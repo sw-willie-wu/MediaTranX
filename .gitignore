@@ -1,0 +1,21 @@
+# Python venv
+Include/
+Lib/
+Scripts/
+share/
+pyvenv.cfg
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# Temp
+temp/
+output/
+*.log
