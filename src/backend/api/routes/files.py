@@ -1,7 +1,9 @@
 """
 檔案處理端點
 """
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from typing import Optional
+
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pathlib import Path
 
@@ -12,9 +14,16 @@ router = APIRouter()
 
 
 @router.post("/upload", response_model=FileUploadResponse)
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(
+    file: UploadFile = File(...),
+    source_dir: Optional[str] = Form(default=None)
+):
     """
     上傳檔案
+
+    Args:
+        file: 上傳的檔案
+        source_dir: 檔案在使用者電腦上的原始目錄（由 Electron 提供）
 
     Returns:
         FileUploadResponse: 包含 file_id 的回應
@@ -25,7 +34,8 @@ async def upload_file(file: UploadFile = File(...)):
     file_info = await file_service.save_upload(
         filename=file.filename or "unnamed",
         content=content,
-        mime_type=file.content_type
+        mime_type=file.content_type,
+        source_dir=source_dir
     )
 
     return FileUploadResponse(

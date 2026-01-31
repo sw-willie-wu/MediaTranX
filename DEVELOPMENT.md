@@ -115,15 +115,106 @@ src/frontend/src/
 
 ## 待完成項目 📋
 
-### 第二階段：影片轉檔
+### UI 重新設計 ✅
 
-| 項目 | 檔案位置 | 說明 |
+#### 1. 頁面架構
+
+**入口頁面 (HomeView)**
+- 快速工具區：四個工具按鈕（影片、音訊、圖片、文件）
+- 拖曳區域：自動識別檔案類型並導向對應工具
+
+**工具頁面 (ToolLayout)**
+- 三欄式佈局：
+  - 左側：子功能列表（帶動畫指示燈）
+  - 中間：預覽區域（原圖/成果/並排比對）
+  - 右側：設定面板 + 匯出按鈕
+
+**標題列 (Titlebar)**
+- 左側：首頁按鈕 + App 標題
+- 右側：設定按鈕 + 視窗控制
+
+#### 2. 主題系統
+
+**檔案結構：**
+```
+src/frontend/src/
+├── composables/
+│   └── useTheme.ts          # 主題管理 composable
+├── assets/
+│   └── base.css             # CSS 變數定義
+└── components/
+    └── SettingsModal.vue    # 設定彈窗
+```
+
+**支援模式：**
+- 深色模式（預設）
+- 淺色模式
+- 跟隨系統（自動偵測 OS 偏好）
+
+**CSS 變數：**
+| 變數 | 用途 |
+|------|------|
+| `--bg-gradient-start/end` | 背景漸層 |
+| `--text-primary/secondary/muted` | 文字顏色 |
+| `--panel-bg/hover/active` | 面板背景 |
+| `--panel-border` | 面板邊框 |
+| `--input-bg/border` | 輸入框 |
+| `--modal-bg/backdrop` | 彈窗 |
+| `--color-primary/success/danger` | 主題色 |
+| `--color-accent` | 強調色 |
+
+**使用方式：**
+```vue
+<script setup>
+import { useTheme } from '@/composables/useTheme'
+const { themeMode, setTheme } = useTheme()
+</script>
+
+<style>
+.my-panel {
+  background: var(--panel-bg);
+  color: var(--text-primary);
+}
+</style>
+```
+
+#### 3. 元件清單
+
+| 元件 | 檔案 | 說明 |
+|------|------|------|
+| ToolLayout | `components/ToolLayout.vue` | 三欄式工具頁面框架 |
+| SettingsModal | `components/SettingsModal.vue` | 設定彈窗（主題、語言、路徑） |
+| Titlebar | `components/Titlebar.vue` | 自訂標題列 |
+
+#### 4. 工具頁面
+
+| 頁面 | 路由 | 子功能 |
+|------|------|--------|
+| 圖片工具 | `/image` | 去背、超解析、濾鏡、轉檔、裁切、壓縮 |
+| 影片工具 | `/video` | 轉檔、剪輯、壓縮、提取音訊、字幕、調整尺寸 |
+| 音訊工具 | `/audio` | 轉檔、剪輯、音量調整、正規化、合併 |
+| 文件工具 | `/document` | PDF 轉換、OCR、合併、分割 |
+
+---
+
+### 第二階段：影片轉檔 ✅
+
+| 項目 | 檔案位置 | 狀態 |
 |------|----------|------|
-| FFmpeg 封裝 | `backend/core/ffmpeg.py` | FFmpeg 命令執行、進度解析 |
-| 轉檔服務 | `backend/services/video/transcode_service.py` | 轉檔業務邏輯 |
-| 轉檔路由 | `backend/api/routes/video/transcode.py` | 轉檔 API 端點 |
-| 轉檔面板 | `frontend/src/components/video/TranscodePanel.vue` | 轉檔 UI |
-| 影片頁面 | `frontend/src/views/VideoView.vue` | 影片功能主頁 |
+| FFmpeg 封裝 | `backend/core/ffmpeg.py` | ✅ 完成 |
+| 轉檔服務 | `backend/services/video/transcode_service.py` | ✅ 完成 |
+| 轉檔路由 | `backend/api/routes/video/transcode.py` | ✅ 完成 |
+| 轉檔面板 | `frontend/src/components/video/TranscodePanel.vue` | ✅ 完成 |
+| 影片頁面 | `frontend/src/views/VideoView.vue` | ✅ 完成 |
+
+**FFmpeg 管理：**
+- FFmpeg 放置於 `bin/ffmpeg/` 目錄
+- 自動偵測專案內或系統 PATH 的 FFmpeg
+
+**API 端點：**
+- `GET /api/video/ffmpeg/status` - 檢查 FFmpeg 狀態
+- `GET /api/video/info/{file_id}` - 取得媒體資訊
+- `POST /api/video/transcode` - 提交轉檔任務
 
 **API 設計：**
 ```
@@ -231,14 +322,19 @@ npm install pinia
 
 ### 開發模式 (Electron)
 ```bash
-# 終端 1: 啟動前端 Vite dev server (port 8000)
-cd src/frontend
-npm run dev
+# 需要先啟用 conda 環境
+conda activate node
 
-# 終端 2: 啟動 Electron (會自動啟動 Python 後端於 port 8001)
+# 啟動 Electron（會自動啟動 Vite 和 Python 後端）
 cd src/frontend
-npm run electron:serve
+npm run electron
 ```
+
+**自動啟動機制：**
+- Electron 會自動啟動 Vite dev server (port 8000)
+- 同時啟動 Python FastAPI 後端 (port 8001)
+- 使用 `waitForServer()` 等待服務就緒後才開啟視窗
+- 關閉視窗時自動清理子程序
 
 ### 生產模式
 ```bash

@@ -1,84 +1,70 @@
 <template>
-    <div class="panel">
-        <div v-if="!fileURL" class="drop-area d-flex justify-content-center align-items-center"
-            @click="openFileDialog" @dragover.prevent="dragOver = true" @dragleave="dragOver = false"
-            @drop.prevent="handleDrop">
-            <button class="btn btn-outline-light">點擊 / 拖曳檔案至此</button>
-            <input type="file" ref="fileInput" class="d-none" @change="handleFileInput" />
-        </div>
-
-        <div v-if="fileURL" class="preview d-flex justify-content-center align-items-center">
-            <img v-if="fileURL && fileType.startsWith('image/')" :src="fileURL" class="img-fluid rounded" />
-            <audio v-else-if="fileURL && fileType.startsWith('audio/')" :src="fileURL" controls class="w-100 mt-2" />
-            <video v-else-if="fileURL && fileType.startsWith('video/')" :src="fileURL" controls class="w-100 rounded" />
-            <pre v-else-if="textContent" class="bg-dark text-success p-3 rounded">{{ textContent }}</pre>
-        </div>
+  <div class="panel">
+    <!-- 有檔案時顯示預覽 -->
+    <div v-if="previewUrl" class="preview d-flex justify-content-center align-items-center">
+      <img v-if="isImage" :src="previewUrl" class="img-fluid rounded" />
+      <audio v-else-if="isAudio" :src="previewUrl" controls class="w-100 mt-2" />
+      <video v-else-if="isVideo" :src="previewUrl" controls class="w-100 rounded" />
+      <div v-else class="file-icon">
+        <i class="bi bi-file-earmark display-1"></i>
+        <p class="mt-2">{{ currentFile?.originalName }}</p>
+      </div>
     </div>
+
+    <!-- 無檔案時顯示空狀態 -->
+    <div v-else class="empty-state d-flex justify-content-center align-items-center">
+      <i class="bi bi-image display-1 text-muted"></i>
+    </div>
+  </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed } from 'vue'
+import { useFilesStore } from '@/stores/files'
 
-const fileInput = ref(null)
-const dragOver = ref(false)
-const fileURL = ref('')
-const fileType = ref('')
-const textContent = ref('')
+const filesStore = useFilesStore()
 
-const openFileDialog = () => {
-    fileInput.value?.click()
-}
+const currentFile = computed(() => filesStore.currentFile)
+const previewUrl = computed(() => currentFile.value?.previewUrl || null)
+const mimeType = computed(() => currentFile.value?.mimeType || '')
 
-const handleFile = (file) => {
-    fileType.value = file.type
-    textContent.value = ''
-    fileURL.value = ''
-
-    if (fileType.value.startsWith('image/') || fileType.value.startsWith('audio/') || fileType.value.startsWith('video/')) {
-        fileURL.value = URL.createObjectURL(file)
-    } else {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-            textContent.value = e.target.result
-        }
-        reader.readAsText(file)
-    }
-}
-
-const handleFileInput = (e) => {
-    const file = e.target.files[0]
-    if (file) handleFile(file)
-}
-
-const handleDrop = (e) => {
-    dragOver.value = false
-    const file = e.dataTransfer.files[0]
-    if (file) handleFile(file)
-}
+const isImage = computed(() => mimeType.value.startsWith('image/'))
+const isAudio = computed(() => mimeType.value.startsWith('audio/'))
+const isVideo = computed(() => mimeType.value.startsWith('video/'))
 </script>
 
 <style scoped>
 .panel {
-    width: 100%;
-    height: 100%;
-}
-
-.drop-area {
-    cursor: pointer;
-    transition: background 0.3s ease;
-    height: 100%;
-    font-size: 1rem;
+  width: 100%;
+  height: 100%;
 }
 
 .preview {
-    height: 100%;
-    img {
-        max-height: 65vh;
-    }
+  height: 100%;
 }
 
-/* .preview img,
+.preview img {
+  max-height: 65vh;
+  max-width: 100%;
+  object-fit: contain;
+}
+
 .preview video {
-    max-height: 400px;
-} */
+  max-height: 65vh;
+  max-width: 100%;
+}
+
+.preview audio {
+  max-width: 400px;
+}
+
+.file-icon {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.empty-state {
+  height: 100%;
+  color: rgba(255, 255, 255, 0.3);
+}
 </style>

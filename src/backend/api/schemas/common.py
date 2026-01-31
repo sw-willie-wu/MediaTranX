@@ -56,6 +56,7 @@ class FileInfo(BaseModel):
     file_path: str
     file_size: int
     mime_type: str
+    source_dir: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     metadata: Optional[dict] = None
 

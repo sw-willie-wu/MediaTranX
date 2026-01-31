@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1f1c2c"/>
+      <stop offset="100%" stop-color="#928dab"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a89cc8"/>
+      <stop offset="100%" stop-color="#7c6fad"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect x="32" y="32" width="448" height="448" rx="96" ry="96" fill="url(#bg)"/>
+  <!-- Subtle inner glow -->
+  <rect x="48" y="48" width="416" height="416" rx="84" ry="84" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1.5"/>
+  <!-- Circular conversion arrows -->
+  <!-- Top arc (right direction) -->
+  <path d="M310 168 A100 100 0 0 0 190 196" stroke="rgba(255,255,255,0.25)" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <!-- Top arrowhead -->
+  <polygon points="183,180 183,212 204,196" fill="rgba(255,255,255,0.25)"/>
+  <!-- Bottom arc (left direction) -->
+  <path d="M202 344 A100 100 0 0 0 322 316" stroke="rgba(255,255,255,0.25)" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <!-- Bottom arrowhead -->
+  <polygon points="329,332 329,300 308,316" fill="rgba(255,255,255,0.25)"/>
+  <!-- Center play triangle -->
+  <path d="M228 218 L228 294 L300 256 Z" fill="url(#accent)"/>
+</svg>
