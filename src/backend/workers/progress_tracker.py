@@ -84,7 +84,9 @@ class ProgressTracker:
 
     def create_callback(self, task_id: str) -> Callable[[float, str], None]:
         """
-        建立同步的進度回調函數（用於非異步環境）
+        建立同步的進度回調函數（用於非異步環境，如 ThreadPoolExecutor）
+
+        會將進度事件安全地調度回主事件循環，確保 SSE 訂閱者能正確收到更新。
 
         Args:
             task_id: 任務 ID
@@ -92,21 +94,31 @@ class ProgressTracker:
         Returns:
             回調函數
         """
+        # 捕獲主事件循環的參考（此方法在主循環上被呼叫）
+        try:
+            main_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            main_loop = None
+
+        tracker = self
+
         def callback(progress: float, message: str = "") -> None:
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.create_task(self.emit(task_id, progress, message))
-                else:
-                    loop.run_until_complete(self.emit(task_id, progress, message))
-            except RuntimeError:
-                # 沒有事件循環時直接記錄
-                self._latest_progress[task_id] = ProgressEvent(
-                    task_id=task_id,
-                    progress=progress,
-                    stage="processing",
-                    message=message
+            # 直接更新最新進度（供心跳和查詢用）
+            tracker._latest_progress[task_id] = ProgressEvent(
+                task_id=task_id,
+                progress=min(max(progress, 0.0), 1.0),
+                stage="processing",
+                message=message
+            )
+
+            # 透過主事件循環發送給 SSE 訂閱者
+            if main_loop is not None and main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    tracker.emit(task_id, progress, message),
+                    main_loop
                 )
+            else:
+                logger.debug(f"Task {task_id}: {progress:.1%} - {message}")
 
         return callback
 

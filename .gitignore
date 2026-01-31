@@ -19,3 +19,13 @@ dist/
 temp/
 output/
 *.log
+
+# Binaries (keep README)
+bin/**/*.exe
+bin/**/*.dll
+models/
+
+# Agents
+.claude/
+CLAUDE.md
+nul

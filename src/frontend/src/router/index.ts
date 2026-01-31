@@ -25,14 +25,19 @@ const router = createRouter({
       component: () => import('../views/AudioView.vue'),
     },
     {
-      path: '/convert',
-      name: 'convert',
-      component: () => import('../views/ConvertView.vue'),
+      path: '/document',
+      name: 'document',
+      component: () => import('../views/DocumentView.vue'),
     },
     {
-      path: '/settings',
-      name: 'settings',
-      component: () => import('../views/SettingsView.vue'),
+      path: '/history',
+      name: 'history',
+      component: () => import('../views/HistoryView.vue'),
+    },
+    {
+      path: '/tasks',
+      name: 'tasks',
+      component: () => import('../views/TasksView.vue'),
     },
   ],
 })

@@ -1,4 +1,13 @@
+import os
+import sys
 from pathlib import Path
+
+# 將 pip 安裝的 NVIDIA CUDA DLL 加入 PATH（Windows）
+if sys.platform == "win32":
+    _site_packages = Path(sys.prefix) / "Lib" / "site-packages"
+    _nvidia_dirs = [str(p) for p in _site_packages.glob("nvidia/*/bin") if p.is_dir()]
+    if _nvidia_dirs:
+        os.environ["PATH"] = os.pathsep.join(_nvidia_dirs) + os.pathsep + os.environ.get("PATH", "")
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles

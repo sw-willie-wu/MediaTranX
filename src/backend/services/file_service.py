@@ -69,7 +69,8 @@ class FileService:
         self,
         filename: str,
         content: bytes,
-        mime_type: Optional[str] = None
+        mime_type: Optional[str] = None,
+        source_dir: Optional[str] = None
     ) -> FileInfo:
         """
         儲存上傳的檔案
@@ -78,6 +79,7 @@ class FileService:
             filename: 原始檔名
             content: 檔案內容
             mime_type: MIME 類型（可選，會自動偵測）
+            source_dir: 來源目錄（檔案在使用者電腦上的原始目錄）
 
         Returns:
             FileInfo: 檔案資訊
@@ -105,6 +107,7 @@ class FileService:
             file_path=str(file_path),
             file_size=len(content),
             mime_type=mime_type,
+            source_dir=source_dir,
             created_at=datetime.utcnow()
         )
 

@@ -12,6 +12,7 @@
     "type-check": "vue-tsc --build",
     "lint": "eslint . --fix",
     "format": "prettier --write src/",
+    "electron": "electron .",
     "electron:serve": "electron ."
   },
   "dependencies": {

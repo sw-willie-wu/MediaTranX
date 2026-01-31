@@ -1,131 +1,166 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { RouterView } from 'vue-router'
 import Titlebar from './components/Titlebar.vue'
-import Sidebar from './components/Sidebar.vue'
-// import HelloWorld from './components/HelloWorld.vue'
+import MainSidebar from './components/MainSidebar.vue'
+import { useTheme } from './composables/useTheme'
+
+// 初始化主題
+useTheme()
+
+// 後端就緒狀態
+const backendReady = ref(false)
+const splashFading = ref(false)
+
+// 輪詢後端健康檢查
+onMounted(async () => {
+  const maxAttempts = 120
+  let attempts = 0
+
+  while (attempts < maxAttempts) {
+    try {
+      const res = await fetch('/api/health')
+      if (res.ok) {
+        // 後端就緒，開始淡出動畫
+        splashFading.value = true
+        setTimeout(() => {
+          backendReady.value = true
+        }, 500)
+        return
+      }
+    } catch {
+      // 後端尚未就緒
+    }
+    attempts++
+    await new Promise(r => setTimeout(r, 500))
+  }
+
+  // 超過最大嘗試次數，仍然顯示主畫面
+  backendReady.value = true
+})
 </script>
 
 <template>
-  <div class="wrapper">
+  <!-- 啟動畫面 -->
+  <div v-if="!backendReady" class="splash-screen" :class="{ 'fade-out': splashFading }">
     <Titlebar />
-    <Sidebar />
-    <div class="workspace">
+    <div class="splash-content">
+      <div class="splash-logo">
+        <img src="@/assets/icon.svg" alt="MediaTranX" class="splash-icon" />
+      </div>
+      <h1 class="splash-title">MediaTranX</h1>
+      <div class="splash-loader">
+        <div class="splash-loader-bar"></div>
+      </div>
+      <p class="splash-hint">正在初始化...</p>
+    </div>
+  </div>
+
+  <!-- 主畫面 -->
+  <div v-else class="app-wrapper app-enter">
+    <Titlebar />
+    <MainSidebar />
+    <div class="app-content">
       <RouterView />
     </div>
   </div>
 </template>
 
 <style lang="scss">
-.wrapper {
-  display: flex;
-  flex-direction: column;
+.app-wrapper {
+  --main-sidebar-width: 60px;
   min-height: 100vh;
 }
 
-.workspace {
-  /* background-color: #dbd2e3; */
-  /* background: rgba(255, 255, 255, 0.5); */
-  /* backdrop-filter: blur(15px) saturate(120%); */
-  /* -webkit-backdrop-filter: blur(15px) saturate(120%); */
-  /* border-right: 1px solid rgba(255, 255, 255, 0.15); */
-  /* box-shadow: 2px 0 20px rgba(0, 0, 0, 0.25); */
-  margin-top: 3rem;
-  margin-left: 250px;
-  /* height: calc(100vh - 5rem); */
-  /* width: calc(100vw - 250px); */
-  /* border-radius: 15px; */
-  /* width: calc(100vw - 300px);
-  position: relative;
-  left: 0;
-  top: 5rem; */
+.app-content {
+  padding-top: 40px;
+  margin-left: var(--main-sidebar-width);
+  min-height: 100vh;
 }
 
-.preview-panel {
-  color: white;
-  min-height: calc(100vh - 4.5rem);
-  padding: 1rem;
-  width: calc(100vw - 250px - 400px - 3rem);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(15px) saturate(150%);
-  -webkit-backdrop-filter: blur(15px) saturate(150%);
-  border-right: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 2px 0 20px rgba(0, 0, 0, 0.25);
+// 全域樣式：玻璃面板
+.glass-panel {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
 }
 
-.tool-panel {
-  position: absolute;
-  right: 1.5rem;
-  padding: 1rem;
-  min-height: calc(100vh - 4.5rem);
-  width: 400px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(15px) saturate(150%);
-  -webkit-backdrop-filter: blur(15px) saturate(150%);
-  border-right: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 2px 0 20px rgba(0, 0, 0, 0.25);
+// 主畫面淡入
+.app-enter {
+  animation: fadeIn 0.4s ease;
 }
 
-/* header {
-  line-height: 1.5;
-  max-height: 100vh;
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.logo {
-  display: block;
-  margin: 0 auto 2rem;
-}
+// 啟動畫面
+.splash-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  transition: opacity 0.5s ease;
 
-nav {
-  width: 100%;
-  font-size: 12px;
-  text-align: center;
-  margin-top: 2rem;
-}
-
-nav a.router-link-exact-active {
-  color: var(--color-text);
-}
-
-nav a.router-link-exact-active:hover {
-  background-color: transparent;
-}
-
-nav a {
-  display: inline-block;
-  padding: 0 1rem;
-  border-left: 1px solid var(--color-border);
-}
-
-nav a:first-of-type {
-  border: 0;
-}
-
-@media (min-width: 1024px) {
-  header {
-    display: flex;
-    place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
+  &.fade-out {
+    opacity: 0;
   }
+}
 
-  .logo {
-    margin: 0 2rem 0 0;
-  }
+.splash-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 80px;
+}
 
-  header .wrapper {
-    display: flex;
-    place-items: flex-start;
-    flex-wrap: wrap;
-  }
+.splash-logo {
+  margin-bottom: 1.5rem;
+}
 
-  nav {
-    text-align: left;
-    margin-left: -1rem;
-    font-size: 1rem;
+.splash-icon {
+  width: 88px;
+  height: 88px;
+  border-radius: 20px;
+}
 
-    padding: 1rem 0;
-    margin-top: 1rem;
-  }
-} */
+.splash-title {
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.05em;
+  margin-bottom: 2rem;
+}
+
+.splash-loader {
+  width: 180px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 1.2rem;
+}
+
+.splash-loader-bar {
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+  border-radius: 2px;
+  animation: loaderSlide 1.5s ease-in-out infinite;
+}
+
+@keyframes loaderSlide {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(200%); }
+  100% { transform: translateX(-100%); }
+}
+
+.splash-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
 </style>

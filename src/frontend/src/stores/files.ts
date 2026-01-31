@@ -14,6 +14,10 @@ export const useFilesStore = defineStore('files', () => {
   const isUploading = ref(false)
   const uploadProgress = ref(0)
 
+  // 暫存從首頁拖曳過來的檔案（跨頁面傳遞用）
+  const pendingFile = ref<File | null>(null)
+  const pendingSourceDir = ref<string | undefined>(undefined)
+
   // 計算屬性
   const allFiles = computed(() => Array.from(files.value.values()))
 
@@ -29,14 +33,18 @@ export const useFilesStore = defineStore('files', () => {
     allFiles.value.filter((f) => f.type === 'audio')
   )
 
-  // 上傳檔案
-  async function uploadFile(file: File): Promise<string> {
+  // 上傳檔案（sourceDir 由呼叫端提供，從原始 File.path 提取）
+  async function uploadFile(file: File, sourceDir?: string): Promise<string> {
     isUploading.value = true
     uploadProgress.value = 0
 
     try {
       const formData = new FormData()
       formData.append('file', file)
+
+      if (sourceDir) {
+        formData.append('source_dir', sourceDir)
+      }
 
       const response = await fetch(`${API_BASE}/files/upload`, {
         method: 'POST',
@@ -187,12 +195,24 @@ export const useFilesStore = defineStore('files', () => {
     currentFile.value = null
   }
 
+  // 取出暫存檔案（取出後清除）
+  function consumePendingFile(): { file: File; sourceDir?: string } | null {
+    const file = pendingFile.value
+    const srcDir = pendingSourceDir.value
+    pendingFile.value = null
+    pendingSourceDir.value = undefined
+    if (!file) return null
+    return { file, sourceDir: srcDir }
+  }
+
   return {
     // 狀態
     files,
     currentFile,
     isUploading,
     uploadProgress,
+    pendingFile,
+    pendingSourceDir,
     allFiles,
     imageFiles,
     videoFiles,
@@ -203,6 +223,7 @@ export const useFilesStore = defineStore('files', () => {
     downloadFile,
     deleteFile,
     setCurrentFile,
+    consumePendingFile,
     cleanup,
   }
 })
