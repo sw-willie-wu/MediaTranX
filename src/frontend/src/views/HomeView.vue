@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
+import { detectMediaType, getToolPath } from '@/utils/mediaType'
 
 const router = useRouter()
 const filesStore = useFilesStore()
@@ -14,52 +15,6 @@ const tools = [
   { id: 'image', name: '圖片', icon: 'bi-image-fill', color: '#10b981', path: '/image' },
   { id: 'document', name: '文件', icon: 'bi-file-earmark-text-fill', color: '#6366f1', path: '/document' },
 ]
-
-// 檔案類型對應
-const fileTypeMap: Record<string, string> = {
-  // 影片
-  'video/mp4': 'video',
-  'video/webm': 'video',
-  'video/avi': 'video',
-  'video/quicktime': 'video',
-  'video/x-msvideo': 'video',
-  'video/x-matroska': 'video',
-  // 音訊
-  'audio/mpeg': 'audio',
-  'audio/mp3': 'audio',
-  'audio/wav': 'audio',
-  'audio/ogg': 'audio',
-  'audio/flac': 'audio',
-  'audio/aac': 'audio',
-  'audio/x-m4a': 'audio',
-  // 圖片
-  'image/jpeg': 'image',
-  'image/png': 'image',
-  'image/gif': 'image',
-  'image/webp': 'image',
-  'image/bmp': 'image',
-  'image/tiff': 'image',
-  // 文件
-  'application/pdf': 'document',
-  'application/msword': 'document',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'document',
-}
-
-// 根據副檔名判斷類型
-function getTypeByExtension(filename: string): string | null {
-  const ext = filename.split('.').pop()?.toLowerCase()
-  const extMap: Record<string, string> = {
-    // 影片
-    mp4: 'video', mkv: 'video', avi: 'video', mov: 'video', webm: 'video', wmv: 'video', flv: 'video',
-    // 音訊
-    mp3: 'audio', wav: 'audio', flac: 'audio', aac: 'audio', ogg: 'audio', m4a: 'audio', wma: 'audio',
-    // 圖片
-    jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', webp: 'image', bmp: 'image', tiff: 'image', ico: 'image',
-    // 文件
-    pdf: 'document', doc: 'document', docx: 'document', txt: 'document',
-  }
-  return ext ? extMap[ext] || null : null
-}
 
 function goToTool(path: string) {
   router.push(path)
@@ -82,20 +37,14 @@ function handleDrop(e: DragEvent) {
   if (!files || files.length === 0) return
 
   const file = files[0]
-  let fileType = fileTypeMap[file.type]
-
-  // 如果 MIME type 無法判斷，用副檔名
-  if (!fileType) {
-    fileType = getTypeByExtension(file.name) || 'unknown'
-  }
+  const fileType = detectMediaType(file)
 
   // 導航到對應工具頁面，透過 store 傳遞檔案
-  if (fileType && fileType !== 'unknown') {
-    // 透過 preload 快取取得來源目錄
+  if (fileType) {
     const srcDir = window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
     filesStore.pendingFile = file
     filesStore.pendingSourceDir = srcDir
-    router.push(`/${fileType}`)
+    router.push(getToolPath(fileType))
   } else {
     alert('無法識別此檔案類型')
   }

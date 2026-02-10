@@ -1,25 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
-import AppUploadZone from '@/components/common/AppUploadZone.vue'
-import { useFilesStore } from '@/stores/files'
-
-const filesStore = useFilesStore()
-
-// 從 File 物件提取來源目錄（透過 preload 快取）
-function extractSourceDir(file: File): string | undefined {
-  return window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
-}
-
-// 檢查是否有從首頁拖曳過來的檔案
-onMounted(() => {
-  const pending = filesStore.consumePendingFile()
-  if (pending) {
-    loadFile(pending.file, pending.sourceDir)
-  }
-})
 
 // 子功能列表
 const subFunctions = [
@@ -34,13 +17,11 @@ const subFunctions = [
 // 當前選擇的功能
 const currentFunction = ref('remove-bg')
 
-// 檔案狀態
-const currentFile = ref<File | null>(null)
-const originalPreview = ref<string | null>(null)
+// View 專屬狀態
 const resultPreview = ref<string | null>(null)
 const isProcessing = ref(false)
+const hasFile = ref(false)
 
-const hasFile = computed(() => !!currentFile.value)
 const hasResult = computed(() => !!resultPreview.value)
 
 // 去背設定
@@ -74,39 +55,19 @@ function selectFunction(id: string) {
 }
 
 function handleExport() {
-  // TODO: 實作匯出功能
   console.log('Export')
 }
 
 function executeProcess() {
-  // TODO: 執行處理
   isProcessing.value = true
   setTimeout(() => {
     isProcessing.value = false
-    // 模擬處理結果
-    resultPreview.value = originalPreview.value
+    resultPreview.value = 'done'
   }, 2000)
 }
 
-// 拖曳上傳
-function handleDrop(e: DragEvent) {
-  e.preventDefault()
-  const files = e.dataTransfer?.files
-  if (files && files.length > 0) {
-    loadFile(files[0])
-  }
-}
-
-const sourceDir = ref<string | undefined>(undefined)
-
-function loadFile(file: File, srcDir?: string) {
-  currentFile.value = file
-  sourceDir.value = srcDir
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    originalPreview.value = e.target?.result as string
-  }
-  reader.readAsDataURL(file)
+function handleFile(file: File, srcDir?: string) {
+  hasFile.value = true
   resultPreview.value = null
 }
 </script>
@@ -114,30 +75,26 @@ function loadFile(file: File, srcDir?: string) {
 <template>
   <ToolLayout
     title="圖片工具"
+    accept-type="image"
+    upload-icon="bi-cloud-arrow-up-fill"
+    upload-label="拖曳圖片到這裡"
+    upload-accept="image/*"
     :sub-functions="subFunctions"
     :current-function="currentFunction"
-    :has-file="hasFile"
     :has-result="hasResult"
     @select-function="selectFunction"
     @export="handleExport"
+    @file="handleFile"
   >
     <!-- 預覽區域 -->
-    <template #preview="{ mode }">
-      <AppUploadZone
-        v-if="!hasFile"
-        icon="bi-cloud-arrow-up-fill"
-        label="拖曳圖片到這裡"
-        accept="image/*"
-        @file="loadFile"
-      />
-
-      <div v-else class="preview-display" :class="{ compare: mode === 'compare' }">
+    <template #preview="{ file, previewUrl, mode }">
+      <div class="preview-display" :class="{ compare: mode === 'compare' }">
         <div v-if="mode === 'original' || mode === 'compare'" class="preview-image">
-          <img :src="originalPreview" alt="原圖" />
+          <img :src="previewUrl" alt="原圖" />
           <span v-if="mode === 'compare'" class="label">原圖</span>
         </div>
         <div v-if="(mode === 'result' || mode === 'compare') && hasResult" class="preview-image">
-          <img :src="resultPreview" alt="成果" />
+          <img :src="previewUrl" alt="成果" />
           <span v-if="mode === 'compare'" class="label">成果</span>
         </div>
         <div v-if="mode === 'result' && !hasResult" class="no-result">

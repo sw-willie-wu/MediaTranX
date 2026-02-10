@@ -1,24 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
-import AppUploadZone from '@/components/common/AppUploadZone.vue'
-import { useFilesStore } from '@/stores/files'
-
-const filesStore = useFilesStore()
-
-// 從 File 物件提取來源目錄（透過 preload 快取）
-function extractSourceDir(file: File): string | undefined {
-  return window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
-}
-
-// 檢查是否有從首頁拖曳過來的檔案
-onMounted(() => {
-  const pending = filesStore.consumePendingFile()
-  if (pending) {
-    loadFile(pending.file, pending.sourceDir)
-  }
-})
 
 // 子功能列表
 const subFunctions = [
@@ -31,13 +14,12 @@ const subFunctions = [
 
 const currentFunction = ref('transcode')
 
-// 檔案狀態
-const currentFile = ref<File | null>(null)
-const originalPreview = ref<string | null>(null)
+// View 專屬狀態
 const resultPreview = ref<string | null>(null)
 const isProcessing = ref(false)
+const hasFile = ref(false)
+const currentFileName = ref('')
 
-const hasFile = computed(() => !!currentFile.value)
 const hasResult = computed(() => !!resultPreview.value)
 
 // 轉檔設定
@@ -79,24 +61,13 @@ function executeProcess() {
   isProcessing.value = true
   setTimeout(() => {
     isProcessing.value = false
-    resultPreview.value = originalPreview.value
+    resultPreview.value = 'done'
   }, 2000)
 }
 
-function handleDrop(e: DragEvent) {
-  e.preventDefault()
-  const files = e.dataTransfer?.files
-  if (files && files.length > 0) {
-    loadFile(files[0])
-  }
-}
-
-const sourceDir = ref<string | undefined>(undefined)
-
-function loadFile(file: File, srcDir?: string) {
-  currentFile.value = file
-  sourceDir.value = srcDir
-  originalPreview.value = URL.createObjectURL(file)
+function handleFile(file: File, srcDir?: string) {
+  hasFile.value = true
+  currentFileName.value = file.name
   resultPreview.value = null
 }
 </script>
@@ -104,32 +75,28 @@ function loadFile(file: File, srcDir?: string) {
 <template>
   <ToolLayout
     title="音訊工具"
+    accept-type="audio"
+    upload-icon="bi-music-note-beamed"
+    upload-label="拖曳音訊檔案到這裡"
+    upload-accept="audio/*"
     :sub-functions="subFunctions"
     :current-function="currentFunction"
-    :has-file="hasFile"
     :has-result="hasResult"
     @select-function="selectFunction"
     @export="handleExport"
+    @file="handleFile"
   >
     <!-- 預覽區域 -->
-    <template #preview="{ mode }">
-      <AppUploadZone
-        v-if="!hasFile"
-        icon="bi-music-note-beamed"
-        label="拖曳音訊檔案到這裡"
-        accept="audio/*"
-        @file="loadFile"
-      />
-
-      <div v-else class="preview-display">
+    <template #preview="{ file, previewUrl, mode }">
+      <div class="preview-display">
         <div class="audio-preview">
           <div class="audio-icon">
             <i class="bi bi-music-note-beamed"></i>
           </div>
           <div class="audio-info">
-            <p class="filename">{{ currentFile?.name }}</p>
+            <p class="filename">{{ file.name }}</p>
             <audio
-              :src="mode === 'result' && hasResult ? resultPreview : originalPreview"
+              :src="previewUrl"
               controls
               class="audio-player"
             ></audio>

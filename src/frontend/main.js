@@ -106,7 +106,7 @@ function waitForServer(port, maxAttempts = 30) {
 
 function startPythonBackend() {
   const projectRoot = join(__dirname, '..', '..');
-  const venvPython = join(projectRoot, 'Scripts', 'python.exe');
+  const venvPython = join(projectRoot, '.venv', 'Scripts', 'python.exe');
 
   console.log('Starting Python backend on port', BACKEND_PORT);
 
@@ -144,12 +144,15 @@ function stopPythonBackend() {
   }
 }
 
+let mainWindow = null;
+
 function createWindow() {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
     frame: false,
-    show: false, // 先隱藏，等載入完成再顯示
+    show: true, // 立即顯示（背景色），減少啟動感知延遲
+    backgroundColor: '#1a1a2e',
     icon: join(__dirname, 'src', 'assets', 'icon.ico'),
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
@@ -157,21 +160,6 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false  // 需要關閉 sandbox 才能使用 File.path 取得檔案路徑
     }
-  });
-
-  // 載入前端頁面
-  const isDev = !app.isPackaged;
-  if (isDev) {
-    // 開發模式：從 Vite dev server 載入
-    mainWindow.loadURL(`http://localhost:${FRONTEND_DEV_PORT}/`);
-  } else {
-    // 生產模式：從 Python 後端載入靜態檔案
-    mainWindow.loadURL(`http://localhost:${BACKEND_PORT}/static/`);
-  }
-
-  // 視窗準備好後顯示（有動畫效果）
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
   });
 
   mainWindow.on('maximize', () => {
@@ -183,7 +171,7 @@ function createWindow() {
   });
 
   // 開發模式下開啟 DevTools
-  if (isDev) {
+  if (!app.isPackaged) {
     mainWindow.webContents.openDevTools();
   }
 
@@ -246,23 +234,29 @@ app.whenReady().then(async () => {
   const isDev = !app.isPackaged;
 
   if (isDev) {
-    // 開發模式：自動啟動 Vite dev server 和 Python 後端
+    // 開發模式：先顯示 splash 畫面，等前後端都就緒後載入頁面
     console.log('Development mode - starting Vite and Python backend...');
     startViteDevServer();
     startPythonBackend();
-    // 等待 Vite 準備好再建立視窗
+    createWindow();
+    mainWindow.loadFile(join(__dirname, 'splash.html'));
     try {
-      await waitForServer(FRONTEND_DEV_PORT);
-      createWindow();
+      await Promise.all([
+        waitForServer(FRONTEND_DEV_PORT),
+        waitForServer(BACKEND_PORT),
+      ]);
+      mainWindow.loadURL(`http://localhost:${FRONTEND_DEV_PORT}/`);
     } catch (err) {
       console.error('Failed to start dev servers:', err);
     }
   } else {
-    // 生產模式：先啟動 Python 後端
+    // 生產模式：先顯示 splash 畫面，等後端就緒後載入頁面
     startPythonBackend();
+    createWindow();
+    mainWindow.loadFile(join(__dirname, 'splash.html'));
     try {
       await waitForServer(BACKEND_PORT);
-      createWindow();
+      mainWindow.loadURL(`http://localhost:${BACKEND_PORT}/static/`);
     } catch (err) {
       console.error('Failed to start backend:', err);
     }

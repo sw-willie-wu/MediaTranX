@@ -96,6 +96,7 @@ def get_device_info() -> dict:
     }
 
     # 嘗試透過 PyTorch 取得詳細 GPU 資訊
+    got_gpu_info = False
     try:
         import torch
 
@@ -103,14 +104,52 @@ def get_device_info() -> dict:
             info["device_name"] = torch.cuda.get_device_name(0)
             info["memory_total"] = torch.cuda.get_device_properties(0).total_memory
             info["memory_free"] = torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)
+            got_gpu_info = True
         elif info["device"] == "mps":
             info["device_name"] = "Apple Silicon"
+            got_gpu_info = True
     except ImportError:
-        # PyTorch 未安裝，嘗試透過 nvidia-smi 取得 GPU 名稱
-        if info["device"] == "cuda":
-            info["device_name"] = _get_gpu_name_via_smi() or "NVIDIA GPU"
+        pass
+
+    # PyTorch 無法取得 GPU 資訊時（未安裝或 CPU 版），改用 nvidia-smi
+    if info["device"] == "cuda" and not got_gpu_info:
+        info["device_name"] = _get_gpu_name_via_smi() or "NVIDIA GPU"
+
+    # nvidia-smi fallback: 當 memory_total 仍為 None 且有 CUDA 裝置時
+    if info["memory_total"] is None and info["device"] == "cuda":
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=memory.total,memory.free", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                parts = result.stdout.strip().split(",")
+                info["memory_total"] = int(parts[0].strip()) * 1024 * 1024  # MB→bytes
+                info["memory_free"] = int(parts[1].strip()) * 1024 * 1024
+        except Exception:
+            pass
 
     return info
+
+
+@lru_cache(maxsize=1)
+def has_nvidia_gpu() -> bool:
+    """
+    透過 nvidia-smi 偵測是否有 NVIDIA GPU（不依賴 torch）
+
+    即使 torch 未安裝或只有 CPU 版，仍可偵測到 GPU 硬體。
+    """
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["nvidia-smi"],
+            capture_output=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
 
 
 def _get_gpu_name_via_smi() -> str | None:

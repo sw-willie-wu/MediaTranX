@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: linear-gradient(135deg, #1f1c2c 0%, #928dab 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      -webkit-app-region: drag;
+    }
+    .logo {
+      width: 88px;
+      height: 88px;
+      border-radius: 20px;
+      margin-bottom: 1.5rem;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .title {
+      font-size: 1.6rem;
+      font-weight: 600;
+      color: #ffffff;
+      letter-spacing: 0.05em;
+      margin-bottom: 2rem;
+    }
+    .loader {
+      width: 180px;
+      height: 3px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 1.2rem;
+    }
+    .loader-bar {
+      width: 40%;
+      height: 100%;
+      background: linear-gradient(90deg, #7c6fad, #a89cc8);
+      border-radius: 2px;
+      animation: slide 1.5s ease-in-out infinite;
+    }
+    .hint {
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.5);
+    }
+    @keyframes slide {
+      0% { transform: translateX(-100%); }
+      50% { transform: translateX(200%); }
+      100% { transform: translateX(-100%); }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.8; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <defs>
+      <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#1f1c2c"/>
+        <stop offset="100%" stop-color="#928dab"/>
+      </linearGradient>
+      <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#a89cc8"/>
+        <stop offset="100%" stop-color="#7c6fad"/>
+      </linearGradient>
+    </defs>
+    <rect x="32" y="32" width="448" height="448" rx="96" ry="96" fill="url(#bg)"/>
+    <rect x="48" y="48" width="416" height="416" rx="84" ry="84" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1.5"/>
+    <path d="M310 168 A100 100 0 0 0 190 196" stroke="rgba(255,255,255,0.25)" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <polygon points="183,180 183,212 204,196" fill="rgba(255,255,255,0.25)"/>
+    <path d="M202 344 A100 100 0 0 0 322 316" stroke="rgba(255,255,255,0.25)" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <polygon points="329,332 329,300 308,316" fill="rgba(255,255,255,0.25)"/>
+    <path d="M228 218 L228 294 L300 256 Z" fill="url(#accent)"/>
+  </svg>
+  <h1 class="title">MediaTranX</h1>
+  <div class="loader"><div class="loader-bar"></div></div>
+  <p class="hint">正在初始化...</p>
+</body>
+</html>

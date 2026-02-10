@@ -19,7 +19,7 @@ from backend.api import build_router
 static_dir = Path(__file__).parent / 'static'
 
 # 建立 FastAPI 應用
-app: FastAPI = FastAPI(docs_url=None)
+app: FastAPI = FastAPI()  # docs_url=None 暫時關閉以測試
 app = build_router(app)
 
 # 掛載靜態檔案（生產模式用）
