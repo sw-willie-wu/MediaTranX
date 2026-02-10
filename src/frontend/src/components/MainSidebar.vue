@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useTaskStore } from '@/stores/tasks'
 
 const route = useRoute()
 const router = useRouter()
+const taskStore = useTaskStore()
 
 interface NavItem {
   path: string
@@ -93,6 +95,10 @@ function navigate(path: string) {
         @click="navigate(item.path)"
       >
         <i class="bi" :class="item.icon"></i>
+        <span
+          v-if="item.path === '/tasks' && taskStore.activeCount > 0"
+          class="nav-badge"
+        >{{ taskStore.activeCount }}</span>
       </button>
     </div>
   </nav>
@@ -196,5 +202,22 @@ function navigate(path: string) {
   &:hover::after {
     opacity: 1;
   }
+}
+
+.nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--color-accent, #f87171);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 8px;
+  pointer-events: none;
 }
 </style>

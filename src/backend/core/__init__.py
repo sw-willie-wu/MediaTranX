@@ -10,11 +10,17 @@ from .ffmpeg import (
     AudioCodec,
     QualityPreset,
 )
-from .whisper import (
+from .models import (
+    ModelManager,
+    get_model_manager,
+    SLOT_WHISPER,
+    SLOT_TRANSLATEGEMMA,
     WhisperWrapper,
     get_whisper,
     TranscribeSegment,
     TranscribeResult,
+    TranslateGemmaWrapper,
+    get_translategemma,
 )
 
 __all__ = [
@@ -29,8 +35,14 @@ __all__ = [
     "VideoCodec",
     "AudioCodec",
     "QualityPreset",
+    "ModelManager",
+    "get_model_manager",
+    "SLOT_WHISPER",
+    "SLOT_TRANSLATEGEMMA",
     "WhisperWrapper",
     "get_whisper",
     "TranscribeSegment",
     "TranscribeResult",
+    "TranslateGemmaWrapper",
+    "get_translategemma",
 ]

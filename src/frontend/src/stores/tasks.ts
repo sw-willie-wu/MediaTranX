@@ -29,6 +29,8 @@ export const useTaskStore = defineStore('tasks', () => {
 
   const allTasks = computed(() => Array.from(tasks.value.values()))
 
+  const activeCount = computed(() => activeTasks.value.length)
+
   // 提交任務
   async function submitTask(
     taskType: string,
@@ -65,6 +67,14 @@ export const useTaskStore = defineStore('tasks', () => {
     subscribeToProgress(taskId)
 
     return taskId
+  }
+
+  // 註冊任務並自動訂閱 SSE
+  function addTask(task: Task) {
+    tasks.value.set(task.taskId, task)
+    if (task.status === 'pending' || task.status === 'processing') {
+      subscribeToProgress(task.taskId)
+    }
   }
 
   // 訂閱 SSE 進度更新
@@ -167,8 +177,10 @@ export const useTaskStore = defineStore('tasks', () => {
       const response = await fetch(`${API_BASE}/tasks`)
       const data = await response.json()
 
+      const previousTasks = new Map(tasks.value)
       tasks.value.clear()
       for (const taskData of data) {
+        const existing = previousTasks.get(taskData.task_id)
         const task: Task = {
           taskId: taskData.task_id,
           taskType: taskData.task_type,
@@ -179,6 +191,8 @@ export const useTaskStore = defineStore('tasks', () => {
           error: taskData.error,
           createdAt: new Date(taskData.created_at),
           updatedAt: new Date(taskData.updated_at),
+          label: existing?.label ?? taskData.label,
+          fileName: existing?.fileName ?? taskData.file_name,
         }
         tasks.value.set(task.taskId, task)
 
@@ -207,7 +221,9 @@ export const useTaskStore = defineStore('tasks', () => {
     completedTasks,
     failedTasks,
     allTasks,
+    activeCount,
     // 方法
+    addTask,
     submitTask,
     cancelTask,
     removeTask,

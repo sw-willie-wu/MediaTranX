@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onActivated, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
+import AppUploadZone from '@/components/common/AppUploadZone.vue'
+import { useFilesStore } from '@/stores/files'
+import { detectMediaType, getToolLabel, getToolPath, type ToolType } from '@/utils/mediaType'
 
 interface SubFunction {
   id: string
@@ -7,18 +11,34 @@ interface SubFunction {
   icon: string
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   title: string
   subFunctions: SubFunction[]
   currentFunction?: string
-  hasFile?: boolean
+  acceptType?: ToolType
+  uploadIcon?: string
+  uploadLabel?: string
+  uploadAccept?: string
   hasResult?: boolean
-}>()
+  executeDisabled?: boolean
+  executeLoading?: boolean
+  executeLabel?: string
+  hideExecute?: boolean
+}>(), {
+  uploadIcon: 'bi-cloud-arrow-up-fill',
+  uploadLabel: '拖曳檔案到這裡',
+  uploadAccept: '*',
+  executeLabel: '開始執行',
+})
 
 const emit = defineEmits<{
   (e: 'select-function', id: string): void
-  (e: 'export'): void
+  (e: 'execute'): void
+  (e: 'file', file: File, sourceDir?: string): void
 }>()
+
+const router = useRouter()
+const filesStore = useFilesStore()
 
 // 預覽模式
 type PreviewMode = 'original' | 'result' | 'compare'
@@ -26,12 +46,117 @@ const previewMode = ref<PreviewMode>('original')
 
 const canShowResult = computed(() => props.hasResult)
 
+// 內部檔案管理
+const currentFile = ref<File | null>(null)
+const previewUrl = ref<string | null>(null)
+const hasFile = computed(() => !!currentFile.value)
+
+// 不支援類型 overlay
+const showUnsupported = ref(false)
+const unsupportedTarget = ref<ToolType | null>(null)
+let unsupportedTimer: ReturnType<typeof setTimeout> | null = null
+
+// 拖曳 hover 狀態
+const isDragOver = ref(false)
+
+function setFile(file: File, sourceDir?: string) {
+  // 釋放舊的 blob URL
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+  }
+  currentFile.value = file
+  previewUrl.value = URL.createObjectURL(file)
+  previewMode.value = 'original'
+  emit('file', file, sourceDir)
+}
+
+function handleUploadFile(file: File, sourceDir?: string) {
+  if (props.acceptType) {
+    const detected = detectMediaType(file)
+    if (detected && detected !== props.acceptType) {
+      showUnsupportedOverlay(detected)
+      return
+    }
+  }
+  setFile(file, sourceDir)
+}
+
+function handleDrop(e: DragEvent) {
+  e.preventDefault()
+  isDragOver.value = false
+  const files = e.dataTransfer?.files
+  if (!files || files.length === 0) return
+
+  const file = files[0]
+  const sourceDir = window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
+
+  if (props.acceptType) {
+    const detected = detectMediaType(file)
+    if (detected && detected !== props.acceptType) {
+      showUnsupportedOverlay(detected)
+      return
+    }
+    if (!detected) {
+      showUnsupportedOverlay(null)
+      return
+    }
+  }
+
+  setFile(file, sourceDir)
+}
+
+function handleDragOver(e: DragEvent) {
+  e.preventDefault()
+  isDragOver.value = true
+}
+
+function handleDragLeave() {
+  isDragOver.value = false
+}
+
+function showUnsupportedOverlay(target: ToolType | null) {
+  unsupportedTarget.value = target
+  showUnsupported.value = true
+  if (unsupportedTimer) clearTimeout(unsupportedTimer)
+  unsupportedTimer = setTimeout(() => {
+    showUnsupported.value = false
+  }, 3000)
+}
+
+function dismissUnsupported() {
+  showUnsupported.value = false
+  if (unsupportedTimer) clearTimeout(unsupportedTimer)
+}
+
+function goToTool() {
+  if (unsupportedTarget.value) {
+    router.push(getToolPath(unsupportedTarget.value))
+  }
+  dismissUnsupported()
+}
+
+// KeepAlive: 每次 activated 時檢查 pending file
+onActivated(() => {
+  const pending = filesStore.consumePendingFile()
+  if (pending) {
+    setFile(pending.file, pending.sourceDir)
+  }
+})
+
+// 清理
+onBeforeUnmount(() => {
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+  }
+  if (unsupportedTimer) clearTimeout(unsupportedTimer)
+})
+
 function selectFunction(id: string) {
   emit('select-function', id)
 }
 
-function handleExport() {
-  emit('export')
+function handleExecute() {
+  emit('execute')
 }
 </script>
 
@@ -83,8 +208,49 @@ function handleExport() {
       </div>
 
       <!-- 預覽內容 -->
-      <div class="preview-content">
-        <slot name="preview" :mode="previewMode">
+      <div
+        class="preview-content"
+        @dragover="handleDragOver"
+        @dragleave="handleDragLeave"
+        @drop="handleDrop"
+      >
+        <!-- 不支援類型 overlay -->
+        <Transition name="overlay-fade">
+          <div v-if="showUnsupported" class="unsupported-overlay" @click.self="dismissUnsupported">
+            <div class="unsupported-card">
+              <i class="bi bi-exclamation-triangle"></i>
+              <p>此工具不支援此檔案格式</p>
+              <button v-if="unsupportedTarget" class="goto-btn" @click="goToTool">
+                前往{{ getToolLabel(unsupportedTarget) }}
+              </button>
+              <button class="dismiss-btn" @click="dismissUnsupported">關閉</button>
+            </div>
+          </div>
+        </Transition>
+
+        <!-- 拖曳 hover 效果 -->
+        <div v-if="isDragOver" class="drag-hover-overlay">
+          <i class="bi bi-cloud-arrow-up-fill"></i>
+          <p>放開以載入檔案</p>
+        </div>
+
+        <!-- 無檔案時顯示上傳區 -->
+        <AppUploadZone
+          v-if="!hasFile"
+          :icon="uploadIcon"
+          :label="uploadLabel"
+          :accept="uploadAccept"
+          @file="handleUploadFile"
+        />
+
+        <!-- 有檔案時顯示預覽 slot -->
+        <slot
+          v-else
+          name="preview"
+          :file="currentFile!"
+          :previewUrl="previewUrl!"
+          :mode="previewMode"
+        >
           <div class="preview-placeholder">
             <i class="bi bi-image"></i>
             <p>請選擇或拖曳檔案</p>
@@ -101,15 +267,16 @@ function handleExport() {
         </slot>
       </div>
 
-      <!-- 匯出按鈕 -->
-      <div class="export-section">
+      <!-- 執行按鈕 -->
+      <div v-if="!hideExecute" class="execute-section">
         <button
-          class="export-btn"
-          :disabled="!hasResult"
-          @click="handleExport"
+          class="execute-btn"
+          :disabled="executeDisabled"
+          @click="handleExecute"
         >
-          <i class="bi bi-download me-2"></i>
-          匯出成果
+          <span v-if="executeLoading" class="spinner-border spinner-border-sm me-2"></span>
+          <i v-else class="bi bi-play-fill me-2"></i>
+          {{ executeLoading ? '處理中...' : executeLabel }}
         </button>
       </div>
     </aside>
@@ -227,6 +394,7 @@ function handleExport() {
 }
 
 .preview-content {
+  position: relative;
   flex: 1;
   display: flex;
   align-items: center;
@@ -246,6 +414,114 @@ function handleExport() {
 
   p {
     font-size: 1rem;
+  }
+}
+
+// 不支援 overlay
+.unsupported-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.unsupported-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem 2.5rem;
+  background: var(--panel-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  text-align: center;
+
+  > i {
+    font-size: 2.5rem;
+    color: var(--color-warning);
+  }
+
+  > p {
+    color: var(--text-primary);
+    font-size: 1rem;
+    margin: 0;
+  }
+}
+
+.goto-btn {
+  padding: 0.5rem 1.25rem;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(124, 111, 173, 0.4);
+  }
+}
+
+.dismiss-btn {
+  padding: 0.35rem 1rem;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+  }
+}
+
+.overlay-fade-enter-active,
+.overlay-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.overlay-fade-enter-from,
+.overlay-fade-leave-to {
+  opacity: 0;
+}
+
+// 拖曳 hover
+.drag-hover-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: rgba(96, 165, 250, 0.1);
+  border: 2px dashed var(--color-accent);
+  border-radius: 8px;
+  pointer-events: none;
+
+  i {
+    font-size: 2.5rem;
+    color: var(--color-accent);
+  }
+
+  p {
+    color: var(--color-accent);
+    font-size: 0.95rem;
+    margin: 0;
   }
 }
 
@@ -269,15 +545,15 @@ function handleExport() {
   color: var(--text-primary);
 }
 
-.export-section {
+.execute-section {
   padding: 1rem;
   border-top: 1px solid var(--panel-border);
 }
 
-.export-btn {
+.execute-btn {
   width: 100%;
   padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success-hover) 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
   border: none;
   border-radius: 8px;
   color: white;
@@ -288,7 +564,7 @@ function handleExport() {
 
   &:hover:not(:disabled) {
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    box-shadow: 0 4px 12px rgba(124, 111, 173, 0.4);
   }
 
   &:disabled {

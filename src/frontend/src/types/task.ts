@@ -14,6 +14,8 @@ export interface Task {
   error: string | null
   createdAt: Date
   updatedAt: Date
+  label?: string
+  fileName?: string
 }
 
 export interface ProgressUpdate {

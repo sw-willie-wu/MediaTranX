@@ -19,6 +19,11 @@ dist/
 temp/
 output/
 *.log
+test_*.py
+test_*.txt
+
+# Frontend build output served by backend
+src/backend/static/assets/
 
 # Binaries (keep README)
 bin/**/*.exe

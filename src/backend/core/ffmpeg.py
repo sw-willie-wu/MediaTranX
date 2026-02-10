@@ -70,6 +70,7 @@ class TranscodeOptions:
     preset: QualityPreset = QualityPreset.MEDIUM
     crf: int = 23  # 品質 (0-51, 越小越好)
     resolution: Optional[str] = None  # e.g., "1920x1080"
+    scale_algorithm: Optional[str] = None  # e.g., "lanczos", "bicubic", "bilinear"
     fps: Optional[float] = None
     audio_bitrate: Optional[str] = None  # e.g., "128k"
     extra_args: Optional[list[str]] = None
@@ -228,7 +229,9 @@ class FFmpeg:
 
         # 解析度
         if options.resolution:
-            args.extend(["-s", options.resolution])
+            w, h = options.resolution.split("x")
+            algo = options.scale_algorithm or "bicubic"
+            args.extend(["-vf", f"scale={w}:{h}:flags={algo}"])
 
         # FPS
         if options.fps:
@@ -296,6 +299,167 @@ class FFmpeg:
             return progress
 
         return None
+
+    async def cut(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        start_time: float,
+        end_time: float,
+        stream_copy: bool = True,
+        on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
+    ) -> Path:
+        """
+        剪輯影片
+
+        Args:
+            input_path: 輸入檔案路徑
+            output_path: 輸出檔案路徑
+            start_time: 開始時間（秒）
+            end_time: 結束時間（秒）
+            stream_copy: 是否使用 stream copy（快速但不精確）
+            on_progress: 進度回調函數
+
+        Returns:
+            輸出檔案路徑
+        """
+        input_path = Path(input_path)
+        output_path = Path(output_path)
+
+        if not input_path.exists():
+            raise FFmpegError(f"輸入檔案不存在: {input_path}")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        duration = end_time - start_time
+        if duration <= 0:
+            raise FFmpegError("結束時間必須大於開始時間")
+
+        args = [
+            self.ffmpeg_path,
+            "-y",
+            "-ss", str(start_time),
+            "-to", str(end_time),
+            "-i", str(input_path),
+            "-progress", "pipe:1",
+            "-nostats",
+        ]
+
+        if stream_copy:
+            args.extend(["-c", "copy"])
+        else:
+            args.extend(["-c:v", "libx264", "-c:a", "aac"])
+
+        args.append(str(output_path))
+
+        self._progress_data = {}
+
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        async def read_progress():
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                line_str = line.decode().strip()
+                progress = self._parse_progress(line_str, duration)
+                if progress and on_progress:
+                    on_progress(progress)
+
+        await read_progress()
+        await proc.wait()
+
+        if proc.returncode != 0:
+            stderr = await proc.stderr.read()
+            raise FFmpegError(f"剪輯失敗: {stderr.decode()}")
+
+        return output_path
+
+    async def extract_audio(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        audio_format: str = "mp3",
+        audio_bitrate: Optional[str] = None,
+        on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
+    ) -> Path:
+        """
+        提取音訊
+
+        Args:
+            input_path: 輸入檔案路徑
+            output_path: 輸出檔案路徑
+            audio_format: 音訊格式 (mp3, wav, flac, aac)
+            audio_bitrate: 音訊位元率 (e.g. "320k")
+            on_progress: 進度回調函數
+
+        Returns:
+            輸出檔案路徑
+        """
+        input_path = Path(input_path)
+        output_path = Path(output_path)
+
+        if not input_path.exists():
+            raise FFmpegError(f"輸入檔案不存在: {input_path}")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        codec_map = {
+            "mp3": "libmp3lame",
+            "wav": "pcm_s16le",
+            "flac": "flac",
+            "aac": "aac",
+        }
+        codec = codec_map.get(audio_format, "libmp3lame")
+
+        media_info = await self.get_media_info(input_path)
+        duration = media_info.duration
+
+        args = [
+            self.ffmpeg_path,
+            "-y",
+            "-i", str(input_path),
+            "-vn",
+            "-c:a", codec,
+            "-progress", "pipe:1",
+            "-nostats",
+        ]
+
+        if audio_bitrate and audio_format not in ("wav", "flac"):
+            args.extend(["-b:a", audio_bitrate])
+
+        args.append(str(output_path))
+
+        self._progress_data = {}
+
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        async def read_progress():
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                line_str = line.decode().strip()
+                progress = self._parse_progress(line_str, duration)
+                if progress and on_progress:
+                    on_progress(progress)
+
+        await read_progress()
+        await proc.wait()
+
+        if proc.returncode != 0:
+            stderr = await proc.stderr.read()
+            raise FFmpegError(f"提取音訊失敗: {stderr.decode()}")
+
+        return output_path
 
     async def transcode(
         self,
