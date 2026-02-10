@@ -30,6 +30,9 @@ bin/**/*.exe
 bin/**/*.dll
 models/
 
+# Env
+.env*
+
 # Agents
 .claude/
 CLAUDE.md
