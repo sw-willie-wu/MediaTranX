@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import Titlebar from './components/Titlebar.vue'
 import MainSidebar from './components/MainSidebar.vue'
@@ -7,6 +8,15 @@ import { useTheme } from './composables/useTheme'
 
 // 初始化主題
 useTheme()
+
+// Vue 掛載後淡出 splash overlay
+onMounted(() => {
+  const overlay = document.getElementById('splash-overlay')
+  if (overlay) {
+    overlay.classList.add('fade-out')
+    setTimeout(() => overlay.remove(), 300)
+  }
+})
 </script>
 
 <template>

@@ -4,9 +4,80 @@
     <meta charset="UTF-8">
     <link rel="icon" href="/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vite App</title>
+    <title>MediaTranX</title>
+    <style>
+      #splash-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        background: linear-gradient(135deg, #1f1c2c 0%, #928dab 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: opacity 0.3s ease;
+      }
+      #splash-overlay.fade-out {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #splash-overlay * {
+        margin: 0;
+        padding: 0;
+      }
+      #splash-overlay .title {
+        font-size: 1.6rem;
+        font-weight: 600;
+        color: #ffffff;
+        letter-spacing: 0.05em;
+        margin-bottom: 2rem;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      #splash-overlay .loader {
+        width: 180px;
+        height: 3px;
+        background: rgba(255,255,255,0.1);
+        border-radius: 2px;
+        overflow: hidden;
+        margin-bottom: 1.2rem;
+      }
+      #splash-overlay .loader-bar {
+        width: 40%;
+        height: 100%;
+        background: linear-gradient(90deg, #7c6fad, #a89cc8);
+        border-radius: 2px;
+        animation: slide 1.5s ease-in-out infinite;
+      }
+      #splash-overlay .hint {
+        font-size: 0.85rem;
+        color: rgba(255,255,255,0.5);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      @keyframes slide {
+        0% { transform: translateX(-100%); }
+        50% { transform: translateX(200%); }
+        100% { transform: translateX(-100%); }
+      }
+    </style>
   </head>
   <body>
+    <div id="splash-overlay">
+      <svg width="88" height="88" viewBox="0 0 512 512" style="border-radius:20px;margin-bottom:1.5rem;">
+        <defs>
+          <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#1f1c2c"/><stop offset="100%" stop-color="#928dab"/>
+          </linearGradient>
+          <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#a89cc8"/><stop offset="100%" stop-color="#7c6fad"/>
+          </linearGradient>
+        </defs>
+        <rect x="32" y="32" width="448" height="448" rx="96" ry="96" fill="url(#bg)"/>
+        <path d="M228 218 L228 294 L300 256 Z" fill="url(#accent)"/>
+      </svg>
+      <h1 class="title">MediaTranX</h1>
+      <div class="loader"><div class="loader-bar"></div></div>
+      <p class="hint">即將完成...</p>
+    </div>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

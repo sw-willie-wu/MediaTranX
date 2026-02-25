@@ -2,7 +2,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import http from 'http';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -105,19 +105,34 @@ function waitForServer(port, maxAttempts = 30) {
 }
 
 function startPythonBackend() {
-  const projectRoot = join(__dirname, '..', '..');
-  const venvPython = join(projectRoot, '.venv', 'Scripts', 'python.exe');
+  const isDev = !app.isPackaged;
 
-  console.log('Starting Python backend on port', BACKEND_PORT);
+  if (isDev) {
+    // 開發模式：使用 venv 的 python
+    const projectRoot = join(__dirname, '..', '..');
+    const venvPython = join(projectRoot, '.venv', 'Scripts', 'python.exe');
 
-  pythonProcess = spawn(venvPython, [
-    '-m', 'uvicorn', 'backend.main:app',
-    '--host', '127.0.0.1',
-    '--port', String(BACKEND_PORT)
-  ], {
-    cwd: join(projectRoot, 'src'),
-    stdio: ['pipe', 'pipe', 'pipe']
-  });
+    console.log('Starting Python backend (dev) on port', BACKEND_PORT);
+
+    pythonProcess = spawn(venvPython, [
+      '-m', 'uvicorn', 'backend.main:app',
+      '--host', '127.0.0.1',
+      '--port', String(BACKEND_PORT)
+    ], {
+      cwd: join(projectRoot, 'src'),
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+  } else {
+    // 生產模式：使用 PyInstaller 打包的 backend.exe
+    const backendExe = join(process.resourcesPath, 'backend', 'backend.exe');
+
+    console.log('Starting backend (production):', backendExe);
+
+    pythonProcess = spawn(backendExe, [], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env }
+    });
+  }
 
   pythonProcess.stdout.on('data', (data) => {
     console.log(`[Python] ${data}`);
@@ -139,7 +154,16 @@ function startPythonBackend() {
 function stopPythonBackend() {
   if (pythonProcess) {
     console.log('Stopping Python backend...');
-    pythonProcess.kill();
+    if (process.platform === 'win32') {
+      // 使用 taskkill /t 確保子進程也被終止
+      try {
+        execSync(`taskkill /f /t /pid ${pythonProcess.pid}`, { stdio: 'ignore' });
+      } catch (e) {
+        // 進程可能已經退出
+      }
+    } else {
+      pythonProcess.kill();
+    }
     pythonProcess = null;
   }
 }
@@ -152,7 +176,7 @@ function createWindow() {
     height: 900,
     frame: false,
     show: true, // 立即顯示（背景色），減少啟動感知延遲
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#1f1c2c',
     icon: join(__dirname, 'src', 'assets', 'icon.ico'),
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
@@ -180,7 +204,7 @@ function createWindow() {
       mainWindow.minimize();
     }
   })
-  
+
   // 監聽最大化/還原事件
   ipcMain.on('maximize-window', () => {
     if (mainWindow) {
@@ -195,7 +219,7 @@ function createWindow() {
   ipcMain.handle('check-maximized', () => {
     return mainWindow.isMaximized();
   })
-  
+
   // 監聽關閉事件
   ipcMain.on('close-window', () => {
     if (mainWindow) {
@@ -250,13 +274,14 @@ app.whenReady().then(async () => {
       console.error('Failed to start dev servers:', err);
     }
   } else {
-    // 生產模式：先顯示 splash 畫面，等後端就緒後載入頁面
+    // 生產模式：啟動 backend.exe，等就緒後載入前端（由後端 serve）
+    console.log('Production mode - starting backend...');
     startPythonBackend();
     createWindow();
     mainWindow.loadFile(join(__dirname, 'splash.html'));
     try {
       await waitForServer(BACKEND_PORT);
-      mainWindow.loadURL(`http://localhost:${BACKEND_PORT}/static/`);
+      mainWindow.loadURL(`http://localhost:${BACKEND_PORT}/`);
     } catch (err) {
       console.error('Failed to start backend:', err);
     }
