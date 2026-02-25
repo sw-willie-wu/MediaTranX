@@ -1,6 +1,6 @@
 {
-  "name": "frontend",
-  "version": "0.0.0",
+  "name": "mediatranx",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "main.js",
@@ -13,7 +13,9 @@
     "lint": "eslint . --fix",
     "format": "prettier --write src/",
     "electron": "electron .",
-    "electron:serve": "electron ."
+    "electron:serve": "electron .",
+    "build:frontend": "vite build",
+    "build:electron": "npx electron-builder --win"
   },
   "dependencies": {
     "bootstrap": "^5.3.5",
@@ -31,6 +33,7 @@
     "@vue/eslint-config-typescript": "^14.5.0",
     "@vue/tsconfig": "^0.7.0",
     "electron": "^35.1.5",
+    "electron-builder": "^26.0.0",
     "electron-vite": "^3.1.0",
     "eslint": "^9.22.0",
     "eslint-plugin-vue": "~10.0.0",
@@ -43,5 +46,41 @@
     "vite": "^6.2.4",
     "vite-plugin-vue-devtools": "^7.7.2",
     "vue-tsc": "^2.2.8"
+  },
+  "build": {
+    "appId": "com.mediatranx.app",
+    "productName": "MediaTranX",
+    "directories": {
+      "output": "dist_electron"
+    },
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "splash.html",
+      "src/assets/icon.ico"
+    ],
+    "extraResources": [
+      {
+        "from": "../../build/dist/backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../../bin/ffmpeg",
+        "to": "ffmpeg",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "src/assets/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "src/assets/icon.ico",
+      "uninstallerIcon": "src/assets/icon.ico"
+    }
   }
 }
