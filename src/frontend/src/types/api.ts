@@ -20,4 +20,6 @@ export interface DeviceInfo {
   device_name: string
   memory_total: number | null
   memory_free: number | null
+  has_nvidia_gpu: boolean
+  cuda_toolkit_installed: boolean
 }

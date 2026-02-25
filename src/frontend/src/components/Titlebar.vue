@@ -3,13 +3,11 @@ import IconMinimize from './icons/IconMinimize.vue'
 import IconMaximize from './icons/IconMaximize.vue'
 import IconRestore from './icons/IconRestore.vue'
 import IconClose from './icons/IconClose.vue'
-import SettingsModal from './SettingsModal.vue'
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
 const isMaximized = ref(false)
-const showSettings = ref(false)
 
 // 頁面標題對應
 const pageTitles: Record<string, string> = {
@@ -20,16 +18,13 @@ const pageTitles: Record<string, string> = {
   '/document': '文件工具',
   '/history': '歷史紀錄',
   '/tasks': '執行任務',
+  '/settings': '設定',
 }
 
 const pageTitle = computed(() => {
   const title = pageTitles[route.path]
   return title ? ` - ${title}` : ''
 })
-
-function openSettings() {
-  showSettings.value = true
-}
 
 function minimize() {
   window.electron?.minimize()
@@ -61,20 +56,8 @@ onMounted(async () => {
       <span class="app-title">MediaTranX{{ pageTitle }}</span>
     </div>
 
-    <!-- 右側：設定 + 視窗控制 -->
+    <!-- 右側：視窗控制 -->
     <div class="titlebar-right">
-      <button
-        class="titlebar-btn settings-btn"
-        @click="openSettings"
-        :class="{ active: showSettings }"
-        title="設定"
-      >
-        <i class="bi bi-gear-fill"></i>
-      </button>
-
-      <!-- 設定 Modal -->
-      <SettingsModal :show="showSettings" @close="showSettings = false" />
-
       <div class="window-controls">
         <button class="window-btn" @click="minimize" title="最小化">
           <IconMinimize />
@@ -134,41 +117,6 @@ onMounted(async () => {
   width: 18px;
   height: 18px;
   border-radius: 4px;
-}
-
-.titlebar-btn {
-  width: 36px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  i {
-    font-size: 1rem;
-  }
-
-  &:hover {
-    background: var(--panel-bg-hover);
-    color: var(--text-primary);
-  }
-
-  &:active {
-    background: var(--panel-bg-active);
-  }
-
-  &.active {
-    color: var(--color-accent);
-  }
-}
-
-.settings-btn {
-  margin-right: 1rem;
 }
 
 .window-controls {

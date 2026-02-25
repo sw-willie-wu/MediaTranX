@@ -16,6 +16,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const hasGPU = computed(() => deviceInfo.value?.device === 'cuda')
   const hasMPS = computed(() => deviceInfo.value?.device === 'mps')
   const isCPUOnly = computed(() => deviceInfo.value?.device === 'cpu')
+  const needsCudaToolkit = computed(() =>
+    deviceInfo.value?.has_nvidia_gpu === true && !deviceInfo.value?.cuda_toolkit_installed
+  )
 
   const deviceDisplayName = computed(() => {
     if (!deviceInfo.value) return 'Unknown'
@@ -46,6 +49,7 @@ export const useSettingsStore = defineStore('settings', () => {
     hasGPU,
     hasMPS,
     isCPUOnly,
+    needsCudaToolkit,
     deviceDisplayName,
     // 方法
     loadDeviceInfo,
