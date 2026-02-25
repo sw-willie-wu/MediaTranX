@@ -40,11 +40,6 @@ const translateStatus = ref<{
   available: boolean
   model_size: string
   model_downloaded: boolean
-  device: string
-  compute_type: string
-  device_name: string
-  missing_packages?: string[]
-  gpu_upgrade?: boolean
 } | null>(null)
 
 // 翻譯模型大小選項（GGUF Q4_K_M 量化）
@@ -225,6 +220,7 @@ onMounted(() => {
     upload-icon="bi-file-earmark-text-fill"
     upload-label="拖曳文件到這裡"
     upload-accept=".pdf,.doc,.docx,.txt,.srt,.vtt,.md,.csv,.json"
+    hide-preview-tabs
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"
@@ -256,19 +252,15 @@ onMounted(() => {
 
           <!-- 未安裝或需升級：顯示安裝按鈕 -->
           <div v-if="translateStatus && !translateStatus.available" class="install-prompt">
-            <p class="install-hint">
-              {{ translateStatus.gpu_upgrade
-                ? '偵測到 GPU，建議安裝 GPU 版以大幅加速翻譯'
-                : '翻譯功能需要額外元件，首次使用前請先安裝' }}
-            </p>
+            <p class="install-hint">翻譯功能需要額外元件，首次使用前請先安裝</p>
             <button
               class="install-btn"
               :disabled="isInstalling"
               @click="installTranslate"
             >
               <span v-if="isInstalling" class="spinner-border spinner-border-sm me-2"></span>
-              <i v-else class="bi me-1" :class="translateStatus.gpu_upgrade ? 'bi-gpu-card' : 'bi-download'"></i>
-              {{ isInstalling ? '安裝中...' : (translateStatus.gpu_upgrade ? '安裝 GPU 版' : '安裝翻譯功能') }}
+              <i v-else class="bi bi-download me-1"></i>
+              {{ isInstalling ? '安裝中...' : '安裝翻譯功能' }}
             </button>
           </div>
 
@@ -301,13 +293,8 @@ onMounted(() => {
               />
               <div v-if="translateStatus" class="model-status">
                 <span class="status-item">
-                  <i class="bi bi-check-circle-fill status-ok"></i>
-                  翻譯功能已就緒
-                  <span v-if="!translateStatus.model_downloaded" class="model-hint">(首次使用自動下載模型)</span>
-                </span>
-                <span class="status-item">
-                  <i class="bi bi-gpu-card"></i>
-                  {{ translateStatus.device_name }}
+                  <i class="bi" :class="translateStatus.model_downloaded ? 'bi-check-circle-fill status-ok' : 'bi-exclamation-circle-fill status-warn'"></i>
+                  {{ translateStatus.model_downloaded ? '模型已掛載' : '首次使用自動下載模型' }}
                 </span>
               </div>
             </div>
@@ -447,6 +434,7 @@ onMounted(() => {
 }
 
 .status-ok { color: #10b981 !important; }
+.status-warn { color: #f59e0b !important; }
 .status-err { color: #ef4444 !important; }
 
 .model-hint {

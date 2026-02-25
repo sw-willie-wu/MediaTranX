@@ -9,6 +9,40 @@ from functools import lru_cache
 logger = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=1)
+def is_cuda_runtime_available() -> bool:
+    """
+    檢查 CUDA 運算庫（cublas 等）是否可用
+
+    有 NVIDIA GPU 不代表能跑 CUDA 運算，還需要 CUDA Toolkit 或對應 DLLs。
+    PyInstaller 打包後 DLL 在 exe 同目錄，需要額外搜尋。
+    """
+    import ctypes
+    import sys
+    from pathlib import Path
+
+    # 1. 標準搜尋（系統 PATH、目前目錄等）
+    try:
+        ctypes.CDLL("cublas64_12.dll")
+        return True
+    except (OSError, Exception):
+        pass
+
+    # 2. PyInstaller 打包環境：在 exe 目錄搜尋
+    if getattr(sys, 'frozen', False):
+        exe_dir = Path(sys.executable).parent
+        for search_dir in [exe_dir, exe_dir / '_internal']:
+            dll_path = search_dir / "cublas64_12.dll"
+            if dll_path.exists():
+                try:
+                    ctypes.CDLL(str(dll_path))
+                    return True
+                except (OSError, Exception):
+                    pass
+
+    return False
+
+
 def _detect_cuda_via_torch() -> str | None:
     """嘗試透過 PyTorch 偵測 CUDA"""
     try:
@@ -21,7 +55,7 @@ def _detect_cuda_via_torch() -> str | None:
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             logger.info("[PyTorch] Using Apple Silicon MPS")
             return "mps"
-    except ImportError:
+    except Exception:
         pass
     return None
 
@@ -45,22 +79,32 @@ def get_device() -> str:
     """
     自動偵測最佳運算裝置
     依序嘗試: PyTorch → CTranslate2 → fallback CPU
+    額外檢查 CUDA runtime 是否可用（有 GPU 不代表有 CUDA Toolkit）
 
     Returns:
         str: "cuda" | "mps" | "cpu"
     """
     # 1. 嘗試 PyTorch 偵測
     device = _detect_cuda_via_torch()
-    if device:
+    if device == "cuda":
+        if is_cuda_runtime_available():
+            return "cuda"
+        logger.warning("CUDA detected via PyTorch but CUDA runtime (cublas) not available")
+    elif device:  # mps
         return device
 
     # 2. 嘗試 CTranslate2 偵測
     device = _detect_cuda_via_ctranslate2()
-    if device:
-        return device
+    if device == "cuda":
+        if is_cuda_runtime_available():
+            return "cuda"
+        logger.warning("CUDA detected via CTranslate2 but CUDA runtime (cublas) not available")
 
     # 3. Fallback CPU
-    logger.info("Using CPU (no GPU detected)")
+    if has_nvidia_gpu():
+        logger.info("NVIDIA GPU detected but CUDA Toolkit not installed, falling back to CPU")
+    else:
+        logger.info("Using CPU (no GPU detected)")
     return "cpu"
 
 
@@ -80,19 +124,36 @@ def get_compute_type() -> str:
     return "int8"  # CPU 用 int8 量化節省記憶體
 
 
+_device_info_cache: dict | None = None
+
+
 def get_device_info() -> dict:
     """
-    取得完整的裝置資訊
+    取得完整的裝置資訊（結果會快取）
 
     Returns:
         dict: 包含裝置類型、名稱、記憶體等資訊
     """
+    global _device_info_cache
+    if _device_info_cache is not None:
+        return _device_info_cache
+
+    gpu_detected = has_nvidia_gpu()
+
+    # 必須先呼叫 get_device()（內部 import torch 會載入 CUDA DLL），
+    # 再呼叫 is_cuda_runtime_available()，否則 @lru_cache 會快取錯誤結果
+    device = get_device()
+    compute_type = get_compute_type()
+    cuda_runtime = is_cuda_runtime_available()
+
     info = {
-        "device": get_device(),
-        "compute_type": get_compute_type(),
+        "device": device,
+        "compute_type": compute_type,
         "device_name": "CPU",
         "memory_total": None,
         "memory_free": None,
+        "has_nvidia_gpu": gpu_detected,
+        "cuda_toolkit_installed": cuda_runtime,
     }
 
     # 嘗試透過 PyTorch 取得詳細 GPU 資訊
@@ -108,15 +169,15 @@ def get_device_info() -> dict:
         elif info["device"] == "mps":
             info["device_name"] = "Apple Silicon"
             got_gpu_info = True
-    except ImportError:
+    except Exception:
         pass
 
     # PyTorch 無法取得 GPU 資訊時（未安裝或 CPU 版），改用 nvidia-smi
-    if info["device"] == "cuda" and not got_gpu_info:
+    if gpu_detected and not got_gpu_info:
         info["device_name"] = _get_gpu_name_via_smi() or "NVIDIA GPU"
 
-    # nvidia-smi fallback: 當 memory_total 仍為 None 且有 CUDA 裝置時
-    if info["memory_total"] is None and info["device"] == "cuda":
+    # nvidia-smi fallback: 當 memory_total 仍為 None 且有 NVIDIA GPU 時
+    if info["memory_total"] is None and gpu_detected:
         try:
             import subprocess
             result = subprocess.run(
@@ -130,6 +191,7 @@ def get_device_info() -> dict:
         except Exception:
             pass
 
+    _device_info_cache = info
     return info
 
 
@@ -152,8 +214,9 @@ def has_nvidia_gpu() -> bool:
         return False
 
 
+@lru_cache(maxsize=1)
 def _get_gpu_name_via_smi() -> str | None:
-    """透過 nvidia-smi 取得 GPU 名稱"""
+    """透過 nvidia-smi 取得 GPU 名稱（結果會快取）"""
     try:
         import subprocess
         result = subprocess.run(

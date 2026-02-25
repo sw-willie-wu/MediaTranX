@@ -79,6 +79,7 @@ function handleFile(file: File, srcDir?: string) {
     upload-icon="bi-music-note-beamed"
     upload-label="拖曳音訊檔案到這裡"
     upload-accept="audio/*"
+    hide-preview-tabs
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"

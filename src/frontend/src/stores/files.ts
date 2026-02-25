@@ -34,28 +34,44 @@ export const useFilesStore = defineStore('files', () => {
   )
 
   // 上傳檔案（sourceDir 由呼叫端提供，從原始 File.path 提取）
+  // 當 sourceDir 存在時（Electron 環境），直接註冊本機路徑，避免大檔案複製
   async function uploadFile(file: File, sourceDir?: string): Promise<string> {
     isUploading.value = true
     uploadProgress.value = 0
 
     try {
-      const formData = new FormData()
-      formData.append('file', file)
+      let data: FileUploadResponse
 
       if (sourceDir) {
-        formData.append('source_dir', sourceDir)
+        // Electron 環境：直接註冊本機檔案路徑，不需複製
+        const filePath = sourceDir.replace(/\\/g, '/') + '/' + file.name
+        const response = await fetch(`${API_BASE}/files/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_path: filePath }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`Register failed: ${response.statusText}`)
+        }
+
+        data = await response.json()
+      } else {
+        // 瀏覽器環境：透過 HTTP 上傳
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const response = await fetch(`${API_BASE}/files/upload`, {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.statusText}`)
+        }
+
+        data = await response.json()
       }
-
-      const response = await fetch(`${API_BASE}/files/upload`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.statusText}`)
-      }
-
-      const data: FileUploadResponse = await response.json()
 
       // 建立本地檔案記錄
       const mediaFile: MediaFile = {

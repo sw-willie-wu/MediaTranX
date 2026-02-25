@@ -42,21 +42,13 @@ const whisperStatus = ref<{
   available: boolean
   model_size: string
   model_downloaded: boolean
-  device: string
-  compute_type: string
-  device_name: string
 } | null>(null)
 
-// TranslateGemma 模型狀態
+// 翻譯模型狀態
 const translateStatus = ref<{
   available: boolean
   model_size: string
   model_downloaded: boolean
-  device: string
-  compute_type: string
-  device_name: string
-  missing_packages?: string[]
-  gpu_upgrade?: boolean
 } | null>(null)
 
 // 字幕選項
@@ -501,7 +493,7 @@ watch(modelSize, () => {
 watch(translateModelType, (val) => {
   translateModelSize.value = val === 'qwen3' ? '4b' : '4b'
   // 量化會由 translateModelSize watcher 重設
-  loadTranslateStatus()
+  if (enableTranslation.value) loadTranslateStatus()
 })
 
 // 翻譯模型大小變更時重設量化為該 size 的第一個選項
@@ -510,12 +502,12 @@ watch(translateModelSize, () => {
   if (quants && quants.length > 0) {
     translateQuantization.value = quants[0].value
   }
-  loadTranslateStatus()
+  if (enableTranslation.value) loadTranslateStatus()
 })
 
 // 量化變更時重新查狀態
 watch(translateQuantization, () => {
-  loadTranslateStatus()
+  if (enableTranslation.value) loadTranslateStatus()
 })
 
 // 偏好設定持久化
@@ -550,6 +542,7 @@ defineExpose({
 // 初始化
 onMounted(async () => {
   loadWhisperStatus()
+  settings.loadDeviceInfo()
 
   // 先讀 localStorage，若無則 autoRecommend
   const saved = loadPreferences()
@@ -664,21 +657,17 @@ onMounted(async () => {
       </label>
 
       <div v-if="enableTranslation" class="translate-options">
-        <!-- 未安裝或需升級：顯示安裝按鈕 -->
+        <!-- 未安裝：顯示安裝按鈕 -->
         <div v-if="translateStatus && !translateStatus.available" class="install-prompt">
-          <p class="install-hint">
-            {{ translateStatus.gpu_upgrade
-              ? '偵測到 GPU，建議安裝 GPU 版以大幅加速翻譯'
-              : '翻譯功能需要額外元件，首次使用前請先安裝' }}
-          </p>
+          <p class="install-hint">翻譯功能需要額外元件，首次使用前請先安裝</p>
           <button
             class="install-btn"
             :disabled="isInstalling"
             @click="installTranslate"
           >
             <span v-if="isInstalling" class="spinner-border spinner-border-sm me-2"></span>
-            <i v-else class="bi me-1" :class="translateStatus.gpu_upgrade ? 'bi-gpu-card' : 'bi-download'"></i>
-            {{ isInstalling ? '安裝中...' : (translateStatus.gpu_upgrade ? '安裝 GPU 版' : '安裝翻譯功能') }}
+            <i v-else class="bi bi-download me-1"></i>
+            {{ isInstalling ? '安裝中...' : '安裝翻譯功能' }}
           </button>
         </div>
 
