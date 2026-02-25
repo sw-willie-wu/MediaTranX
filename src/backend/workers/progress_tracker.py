@@ -153,14 +153,15 @@ class ProgressTracker:
                     if event.progress >= 1.0:
                         break
                 except asyncio.TimeoutError:
-                    # 發送心跳以保持連線
+                    # 發送心跳以保持連線，保留最後一次的進度訊息
+                    latest = self._latest_progress.get(task_id, ProgressEvent(
+                        task_id=task_id, progress=0, stage="waiting", message=""
+                    ))
                     yield ProgressEvent(
                         task_id=task_id,
-                        progress=self._latest_progress.get(task_id, ProgressEvent(
-                            task_id=task_id, progress=0, stage="waiting", message=""
-                        )).progress,
+                        progress=latest.progress,
                         stage="heartbeat",
-                        message="keepalive"
+                        message=latest.message or "處理中..."
                     )
         finally:
             async with self._lock:

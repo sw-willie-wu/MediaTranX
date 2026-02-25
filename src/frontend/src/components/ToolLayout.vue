@@ -24,6 +24,7 @@ const props = withDefaults(defineProps<{
   executeLoading?: boolean
   executeLabel?: string
   hideExecute?: boolean
+  hidePreviewTabs?: boolean
 }>(), {
   uploadIcon: 'bi-cloud-arrow-up-fill',
   uploadLabel: '拖曳檔案到這裡',
@@ -35,6 +36,7 @@ const emit = defineEmits<{
   (e: 'select-function', id: string): void
   (e: 'execute'): void
   (e: 'file', file: File, sourceDir?: string): void
+  (e: 'remove-file'): void
 }>()
 
 const router = useRouter()
@@ -68,6 +70,16 @@ function setFile(file: File, sourceDir?: string) {
   previewUrl.value = URL.createObjectURL(file)
   previewMode.value = 'original'
   emit('file', file, sourceDir)
+}
+
+function removeFile() {
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+  }
+  currentFile.value = null
+  previewUrl.value = null
+  previewMode.value = 'original'
+  emit('remove-file')
 }
 
 function handleUploadFile(file: File, sourceDir?: string) {
@@ -180,8 +192,18 @@ function handleExecute() {
 
     <!-- 中間：預覽區域 -->
     <main class="preview-area">
+      <!-- 右上角：移除檔案按鈕 -->
+      <button
+        v-if="hasFile"
+        class="remove-file-btn"
+        title="移除目前檔案"
+        @click="removeFile"
+      >
+        <i class="bi bi-x-lg"></i>
+      </button>
+
       <!-- 預覽模式切換 -->
-      <div class="preview-tabs" v-if="hasFile">
+      <div class="preview-tabs" v-if="hasFile && !props.hidePreviewTabs">
         <button
           class="preview-tab"
           :class="{ active: previewMode === 'original' }"
@@ -349,6 +371,7 @@ function handleExecute() {
 
 // 中間預覽區
 .preview-area {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -358,6 +381,32 @@ function handleExecute() {
   border: 1px solid var(--panel-border);
   border-radius: 12px;
   overflow: hidden;
+}
+
+.remove-file-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 10;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  opacity: 0.6;
+
+  &:hover {
+    background: rgba(220, 53, 69, 0.8);
+    color: #fff;
+    opacity: 1;
+  }
 }
 
 .preview-tabs {

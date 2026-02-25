@@ -416,6 +416,7 @@ function handleSubtitleComplete(taskId: string) {
     upload-icon="bi-film"
     upload-label="拖曳影片到這裡"
     upload-accept="video/*"
+    hide-preview-tabs
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"

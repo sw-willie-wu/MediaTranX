@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pathlib import Path
+from pydantic import BaseModel
 
 from backend.services.file_service import get_file_service
 from backend.api.schemas.common import FileInfo, FileUploadResponse
@@ -37,6 +38,31 @@ async def upload_file(
         mime_type=file.content_type,
         source_dir=source_dir
     )
+
+    return FileUploadResponse(
+        file_id=file_info.file_id,
+        filename=file_info.original_filename,
+        file_size=file_info.file_size,
+        mime_type=file_info.mime_type
+    )
+
+
+class RegisterRequest(BaseModel):
+    file_path: str
+
+
+@router.post("/register", response_model=FileUploadResponse)
+async def register_local_file(req: RegisterRequest):
+    """
+    註冊本機檔案（不複製），直接用原始路徑。
+    適用於 Electron 桌面環境，避免大檔案複製。
+    """
+    file_service = get_file_service()
+
+    try:
+        file_info = file_service.register_local_file(req.file_path)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
     return FileUploadResponse(
         file_id=file_info.file_id,

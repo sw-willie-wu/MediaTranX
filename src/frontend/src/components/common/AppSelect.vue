@@ -86,8 +86,11 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && isOpen.value) close()
 }
 
-function onScroll() {
-  if (isOpen.value) close()
+function onScroll(e: Event) {
+  if (!isOpen.value) return
+  // 不要因為 dropdown 內部滾動而關閉
+  if (dropdownRef.value?.contains(e.target as Node)) return
+  close()
 }
 
 onMounted(() => {

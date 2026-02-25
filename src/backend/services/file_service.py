@@ -13,6 +13,7 @@ from typing import Dict, Optional
 from uuid import uuid4
 
 from backend.api.schemas.common import FileInfo
+from backend.core.paths import get_temp_dir, get_output_dir
 
 logger = logging.getLogger(__name__)
 
@@ -38,14 +39,11 @@ class FileService:
 
         # 設定基礎目錄
         if base_dir:
-            self._base_dir = Path(base_dir)
+            self._upload_dir = Path(base_dir) / "temp" / "uploads"
+            self._output_dir = Path(base_dir) / "output"
         else:
-            # 預設使用專案根目錄下的 temp 和 output
-            project_root = Path(__file__).parent.parent.parent.parent
-            self._base_dir = project_root
-
-        self._upload_dir = self._base_dir / "temp" / "uploads"
-        self._output_dir = self._base_dir / "output"
+            self._upload_dir = get_temp_dir() / "uploads"
+            self._output_dir = get_output_dir()
 
         # 確保目錄存在
         self._upload_dir.mkdir(parents=True, exist_ok=True)
@@ -114,6 +112,34 @@ class FileService:
         self._files[file_id] = file_info
         logger.info(f"File uploaded: {file_id} ({filename}, {len(content)} bytes)")
 
+        return file_info
+
+    def register_local_file(self, file_path: str) -> FileInfo:
+        """
+        直接註冊本機檔案（不複製），適用於 Electron 本地環境。
+        """
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"檔案不存在: {file_path}")
+
+        file_id = str(uuid4())
+        mime_type, _ = mimetypes.guess_type(path.name)
+        if mime_type is None:
+            mime_type = "application/octet-stream"
+
+        file_info = FileInfo(
+            file_id=file_id,
+            filename=path.name,
+            original_filename=path.name,
+            file_path=str(path),
+            file_size=path.stat().st_size,
+            mime_type=mime_type,
+            source_dir=str(path.parent),
+            created_at=datetime.utcnow()
+        )
+
+        self._files[file_id] = file_info
+        logger.info(f"File registered (local): {file_id} ({path.name}, {file_info.file_size} bytes)")
         return file_info
 
     async def save_upload_stream(
