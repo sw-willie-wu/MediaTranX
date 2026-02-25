@@ -22,8 +22,11 @@ output/
 test_*.py
 test_*.txt
 
-# Frontend build output served by backend
-src/backend/static/assets/
+# Build output
+src/backend/static/
+build/dist/
+build/work/
+src/frontend/dist_electron/
 
 # Binaries (keep README)
 bin/**/*.exe

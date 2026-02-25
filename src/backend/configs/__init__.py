@@ -5,11 +5,13 @@ from configparser import ConfigParser
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
+from backend.core.paths import get_static_dir
+
 
 class UISettings(BaseModel):
-    
+
     StaticFiles: Path = Field(
-        default=Path(__file__).parent.parent / 'static',
+        default_factory=get_static_dir,
         description='前端靜態檔編譯後路徑'
     )
     ThemeMode: Literal['LIGHT', 'DARK', 'AUTO'] = Field(

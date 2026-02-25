@@ -243,56 +243,64 @@ class SubtitleService:
             await self._extract_audio(file_info.file_path, temp_audio_path)
             progress_callback(0.10, "音訊提取完成，準備語音辨識...")
 
-            # === 階段 2: 語音辨識 ===
-            # 無翻譯: 10~90%, 有翻譯: 10~70%
-            whisper_end = 0.70 if has_translation else 0.90
-            whisper_range = whisper_end - 0.10
+            # === GPU 排隊管線 ===
+            # 同時只有一個任務使用 GPU，模型用完即卸載
+            from backend.core.models.model_manager import get_model_manager
+            manager = get_model_manager()
 
-            def whisper_progress(percent: float, msg: str):
-                overall = 0.10 + percent * whisper_range
-                progress_callback(overall, msg)
+            with manager.gpu_session():
+                # === 階段 2: 語音辨識 ===
+                # 無翻譯: 10~90%, 有翻譯: 10~70%
+                whisper_end = 0.70 if has_translation else 0.90
+                whisper_range = whisper_end - 0.10
 
-            result = self._whisper.transcribe(
-                audio_path=temp_audio_path,
-                language=language,
-                model_size=model_size,
-                on_progress=whisper_progress,
-                word_timestamps=word_timestamps,
-                condition_on_previous_text=condition_on_previous_text,
-                min_silence_duration_ms=min_silence_duration_ms,
-                vad_threshold=vad_threshold,
-            )
-
-            # === 階段 3 (選用): 翻譯字幕 (70~95%) ===
-            from backend.core.models.whisper import TranscribeSegment
-
-            # 保存原始 segments（用於翻譯時輸出雙語字幕）
-            original_segments = list(result.segments)
-
-            if has_translation:
-                progress_callback(whisper_end, "準備翻譯字幕...")
-
-                translator = get_translator(translate_model_type)
-                seg_dicts = [
-                    {"start": s.start, "end": s.end, "text": s.text}
-                    for s in result.segments
-                ]
-
-                def translate_progress(percent: float, msg: str):
-                    overall = 0.70 + percent * 0.25
+                def whisper_progress(percent: float, msg: str):
+                    overall = 0.10 + percent * whisper_range
                     progress_callback(overall, msg)
 
-                translated = translator.translate_segments(
-                    seg_dicts,
-                    source_lang=result.language,
-                    target_lang=target_language,
-                    model_size=translate_model_size,
-                    quantization=translate_quantization,
-                    on_progress=translate_progress,
-                    keep_names=keep_names,
-                    style=translate_style,
-                    glossary=glossary,
+                result = self._whisper.transcribe(
+                    audio_path=temp_audio_path,
+                    language=language,
+                    model_size=model_size,
+                    on_progress=whisper_progress,
+                    word_timestamps=word_timestamps,
+                    condition_on_previous_text=condition_on_previous_text,
+                    min_silence_duration_ms=min_silence_duration_ms,
+                    vad_threshold=vad_threshold,
                 )
+                # Whisper 已在 transcribe() 的 finally 中自動卸載
+
+                # === 階段 3 (選用): 翻譯字幕 (70~95%) ===
+                from backend.core.models.whisper import TranscribeSegment
+
+                # 保存原始 segments（用於翻譯時輸出雙語字幕）
+                original_segments = list(result.segments)
+
+                if has_translation:
+                    progress_callback(whisper_end, "準備翻譯字幕...")
+
+                    translator = get_translator(translate_model_type)
+                    seg_dicts = [
+                        {"start": s.start, "end": s.end, "text": s.text}
+                        for s in result.segments
+                    ]
+
+                    def translate_progress(percent: float, msg: str):
+                        overall = 0.70 + percent * 0.25
+                        progress_callback(overall, msg)
+
+                    translated = translator.translate_segments(
+                        seg_dicts,
+                        source_lang=result.language,
+                        target_lang=target_language,
+                        model_size=translate_model_size,
+                        quantization=translate_quantization,
+                        on_progress=translate_progress,
+                        keep_names=keep_names,
+                        style=translate_style,
+                        glossary=glossary,
+                    )
+                    # 翻譯模型已在 translate_segments() 的 finally 中自動卸載
 
                 result.segments = [
                     TranscribeSegment(s["start"], s["end"], s["text"])
