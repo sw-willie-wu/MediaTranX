@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 from pydantic import BaseModel
 
-from backend.services.file_service import get_file_service
+from backend.services.files.file_service import get_file_service
 from backend.api.schemas.common import FileInfo, FileUploadResponse
 
 router = APIRouter()

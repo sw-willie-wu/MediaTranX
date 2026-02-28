@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { useTheme, type ThemeMode } from '../composables/useTheme'
 import { useSettingsStore } from '@/stores/settings'
+import { useTaskStore } from '@/stores/tasks'
 import AppSelect from '@/components/common/AppSelect.vue'
+import type { Task } from '@/types/task'
 
 const { themeMode, setTheme } = useTheme()
 const settingsStore = useSettingsStore()
+const taskStore = useTaskStore()
 
 // 當前選中的區塊
-const activeSection = ref<'general' | 'gpu' | 'about'>('general')
+const activeSection = ref<'general' | 'gpu' | 'models' | 'about'>('general')
 
 const sections = [
   { id: 'general' as const, icon: 'bi-sliders', label: '一般' },
   { id: 'gpu' as const, icon: 'bi-gpu-card', label: '硬體加速' },
+  { id: 'models' as const, icon: 'bi-download', label: '模型管理' },
   { id: 'about' as const, icon: 'bi-info-circle', label: '關於' },
 ]
 
@@ -40,6 +44,14 @@ const languages = [
 // 硬體加速
 const gpuEnabled = ref(false)
 const gpuDetecting = ref(false)
+
+// CUDA DLL 下載
+const cudaDownloadTaskId = ref<string | null>(null)
+const cudaSubmitting = ref(false)
+const cudaDownloadTask = computed(() => {
+  if (!cudaDownloadTaskId.value) return null
+  return taskStore.tasks.get(cudaDownloadTaskId.value) ?? null
+})
 
 // 載入設定
 onMounted(() => {
@@ -94,6 +106,145 @@ async function detectGpu() {
   gpuDetecting.value = true
   await settingsStore.loadDeviceInfo()
   gpuDetecting.value = false
+}
+
+async function downloadCuda() {
+  cudaSubmitting.value = true
+  try {
+    const res = await fetch('/api/setup/cuda/download', { method: 'POST' })
+    if (!res.ok) {
+      console.error('CUDA download request failed:', res.statusText)
+      return
+    }
+    const { task_id } = await res.json()
+    cudaDownloadTaskId.value = task_id
+    taskStore.addTask({
+      taskId: task_id,
+      taskType: 'setup.cuda_download',
+      status: 'pending',
+      progress: 0,
+      message: '準備下載 CUDA DLL...',
+      result: null,
+      error: null,
+      label: '安裝 CUDA 加速',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+  } finally {
+    cudaSubmitting.value = false
+  }
+}
+
+// CUDA 下載完成後提示重啟
+const cudaInstalled = ref(false)
+
+watch(cudaDownloadTask, (task) => {
+  if (task && (task.status === 'completed' || task.status === 'failed')) {
+    cudaDownloadTaskId.value = null
+    if (task.status === 'completed') {
+      cudaInstalled.value = true
+    }
+  }
+})
+
+// ── 模型管理 ──────────────────────────────────────────────────────────────────
+
+interface ToolItem {
+  id: string
+  label: string
+  description: string
+  installed: boolean
+  size_mb: number
+}
+
+interface ModelItem {
+  id: string
+  label: string
+  category: string
+  downloaded: boolean
+  size_mb: number
+}
+
+interface ModelsStatus {
+  tools: ToolItem[]
+  models: ModelItem[]
+}
+
+const modelStatus = ref<ModelsStatus | null>(null)
+const modelStatusLoading = ref(false)
+// itemId → taskId
+const downloadingTaskId = ref<Record<string, string>>({})
+
+async function loadModelStatus() {
+  modelStatusLoading.value = true
+  try {
+    const res = await fetch('/api/setup/models')
+    if (res.ok) {
+      modelStatus.value = await res.json()
+    }
+  } catch (e) {
+    console.error('Failed to load model status', e)
+  } finally {
+    modelStatusLoading.value = false
+  }
+}
+
+async function downloadItem(id: string) {
+  const res = await fetch('/api/setup/models/download', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  })
+  if (!res.ok) {
+    console.error('Download request failed:', res.statusText)
+    return
+  }
+  const { task_id } = await res.json()
+  downloadingTaskId.value[id] = task_id
+  taskStore.addTask({
+    taskId: task_id,
+    taskType: 'setup.download',
+    status: 'pending',
+    progress: 0,
+    message: `下載 ${id}`,
+    result: null,
+    error: null,
+    label: `下載 ${id}`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+}
+
+function getDownloadingTask(id: string): Task | undefined {
+  const taskId = downloadingTaskId.value[id]
+  if (!taskId) return undefined
+  return taskStore.tasks.get(taskId)
+}
+
+// 監聽任務完成 → 刷新狀態
+watch(
+  () => taskStore.allTasks.map((t) => t.status),
+  () => {
+    for (const [itemId, taskId] of Object.entries(downloadingTaskId.value)) {
+      const task = taskStore.tasks.get(taskId)
+      if (task && (task.status === 'completed' || task.status === 'failed')) {
+        delete downloadingTaskId.value[itemId]
+        loadModelStatus()
+      }
+    }
+  },
+)
+
+// 切到模型管理 tab 時才 lazy load
+watch(activeSection, (val) => {
+  if (val === 'models' && !modelStatus.value) {
+    loadModelStatus()
+  }
+})
+
+function formatSize(mb: number): string {
+  if (mb >= 1000) return `${(mb / 1000).toFixed(1)} GB`
+  return `${mb} MB`
 }
 
 async function selectOutputDir() {
@@ -239,21 +390,44 @@ function formatVram(bytes: number | null): string {
               </div>
             </div>
 
-            <!-- 有 NVIDIA GPU + 無 CUDA Toolkit -->
+            <!-- 有 NVIDIA GPU + 無 CUDA DLL -->
             <div v-else-if="settingsStore.needsCudaToolkit" class="gpu-result gpu-warn">
               <i class="bi bi-exclamation-triangle-fill"></i>
               <div class="gpu-info">
                 <span class="gpu-name">{{ settingsStore.deviceInfo.device_name }}</span>
-                <span class="gpu-detail">偵測到 NVIDIA GPU，但尚未安裝 CUDA Toolkit</span>
-                <span class="gpu-hint">安裝 CUDA Toolkit 後即可使用 GPU 加速</span>
-                <a
-                  href="https://developer.nvidia.com/cuda-toolkit"
-                  target="_blank"
+                <span class="gpu-detail">偵測到 NVIDIA GPU，但尚未安裝 CUDA DLL</span>
+                <span class="gpu-hint">下載 CUDA DLL（約 850 MB）即可啟用 GPU 加速，資料存於 AppData 並跨版本保留</span>
+                <!-- 下載進行中 -->
+                <template v-if="cudaDownloadTask">
+                  <div class="cuda-progress-row">
+                    <div class="download-progress cuda-progress-bar">
+                      <div
+                        class="progress-bar"
+                        :style="{ width: `${(cudaDownloadTask.progress * 100).toFixed(0)}%` }"
+                      ></div>
+                    </div>
+                    <span class="progress-label">{{ (cudaDownloadTask.progress * 100).toFixed(0) }}%</span>
+                  </div>
+                  <span class="cuda-progress-msg">{{ cudaDownloadTask.message }}</span>
+                </template>
+                <!-- 安裝完成 → 提示重啟 -->
+                <div v-else-if="cudaInstalled" class="cuda-restart-hint">
+                  <i class="bi bi-check-circle-fill" style="color: #10b981"></i>
+                  <span>安裝完成，請重新啟動應用程式以啟用 GPU 加速</span>
+                  <button class="cuda-restart-btn" @click="window.electron?.restart()">
+                    <i class="bi bi-arrow-counterclockwise"></i> 立即重啟
+                  </button>
+                </div>
+                <!-- 下載按鈕 -->
+                <button
+                  v-else
                   class="cuda-download-btn"
+                  :disabled="cudaSubmitting"
+                  @click="downloadCuda"
                 >
-                  <i class="bi bi-box-arrow-up-right"></i>
-                  下載 CUDA Toolkit
-                </a>
+                  <i class="bi bi-download"></i>
+                  安裝 CUDA 加速
+                </button>
               </div>
             </div>
 
@@ -267,6 +441,119 @@ function formatVram(bytes: number | null): string {
             </div>
           </template>
         </div>
+      </div>
+
+      <!-- 模型管理 -->
+      <div v-if="activeSection === 'models'" class="section-content models-section">
+        <div v-if="modelStatusLoading" class="models-loading">
+          <div class="spinner"></div>
+          <span>載入中...</span>
+        </div>
+
+        <template v-else-if="modelStatus">
+          <!-- 超解析工具 -->
+          <h6 class="section-title">超解析工具</h6>
+          <div class="model-list">
+            <div v-for="tool in modelStatus.tools" :key="tool.id" class="model-item">
+              <div class="model-info">
+                <span class="model-label">{{ tool.label }}</span>
+                <span class="model-desc">{{ tool.description }}</span>
+              </div>
+              <span class="model-size">{{ formatSize(tool.size_mb) }}</span>
+              <div class="model-action">
+                <template v-if="getDownloadingTask(tool.id)">
+                  <div class="download-progress">
+                    <div
+                      class="progress-bar"
+                      :style="{ width: `${(getDownloadingTask(tool.id)!.progress * 100).toFixed(0)}%` }"
+                    ></div>
+                  </div>
+                  <span class="progress-label">
+                    {{ (getDownloadingTask(tool.id)!.progress * 100).toFixed(0) }}%
+                  </span>
+                </template>
+                <span v-else-if="tool.installed" class="status-badge installed">
+                  <i class="bi bi-check-circle-fill"></i> 已安裝
+                </span>
+                <button v-else class="download-btn" @click="downloadItem(tool.id)">
+                  <i class="bi bi-download"></i> 安裝
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 語音識別 -->
+          <h6 class="section-title mt">語音識別</h6>
+          <div class="model-list">
+            <div
+              v-for="model in modelStatus.models.filter(m => m.category === 'stt')"
+              :key="model.id"
+              class="model-item"
+            >
+              <div class="model-info">
+                <span class="model-label">{{ model.label }}</span>
+              </div>
+              <span class="model-size">{{ formatSize(model.size_mb) }}</span>
+              <div class="model-action">
+                <template v-if="getDownloadingTask(model.id)">
+                  <div class="download-progress">
+                    <div
+                      class="progress-bar"
+                      :style="{ width: `${(getDownloadingTask(model.id)!.progress * 100).toFixed(0)}%` }"
+                    ></div>
+                  </div>
+                  <span class="progress-label">
+                    {{ (getDownloadingTask(model.id)!.progress * 100).toFixed(0) }}%
+                  </span>
+                </template>
+                <span v-else-if="model.downloaded" class="status-badge installed">
+                  <i class="bi bi-check-circle-fill"></i> 已安裝
+                </span>
+                <button v-else class="download-btn" @click="downloadItem(model.id)">
+                  <i class="bi bi-download"></i> 安裝
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 翻譯模型 -->
+          <h6 class="section-title mt">翻譯模型</h6>
+          <div class="model-list">
+            <div
+              v-for="model in modelStatus.models.filter(m => m.category === 'translate')"
+              :key="model.id"
+              class="model-item"
+            >
+              <div class="model-info">
+                <span class="model-label">{{ model.label }}</span>
+              </div>
+              <span class="model-size">{{ formatSize(model.size_mb) }}</span>
+              <div class="model-action">
+                <template v-if="getDownloadingTask(model.id)">
+                  <div class="download-progress">
+                    <div
+                      class="progress-bar"
+                      :style="{ width: `${(getDownloadingTask(model.id)!.progress * 100).toFixed(0)}%` }"
+                    ></div>
+                  </div>
+                  <span class="progress-label">
+                    {{ (getDownloadingTask(model.id)!.progress * 100).toFixed(0) }}%
+                  </span>
+                </template>
+                <span v-else-if="model.downloaded" class="status-badge installed">
+                  <i class="bi bi-check-circle-fill"></i> 已安裝
+                </span>
+                <button v-else class="download-btn" @click="downloadItem(model.id)">
+                  <i class="bi bi-download"></i> 安裝
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <button class="refresh-btn" @click="loadModelStatus">
+            <i class="bi bi-arrow-clockwise"></i> 重新整理
+          </button>
+        </template>
       </div>
 
       <!-- 關於 -->
@@ -581,13 +868,218 @@ function formatVram(bytes: number | null): string {
   font-size: 0.85rem;
   font-weight: 500;
   text-decoration: none;
+  cursor: pointer;
   transition: all 0.2s ease;
   width: fit-content;
 
-  &:hover {
+  &:hover:not(:disabled) {
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(96, 165, 250, 0.3);
     color: white;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.cuda-restart-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+
+  i { flex-shrink: 0; }
+}
+
+.cuda-restart-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+  padding: 0.4rem 0.875rem;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  color: #10b981;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: fit-content;
+
+  &:hover {
+    background: rgba(16, 185, 129, 0.2);
+  }
+}
+
+.cuda-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.cuda-progress-bar {
+  width: 200px;
+}
+
+.cuda-progress-msg {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+}
+
+// 模型管理
+.models-section {
+  max-width: 640px;
+}
+
+.models-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.model-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 0.875rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+}
+
+.model-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.model-label {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-desc {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.model-size {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.model-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  width: 130px;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  position: relative;
+  left: 2px;
+
+  &.installed {
+    color: #10b981;
+  }
+}
+
+.download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.22);
+    color: var(--text-primary);
+  }
+}
+
+.download-progress {
+  width: 80px;
+  height: 6px;
+  background: var(--panel-border);
+  border-radius: 3px;
+  overflow: hidden;
+
+  .progress-bar {
+    height: 100%;
+    background: var(--color-primary);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+}
+
+.progress-label {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  min-width: 32px;
+  text-align: right;
+}
+
+.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  padding: 0.4rem 0.875rem;
+  background: transparent;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: var(--panel-bg-hover);
+    color: var(--text-primary);
   }
 }
 

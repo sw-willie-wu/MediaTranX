@@ -40,8 +40,10 @@ contextBridge.exposeInMainWorld('electron', {
   close: () => ipcRenderer.send('close-window'),
   isMaximized: async () => await ipcRenderer.invoke('check-maximized'),
   onMaximizeChange: (callback) => ipcRenderer.on('window-maximized', (_event, value) => callback(value)),
+  restart: () => ipcRenderer.send('restart-app'),
   selectFolder: async () => await ipcRenderer.invoke('select-folder'),
   saveFileDialog: async (options) => await ipcRenderer.invoke('save-file-dialog', options),
+  downloadToPath: async (url, destPath) => await ipcRenderer.invoke('download-to-path', { url, destPath }),
   getFileSourceDir: (name, size, lastModified) => {
     const key = `${name}|${size}|${lastModified}`;
     const filePath = filePathCache.get(key);

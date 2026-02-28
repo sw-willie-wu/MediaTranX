@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import ToolLayout from '@/components/ToolLayout.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
+import AppMediaInfoBar from '@/components/common/AppMediaInfoBar.vue'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
+import { useFileDownload } from '@/composables/useFileDownload'
 import type { Task } from '@/types/task'
 
 const filesStore = useFilesStore()
 const taskStore = useTaskStore()
 const toast = useToast()
+const { downloadFile } = useFileDownload()
+
+const currentTaskId = ref<string | null>(null)
 
 // SubtitlePanel ref
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
@@ -53,6 +58,20 @@ interface MediaInfo {
 const mediaInfo = ref<MediaInfo | null>(null)
 
 const hasResult = computed(() => !!resultPreview.value)
+
+const mediaInfoItems = computed(() => {
+  if (!mediaInfo.value) return []
+  const m = mediaInfo.value
+  return [
+    { icon: 'bi-aspect-ratio', label: `${m.width}x${m.height}` },
+    { icon: 'bi-clock', label: formatDuration(m.duration) },
+    { icon: 'bi-film', label: m.video_codec.toUpperCase() },
+    { icon: 'bi-volume-up', label: m.audio_codec.toUpperCase() },
+    { icon: 'bi-speedometer2', label: formatBitrate(m.bitrate) },
+    { icon: 'bi-camera-reels', label: `${m.fps.toFixed(1)} fps` },
+    { icon: 'bi-hdd', label: formatFileSize(m.file_size) },
+  ]
+})
 
 // 格式化工具
 function formatDuration(seconds: number) {
@@ -316,6 +335,7 @@ async function submitTask(apiPath: string, body: Record<string, unknown>, label:
       fileName: currentFileName.value,
     }
     taskStore.addTask(task)
+    currentTaskId.value = taskId
 
     toast.show(`${label}任務已提交`, { type: 'success', icon: 'bi-check-circle' })
     resultPreview.value = 'submitted'
@@ -400,6 +420,19 @@ async function ensureFileUploaded(file: File) {
   }
 }
 
+function handleDownload() {
+  const task = currentTaskId.value ? taskStore.tasks.get(currentTaskId.value) : null
+  if (!task?.result) return
+  const r = task.result as { output_file_id?: string }
+  if (!r.output_file_id) return
+
+  const baseName = currentFileName.value.replace(/\.[^.]+$/, '')
+  const ext = isAudioFormat.value ? outputFormat.value : outputFormat.value
+  const suffix = currentFunction.value === 'cut' ? '_cut' : '_transcoded'
+  const outputName = `${baseName}${suffix}.${ext}`
+  downloadFile(r.output_file_id, outputName, sourceDir.value)
+}
+
 function handleSubtitleSubmit(taskId: string) {
   isProcessing.value = true
 }
@@ -407,6 +440,22 @@ function handleSubtitleSubmit(taskId: string) {
 function handleSubtitleComplete(taskId: string) {
   isProcessing.value = false
 }
+
+// 監聽任務完成 → 帶下載的 toast
+watch(
+  () => currentTaskId.value ? taskStore.tasks.get(currentTaskId.value) : null,
+  (task) => {
+    if (!task || task.status !== 'completed' || !task.result) return
+    const r = task.result as { output_file_id?: string }
+    if (!r.output_file_id) return
+    toast.show(`${task.label ?? '處理'} 完成`, {
+      type: 'success',
+      icon: 'bi-check-circle',
+      action: { label: '下載', callback: () => handleDownload() },
+    })
+  },
+  { deep: true }
+)
 </script>
 
 <template>
@@ -425,6 +474,7 @@ function handleSubtitleComplete(taskId: string) {
     @select-function="selectFunction"
     @execute="handleExecute"
     @file="handleFile"
+    @download="handleDownload"
   >
     <!-- 預覽區域 -->
     <template #preview="{ file, previewUrl, mode }">
@@ -463,40 +513,12 @@ function handleSubtitleComplete(taskId: string) {
         </div>
 
         <!-- 媒體資訊 -->
-        <div v-if="mediaInfo" class="media-info-bar">
-          <div class="info-item">
-            <i class="bi bi-aspect-ratio"></i>
-            <span>{{ mediaInfo.width }}x{{ mediaInfo.height }}</span>
-          </div>
-          <div class="info-item">
-            <i class="bi bi-clock"></i>
-            <span>{{ formatDuration(mediaInfo.duration) }}</span>
-          </div>
-          <div class="info-item">
-            <i class="bi bi-film"></i>
-            <span>{{ mediaInfo.video_codec.toUpperCase() }}</span>
-          </div>
-          <div class="info-item">
-            <i class="bi bi-volume-up"></i>
-            <span>{{ mediaInfo.audio_codec.toUpperCase() }}</span>
-          </div>
-          <div class="info-item">
-            <i class="bi bi-speedometer2"></i>
-            <span>{{ formatBitrate(mediaInfo.bitrate) }}</span>
-          </div>
-          <div class="info-item">
-            <i class="bi bi-camera-reels"></i>
-            <span>{{ mediaInfo.fps.toFixed(1) }} fps</span>
-          </div>
-          <div class="info-item">
-            <i class="bi bi-hdd"></i>
-            <span>{{ formatFileSize(mediaInfo.file_size) }}</span>
-          </div>
-        </div>
-        <div v-else-if="isUploading" class="media-info-bar loading">
-          <div class="spinner-border spinner-border-sm" role="status"></div>
-          <span>讀取媒體資訊...</span>
-        </div>
+        <AppMediaInfoBar
+          v-if="mediaInfo || isUploading"
+          :items="mediaInfoItems"
+          :loading="isUploading && !mediaInfo"
+          loading-text="讀取媒體資訊..."
+        />
       </div>
     </template>
 
@@ -633,35 +655,6 @@ function handleSubtitleComplete(taskId: string) {
   display: block;
   max-width: 100%;
   max-height: 100%;
-  border-radius: 8px;
-}
-
-.media-info-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem 1rem;
-  padding: 0.6rem 1rem;
-  border-top: 1px solid var(--panel-border);
-
-  &.loading {
-    gap: 0.5rem;
-    color: var(--text-muted);
-    font-size: 0.85rem;
-  }
-}
-
-.info-item {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-
-  i {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-  }
 }
 
 .settings-form { color: var(--text-primary); }

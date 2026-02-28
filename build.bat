@@ -40,5 +40,5 @@ cd ..\..
 echo.
 echo ========================================
 echo  Build complete!
-echo  Output: src\frontend\dist_electron\
+echo  Output: dist\
 echo ========================================

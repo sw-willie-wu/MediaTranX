@@ -16,4 +16,4 @@ if errorlevel 1 (
 )
 cd ..\..
 echo Build complete!
-echo Output: src\frontend\dist_electron\
+echo Output: dist\

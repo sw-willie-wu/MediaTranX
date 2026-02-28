@@ -74,6 +74,44 @@ def get_temp_dir() -> Path:
     return d
 
 
+def get_waifu2x_dir() -> Path:
+    """
+    waifu2x-ncnn-vulkan 二進位目錄
+
+    Packaged: resources/waifu2x/
+    Dev:      bin/waifu2x/
+    """
+    if _is_frozen():
+        return Path(sys.executable).parent.parent / "waifu2x"
+    else:
+        return _get_app_root() / "bin" / "waifu2x"
+
+
+def get_realesrgan_dir() -> Path:
+    """
+    Real-ESRGAN ncnn-vulkan 二進位目錄
+
+    Packaged: resources/realesrgan/
+    Dev:      bin/realesrgan/
+    """
+    if _is_frozen():
+        return Path(sys.executable).parent.parent / "realesrgan"
+    else:
+        return _get_app_root() / "bin" / "realesrgan"
+
+
+def get_cuda_dir() -> Path:
+    """
+    CUDA DLL 目錄（使用者資料，跨版本保存）
+
+    %APPDATA%/MediaTranX/cuda/
+    此目錄在應用程式更新後仍然保留，不需要重複下載。
+    """
+    import os
+    appdata = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
+    return Path(appdata) / 'MediaTranX' / 'cuda'
+
+
 def get_output_dir() -> Path:
     """輸出目錄"""
     d = _get_app_root() / "output"

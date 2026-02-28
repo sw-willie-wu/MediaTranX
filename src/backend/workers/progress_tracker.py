@@ -19,16 +19,20 @@ class ProgressEvent:
     progress: float
     stage: str
     message: str
+    result: Optional[dict] = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
     def to_json(self) -> str:
-        return json.dumps({
+        data = {
             "task_id": self.task_id,
             "progress": self.progress,
             "stage": self.stage,
             "message": self.message,
             "timestamp": self.timestamp.isoformat()
-        })
+        }
+        if self.result is not None:
+            data["result"] = self.result
+        return json.dumps(data)
 
 
 class ProgressTracker:
@@ -47,7 +51,8 @@ class ProgressTracker:
         task_id: str,
         progress: float,
         message: str = "",
-        stage: str = "processing"
+        stage: str = "processing",
+        result: Optional[dict] = None,
     ) -> None:
         """
         發送進度更新給所有訂閱者
@@ -60,9 +65,10 @@ class ProgressTracker:
         """
         event = ProgressEvent(
             task_id=task_id,
-            progress=min(max(progress, 0.0), 1.0),  # 確保在 0-1 範圍
+            progress=min(max(progress, 0.0), 1.0),
             stage=stage,
-            message=message
+            message=message,
+            result=result,
         )
 
         self._latest_progress[task_id] = event
@@ -149,8 +155,11 @@ class ProgressTracker:
                     event = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield event
 
-                    # 如果進度完成，結束訂閱
-                    if event.progress >= 1.0:
+                    # 只在 stage="completed" 或 stage="error" 時才結束訂閱
+                    # 不能只看 progress >= 1.0：handler 的 progress_callback(1.0)
+                    # 與 task_manager 最終帶 result 的 emit 都是 progress=1.0，
+                    # 但只有後者的 stage 是 "completed"
+                    if event.stage in ("completed", "error"):
                         break
                 except asyncio.TimeoutError:
                     # 發送心跳以保持連線，保留最後一次的進度訊息

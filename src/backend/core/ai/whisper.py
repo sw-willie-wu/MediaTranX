@@ -168,6 +168,36 @@ class WhisperWrapper:
         )
         return str(local_dir)
 
+    def download_only(self, model_size: str, on_progress=None) -> None:
+        """只下載模型，不載入記憶體"""
+        if model_size not in MODEL_SIZES:
+            raise ValueError(f"不支援的模型大小: {model_size}")
+
+        if self._is_model_downloaded(model_size):
+            if on_progress:
+                on_progress(1.0, "模型已下載")
+            return
+
+        _SIZE_MB = {"tiny": 150, "base": 300, "small": 500, "medium": 1500, "large-v3": 3000}
+        size_mb = _SIZE_MB.get(model_size, 1500)
+        size_label = f"~{size_mb / 1000:.1f} GB" if size_mb >= 1000 else f"~{size_mb} MB"
+
+        local_dir = self._get_local_model_dir(model_size)
+        repo_name = MODEL_SIZES[model_size]
+
+        logger.info(f"Downloading Whisper model: {model_size} to {local_dir}")
+        if on_progress:
+            on_progress(0.0, f"開始下載 Whisper {model_size} ({size_label})...")
+
+        from huggingface_hub import snapshot_download
+        snapshot_download(
+            repo_id=repo_name,
+            local_dir=str(local_dir),
+        )
+
+        if on_progress:
+            on_progress(1.0, "模型下載完成")
+
     def _load_model(self, model_size: str) -> None:
         """
         載入或下載模型

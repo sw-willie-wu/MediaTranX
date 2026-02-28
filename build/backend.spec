@@ -21,20 +21,10 @@ llama_binaries = collect_dynamic_libs('llama_cpp')
 # 收集 ctranslate2 動態庫
 ct2_binaries = collect_dynamic_libs('ctranslate2')
 
-# 收集 CUDA 動態庫（from nvidia pip packages）
-# nvidia Python 模組仍排除（不需要），但 DLLs 必須打包
-# 放到根目錄 '.' 讓 ctypes.CDLL() 和動態連結都能找到
-VENV_SITE = PROJECT_ROOT / '.venv' / 'Lib' / 'site-packages'
-cuda_dll_dirs = [
-    VENV_SITE / 'nvidia' / 'cublas' / 'bin',
-    VENV_SITE / 'nvidia' / 'cuda_runtime' / 'bin',
-    VENV_SITE / 'nvidia' / 'cudnn' / 'bin',
-]
+# CUDA DLL 不再打包進安裝檔
+# 改由應用程式在「設定 → 硬體加速」中按需下載到 %APPDATA%/MediaTranX/cuda/
+# 這樣安裝檔從 ~1.2 GB 縮小到 ~200 MB，且 CUDA DLL 跨版本保留不需重複下載
 cuda_binaries = []
-for dll_dir in cuda_dll_dirs:
-    if dll_dir.exists():
-        for dll in dll_dir.glob('*.dll'):
-            cuda_binaries.append((str(dll), '.'))
 
 # 收集 faster_whisper 的資料檔（含 silero_vad ONNX 模型）
 faster_whisper_datas = collect_data_files('faster_whisper')
@@ -134,9 +124,9 @@ a = Analysis(
     noarchive=False,
 )
 
-# 移除 PyInstaller DLL 掃描自動拉進來的 torch/ 和 nvidia/ 子目錄副本
-# 這些是 CUDA DLLs 的重複（已在根目錄有一份 from cuda_binaries）
-# torch/lib/ ~750MB, nvidia/ ~840MB 全是重複，不移除會超過 NSIS 2GB 限制
+# 移除 PyInstaller DLL 掃描自動拉進來的 torch/ 和 nvidia/ 子目錄
+# torch/lib/ ~750MB, nvidia/ ~840MB 都不需要打包
+# CUDA DLL 改由使用者自行透過設定頁面下載到 %APPDATA%
 a.binaries = [b for b in a.binaries
               if not b[0].startswith(('torch\\', 'torch/', 'nvidia\\', 'nvidia/'))]
 
