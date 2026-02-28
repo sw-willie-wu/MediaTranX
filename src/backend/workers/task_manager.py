@@ -128,7 +128,11 @@ class TaskManager:
             task.progress = 1.0
             task.result = result
             task.updated_at = datetime.utcnow()
-            await self._progress_tracker.emit(task_id, 1.0, "Task completed")
+            await self._progress_tracker.emit(
+                task_id, 1.0, "Task completed",
+                stage="completed",
+                result=result if isinstance(result, dict) else None,
+            )
 
             logger.info(f"Task completed: {task_id}")
 

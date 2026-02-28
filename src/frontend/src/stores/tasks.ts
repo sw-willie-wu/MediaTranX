@@ -98,8 +98,10 @@ export const useTaskStore = defineStore('tasks', () => {
         task.updatedAt = new Date()
 
         // 判斷狀態
-        if (data.progress >= 1) {
+        if (data.stage === 'completed') {
           task.status = 'completed'
+          task.progress = 1.0
+          if (data.result) task.result = data.result
           eventSource.close()
           eventSources.value.delete(taskId)
         } else if (data.stage === 'error') {

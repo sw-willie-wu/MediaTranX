@@ -1,4 +1,4 @@
-from .file_service import FileService, get_file_service
+from .files.file_service import FileService, get_file_service
 from .video import TranscodeService, get_transcode_service
 from .video import SubtitleService, get_subtitle_service
 from .document import TranslateService, get_translate_service

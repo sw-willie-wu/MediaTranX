@@ -7,9 +7,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.services.video.subtitle_service import get_subtitle_service
-from backend.core.models.base_translator import SUPPORTED_LANGUAGES
-from backend.core.models.translategemma import get_translategemma
-from backend.core.models.translation import get_translator
+from backend.core.ai.base_translator import SUPPORTED_LANGUAGES
+from backend.core.ai.translategemma import get_translategemma
+from backend.core.ai.translation import get_translator
 
 router = APIRouter()
 

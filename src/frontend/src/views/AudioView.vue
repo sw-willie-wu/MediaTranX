@@ -2,14 +2,18 @@
 import { ref, computed } from 'vue'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
+import AppMediaInfoBar from '@/components/common/AppMediaInfoBar.vue'
+import { useToast } from '@/composables/useToast'
+
+const toast = useToast()
 
 // 子功能列表
 const subFunctions = [
   { id: 'transcode', name: '轉檔', icon: 'bi-arrow-repeat' },
-  { id: 'cut', name: '剪輯', icon: 'bi-scissors' },
-  { id: 'volume', name: '音量調整', icon: 'bi-volume-up-fill' },
-  { id: 'normalize', name: '音量正規化', icon: 'bi-soundwave' },
-  { id: 'merge', name: '合併', icon: 'bi-union' },
+  { id: 'cut', name: '剪輯', icon: 'bi-scissors', comingSoon: true },
+  { id: 'volume', name: '音量調整', icon: 'bi-volume-up-fill', comingSoon: true },
+  { id: 'normalize', name: '音量正規化', icon: 'bi-soundwave', comingSoon: true },
+  { id: 'merge', name: '合併', icon: 'bi-union', comingSoon: true },
 ]
 
 const currentFunction = ref('transcode')
@@ -53,16 +57,23 @@ function selectFunction(id: string) {
   currentFunction.value = id
 }
 
-function handleExport() {
-  console.log('Export audio')
+function executeProcess() {
+  // TODO: 接後端 API
+  toast.show('此功能尚未實作', { type: 'info', icon: 'bi-info-circle' })
 }
 
-function executeProcess() {
-  isProcessing.value = true
-  setTimeout(() => {
-    isProcessing.value = false
-    resultPreview.value = 'done'
-  }, 2000)
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function getAudioInfoItems(file: File) {
+  const ext = file.name.split('.').pop()?.toUpperCase() ?? '—'
+  return [
+    { icon: 'bi-file-earmark-music', label: ext },
+    { icon: 'bi-hdd', label: formatSize(file.size) },
+  ]
 }
 
 function handleFile(file: File, srcDir?: string) {
@@ -83,12 +94,15 @@ function handleFile(file: File, srcDir?: string) {
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"
+    :execute-disabled="!hasFile || isProcessing"
+    :execute-loading="isProcessing"
+    execute-label="執行轉檔"
     @select-function="selectFunction"
-    @export="handleExport"
+    @execute="executeProcess"
     @file="handleFile"
   >
     <!-- 預覽區域 -->
-    <template #preview="{ file, previewUrl, mode }">
+    <template #preview="{ file, previewUrl }">
       <div class="preview-display">
         <div class="audio-preview">
           <div class="audio-icon">
@@ -103,6 +117,7 @@ function handleFile(file: File, srcDir?: string) {
             ></audio>
           </div>
         </div>
+        <AppMediaInfoBar :items="getAudioInfoItems(file)" />
       </div>
     </template>
 
@@ -129,15 +144,6 @@ function handleFile(file: File, srcDir?: string) {
             <label>取樣率</label>
             <AppSelect v-model="sampleRate" :options="sampleRates" />
           </div>
-
-          <button
-            class="execute-btn"
-            :disabled="!hasFile || isProcessing"
-            @click="executeProcess"
-          >
-            <span v-if="isProcessing" class="spinner-border spinner-border-sm me-2"></span>
-            {{ isProcessing ? '處理中...' : '執行轉檔' }}
-          </button>
         </div>
 
         <!-- 其他功能 -->
@@ -240,26 +246,6 @@ function handleFile(file: File, srcDir?: string) {
   flex-direction: column;
   gap: 0.5rem;
   label { font-size: 0.85rem; color: var(--text-secondary); }
-}
-
-.execute-btn {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  margin-top: 0.5rem;
-
-  &:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(124, 111, 173, 0.4);
-  }
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
 .text-muted { color: var(--text-muted); }

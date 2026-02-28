@@ -40,6 +40,24 @@ def is_cuda_runtime_available() -> bool:
                 except (OSError, Exception):
                     pass
 
+    # 3. 使用者下載的 CUDA DLL（%APPDATA%/MediaTranX/cuda/）
+    # 用絕對路徑載入，避免 frozen 環境 PATH 搜尋不可靠的問題
+    try:
+        import os
+        appdata = os.environ.get('APPDATA', '')
+        if appdata:
+            cuda_dll = Path(appdata) / 'MediaTranX' / 'cuda' / 'cublas64_12.dll'
+            if cuda_dll.exists():
+                # 先把目錄加入 AddDllDirectory，讓依賴 DLL（cudart 等）也能被找到
+                try:
+                    os.add_dll_directory(str(cuda_dll.parent))
+                except (AttributeError, OSError):
+                    pass
+                ctypes.CDLL(str(cuda_dll))
+                return True
+    except (OSError, Exception):
+        pass
+
     return False
 
 
@@ -193,6 +211,18 @@ def get_device_info() -> dict:
 
     _device_info_cache = info
     return info
+
+
+def refresh_device_cache() -> None:
+    """清除所有裝置偵測快取，強制重新偵測（CUDA DLL 下載後呼叫）"""
+    global _device_info_cache
+    _device_info_cache = None
+    is_cuda_runtime_available.cache_clear()
+    get_device.cache_clear()
+    get_compute_type.cache_clear()
+    has_nvidia_gpu.cache_clear()
+    _get_gpu_name_via_smi.cache_clear()
+    logger.info("Device cache cleared, will re-detect on next call")
 
 
 @lru_cache(maxsize=1)

@@ -1,18 +1,20 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
+import AppMediaInfoBar from '@/components/common/AppMediaInfoBar.vue'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
+import { useFileDownload } from '@/composables/useFileDownload'
 
 // 子功能列表
 const subFunctions = [
   { id: 'translate', name: '翻譯', icon: 'bi-translate' },
-  { id: 'pdf-convert', name: 'PDF 轉換', icon: 'bi-file-earmark-pdf-fill' },
-  { id: 'ocr', name: '文字辨識', icon: 'bi-type' },
-  { id: 'merge', name: '合併文件', icon: 'bi-union' },
-  { id: 'split', name: '分割文件', icon: 'bi-layout-split' },
+  { id: 'pdf-convert', name: 'PDF 轉換', icon: 'bi-file-earmark-pdf-fill', comingSoon: true },
+  { id: 'ocr', name: '文字辨識', icon: 'bi-type', comingSoon: true },
+  { id: 'merge', name: '合併文件', icon: 'bi-union', comingSoon: true },
+  { id: 'split', name: '分割文件', icon: 'bi-layout-split', comingSoon: true },
 ]
 
 const currentFunction = ref('translate')
@@ -20,11 +22,15 @@ const currentFunction = ref('translate')
 const filesStore = useFilesStore()
 const taskStore = useTaskStore()
 const toast = useToast()
+const { downloadFile } = useFileDownload()
+
+const currentTranslateTaskId = ref<string | null>(null)
 
 // View 專屬狀態
 const hasFile = ref(false)
 const hasResult = ref(false)
 const currentFileName = ref('')
+const sourceDir = ref<string | undefined>(undefined)
 const fileId = ref<string | null>(null)
 const isUploading = ref(false)
 const isSubmitting = ref(false)
@@ -58,13 +64,25 @@ function selectFunction(id: string) {
   currentFunction.value = id
 }
 
-function handleExport() {
-  console.log('Export document')
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function getDocInfoItems(file: File) {
+  const ext = file.name.split('.').pop()?.toUpperCase() ?? '—'
+  return [
+    { icon: 'bi-file-earmark-text', label: ext },
+    { icon: 'bi-hdd', label: formatSize(file.size) },
+  ]
 }
 
 async function handleFile(file: File, srcDir?: string) {
   hasFile.value = true
   currentFileName.value = file.name
+  sourceDir.value = srcDir
   isUploading.value = true
   error.value = null
 
@@ -199,6 +217,7 @@ async function submitTranslate() {
       label: '文件翻譯',
       fileName: currentFileName.value,
     })
+    currentTranslateTaskId.value = result.task_id
     toast.show('開始文件翻譯', { type: 'info', icon: 'bi-translate' })
   } catch (e) {
     error.value = e instanceof Error ? e.message : '發生錯誤'
@@ -206,6 +225,33 @@ async function submitTranslate() {
     isSubmitting.value = false
   }
 }
+
+function handleDownload() {
+  const task = currentTranslateTaskId.value ? taskStore.tasks.get(currentTranslateTaskId.value) : null
+  if (!task?.result) return
+  const r = task.result as { output_file_id?: string }
+  if (!r.output_file_id) return
+  const baseName = currentFileName.value.replace(/\.[^.]+$/, '')
+  const outputName = `${baseName}_translated.srt`
+  downloadFile(r.output_file_id, outputName, sourceDir.value)
+}
+
+// 監聽翻譯任務完成 → 帶下載的 toast
+watch(
+  () => currentTranslateTaskId.value ? taskStore.tasks.get(currentTranslateTaskId.value) : null,
+  (task) => {
+    if (!task || task.status !== 'completed' || !task.result) return
+    const r = task.result as { output_file_id?: string }
+    if (!r.output_file_id) return
+    hasResult.value = true
+    toast.show('文件翻譯完成', {
+      type: 'success',
+      icon: 'bi-check-circle',
+      action: { label: '下載', callback: () => handleDownload() },
+    })
+  },
+  { deep: true }
+)
 
 onMounted(() => {
   loadTranslateLanguages()
@@ -225,17 +271,22 @@ onMounted(() => {
     :current-function="currentFunction"
     :has-result="hasResult"
     @select-function="selectFunction"
-    @export="handleExport"
     @file="handleFile"
+    @download="handleDownload"
   >
     <!-- 預覽區域 -->
-    <template #preview="{ file, previewUrl, mode }">
+    <template #preview="{ file }">
       <div class="preview-display">
         <div class="document-preview">
           <i class="bi bi-file-earmark-text-fill"></i>
           <p class="filename">{{ file.name }}</p>
           <p v-if="isUploading" class="upload-hint">上傳中...</p>
         </div>
+        <AppMediaInfoBar
+          :items="getDocInfoItems(file)"
+          :loading="isUploading"
+          loading-text="上傳中..."
+        />
       </div>
     </template>
 

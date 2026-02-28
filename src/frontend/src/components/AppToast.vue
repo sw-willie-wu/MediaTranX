@@ -24,6 +24,11 @@ function iconFor(type: string, icon?: string) {
       >
         <i class="bi toast-icon" :class="iconFor(toast.type, toast.icon)"></i>
         <span class="toast-message">{{ toast.message }}</span>
+        <button
+          v-if="toast.action"
+          class="toast-action"
+          @click="() => { toast.action!.callback(); dismiss(toast.id) }"
+        >{{ toast.action.label }}</button>
         <button class="toast-close" @click="dismiss(toast.id)">
           <i class="bi bi-x"></i>
         </button>
@@ -74,6 +79,24 @@ function iconFor(type: string, icon?: string) {
 .toast-message {
   flex: 1;
   line-height: 1.4;
+}
+
+.toast-action {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.25);
+  }
 }
 
 .toast-close {

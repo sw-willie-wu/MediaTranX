@@ -10,7 +10,7 @@ from .ffmpeg import (
     AudioCodec,
     QualityPreset,
 )
-from .models import (
+from .ai import (
     ModelManager,
     get_model_manager,
     SLOT_WHISPER,

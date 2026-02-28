@@ -51,7 +51,7 @@
     "appId": "com.mediatranx.app",
     "productName": "MediaTranX",
     "directories": {
-      "output": "dist_electron"
+      "output": "../../dist"
     },
     "files": [
       "main.js",

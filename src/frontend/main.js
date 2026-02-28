@@ -4,6 +4,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
 import http from 'http';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -238,6 +239,32 @@ function createWindow() {
     }
     return result.filePaths[0];
   })
+
+  // 重新啟動應用程式（CUDA 安裝後使用）
+  ipcMain.on('restart-app', () => {
+    stopViteDevServer();
+    stopPythonBackend();
+    app.relaunch();
+    app.exit(0);
+  });
+
+  // 下載後端檔案到本機路徑
+  ipcMain.handle('download-to-path', async (event, { url, destPath }) => {
+    return new Promise((resolve, reject) => {
+      const parsedUrl = new URL(url);
+      const req = http.get({ host: parsedUrl.hostname, port: parsedUrl.port, path: parsedUrl.pathname + parsedUrl.search }, (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        const file = fs.createWriteStream(destPath);
+        res.pipe(file);
+        file.on('finish', () => { file.close(); resolve(true); });
+        file.on('error', (err) => { fs.unlink(destPath, () => {}); reject(err); });
+      });
+      req.on('error', reject);
+    });
+  });
 
   // 另存新檔對話框
   ipcMain.handle('save-file-dialog', async (event, options) => {

@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from backend.core.models.translation import get_translator
-from backend.services.file_service import FileService, get_file_service
+from backend.core.ai.translation import get_translator
+from backend.services.files.file_service import FileService, get_file_service
 from backend.workers.task_manager import TaskManager, get_task_manager
 
 logger = logging.getLogger(__name__)
@@ -244,7 +244,7 @@ class TranslateService:
 
         # === 階段 2: 翻譯 (5~95%) ===
         # GPU 排隊：同時只有一個任務使用 GPU，模型用完即卸載
-        from backend.core.models.model_manager import get_model_manager
+        from backend.core.ai.model_manager import get_model_manager
         manager = get_model_manager()
 
         translator = get_translator(model_type)
