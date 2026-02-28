@@ -40,3 +40,6 @@ models/
 .claude/
 CLAUDE.md
 nul
+
+# For build
+resources/*

@@ -61,9 +61,17 @@
     ],
     "extraResources": [
       {
-        "from": "../../build/dist/backend",
-        "to": "backend",
+        "from": "../../resources/core_engine",
+        "to": "core_engine",
         "filter": ["**/*"]
+      },
+      {
+        "from": "../../resources/uv.exe",
+        "to": "uv.exe"
+      },
+      {
+        "from": "../../resources/pyproject.toml",
+        "to": "pyproject.toml"
       },
       {
         "from": "../../bin/ffmpeg",
