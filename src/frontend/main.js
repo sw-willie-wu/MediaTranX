@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
 import http from 'http';
 import fs from 'fs';
+import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -17,12 +18,34 @@ let viteProcess = null;
 const BACKEND_PORT = 8001;
 const FRONTEND_DEV_PORT = 8000;
 
+// 取得應用程式資料目錄
+function getAppDataPath() {
+  const appData = process.env.APPDATA || (process.platform === 'darwin' ? join(os.homedir(), 'Library', 'Application Support') : join(os.homedir(), '.config'));
+  const path = join(appData, 'MediaTranX');
+  if (!fs.existsSync(path)) {
+    fs.mkdirSync(path, { recursive: true });
+  }
+  return path;
+}
+
+// 檢查並確保環境目錄存在 (BUILD_STRATEGY.md)
+async function ensureVenv(window) {
+  if (!app.isPackaged) return;
+
+  const appDataPath = getAppDataPath();
+  const venvPath = join(appDataPath, '.venv');
+  
+  // 基礎依賴已在 core.exe (Nuitka) 中
+  // 這裡只確保目錄存在，未來 uv sync --extra ai 會用到
+  if (!fs.existsSync(venvPath)) {
+    console.log('Creating initial data directory...');
+    fs.mkdirSync(venvPath, { recursive: true });
+  }
+}
+
 function startViteDevServer() {
   console.log('Starting Vite dev server on port', FRONTEND_DEV_PORT);
-
-  // Windows 上使用 npm.cmd
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-
   viteProcess = spawn(npmCmd, ['run', 'dev'], {
     cwd: __dirname,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -30,27 +53,12 @@ function startViteDevServer() {
     env: { ...process.env, FORCE_COLOR: '1' }
   });
 
-  viteProcess.stdout.on('data', (data) => {
-    console.log(`[Vite] ${data}`);
-  });
-
-  viteProcess.stderr.on('data', (data) => {
-    console.error(`[Vite] ${data}`);
-  });
-
-  viteProcess.on('close', (code) => {
-    console.log(`Vite dev server exited with code ${code}`);
-  });
-
-  viteProcess.on('error', (err) => {
-    console.error('Failed to start Vite dev server:', err);
-  });
+  viteProcess.stdout.on('data', (data) => console.log(`[Vite] ${data}`));
+  viteProcess.stderr.on('data', (data) => console.error(`[Vite] ${data}`));
 }
 
 function stopViteDevServer() {
   if (viteProcess) {
-    console.log('Stopping Vite dev server...');
-    // Windows 上需要 kill 整個進程樹
     if (process.platform === 'win32') {
       spawn('taskkill', ['/pid', viteProcess.pid, '/f', '/t']);
     } else {
@@ -60,45 +68,17 @@ function stopViteDevServer() {
   }
 }
 
-// 等待服務啟動
-function waitForServer(port, maxAttempts = 30) {
+function waitForServer(port, maxAttempts = 60) {
   return new Promise((resolve, reject) => {
     let attempts = 0;
-    let resolved = false;
-
     const check = () => {
-      if (resolved) return;
       attempts++;
-      console.log(`Checking if port ${port} is ready... (attempt ${attempts}/${maxAttempts})`);
-
-      const req = http.get(`http://localhost:${port}/`, (res) => {
-        if (!resolved) {
-          resolved = true;
-          console.log(`Port ${port} is ready!`);
-          res.destroy();
-          resolve();
-        }
-      });
-
-      req.on('error', () => {
-        if (resolved) return;
-        if (attempts >= maxAttempts) {
-          resolved = true;
-          reject(new Error(`Server on port ${port} not ready after ${maxAttempts} attempts`));
-        } else {
-          setTimeout(check, 500);
-        }
-      });
-
-      req.setTimeout(1000, () => {
-        req.destroy();
-        if (resolved) return;
-        if (attempts >= maxAttempts) {
-          resolved = true;
-          reject(new Error(`Server on port ${port} timeout`));
-        } else {
-          setTimeout(check, 500);
-        }
+      http.get(`http://localhost:${port}/`, (res) => {
+        res.destroy();
+        resolve();
+      }).on('error', () => {
+        if (attempts >= maxAttempts) reject(new Error(`Server on port ${port} not ready`));
+        else setTimeout(check, 1000);
       });
     };
     check();
@@ -109,59 +89,71 @@ function startPythonBackend() {
   const isDev = !app.isPackaged;
 
   if (isDev) {
-    // 開發模式：使用 venv 的 python
     const projectRoot = join(__dirname, '..', '..');
-    const venvPython = join(projectRoot, '.venv', 'Scripts', 'python.exe');
+    console.log('Starting Python backend (dev) via uv run...');
 
-    console.log('Starting Python backend (dev) on port', BACKEND_PORT);
-
-    pythonProcess = spawn(venvPython, [
-      '-m', 'uvicorn', 'backend.main:app',
+    pythonProcess = spawn('uv', [
+      'run', '--project', projectRoot,
+      'python', '-m', 'uvicorn', 'backend.main:app',
       '--host', '127.0.0.1',
       '--port', String(BACKEND_PORT)
     ], {
       cwd: join(projectRoot, 'src'),
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      shell: true
     });
   } else {
-    // 生產模式：使用 PyInstaller 打包的 backend.exe
-    const backendExe = join(process.resourcesPath, 'backend', 'backend.exe');
+    // 生產模式：實作資源路徑探測 (配合 Nuitka Standalone 模式)
+    const possiblePaths = [
+      join(process.resourcesPath, 'core_engine', 'main.dist', 'core.exe'),
+      join(process.resourcesPath, 'core.exe'),
+      join(dirname(app.getPath('exe')), 'resources', 'core_engine', 'main.dist', 'core.exe')
+    ];
 
-    console.log('Starting backend (production):', backendExe);
+    let backendExe = null;
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        backendExe = p;
+        break;
+      }
+    }
+
+    if (!backendExe) {
+      const errorMsg = `找不到核心後端組件。\n已嘗試路徑：\n${possiblePaths.join('\n')}`;
+      dialog.showErrorBox('啟動失敗', errorMsg);
+      app.quit();
+      return;
+    }
+
+    const appDataPath = getAppDataPath();
+    const backendLog = join(appDataPath, 'core_debug.log');
+    const logStream = fs.createWriteStream(backendLog, { flags: 'a' });
+    logStream.write(`\n--- Core Engine Start Attempt: ${new Date().toISOString()} ---\n`);
+    logStream.write(`Path: ${backendExe}\n`);
 
     pythonProcess = spawn(backendExe, [], {
+      cwd: dirname(backendExe),
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env }
+      env: { ...process.env },
+      windowsHide: true
+    });
+
+    pythonProcess.stdout.pipe(logStream);
+    pythonProcess.stderr.pipe(logStream);
+    
+    pythonProcess.on('error', (err) => {
+      logStream.write(`Spawn Error: ${err.message}\n`);
     });
   }
 
-  pythonProcess.stdout.on('data', (data) => {
-    console.log(`[Python] ${data}`);
-  });
-
-  pythonProcess.stderr.on('data', (data) => {
-    console.error(`[Python] ${data}`);
-  });
-
-  pythonProcess.on('close', (code) => {
-    console.log(`Python backend exited with code ${code}`);
-  });
-
-  pythonProcess.on('error', (err) => {
-    console.error('Failed to start Python backend:', err);
-  });
+  pythonProcess.stdout.on('data', (data) => console.log(`[Python] ${data}`));
+  pythonProcess.stderr.on('data', (data) => console.error(`[Python] ${data}`));
 }
 
 function stopPythonBackend() {
   if (pythonProcess) {
-    console.log('Stopping Python backend...');
     if (process.platform === 'win32') {
-      // 使用 taskkill /t 確保子進程也被終止
-      try {
-        execSync(`taskkill /f /t /pid ${pythonProcess.pid}`, { stdio: 'ignore' });
-      } catch (e) {
-        // 進程可能已經退出
-      }
+      try { execSync(`taskkill /f /t /pid ${pythonProcess.pid}`, { stdio: 'ignore' }); } catch (e) {}
     } else {
       pythonProcess.kill();
     }
@@ -176,71 +168,28 @@ function createWindow() {
     width: 1440,
     height: 900,
     frame: false,
-    show: true, // 立即顯示（背景色），減少啟動感知延遲
+    show: true,
     backgroundColor: '#1f1c2c',
     icon: join(__dirname, 'src', 'assets', 'icon.ico'),
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false  // 需要關閉 sandbox 才能使用 File.path 取得檔案路徑
+      sandbox: false
     }
   });
 
-  mainWindow.on('maximize', () => {
-    mainWindow.webContents.send('window-maximized', true);
-  });
+  mainWindow.on('maximize', () => mainWindow.webContents.send('window-maximized', true));
+  mainWindow.on('unmaximize', () => mainWindow.webContents.send('window-maximized', false));
+  if (!app.isPackaged) mainWindow.webContents.openDevTools();
 
-  mainWindow.on('unmaximize', () => {
-    mainWindow.webContents.send('window-maximized', false);
-  });
-
-  // 開發模式下開啟 DevTools
-  if (!app.isPackaged) {
-    mainWindow.webContents.openDevTools();
-  }
-
-  ipcMain.on('minimize-window', () => {
-    if (mainWindow) {
-      mainWindow.minimize();
-    }
-  })
-
-  // 監聽最大化/還原事件
+  ipcMain.on('minimize-window', () => mainWindow?.minimize());
   ipcMain.on('maximize-window', () => {
-    if (mainWindow) {
-      if (mainWindow.isMaximized()) {
-        mainWindow.restore();  // 還原
-      } else {
-        mainWindow.maximize();  // 最大化
-      }
-    }
-  })
-
-  ipcMain.handle('check-maximized', () => {
-    return mainWindow.isMaximized();
-  })
-
-  // 監聽關閉事件
-  ipcMain.on('close-window', () => {
-    if (mainWindow) {
-      mainWindow.close();
-    }
-  })
-
-  // 選擇資料夾對話框
-  ipcMain.handle('select-folder', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openDirectory', 'createDirectory'],
-      title: '選擇輸出資料夾'
-    });
-    if (result.canceled) {
-      return null;
-    }
-    return result.filePaths[0];
-  })
-
-  // 重新啟動應用程式（CUDA 安裝後使用）
+    if (mainWindow?.isMaximized()) mainWindow.restore();
+    else mainWindow?.maximize();
+  });
+  ipcMain.handle('check-maximized', () => mainWindow?.isMaximized());
+  ipcMain.on('close-window', () => mainWindow?.close());
   ipcMain.on('restart-app', () => {
     stopViteDevServer();
     stopPythonBackend();
@@ -248,85 +197,48 @@ function createWindow() {
     app.exit(0);
   });
 
-  // 下載後端檔案到本機路徑
-  ipcMain.handle('download-to-path', async (event, { url, destPath }) => {
-    return new Promise((resolve, reject) => {
-      const parsedUrl = new URL(url);
-      const req = http.get({ host: parsedUrl.hostname, port: parsedUrl.port, path: parsedUrl.pathname + parsedUrl.search }, (res) => {
-        if (res.statusCode !== 200) {
-          reject(new Error(`HTTP ${res.statusCode}`));
-          return;
-        }
-        const file = fs.createWriteStream(destPath);
-        res.pipe(file);
-        file.on('finish', () => { file.close(); resolve(true); });
-        file.on('error', (err) => { fs.unlink(destPath, () => {}); reject(err); });
-      });
-      req.on('error', reject);
+  ipcMain.handle('select-folder', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: '選擇輸出資料夾'
     });
+    return result.canceled ? null : result.filePaths[0];
   });
-
-  // 另存新檔對話框
-  ipcMain.handle('save-file-dialog', async (event, options) => {
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: options.title || '另存新檔',
-      defaultPath: options.defaultPath || '',
-      filters: options.filters || []
-    });
-    if (result.canceled) {
-      return null;
-    }
-    return result.filePath;
-  })
 }
 
-// 應用程式初始化完成後
 app.whenReady().then(async () => {
-  const isDev = !app.isPackaged;
+  createWindow();
+  mainWindow.loadFile(join(__dirname, 'splash.html'));
 
-  if (isDev) {
-    // 開發模式：先顯示 splash 畫面，等前後端都就緒後載入頁面
-    console.log('Development mode - starting Vite and Python backend...');
-    startViteDevServer();
-    startPythonBackend();
-    createWindow();
-    mainWindow.loadFile(join(__dirname, 'splash.html'));
-    try {
+  try {
+    const isDev = !app.isPackaged;
+    if (isDev) {
+      startViteDevServer();
+      startPythonBackend();
       await Promise.all([
         waitForServer(FRONTEND_DEV_PORT),
         waitForServer(BACKEND_PORT),
       ]);
       mainWindow.loadURL(`http://localhost:${FRONTEND_DEV_PORT}/`);
-    } catch (err) {
-      console.error('Failed to start dev servers:', err);
-    }
-  } else {
-    // 生產模式：啟動 backend.exe，等就緒後載入前端（由後端 serve）
-    console.log('Production mode - starting backend...');
-    startPythonBackend();
-    createWindow();
-    mainWindow.loadFile(join(__dirname, 'splash.html'));
-    try {
+    } else {
+      await ensureVenv(mainWindow);
+      startPythonBackend();
       await waitForServer(BACKEND_PORT);
       mainWindow.loadURL(`http://localhost:${BACKEND_PORT}/`);
-    } catch (err) {
-      console.error('Failed to start backend:', err);
     }
+  } catch (err) {
+    console.error('Initialization failed:', err);
+    dialog.showErrorBox('啟動失敗', `應用程式初始化過程中發生錯誤：\n${err.message}`);
+    app.quit();
   }
-
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
 });
 
-// 所有視窗關閉時
-app.on('window-all-closed', function () {
+app.on('window-all-closed', () => {
   stopViteDevServer();
   stopPythonBackend();
   if (process.platform !== 'darwin') app.quit();
 });
 
-// 應用程式退出前
 app.on('before-quit', () => {
   stopViteDevServer();
   stopPythonBackend();
