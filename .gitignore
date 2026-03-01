@@ -1,4 +1,5 @@
 # Python venv
+.venv/
 Include/
 Lib/
 Scripts/
@@ -26,6 +27,7 @@ test_*.txt
 src/backend/static/
 build/dist/
 build/work/
+build/*
 src/frontend/dist_electron/
 
 # Binaries (keep README)
@@ -40,6 +42,3 @@ models/
 .claude/
 CLAUDE.md
 nul
-
-# For build
-resources/*
