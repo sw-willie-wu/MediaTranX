@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from backend.core.ffmpeg import FFmpeg, FFmpegError, get_ffmpeg
 from backend.core.ai.whisper import WhisperWrapper, get_whisper, TranscribeResult
-from backend.core.ai.translation import get_translator
+from backend.core.ai.translate import get_translator
 from backend.services.files.file_service import FileService, get_file_service
 from backend.workers.task_manager import TaskManager, get_task_manager
 
@@ -302,10 +302,10 @@ class SubtitleService:
                     )
                     # 翻譯模型已在 translate_segments() 的 finally 中自動卸載
 
-                result.segments = [
-                    TranscribeSegment(s["start"], s["end"], s["text"])
-                    for s in translated
-                ]
+                    result.segments = [
+                        TranscribeSegment(s["start"], s["end"], s["text"])
+                        for s in translated
+                    ]
 
             # === 最終階段: 寫入字幕檔 ===
             write_start = 0.95 if has_translation else 0.90

@@ -61,7 +61,8 @@ async def stream_progress(task_id: str):
 
     async def event_generator():
         async for event in task_manager.progress_tracker.subscribe(task_id):
-            yield f"data: {event.to_json()}\n\n"
+            if event is not None:
+                yield f"data: {event.to_json()}\n\n"
 
     return StreamingResponse(
         event_generator(),
