@@ -96,15 +96,16 @@ class WhisperWrapper:
 
                 self._model = None
                 self._current_model_size = None
-                get_model_manager().mark_unloaded(SLOT_WHISPER)
+                get_model_manager().release(SLOT_WHISPER)
 
     def get_model_status(self, model_size: str = "medium") -> dict:
         """查詢模型狀態（僅檢查套件與模型檔，不偵測 GPU）"""
-        try:
-            import faster_whisper  # noqa: F401
-            available = True
-        except Exception:
-            available = False
+        # 改用檔案存在檢查：打包環境下 import faster_whisper 會因 PyAV 缺少
+        # FFmpeg shared libraries 而失敗，但實際推理時不走此路徑（WhisperModel
+        # 直接使用 ctranslate2，av 只在 audio.py 工具函式中才 import）。
+        from backend.core.paths import get_base_data_dir
+        venv_fw = get_base_data_dir() / ".venv" / "Lib" / "site-packages" / "faster_whisper"
+        available = venv_fw.is_dir()
 
         return {
             "available": available,
@@ -124,7 +125,11 @@ class WhisperWrapper:
 
         # 優先檢查平面目錄（local_dir 模式，無 symlink）
         local_dir = self._get_local_model_dir(model_size)
-        if local_dir.exists() and (local_dir / "model.bin").exists():
+        # vocabulary 檔案有兩種格式：
+        #   vocabulary.txt (tiny/base/small/medium, SentencePiece)
+        #   vocabulary.json (large-v3, Tiktoken 新格式)
+        has_vocab = (local_dir / "vocabulary.txt").exists() or (local_dir / "vocabulary.json").exists()
+        if local_dir.exists() and (local_dir / "model.bin").exists() and has_vocab:
             return True
 
         # 相容舊版 HuggingFace cache 目錄結構
@@ -145,8 +150,9 @@ class WhisperWrapper:
         """
         local_dir = self._get_local_model_dir(model_size)
 
-        # 已下載到平面目錄
-        if local_dir.exists() and (local_dir / "model.bin").exists():
+        # 已下載到平面目錄（model.bin + vocabulary 都需存在）
+        has_vocab = (local_dir / "vocabulary.txt").exists() or (local_dir / "vocabulary.json").exists()
+        if local_dir.exists() and (local_dir / "model.bin").exists() and has_vocab:
             return str(local_dir)
 
         # 檢查舊版 cache 目錄是否有模型（相容既有下載）

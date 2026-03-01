@@ -2,7 +2,6 @@
 翻譯模型基礎類別
 將 TranslateGemma 和 Qwen3 的共用邏輯抽出，子類只需覆寫 prompt 建構方法
 """
-import gc
 import glob
 import logging
 import os
@@ -16,7 +15,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from backend.core.device import has_nvidia_gpu
-from .model_manager import get_model_manager
+from backend.core.ai.model_manager import get_model_manager
 
 logger = logging.getLogger(__name__)
 
@@ -114,18 +113,44 @@ def _setup_cuda_dll_path():
     這些 DLL 由 pip 安裝在 site-packages/nvidia/*/bin/ 下，
     但不在系統 PATH 中，需要手動加入。
 
+    同時搜尋 project venv 和 data venv（MediaTranX AI 套件安裝位置）。
     frozen 模式下跳過：CUDA 由使用者系統環境提供。
     """
     if sys.platform != "win32":
         return
-    if getattr(sys, 'frozen', False):
-        return
-    site = os.path.join(sys.prefix, "Lib", "site-packages", "nvidia")
-    if not os.path.isdir(site):
-        return
-    for bin_dir in glob.glob(os.path.join(site, "*", "bin")):
-        if bin_dir not in os.environ.get("PATH", ""):
-            os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+
+    search_roots = [sys.prefix]
+
+    # 加入 data venv（AI 套件實際安裝位置）
+    try:
+        appdata = os.environ.get('APPDATA', '')
+        if appdata:
+            data_site = os.path.join(appdata, 'MediaTranX', '.venv', 'Lib', 'site-packages')
+            if os.path.isdir(data_site):
+                search_roots.append(os.path.join(appdata, 'MediaTranX', '.venv'))
+    except Exception:
+        pass
+
+    for root in search_roots:
+        site = os.path.join(root, "Lib", "site-packages", "nvidia")
+        if os.path.isdir(site):
+            for bin_dir in glob.glob(os.path.join(site, "*", "bin")):
+                if bin_dir not in os.environ.get("PATH", ""):
+                    os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+                try:
+                    os.add_dll_directory(bin_dir)
+                except (AttributeError, OSError):
+                    pass
+
+        # 同時加入 torch/lib（llama CUDA 版本可能共用 CUDA DLL）
+        torch_lib = os.path.join(root, "Lib", "site-packages", "torch", "lib")
+        if os.path.isdir(torch_lib):
+            if torch_lib not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = torch_lib + os.pathsep + os.environ.get("PATH", "")
+            try:
+                os.add_dll_directory(torch_lib)
+            except (AttributeError, OSError):
+                pass
 
 
 _setup_cuda_dll_path()
@@ -194,8 +219,7 @@ class BaseTranslator:
                 self._current_model_size = None
                 self._current_quantization = None
                 del model
-                gc.collect()
-                get_model_manager().mark_unloaded(self.SLOT)
+                get_model_manager().release(self.SLOT)
 
     def _get_variant(self, model_size: str, quantization: Optional[str] = None) -> dict:
         """取得指定模型大小和量化的變體資訊"""
@@ -219,12 +243,11 @@ class BaseTranslator:
 
     def get_model_status(self, model_size: str = "4b", quantization: Optional[str] = None) -> dict:
         """查詢模型狀態（僅檢查套件與模型檔，不偵測 GPU）"""
-        available = True
-
-        try:
-            import llama_cpp  # noqa: F401
-        except Exception:
-            available = False
+        # 改用檔案存在檢查：打包環境下 import 可能因 DLL 找不到而失敗，
+        # 但實際推理時 llama_cpp 能正確載入（DLL 由 main.py 注入路徑後可用）。
+        from backend.core.paths import get_base_data_dir
+        venv_lc = get_base_data_dir() / ".venv" / "Lib" / "site-packages" / "llama_cpp"
+        available = venv_lc.is_dir()
 
         return {
             "available": available,
@@ -233,10 +256,23 @@ class BaseTranslator:
         }
 
     def _is_model_downloaded(self, model_size: str, quantization: Optional[str] = None) -> bool:
-        """檢查模型是否已下載到本地"""
+        """檢查模型是否已下載到本地（同時驗證檔案大小）"""
         try:
             variant = self._get_variant(model_size, quantization)
         except ValueError:
+            return False
+
+        # 優先：平坦路徑（直接放在 models_dir 下）
+        flat_path = self._MODELS_DIR / variant["filename"]
+        if flat_path.exists():
+            expected_bytes = variant["size_mb"] * 1024 * 1024
+            actual_bytes = flat_path.stat().st_size
+            if actual_bytes >= expected_bytes * 0.9:
+                return True
+            logger.warning(
+                f"Model file {flat_path.name} is incomplete: "
+                f"{actual_bytes // (1024 * 1024)}MB / {variant['size_mb']}MB expected"
+            )
             return False
 
         try:
@@ -248,7 +284,7 @@ class BaseTranslator:
             )
             return result is not None and isinstance(result, str)
         except Exception:
-            # Fallback: 直接掃描目錄
+            # Fallback: 直接掃描 HuggingFace cache 目錄結構
             repo_dir = self._MODELS_DIR / f"models--{variant['repo_id'].replace('/', '--')}"
             if repo_dir.exists():
                 snapshots = repo_dir / "snapshots"
@@ -263,6 +299,11 @@ class BaseTranslator:
     def _download_model(self, model_size: str, quantization: Optional[str] = None, on_progress=None) -> str:
         """下載模型，回傳本地路徑"""
         variant = self._get_variant(model_size, quantization)
+
+        # 優先使用平坦路徑（直接放在 models_dir 下）
+        flat_path = self._MODELS_DIR / variant["filename"]
+        if flat_path.exists():
+            return str(flat_path)
 
         try:
             from huggingface_hub import hf_hub_download
@@ -283,7 +324,7 @@ class BaseTranslator:
         model_path = hf_hub_download(
             repo_id=variant["repo_id"],
             filename=variant["filename"],
-            cache_dir=str(self._MODELS_DIR),
+            local_dir=str(self._MODELS_DIR),
         )
 
         if needs_download:
@@ -331,9 +372,10 @@ class BaseTranslator:
 
         try:
             from llama_cpp import Llama
-        except ImportError:
+        except ImportError as _e:
+            logger.error(f"llama_cpp ImportError: {_e}", exc_info=True)
             raise RuntimeError(
-                "翻譯功能需要安裝 llama-cpp-python，請先安裝翻譯功能"
+                f"翻譯功能需要安裝 llama-cpp-python，請先安裝翻譯功能\n原始錯誤: {_e}"
             )
 
         # 下載模型（如果尚未下載）
@@ -409,24 +451,49 @@ class BaseTranslator:
                 is_memory_error = any(x in error_msg for x in [
                     "memory", "cuda", "gpu", "alloc", "context",
                 ])
+                # 僅在確定是檔案系統/格式問題時才自動刪除
+                is_file_error = any(x in error_msg for x in [
+                    "no such file", "cannot open",
+                    "invalid file", "not a gguf",
+                ])
+                # "failed to load model" 可能是版本不支援該架構（不刪除）
+                is_load_failure = "failed to load model" in error_msg
 
-                if n_gpu_layers > 0 and is_memory_error:
+                if is_file_error:
+                    # 真正的檔案損壞或不完整 → 自動刪除，讓使用者重新下載
+                    try:
+                        Path(model_path).unlink()
+                        logger.warning(f"Deleted corrupt model file: {model_path}")
+                    except Exception:
+                        pass
+                    raise RuntimeError(
+                        f"模型檔案損壞或下載不完整（{Path(model_path).name}），"
+                        "已自動刪除，請前往「AI 模組管理」重新下載"
+                    )
+                elif is_load_failure and not is_memory_error:
+                    # 無法載入模型（可能是版本不支援此架構，不刪除檔案）
+                    logger.error(f"Model load failure (not memory): {e}")
+                    raise RuntimeError(
+                        f"無法載入模型 {Path(model_path).name}。\n"
+                        "可能原因：\n"
+                        "1. llama-cpp-python 版本不支援此模型架構"
+                        "（請前往設定 → AI 模組安裝，重新安裝翻譯功能）\n"
+                        "2. 若剛下載完成，模型可能不完整（請重新下載）"
+                    )
+                elif n_gpu_layers > 0 and is_memory_error:
                     n_gpu_layers = max(0, n_gpu_layers - 4)
                     logger.warning(
                         f"GPU memory error, retrying with {n_gpu_layers} layers: {e}"
                     )
-                    gc.collect()
                 elif n_gpu_layers > 0:
                     logger.warning(f"GPU load failed, falling back to CPU: {e}")
                     n_gpu_layers = 0
-                    gc.collect()
                 elif is_memory_error and n_ctx > min_n_ctx:
                     # CPU 也失敗時，嘗試減少 context 長度
                     n_ctx = max(min_n_ctx, n_ctx // 2)
                     logger.warning(
                         f"CPU load failed, retrying with reduced n_ctx={n_ctx}: {e}"
                     )
-                    gc.collect()
                 else:
                     raise
 

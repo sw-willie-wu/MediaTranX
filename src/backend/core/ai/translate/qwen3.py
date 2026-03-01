@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Optional
 
 from backend.core.paths import get_models_dir
-from .model_manager import SLOT_QWEN3
-from .base_translator import (
+from backend.core.ai.model_manager import SLOT_QWEN3
+from .base import (
     BaseTranslator,
     TranslateResult,
     WHISPER_TO_BCP47,

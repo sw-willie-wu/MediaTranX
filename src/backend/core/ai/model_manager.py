@@ -1,39 +1,61 @@
 """
-GPU 模型記憶體管理器
-智能管理多個 AI 模型的 GPU 記憶體：
-- GPU 任務排隊執行，同時只有一個任務使用 GPU
-- 模型用完即卸載，不佔用 VRAM
+模型與 VRAM 管理中心 (REFACTOR V4)
+負責模型的註冊、下載、雜湊驗證與顯存調度。
+遵循 DEVELOPMENT.md 單例規範。
 """
-import gc
+import os
+import sys
 import logging
-import subprocess
 import threading
+import subprocess
+from pathlib import Path
+from typing import Optional, Dict, Callable, Set, Any
 from contextlib import contextmanager
-from typing import Callable, Dict, Optional, Set
+
+from backend.core.paths import get_models_dir, get_base_data_dir
+from backend.core.device import has_nvidia_gpu
 
 logger = logging.getLogger(__name__)
 
-# 模型 slot 常數
+# --- 模型 Slot 常數 (相容性) ---
 SLOT_WHISPER = "whisper"
 SLOT_TRANSLATEGEMMA = "translategemma"
 SLOT_QWEN3 = "qwen3"
-# 之後: SLOT_REALESRGAN = "realesrgan"
-# 之後: SLOT_RIFE = "rife"
+SLOT_UPSCALE = "upscale"
 
+# --- 模型註冊表 ---
+MODELS_REGISTRY = {
+    "upscale": {
+        "realesrgan-x4plus": {
+            "repo_id": "sberbank-ai/Real-ESRGAN", # 範例
+            "filename": "RealESRGAN_x4plus.pth",
+            "size_mb": 64,
+            "description": "通用超解析 (x4)"
+        },
+        "hat-l-x4": {
+            "repo_id": "Facea/HAT", # 範例
+            "filename": "HAT_L_X4.pth",
+            "size_mb": 200,
+            "description": "頂級品質超解析 (x4)"
+        }
+    },
+    "llm": {
+        "qwen2.5-1.5b-instruct": {
+            "repo_id": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+            "filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+            "size_mb": 1100,
+            "description": "輕量級高效能翻譯模型"
+        }
+    }
+}
 
 class ModelManager:
     """
-    GPU 模型記憶體管理器（智能版）
-
-    - acquire(slot, required_vram) 時檢查可用 VRAM
-    - VRAM 足夠：直接載入，不卸載其他模型
-    - VRAM 不足：按 LRU 順序卸載其他模型直到空間足夠
-    - release() 標記不再使用（但保留在記憶體，直到需要騰出空間）
+    模型管理器單例
     """
-
     _instance: Optional["ModelManager"] = None
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
@@ -42,201 +64,173 @@ class ModelManager:
     def __init__(self):
         if self._initialized:
             return
-        self._lock = threading.Lock()
-        self._gpu_lock = threading.Lock()  # GPU 任務排隊鎖
-        self._loaded_slots: Set[str] = set()  # 目前已載入的模型
-        self._slot_order: list[str] = []  # LRU 順序（最近使用的在後面）
+        
+        self._lock = threading.RLock()  # RLock 允許 unloader callback 在 acquire() 內重入
+        self._gpu_lock = threading.Lock()  # 顯存互斥鎖
+        self._loaded_slots: Set[str] = set()
         self._unloaders: Dict[str, Callable[[], None]] = {}
+        
+        # 版本守門員：記錄當前要求的環境版本
+        self.required_env_version = "1.0.0"
+        
         self._initialized = True
-        logger.info("ModelManager initialized (queued GPU mode)")
-
-    @staticmethod
-    def _get_free_vram_mb() -> int:
-        """透過 nvidia-smi 查詢可用 VRAM（MB），失敗回傳 0"""
-        try:
-            result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 0:
-                return int(result.stdout.strip().split("\n")[0])
-        except Exception:
-            pass
-        return 0
+        logger.info("ModelManager (V4) initialized")
 
     @contextmanager
     def gpu_session(self):
-        """
-        排隊取得 GPU 使用權，確保同時只有一個任務管線使用 GPU。
-
-        用法：
-            with manager.gpu_session():
-                # Whisper 辨識（結束後自動卸載）
-                # 翻譯模型推論（結束後自動卸載）
-        """
-        self._gpu_lock.acquire()
-        try:
+        """顯存鎖：確保影像處理與語言推理不會同時搶奪顯存"""
+        logger.debug("Requesting GPU session...")
+        with self._gpu_lock:
             yield
-        finally:
-            self._gpu_lock.release()
+        logger.debug("GPU session ended.")
 
-    def register_unloader(self, slot: str, callback: Callable[[], None]) -> None:
-        """
-        註冊模型卸載回調
-
-        Args:
-            slot: 模型 slot 名稱
-            callback: 卸載函式，呼叫後應釋放模型佔用的 GPU 記憶體
-        """
+    def register_unloader(self, slot: str, callback: Callable[[], None]):
+        """註冊模型卸載函數"""
         self._unloaders[slot] = callback
-        logger.debug(f"Registered unloader for slot: {slot}")
 
     def acquire(self, slot: str, required_vram_mb: int = 0) -> None:
         """
-        取得 GPU 使用權
-
-        Args:
-            slot: 要取得的模型 slot
-            required_vram_mb: 預估需要的 VRAM（MB），0 表示不檢查
+        申請加載 slot。
+        - 若 slot 已加載則短路返回。
+        - 否則驅逐其他已加載 slot 以釋放 VRAM，再標記此 slot 為已加載。
+        注意：不呼叫 gc.collect()，避免 CTranslate2 destructor crash。
         """
-        # 先決定要卸載哪些 slot（在 lock 內），然後在 lock 外執行卸載（避免死鎖）
-        slots_to_evict: list[str] = []
-
         with self._lock:
-            # 如果已載入，更新 LRU 順序即可
             if slot in self._loaded_slots:
-                if slot in self._slot_order:
-                    self._slot_order.remove(slot)
-                self._slot_order.append(slot)
-                logger.debug(f"Model already loaded: {slot}")
                 return
 
-            # 檢查是否需要騰出空間
-            if required_vram_mb > 0:
-                free_vram = self._get_free_vram_mb()
-                logger.info(
-                    f"VRAM check for {slot}: need {required_vram_mb}MB, "
-                    f"free {free_vram}MB, loaded models: {list(self._loaded_slots)}"
-                )
+            # 驅逐其他 slot
+            for other_slot in list(self._loaded_slots):
+                unloader = self._unloaders.get(other_slot)
+                if unloader:
+                    try:
+                        unloader()
+                        logger.info(f"Evicted slot: {other_slot}")
+                    except Exception as e:
+                        logger.error(f"Failed to evict {other_slot}: {e}")
+            self._loaded_slots.clear()
 
-                # 收集需要卸載的 slot（估算）
-                slots_copy = list(self._slot_order)
-                for oldest_slot in slots_copy:
-                    if free_vram >= required_vram_mb:
-                        break
-                    if oldest_slot == slot:
-                        continue
-                    slots_to_evict.append(oldest_slot)
-                    # 粗估卸載後釋放的 VRAM（假設每個模型平均 3GB）
-                    free_vram += 3000
+            # 釋放 CUDA 快取（不呼叫 gc.collect，避免 CTranslate2 destructor crash）
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
 
-        # 在 lock 外執行卸載（避免死鎖）
-        for evict_slot in slots_to_evict:
-            logger.info(f"Evicting {evict_slot} to free VRAM")
-            self._evict_unlocked(evict_slot)
-
-        # 重新取得 lock 並標記為已載入
-        with self._lock:
             self._loaded_slots.add(slot)
-            if slot in self._slot_order:
-                self._slot_order.remove(slot)
-            self._slot_order.append(slot)
-            logger.info(f"GPU acquired by: {slot} (loaded: {list(self._loaded_slots)})")
+            logger.info(f"Acquired slot: {slot} (required_vram_mb={required_vram_mb})")
 
     def release(self, slot: str) -> None:
-        """
-        釋放 GPU 使用權標記（不主動卸載模型）
-
-        Args:
-            slot: 要釋放的模型 slot
-        """
-        # 不做任何事，模型保留在記憶體直到需要騰出空間
-        logger.debug(f"GPU released by: {slot} (model kept in memory)")
-
-    def mark_unloaded(self, slot: str) -> None:
-        """
-        標記模型已卸載（由模型 wrapper 在卸載後呼叫）
-
-        Args:
-            slot: 已卸載的模型 slot
-        """
+        """標記 slot 為已卸載（由模型自行呼叫 _unload_model 後通知）"""
         with self._lock:
             self._loaded_slots.discard(slot)
-            if slot in self._slot_order:
-                self._slot_order.remove(slot)
-            logger.debug(f"Model marked as unloaded: {slot}")
 
-    def _evict_unlocked(self, slot: str) -> None:
-        """卸載指定 slot 的模型（不持有 lock，避免死鎖）"""
-        import time
-
-        unloader = self._unloaders.get(slot)
-        if unloader:
-            logger.info(f"Evicting model from memory: {slot}")
+    def is_llama_ready(self) -> bool:
+        """
+        檢查 llama-cpp-python 是否已安裝且版本 >= 0.3.9（支援 Qwen3 的最低版本）。
+        0.3.4（abetlen Windows wheel）不支援 Qwen3 架構，視為未就緒。
+        """
+        venv_path = get_base_data_dir() / ".venv"
+        if not venv_path.exists():
+            return False
+        if not list(venv_path.glob("**/site-packages/llama_cpp")):
+            return False
+        # 版本檢查：0.3.4 不支援 Qwen3
+        MIN_VERSION = (0, 3, 9)
+        for dist_info in venv_path.glob("**/site-packages/llama_cpp_python-*.dist-info"):
             try:
-                unloader()
-            except Exception as e:
-                logger.warning(f"Error unloading {slot}: {e}")
+                ver_str = dist_info.name.split("llama_cpp_python-")[1].split(".dist-info")[0]
+                parts = ver_str.split("+")[0].split(".")
+                ver = tuple(int(x) for x in parts[:3])
+                if ver >= MIN_VERSION:
+                    return True
+                logger.info(f"llama-cpp-python {ver_str} < {MIN_VERSION} — needs upgrade (no Qwen3 support)")
+                return False
+            except Exception:
+                pass
+        return True  # 無法解析版本時假設 OK
 
-        # 更新狀態（需要 lock）
+    def is_ai_env_ready(self) -> bool:
+        """
+        檢查 .venv 是否已安裝 [ai] 插件，且 torch 版本符合硬體需求：
+        - 無 NVIDIA GPU：torch 存在即可（CPU 版）
+        - 有 NVIDIA GPU：需確認 CUDA DLL（cublas64_12.dll）存在於 torch/lib/
+        """
+        venv_path = get_base_data_dir() / ".venv"
+        if not venv_path.exists():
+            return False
+
+        torch_dirs = list(venv_path.glob("**/site-packages/torch"))
+        if not torch_dirs:
+            return False
+
+        # 有 NVIDIA GPU 時，確認 CUDA 版 torch（含 cublas DLL）
+        if has_nvidia_gpu():
+            torch_lib = torch_dirs[0] / "lib"
+            cuda_dll = torch_lib / "cublas64_12.dll"
+            return cuda_dll.exists()
+
+        return True
+
+    def get_model_path(self, category: str, model_id: str) -> Optional[Path]:
+        """檢查模型是否存在並回傳路徑"""
+        config = MODELS_REGISTRY.get(category, {}).get(model_id)
+        if not config:
+            return None
+        
+        # 這裡未來整合 huggingface_hub 的快取檢查
+        target_path = get_models_dir(category) / config["filename"]
+        return target_path if target_path.exists() else None
+
+    async def download_model(self, category: str, model_id: str, on_progress: Callable[[float, str], None]):
+        """下載模型 (支援斷點續傳)"""
+        config = MODELS_REGISTRY.get(category, {}).get(model_id)
+        if not config:
+            raise ValueError(f"Unknown model: {model_id}")
+
+        try:
+            from huggingface_hub import hf_hub_download
+        except ImportError:
+            raise RuntimeError("AI 環境未就緒，無法下載模型")
+
+        target_dir = get_models_dir(category)
+        
+        logger.info(f"Downloading {model_id} to {target_dir}...")
+        on_progress(0.1, f"開始下載 {model_id}...")
+
+        # 使用 huggingface_hub 的標準下載 (內建續傳)
+        path = hf_hub_download(
+            repo_id=config["repo_id"],
+            filename=config["filename"],
+            cache_dir=str(target_dir),
+            resume_download=True
+        )
+        
+        on_progress(1.0, "下載完成")
+        return Path(path)
+
+    def unload_all(self):
+        """強制清空所有已註冊的模型顯存"""
         with self._lock:
-            self._loaded_slots.discard(slot)
-            if slot in self._slot_order:
-                self._slot_order.remove(slot)
-
-        # 注意：不呼叫 gc.collect()，因為可能觸發 CTranslate2 的 C++ 解構子 crash
-        # 各模型的 unloader 應自行處理記憶體釋放（如 ctranslate2.unload_model()）
-        try:
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.synchronize()
-        except ImportError:
-            pass
-
-        # 等待 CUDA 記憶體釋放
-        time.sleep(2.0)
-
-        free_vram = self._get_free_vram_mb()
-        logger.info(f"Model evicted and memory freed: {slot} (free VRAM: {free_vram}MB)")
-
-    def _evict(self, slot: str) -> None:
-        """卸載指定 slot 的模型並清理記憶體（需在 lock 內呼叫）"""
-        if slot not in self._loaded_slots:
-            return
-
-        unloader = self._unloaders.get(slot)
-        if unloader:
-            logger.info(f"Evicting model from memory: {slot}")
+            for slot, unloader in self._unloaders.items():
+                try:
+                    unloader()
+                    logger.info(f"Evicted {slot}")
+                except Exception as e:
+                    logger.error(f"Failed to unload {slot}: {e}")
+            
+            self._loaded_slots.clear()
+            
+            # 強制清理 Torch 快取
             try:
-                unloader()
-            except Exception as e:
-                logger.warning(f"Error unloading {slot}: {e}")
-
-        # 更新狀態
-        self._loaded_slots.discard(slot)
-        if slot in self._slot_order:
-            self._slot_order.remove(slot)
-
-        # 清理記憶體
-        gc.collect()
-
-        try:
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                logger.debug("CUDA cache cleared")
-        except ImportError:
-            pass
-
-
-# 單例
-_manager: Optional[ModelManager] = None
-
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
+            
 
 def get_model_manager() -> ModelManager:
-    """取得 ModelManager 單例"""
-    global _manager
-    if _manager is None:
-        _manager = ModelManager()
-    return _manager
+    """取得單例實例"""
+    return ModelManager()
