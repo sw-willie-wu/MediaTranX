@@ -19,17 +19,50 @@ from fastapi import FastAPI
 # --- 1. 環境與環境路徑注入 (BUILD_STRATEGY.md) ---
 _appdata = os.environ.get('APPDATA', '')
 if _appdata:
-    # 注入外部 .venv site-packages
+    # 注入外部 .venv site-packages（即使目錄尚不存在也先加入，安裝後即可 import）
     _venv_site = os.path.join(_appdata, 'MediaTranX', '.venv', 'Lib', 'site-packages')
-    if os.path.isdir(_venv_site):
-        # 使用 append 而非 insert(0)，確保優先使用內建包，避免 ssl 等核心包衝突
-        if _venv_site not in sys.path:
-            sys.path.append(_venv_site)
-        
-        # 處理 torch 等 DLL
-        _torch_lib = os.path.join(_venv_site, 'torch', 'lib')
-        if os.path.isdir(_torch_lib) and hasattr(os, 'add_dll_directory'):
-            try: os.add_dll_directory(_torch_lib)
+    if _venv_site not in sys.path:
+        sys.path.append(_venv_site)
+
+    # 處理 Python 套件 DLL（需目錄存在才能 add_dll_directory）
+    # python.exe 啟動時會自動把自己的目錄加入 DLL 搜尋，core.exe 不會，需手動補齊
+    if hasattr(os, 'add_dll_directory'):
+        _venv_base = os.path.join(_appdata, 'MediaTranX', '.venv')
+        _dll_dirs = [
+            os.path.join(_venv_base, 'Scripts'),           # python312.dll 等
+            os.path.join(_venv_site, 'torch', 'lib'),      # torch CUDA DLL
+            os.path.join(_venv_site, 'ctranslate2'),        # ctranslate2 DLL（faster-whisper 底層）
+            os.path.join(_venv_site, 'tokenizers'),         # tokenizers .pyd 同層 DLL
+            os.path.join(_venv_site, 'llama_cpp', 'lib'),  # llama.dll / ggml.dll / ggml-cuda.dll
+        ]
+        for _d in _dll_dirs:
+            if os.path.isdir(_d):
+                try: os.add_dll_directory(_d)
+                except Exception: pass
+
+        # 動態掃描 site-packages 下所有 .libs 目錄（delvewheel 打包慣例）
+        # av.libs, numpy.libs, scipy.libs, llvmlite.libs ... 等均需加入
+        if os.path.isdir(_venv_site):
+            try:
+                for _entry in os.scandir(_venv_site):
+                    if _entry.is_dir() and _entry.name.endswith('.libs'):
+                        try: os.add_dll_directory(_entry.path)
+                        except Exception: pass
+            except Exception: pass
+
+        # 從 pyvenv.cfg 讀取 base Python 安裝目錄（uv 管理，含 vcruntime140.dll）
+        # 外部 .pyd 連結 vcruntime140.dll 時，這個目錄必須在搜尋路徑中
+        _pyvenv_cfg = os.path.join(_venv_base, 'pyvenv.cfg')
+        if os.path.isfile(_pyvenv_cfg):
+            try:
+                with open(_pyvenv_cfg, 'r', encoding='utf-8') as _f:
+                    for _line in _f:
+                        if _line.lower().startswith('home'):
+                            _py_home = _line.split('=', 1)[1].strip()
+                            if os.path.isdir(_py_home):
+                                try: os.add_dll_directory(_py_home)
+                                except Exception: pass
+                            break
             except Exception: pass
 
 # CUDA DLL 路徑注入 (Windows)
@@ -42,6 +75,11 @@ if sys.platform == "win32" and _appdata:
             except Exception: pass
 
 # --- 2. 日誌配置 ---
+if not getattr(sys, 'frozen', False):
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    )
 if getattr(sys, 'frozen', False):
     log_dir = Path(_appdata) / 'MediaTranX'
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -65,6 +103,12 @@ app = build_router(app)
 # --- 4. 服務啟動邏輯 ---
 if __name__ == "__main__":
     import uvicorn
-    # 打包後 backend.exe 直接執行此處
-    # 開發模式下 Electron main.js 也可透過 `python -m backend.main` 啟動
-    uvicorn.run(app, host="127.0.0.1", port=8001, log_level="info")
+    import argparse
+
+    parser = argparse.ArgumentParser(description="MediaTranX Backend")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to listen on")
+    parser.add_argument("--port", type=int, default=8001, help="Port to listen on")
+    args = parser.parse_args()
+
+    # 執行後端服務
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
