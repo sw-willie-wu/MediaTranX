@@ -3,6 +3,7 @@ GPU/CPU 自動偵測模組
 自動選擇最佳運算裝置和精度設定
 支援透過 PyTorch 或 CTranslate2 偵測 CUDA
 """
+import sys
 import logging
 from functools import lru_cache
 
@@ -92,31 +93,33 @@ def _detect_cuda_via_ctranslate2() -> str | None:
     return None
 
 
+def has_directml() -> bool:
+    """
+    偵測是否支援 DirectML (Windows AMD/Intel GPU 加速)
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import onnxruntime as ort
+        return "DmlExecutionProvider" in ort.get_available_providers()
+    except Exception:
+        return False
+
 @lru_cache(maxsize=1)
 def get_device() -> str:
     """
     自動偵測最佳運算裝置
-    依序嘗試: PyTorch → CTranslate2 → fallback CPU
-    額外檢查 CUDA runtime 是否可用（有 GPU 不代表有 CUDA Toolkit）
-
-    Returns:
-        str: "cuda" | "mps" | "cpu"
+    優先級: CUDA -> DirectML -> CPU
     """
-    # 1. 嘗試 PyTorch 偵測
-    device = _detect_cuda_via_torch()
-    if device == "cuda":
-        if is_cuda_runtime_available():
-            return "cuda"
-        logger.warning("CUDA detected via PyTorch but CUDA runtime (cublas) not available")
-    elif device:  # mps
-        return device
-
-    # 2. 嘗試 CTranslate2 偵測
-    device = _detect_cuda_via_ctranslate2()
-    if device == "cuda":
-        if is_cuda_runtime_available():
-            return "cuda"
-        logger.warning("CUDA detected via CTranslate2 but CUDA runtime (cublas) not available")
+    # 1. 嘗試 CUDA
+    cuda = _detect_cuda_via_torch() or _detect_cuda_via_ctranslate2()
+    if cuda == "cuda" and is_cuda_runtime_available():
+        return "cuda"
+    
+    # 2. 嘗試 DirectML (AMD/Intel)
+    if has_directml():
+        logger.info("Using DirectML for hardware acceleration")
+        return "dml"
 
     # 3. Fallback CPU
     if has_nvidia_gpu():
@@ -164,6 +167,9 @@ def get_device_info() -> dict:
     compute_type = get_compute_type()
     cuda_runtime = is_cuda_runtime_available()
 
+    ram_total, ram_available = _get_ram_info()
+    os_name, os_version = _get_os_name()
+    cpu_name, cpu_count = _get_cpu_info()
     info = {
         "device": device,
         "compute_type": compute_type,
@@ -172,6 +178,13 @@ def get_device_info() -> dict:
         "memory_free": None,
         "has_nvidia_gpu": gpu_detected,
         "cuda_toolkit_installed": cuda_runtime,
+        "driver_version": get_driver_version() if gpu_detected else None,
+        "ram_total": ram_total,
+        "ram_available": ram_available,
+        "os_name": os_name,
+        "os_version": os_version,
+        "cpu_name": cpu_name,
+        "cpu_count": cpu_count,
     }
 
     # 嘗試透過 PyTorch 取得詳細 GPU 資訊
@@ -213,6 +226,104 @@ def get_device_info() -> dict:
     return info
 
 
+def _get_os_name() -> tuple[str, str]:
+    """取得 OS 名稱與版本號（Windows 區分 10/11）"""
+    import platform
+    system = platform.system()
+    if system == "Windows":
+        try:
+            build = int(platform.version().split(".")[-1])
+            os_name = "Windows 11" if build >= 22000 else "Windows 10"
+        except Exception:
+            os_name = f"Windows {platform.release()}"
+        return os_name, platform.version()
+    if system == "Darwin":
+        ver = platform.mac_ver()[0]
+        return f"macOS {ver}", ver
+    return f"{system} {platform.release()}", platform.version()
+
+
+def _get_cpu_info() -> tuple[str, int | None]:
+    """取得 CPU 名稱與邏輯核心數"""
+    import platform
+    import os as _os
+
+    cpu_count = _os.cpu_count()
+
+    if sys.platform == "win32":
+        try:
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
+            )
+            name, _ = winreg.QueryValueEx(key, "ProcessorNameString")
+            winreg.CloseKey(key)
+            if name:
+                return name.strip(), cpu_count
+        except Exception:
+            pass
+
+    if sys.platform == "darwin":
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip(), cpu_count
+        except Exception:
+            pass
+
+    try:
+        with open("/proc/cpuinfo") as f:
+            for line in f:
+                if line.startswith("model name"):
+                    name = line.split(":", 1)[1].strip()
+                    if name:
+                        return name, cpu_count
+    except Exception:
+        pass
+
+    return platform.processor() or "Unknown CPU", cpu_count
+
+
+def _get_ram_info() -> tuple[int | None, int | None]:
+    """取得系統 RAM 資訊（bytes）"""
+    try:
+        import ctypes
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("dwLength",                ctypes.c_ulong),
+                ("dwMemoryLoad",            ctypes.c_ulong),
+                ("ullTotalPhys",            ctypes.c_ulonglong),
+                ("ullAvailPhys",            ctypes.c_ulonglong),
+                ("ullTotalPageFile",        ctypes.c_ulonglong),
+                ("ullAvailPageFile",        ctypes.c_ulonglong),
+                ("ullTotalVirtual",         ctypes.c_ulonglong),
+                ("ullAvailVirtual",         ctypes.c_ulonglong),
+                ("sullAvailExtendedVirtual",ctypes.c_ulonglong),
+            ]
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.dwLength = ctypes.sizeof(self)
+        stat = MEMORYSTATUSEX()
+        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
+        return stat.ullTotalPhys, stat.ullAvailPhys
+    except Exception:
+        pass
+    # fallback: /proc/meminfo (Linux)
+    try:
+        with open("/proc/meminfo") as f:
+            lines = {k: int(v.split()[0]) * 1024
+                     for k, _, v in (l.partition(":") for l in f)
+                     if v.strip()}
+        return lines.get("MemTotal"), lines.get("MemAvailable")
+    except Exception:
+        return None, None
+
+
 def refresh_device_cache() -> None:
     """清除所有裝置偵測快取，強制重新偵測（CUDA DLL 下載後呼叫）"""
     global _device_info_cache
@@ -222,6 +333,7 @@ def refresh_device_cache() -> None:
     get_compute_type.cache_clear()
     has_nvidia_gpu.cache_clear()
     _get_gpu_name_via_smi.cache_clear()
+    get_driver_version.cache_clear()
     logger.info("Device cache cleared, will re-detect on next call")
 
 
@@ -260,3 +372,52 @@ def _get_gpu_name_via_smi() -> str | None:
     except Exception:
         pass
     return None
+
+
+@lru_cache(maxsize=1)
+def get_driver_version() -> str | None:
+    """透過 nvidia-smi 取得 NVIDIA 驅動版本號，例如 '560.94'"""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            version = result.stdout.strip().split("\n")[0].strip()
+            if version:
+                return version
+    except Exception:
+        pass
+    return None
+
+
+def select_torch_index() -> str:
+    """
+    根據 NVIDIA 驅動版本選擇對應的 PyTorch wheel 類型。
+
+    對應規則（參見 BUILD_STRATEGY.md）：
+      驅動 ≥ 560 → cu124
+      驅動 ≥ 527 → cu121
+      驅動 ≥ 452 → cu118
+      無 GPU / 太舊 → cpu
+    """
+    if not has_nvidia_gpu():
+        return "cpu"
+
+    version_str = get_driver_version()
+    if not version_str:
+        return "cu124"  # fallback：有 GPU 但無法讀版本，用最新
+
+    try:
+        major = int(version_str.split(".")[0])
+        if major >= 560:
+            return "cu124"
+        elif major >= 527:
+            return "cu121"
+        elif major >= 452:
+            return "cu118"
+        else:
+            return "cpu"  # 驅動太舊，建議升級
+    except (ValueError, IndexError):
+        return "cu124"
