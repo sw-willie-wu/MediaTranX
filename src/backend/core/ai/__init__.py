@@ -4,6 +4,7 @@ from .model_manager import (
     SLOT_WHISPER,
     SLOT_TRANSLATEGEMMA,
     SLOT_QWEN3,
+    SLOT_UPSCALE,
 )
 from .whisper import (
     WhisperWrapper,
@@ -11,37 +12,24 @@ from .whisper import (
     TranscribeSegment,
     TranscribeResult,
 )
-from .base_translator import (
+from .translate import (
     BaseTranslator,
     TranslateResult,
     SUPPORTED_LANGUAGES,
     WHISPER_TO_BCP47,
-)
-from .translategemma import (
-    TranslateGemmaWrapper,
+    get_translator,
     get_translategemma,
-)
-from .qwen3 import (
-    Qwen3Wrapper,
     get_qwen3,
+    TranslateGemmaWrapper,
+    Qwen3Wrapper,
 )
 
 __all__ = [
-    "ModelManager",
-    "get_model_manager",
-    "SLOT_WHISPER",
-    "SLOT_TRANSLATEGEMMA",
-    "SLOT_QWEN3",
-    "WhisperWrapper",
-    "get_whisper",
-    "TranscribeSegment",
-    "TranscribeResult",
-    "BaseTranslator",
-    "TranslateResult",
-    "SUPPORTED_LANGUAGES",
-    "WHISPER_TO_BCP47",
-    "TranslateGemmaWrapper",
-    "get_translategemma",
-    "Qwen3Wrapper",
-    "get_qwen3",
+    "ModelManager", "get_model_manager",
+    "SLOT_WHISPER", "SLOT_TRANSLATEGEMMA", "SLOT_QWEN3", "SLOT_UPSCALE",
+    "WhisperWrapper", "get_whisper", "TranscribeSegment", "TranscribeResult",
+    "BaseTranslator", "TranslateResult", "SUPPORTED_LANGUAGES", "WHISPER_TO_BCP47",
+    "get_translator", "get_translategemma", "get_qwen3",
+    "TranslateGemmaWrapper", "Qwen3Wrapper",
+    # upscale: import lazily via backend.core.ai.upscale
 ]
