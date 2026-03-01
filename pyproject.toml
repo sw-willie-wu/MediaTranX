@@ -1,46 +1,51 @@
 [project]
 name = "mediatranx-backend"
 version = "1.0.0"
-description = "MediaTranX Backend with FastAPI, Whisper and TranslateGemma"
+description = "MediaTranX Backend with FastAPI, Sidecar AI Support"
 requires-python = "~=3.12.0"
 dependencies = [
-    # Core Framework
+    # Core Framework (Always bundled in core.exe)
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
-    # Async File Operations
+    
+    # Base Utilities
     "aiofiles>=23.2.1",
     "python-multipart>=0.0.6",
-    # Video/Audio Processing
-    "ffmpeg-python>=0.2.0",
-    # Subtitle Processing
-    "pysrt>=1.1.2",
-    "webvtt-py>=0.4.6",
-    # Image Processing (Base)
     "Pillow>=10.2.0",
-    # AI - Basic (Always included)
-    "faster-whisper>=0.10.0",
-    "ctranslate2>=3.24.0",
+    "ffmpeg-python>=0.2.0",
+    "requests>=2.31.0",
     "tzdata",
 ]
 
 [project.optional-dependencies]
-# 進階 AI 功能 (用戶點擊後由 uv 安裝)
+# AI Extensions (Downloaded on-demand via uv)
 ai = [
+    # --- Inference Runtimes ---
     "torch>=2.5.1",
     "torchvision>=0.20.1",
+    "ctranslate2>=4.7.1",
+    "onnxruntime>=1.17.0",
+    "llama-cpp-python>=0.3.0",
+    
+    # --- Media Processing Libraries ---
+    "faster-whisper>=1.2.1",
+    "basicsr>=1.4.2",
+    "realesrgan>=0.3.0",
+    "facexlib>=0.3.0",
+    "gfpgan>=1.3.8",
     "rembg>=2.0.50",
-    "transformers>=4.48.0",
-    "sentencepiece>=0.2.0",
-    "accelerate>=1.1.0",
-    "llama-cpp-python>=0.3.0", # 用於 TranslateGemma GGUF
+    
+    # --- Download & Utils ---
+    "huggingface-hub>=0.20.0",
+    "tqdm>=4.66.0",
+    "einops>=0.7.0",
 ]
 
 [tool.uv]
 managed = true
 
-# 設定不同硬體環境的 torch 下載源
 [[tool.uv.index]]
 name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"
@@ -50,8 +55,3 @@ explicit = true
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
-
-[dependency-groups]
-dev = [
-    "nuitka>=4.0.1",
-]
