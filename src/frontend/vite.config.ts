@@ -31,7 +31,7 @@ export default defineConfig(({ mode }) => {
       open: false, // Electron 會開啟視窗，不需要自動開瀏覽器
       proxy: {
         '/api': {
-          target: 'http://localhost:8001',
+          target: `http://localhost:${process.env.VITE_BACKEND_PORT || 8001}`,
           changeOrigin: true,
         }
       },

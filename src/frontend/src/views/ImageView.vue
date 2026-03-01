@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
@@ -10,10 +11,49 @@ import { useToast } from '@/composables/useToast'
 import { useFileDownload } from '@/composables/useFileDownload'
 import type { Task } from '@/types/task'
 
+const router = useRouter()
 const filesStore = useFilesStore()
 const taskStore = useTaskStore()
 const toast = useToast()
 const { downloadFile } = useFileDownload()
+
+// AI 環境與模型狀態
+const aiEnvReady = ref(false)
+const isModelDownloaded = ref(true)
+
+async function checkAiEnvironment() {
+  try {
+    const res = await fetch('/api/setup/status')
+    const status = await res.json()
+    aiEnvReady.value = status.ai_env_ready
+    
+    if (!aiEnvReady.value && currentFunction.value === 'upscale') {
+      toast.show('超解析功能需要安裝 AI 核心環境', { 
+        type: 'info', 
+        action: { label: '去安裝', callback: () => router.push('/setup') }
+      })
+    }
+  } catch (e) {
+    console.error('Failed to check AI status', e)
+  }
+}
+
+async function checkModelStatus() {
+  if (currentFunction.value !== 'upscale' || !upscaleModel.value) return
+  try {
+    // 假設後端有提供檢查模型端點
+    const res = await fetch(`/api/models/check?category=upscale&model_id=${upscaleModel.value}`)
+    const data = await res.json()
+    isModelDownloaded.value = data.downloaded
+  } catch (e) {
+    // 若端點未實作，先預設為 true 以免卡住
+    isModelDownloaded.value = true
+  }
+}
+
+onMounted(() => {
+  checkAiEnvironment()
+})
 
 // 子功能列表
 const subFunctions = [
@@ -154,6 +194,18 @@ const upscaleModels = [
 const upscaleEngine = ref('waifu2x')
 const upscaleSharpen = ref(false)
 
+// currentFunction 與 upscaleModel 的 watcher（必須在 ref 宣告之後）
+watch(currentFunction, (val) => {
+  if (val === 'upscale') {
+    checkAiEnvironment()
+    checkModelStatus()
+  }
+})
+
+watch(upscaleModel, () => {
+  checkModelStatus()
+})
+
 // 轉檔設定
 const convertFormat = ref('png')
 const convertQuality = ref(90)
@@ -169,12 +221,35 @@ const executeDisabled = computed(() => !hasFile.value || !fileId.value || isProc
 const executeLoading = computed(() => isProcessing.value)
 
 function handleExecute() {
-  if (currentFunction.value === 'convert') {
-    executeConvert()
-  } else if (currentFunction.value === 'upscale') {
+  if (currentFunction.value === 'upscale') {
+    if (!aiEnvReady.value) {
+      router.push('/setup')
+      return
+    }
+    if (!isModelDownloaded.value) {
+      executeDownloadModel()
+      return
+    }
     executeUpscale()
+  } else if (currentFunction.value === 'convert') {
+    executeConvert()
   } else {
     executeMock()
+  }
+}
+
+async function executeDownloadModel() {
+  isProcessing.value = true
+  toast.info(`正在啟動 ${upscaleModel.value} 下載任務...`)
+  try {
+    const res = await fetch(`/api/models/download?category=upscale&model_id=${upscaleModel.value}`, { method: 'POST' })
+    const { task_id } = await res.json()
+    toast.success('下載任務已提交')
+    // 這裡未來可以監聽下載進度
+  } catch (e) {
+    toast.error('啟動下載失敗')
+  } finally {
+    isProcessing.value = false
   }
 }
 
@@ -388,6 +463,7 @@ watch(
     :current-function="currentFunction"
     :has-result="hasResult"
     :result-preview-url="resultPreviewUrl"
+    :execute-label="currentFunction === 'upscale' ? (!aiEnvReady ? '安裝 AI 核心' : (!isModelDownloaded ? '下載模型' : '執行處理')) : '執行處理'"
     :execute-disabled="executeDisabled"
     :execute-loading="executeLoading"
     hide-preview-tabs

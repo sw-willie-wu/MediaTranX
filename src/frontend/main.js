@@ -6,6 +6,7 @@ import { spawn, execSync } from 'child_process';
 import http from 'http';
 import fs from 'fs';
 import os from 'os';
+import net from 'net';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -14,9 +15,23 @@ const __dirname = dirname(__filename);
 let pythonProcess = null;
 let viteProcess = null;
 
-// 後端 API port（與前端 Vite dev server 分開）
-const BACKEND_PORT = 8001;
+// 後端 API port (動態偵測)
+let BACKEND_PORT = 8001;
 const FRONTEND_DEV_PORT = 8000;
+
+// 自動尋找可用 Port
+function findFreePort(startPort) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.listen(startPort, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+    server.on('error', () => {
+      resolve(findFreePort(startPort + 1));
+    });
+  });
+}
 
 // 取得應用程式資料目錄
 function getAppDataPath() {
@@ -35,8 +50,6 @@ async function ensureVenv(window) {
   const appDataPath = getAppDataPath();
   const venvPath = join(appDataPath, '.venv');
   
-  // 基礎依賴已在 core.exe (Nuitka) 中
-  // 這裡只確保目錄存在，未來 uv sync --extra ai 會用到
   if (!fs.existsSync(venvPath)) {
     console.log('Creating initial data directory...');
     fs.mkdirSync(venvPath, { recursive: true });
@@ -50,7 +63,7 @@ function startViteDevServer() {
     cwd: __dirname,
     stdio: ['pipe', 'pipe', 'pipe'],
     shell: true,
-    env: { ...process.env, FORCE_COLOR: '1' }
+    env: { ...process.env, FORCE_COLOR: '1', VITE_BACKEND_PORT: String(BACKEND_PORT) }
   });
 
   viteProcess.stdout.on('data', (data) => console.log(`[Vite] ${data}`));
@@ -90,11 +103,11 @@ function startPythonBackend() {
 
   if (isDev) {
     const projectRoot = join(__dirname, '..', '..');
-    console.log('Starting Python backend (dev) via uv run...');
+    console.log(`Starting Python backend (dev) on port ${BACKEND_PORT} via uv run...`);
 
     pythonProcess = spawn('uv', [
       'run', '--project', projectRoot,
-      'python', '-m', 'uvicorn', 'backend.main:app',
+      'python', '-m', 'backend.main',
       '--host', '127.0.0.1',
       '--port', String(BACKEND_PORT)
     ], {
@@ -103,23 +116,11 @@ function startPythonBackend() {
       shell: true
     });
   } else {
-    // 生產模式：實作資源路徑探測 (配合 Nuitka Standalone 模式)
-    const possiblePaths = [
-      join(process.resourcesPath, 'core_engine', 'main.dist', 'core.exe'),
-      join(process.resourcesPath, 'core.exe'),
-      join(dirname(app.getPath('exe')), 'resources', 'core_engine', 'main.dist', 'core.exe')
-    ];
-
-    let backendExe = null;
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        backendExe = p;
-        break;
-      }
-    }
-
-    if (!backendExe) {
-      const errorMsg = `找不到核心後端組件。\n已嘗試路徑：\n${possiblePaths.join('\n')}`;
+    // 生產模式：使用隨附的 core_service/core.exe
+    const backendExe = join(process.resourcesPath, 'core_service', 'core.exe');
+    
+    if (!fs.existsSync(backendExe)) {
+      const errorMsg = `找不到核心後端組件：\n${backendExe}`;
       dialog.showErrorBox('啟動失敗', errorMsg);
       app.quit();
       return;
@@ -129,9 +130,9 @@ function startPythonBackend() {
     const backendLog = join(appDataPath, 'core_debug.log');
     const logStream = fs.createWriteStream(backendLog, { flags: 'a' });
     logStream.write(`\n--- Core Engine Start Attempt: ${new Date().toISOString()} ---\n`);
-    logStream.write(`Path: ${backendExe}\n`);
+    logStream.write(`Path: ${backendExe} (Port: ${BACKEND_PORT})\n`);
 
-    pythonProcess = spawn(backendExe, [], {
+    pythonProcess = spawn(backendExe, ['--port', String(BACKEND_PORT)], {
       cwd: dirname(backendExe),
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env },
@@ -170,7 +171,7 @@ function createWindow() {
     frame: false,
     show: true,
     backgroundColor: '#1f1c2c',
-    icon: join(__dirname, 'src', 'assets', 'icon.ico'),
+    icon: join(__dirname, 'icon.ico'),
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -211,6 +212,9 @@ app.whenReady().then(async () => {
   mainWindow.loadFile(join(__dirname, 'splash.html'));
 
   try {
+    BACKEND_PORT = await findFreePort(8001);
+    console.log(`Using port ${BACKEND_PORT} for backend.`);
+
     const isDev = !app.isPackaged;
     if (isDev) {
       startViteDevServer();

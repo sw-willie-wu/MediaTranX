@@ -57,38 +57,41 @@
       "main.js",
       "preload.cjs",
       "splash.html",
-      "src/assets/icon.ico"
+      "icon.ico"
     ],
     "extraResources": [
       {
-        "from": "../../resources/core_engine",
-        "to": "core_engine",
+        "from": "../../build/resources/core_service",
+        "to": "core_service",
         "filter": ["**/*"]
       },
       {
-        "from": "../../resources/uv.exe",
+        "from": "../../build/resources/uv.exe",
         "to": "uv.exe"
       },
       {
-        "from": "../../resources/pyproject.toml",
+        "from": "../../build/resources/pyproject.toml",
         "to": "pyproject.toml"
       },
       {
-        "from": "../../bin/ffmpeg",
+        "from": "../../build/resources/ffmpeg",
         "to": "ffmpeg",
         "filter": ["**/*"]
       }
     ],
+    "afterPack": "./scripts/afterPack.cjs",
     "win": {
       "target": "nsis",
-      "icon": "src/assets/icon.ico",
+      "icon": "icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "src/assets/icon.ico",
-      "uninstallerIcon": "src/assets/icon.ico"
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "include": "./scripts/installer.nsh"
     }
   }
 }
