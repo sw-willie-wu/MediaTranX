@@ -319,16 +319,15 @@ async function loadTranslateLanguages(retries = 3) {
   }
 }
 
-// 安裝翻譯功能
+// 安裝 AI 推理環境（翻譯功能前置條件）
 async function installTranslate() {
   isInstalling.value = true
   error.value = null
 
   try {
-    const response = await fetch('/api/setup/install', {
+    const response = await fetch('/api/setup/initialize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ feature: 'translategemma' }),
     })
 
     if (!response.ok) {
@@ -338,16 +337,9 @@ async function installTranslate() {
 
     const result = await response.json()
 
-    if (!result.task_id) {
-      // 已經安裝好了
-      toast.show('翻譯功能已就緒', { type: 'success' })
-      await loadTranslateStatus()
-      return
-    }
-
     taskStore.addTask({
       taskId: result.task_id,
-      taskType: 'setup/install',
+      taskType: 'setup/initialize',
       status: 'pending',
       progress: 0,
       message: null,
@@ -355,9 +347,9 @@ async function installTranslate() {
       error: null,
       createdAt: new Date(),
       updatedAt: new Date(),
-      label: '安裝翻譯功能',
+      label: '安裝 AI 推理環境',
     })
-    toast.show('開始安裝翻譯功能，請稍候...', { type: 'info', icon: 'bi-download' })
+    toast.show('開始安裝 AI 推理環境，請稍候...', { type: 'info', icon: 'bi-download' })
 
     // 輪詢等安裝完成
     const checkDone = setInterval(async () => {
@@ -366,7 +358,7 @@ async function installTranslate() {
         clearInterval(checkDone)
         isInstalling.value = false
         if (task.status === 'completed') {
-          toast.show('翻譯功能安裝完成', { type: 'success' })
+          toast.show('AI 推理環境安裝完成', { type: 'success' })
           await loadTranslateStatus()
         } else {
           error.value = '安裝失敗，請查看任務列表'
@@ -659,7 +651,7 @@ onMounted(async () => {
       <div v-if="enableTranslation" class="translate-options">
         <!-- 未安裝：顯示安裝按鈕 -->
         <div v-if="translateStatus && !translateStatus.available" class="install-prompt">
-          <p class="install-hint">翻譯功能需要額外元件，首次使用前請先安裝</p>
+          <p class="install-hint">翻譯功能需要 AI 推理環境，首次使用前請先安裝</p>
           <button
             class="install-btn"
             :disabled="isInstalling"
@@ -667,7 +659,7 @@ onMounted(async () => {
           >
             <span v-if="isInstalling" class="spinner-border spinner-border-sm me-2"></span>
             <i v-else class="bi bi-download me-1"></i>
-            {{ isInstalling ? '安裝中...' : '安裝翻譯功能' }}
+            {{ isInstalling ? '安裝中...' : '安裝 AI 推理環境' }}
           </button>
         </div>
 

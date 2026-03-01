@@ -1,20 +1,80 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import Titlebar from './components/Titlebar.vue'
 import MainSidebar from './components/MainSidebar.vue'
 import AppToast from './components/AppToast.vue'
+import AppSetupWizard from './components/common/AppSetupWizard.vue'
 import { useTheme } from './composables/useTheme'
 
 // 初始化主題
 useTheme()
 
-// Vue 掛載後淡出 splash overlay
-onMounted(() => {
+const showWizard = ref(false)
+const AI_CACHE_KEY = 'ai-module-cache'
+
+function removeSplash() {
   const overlay = document.getElementById('splash-overlay')
   if (overlay) {
     overlay.classList.add('fade-out')
     setTimeout(() => overlay.remove(), 300)
+  }
+}
+
+function isWizardEnabled(): boolean {
+  try {
+    const saved = localStorage.getItem('app-settings')
+    return saved ? (JSON.parse(saved).showSetupWizard ?? true) : true
+  } catch { return true }
+}
+
+function readAiCache(): { aiEnvReady: boolean; llamaReady: boolean } | null {
+  try {
+    const s = localStorage.getItem(AI_CACHE_KEY)
+    return s ? JSON.parse(s) : null
+  } catch { return null }
+}
+
+async function fetchAndCacheStatus(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/setup/status')
+    const data = await res.json()
+    const notReady = !data.ai_env_ready || !(data.llama_ready ?? false)
+    localStorage.setItem(AI_CACHE_KEY, JSON.stringify({
+      aiEnvReady: data.ai_env_ready,
+      llamaReady: data.llama_ready ?? false,
+      torchIndex: data.torch_index ?? 'cpu',
+      driverVersion: data.device?.driver_version ?? null,
+    }))
+    return notReady
+  } catch {
+    return false
+  }
+}
+
+// Vue 掛載後處理 splash 與 wizard 邏輯
+onMounted(async () => {
+  if (!isWizardEnabled()) {
+    removeSplash()
+    // 背景更新快取
+    fetchAndCacheStatus()
+    return
+  }
+
+  const cache = readAiCache()
+  if (cache) {
+    // 有快取：同步決定，立刻移除 splash
+    showWizard.value = !cache.aiEnvReady || !cache.llamaReady
+    removeSplash()
+    // 背景更新快取；若狀態改變（例如用戶手動刪 .venv）則補顯示 wizard
+    fetchAndCacheStatus().then((notReady) => {
+      if (notReady) showWizard.value = true
+    })
+  } else {
+    // 第一次啟動：等後端回應才移除 splash
+    const notReady = await fetchAndCacheStatus()
+    showWizard.value = notReady
+    removeSplash()
   }
 })
 </script>
@@ -31,6 +91,7 @@ onMounted(() => {
       </RouterView>
     </div>
     <AppToast />
+    <AppSetupWizard v-if="showWizard" @close="showWizard = false" />
   </div>
 </template>
 

@@ -22,4 +22,11 @@ export interface DeviceInfo {
   memory_free: number | null
   has_nvidia_gpu: boolean
   cuda_toolkit_installed: boolean
+  driver_version: string | null
+  ram_total: number | null
+  ram_available: number | null
+  os_name: string
+  os_version: string
+  cpu_name: string
+  cpu_count: number | null
 }
