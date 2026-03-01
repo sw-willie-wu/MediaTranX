@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import AsyncGenerator, Callable, Dict, Optional, Set
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class ProgressEvent:
     stage: str
     message: str
     result: Optional[dict] = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_json(self) -> str:
         data = {
@@ -187,3 +187,15 @@ class ProgressTracker:
         """清理任務的進度記錄"""
         self._latest_progress.pop(task_id, None)
         self._subscribers.pop(task_id, None)
+
+
+# 全域單例（task_manager 與其他 service 共用同一個 tracker）
+_tracker_instance: Optional[ProgressTracker] = None
+
+
+def get_progress_tracker() -> ProgressTracker:
+    """取得全域 ProgressTracker 單例"""
+    global _tracker_instance
+    if _tracker_instance is None:
+        _tracker_instance = ProgressTracker()
+    return _tracker_instance

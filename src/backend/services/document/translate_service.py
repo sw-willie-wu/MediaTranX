@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from backend.core.ai.translation import get_translator
+from backend.core.ai.translate import get_translator
 from backend.services.files.file_service import FileService, get_file_service
 from backend.workers.task_manager import TaskManager, get_task_manager
 

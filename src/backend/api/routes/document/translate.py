@@ -7,8 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.services.document.translate_service import get_translate_service
-from backend.core.ai.base_translator import SUPPORTED_LANGUAGES
-from backend.core.ai.translation import get_translator
+from backend.core.ai.translate import SUPPORTED_LANGUAGES, get_translator
 
 router = APIRouter()
 
