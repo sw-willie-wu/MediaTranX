@@ -4,19 +4,20 @@ import { useTheme, type ThemeMode } from '../composables/useTheme'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskStore } from '@/stores/tasks'
 import AppSelect from '@/components/common/AppSelect.vue'
-import type { Task } from '@/types/task'
+import AppModelList from '@/components/common/AppModelList.vue'
+import AppIcon from '@/assets/icon.svg'
 
 const { themeMode, setTheme } = useTheme()
 const settingsStore = useSettingsStore()
 const taskStore = useTaskStore()
 
 // 當前選中的區塊
-const activeSection = ref<'general' | 'gpu' | 'models' | 'about'>('general')
+const activeSection = ref<'general' | 'system' | 'models' | 'about'>('general')
 
 const sections = [
   { id: 'general' as const, icon: 'bi-sliders', label: '一般' },
-  { id: 'gpu' as const, icon: 'bi-gpu-card', label: '硬體加速' },
-  { id: 'models' as const, icon: 'bi-download', label: '模型管理' },
+  { id: 'system' as const, icon: 'bi-cpu', label: '系統資訊' },
+  { id: 'models' as const, icon: 'bi-boxes', label: 'AI 模組管理' },
   { id: 'about' as const, icon: 'bi-info-circle', label: '關於' },
 ]
 
@@ -24,9 +25,8 @@ const sections = [
 const settings = ref({
   theme: 'system' as ThemeMode,
   language: 'zh-TW',
-  outputDir: '',
-  tempDir: '',
   autoCleanTemp: true,
+  showSetupWizard: true,
 })
 
 const themes = [
@@ -41,18 +41,6 @@ const languages = [
   { value: 'en', label: 'English' },
 ]
 
-// 硬體加速
-const gpuEnabled = ref(false)
-const gpuDetecting = ref(false)
-
-// CUDA DLL 下載
-const cudaDownloadTaskId = ref<string | null>(null)
-const cudaSubmitting = ref(false)
-const cudaDownloadTask = computed(() => {
-  if (!cudaDownloadTaskId.value) return null
-  return taskStore.tasks.get(cudaDownloadTaskId.value) ?? null
-})
-
 // 載入設定
 onMounted(() => {
   const saved = localStorage.getItem('app-settings')
@@ -60,9 +48,6 @@ onMounted(() => {
     try {
       const parsed = JSON.parse(saved)
       settings.value = { ...settings.value, ...parsed }
-      if (parsed.gpuEnabled !== undefined) {
-        gpuEnabled.value = parsed.gpuEnabled
-      }
     } catch {
       // ignore
     }
@@ -70,10 +55,9 @@ onMounted(() => {
   // 同步主題
   settings.value.theme = themeMode.value
 
-  // 如果 GPU 已啟用，自動偵測
-  if (gpuEnabled.value) {
-    detectGpu()
-  }
+  // 載入 AI 環境狀態（不依賴 tab 切換）
+  loadAiEnvStatus()
+  loadDirConfig()
 })
 
 // 即時套用主題
@@ -86,65 +70,125 @@ watch(settings, () => {
   saveSettings()
 }, { deep: true })
 
-// GPU 啟用切換
-watch(gpuEnabled, (val) => {
-  saveSettings()
-  if (val) {
-    detectGpu()
-  }
+function saveSettings() {
+  localStorage.setItem('app-settings', JSON.stringify(settings.value))
+}
+
+// ── AI 推理環境（Torch）────────────────────────────────────────────────────────
+const aiEnvLoading = ref(true)
+const aiEnvReady = ref(false)
+const llamaReady = ref(false)
+const aiTorchIndex = ref('cpu')
+const aiDriverVersion = ref<string | null>(null)
+const aiInstallTaskId = ref<string | null>(null)
+const aiInstalling = ref(false)
+const aiInstalled = ref(false)
+
+const aiInstallTask = computed(() => {
+  if (!aiInstallTaskId.value) return null
+  return taskStore.tasks.get(aiInstallTaskId.value) ?? null
 })
 
-function saveSettings() {
-  const data = {
-    ...settings.value,
-    gpuEnabled: gpuEnabled.value,
-  }
-  localStorage.setItem('app-settings', JSON.stringify(data))
-}
+const AI_CACHE_KEY = 'ai-module-cache'
 
-async function detectGpu() {
-  gpuDetecting.value = true
-  await settingsStore.loadDeviceInfo()
-  gpuDetecting.value = false
-}
-
-async function downloadCuda() {
-  cudaSubmitting.value = true
+function readAiCache() {
   try {
-    const res = await fetch('/api/setup/cuda/download', { method: 'POST' })
-    if (!res.ok) {
-      console.error('CUDA download request failed:', res.statusText)
-      return
-    }
+    const s = localStorage.getItem(AI_CACHE_KEY)
+    return s ? JSON.parse(s) : null
+  } catch { return null }
+}
+
+function writeAiCache(data: { aiEnvReady: boolean; llamaReady: boolean; torchIndex: string; driverVersion: string | null }) {
+  localStorage.setItem(AI_CACHE_KEY, JSON.stringify(data))
+}
+
+async function loadAiEnvStatus() {
+  // 先從快取同步填入，不需要 loading 狀態
+  const cache = readAiCache()
+  if (cache) {
+    aiEnvReady.value = cache.aiEnvReady
+    llamaReady.value = cache.llamaReady
+    aiTorchIndex.value = cache.torchIndex ?? 'cpu'
+    aiDriverVersion.value = cache.driverVersion ?? null
+    aiEnvLoading.value = false
+  }
+
+  // 背景向後端確認最新狀態並更新快取
+  try {
+    const res = await fetch('/api/setup/status')
+    if (!res.ok) return
+    const data = await res.json()
+    aiEnvReady.value = data.ai_env_ready
+    llamaReady.value = data.llama_ready ?? false
+    aiTorchIndex.value = data.torch_index ?? 'cpu'
+    aiDriverVersion.value = data.device?.driver_version ?? null
+    aiEnvLoading.value = false
+    writeAiCache({
+      aiEnvReady: data.ai_env_ready,
+      llamaReady: data.llama_ready ?? false,
+      torchIndex: data.torch_index ?? 'cpu',
+      driverVersion: data.device?.driver_version ?? null,
+    })
+  } catch (e) {
+    console.error('Failed to load AI env status', e)
+    if (!cache) aiEnvLoading.value = false
+  }
+}
+
+async function installAiEnv() {
+  aiInstalling.value = true
+  try {
+    const res = await fetch('/api/setup/initialize', { method: 'POST' })
+    if (!res.ok) { aiInstalling.value = false; return }
     const { task_id } = await res.json()
-    cudaDownloadTaskId.value = task_id
+    aiInstallTaskId.value = task_id
     taskStore.addTask({
       taskId: task_id,
-      taskType: 'setup.cuda_download',
+      taskType: 'ai.setup',
       status: 'pending',
       progress: 0,
-      message: '準備下載 CUDA DLL...',
+      message: '準備安裝...',
       result: null,
       error: null,
-      label: '安裝 CUDA 加速',
+      label: '安裝 AI 推理環境',
       createdAt: new Date(),
       updatedAt: new Date(),
     })
-  } finally {
-    cudaSubmitting.value = false
+  } catch {
+    aiInstalling.value = false
   }
 }
 
-// CUDA 下載完成後提示重啟
-const cudaInstalled = ref(false)
-
-watch(cudaDownloadTask, (task) => {
-  if (task && (task.status === 'completed' || task.status === 'failed')) {
-    cudaDownloadTaskId.value = null
-    if (task.status === 'completed') {
-      cudaInstalled.value = true
+watch(
+  () => aiInstallTask.value?.status,
+  (status) => {
+    if (status === 'completed' || status === 'failed') {
+      aiInstallTaskId.value = null
+      aiInstalling.value = false
+      if (status === 'completed') {
+        aiInstalled.value = true
+        aiEnvReady.value = true
+        llamaReady.value = true
+        writeAiCache({ aiEnvReady: true, llamaReady: true, torchIndex: aiTorchIndex.value, driverVersion: aiDriverVersion.value })
+      }
     }
-  }
+  },
+)
+
+const coreModules = computed(() => {
+  const tag = aiTorchIndex.value === 'cpu' ? 'CPU' : aiTorchIndex.value.toUpperCase()
+  return [
+    { key: 'torch',      icon: 'bi-lightning-charge', name: 'PyTorch',           tag,   desc: '深度學習推理框架',     ready: aiEnvReady.value },
+    { key: 'whisper',    icon: 'bi-mic',              name: 'faster-whisper',    tag: '', desc: '語音辨識引擎',        ready: aiEnvReady.value },
+    { key: 'llama',      icon: 'bi-translate',        name: 'llama-cpp-python',  tag,   desc: '翻譯推理引擎（GGUF）', ready: llamaReady.value },
+    { key: 'hf',         icon: 'bi-cloud-download',   name: 'huggingface-hub',   tag: '', desc: 'AI 模型下載管理',     ready: aiEnvReady.value },
+  ]
+})
+
+// 切到系統資訊 / AI 模組管理 tab 時自動載入
+watch(activeSection, (val) => {
+  if (val === 'system' || val === 'models') loadAiEnvStatus()
+  if (val === 'system' && !settingsStore.deviceInfo) settingsStore.loadDeviceInfo()
 })
 
 // ── 模型管理 ──────────────────────────────────────────────────────────────────
@@ -215,10 +259,13 @@ async function downloadItem(id: string) {
   })
 }
 
-function getDownloadingTask(id: string): Task | undefined {
-  const taskId = downloadingTaskId.value[id]
-  if (!taskId) return undefined
-  return taskStore.tasks.get(taskId)
+async function removeItem(id: string) {
+  const res = await fetch('/api/setup/models/remove', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  })
+  if (res.ok) await loadModelStatus()
 }
 
 // 監聽任務完成 → 刷新狀態
@@ -235,41 +282,78 @@ watch(
   },
 )
 
-// 切到模型管理 tab 時才 lazy load
+// 切到模型管理 tab 時重新載入（每次都刷新，確保狀態最新）
 watch(activeSection, (val) => {
-  if (val === 'models' && !modelStatus.value) {
+  if (val === 'models') {
     loadModelStatus()
   }
 })
 
-function formatSize(mb: number): string {
-  if (mb >= 1000) return `${(mb / 1000).toFixed(1)} GB`
-  return `${mb} MB`
+function restartApp() {
+  ;(window as any).electron?.restart()
 }
 
-async function selectOutputDir() {
-  if (window.electron?.selectFolder) {
-    const result = await window.electron.selectFolder()
-    if (result) {
-      settings.value.outputDir = result
+// 目錄設定（後端 config.json 管理，不存 localStorage）
+const modelsDir = ref('')
+const effectiveModelsDir = ref('')
+const tempDir = ref('')
+const effectiveTempDir = ref('')
+const dirSaved = ref(false)
+
+async function loadDirConfig() {
+  try {
+    const res = await fetch('/api/setup/config')
+    if (res.ok) {
+      const data = await res.json()
+      modelsDir.value = data.models_dir ?? ''
+      effectiveModelsDir.value = data.effective_models_dir ?? ''
+      tempDir.value = data.temp_dir ?? ''
+      effectiveTempDir.value = data.effective_temp_dir ?? ''
     }
+  } catch (e) {
+    console.error('Failed to load dir config', e)
+  }
+}
+
+async function saveDirConfig() {
+  dirSaved.value = false
+  await fetch('/api/setup/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ models_dir: modelsDir.value, temp_dir: tempDir.value }),
+  })
+  await loadDirConfig()
+  dirSaved.value = true
+}
+
+async function selectModelsDir() {
+  if (!window.electron?.selectFolder) return
+  const result = await window.electron.selectFolder()
+  if (result) {
+    modelsDir.value = result
+    await saveDirConfig()
   }
 }
 
 async function selectTempDir() {
-  if (window.electron?.selectFolder) {
-    const result = await window.electron.selectFolder()
-    if (result) {
-      settings.value.tempDir = result
-    }
+  if (!window.electron?.selectFolder) return
+  const result = await window.electron.selectFolder()
+  if (result) {
+    tempDir.value = result
+    await saveDirConfig()
   }
 }
 
-// GPU 顯示 VRAM
 function formatVram(bytes: number | null): string {
   if (!bytes) return ''
   const gb = bytes / (1024 * 1024 * 1024)
   return `${gb.toFixed(1)} GB`
+}
+
+function formatRam(bytes: number | null): string {
+  if (!bytes) return 'N/A'
+  const gb = bytes / (1024 * 1024 * 1024)
+  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`
 }
 </script>
 
@@ -295,44 +379,32 @@ function formatVram(bytes: number | null): string {
     <main class="settings-content">
       <!-- 一般 -->
       <div v-if="activeSection === 'general'" class="section-content">
-        <h6 class="section-title">外觀</h6>
+        <h6 class="section-title">外觀選項</h6>
 
         <div class="setting-item">
-          <label>主題</label>
+          <label class="section-subtitle">主題</label>
           <AppSelect v-model="settings.theme" :options="themes" size="sm" />
         </div>
 
         <div class="setting-item">
-          <label>語言</label>
+          <label class="section-subtitle">語言</label>
           <AppSelect v-model="settings.language" :options="languages" size="sm" />
+        </div>
+
+        <div class="setting-item toggle-item" @click="settings.showSetupWizard = !settings.showSetupWizard">
+          <span>啟動時提示安裝AI模組</span>
+          <span class="toggle" :class="{ on: settings.showSetupWizard }"><span class="toggle-thumb"></span></span>
         </div>
 
         <h6 class="section-title mt">檔案路徑</h6>
 
         <div class="setting-item">
-          <label>預設輸出資料夾</label>
+          <label class="section-subtitle">暫存資料夾</label>
           <div class="path-input">
             <input
               type="text"
-              v-model="settings.outputDir"
+              :value="tempDir || effectiveTempDir"
               class="form-control"
-              placeholder="使用原檔案所在資料夾"
-              readonly
-            />
-            <button class="browse-btn" @click="selectOutputDir">
-              <i class="bi bi-folder2-open"></i>
-            </button>
-          </div>
-        </div>
-
-        <div class="setting-item">
-          <label>暫存資料夾</label>
-          <div class="path-input">
-            <input
-              type="text"
-              v-model="settings.tempDir"
-              class="form-control"
-              placeholder="使用系統預設"
               readonly
             />
             <button class="browse-btn" @click="selectTempDir">
@@ -341,110 +413,160 @@ function formatVram(bytes: number | null): string {
           </div>
         </div>
 
-        <div class="setting-item checkbox-item">
-          <label class="checkbox-label" @click="settings.autoCleanTemp = !settings.autoCleanTemp">
-            <span class="checkbox" :class="{ checked: settings.autoCleanTemp }">
-              <i v-if="settings.autoCleanTemp" class="bi bi-check"></i>
-            </span>
-            <span>關閉時自動清理暫存檔</span>
-          </label>
+        <div class="setting-item">
+          <label class="section-subtitle">AI 模型存放目錄</label>
+          <div class="path-input">
+            <input
+              type="text"
+              :value="modelsDir || effectiveModelsDir"
+              class="form-control"
+              readonly
+            />
+            <button class="browse-btn" @click="selectModelsDir">
+              <i class="bi bi-folder2-open"></i>
+            </button>
+          </div>
+          <p v-if="dirSaved" class="setting-hint setting-hint-warn">
+            <i class="bi bi-exclamation-triangle-fill"></i> 重新啟動後生效
+          </p>
+        </div>
+
+        <div class="setting-item toggle-item" @click="settings.autoCleanTemp = !settings.autoCleanTemp">
+          <span>關閉時自動清理暫存檔</span>
+          <span class="toggle" :class="{ on: settings.autoCleanTemp }"><span class="toggle-thumb"></span></span>
+        </div>
+
+        <h6 class="section-title mt">重新啟動</h6>
+
+        <div class="setting-item">
+          <button class="restart-app-btn" @click="restartApp()">
+            <i class="bi bi-arrow-counterclockwise"></i> 重新啟動應用程式
+          </button>
         </div>
       </div>
 
-      <!-- 硬體加速 -->
-      <div v-if="activeSection === 'gpu'" class="section-content">
-        <h6 class="section-title">GPU 加速</h6>
+      <!-- 系統資訊 -->
+      <div v-if="activeSection === 'system'" class="section-content">
+        <h6 class="section-title">系統資訊</h6>
 
-        <div class="setting-item checkbox-item">
-          <label class="checkbox-label" @click="gpuEnabled = !gpuEnabled">
-            <span class="checkbox" :class="{ checked: gpuEnabled }">
-              <i v-if="gpuEnabled" class="bi bi-check"></i>
-            </span>
-            <span>啟用 GPU 加速</span>
-          </label>
-          <p class="setting-desc">使用 GPU 加速語音辨識與翻譯模型推理</p>
+        <div v-if="settingsStore.isLoading" class="gpu-detecting">
+          <div class="spinner"></div>
+          <span>偵測硬體中...</span>
         </div>
 
-        <!-- GPU 偵測結果 -->
-        <div v-if="gpuEnabled" class="gpu-status">
-          <!-- 偵測中 -->
-          <div v-if="gpuDetecting" class="gpu-detecting">
-            <div class="spinner"></div>
-            <span>偵測硬體中...</span>
+        <template v-else-if="settingsStore.deviceInfo">
+          <div class="sys-card">
+            <i class="bi bi-window"></i>
+            <span class="sys-name">作業系統</span>
+            <span class="sys-detail">{{ settingsStore.deviceInfo.os_name }}</span>
           </div>
 
-          <!-- 偵測完成 -->
-          <template v-else-if="settingsStore.deviceInfo">
-            <!-- 有 NVIDIA GPU + 有 CUDA -->
-            <div v-if="settingsStore.hasGPU" class="gpu-result gpu-ok">
-              <i class="bi bi-check-circle-fill"></i>
-              <div class="gpu-info">
-                <span class="gpu-name">{{ settingsStore.deviceInfo.device_name }}</span>
-                <span class="gpu-detail">
-                  VRAM: {{ formatVram(settingsStore.deviceInfo.memory_total) }}
-                  <template v-if="settingsStore.deviceInfo.memory_free">
-                    （可用: {{ formatVram(settingsStore.deviceInfo.memory_free) }}）
-                  </template>
-                </span>
-                <span class="gpu-label">GPU 加速已啟用</span>
-              </div>
-            </div>
+          <div class="sys-card">
+            <i class="bi bi-cpu"></i>
+            <span class="sys-name">處理器</span>
+            <span class="sys-detail">
+              {{ settingsStore.deviceInfo.cpu_name
+              }}<template v-if="settingsStore.deviceInfo.cpu_count"
+              > ({{ settingsStore.deviceInfo.cpu_count }} 執行緒)</template>
+            </span>
+          </div>
 
-            <!-- 有 NVIDIA GPU + 無 CUDA DLL -->
-            <div v-else-if="settingsStore.needsCudaToolkit" class="gpu-result gpu-warn">
-              <i class="bi bi-exclamation-triangle-fill"></i>
-              <div class="gpu-info">
-                <span class="gpu-name">{{ settingsStore.deviceInfo.device_name }}</span>
-                <span class="gpu-detail">偵測到 NVIDIA GPU，但尚未安裝 CUDA DLL</span>
-                <span class="gpu-hint">下載 CUDA DLL（約 850 MB）即可啟用 GPU 加速，資料存於 AppData 並跨版本保留</span>
-                <!-- 下載進行中 -->
-                <template v-if="cudaDownloadTask">
-                  <div class="cuda-progress-row">
-                    <div class="download-progress cuda-progress-bar">
-                      <div
-                        class="progress-bar"
-                        :style="{ width: `${(cudaDownloadTask.progress * 100).toFixed(0)}%` }"
-                      ></div>
-                    </div>
-                    <span class="progress-label">{{ (cudaDownloadTask.progress * 100).toFixed(0) }}%</span>
-                  </div>
-                  <span class="cuda-progress-msg">{{ cudaDownloadTask.message }}</span>
-                </template>
-                <!-- 安裝完成 → 提示重啟 -->
-                <div v-else-if="cudaInstalled" class="cuda-restart-hint">
-                  <i class="bi bi-check-circle-fill" style="color: #10b981"></i>
-                  <span>安裝完成，請重新啟動應用程式以啟用 GPU 加速</span>
-                  <button class="cuda-restart-btn" @click="window.electron?.restart()">
-                    <i class="bi bi-arrow-counterclockwise"></i> 立即重啟
-                  </button>
-                </div>
-                <!-- 下載按鈕 -->
-                <button
-                  v-else
-                  class="cuda-download-btn"
-                  :disabled="cudaSubmitting"
-                  @click="downloadCuda"
-                >
-                  <i class="bi bi-download"></i>
-                  安裝 CUDA 加速
-                </button>
-              </div>
-            </div>
+          <div class="sys-card">
+            <i class="bi bi-memory"></i>
+            <span class="sys-name">記憶體</span>
+            <span class="sys-detail">{{ formatRam(settingsStore.deviceInfo.ram_total) }}</span>
+          </div>
 
-            <!-- 無 GPU -->
-            <div v-else class="gpu-result gpu-none">
-              <i class="bi bi-cpu"></i>
-              <div class="gpu-info">
-                <span class="gpu-name">未偵測到支援的 GPU</span>
-                <span class="gpu-detail">將使用 CPU 模式運行，速度較慢</span>
-              </div>
-            </div>
-          </template>
-        </div>
+          <div class="sys-card">
+            <i class="bi bi-gpu-card"></i>
+            <span class="sys-name">顯示卡</span>
+            <span v-if="settingsStore.deviceInfo.has_nvidia_gpu" class="sys-detail">
+              {{ settingsStore.deviceInfo.device_name
+              }}<template v-if="settingsStore.deviceInfo.memory_total"
+              > · {{ formatVram(settingsStore.deviceInfo.memory_total) }}</template
+              ><template v-if="settingsStore.deviceInfo.driver_version"
+              > · 驅動 {{ settingsStore.deviceInfo.driver_version }}</template>
+            </span>
+            <span v-else class="sys-detail sys-muted">未偵測到 GPU</span>
+          </div>
+        </template>
       </div>
 
-      <!-- 模型管理 -->
-      <div v-if="activeSection === 'models'" class="section-content models-section">
+      <!-- AI 模組管理 -->
+      <div v-if="activeSection === 'models'" class="section-content">
+
+        <!-- 核心模組 -->
+        <h6 class="section-title">核心模組</h6>
+
+        <!-- 四個模組狀態列 -->
+        <div class="module-list">
+          <div class="module-item" v-for="mod in coreModules" :key="mod.key">
+            <div class="module-info">
+              <span class="module-label">{{ mod.desc }}</span>
+              <span class="module-sub">{{ mod.name }}<template v-if="mod.tag"> ({{ mod.tag.toLowerCase() }})</template></span>
+            </div>
+            <span v-if="aiEnvLoading" class="module-badge badge-loading">
+              <i class="bi bi-three-dots"></i>
+            </span>
+            <span v-else class="module-badge" :class="mod.ready ? 'badge-ok' : 'badge-off'">
+              <i class="bi" :class="mod.ready ? 'bi-check-circle-fill' : 'bi-x-circle-fill'"></i>
+              {{ mod.ready ? '已安裝' : '未安裝' }}
+            </span>
+          </div>
+        </div>
+
+        <!-- 安裝進行中 -->
+        <div v-if="!aiEnvLoading && aiInstallTask" class="ai-env-card ai-env-installing">
+          <div class="ai-env-body">
+            <span class="ai-env-name">{{ aiInstallTask.message }}</span>
+            <div class="cuda-progress-row">
+              <div class="download-progress cuda-progress-bar">
+                <div
+                  class="progress-bar"
+                  :style="{ width: `${(aiInstallTask.progress * 100).toFixed(0)}%` }"
+                ></div>
+              </div>
+              <span class="progress-label">{{ (aiInstallTask.progress * 100).toFixed(0) }}%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 安裝完成，需重啟 -->
+        <div v-else-if="!aiEnvLoading && aiInstalled" class="ai-env-card ai-env-ok">
+          <i class="bi bi-check-circle-fill"></i>
+          <div class="ai-env-body">
+            <span class="ai-env-name">安裝完成</span>
+            <span class="ai-env-hint">請重新啟動應用程式以套用</span>
+            <button class="cuda-restart-btn" @click="restartApp()">
+              <i class="bi bi-arrow-counterclockwise"></i> 立即重啟
+            </button>
+          </div>
+        </div>
+
+        <!-- 有模組未啟用 → 顯示安裝/重裝按鈕 -->
+        <div v-else-if="!aiEnvLoading && (!aiEnvReady || !llamaReady)" class="ai-env-card ai-env-warn">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          <div class="ai-env-body">
+            <span class="ai-env-name">核心模組未完整安裝</span>
+            <span class="ai-env-hint">
+              將安裝 <strong>Torch {{ aiTorchIndex.toUpperCase() }}</strong> + llama-cpp-python
+              <template v-if="aiDriverVersion">（驅動 {{ aiDriverVersion }}）</template>
+              <template v-else>（CPU 模式）</template>
+            </span>
+            <button
+              class="cuda-download-btn"
+              :disabled="aiInstalling"
+              @click="installAiEnv"
+            >
+              <i class="bi bi-download"></i>
+              安裝核心模組
+            </button>
+          </div>
+        </div>
+
+        <!-- 模型與工具下載 -->
+        <h6 class="section-title mt">模型與工具</h6>
+
         <div v-if="modelStatusLoading" class="models-loading">
           <div class="spinner"></div>
           <span>載入中...</span>
@@ -452,103 +574,35 @@ function formatVram(bytes: number | null): string {
 
         <template v-else-if="modelStatus">
           <!-- 超解析工具 -->
-          <h6 class="section-title">超解析工具</h6>
-          <div class="model-list">
-            <div v-for="tool in modelStatus.tools" :key="tool.id" class="model-item">
-              <div class="model-info">
-                <span class="model-label">{{ tool.label }}</span>
-                <span class="model-desc">{{ tool.description }}</span>
-              </div>
-              <span class="model-size">{{ formatSize(tool.size_mb) }}</span>
-              <div class="model-action">
-                <template v-if="getDownloadingTask(tool.id)">
-                  <div class="download-progress">
-                    <div
-                      class="progress-bar"
-                      :style="{ width: `${(getDownloadingTask(tool.id)!.progress * 100).toFixed(0)}%` }"
-                    ></div>
-                  </div>
-                  <span class="progress-label">
-                    {{ (getDownloadingTask(tool.id)!.progress * 100).toFixed(0) }}%
-                  </span>
-                </template>
-                <span v-else-if="tool.installed" class="status-badge installed">
-                  <i class="bi bi-check-circle-fill"></i> 已安裝
-                </span>
-                <button v-else class="download-btn" @click="downloadItem(tool.id)">
-                  <i class="bi bi-download"></i> 安裝
-                </button>
-              </div>
-            </div>
-          </div>
+          <label class="section-subtitle">超解析工具</label>
+          <AppModelList
+            :items="modelStatus.tools.map(t => ({ ...t, ready: t.installed }))"
+            :downloadingTaskId="downloadingTaskId"
+            @download="downloadItem"
+            @remove="removeItem"
+          />
 
           <!-- 語音識別 -->
-          <h6 class="section-title mt">語音識別</h6>
-          <div class="model-list">
-            <div
-              v-for="model in modelStatus.models.filter(m => m.category === 'stt')"
-              :key="model.id"
-              class="model-item"
-            >
-              <div class="model-info">
-                <span class="model-label">{{ model.label }}</span>
-              </div>
-              <span class="model-size">{{ formatSize(model.size_mb) }}</span>
-              <div class="model-action">
-                <template v-if="getDownloadingTask(model.id)">
-                  <div class="download-progress">
-                    <div
-                      class="progress-bar"
-                      :style="{ width: `${(getDownloadingTask(model.id)!.progress * 100).toFixed(0)}%` }"
-                    ></div>
-                  </div>
-                  <span class="progress-label">
-                    {{ (getDownloadingTask(model.id)!.progress * 100).toFixed(0) }}%
-                  </span>
-                </template>
-                <span v-else-if="model.downloaded" class="status-badge installed">
-                  <i class="bi bi-check-circle-fill"></i> 已安裝
-                </span>
-                <button v-else class="download-btn" @click="downloadItem(model.id)">
-                  <i class="bi bi-download"></i> 安裝
-                </button>
-              </div>
-            </div>
-          </div>
+          <label class="section-subtitle">語音識別</label>
+          <AppModelList
+            :items="modelStatus.models
+              .filter(m => m.category === 'stt')
+              .map(m => ({ ...m, ready: m.downloaded }))"
+            :downloadingTaskId="downloadingTaskId"
+            @download="downloadItem"
+            @remove="removeItem"
+          />
 
           <!-- 翻譯模型 -->
-          <h6 class="section-title mt">翻譯模型</h6>
-          <div class="model-list">
-            <div
-              v-for="model in modelStatus.models.filter(m => m.category === 'translate')"
-              :key="model.id"
-              class="model-item"
-            >
-              <div class="model-info">
-                <span class="model-label">{{ model.label }}</span>
-              </div>
-              <span class="model-size">{{ formatSize(model.size_mb) }}</span>
-              <div class="model-action">
-                <template v-if="getDownloadingTask(model.id)">
-                  <div class="download-progress">
-                    <div
-                      class="progress-bar"
-                      :style="{ width: `${(getDownloadingTask(model.id)!.progress * 100).toFixed(0)}%` }"
-                    ></div>
-                  </div>
-                  <span class="progress-label">
-                    {{ (getDownloadingTask(model.id)!.progress * 100).toFixed(0) }}%
-                  </span>
-                </template>
-                <span v-else-if="model.downloaded" class="status-badge installed">
-                  <i class="bi bi-check-circle-fill"></i> 已安裝
-                </span>
-                <button v-else class="download-btn" @click="downloadItem(model.id)">
-                  <i class="bi bi-download"></i> 安裝
-                </button>
-              </div>
-            </div>
-          </div>
+          <label class="section-subtitle">翻譯模型</label>
+          <AppModelList
+            :items="modelStatus.models
+              .filter(m => m.category === 'translate')
+              .map(m => ({ ...m, ready: m.downloaded }))"
+            :downloadingTaskId="downloadingTaskId"
+            @download="downloadItem"
+            @remove="removeItem"
+          />
 
           <button class="refresh-btn" @click="loadModelStatus">
             <i class="bi bi-arrow-clockwise"></i> 重新整理
@@ -558,15 +612,40 @@ function formatVram(bytes: number | null): string {
 
       <!-- 關於 -->
       <div v-if="activeSection === 'about'" class="section-content">
-        <div class="about-section">
-          <h4 class="about-name">MediaTranX</h4>
-          <p class="about-version">版本 1.0.0</p>
-          <p class="about-desc">
-            本地 AI 驅動的多媒體處理工具，支援影片字幕提取、翻譯、音訊處理、圖片處理等功能。
-          </p>
-          <p class="about-desc">
-            所有 AI 模型均在本機運行，無需上傳資料至雲端，保護您的隱私。
-          </p>
+        <div class="about-header">
+          <div class="about-logo">
+            <img :src="AppIcon" alt="MediaTranX Logo" />
+          </div>
+          <div class="about-title-group">
+            <h4 class="about-name">MediaTranX</h4>
+            <p class="about-version">版本 1.0.0 (Production Build)</p>
+          </div>
+        </div>
+        <p class="about-desc">
+          本地 AI 驅動的多媒體處理工具，支援影片字幕提取、翻譯、音訊處理、圖片處理等功能。所有 AI 模型均在本機運行，無需上傳資料至雲端，保護您的隱私。
+        </p>
+
+        <h6 class="section-title mt">支援與連結</h6>
+        <div class="about-links">
+          <button class="about-link-btn">
+            <i class="bi bi-github"></i> GitHub
+          </button>
+          <button class="about-link-btn">
+            <i class="bi bi-chat-dots"></i> 意見回饋
+          </button>
+          <button class="about-link-btn">
+            <i class="bi bi-globe"></i> 官方網站
+          </button>
+        </div>
+
+        <h6 class="section-title mt">技術致謝</h6>
+        <p class="credits-text">
+          MediaTranX 建立在眾多卓越的開源技術之上：<br/>
+          Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, TranslateGemma, Llama-cpp-python 等。
+        </p>
+
+        <div class="about-footer">
+          <p>© 2026 MediaTranX Project. All rights reserved.</p>
         </div>
       </div>
     </main>
@@ -646,6 +725,7 @@ function formatVram(bytes: number | null): string {
   border-radius: 12px;
   padding: 1.5rem;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .section-content {
@@ -654,16 +734,23 @@ function formatVram(bytes: number | null): string {
 }
 
 .section-title {
-  color: var(--text-muted);
-  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   margin-bottom: 0.75rem;
 
   &.mt {
-    margin-top: 1.5rem;
+    margin-top: 2.5rem;
   }
+}
+
+.section-subtitle {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .setting-item {
@@ -671,13 +758,6 @@ function formatVram(bytes: number | null): string {
 
   &:last-child {
     margin-bottom: 0;
-  }
-
-  > label {
-    display: block;
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    margin-bottom: 0.5rem;
   }
 }
 
@@ -689,10 +769,10 @@ function formatVram(bytes: number | null): string {
 
 .form-control {
   width: 100%;
-  padding: 0.375rem 0.625rem;
+  padding: 0.375rem 0.75rem;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-primary);
   font-size: 0.875rem;
 
@@ -716,11 +796,41 @@ function formatVram(bytes: number | null): string {
   }
 }
 
+.setting-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0.15rem 0 0 0;
+
+  &.setting-hint-warn {
+    color: #f59e0b;
+  }
+}
+
+.restart-app-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.375rem 0.875rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: var(--panel-bg-hover);
+    color: var(--text-primary);
+    border-color: var(--input-border-focus);
+  }
+}
+
 .browse-btn {
   padding: 0.375rem 0.75rem;
   background: var(--panel-bg);
   border: 1px solid var(--input-border);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -731,44 +841,56 @@ function formatVram(bytes: number | null): string {
   }
 }
 
-.checkbox-item {
-  .checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    cursor: pointer;
-    user-select: none;
-  }
-}
-
-.checkbox {
+.toggle-item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: 1.5px solid var(--input-border);
-  border-radius: 4px;
+  justify-content: space-between;
+  padding: 0.375rem 0.875rem;
   background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
   transition: all 0.15s ease;
-  flex-shrink: 0;
 
-  i {
-    font-size: 0.75rem;
-    color: white;
+  &:hover {
+    background: var(--panel-bg-hover);
+    border-color: var(--input-border-focus);
   }
 
-  &.checked {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
+  > span:first-child {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
   }
 }
 
-// GPU 區塊
-.gpu-status {
-  margin-top: 1rem;
+.toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: var(--input-border);
+  border-radius: 10px;
+  flex-shrink: 0;
+  transition: background 0.2s ease;
+
+  .toggle-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s ease;
+  }
+
+  &.on {
+    background: var(--color-primary);
+
+    .toggle-thumb {
+      transform: translateX(16px);
+    }
+  }
 }
 
 .gpu-detecting {
@@ -779,7 +901,7 @@ function formatVram(bytes: number | null): string {
   background: var(--input-bg);
   border-radius: 8px;
   color: var(--text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
 }
 
 .spinner {
@@ -795,64 +917,45 @@ function formatVram(bytes: number | null): string {
   to { transform: rotate(360deg); }
 }
 
-.gpu-result {
+// 系統資訊卡片（單排 key-value）
+.sys-card {
   display: flex;
+  align-items: center;
   gap: 0.75rem;
-  padding: 1rem;
+  padding: 0.375rem 0.875rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: 8px;
-  border: 1px solid;
+  margin-bottom: 1rem;
 
   > i {
-    font-size: 1.25rem;
+    font-size: 0.95rem;
+    color: var(--text-secondary);
     flex-shrink: 0;
-    margin-top: 0.1rem;
-  }
-
-  &.gpu-ok {
-    background: rgba(16, 185, 129, 0.08);
-    border-color: rgba(16, 185, 129, 0.25);
-    > i { color: #10b981; }
-  }
-
-  &.gpu-warn {
-    background: rgba(245, 158, 11, 0.08);
-    border-color: rgba(245, 158, 11, 0.25);
-    > i { color: #f59e0b; }
-  }
-
-  &.gpu-none {
-    background: var(--input-bg);
-    border-color: var(--input-border);
-    > i { color: var(--text-muted); }
+    width: 18px;
+    text-align: center;
   }
 }
 
-.gpu-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.gpu-name {
-  color: var(--text-primary);
-  font-size: 0.95rem;
-  font-weight: 500;
-}
-
-.gpu-detail {
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-}
-
-.gpu-label {
-  color: #10b981;
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-.gpu-hint {
+.sys-name {
+  font-size: 0.875rem;
   color: var(--text-muted);
-  font-size: 0.8rem;
+  flex-shrink: 0;
+  width: 72px;
+}
+
+.sys-detail {
+  flex: 1;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &.sys-muted {
+    color: var(--text-muted);
+  }
 }
 
 .cuda-download-btn {
@@ -865,7 +968,7 @@ function formatVram(bytes: number | null): string {
   border: none;
   border-radius: 8px;
   color: white;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   font-weight: 500;
   text-decoration: none;
   cursor: pointer;
@@ -884,17 +987,6 @@ function formatVram(bytes: number | null): string {
   }
 }
 
-.cuda-restart-hint {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin-top: 0.5rem;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-
-  i { flex-shrink: 0; }
-}
-
 .cuda-restart-btn {
   display: inline-flex;
   align-items: center;
@@ -905,7 +997,7 @@ function formatVram(bytes: number | null): string {
   border: 1px solid rgba(16, 185, 129, 0.3);
   border-radius: 8px;
   color: #10b981;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -927,16 +1019,124 @@ function formatVram(bytes: number | null): string {
   width: 200px;
 }
 
-.cuda-progress-msg {
+// 核心模組列表
+.module-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.module-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+}
+
+.module-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.module-label {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.module-sub {
+  font-size: 0.75rem;
   color: var(--text-muted);
-  font-size: 0.78rem;
-  margin-top: 0.25rem;
+}
+
+.module-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  flex-shrink: 0;
+
+  &.badge-ok {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+  }
+  &.badge-off {
+    background: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+  }
+  &.badge-loading {
+    background: transparent;
+    color: var(--text-muted);
+  }
+
+  i { font-size: 0.72rem; }
+}
+
+// AI 推理環境
+.ai-env-card {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid;
+  margin-top: 0.75rem;
+
+  > i {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+  }
+
+  &.ai-env-ok {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.25);
+    > i { color: #10b981; }
+  }
+
+  &.ai-env-warn {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.25);
+    > i { color: #f59e0b; }
+  }
+
+  &.ai-env-installing {
+    background: var(--input-bg);
+    border-color: var(--input-border);
+  }
+}
+
+.ai-env-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+}
+
+.ai-env-name {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.ai-env-hint {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+
+  strong {
+    color: var(--text-secondary);
+  }
 }
 
 // 模型管理
-.models-section {
-  max-width: 640px;
-}
 
 .models-loading {
   display: flex;
@@ -944,123 +1144,7 @@ function formatVram(bytes: number | null): string {
   gap: 0.75rem;
   padding: 1rem;
   color: var(--text-secondary);
-  font-size: 0.9rem;
-}
-
-.model-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.model-item {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.6rem 0.875rem;
-  background: var(--input-bg);
-  border: 1px solid var(--input-border);
-  border-radius: 8px;
-}
-
-.model-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-
-.model-label {
-  color: var(--text-primary);
   font-size: 0.875rem;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.model-desc {
-  color: var(--text-muted);
-  font-size: 0.78rem;
-}
-
-.model-size {
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.model-action {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  flex-shrink: 0;
-  width: 130px;
-}
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.3rem 0.75rem;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  font-weight: 500;
-  position: relative;
-  left: 2px;
-
-  &.installed {
-    color: #10b981;
-  }
-}
-
-.download-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.75rem;
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(255, 255, 255, 0.22);
-    color: var(--text-primary);
-  }
-}
-
-.download-progress {
-  width: 80px;
-  height: 6px;
-  background: var(--panel-border);
-  border-radius: 3px;
-  overflow: hidden;
-
-  .progress-bar {
-    height: 100%;
-    background: var(--color-primary);
-    border-radius: 3px;
-    transition: width 0.3s ease;
-  }
-}
-
-.progress-label {
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  min-width: 32px;
-  text-align: right;
 }
 
 .refresh-btn {
@@ -1073,7 +1157,7 @@ function formatVram(bytes: number | null): string {
   border: 1px solid var(--input-border);
   border-radius: 6px;
   color: var(--text-secondary);
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   cursor: pointer;
   transition: all 0.15s ease;
 
@@ -1084,31 +1168,88 @@ function formatVram(bytes: number | null): string {
 }
 
 // 關於
-.about-section {
-  padding: 1rem 0;
+.about-header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.about-logo {
+  flex-shrink: 0;
+  
+  img {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+  }
+}
+
+.about-title-group {
+  display: flex;
+  flex-direction: column;
 }
 
 .about-name {
   color: var(--text-primary);
   font-size: 1.5rem;
   font-weight: 600;
-  margin: 0 0 0.25rem 0;
+  margin: 0;
 }
 
 .about-version {
   color: var(--text-muted);
-  font-size: 0.9rem;
-  margin: 0 0 1.25rem 0;
+  font-size: 0.875rem;
+  margin: 0;
 }
 
 .about-desc {
   color: var(--text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   line-height: 1.6;
-  margin: 0 0 0.75rem 0;
+  max-width: 560px;
+  margin-bottom: 2rem;
+}
 
-  &:last-child {
-    margin-bottom: 0;
+.about-links {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.about-link-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: var(--panel-bg-hover);
+    color: var(--text-primary);
+    border-color: var(--input-border-focus);
   }
+}
+
+
+.credits-text {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.about-footer {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--panel-border);
+  color: var(--text-muted);
+  font-size: 0.75rem;
 }
 </style>
