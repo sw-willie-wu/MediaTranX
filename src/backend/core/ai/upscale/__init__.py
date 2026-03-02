@@ -1,11 +1,11 @@
-from .base import BaseUpscaler
+from backend.core.ai.base import PTHRuntime
 from .realesrgan import RealESRGANWrapper, get_realesrgan
 from .swinir import SwinIRWrapper, get_swinir
 from .bsrgan import BSRGANWrapper, get_bsrgan
 from .real_cugan import RealCUGANWrapper, get_real_cugan
 
 
-def get_upscaler(model_id: str) -> BaseUpscaler:
+def get_upscaler(model_id: str) -> PTHRuntime:
     """
     根據 model_id 取得對應的超解析 wrapper
     
@@ -35,7 +35,6 @@ __all__ = [
     "get_swinir",
     "get_bsrgan",
     "get_real_cugan",
-    "BaseUpscaler",
     "RealESRGANWrapper",
     "SwinIRWrapper",
     "BSRGANWrapper",
