@@ -28,10 +28,11 @@ def get_base_data_dir() -> Path:
     custom_home = os.environ.get('MEDIATRANX_HOME')
     if custom_home:
         path = Path(custom_home)
-    else:
+    elif _is_frozen():
         appdata = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
         path = Path(appdata) / 'MediaTranX'
-    
+    else:
+        path = _get_app_root()
     path.mkdir(parents=True, exist_ok=True)
     return path
 
