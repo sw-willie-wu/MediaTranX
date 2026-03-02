@@ -1,64 +1,48 @@
 """
-Qwen3 翻譯模組
-使用 llama-cpp-python 載入 GGUF 量化模型，提供文字翻譯功能
-模型不打包在 app 中，首次使用時自動從 HuggingFace 下載
+Qwen3 翻譯模組 (REFACTOR V3)
+重構: 移除內部模型註冊，改由 registry.py 管理。
+保持所有翻譯 Prompt 與邏輯細節不變。
+
+TODO (未來重構):
+- 將 SRT 解析/格式化邏輯移至 subtitle_utils.py
+- 將 BaseTranslator 簡化為純翻譯器（繼承 GGUFRuntime）
+- 批次處理邏輯移至 Service 層
+參考: REFACTOR_COMPLETED.md 中的職責邊界分析
 """
 import logging
-from pathlib import Path
 from typing import Optional
 
-from backend.core.paths import get_models_dir
-from backend.core.ai.model_manager import SLOT_QWEN3
+from backend.core.ai.registry import SLOT_LLM, MODELS_REGISTRY
 from .base import (
     BaseTranslator,
-    TranslateResult,
-    WHISPER_TO_BCP47,
-    SUPPORTED_LANGUAGES,
     LANG_NAMES_EN,
     LANG_NAMES_ZH,
     STYLE_INSTRUCTIONS,
-    _split_by_sentences,
-    _setup_cuda_dll_path,
 )
 
 logger = logging.getLogger(__name__)
 
-# GGUF 模型變體（含多量化選項）
-MODEL_VARIANTS = {
-    "1.7b": {
-        "Q8_0": {"repo_id": "Qwen/Qwen3-1.7B-GGUF", "filename": "Qwen3-1.7B-Q8_0.gguf", "size_mb": 1830},
-    },
-    "4b": {
-        "Q4_K_M": {"repo_id": "Qwen/Qwen3-4B-GGUF", "filename": "Qwen3-4B-Q4_K_M.gguf", "size_mb": 2500},
-    },
-    "8b": {
-        "Q4_K_M": {"repo_id": "Qwen/Qwen3-8B-GGUF", "filename": "Qwen3-8B-Q4_K_M.gguf", "size_mb": 5030},
-    },
-    "14b": {
-        "Q4_K_M": {"repo_id": "Qwen/Qwen3-14B-GGUF", "filename": "Qwen3-14B-Q4_K_M.gguf", "size_mb": 9000},
-        "Q4_K_S": {"repo_id": "unsloth/Qwen3-14B-GGUF", "filename": "Qwen3-14B-Q4_K_S.gguf", "size_mb": 8570},
-        "Q3_K_M": {"repo_id": "unsloth/Qwen3-14B-GGUF", "filename": "Qwen3-14B-Q3_K_M.gguf", "size_mb": 7320},
-        "Q3_K_S": {"repo_id": "unsloth/Qwen3-14B-GGUF", "filename": "Qwen3-14B-Q3_K_S.gguf", "size_mb": 6660},
-    },
-}
-
-DEFAULT_QUANT = {"1.7b": "Q8_0", "4b": "Q4_K_M", "8b": "Q4_K_M", "14b": "Q4_K_M"}
-
-
 class Qwen3Wrapper(BaseTranslator):
     """
     Qwen3 封裝類別（llama.cpp GGUF 版）
-    使用 ChatML 格式 + /no_think
+    
+    TODO: 未來應重構為繼承 GGUFRuntime，移除內部的模型載入邏輯
     """
-
-    MODEL_VARIANTS = MODEL_VARIANTS
-    DEFAULT_QUANT = DEFAULT_QUANT
-    SLOT = SLOT_QWEN3
+    SLOT = SLOT_LLM
     MODEL_NAME = "Qwen3"
-    _MODELS_DIR = get_models_dir("qwen3")
-    _MODEL_LAYERS = {"1.7b": 28, "4b": 36, "8b": 36, "14b": 40}
-    _VRAM_OVERHEAD_MB = {"1.7b": 300, "4b": 400, "8b": 800, "14b": 1000}
-    _MODEL_N_CTX = {"1.7b": 2048, "4b": 2048, "8b": 1024, "14b": 512}
+    CATEGORY = "qwen3"
+
+    # 完整繼承自 registry.py 的配置
+    @property
+    def MODEL_VARIANTS(self): return MODELS_REGISTRY[self.CATEGORY]["variants"]
+    @property
+    def DEFAULT_QUANT(self): return MODELS_REGISTRY[self.CATEGORY]["default_quant"]
+    @property
+    def _MODEL_LAYERS(self): return MODELS_REGISTRY[self.CATEGORY]["layers"]
+    @property
+    def _VRAM_OVERHEAD_MB(self): return MODELS_REGISTRY[self.CATEGORY]["vram_overhead_mb"]
+    @property
+    def _MODEL_N_CTX(self): return MODELS_REGISTRY[self.CATEGORY]["n_ctx"]
 
     def _generate_translation(
         self, text: str, source_lang: str, target_lang: str,
@@ -137,10 +121,8 @@ class Qwen3Wrapper(BaseTranslator):
 
         return output["choices"][0]["text"].strip()
 
-
 # 單例
 _qwen3: Optional[Qwen3Wrapper] = None
-
 
 def get_qwen3() -> Qwen3Wrapper:
     """取得 Qwen3Wrapper 單例"""
