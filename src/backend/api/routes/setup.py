@@ -42,9 +42,11 @@ async def initialize_env(background_tasks: BackgroundTasks):
 
 # 展示用的 Whisper 模型清單（size → size_mb）
 _WHISPER_DISPLAY = [
-    ("small",    "Whisper Small",    500,  "輕量語音辨識，速度快"),
-    ("medium",   "Whisper Medium",   1500, "平衡精度與速度"),
-    ("large-v3", "Whisper Large-v3", 3000, "最高精度語音辨識"),
+    ("tiny",     "Whisper Tiny",     500,  "極速語音辨識（150MB）"),
+    ("base",     "Whisper Base",     700,  "快速語音辨識（300MB）"),
+    ("small",    "Whisper Small",    1500, "輕量語音辨識（500MB）"),
+    ("medium",   "Whisper Medium",   3000, "平衡精度與速度（1.5GB）"),
+    ("large-v3", "Whisper Large-v3", 5000, "最高精度語音辨識（3GB）"),
 ]
 
 _SIZE_DESC = {
@@ -72,78 +74,139 @@ _QUANT_DESC = {
 
 
 def _enumerate_translate_models() -> list[dict]:
-    """從 MODEL_VARIANTS 動態枚舉所有翻譯模型，並確認檔案是否已下載"""
-    from backend.core.ai.translate.gemma import MODEL_VARIANTS as TG_VARIANTS
-    from backend.core.ai.translate.qwen3 import MODEL_VARIANTS as Q3_VARIANTS
+    """從 registry 動態枚舉所有翻譯模型，並確認檔案是否已下載"""
+    from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
 
     items = []
-    for model_type, variants, name_prefix in [
-        ("translategemma", TG_VARIANTS, "TranslateGemma"),
-        ("qwen3",          Q3_VARIANTS, "Qwen3"),
-    ]:
-        target_dir = get_models_dir(model_type)
-        for size, quants in variants.items():
-            for quant, info in quants.items():
-                model_path = target_dir / info["filename"]
-                size_desc  = _SIZE_DESC.get(model_type, {}).get(size, "")
+    gguf_models = MODELS_REGISTRY.get(FORMAT_GGUF, {})
+    
+    for model_family, config in gguf_models.items():
+        if model_family not in ["translategemma", "qwen3"]:
+            continue
+            
+        name_prefix = "TranslateGemma" if model_family == "translategemma" else "Qwen3"
+        target_dir = get_models_dir(model_family)
+        specs = config.get("specs", {})
+        
+        # 遍歷 size -> variants -> quant
+        for size, size_spec in specs.items():
+            variants = size_spec.get("variants", {})
+            for quant, quant_spec in variants.items():
+                model_path = target_dir / quant_spec["filename"]
+                
+                size_desc  = _SIZE_DESC.get(model_family, {}).get(size, "")
                 quant_desc = _QUANT_DESC.get(quant, "")
                 description = f"{size_desc} · {quant_desc}" if size_desc and quant_desc else (size_desc or quant_desc)
+                
                 items.append({
-                    "id":          f"{model_type}-{size}-{quant}",
+                    "id":          f"{model_family}-{size}-{quant}",
+                    "family":      model_family,
+                    "variant":     f"{size}-{quant}",
                     "label":       f"{name_prefix} {size.upper()} {quant}",
                     "description": description,
                     "category":    "translate",
                     "downloaded":  model_path.exists(),
-                    "size_mb":     info.get("size_mb", 0),
+                    "size_mb":     quant_spec.get("size_mb", 0),
                 })
     return items
 
 
 @router.get("/models")
 async def get_models_status():
-    """取得所有工具/模型的安裝/下載狀態"""
-    from backend.core.ai.model_manager import get_model_manager, MODELS_REGISTRY
+    """取得所有工具/模型的安裝/下載狀態（枚舉所有變體）"""
+    from backend.core.ai.model_manager import get_model_manager
+    from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_PTH
 
     manager = get_model_manager()
+    all_models = []
 
-    # ── 超解析模型（PyTorch 權重）──
-    TOOL_LABELS = {
-        "realesrgan-x4plus": {"label": "Real-ESRGAN x4+",  "description": "通用超解析（寫實）"},
-        "hat-l-x4":          {"label": "HAT-L x4",          "description": "高品質超解析（寫實）"},
+    # ── PyTorch 模型（超解析 & 人臉修復）：枚舉所有變體 ──
+    UPSCALE_LABELS = {
+        "realesrgan": {"label": "Real-ESRGAN",  "description": "通用超解析（寫實）"},
+        "swinir":     {"label": "SwinIR",       "description": "Transformer 超解析"},
+        "bsrgan":     {"label": "BSRGAN",       "description": "盲超解析"},
+        "real-cugan": {"label": "Real-CUGAN",   "description": "動漫風格超解析"},
     }
-    tools = []
-    for model_id, config in MODELS_REGISTRY.get("upscale", {}).items():
-        meta = TOOL_LABELS.get(model_id, {})
-        tools.append({
-            "id":          model_id,
-            "label":       meta.get("label", model_id),
-            "description": meta.get("description", config.get("description", "")),
-            "installed":   manager.get_model_path("upscale", model_id) is not None,
-            "size_mb":     config.get("size_mb", 0),
-        })
+    
+    FACE_RESTORE_LABELS = {
+        "codeformer": {"label": "CodeFormer",   "description": "VQ-GAN 人臉修復"},
+        "gfpgan":     {"label": "GFPGAN",       "description": "GAN 人臉修復"},
+    }
+    
+    # 變體描述映射
+    VARIANT_DESC = {
+        "x2plus": "2x 放大",
+        "x4plus": "4x 放大",
+        "x4plus-anime": "4x 放大（動漫）",
+        "lightweight-x4": "輕量 4x",
+        "classical-x4": "經典 4x",
+        "realworld-x4": "真實世界 4x",
+        "default": "標準",
+        "up2x-conservative": "2x 保守降噪",
+        "up2x-denoise3x": "2x 強力降噪",
+        "up2x-no-denoise": "2x 無降噪",
+        "up3x-conservative": "3x 保守降噪",
+        "up3x-no-denoise": "3x 無降噪",
+        "up4x-conservative": "4x 保守降噪",
+        "up4x-no-denoise": "4x 無降噪",
+        "v1.4": "v1.4",
+    }
+    
+    pth_models = MODELS_REGISTRY.get(FORMAT_PTH, {})
+    for model_family, config in pth_models.items():
+        # 判斷分類
+        if model_family in UPSCALE_LABELS:
+            category = "upscale"
+            family_meta = UPSCALE_LABELS[model_family]
+        elif model_family in FACE_RESTORE_LABELS:
+            category = "face_restore"
+            family_meta = FACE_RESTORE_LABELS[model_family]
+        else:
+            continue
+        
+        # 枚舉所有變體
+        variants = config.get("variants", {})
+        for variant_name, variant_spec in variants.items():
+            model_path = manager.get_model_path(model_family, variant_name)
+            downloaded = model_path is not None and model_path.exists()
+            
+            variant_desc = VARIANT_DESC.get(variant_name, variant_name)
+            label = f"{family_meta['label']} - {variant_desc}" if len(variants) > 1 else family_meta['label']
+            
+            all_models.append({
+                "id":          f"{model_family}-{variant_name}",
+                "family":      model_family,
+                "variant":     variant_name,
+                "category":    category,
+                "label":       label,
+                "description": family_meta["description"],
+                "downloaded":  downloaded,
+                "size_mb":     variant_spec.get("vram_mb", 0),
+            })
 
     # ── Whisper STT 模型 ──
     whisper_dir = get_models_dir("whisper")
-    stt_models = []
     for size, label, size_mb, description in _WHISPER_DISPLAY:
         model_dir = whisper_dir / size
         has_vocab = (model_dir / "vocabulary.txt").exists() or (model_dir / "vocabulary.json").exists()
         downloaded = model_dir.exists() and (model_dir / "model.bin").exists() and has_vocab
-        stt_models.append({
+        all_models.append({
             "id":          f"whisper-{size}",
+            "family":      "whisper",
+            "variant":     size,
+            "category":    "stt",
             "label":       label,
             "description": description,
-            "category":    "stt",
             "downloaded":  downloaded,
             "size_mb":     size_mb,
         })
 
-    # ── 翻譯模型 (GGUF)：從 MODEL_VARIANTS 動態枚舉 ──
+    # ── 翻譯模型 (GGUF)：從 registry 動態枚舉所有變體 ──
     translate_models = _enumerate_translate_models()
+    all_models.extend(translate_models)
 
     return {
-        "tools":  tools,
-        "models": stt_models + translate_models,
+        "models": all_models,
     }
 
 
