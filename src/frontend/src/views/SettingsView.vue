@@ -5,6 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useTaskStore } from '@/stores/tasks'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppModelList from '@/components/common/AppModelList.vue'
+import AppModelGroupList from '@/components/common/AppModelGroupList.vue'
 import AppIcon from '@/assets/icon.svg'
 
 const { themeMode, setTheme } = useTheme()
@@ -575,8 +576,17 @@ function formatRam(bytes: number | null): string {
         <template v-else-if="modelStatus">
           <!-- 超解析工具 -->
           <label class="section-subtitle">超解析工具</label>
-          <AppModelList
-            :items="modelStatus.tools.map(t => ({ ...t, ready: t.installed }))"
+          <AppModelGroupList
+            :items="modelStatus.models.filter(m => m.category === 'upscale')"
+            :downloadingTaskId="downloadingTaskId"
+            @download="downloadItem"
+            @remove="removeItem"
+          />
+
+          <!-- 人臉修復 -->
+          <label class="section-subtitle">人臉修復</label>
+          <AppModelGroupList
+            :items="modelStatus.models.filter(m => m.category === 'face_restore')"
             :downloadingTaskId="downloadingTaskId"
             @download="downloadItem"
             @remove="removeItem"
@@ -584,10 +594,8 @@ function formatRam(bytes: number | null): string {
 
           <!-- 語音識別 -->
           <label class="section-subtitle">語音識別</label>
-          <AppModelList
-            :items="modelStatus.models
-              .filter(m => m.category === 'stt')
-              .map(m => ({ ...m, ready: m.downloaded }))"
+          <AppModelGroupList
+            :items="modelStatus.models.filter(m => m.category === 'stt')"
             :downloadingTaskId="downloadingTaskId"
             @download="downloadItem"
             @remove="removeItem"
@@ -595,10 +603,8 @@ function formatRam(bytes: number | null): string {
 
           <!-- 翻譯模型 -->
           <label class="section-subtitle">翻譯模型</label>
-          <AppModelList
-            :items="modelStatus.models
-              .filter(m => m.category === 'translate')
-              .map(m => ({ ...m, ready: m.downloaded }))"
+          <AppModelGroupList
+            :items="modelStatus.models.filter(m => m.category === 'translate')"
             :downloadingTaskId="downloadingTaskId"
             @download="downloadItem"
             @remove="removeItem"
