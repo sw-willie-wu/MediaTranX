@@ -270,8 +270,12 @@ class SetupService:
         elif item_id.startswith("translategemma-"):
             parts = item_id.split("-", 2)
             size, quant = parts[1], parts[2]
-            from backend.core.ai.translate.gemma import MODEL_VARIANTS
-            variant = MODEL_VARIANTS.get(size, {}).get(quant)
+            from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
+            
+            translategemma_config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get("translategemma", {})
+            specs = translategemma_config.get("specs", {})
+            variant = specs.get(size, {}).get("variants", {}).get(quant)
+            
             if variant:
                 p = get_models_dir("translategemma") / variant["filename"]
                 if p.exists():
@@ -281,8 +285,12 @@ class SetupService:
         elif item_id.startswith("qwen3-"):
             parts = item_id.split("-", 2)
             size, quant = parts[1], parts[2]
-            from backend.core.ai.translate.qwen3 import MODEL_VARIANTS
-            variant = MODEL_VARIANTS.get(size, {}).get(quant)
+            from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
+            
+            qwen3_config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get("qwen3", {})
+            specs = qwen3_config.get("specs", {})
+            variant = specs.get(size, {}).get("variants", {}).get(quant)
+            
             if variant:
                 p = get_models_dir("qwen3") / variant["filename"]
                 if p.exists():
@@ -290,13 +298,42 @@ class SetupService:
                     logger.info(f"Removed qwen3 model: {item_id}")
 
         else:
-            from backend.core.ai.model_manager import MODELS_REGISTRY
-            config = MODELS_REGISTRY.get("upscale", {}).get(item_id)
-            if config:
-                p = get_models_dir("upscale") / config["filename"]
-                if p.exists():
-                    p.unlink()
-                    logger.info(f"Removed upscale model: {item_id}")
+            # PTH 模型（upscale / face_restore）: {family}-{variant}
+            from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_PTH
+            
+            # 分解 ID: family-variant
+            if '-' in item_id:
+                family, variant = item_id.split('-', 1)
+            else:
+                # 舊格式相容，直接當作 family
+                family = item_id
+                variant = None
+            
+            pth_models = MODELS_REGISTRY.get(FORMAT_PTH, {})
+            model_config = pth_models.get(family)
+            
+            if model_config:
+                if variant:
+                    # 刪除特定變體
+                    variant_spec = model_config.get("variants", {}).get(variant)
+                    if variant_spec:
+                        from backend.core.ai.model_manager import get_model_manager
+                        manager = get_model_manager()
+                        model_path = manager.get_model_path(family, variant)
+                        if model_path and model_path.exists():
+                            model_path.unlink()
+                            logger.info(f"Removed PTH model: {item_id}")
+                else:
+                    # 舊格式：刪除第一個變體
+                    variants = model_config.get("variants", {})
+                    if variants:
+                        first_variant = list(variants.keys())[0]
+                        from backend.core.ai.model_manager import get_model_manager
+                        manager = get_model_manager()
+                        model_path = manager.get_model_path(family, first_variant)
+                        if model_path and model_path.exists():
+                            model_path.unlink()
+                            logger.info(f"Removed PTH model: {family}")
 
     # ─── 模型下載 Handler（同步，由 ThreadPoolExecutor 執行）──────────────────
 
@@ -331,44 +368,32 @@ class SetupService:
             self._download_translate("qwen3", size, quant, progress_callback, hf_hub_download)
 
         else:
-            # Upscale 模型權重
-            self._download_upscale(item_id, progress_callback, hf_hub_download)
+            # PTH 模型（upscale / face_restore）
+            self._download_pth_model(item_id, progress_callback, hf_hub_download)
 
         progress_callback(1.0, "下載完成")
         return {"status": "ok", "id": item_id}
 
-    def _stream_download(
+    def _download_from_url(
         self,
-        repo_id: str,
-        filename: str,
+        url: str,
         target_path: Path,
         progress_callback: Callable,
         base_progress: float = 0.1,
         end_progress: float = 0.95,
     ) -> None:
-        """透過 HTTP streaming 下載單一 HuggingFace 檔案並即時回報進度"""
+        """從直接 URL 下載檔案（支援 GitHub releases 等）"""
         import requests
-
-        url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
-
-        # 取得 HF token（若已登入）
-        headers: dict = {}
-        try:
-            from huggingface_hub import get_token
-            token = get_token()
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-        except Exception:
-            pass
-
-        response = requests.get(url, stream=True, headers=headers, allow_redirects=True, timeout=60)
+        
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        response = requests.get(url, stream=True, allow_redirects=True, timeout=60)
         response.raise_for_status()
-
+        
         total = int(response.headers.get("content-length", 0))
         downloaded = 0
         chunk_size = 4 * 1024 * 1024  # 4 MB
-
-        target_path.parent.mkdir(parents=True, exist_ok=True)
+        
         with open(target_path, "wb") as f:
             for chunk in response.iter_content(chunk_size=chunk_size):
                 if chunk:
@@ -380,13 +405,59 @@ class SetupService:
                         mb_done = downloaded / 1024 / 1024
                         mb_total = total / 1024 / 1024
                         progress_callback(prog, f"下載中... {mb_done:.0f} / {mb_total:.0f} MB")
+        
+        if target_path.exists():
+            size_mb = target_path.stat().st_size / 1024 / 1024
+            progress_callback(end_progress, f"下載完成 ({size_mb:.1f} MB)")
+    
+    def _stream_download(
+        self,
+        repo_id: str,
+        filename: str,
+        target_path: Path,
+        progress_callback: Callable,
+        base_progress: float = 0.1,
+        end_progress: float = 0.95,
+    ) -> None:
+        """透過 HuggingFace Hub 下載單一檔案"""
+        from huggingface_hub import hf_hub_download
+        import shutil
+        
+        progress_callback(base_progress, f"正在下載 {filename}...")
+        
+        # 確保目標目錄存在
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # 使用 hf_hub_download 直接下載到目標目錄
+        # local_dir_use_symlinks=False 確保檔案直接下載，不使用符號連結
+        try:
+            downloaded_path = hf_hub_download(
+                repo_id=repo_id,
+                filename=filename,
+                local_dir=target_path.parent,
+                local_dir_use_symlinks=False,
+            )
+            
+            # 檢查下載的檔案大小
+            if target_path.exists():
+                size_mb = target_path.stat().st_size / 1024 / 1024
+                progress_callback(end_progress, f"下載完成 ({size_mb:.1f} MB)")
+            else:
+                progress_callback(end_progress, "下載完成")
+        except Exception as e:
+            raise RuntimeError(f"下載失敗: {str(e)}")
 
     def _download_whisper(self, size: str, progress_callback: Callable, snapshot_download) -> None:
-        from backend.core.ai.whisper import MODEL_SIZES
-        repo_id = MODEL_SIZES.get(size)
-        if not repo_id:
+        from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_BIN
+        
+        whisper_config = MODELS_REGISTRY.get(FORMAT_BIN, {}).get("whisper", {})
+        variants = whisper_config.get("variants", {})
+        variant_spec = variants.get(size)
+        
+        if not variant_spec:
             raise ValueError(f"未知的 Whisper 模型大小: {size}")
-
+        
+        repo_id = variant_spec["repo_id"]
         local_dir = get_models_dir("whisper") / size
         local_dir.mkdir(parents=True, exist_ok=True)
 
@@ -406,12 +477,12 @@ class SetupService:
         progress_callback(0.95, "模型下載完成")
 
     def _download_translate(self, model_type: str, size: str, quant: str, progress_callback: Callable, hf_hub_download) -> None:
-        if model_type == "translategemma":
-            from backend.core.ai.translate.gemma import MODEL_VARIANTS
-        else:
-            from backend.core.ai.translate.qwen3 import MODEL_VARIANTS
-
-        variant = MODEL_VARIANTS.get(size, {}).get(quant)
+        from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
+        
+        model_config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get(model_type, {})
+        specs = model_config.get("specs", {})
+        variant = specs.get(size, {}).get("variants", {}).get(quant)
+        
         if not variant:
             raise ValueError(f"未知的模型變體: {model_type}-{size}-{quant}")
 
@@ -429,24 +500,141 @@ class SetupService:
         )
         progress_callback(0.95, "模型下載完成")
 
-    def _download_upscale(self, model_id: str, progress_callback: Callable, hf_hub_download) -> None:
-        from backend.core.ai.model_manager import MODELS_REGISTRY
-        config = MODELS_REGISTRY.get("upscale", {}).get(model_id)
-        if not config:
-            raise ValueError(f"未知的超解析模型: {model_id}")
-
-        target_dir = get_models_dir("upscale")
+    def _download_pth_model(self, model_id: str, progress_callback: Callable, hf_hub_download) -> None:
+        """下載 PTH 模型（upscale / face_restore）"""
+        from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_PTH
+        
+        pth_models = MODELS_REGISTRY.get(FORMAT_PTH, {})
+        
+        # 智能分解 ID: 嘗試匹配所有 family（處理 real-cugan 這種多連字符的情況）
+        family = None
+        variant = None
+        
+        # 嘗試匹配最長的 family 前綴（避免 "real" 和 "real-cugan" 衝突）
+        matched_families = [
+            (family_name, model_id[len(family_name) + 1:])
+            for family_name in pth_models.keys()
+            if model_id.startswith(family_name + "-")
+        ]
+        
+        if matched_families:
+            # 選擇最長的匹配（最具體的 family）
+            family, variant = max(matched_families, key=lambda x: len(x[0]))
+        
+        if not family or not variant:
+            raise ValueError(f"無效的模型 ID 格式: {model_id}，無法匹配任何已知模型家族")
+        
+        model_config = pth_models.get(family)
+        
+        if not model_config:
+            raise ValueError(f"未知的模型家族: {family}")
+        
+        variant_spec = model_config.get("variants", {}).get(variant)
+        if not variant_spec:
+            raise ValueError(f"未知的模型變體: {family}-{variant}")
+        
+        # 獲取 slot 來決定目錄結構
+        slot = model_config.get("slot", "")
+        if not slot:
+            raise ValueError(f"模型 {family} 缺少 slot 配置")
+        
+        # 構建目標目錄：models/{slot}/
+        target_dir = get_models_dir() / slot
         target_dir.mkdir(parents=True, exist_ok=True)
-
-        progress_callback(0.1, f"下載 {model_id} 模型中...")
-        self._stream_download(
-            repo_id=config["repo_id"],
-            filename=config["filename"],
-            target_path=target_dir / config["filename"],
-            progress_callback=progress_callback,
-            base_progress=0.1,
-            end_progress=0.95,
-        )
+        
+        filename = variant_spec["filename"]
+        target_path = target_dir / filename
+        
+        # 檢查是否需要解壓縮
+        needs_unzip = variant_spec.get("unzip", False)
+        archive_path = variant_spec.get("archive_path", None)
+        
+        # 檢查是直接 URL 還是 HuggingFace repo_id
+        if "url" in variant_spec:
+            # 直接從 URL 下載（GitHub releases 等）
+            url = variant_spec["url"]
+            progress_callback(0.1, f"下載 {family} {variant} 中...")
+            
+            if needs_unzip:
+                # 下載壓縮檔到臨時目錄
+                import tempfile
+                import zipfile
+                import shutil
+                from pathlib import Path as PathlibPath
+                
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_archive = PathlibPath(temp_dir) / "archive.zip"
+                    self._download_from_url(url, temp_archive, progress_callback, 0.1, 0.85)
+                    
+                    progress_callback(0.85, "解壓縮中...")
+                    
+                    # 解壓縮
+                    with zipfile.ZipFile(temp_archive, 'r') as zip_ref:
+                        # 如果指定了 archive_path，只提取該檔案
+                        if archive_path:
+                            # 列出所有文件以便調試
+                            all_files = zip_ref.namelist()
+                            
+                            # 嘗試多種匹配方式
+                            matching_files = []
+                            
+                            # 1. 精確匹配
+                            if archive_path in all_files:
+                                matching_files = [archive_path]
+                            else:
+                                # 2. 後綴匹配（處理目錄前綴）
+                                matching_files = [
+                                    name for name in all_files
+                                    if name.endswith(archive_path) or name.endswith('/' + archive_path)
+                                ]
+                                
+                                # 3. 如果還沒找到，嘗試只匹配基本文件名（不含路徑）
+                                if not matching_files:
+                                    target_basename = PathlibPath(archive_path).name
+                                    matching_files = [
+                                        name for name in all_files
+                                        if PathlibPath(name).name == target_basename
+                                    ]
+                            
+                            if not matching_files:
+                                # 打印所有文件以便調試
+                                files_list = "\n  ".join(all_files[:10])  # 只顯示前10個
+                                raise ValueError(
+                                    f"壓縮檔中找不到 {archive_path}\n"
+                                    f"壓縮檔包含 {len(all_files)} 個文件，前幾個：\n  {files_list}"
+                                )
+                            
+                            # 提取第一個匹配的檔案
+                            source_file = matching_files[0]
+                            temp_extract = PathlibPath(temp_dir) / "extracted"
+                            zip_ref.extract(source_file, temp_extract)
+                            
+                            # 複製到最終位置
+                            extracted_file = temp_extract / source_file
+                            shutil.copy2(extracted_file, target_path)
+                        else:
+                            # 解壓全部到目標目錄
+                            zip_ref.extractall(target_dir)
+                    
+                    progress_callback(0.95, "解壓縮完成")
+            else:
+                # 直接下載到目標路徑
+                self._download_from_url(url, target_path, progress_callback, 0.1, 0.95)
+        elif "repo_id" in variant_spec:
+            # 從 HuggingFace 下載
+            repo_id = variant_spec["repo_id"]
+            progress_callback(0.1, f"下載 {family} {variant} 中...")
+            self._stream_download(
+                repo_id=repo_id,
+                filename=filename,
+                target_path=target_path,
+                progress_callback=progress_callback,
+                base_progress=0.1,
+                end_progress=0.95,
+            )
+        else:
+            raise ValueError(f"模型 {family}-{variant} 缺少 url 或 repo_id 配置")
+        
         progress_callback(0.95, "模型下載完成")
 
 
