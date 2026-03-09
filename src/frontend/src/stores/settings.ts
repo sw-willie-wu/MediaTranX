@@ -5,7 +5,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { DeviceInfo } from '@/types/api'
 
-const API_BASE = '/api'
+import { apiFetch } from '@/composables/useApi'
 
 export const useSettingsStore = defineStore('settings', () => {
   // 狀態
@@ -16,6 +16,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const hasGPU = computed(() => deviceInfo.value?.device === 'cuda')
   const hasMPS = computed(() => deviceInfo.value?.device === 'mps')
   const isCPUOnly = computed(() => deviceInfo.value?.device === 'cpu')
+  const needsCudaToolkit = computed(() =>
+    deviceInfo.value?.has_nvidia_gpu === true && !deviceInfo.value?.cuda_toolkit_installed
+  )
 
   const deviceDisplayName = computed(() => {
     if (!deviceInfo.value) return 'Unknown'
@@ -28,7 +31,7 @@ export const useSettingsStore = defineStore('settings', () => {
   async function loadDeviceInfo(): Promise<void> {
     isLoading.value = true
     try {
-      const response = await fetch(`${API_BASE}/device`)
+      const response = await apiFetch('/device')
       if (response.ok) {
         deviceInfo.value = await response.json()
       }
@@ -46,6 +49,7 @@ export const useSettingsStore = defineStore('settings', () => {
     hasGPU,
     hasMPS,
     isCPUOnly,
+    needsCudaToolkit,
     deviceDisplayName,
     // 方法
     loadDeviceInfo,

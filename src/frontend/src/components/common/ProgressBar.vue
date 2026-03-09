@@ -8,18 +8,11 @@ defineProps<{
 
 <template>
   <div class="progress-wrapper">
-    <div class="progress" style="height: 8px">
+    <div class="progress-track">
       <div
-        class="progress-bar progress-bar-striped progress-bar-animated"
-        :class="{
-          'bg-success': progress >= 1,
-          'bg-primary': progress < 1,
-        }"
-        role="progressbar"
+        class="progress-fill"
+        :class="{ done: progress >= 1 }"
         :style="{ width: `${Math.min(progress * 100, 100)}%` }"
-        :aria-valuenow="progress * 100"
-        aria-valuemin="0"
-        aria-valuemax="100"
       ></div>
     </div>
     <div class="progress-info" v-if="message || showPercentage">
@@ -34,28 +27,39 @@ defineProps<{
 <style scoped lang="scss">
 .progress-wrapper {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
-.progress {
-  background-color: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+.progress-track {
+  width: 100%;
+  height: 6px;
+  background: var(--input-border, rgba(255, 255, 255, 0.1));
+  border-radius: 3px;
   overflow: hidden;
 }
 
-.progress-bar {
-  transition: width 0.3s ease;
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary, #60a5fa), #818cf8);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+
+  &.done {
+    background: linear-gradient(90deg, #34d399, #10b981);
+  }
 }
 
 .progress-info {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 4px;
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.78rem;
 }
 
 .progress-message {
+  color: var(--text-muted);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -63,7 +67,9 @@ defineProps<{
 }
 
 .progress-percentage {
-  margin-left: 8px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  margin-left: 0.5rem;
   font-weight: 500;
 }
 </style>

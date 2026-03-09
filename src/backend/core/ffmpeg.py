@@ -10,6 +10,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Optional
 
+from backend.core.paths import get_ffmpeg_dir
+
 
 class VideoCodec(str, Enum):
     """影片編碼器"""
@@ -84,8 +86,8 @@ class FFmpegError(Exception):
 class FFmpeg:
     """FFmpeg 封裝類別"""
 
-    # 專案內的 FFmpeg 路徑
-    _PROJECT_BIN_DIR = Path(__file__).parent.parent.parent.parent / "bin" / "ffmpeg"
+    # FFmpeg 路徑（dev: bin/ffmpeg, packaged: resources/ffmpeg）
+    _PROJECT_BIN_DIR = get_ffmpeg_dir()
 
     def __init__(self):
         self.ffmpeg_path = self._find_ffmpeg()

@@ -17,6 +17,7 @@
   /* Background */
   --bg-gradient-start: #1f1c2c;
   --bg-gradient-end: #928dab;
+  --bg-color: linear-gradient(to bottom, #1f1c2c, #4a4468);
 
   /* Text colors */
   --text-primary: #ffffff;
@@ -53,6 +54,7 @@
   /* Background */
   --bg-gradient-start: #e8e8e8;
   --bg-gradient-end: #b8b8db;
+  --bg-color: linear-gradient(to bottom, #e8e8e8, #b8b8db);
 
   /* Text colors */
   --text-primary: #1a1a2e;
@@ -95,7 +97,7 @@
 body {
   min-height: 100vh;
   color: var(--text-primary);
-  background: linear-gradient(to bottom, var(--bg-gradient-start), var(--bg-gradient-end));
+  background: var(--bg-color) fixed;
   line-height: 1.6;
   font-family:
     Inter,

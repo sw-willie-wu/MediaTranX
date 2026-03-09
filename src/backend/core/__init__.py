@@ -10,11 +10,12 @@ from .ffmpeg import (
     AudioCodec,
     QualityPreset,
 )
-from .models import (
+from .ai import (
     ModelManager,
     get_model_manager,
     SLOT_WHISPER,
-    SLOT_TRANSLATEGEMMA,
+    SLOT_LLM,
+    SLOT_PTH,
     WhisperWrapper,
     get_whisper,
     TranscribeSegment,
@@ -38,7 +39,8 @@ __all__ = [
     "ModelManager",
     "get_model_manager",
     "SLOT_WHISPER",
-    "SLOT_TRANSLATEGEMMA",
+    "SLOT_LLM",
+    "SLOT_PTH",
     "WhisperWrapper",
     "get_whisper",
     "TranscribeSegment",

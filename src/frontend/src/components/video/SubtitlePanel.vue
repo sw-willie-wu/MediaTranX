@@ -5,8 +5,9 @@ import { useTaskStore } from '@/stores/tasks'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import AppSelect from '@/components/common/AppSelect.vue'
+import AppToggle from '@/components/common/AppToggle.vue'
+import { apiFetch, getApiBase } from '@/composables/useApi'
 
-// Props
 const props = defineProps<{
   fileId: string | null
   mediaInfo: {
@@ -21,7 +22,6 @@ const props = defineProps<{
   } | null
 }>()
 
-// Emits
 const emit = defineEmits<{
   (e: 'submit', taskId: string): void
   (e: 'complete', taskId: string): void
@@ -32,48 +32,108 @@ const taskStore = useTaskStore()
 const settings = useSettingsStore()
 const toast = useToast()
 
-// 狀態
 const isLoading = ref(false)
 const isInstalling = ref(false)
 const error = ref<string | null>(null)
 
-// Whisper 模型狀態
-const whisperStatus = ref<{
-  available: boolean
-  model_size: string
-  model_downloaded: boolean
-  device: string
-  compute_type: string
-  device_name: string
-} | null>(null)
+// ========== Whisper 模型狀態 ==========
+const whisperAvailable = ref<boolean | null>(null)
+const whisperDownloadedMap = ref<Record<string, boolean | null>>({})
 
-// TranslateGemma 模型狀態
-const translateStatus = ref<{
-  available: boolean
-  model_size: string
-  model_downloaded: boolean
-  device: string
-  compute_type: string
-  device_name: string
-  missing_packages?: string[]
-  gpu_upgrade?: boolean
-} | null>(null)
+const baseModelSizes = [
+  { value: 'tiny',     label: 'Tiny (~75 MB)',    desc: '最快，精度較低' },
+  { value: 'base',     label: 'Base (~145 MB)',   desc: '快速' },
+  { value: 'small',    label: 'Small (~484 MB)',  desc: '平衡' },
+  { value: 'medium',   label: 'Medium (~1.5 GB)', desc: '推薦' },
+  { value: 'large-v3', label: 'Large-v3 (~3 GB)', desc: '最佳精度' },
+]
 
-// 字幕選項
+const modelSizesWithBadge = computed(() =>
+  baseModelSizes.map(m => {
+    const dl = whisperDownloadedMap.value[m.value]
+    return { ...m, badge: dl === undefined ? null : dl ? 'ok' as const : 'err' as const }
+  })
+)
+
+async function loadAllWhisperStatus() {
+  await Promise.allSettled(baseModelSizes.map(async ({ value: size }) => {
+    try {
+      const res = await fetch(`${getApiBase()}/video/whisper/status?model_size=${size}`)
+      if (!res.ok) return
+      const data = await res.json()
+      whisperDownloadedMap.value[size] = data.model_downloaded
+      if (whisperAvailable.value === null) whisperAvailable.value = data.available
+    } catch {}
+  }))
+}
+
+// ========== 翻譯模型（從後端 registry 取得） ==========
+interface TranslateModelItem {
+  key: string
+  label: string
+  desc: string
+  sizeMb: number
+  downloaded: boolean
+}
+
+const selectedTranslateModel = ref('translategemma:4b:Q4_K_M')
+const translateEnvAvailable = ref<boolean | null>(null)
+const translateModelsFromApi = ref<TranslateModelItem[]>([])
+
+const translateModelOptions = computed(() =>
+  translateModelsFromApi.value.map(m => ({
+    value: m.key,
+    label: m.label,
+    desc: m.desc,
+    badge: m.downloaded ? 'ok' as const : 'err' as const,
+  }))
+)
+
+async function loadTranslateModels() {
+  try {
+    const [statusRes, modelsRes] = await Promise.all([
+      apiFetch('/setup/status'),
+      apiFetch('/setup/models'),
+    ])
+    if (statusRes.ok) {
+      const s = await statusRes.json()
+      translateEnvAvailable.value = s.ai_env_ready ?? null
+    }
+    if (!modelsRes.ok) return
+    const data = await modelsRes.json()
+    translateModelsFromApi.value = (data.models as any[])
+      .filter((m: any) => m.category === 'translate')
+      .sort((a: any, b: any) => a.size_mb - b.size_mb)
+      .map((m: any) => {
+        const dashIdx = m.variant.indexOf('-')
+        const size = m.variant.slice(0, dashIdx)
+        const quant = m.variant.slice(dashIdx + 1)
+        const sizeGb = (m.size_mb / 1024).toFixed(1)
+        const desc = m.description ? `${sizeGb} GB · ${m.description}` : `${sizeGb} GB`
+        return {
+          key: `${m.family}:${size}:${quant}`,
+          label: m.label,
+          desc,
+          sizeMb: m.size_mb,
+          downloaded: m.downloaded,
+        }
+      })
+  } catch {}
+}
+
+// ========== 字幕選項 ==========
 const language = ref('')
 const modelSize = ref('medium')
 const outputFormat = ref('srt')
 const outputPath = ref('')
 
-// 翻譯選項
+// ========== 翻譯選項 ==========
 const enableTranslation = ref(false)
 const targetLanguage = ref('zh-TW')
-const translateModelType = ref<'translategemma' | 'qwen3'>('translategemma')
-const translateModelSize = ref('4b')
-const translateQuantization = ref('Q4_K_M')
-const showAdvancedTranslate = ref(false)
+const keepNames = ref(true)
+const translateStyle = ref('colloquial')
+const glossaryText = ref('')
 
-// 預設語言列表（避免 API 載入前顯示空白）
 const translateLanguages = ref<{ code: string; name: string }[]>([
   { code: 'zh-TW', name: '繁體中文' },
   { code: 'zh-CN', name: '簡體中文' },
@@ -81,50 +141,15 @@ const translateLanguages = ref<{ code: string; name: string }[]>([
   { code: 'ja', name: '日文' },
   { code: 'ko', name: '韓文' },
 ])
-const keepNames = ref(true)
-const translateStyle = ref('colloquial')
-const glossaryText = ref('')
 
-// 進階分句選項
+// ========== 進階分句選項 ==========
 const showAdvanced = ref(false)
 const wordTimestamps = ref(false)
 const conditionOnPreviousText = ref(true)
 const minSilenceDurationMs = ref(200)
 const vadThreshold = ref(0.3)
 
-// 量化選項靜態配置
-const quantOptions: Record<string, Record<string, Array<{value: string, label: string, sizeMb: number}>>> = {
-  translategemma: {
-    '4b':  [{ value: 'Q4_K_M', label: 'Q4_K_M (2.5 GB)', sizeMb: 2500 }],
-    '12b': [
-      { value: 'Q4_K_M', label: 'Q4_K_M (7.3 GB)', sizeMb: 7300 },
-      { value: 'Q4_K_S', label: 'Q4_K_S (6.9 GB)', sizeMb: 6940 },
-      { value: 'Q3_K_L', label: 'Q3_K_L (6.5 GB)', sizeMb: 6480 },
-      { value: 'Q3_K_M', label: 'Q3_K_M (6.0 GB)', sizeMb: 6010 },
-      { value: 'Q3_K_S', label: 'Q3_K_S (5.5 GB)', sizeMb: 5460 },
-    ],
-    '27b': [{ value: 'Q4_K_M', label: 'Q4_K_M (16.5 GB)', sizeMb: 16500 }],
-  },
-  qwen3: {
-    '1.7b': [{ value: 'Q8_0', label: 'Q8_0 (1.83 GB)', sizeMb: 1830 }],
-    '4b':   [{ value: 'Q4_K_M', label: 'Q4_K_M (2.5 GB)', sizeMb: 2500 }],
-    '8b':   [{ value: 'Q4_K_M', label: 'Q4_K_M (5 GB)', sizeMb: 5030 }],
-    '14b':  [
-      { value: 'Q4_K_M', label: 'Q4_K_M (9 GB)', sizeMb: 9000 },
-      { value: 'Q4_K_S', label: 'Q4_K_S (8.6 GB)', sizeMb: 8570 },
-      { value: 'Q3_K_M', label: 'Q3_K_M (7.3 GB)', sizeMb: 7320 },
-      { value: 'Q3_K_S', label: 'Q3_K_S (6.7 GB)', sizeMb: 6660 },
-    ],
-  },
-}
-
-const availableQuants = computed(() =>
-  quantOptions[translateModelType.value]?.[translateModelSize.value]
-    ?? [{ value: 'Q4_K_M', label: 'Q4_K_M', sizeMb: 0 }]
-)
-const showQuantSelector = computed(() => availableQuants.value.length > 1)
-
-// 語言選項
+// ========== 語言 / 格式選項 ==========
 const languages = [
   { value: '', label: '自動偵測' },
   { value: 'zh', label: '中文' },
@@ -141,107 +166,59 @@ const languages = [
   { value: 'vi', label: '越南文' },
 ]
 
-// 模型大小選項
-const modelSizes = [
-  { value: 'tiny', label: 'Tiny (~75 MB)', desc: '最快，精度較低' },
-  { value: 'base', label: 'Base (~145 MB)', desc: '快速' },
-  { value: 'small', label: 'Small (~484 MB)', desc: '平衡' },
-  { value: 'medium', label: 'Medium (~1.5 GB)', desc: '推薦' },
-  { value: 'large-v3', label: 'Large-v3 (~3 GB)', desc: '最佳精度' },
-]
-
-// 輸出格式選項
 const outputFormats = [
   { value: 'srt', label: 'SRT' },
   { value: 'vtt', label: 'VTT (WebVTT)' },
 ]
 
-// 翻譯模型類型選項
-const translateModelTypes = [
-  { value: 'translategemma', label: 'TranslateGemma', desc: '翻譯專用模型' },
-  { value: 'qwen3', label: 'Qwen3', desc: '通用 LLM' },
-]
-
-// 翻譯模型大小選項（根據模型類型動態切換）
-const translateGemmaSizes = [
-  { value: '4b', label: '4B (~2.5 GB)', desc: '推薦' },
-  { value: '12b', label: '12B (~7.3 GB)', desc: '較佳品質' },
-  { value: '27b', label: '27B (~16.5 GB)', desc: '最佳品質' },
-]
-const qwen3Sizes = [
-  { value: '1.7b', label: '1.7B (~1.83 GB)', desc: '輕量' },
-  { value: '4b', label: '4B (~2.5 GB)', desc: '推薦' },
-  { value: '8b', label: '8B (~5 GB)', desc: '較佳品質' },
-  { value: '14b', label: '14B (~9 GB)', desc: '最佳品質' },
-]
-
-const translateModelSizes = computed(() =>
-  translateModelType.value === 'qwen3' ? qwen3Sizes : translateGemmaSizes
-)
-
-// 翻譯風格選項
 const translateStyles = [
   { value: 'colloquial', label: '口語化' },
   { value: 'formal', label: '正式' },
   { value: 'literal', label: '直譯' },
 ]
 
-// 目標語言選項（從 API 載入）
 const targetLanguageOptions = computed(() =>
   translateLanguages.value.map(l => ({ value: l.code, label: l.name }))
 )
 
-// === localStorage 持久化 ===
+// ========== localStorage 持久化 ==========
 const STORAGE_KEY = 'translate-preferences'
 
 function savePreferences() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
-    modelType: translateModelType.value,
-    modelSize: translateModelSize.value,
-    quantization: translateQuantization.value,
+    translateModel: selectedTranslateModel.value,
   }))
 }
 
-function loadPreferences(): { modelType: string; modelSize: string; quantization: string } | null {
+function loadPreferences(): string | null {
   const saved = localStorage.getItem(STORAGE_KEY)
   if (!saved) return null
-  try { return JSON.parse(saved) } catch { return null }
+  try {
+    const parsed = JSON.parse(saved)
+    // 新格式
+    if (parsed.translateModel) return parsed.translateModel
+    // 舊格式向下相容
+    if (parsed.modelType && parsed.modelSize && parsed.quantization) {
+      return `${parsed.modelType}:${parsed.modelSize}:${parsed.quantization}`
+    }
+  } catch {}
+  return null
 }
 
-// === 首次啟動 VRAM 推薦 ===
+// ========== VRAM 自動推薦 ==========
 async function autoRecommend() {
   await settings.loadDeviceInfo()
   const totalBytes = settings.deviceInfo?.memory_total
   if (!totalBytes) return
 
-  const usableMb = totalBytes / (1024 * 1024) - 1500  // 預留 OS + Whisper
+  const usableMb = totalBytes / (1024 * 1024) - 1500
 
-  // 按品質降序排列（越大越好）
-  const allModels = [
-    { type: 'qwen3' as const, size: '14b', quant: 'Q4_K_M', mb: 9000 },
-    { type: 'qwen3' as const, size: '14b', quant: 'Q4_K_S', mb: 8570 },
-    { type: 'translategemma' as const, size: '12b', quant: 'Q4_K_M', mb: 7300 },
-    { type: 'qwen3' as const, size: '14b', quant: 'Q3_K_M', mb: 7320 },
-    { type: 'translategemma' as const, size: '12b', quant: 'Q4_K_S', mb: 6940 },
-    { type: 'translategemma' as const, size: '12b', quant: 'Q3_K_L', mb: 6480 },
-    { type: 'translategemma' as const, size: '12b', quant: 'Q3_K_M', mb: 6010 },
-    { type: 'qwen3' as const, size: '14b', quant: 'Q3_K_S', mb: 6660 },
-    { type: 'translategemma' as const, size: '12b', quant: 'Q3_K_S', mb: 5460 },
-    { type: 'qwen3' as const, size: '8b', quant: 'Q4_K_M', mb: 5030 },
-    { type: 'qwen3' as const, size: '4b', quant: 'Q4_K_M', mb: 2500 },
-    { type: 'translategemma' as const, size: '4b', quant: 'Q4_K_M', mb: 2500 },
-    { type: 'qwen3' as const, size: '1.7b', quant: 'Q8_0', mb: 1830 },
-  ]
-
-  const best = allModels.find(m => m.mb <= usableMb)
-  if (best) {
-    translateModelType.value = best.type
-    translateModelSize.value = best.size
-    translateQuantization.value = best.quant
-  }
+  const sorted = [...translateModelsFromApi.value].sort((a, b) => b.sizeMb - a.sizeMb)
+  const best = sorted.find(m => m.sizeMb <= usableMb)
+  if (best) selectedTranslateModel.value = best.key
 }
 
-// 解析 glossary 文字為 dict（每行格式：原文 → 譯文 或 原文 = 譯文）
+// ========== Glossary 解析 ==========
 function parseGlossary(): Record<string, string> | undefined {
   const text = glossaryText.value.trim()
   if (!text) return undefined
@@ -249,7 +226,6 @@ function parseGlossary(): Record<string, string> | undefined {
   for (const line of text.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed) continue
-    // 支援 → 和 = 兩種分隔符
     const sep = trimmed.includes('→') ? '→' : '='
     const parts = trimmed.split(sep)
     if (parts.length >= 2) {
@@ -261,7 +237,7 @@ function parseGlossary(): Record<string, string> | undefined {
   return Object.keys(dict).length > 0 ? dict : undefined
 }
 
-// 取得來源檔名（不含副檔名）
+// ========== 輸出路徑 ==========
 const sourceBaseName = computed(() => {
   const file = filesStore.currentFile
   if (!file?.originalName) return 'output'
@@ -270,12 +246,8 @@ const sourceBaseName = computed(() => {
   return lastDot > 0 ? name.substring(0, lastDot) : name
 })
 
-// 預設輸出檔名
-const defaultOutputName = computed(() => {
-  return `${sourceBaseName.value}.${outputFormat.value}`
-})
+const defaultOutputName = computed(() => `${sourceBaseName.value}.${outputFormat.value}`)
 
-// 顯示的輸出路徑
 const displayOutputPath = computed(() => {
   if (outputPath.value) {
     const parts = outputPath.value.replace(/\\/g, '/').split('/')
@@ -284,59 +256,15 @@ const displayOutputPath = computed(() => {
   return defaultOutputName.value
 })
 
-// 載入 Whisper 模型狀態
-async function loadWhisperStatus() {
-  try {
-    const response = await fetch(`/api/video/whisper/status?model_size=${modelSize.value}`)
-    if (response.ok) {
-      whisperStatus.value = await response.json()
-    }
-  } catch (e) {
-    console.error('Failed to load whisper status:', e)
-  }
-}
-
-// 載入翻譯模型狀態
-async function loadTranslateStatus() {
-  try {
-    const response = await fetch(`/api/video/translate/status?model_type=${translateModelType.value}&model_size=${translateModelSize.value}&quantization=${translateQuantization.value}`)
-    if (response.ok) {
-      translateStatus.value = await response.json()
-    }
-  } catch (e) {
-    console.error('Failed to load translate status:', e)
-  }
-}
-
-// 載入翻譯語言列表（含重試機制）
-async function loadTranslateLanguages(retries = 3) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await fetch('/api/video/translategemma/languages')
-      if (response.ok) {
-        translateLanguages.value = await response.json()
-        return
-      }
-    } catch (e) {
-      console.error(`Failed to load translate languages (attempt ${i + 1}):`, e)
-    }
-    // 等待後重試
-    if (i < retries - 1) {
-      await new Promise(r => setTimeout(r, 1000))
-    }
-  }
-}
-
-// 安裝翻譯功能
+// ========== 安裝 AI 推理環境 ==========
 async function installTranslate() {
   isInstalling.value = true
   error.value = null
 
   try {
-    const response = await fetch('/api/setup/install', {
+    const response = await apiFetch('/setup/initialize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ feature: 'translategemma' }),
     })
 
     if (!response.ok) {
@@ -346,16 +274,9 @@ async function installTranslate() {
 
     const result = await response.json()
 
-    if (!result.task_id) {
-      // 已經安裝好了
-      toast.show('翻譯功能已就緒', { type: 'success' })
-      await loadTranslateStatus()
-      return
-    }
-
     taskStore.addTask({
       taskId: result.task_id,
-      taskType: 'setup/install',
+      taskType: 'setup/initialize',
       status: 'pending',
       progress: 0,
       message: null,
@@ -363,19 +284,18 @@ async function installTranslate() {
       error: null,
       createdAt: new Date(),
       updatedAt: new Date(),
-      label: '安裝翻譯功能',
+      label: '安裝 AI 推理環境',
     })
-    toast.show('開始安裝翻譯功能，請稍候...', { type: 'info', icon: 'bi-download' })
+    toast.show('開始安裝 AI 推理環境，請稍候...', { type: 'info', icon: 'bi-download' })
 
-    // 輪詢等安裝完成
     const checkDone = setInterval(async () => {
       const task = taskStore.tasks.get(result.task_id)
       if (task && (task.status === 'completed' || task.status === 'failed')) {
         clearInterval(checkDone)
         isInstalling.value = false
         if (task.status === 'completed') {
-          toast.show('翻譯功能安裝完成', { type: 'success' })
-          await loadTranslateStatus()
+          toast.show('AI 推理環境安裝完成', { type: 'success' })
+          await loadTranslateModels()
         } else {
           error.value = '安裝失敗，請查看任務列表'
         }
@@ -387,7 +307,7 @@ async function installTranslate() {
   }
 }
 
-// 提交字幕生成
+// ========== 提交字幕生成 ==========
 async function submitGenerate() {
   if (!props.fileId) return
 
@@ -401,22 +321,20 @@ async function submitGenerate() {
       output_format: outputFormat.value,
     }
 
-    if (language.value) {
-      body.language = language.value
-    }
+    if (language.value) body.language = language.value
 
     if (enableTranslation.value && targetLanguage.value) {
+      const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
       body.target_language = targetLanguage.value
-      body.translate_model_type = translateModelType.value
-      body.translate_model_size = translateModelSize.value
-      body.translate_quantization = translateQuantization.value
+      body.translate_model_type = tmType
+      body.translate_model_size = tmSize
+      body.translate_quantization = tmQuant
       body.keep_names = keepNames.value
       body.translate_style = translateStyle.value
       const glossary = parseGlossary()
       if (glossary) body.glossary = glossary
     }
 
-    // 進階分句參數
     body.word_timestamps = wordTimestamps.value
     body.condition_on_previous_text = conditionOnPreviousText.value
     body.min_silence_duration_ms = minSilenceDurationMs.value
@@ -433,7 +351,7 @@ async function submitGenerate() {
       }
     }
 
-    const response = await fetch('/api/video/subtitle/generate', {
+    const response = await apiFetch('/video/subtitle/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -469,94 +387,59 @@ async function submitGenerate() {
   }
 }
 
-// 選擇輸出檔案
+// ========== 選擇輸出檔案 ==========
 async function selectOutputFile() {
   if (window.electron?.saveFileDialog) {
-    const ext = outputFormat.value
-    const filters = [
-      { name: '字幕檔案', extensions: [ext] }
-    ]
     const result = await window.electron.saveFileDialog({
       title: '選擇輸出位置',
       defaultPath: defaultOutputName.value,
-      filters
+      filters: [{ name: '字幕檔案', extensions: [outputFormat.value] }],
     })
-    if (result) {
-      outputPath.value = result
-    }
+    if (result) outputPath.value = result
   }
 }
 
-// 監聽 fileId 變化
-watch(() => props.fileId, () => {
-  outputPath.value = ''
-})
-
-// 模型大小變更時更新狀態
-watch(modelSize, () => {
-  loadWhisperStatus()
-})
-
-// 翻譯模型類型變更時重設大小和量化
-watch(translateModelType, (val) => {
-  translateModelSize.value = val === 'qwen3' ? '4b' : '4b'
-  // 量化會由 translateModelSize watcher 重設
-  loadTranslateStatus()
-})
-
-// 翻譯模型大小變更時重設量化為該 size 的第一個選項
-watch(translateModelSize, () => {
-  const quants = quantOptions[translateModelType.value]?.[translateModelSize.value]
-  if (quants && quants.length > 0) {
-    translateQuantization.value = quants[0].value
+// ========== 載入翻譯語言 ==========
+async function loadTranslateLanguages(retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await apiFetch('/video/translategemma/languages')
+      if (response.ok) {
+        translateLanguages.value = await response.json()
+        return
+      }
+    } catch {}
+    if (i < retries - 1) await new Promise(r => setTimeout(r, 1000))
   }
-  loadTranslateStatus()
-})
+}
 
-// 量化變更時重新查狀態
-watch(translateQuantization, () => {
-  loadTranslateStatus()
-})
+// ========== Watchers ==========
+watch(() => props.fileId, () => { outputPath.value = '' })
 
-// 偏好設定持久化
-watch([translateModelType, translateModelSize, translateQuantization], () => {
-  savePreferences()
-})
+watch(outputFormat, () => { outputPath.value = '' })
 
-// 格式變更時重置輸出路徑
-watch(outputFormat, () => {
-  outputPath.value = ''
-})
-
-// 啟用翻譯時載入語言列表和狀態
 watch(enableTranslation, (val) => {
-  if (val) {
-    loadTranslateLanguages()
-    loadTranslateStatus()
-  }
+  if (val) loadTranslateLanguages()
 })
 
-// 暴露給父組件
+watch(selectedTranslateModel, savePreferences)
+
+// ========== Expose ==========
 const isDisabled = computed(() =>
-  isLoading.value || !props.fileId || (whisperStatus.value && !whisperStatus.value.available) || (enableTranslation.value && translateStatus.value && !translateStatus.value.available)
+  isLoading.value || !props.fileId || whisperAvailable.value === false
 )
 
-defineExpose({
-  submitGenerate,
-  isLoading,
-  isDisabled,
-})
+defineExpose({ submitGenerate, isLoading, isDisabled })
 
-// 初始化
+// ========== 初始化 ==========
 onMounted(async () => {
-  loadWhisperStatus()
+  loadAllWhisperStatus()
+  loadTranslateModels()
+  settings.loadDeviceInfo()
 
-  // 先讀 localStorage，若無則 autoRecommend
   const saved = loadPreferences()
   if (saved) {
-    translateModelType.value = saved.modelType as 'translategemma' | 'qwen3'
-    translateModelSize.value = saved.modelSize
-    translateQuantization.value = saved.quantization
+    selectedTranslateModel.value = saved
   } else {
     await autoRecommend()
   }
@@ -565,10 +448,7 @@ onMounted(async () => {
 
 <template>
   <div class="subtitle-panel">
-    <!-- 錯誤訊息 -->
-    <div v-if="error" class="error-msg">
-      {{ error }}
-    </div>
+    <div v-if="error" class="error-msg">{{ error }}</div>
 
     <div class="form-group">
       <label>語言</label>
@@ -577,56 +457,33 @@ onMounted(async () => {
 
     <div class="form-group">
       <label>模型設定</label>
-      <AppSelect v-model="modelSize" :options="modelSizes" size="sm" />
-      <div v-if="whisperStatus" class="model-status">
-        <span class="status-item">
-          <i class="bi" :class="!whisperStatus.available ? 'bi-x-circle-fill status-err' : whisperStatus.model_downloaded ? 'bi-check-circle-fill status-ok' : 'bi-exclamation-circle-fill status-warn'"></i>
-          {{ whisperStatus.available ? (whisperStatus.model_downloaded ? '模型已掛載' : '首次使用自動下載模型') : 'Whisper 未安裝' }}
-        </span>
-      </div>
+      <AppSelect v-model="modelSize" :options="modelSizesWithBadge" size="sm" />
     </div>
 
-    <!-- 進階分句設定（Whisper 參數） -->
+    <!-- 進階分句設定 -->
     <div class="form-group">
-      <label class="checkbox-label" @click="showAdvanced = !showAdvanced">
-        <span class="checkbox" :class="{ checked: showAdvanced }">
-          <i v-if="showAdvanced" class="bi bi-check"></i>
-        </span>
-        進階分句設定
-        <span class="label-hint">（適合多人對話）</span>
-      </label>
+      <AppToggle v-model="showAdvanced">
+        進階分句設定 <span class="label-hint">（適合多人對話）</span>
+      </AppToggle>
 
       <div v-if="showAdvanced" class="advanced-options">
         <div class="option-row">
-          <label class="checkbox-label" @click.stop="conditionOnPreviousText = !conditionOnPreviousText">
-            <span class="checkbox" :class="{ checked: !conditionOnPreviousText }">
-              <i v-if="!conditionOnPreviousText" class="bi bi-check"></i>
-            </span>
-            獨立辨識每段語音
-          </label>
+          <AppToggle
+            :modelValue="!conditionOnPreviousText"
+            @update:modelValue="v => conditionOnPreviousText = !v"
+          >獨立辨識每段語音</AppToggle>
           <span class="option-hint">關閉上下文關聯，避免句子合併</span>
         </div>
 
         <div class="option-row">
-          <label class="checkbox-label" @click.stop="wordTimestamps = !wordTimestamps">
-            <span class="checkbox" :class="{ checked: wordTimestamps }">
-              <i v-if="wordTimestamps" class="bi bi-check"></i>
-            </span>
-            詞級時間戳
-          </label>
+          <AppToggle v-model="wordTimestamps">詞級時間戳</AppToggle>
           <span class="option-hint">更精確的分句邊界</span>
         </div>
 
         <div class="option-row slider-row">
           <label>最小靜音時長</label>
           <div class="slider-group">
-            <input
-              type="range"
-              v-model.number="minSilenceDurationMs"
-              min="100"
-              max="2000"
-              step="100"
-            />
+            <input type="range" v-model.number="minSilenceDurationMs" min="100" max="2000" step="100" />
             <span class="slider-value">{{ minSilenceDurationMs }} ms</span>
           </div>
           <span class="option-hint">停頓超過此時長會分句（預設 200ms）</span>
@@ -635,13 +492,7 @@ onMounted(async () => {
         <div class="option-row slider-row">
           <label>VAD 敏感度</label>
           <div class="slider-group">
-            <input
-              type="range"
-              v-model.number="vadThreshold"
-              min="0.1"
-              max="0.9"
-              step="0.1"
-            />
+            <input type="range" v-model.number="vadThreshold" min="0.1" max="0.9" step="0.1" />
             <span class="slider-value">{{ vadThreshold.toFixed(1) }}</span>
           </div>
           <span class="option-hint">越低越敏感，更容易分句（預設 0.3）</span>
@@ -656,98 +507,38 @@ onMounted(async () => {
 
     <!-- 翻譯字幕 -->
     <div class="form-group">
-      <label class="checkbox-label" @click="enableTranslation = !enableTranslation">
-        <span class="checkbox" :class="{ checked: enableTranslation }">
-          <i v-if="enableTranslation" class="bi bi-check"></i>
-        </span>
-        翻譯字幕
-      </label>
+      <AppToggle v-model="enableTranslation">翻譯字幕</AppToggle>
 
       <div v-if="enableTranslation" class="translate-options">
-        <!-- 未安裝或需升級：顯示安裝按鈕 -->
-        <div v-if="translateStatus && !translateStatus.available" class="install-prompt">
-          <p class="install-hint">
-            {{ translateStatus.gpu_upgrade
-              ? '偵測到 GPU，建議安裝 GPU 版以大幅加速翻譯'
-              : '翻譯功能需要額外元件，首次使用前請先安裝' }}
-          </p>
-          <button
-            class="install-btn"
-            :disabled="isInstalling"
-            @click="installTranslate"
-          >
+        <!-- 未安裝 -->
+        <div v-if="translateEnvAvailable === false" class="install-prompt">
+          <p class="install-hint">翻譯功能需要 AI 推理環境，首次使用前請先安裝</p>
+          <button class="install-btn" :disabled="isInstalling" @click="installTranslate">
             <span v-if="isInstalling" class="spinner-border spinner-border-sm me-2"></span>
-            <i v-else class="bi me-1" :class="translateStatus.gpu_upgrade ? 'bi-gpu-card' : 'bi-download'"></i>
-            {{ isInstalling ? '安裝中...' : (translateStatus.gpu_upgrade ? '安裝 GPU 版' : '安裝翻譯功能') }}
+            <i v-else class="bi bi-download me-1"></i>
+            {{ isInstalling ? '安裝中...' : '安裝 AI 推理環境' }}
           </button>
         </div>
 
-        <!-- 已安裝：顯示設定 -->
+        <!-- 已安裝 -->
         <template v-else>
           <div class="form-group">
             <label>目標語言</label>
-            <AppSelect
-              v-model="targetLanguage"
-              :options="targetLanguageOptions"
-              size="sm"
-            />
+            <AppSelect v-model="targetLanguage" :options="targetLanguageOptions" size="sm" />
           </div>
 
           <div class="form-group">
-            <label>翻譯模型類型</label>
-            <AppSelect
-              v-model="translateModelType"
-              :options="translateModelTypes"
-              size="sm"
-            />
-          </div>
-
-          <div class="form-group">
-            <label>模型大小</label>
-            <AppSelect
-              v-model="translateModelSize"
-              :options="translateModelSizes"
-              size="sm"
-            />
-            <div v-if="translateStatus" class="model-status">
-              <span class="status-item">
-                <i class="bi" :class="translateStatus.model_downloaded ? 'bi-check-circle-fill status-ok' : 'bi-exclamation-circle-fill status-warn'"></i>
-                {{ translateStatus.model_downloaded ? '模型已掛載' : '首次使用自動下載模型' }}
-              </span>
-            </div>
-          </div>
-
-          <!-- 進階模型設定（量化選項） -->
-          <div v-if="showQuantSelector" class="form-group">
-            <label class="collapsible-label" @click="showAdvancedTranslate = !showAdvancedTranslate">
-              <i class="bi" :class="showAdvancedTranslate ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-              進階模型設定
-            </label>
-            <div v-if="showAdvancedTranslate" class="advanced-options">
-              <div class="form-group">
-                <label>量化精度</label>
-                <AppSelect v-model="translateQuantization" :options="availableQuants" size="sm" />
-                <span class="option-hint">較低精度節省 VRAM，品質略降</span>
-              </div>
-            </div>
+            <label>翻譯模型</label>
+            <AppSelect v-model="selectedTranslateModel" :options="translateModelOptions" size="sm" />
           </div>
 
           <div class="form-group">
             <label>翻譯風格</label>
-            <AppSelect
-              v-model="translateStyle"
-              :options="translateStyles"
-              size="sm"
-            />
+            <AppSelect v-model="translateStyle" :options="translateStyles" size="sm" />
           </div>
 
           <div class="option-row">
-            <label class="checkbox-label" @click.stop="keepNames = !keepNames">
-              <span class="checkbox" :class="{ checked: keepNames }">
-                <i v-if="keepNames" class="bi bi-check"></i>
-              </span>
-              保留人名和專有名詞原文
-            </label>
+            <AppToggle v-model="keepNames">保留人名和專有名詞原文</AppToggle>
             <span class="option-hint">如：角色名、地名、作品名等不翻譯</span>
           </div>
 
@@ -772,7 +563,6 @@ onMounted(async () => {
         <i class="bi bi-folder2-open"></i>
       </div>
     </div>
-
   </div>
 </template>
 
@@ -792,34 +582,6 @@ onMounted(async () => {
   font-size: 0.85rem;
 }
 
-.model-status {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 1rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--input-bg);
-  border-radius: 6px;
-  font-size: 0.8rem;
-}
-
-.status-item {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  color: var(--text-secondary);
-
-  i { font-size: 0.75rem; }
-}
-
-.status-ok { color: #10b981 !important; }
-.status-warn { color: #f59e0b !important; }
-.status-err { color: #ef4444 !important; }
-
-.model-hint {
-  color: var(--text-muted);
-  font-size: 0.75rem;
-}
-
 .form-group {
   display: flex;
   flex-direction: column;
@@ -831,36 +593,6 @@ onMounted(async () => {
   }
 }
 
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  user-select: none;
-}
-
-.checkbox {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: 1.5px solid var(--input-border);
-  border-radius: 4px;
-  background: var(--input-bg);
-  transition: all 0.15s ease;
-  flex-shrink: 0;
-
-  i {
-    font-size: 0.75rem;
-    color: white;
-  }
-
-  &.checked {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
-  }
-}
 
 .translate-options {
   display: flex;
@@ -870,20 +602,6 @@ onMounted(async () => {
   background: var(--input-bg);
   border-radius: 8px;
   border: 1px solid var(--input-border);
-}
-
-.collapsible-label {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  cursor: pointer;
-  user-select: none;
-
-  i {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    transition: transform 0.2s ease;
-  }
 }
 
 .label-hint {
@@ -909,7 +627,6 @@ onMounted(async () => {
 
   &.slider-row {
     gap: 0.4rem;
-
     > label {
       font-size: 0.8rem;
       color: var(--text-secondary);
@@ -946,9 +663,7 @@ onMounted(async () => {
       cursor: pointer;
       transition: transform 0.15s ease;
 
-      &:hover {
-        transform: scale(1.1);
-      }
+      &:hover { transform: scale(1.1); }
     }
   }
 
@@ -1052,5 +767,4 @@ onMounted(async () => {
 
   i { color: var(--text-muted); }
 }
-
 </style>

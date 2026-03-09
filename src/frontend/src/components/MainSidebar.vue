@@ -24,6 +24,7 @@ const topNav: NavItem[] = [
 const bottomNav: NavItem[] = [
   { path: '/history', icon: 'bi-clock-history', label: '歷史紀錄' },
   { path: '/tasks', icon: 'bi-list-task', label: '執行任務' },
+  { path: '/settings', icon: 'bi-gear-fill', label: '設定' },
 ]
 
 // 指示條位置

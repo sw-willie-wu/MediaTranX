@@ -5,11 +5,19 @@ import ProgressBar from '@/components/common/ProgressBar.vue'
 
 const taskStore = useTaskStore()
 
+function isCoreTasks(taskType: string) {
+  return taskType.startsWith('ai.') || taskType.startsWith('setup.')
+    || taskType.startsWith('setup/')
+}
+
 const sortedTasks = computed(() =>
   [...taskStore.allTasks].sort(
     (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
   )
 )
+
+const coreTasks = computed(() => sortedTasks.value.filter(t => isCoreTasks(t.taskType)))
+const toolTasks = computed(() => sortedTasks.value.filter(t => !isCoreTasks(t.taskType)))
 
 function statusLabel(status: string) {
   switch (status) {
@@ -57,63 +65,95 @@ onActivated(() => {
         <p>目前沒有任務</p>
       </div>
 
-      <!-- 任務列表 -->
-      <TransitionGroup name="task-list" tag="div" class="task-list">
-        <div
-          v-for="task in sortedTasks"
-          :key="task.taskId"
-          class="task-card glass-card"
-        >
-          <div class="task-header">
-            <div class="task-title">
-              <span class="task-label">{{ task.label ?? task.taskType }}</span>
-              <span v-if="task.fileName" class="task-filename">{{ task.fileName }}</span>
+      <template v-else>
+        <!-- 核心功能區 -->
+        <div v-if="coreTasks.length > 0" class="section">
+          <div class="section-header">
+            <i class="bi bi-cpu"></i>
+            <span>核心功能</span>
+          </div>
+          <TransitionGroup name="task-list" tag="div" class="task-list">
+            <div
+              v-for="task in coreTasks"
+              :key="task.taskId"
+              class="task-card glass-card"
+            >
+              <div class="task-header">
+                <div class="task-title">
+                  <span class="task-label">{{ task.label ?? task.taskType }}</span>
+                  <span v-if="task.fileName" class="task-filename">{{ task.fileName }}</span>
+                </div>
+                <span class="task-badge" :class="`badge-${task.status}`">
+                  {{ statusLabel(task.status) }}
+                </span>
+              </div>
+              <div v-if="task.status === 'processing' || task.status === 'pending'" class="task-progress">
+                <ProgressBar :progress="task.progress" :message="task.message ?? undefined" :show-percentage="true" />
+              </div>
+              <div v-else-if="task.status === 'completed'" class="task-done">
+                <i class="bi bi-check-circle-fill"></i>
+                <span>{{ formatTime(task.updatedAt) }} 完成</span>
+              </div>
+              <div v-else-if="task.status === 'failed'" class="task-error">
+                <div class="error-info">
+                  <i class="bi bi-exclamation-circle-fill"></i>
+                  <span>{{ task.error ?? '未知錯誤' }}</span>
+                </div>
+                <button class="remove-btn" @click="handleRemove(task.taskId)"><i class="bi bi-trash3"></i></button>
+              </div>
+              <div v-else-if="task.status === 'cancelled'" class="task-cancelled">
+                <i class="bi bi-dash-circle"></i><span>已取消</span>
+                <button class="remove-btn" @click="handleRemove(task.taskId)"><i class="bi bi-trash3"></i></button>
+              </div>
+              <div class="task-time">{{ formatTime(task.createdAt) }}</div>
             </div>
-            <span class="task-badge" :class="`badge-${task.status}`">
-              {{ statusLabel(task.status) }}
-            </span>
-          </div>
-
-          <!-- 進行中 -->
-          <div v-if="task.status === 'processing' || task.status === 'pending'" class="task-progress">
-            <ProgressBar
-              :progress="task.progress"
-              :message="task.message ?? undefined"
-              :show-percentage="true"
-            />
-          </div>
-
-          <!-- 已完成 -->
-          <div v-else-if="task.status === 'completed'" class="task-done">
-            <i class="bi bi-check-circle-fill"></i>
-            <span>{{ formatTime(task.updatedAt) }} 完成</span>
-          </div>
-
-          <!-- 失敗 -->
-          <div v-else-if="task.status === 'failed'" class="task-error">
-            <div class="error-info">
-              <i class="bi bi-exclamation-circle-fill"></i>
-              <span>{{ task.error ?? '未知錯誤' }}</span>
-            </div>
-            <button class="remove-btn" @click="handleRemove(task.taskId)">
-              <i class="bi bi-trash3"></i>
-            </button>
-          </div>
-
-          <!-- 已取消 -->
-          <div v-else-if="task.status === 'cancelled'" class="task-cancelled">
-            <i class="bi bi-dash-circle"></i>
-            <span>已取消</span>
-            <button class="remove-btn" @click="handleRemove(task.taskId)">
-              <i class="bi bi-trash3"></i>
-            </button>
-          </div>
-
-          <div class="task-time">
-            {{ formatTime(task.createdAt) }}
-          </div>
+          </TransitionGroup>
         </div>
-      </TransitionGroup>
+
+        <!-- 各工具區 -->
+        <div v-if="toolTasks.length > 0" class="section">
+          <div class="section-header">
+            <i class="bi bi-tools"></i>
+            <span>各工具</span>
+          </div>
+          <TransitionGroup name="task-list" tag="div" class="task-list">
+            <div
+              v-for="task in toolTasks"
+              :key="task.taskId"
+              class="task-card glass-card"
+            >
+              <div class="task-header">
+                <div class="task-title">
+                  <span class="task-label">{{ task.label ?? task.taskType }}</span>
+                  <span v-if="task.fileName" class="task-filename">{{ task.fileName }}</span>
+                </div>
+                <span class="task-badge" :class="`badge-${task.status}`">
+                  {{ statusLabel(task.status) }}
+                </span>
+              </div>
+              <div v-if="task.status === 'processing' || task.status === 'pending'" class="task-progress">
+                <ProgressBar :progress="task.progress" :message="task.message ?? undefined" :show-percentage="true" />
+              </div>
+              <div v-else-if="task.status === 'completed'" class="task-done">
+                <i class="bi bi-check-circle-fill"></i>
+                <span>{{ formatTime(task.updatedAt) }} 完成</span>
+              </div>
+              <div v-else-if="task.status === 'failed'" class="task-error">
+                <div class="error-info">
+                  <i class="bi bi-exclamation-circle-fill"></i>
+                  <span>{{ task.error ?? '未知錯誤' }}</span>
+                </div>
+                <button class="remove-btn" @click="handleRemove(task.taskId)"><i class="bi bi-trash3"></i></button>
+              </div>
+              <div v-else-if="task.status === 'cancelled'" class="task-cancelled">
+                <i class="bi bi-dash-circle"></i><span>已取消</span>
+                <button class="remove-btn" @click="handleRemove(task.taskId)"><i class="bi bi-trash3"></i></button>
+              </div>
+              <div class="task-time">{{ formatTime(task.createdAt) }}</div>
+            </div>
+          </TransitionGroup>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -161,6 +201,27 @@ onActivated(() => {
     font-size: 0.95rem;
     margin: 0;
   }
+}
+
+.section {
+  & + & {
+    margin-top: 1.75rem;
+  }
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.6rem;
+  padding-left: 2px;
+
+  i { font-size: 0.8rem; }
 }
 
 .task-list {

@@ -5,12 +5,12 @@
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
 from backend.api.schemas.common import TaskResponse, TaskStatus
-from .progress_tracker import ProgressTracker
+from .progress_tracker import ProgressTracker, get_progress_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class TaskManager:
 
         self._tasks: Dict[str, TaskResponse] = {}
         self._futures: Dict[str, asyncio.Future] = {}
-        self._progress_tracker = ProgressTracker()
+        self._progress_tracker = get_progress_tracker()
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._handlers: Dict[str, Callable] = {}
         self._initialized = True
@@ -46,6 +46,23 @@ class TaskManager:
     @property
     def progress_tracker(self) -> ProgressTracker:
         return self._progress_tracker
+
+    def register_task(self, task_id: str, task_type: str) -> None:
+        """
+        手動登記外部管理的任務（適用於 asyncio-based 長任務）
+        任務由外部程式碼負責執行與 progress_tracker.emit，
+        此方法只確保 task_id 存在於 _tasks 供 SSE 端點查詢。
+        """
+        task = TaskResponse(
+            task_id=task_id,
+            task_type=task_type,
+            status=TaskStatus.PROCESSING,
+            progress=0.0,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
+        )
+        self._tasks[task_id] = task
+        logger.info(f"Task registered (external): {task_id} ({task_type})")
 
     def register_handler(self, task_type: str, handler: Callable) -> None:
         """
@@ -82,8 +99,8 @@ class TaskManager:
             task_type=task_type,
             status=TaskStatus.PENDING,
             progress=0.0,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
         )
         self._tasks[task_id] = task
 
@@ -110,8 +127,7 @@ class TaskManager:
 
             # 更新狀態為處理中
             task.status = TaskStatus.PROCESSING
-            task.updated_at = datetime.utcnow()
-            await self._progress_tracker.emit(task_id, 0.0, "Starting task...")
+            task.updated_at = datetime.now(timezone.utc)
 
             # 建立進度回調
             progress_callback = self._progress_tracker.create_callback(task_id)
@@ -127,32 +143,46 @@ class TaskManager:
             task.status = TaskStatus.COMPLETED
             task.progress = 1.0
             task.result = result
-            task.updated_at = datetime.utcnow()
-            await self._progress_tracker.emit(task_id, 1.0, "Task completed")
+            task.updated_at = datetime.now(timezone.utc)
+            await self._progress_tracker.emit(
+                task_id, 1.0, "Task completed",
+                stage="completed",
+                result=result if isinstance(result, dict) else None,
+            )
 
             logger.info(f"Task completed: {task_id}")
 
         except Exception as e:
             # 任務失敗
+            import traceback
             task.status = TaskStatus.FAILED
             task.error = str(e)
-            task.updated_at = datetime.utcnow()
+            task.updated_at = datetime.now(timezone.utc)
             await self._progress_tracker.emit(task_id, task.progress, f"Error: {e}")
 
-            logger.error(f"Task failed: {task_id} - {e}")
+            logger.error(f"Task failed: {task_id} - {e}\n{traceback.format_exc()}")
 
     def get_task(self, task_id: str) -> Optional[TaskResponse]:
-        """取得任務狀態"""
-        return self._tasks.get(task_id)
+        """取得任務狀態（進行中的任務會從 progress_tracker 同步最新進度）"""
+        task = self._tasks.get(task_id)
+        if task is None:
+            return None
+        if task.status in (TaskStatus.PENDING, TaskStatus.PROCESSING):
+            latest = self._progress_tracker.get_progress(task_id)
+            if latest is not None:
+                task.progress = latest.progress
+                if latest.message:
+                    task.message = latest.message
+        return task
 
     def get_all_tasks(self) -> List[TaskResponse]:
-        """取得所有任務"""
-        return list(self._tasks.values())
+        """取得所有任務（進行中的任務會從 progress_tracker 同步最新進度）"""
+        return [self.get_task(task_id) for task_id in list(self._tasks)]
 
     def get_active_tasks(self) -> List[TaskResponse]:
         """取得進行中的任務"""
         return [
-            task for task in self._tasks.values()
+            self.get_task(task_id) for task_id, task in list(self._tasks.items())
             if task.status in [TaskStatus.PENDING, TaskStatus.PROCESSING]
         ]
 
@@ -172,7 +202,7 @@ class TaskManager:
 
         if task.status in [TaskStatus.PENDING, TaskStatus.PROCESSING]:
             task.status = TaskStatus.CANCELLED
-            task.updated_at = datetime.utcnow()
+            task.updated_at = datetime.now(timezone.utc)
             await self._progress_tracker.emit(task_id, task.progress, "Task cancelled")
             logger.info(f"Task cancelled: {task_id}")
             return True
@@ -211,7 +241,7 @@ class TaskManager:
         Returns:
             清理的任務數量
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         to_remove = []
 
         for task_id, task in self._tasks.items():

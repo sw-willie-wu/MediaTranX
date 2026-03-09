@@ -3,7 +3,17 @@
  */
 import { ref } from 'vue'
 
-const API_BASE = '/api'
+export function getApiBase() {
+  // @ts-ignore
+  const port = window.electron?.backendPort
+  // 如果在 Electron 環境且有 port，使用絕對地址；否則在開發環境使用相對路徑 /api (由 Vite Proxy 處理)
+  return port ? `http://localhost:${port}/api` : '/api'
+}
+
+/** 替換 fetch('/api/...') 的全局輔助函式 */
+export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${getApiBase()}${path}`, init)
+}
 
 export interface UseApiOptions {
   immediate?: boolean
@@ -22,7 +32,7 @@ export function useApi<T>(
     error.value = null
 
     try {
-      const response = await fetch(`${API_BASE}${endpoint}`, {
+      const response = await fetch(`${getApiBase()}${endpoint}`, {
         headers: {
           'Content-Type': 'application/json',
         },
@@ -94,7 +104,7 @@ export async function uploadFile(file: File): Promise<{
   const formData = new FormData()
   formData.append('file', file)
 
-  const response = await fetch(`${API_BASE}/files/upload`, {
+  const response = await fetch(`${getApiBase()}/files/upload`, {
     method: 'POST',
     body: formData,
   })
@@ -110,7 +120,7 @@ export async function uploadFile(file: File): Promise<{
  * 下載檔案
  */
 export async function downloadFile(fileId: string, filename?: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/files/${fileId}/download`)
+  const response = await fetch(`${getApiBase()}/files/${fileId}/download`)
 
   if (!response.ok) {
     throw new Error('Download failed')

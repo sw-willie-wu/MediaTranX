@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import AsyncGenerator, Callable, Dict, Optional, Set
 
 logger = logging.getLogger(__name__)
@@ -19,16 +19,20 @@ class ProgressEvent:
     progress: float
     stage: str
     message: str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    result: Optional[dict] = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_json(self) -> str:
-        return json.dumps({
+        data = {
             "task_id": self.task_id,
             "progress": self.progress,
             "stage": self.stage,
             "message": self.message,
             "timestamp": self.timestamp.isoformat()
-        })
+        }
+        if self.result is not None:
+            data["result"] = self.result
+        return json.dumps(data)
 
 
 class ProgressTracker:
@@ -47,7 +51,8 @@ class ProgressTracker:
         task_id: str,
         progress: float,
         message: str = "",
-        stage: str = "processing"
+        stage: str = "processing",
+        result: Optional[dict] = None,
     ) -> None:
         """
         發送進度更新給所有訂閱者
@@ -60,9 +65,10 @@ class ProgressTracker:
         """
         event = ProgressEvent(
             task_id=task_id,
-            progress=min(max(progress, 0.0), 1.0),  # 確保在 0-1 範圍
+            progress=min(max(progress, 0.0), 1.0),
             stage=stage,
-            message=message
+            message=message,
+            result=result,
         )
 
         self._latest_progress[task_id] = event
@@ -149,18 +155,22 @@ class ProgressTracker:
                     event = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield event
 
-                    # 如果進度完成，結束訂閱
-                    if event.progress >= 1.0:
+                    # 只在 stage="completed" 或 stage="error" 時才結束訂閱
+                    # 不能只看 progress >= 1.0：handler 的 progress_callback(1.0)
+                    # 與 task_manager 最終帶 result 的 emit 都是 progress=1.0，
+                    # 但只有後者的 stage 是 "completed"
+                    if event.stage in ("completed", "error"):
                         break
                 except asyncio.TimeoutError:
-                    # 發送心跳以保持連線
+                    # 發送心跳以保持連線，保留最後一次的進度訊息
+                    latest = self._latest_progress.get(task_id, ProgressEvent(
+                        task_id=task_id, progress=0, stage="waiting", message=""
+                    ))
                     yield ProgressEvent(
                         task_id=task_id,
-                        progress=self._latest_progress.get(task_id, ProgressEvent(
-                            task_id=task_id, progress=0, stage="waiting", message=""
-                        )).progress,
+                        progress=latest.progress,
                         stage="heartbeat",
-                        message="keepalive"
+                        message=latest.message or "處理中..."
                     )
         finally:
             async with self._lock:
@@ -177,3 +187,15 @@ class ProgressTracker:
         """清理任務的進度記錄"""
         self._latest_progress.pop(task_id, None)
         self._subscribers.pop(task_id, None)
+
+
+# 全域單例（task_manager 與其他 service 共用同一個 tracker）
+_tracker_instance: Optional[ProgressTracker] = None
+
+
+def get_progress_tracker() -> ProgressTracker:
+    """取得全域 ProgressTracker 單例"""
+    global _tracker_instance
+    if _tracker_instance is None:
+        _tracker_instance = ProgressTracker()
+    return _tracker_instance

@@ -5,6 +5,7 @@ export interface SelectOption {
   value: any
   label: string
   desc?: string
+  badge?: 'ok' | 'err' | null
 }
 
 const props = withDefaults(defineProps<{
@@ -86,8 +87,11 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && isOpen.value) close()
 }
 
-function onScroll() {
-  if (isOpen.value) close()
+function onScroll(e: Event) {
+  if (!isOpen.value) return
+  // 不要因為 dropdown 內部滾動而關閉
+  if (dropdownRef.value?.contains(e.target as Node)) return
+  close()
 }
 
 onMounted(() => {
@@ -135,8 +139,17 @@ onBeforeUnmount(() => {
           :class="{ 'app-select-option-active': opt.value === modelValue }"
           @click="select(opt)"
         >
-          <span class="app-select-option-label">{{ opt.label }}</span>
-          <small v-if="opt.desc" class="app-select-option-desc">{{ opt.desc }}</small>
+          <div class="app-select-option-main">
+            <div class="app-select-option-text">
+              <span class="app-select-option-label">{{ opt.label }}</span>
+              <small v-if="opt.desc" class="app-select-option-desc">{{ opt.desc }}</small>
+            </div>
+            <i
+              v-if="opt.badge != null"
+              class="bi app-select-badge"
+              :class="opt.badge === 'ok' ? 'bi-check-circle-fill badge-ok' : 'bi-x-circle-fill badge-err'"
+            ></i>
+          </div>
         </div>
       </div>
     </Transition>
@@ -152,7 +165,7 @@ onBeforeUnmount(() => {
   padding: 0.5rem 0.75rem;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-primary);
   font-size: inherit;
   font-family: inherit;
@@ -174,7 +187,7 @@ onBeforeUnmount(() => {
 }
 
 .app-select-sm {
-  padding: 0.375rem 0.625rem;
+  padding: 0.375rem 0.75rem;
   font-size: 0.875rem;
 }
 
@@ -250,6 +263,33 @@ onBeforeUnmount(() => {
   color: rgba(255, 255, 255, 0.85);
   transition: background 0.1s ease;
 }
+
+.app-select-option-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.app-select-option-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.app-select-badge {
+  font-size: 0.7rem;
+  flex-shrink: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+
+.badge-ok { color: #10b981; }
+.badge-err { color: #9ca3af; }
+
+[data-theme="light"] .badge-err { color: #6b7280; }
 
 .app-select-option:hover {
   background: rgba(255, 255, 255, 0.1);
