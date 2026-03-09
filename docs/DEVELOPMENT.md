@@ -9,17 +9,16 @@
 ```
 MediaTranX/
 ├── bin/                        # 第三方二進位工具（不進 git）
-│   ├── ffmpeg/                 # FFmpeg 執行檔
-│   ├── realesrgan/             # Real-ESRGAN ncnn-vulkan 執行檔 + models/
-│   └── waifu2x/                # waifu2x-ncnn-vulkan 執行檔 + 模型目錄
-├── models/                     # AI 模型權重（首次使用自動下載）
-│   ├── whisper/
-│   └── translate/
+│   └── ffmpeg/                 # FFmpeg 執行檔
 ├── src/
 │   ├── backend/                # Python FastAPI 後端
-│   └── frontend/               # Vue 3 + Electron 前端
+│   ├── frontend/               # Vue 3 前端（純 Vite，無 Electron）
+│   └── electron/               # Electron 主進程（main.js, preload.cjs, splash.html）
+├── docs/                       # 文件
 └── .venv/                      # Python 虛擬環境（uv 管理）
 ```
+
+> AI 模型與 `.venv` 存放於 `%APPDATA%/MediaTranX/`，不在專案目錄內。
 
 ---
 
@@ -454,7 +453,7 @@ def get_mytool_dir() -> Path:
 ### 啟動
 
 ```bash
-cd src/frontend
+cd src/electron
 npm run electron
 ```
 
@@ -465,8 +464,9 @@ npm run electron
 ```bash
 taskkill //F //IM electron.exe
 taskkill //F //IM node.exe
+taskkill //F //IM python.exe
 # 等 2 秒後再啟動
-cd src/frontend && npm run electron
+cd src/electron && npm run electron
 ```
 
 ### Python 虛擬環境
