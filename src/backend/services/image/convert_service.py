@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from PIL import Image
 
-from backend.services.file_service import FileService, get_file_service
+from backend.services.files.file_service import FileService, get_file_service
 from backend.workers.task_manager import TaskManager, get_task_manager
 
 logger = logging.getLogger(__name__)

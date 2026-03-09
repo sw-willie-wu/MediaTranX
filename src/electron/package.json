@@ -1,0 +1,67 @@
+{
+  "name": "mediatranx-electron",
+  "version": "1.0.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "electron": "electron .",
+    "build:electron": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^35.1.5",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.mediatranx.app",
+    "productName": "MediaTranX",
+    "directories": {
+      "output": "../../dist"
+    },
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "splash.html",
+      "icon.ico",
+      "scripts/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../../build/resources/core_service",
+        "to": "core_service",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../../build/resources/uv.exe",
+        "to": "uv.exe"
+      },
+      {
+        "from": "../../build/resources/pyproject.toml",
+        "to": "pyproject.toml"
+      },
+      {
+        "from": "../../build/resources/ffmpeg",
+        "to": "ffmpeg",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../../build/resources/frontend_dist",
+        "to": "frontend_dist",
+        "filter": ["**/*"]
+      }
+    ],
+    "afterPack": "./scripts/afterPack.cjs",
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "include": "./scripts/installer.nsh"
+    }
+  }
+}

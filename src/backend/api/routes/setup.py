@@ -1,260 +1,272 @@
 """
-功能安裝 API 路由
-讓使用者一鍵安裝可選功能所需的 Python 套件
+系統安裝與設定路由 (REFACTOR V4)
 """
-import logging
-import subprocess
-import sys
-from typing import Optional
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+from pydantic import BaseModel
+from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
-
-from backend.core.device import has_nvidia_gpu
+from backend.services.setup_service import get_setup_service
 from backend.workers.task_manager import get_task_manager
-
-logger = logging.getLogger(__name__)
+from backend.core.paths import get_models_dir, get_temp_dir, get_app_config, save_app_config
 
 router = APIRouter()
 
-# 功能 → 需要安裝的套件（import 名稱）
-FEATURE_PACKAGES = {
+# 初始化 SetupService（完成 task handler 的綁定）
+get_setup_service()
+
+
+@router.get("/status")
+async def get_status():
+    """取得系統環境狀態"""
+    service = get_setup_service()
+    return await service.get_system_status()
+
+
+@router.post("/initialize")
+async def initialize_env(background_tasks: BackgroundTasks):
+    """啟動 AI 環境初始化任務"""
+    service = get_setup_service()
+    task_id = f"setup-{uuid4().hex[:8]}"
+
+    # 先向 TaskManager 登記，讓 SSE 端點能找到此 task_id
+    task_manager = get_task_manager()
+    task_manager.register_task(task_id, "ai.setup")
+
+    # 背景執行安裝（async 任務，不走 executor）
+    background_tasks.add_task(service.initialize_ai_env, task_id)
+
+    return {"task_id": task_id}
+
+
+# ─── 模型管理 ──────────────────────────────────────────────────────────────────
+
+# 展示用的 Whisper 模型清單（size → size_mb）
+_WHISPER_DISPLAY = [
+    ("tiny",     "Whisper Tiny",     500,  "極速語音辨識（150MB）"),
+    ("base",     "Whisper Base",     700,  "快速語音辨識（300MB）"),
+    ("small",    "Whisper Small",    1500, "輕量語音辨識（500MB）"),
+    ("medium",   "Whisper Medium",   3000, "平衡精度與速度（1.5GB）"),
+    ("large-v3", "Whisper Large-v3", 5000, "最高精度語音辨識（3GB）"),
+]
+
+_SIZE_DESC = {
     "translategemma": {
-        "label": "翻譯功能",
-        "packages": ["llama_cpp"],
+        "4b":  "輕量，速度快",
+        "12b": "平衡精度與速度",
+        "27b": "最高翻譯精度",
+    },
+    "qwen3": {
+        "1.7b": "超輕量，速度極快",
+        "4b":   "輕量，速度快",
+        "8b":   "平衡精度與速度",
+        "14b":  "高精度翻譯",
     },
 }
 
-# import 名稱 → pip install 名稱（不同時才需要列出）
-PIP_NAMES = {
-    "llama_cpp": "llama-cpp-python",
+_QUANT_DESC = {
+    "Q8_0":   "高精度量化",
+    "Q4_K_M": "標準量化",
+    "Q4_K_S": "標準量化，略省 VRAM",
+    "Q3_K_L": "輕量量化",
+    "Q3_K_M": "輕量量化，省 VRAM",
+    "Q3_K_S": "輕量量化，最省 VRAM",
 }
 
-TASK_TYPE_INSTALL = "setup.install"
 
-# 註冊任務處理器（模組載入時）
-_handler_registered = False
+def _enumerate_translate_models() -> list[dict]:
+    """從 registry 動態枚舉所有翻譯模型，並確認檔案是否已下載"""
+    from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
 
-
-def _ensure_handler():
-    global _handler_registered
-    if _handler_registered:
-        return
-    manager = get_task_manager()
-    manager.register_handler(TASK_TYPE_INSTALL, _handle_install_task)
-    _handler_registered = True
-
-
-class InstallRequest(BaseModel):
-    feature: str = Field(..., description="功能名稱 (例如 translategemma)")
-
-
-class InstallResponse(BaseModel):
-    task_id: str
-    message: str
-
-
-class FeatureStatusResponse(BaseModel):
-    feature: str
-    label: str
-    installed: bool
-    missing_packages: list[str]
-
-
-def _check_package(name: str) -> bool:
-    """
-    檢查套件是否已安裝且適合當前環境
-
-    特殊處理 llama_cpp：如果機器有 NVIDIA GPU 但 llama-cpp-python
-    沒有 GPU 支援，視為未安裝（需要升級至 GPU 版）
-    """
-    try:
-        mod = __import__(name)
-        if name == "llama_cpp" and has_nvidia_gpu():
-            if hasattr(mod, "llama_supports_gpu_offload"):
-                if not mod.llama_supports_gpu_offload():
-                    logger.info("llama-cpp-python is CPU-only but NVIDIA GPU detected — needs GPU upgrade")
-                    return False
-        return True
-    except ImportError:
-        return False
+    items = []
+    gguf_models = MODELS_REGISTRY.get(FORMAT_GGUF, {})
+    
+    for model_family, config in gguf_models.items():
+        if model_family not in ["translategemma", "qwen3"]:
+            continue
+            
+        name_prefix = "TranslateGemma" if model_family == "translategemma" else "Qwen3"
+        target_dir = get_models_dir(model_family)
+        specs = config.get("specs", {})
+        
+        # 遍歷 size -> variants -> quant
+        for size, size_spec in specs.items():
+            variants = size_spec.get("variants", {})
+            for quant, quant_spec in variants.items():
+                model_path = target_dir / quant_spec["filename"]
+                
+                size_desc  = _SIZE_DESC.get(model_family, {}).get(size, "")
+                quant_desc = _QUANT_DESC.get(quant, "")
+                description = f"{size_desc} · {quant_desc}" if size_desc and quant_desc else (size_desc or quant_desc)
+                
+                items.append({
+                    "id":          f"{model_family}-{size}-{quant}",
+                    "family":      model_family,
+                    "variant":     f"{size}-{quant}",
+                    "label":       f"{name_prefix} {size.upper()} {quant}",
+                    "description": description,
+                    "category":    "translate",
+                    "downloaded":  model_path.exists(),
+                    "size_mb":     quant_spec.get("size_mb", 0),
+                })
+    return items
 
 
-@router.get("/features/{feature}/status", response_model=FeatureStatusResponse)
-async def get_feature_status(feature: str):
-    """查詢功能的安裝狀態"""
-    if feature not in FEATURE_PACKAGES:
-        raise HTTPException(status_code=404, detail=f"未知的功能: {feature}")
+@router.get("/models")
+async def get_models_status():
+    """取得所有工具/模型的安裝/下載狀態（枚舉所有變體）"""
+    from backend.core.ai.model_manager import get_model_manager
+    from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_PTH
 
-    info = FEATURE_PACKAGES[feature]
-    missing = [pkg for pkg in info["packages"] if not _check_package(pkg)]
+    manager = get_model_manager()
+    all_models = []
 
-    return FeatureStatusResponse(
-        feature=feature,
-        label=info["label"],
-        installed=len(missing) == 0,
-        missing_packages=missing,
-    )
+    # ── PyTorch 模型（超解析 & 人臉修復）：枚舉所有變體 ──
+    UPSCALE_LABELS = {
+        "realesrgan": {"label": "Real-ESRGAN",  "description": "通用超解析（寫實）"},
+        "swinir":     {"label": "SwinIR",       "description": "Transformer 超解析"},
+        "bsrgan":     {"label": "BSRGAN",       "description": "盲超解析"},
+        "real-cugan": {"label": "Real-CUGAN",   "description": "動漫風格超解析"},
+        "waifu2x":    {"label": "Waifu2x",      "description": "經典動漫超解析"},
+    }
+    
+    FACE_RESTORE_LABELS = {
+        "codeformer": {"label": "CodeFormer",   "description": "VQ-GAN 人臉修復"},
+        "gfpgan":     {"label": "GFPGAN",       "description": "GAN 人臉修復"},
+    }
+    
+    # 變體描述映射
+    VARIANT_DESC = {
+        "x2plus": "2x 放大",
+        "x4plus": "4x 放大",
+        "x4plus-anime": "4x 放大（動漫）",
+        "lightweight-x4": "輕量 4x",
+        "classical-x4": "經典 4x",
+        "realworld-x4": "真實世界 4x",
+        "default": "標準",
+        "up2x-conservative": "2x 保守降噪",
+        "up2x-denoise3x": "2x 強力降噪",
+        "up2x-no-denoise": "2x 無降噪",
+        "up3x-conservative": "3x 保守降噪",
+        "up3x-no-denoise": "3x 無降噪",
+        "up4x-conservative": "4x 保守降噪",
+        "up4x-no-denoise": "4x 無降噪",
+        "cunet": "CUnet 變體",
+        "v1.4": "v1.4",
+    }
+    
+    pth_models = MODELS_REGISTRY.get(FORMAT_PTH, {})
+    for model_family, config in pth_models.items():
+        # 判斷分類
+        if model_family in UPSCALE_LABELS:
+            category = "upscale"
+            family_meta = UPSCALE_LABELS[model_family]
+        elif model_family in FACE_RESTORE_LABELS:
+            category = "face_restore"
+            family_meta = FACE_RESTORE_LABELS[model_family]
+        else:
+            continue
+        
+        # 枚舉所有變體
+        variants = config.get("variants", {})
+        for variant_name, variant_spec in variants.items():
+            model_path = manager.get_model_path(model_family, variant_name)
+            downloaded = model_path is not None and model_path.exists()
+            
+            variant_desc = VARIANT_DESC.get(variant_name, variant_name)
+            label = f"{family_meta['label']} - {variant_desc}" if len(variants) > 1 else family_meta['label']
+            
+            all_models.append({
+                "id":          f"{model_family}-{variant_name}",
+                "family":      model_family,
+                "variant":     variant_name,
+                "category":    category,
+                "label":       label,
+                "description": family_meta["description"],
+                "downloaded":  downloaded,
+                "size_mb":     variant_spec.get("vram_mb", 0),
+                "max_scale":   variant_spec.get("scale", 4),
+            })
 
+    # ── Whisper STT 模型 ──
+    whisper_dir = get_models_dir("whisper")
+    for size, label, size_mb, description in _WHISPER_DISPLAY:
+        model_dir = whisper_dir / size
+        has_vocab = (model_dir / "vocabulary.txt").exists() or (model_dir / "vocabulary.json").exists()
+        downloaded = model_dir.exists() and (model_dir / "model.bin").exists() and has_vocab
+        all_models.append({
+            "id":          f"whisper-{size}",
+            "family":      "whisper",
+            "variant":     size,
+            "category":    "stt",
+            "label":       label,
+            "description": description,
+            "downloaded":  downloaded,
+            "size_mb":     size_mb,
+        })
 
-@router.post("/install", response_model=InstallResponse)
-async def install_feature(request: InstallRequest):
-    """安裝功能所需的套件"""
-    feature = request.feature
-
-    if feature not in FEATURE_PACKAGES:
-        raise HTTPException(status_code=404, detail=f"未知的功能: {feature}")
-
-    info = FEATURE_PACKAGES[feature]
-    missing = [pkg for pkg in info["packages"] if not _check_package(pkg)]
-
-    if not missing:
-        return InstallResponse(task_id="", message=f"{info['label']}已安裝完成")
-
-    _ensure_handler()
-
-    manager = get_task_manager()
-    task_id = await manager.submit(TASK_TYPE_INSTALL, {
-        "feature": feature,
-        "packages": missing,
-        "label": info["label"],
-    })
-
-    return InstallResponse(
-        task_id=task_id,
-        message=f"開始安裝{info['label']}...",
-    )
-
-
-def _build_pip_args(pkg: str, has_cuda: bool) -> list[str]:
-    """
-    根據套件和 GPU 狀態建立 pip install 指令
-
-    llama-cpp-python 在 Windows 上沒有 PyPI 預編譯 wheel，
-    需要從社群提供的 wheel 安裝。
-    """
-    import platform
-    python = sys.executable
-    pip_name = PIP_NAMES.get(pkg, pkg)
-    base = [python, "-m", "pip", "install"]
-
-    if pkg == "llama_cpp":
-        is_win = platform.system() == "Windows"
-
-        if is_win and has_cuda:
-            # Windows + CUDA: 社群預編譯 wheel (CUDA 12.8 + Gemma 3 支援)
-            # 同時安裝 CUDA runtime DLL（Windows 上 pip 安裝的 DLL 不在 PATH 中，
-            # translategemma.py 的 _setup_cuda_dll_path() 會處理 PATH）
-            wheel_url = (
-                "https://huggingface.co/boneylizardwizard/"
-                "llama-cpp-python-038-cu128-gemma3-wheel/resolve/main/"
-                "llama_cpp_python-0.3.8%2Bcu128.gemma3-cp311-cp311-win_amd64.whl"
-            )
-            return base + [
-                wheel_url,
-                "nvidia-cuda-runtime-cu12",
-                "nvidia-cublas-cu12",
-            ]
-
-        if is_win and not has_cuda:
-            # Windows + CPU: 社群預編譯 CPU wheel
-            wheel_url = (
-                "https://eswarthammana.github.io/llama-cpp-wheels/"
-                "llama_cpp_python-0.3.14-cp311-cp311-win_amd64.whl"
-            )
-            return base + [wheel_url]
-
-        if has_cuda:
-            # Linux + CUDA: 官方 wheel index
-            return base + [pip_name, "--extra-index-url",
-                           "https://abetlen.github.io/llama-cpp-python/whl/cu124"]
-
-    return base + [pip_name]
-
-
-def _uninstall_package(pip_name: str) -> bool:
-    """卸載指定套件（用於 CPU→GPU 升級前）"""
-    python = sys.executable
-    args = [python, "-m", "pip", "uninstall", pip_name, "-y"]
-    logger.info(f"Uninstalling {pip_name}: {' '.join(args)}")
-    try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=120)
-        return result.returncode == 0
-    except subprocess.TimeoutExpired:
-        logger.error(f"Timeout uninstalling {pip_name}")
-        return False
-
-
-def _is_package_installed(name: str) -> bool:
-    """檢查套件是否已安裝（不檢查 GPU 支援）"""
-    try:
-        __import__(name)
-        return True
-    except ImportError:
-        return False
-
-
-def _handle_install_task(params: dict, progress_callback) -> dict:
-    """執行 pip install（在 executor 中執行）"""
-    packages = params["packages"]
-    label = params["label"]
-    total = len(packages)
-
-    progress_callback(0.0, "偵測 GPU 環境...")
-
-    has_cuda = has_nvidia_gpu()
-    gpu_msg = "偵測到 NVIDIA GPU，將安裝 GPU 版本" if has_cuda else "未偵測到 NVIDIA GPU，將安裝 CPU 版本"
-    logger.info(gpu_msg)
-    progress_callback(0.02, gpu_msg)
-
-    installed = []
-    failed = []
-
-    for i, pkg in enumerate(packages):
-        pip_name = PIP_NAMES.get(pkg, pkg)
-        variant = " (GPU)" if pkg == "llama_cpp" and has_cuda else ""
-        progress_callback(0.02 + (i / total) * 0.96, f"正在安裝 {pip_name}{variant}...")
-
-        # CPU→GPU 升級：先卸載 CPU 版再安裝 GPU 版
-        if has_cuda and _is_package_installed(pkg):
-            progress_callback(0.02 + (i / total) * 0.96, f"正在移除 CPU 版 {pip_name}...")
-            _uninstall_package(pip_name)
-
-        args = _build_pip_args(pkg, has_cuda)
-        logger.info(f"Running: {' '.join(args)}")
-
-        try:
-            result = subprocess.run(
-                args,
-                capture_output=True,
-                text=True,
-                timeout=600,  # 10 分鐘超時
-            )
-
-            if result.returncode == 0:
-                installed.append(pkg)
-                logger.info(f"Installed {pip_name}")
-            else:
-                failed.append(pkg)
-                logger.error(f"Failed to install {pip_name}: {result.stderr}")
-
-        except subprocess.TimeoutExpired:
-            failed.append(pkg)
-            logger.error(f"Timeout installing {pip_name}")
-
-        progress_callback(
-            0.02 + ((i + 1) / total) * 0.96,
-            f"{pip_name} 安裝完成" if pkg in installed else f"{pip_name} 安裝失敗"
-        )
-
-    if failed:
-        pip_names = [PIP_NAMES.get(p, p) for p in failed]
-        progress_callback(1.0, f"部分套件安裝失敗: {', '.join(pip_names)}")
-        raise RuntimeError(f"安裝失敗: {', '.join(pip_names)}")
-
-    progress_callback(1.0, f"{label}安裝完成")
+    # ── 翻譯模型 (GGUF)：從 registry 動態枚舉所有變體 ──
+    translate_models = _enumerate_translate_models()
+    all_models.extend(translate_models)
 
     return {
-        "installed": installed,
-        "failed": failed,
+        "models": all_models,
     }
+
+
+# ─── 應用程式設定 ───────────────────────────────────────────────────────────────
+
+@router.get("/config")
+async def get_config():
+    """取得應用程式設定"""
+    config = get_app_config()
+    return {
+        "models_dir": config.get("models_dir", ""),
+        "effective_models_dir": str(get_models_dir()),
+        "temp_dir": config.get("temp_dir", ""),
+        "effective_temp_dir": str(get_temp_dir()),
+    }
+
+
+class AppConfigUpdate(BaseModel):
+    models_dir: str = ""
+    temp_dir: str = ""
+
+
+@router.post("/config")
+async def update_config(data: AppConfigUpdate):
+    """更新應用程式設定，重啟後生效"""
+    config = get_app_config()
+    for key, val in {"models_dir": data.models_dir, "temp_dir": data.temp_dir}.items():
+        if val.strip():
+            config[key] = val.strip()
+        else:
+            config.pop(key, None)
+    save_app_config(config)
+    return {"ok": True, "needs_restart": True}
+
+
+# ─── 模型下載 ───────────────────────────────────────────────────────────────────
+
+class DownloadRequest(BaseModel):
+    id: str
+
+
+@router.post("/models/remove")
+async def remove_model_item(request: DownloadRequest):
+    """刪除已下載的工具/模型檔案"""
+    if not request.id:
+        raise HTTPException(status_code=400, detail="Missing id")
+    service = get_setup_service()
+    service.remove_model(request.id)
+    return {"ok": True}
+
+
+@router.post("/models/download")
+async def download_model_item(request: DownloadRequest):
+    """提交工具/模型下載任務"""
+    if not request.id:
+        raise HTTPException(status_code=400, detail="Missing id")
+
+    task_manager = get_task_manager()
+    task_id = await task_manager.submit("setup.model_download", {"id": request.id})
+    return {"task_id": task_id}

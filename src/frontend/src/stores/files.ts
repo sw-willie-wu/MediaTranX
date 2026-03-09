@@ -5,7 +5,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { MediaFile, MediaType, FileUploadResponse } from '@/types/media'
 
-const API_BASE = '/api'
+import { getApiBase } from '@/composables/useApi'
 
 export const useFilesStore = defineStore('files', () => {
   // 狀態
@@ -34,28 +34,44 @@ export const useFilesStore = defineStore('files', () => {
   )
 
   // 上傳檔案（sourceDir 由呼叫端提供，從原始 File.path 提取）
+  // 當 sourceDir 存在時（Electron 環境），直接註冊本機路徑，避免大檔案複製
   async function uploadFile(file: File, sourceDir?: string): Promise<string> {
     isUploading.value = true
     uploadProgress.value = 0
 
     try {
-      const formData = new FormData()
-      formData.append('file', file)
+      let data: FileUploadResponse
 
       if (sourceDir) {
-        formData.append('source_dir', sourceDir)
+        // Electron 環境：直接註冊本機檔案路徑，不需複製
+        const filePath = sourceDir.replace(/\\/g, '/') + '/' + file.name
+        const response = await fetch(`${getApiBase()}/files/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_path: filePath }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`Register failed: ${response.statusText}`)
+        }
+
+        data = await response.json()
+      } else {
+        // 瀏覽器環境：透過 HTTP 上傳
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const response = await fetch(`${getApiBase()}/files/upload`, {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.statusText}`)
+        }
+
+        data = await response.json()
       }
-
-      const response = await fetch(`${API_BASE}/files/upload`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.statusText}`)
-      }
-
-      const data: FileUploadResponse = await response.json()
 
       // 建立本地檔案記錄
       const mediaFile: MediaFile = {
@@ -102,7 +118,7 @@ export const useFilesStore = defineStore('files', () => {
     if (cached) return cached
 
     try {
-      const response = await fetch(`${API_BASE}/files/${fileId}`)
+      const response = await fetch(`${getApiBase()}/files/${fileId}`)
       if (!response.ok) return null
 
       const data = await response.json()
@@ -131,7 +147,7 @@ export const useFilesStore = defineStore('files', () => {
     const file = files.value.get(fileId)
     const filename = file?.originalName || 'download'
 
-    const response = await fetch(`${API_BASE}/files/${fileId}/download`)
+    const response = await fetch(`${getApiBase()}/files/${fileId}/download`)
     if (!response.ok) {
       throw new Error('Download failed')
     }
@@ -152,7 +168,7 @@ export const useFilesStore = defineStore('files', () => {
   // 刪除檔案
   async function deleteFile(fileId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE}/files/${fileId}`, {
+      const response = await fetch(`${getApiBase()}/files/${fileId}`, {
         method: 'DELETE',
       })
 

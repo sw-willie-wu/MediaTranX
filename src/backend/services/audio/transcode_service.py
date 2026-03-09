@@ -12,7 +12,7 @@ from backend.core.ffmpeg import (
     FFmpegError,
     get_ffmpeg,
 )
-from backend.services.file_service import FileService, get_file_service
+from backend.services.files.file_service import FileService, get_file_service
 from backend.workers.task_manager import TaskManager, get_task_manager
 
 logger = logging.getLogger(__name__)

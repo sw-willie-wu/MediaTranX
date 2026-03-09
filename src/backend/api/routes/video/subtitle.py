@@ -7,9 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.services.video.subtitle_service import get_subtitle_service
-from backend.core.models.base_translator import SUPPORTED_LANGUAGES
-from backend.core.models.translategemma import get_translategemma
-from backend.core.models.translation import get_translator
+from backend.core.ai.translate import SUPPORTED_LANGUAGES, get_translategemma, get_translator
 
 router = APIRouter()
 
@@ -89,48 +87,31 @@ class SubtitleGenerateResponse(BaseModel):
     message: str = "字幕生成任務已提交"
 
 
-class WhisperStatusResponse(BaseModel):
-    """Whisper 模型狀態回應"""
+class ModelStatusResponse(BaseModel):
+    """模型狀態回應（僅套件可用性 + 模型是否已下載）"""
     available: bool
     model_size: str
     model_downloaded: bool
-    device: str
-    compute_type: str
-    device_name: str
 
 
-class TranslateGemmaStatusResponse(BaseModel):
-    """TranslateGemma 模型狀態回應"""
-    available: bool
-    model_size: str
-    model_downloaded: bool
-    device: str
-    compute_type: str
-    device_name: str
-
-
-@router.get("/whisper/status", response_model=WhisperStatusResponse)
+@router.get("/whisper/status", response_model=ModelStatusResponse)
 async def get_whisper_status(model_size: str = "medium"):
-    """
-    查詢 Whisper 模型狀態
-
-    - **model_size**: 要查詢的模型大小 (預設 medium)
-    """
+    """查詢 Whisper 模型狀態"""
     try:
         service = get_subtitle_service()
         status = service.get_model_status(model_size)
-        return WhisperStatusResponse(**status)
+        return ModelStatusResponse(**status)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/translategemma/status", response_model=TranslateGemmaStatusResponse)
+@router.get("/translategemma/status", response_model=ModelStatusResponse)
 async def get_translategemma_status(model_size: str = "4b"):
     """查詢 TranslateGemma 模型狀態"""
     try:
         tg = get_translategemma()
         status = tg.get_model_status(model_size)
-        return TranslateGemmaStatusResponse(**status)
+        return ModelStatusResponse(**status)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

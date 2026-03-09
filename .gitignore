@@ -1,4 +1,5 @@
 # Python venv
+.venv/
 Include/
 Lib/
 Scripts/
@@ -15,20 +16,28 @@ dist/
 .vscode/
 .idea/
 
-# Temp
+# Temp & Dev
 temp/
+data/
 output/
 *.log
 test_*.py
 test_*.txt
 
-# Frontend build output served by backend
-src/backend/static/assets/
+# Build output
+src/backend/static/
+build/dist/
+build/work/
+build/*
+src/frontend/dist_electron/
 
 # Binaries (keep README)
 bin/**/*.exe
 bin/**/*.dll
 models/
+
+# Env
+.env*
 
 # Agents
 .claude/

@@ -9,6 +9,7 @@ interface SubFunction {
   id: string
   name: string
   icon: string
+  comingSoon?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -20,22 +21,34 @@ const props = withDefaults(defineProps<{
   uploadLabel?: string
   uploadAccept?: string
   hasResult?: boolean
+  resultPreviewUrl?: string | null
+  canGoBack?: boolean
   executeDisabled?: boolean
   executeLoading?: boolean
   executeLabel?: string
   hideExecute?: boolean
+  hidePreviewTabs?: boolean
 }>(), {
   uploadIcon: 'bi-cloud-arrow-up-fill',
   uploadLabel: '拖曳檔案到這裡',
   uploadAccept: '*',
   executeLabel: '開始執行',
+  resultPreviewUrl: null,
 })
 
 const emit = defineEmits<{
   (e: 'select-function', id: string): void
   (e: 'execute'): void
   (e: 'file', file: File, sourceDir?: string): void
+  (e: 'remove-file'): void
+  (e: 'download'): void
+  (e: 'go-back'): void
 }>()
+
+const currentSubFunction = computed(() =>
+  props.subFunctions.find(fn => fn.id === props.currentFunction)
+)
+const isCurrentComingSoon = computed(() => currentSubFunction.value?.comingSoon ?? false)
 
 const router = useRouter()
 const filesStore = useFilesStore()
@@ -45,6 +58,45 @@ type PreviewMode = 'original' | 'result' | 'compare'
 const previewMode = ref<PreviewMode>('original')
 
 const canShowResult = computed(() => props.hasResult)
+
+// Slider 比對模式
+const isComparing = ref(false)
+const sliderPosition = ref(50)
+const isDraggingSlider = ref(false)
+const compareContainerRef = ref<HTMLElement | null>(null)
+
+function toggleCompare() {
+  isComparing.value = !isComparing.value
+  if (isComparing.value) {
+    sliderPosition.value = 50
+  }
+}
+
+function startSliderDrag(e: MouseEvent | TouchEvent) {
+  e.preventDefault()
+  isDraggingSlider.value = true
+  document.addEventListener('mousemove', onSliderDrag)
+  document.addEventListener('mouseup', stopSliderDrag)
+  document.addEventListener('touchmove', onSliderDrag)
+  document.addEventListener('touchend', stopSliderDrag)
+}
+
+function onSliderDrag(e: MouseEvent | TouchEvent) {
+  if (!isDraggingSlider.value || !compareContainerRef.value) return
+  const rect = compareContainerRef.value.getBoundingClientRect()
+  const clientX = e instanceof MouseEvent ? e.clientX : e.touches[0].clientX
+  const x = clientX - rect.left
+  const pct = Math.max(0, Math.min(100, (x / rect.width) * 100))
+  sliderPosition.value = pct
+}
+
+function stopSliderDrag() {
+  isDraggingSlider.value = false
+  document.removeEventListener('mousemove', onSliderDrag)
+  document.removeEventListener('mouseup', stopSliderDrag)
+  document.removeEventListener('touchmove', onSliderDrag)
+  document.removeEventListener('touchend', stopSliderDrag)
+}
 
 // 內部檔案管理
 const currentFile = ref<File | null>(null)
@@ -68,6 +120,18 @@ function setFile(file: File, sourceDir?: string) {
   previewUrl.value = URL.createObjectURL(file)
   previewMode.value = 'original'
   emit('file', file, sourceDir)
+}
+
+function removeFile() {
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+  }
+  currentFile.value = null
+  previewUrl.value = null
+  previewMode.value = 'original'
+  isComparing.value = false
+  sliderPosition.value = 50
+  emit('remove-file')
 }
 
 function handleUploadFile(file: File, sourceDir?: string) {
@@ -169,19 +233,57 @@ function handleExecute() {
           v-for="fn in subFunctions"
           :key="fn.id"
           class="function-item"
-          :class="{ active: currentFunction === fn.id }"
+          :class="{ active: currentFunction === fn.id, 'coming-soon': fn.comingSoon }"
           @click="selectFunction(fn.id)"
         >
           <i :class="['bi', fn.icon]"></i>
           <span>{{ fn.name }}</span>
+          <span v-if="fn.comingSoon" class="coming-badge">即將</span>
         </button>
       </div>
     </aside>
 
     <!-- 中間：預覽區域 -->
     <main class="preview-area">
-      <!-- 預覽模式切換 -->
-      <div class="preview-tabs" v-if="hasFile">
+      <!-- 右上角直排按鈕群（有檔案才顯示） -->
+      <div v-if="hasFile" class="preview-toolbar">
+        <button
+          class="toolbar-btn remove-btn"
+          data-tooltip="移除檔案"
+          @click="removeFile"
+        >
+          <i class="bi bi-x-lg"></i>
+        </button>
+        <button
+          class="toolbar-btn compare-btn"
+          :class="{ active: isComparing, disabled: !canShowResult }"
+          :disabled="!canShowResult"
+          data-tooltip="比對原圖與成果"
+          @click="canShowResult && toggleCompare()"
+        >
+          <i class="bi bi-layout-split"></i>
+        </button>
+        <button
+          class="toolbar-btn download-btn"
+          :class="{ disabled: !canShowResult }"
+          :disabled="!canShowResult"
+          data-tooltip="儲存結果"
+          @click="canShowResult && emit('download')"
+        >
+          <i class="bi bi-download"></i>
+        </button>
+        <button
+          v-if="canGoBack"
+          class="toolbar-btn back-btn"
+          data-tooltip="回到上一步"
+          @click="emit('go-back')"
+        >
+          <i class="bi bi-arrow-counterclockwise"></i>
+        </button>
+      </div>
+
+      <!-- 預覽模式切換 (for non-image views) -->
+      <div class="preview-tabs" v-if="hasFile && !props.hidePreviewTabs">
         <button
           class="preview-tab"
           :class="{ active: previewMode === 'original' }"
@@ -243,6 +345,34 @@ function handleExecute() {
           @file="handleUploadFile"
         />
 
+        <!-- Slider 比對模式 -->
+        <div
+          v-else-if="isComparing && resultPreviewUrl"
+          ref="compareContainerRef"
+          class="compare-slider-container"
+        >
+          <img :src="previewUrl!" alt="原圖" class="compare-img compare-img-original" />
+          <img
+            :src="resultPreviewUrl"
+            alt="成果"
+            class="compare-img compare-img-result"
+            :style="{ clipPath: `inset(0 0 0 ${sliderPosition}%)` }"
+          />
+          <div
+            class="slider-handle"
+            :style="{ left: `${sliderPosition}%` }"
+            @mousedown="startSliderDrag"
+            @touchstart="startSliderDrag"
+          >
+            <div class="slider-line"></div>
+            <div class="slider-grip">
+              <i class="bi bi-grip-vertical"></i>
+            </div>
+          </div>
+          <span class="compare-label compare-label-left">原圖</span>
+          <span class="compare-label compare-label-right">成果</span>
+        </div>
+
         <!-- 有檔案時顯示預覽 slot -->
         <slot
           v-else
@@ -268,7 +398,7 @@ function handleExecute() {
       </div>
 
       <!-- 執行按鈕 -->
-      <div v-if="!hideExecute" class="execute-section">
+      <div v-if="!hideExecute && !isCurrentComingSoon" class="execute-section">
         <button
           class="execute-btn"
           :disabled="executeDisabled"
@@ -338,17 +468,45 @@ function handleExecute() {
 
   &:hover {
     color: var(--text-primary);
-    background: var(--panel-bg);
+    background: var(--panel-bg-hover);
   }
 
   &.active {
     color: var(--text-primary);
-    background: var(--panel-bg);
+    background: var(--panel-bg-active);
+
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 20%;
+      bottom: 20%;
+      width: 3px;
+      border-radius: 0 2px 2px 0;
+      background: var(--color-accent);
+    }
   }
+
+  &.coming-soon {
+    opacity: 0.5;
+  }
+}
+
+.coming-badge {
+  margin-left: auto;
+  padding: 1px 5px;
+  background: var(--panel-bg-active);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  flex-shrink: 0;
 }
 
 // 中間預覽區
 .preview-area {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -358,6 +516,179 @@ function handleExecute() {
   border: 1px solid var(--panel-border);
   border-radius: 12px;
   overflow: hidden;
+}
+
+.preview-toolbar {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.toolbar-btn {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  opacity: 0.75;
+
+  &:hover:not(:disabled) {
+    opacity: 1;
+  }
+
+  &.disabled, &:disabled {
+    opacity: 0.25;
+    cursor: not-allowed;
+  }
+
+  // Tooltip — 左側浮出
+  &::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    right: calc(100% + 8px);
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 4px 10px;
+    background: var(--panel-bg-active);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  &:hover:not(:disabled)::after {
+    opacity: 1;
+  }
+
+  &.remove-btn:hover:not(:disabled) {
+    background: rgba(220, 53, 69, 0.75);
+    border-color: rgba(220, 53, 69, 0.5);
+    color: #fff;
+  }
+
+  &.compare-btn:hover:not(:disabled),
+  &.compare-btn.active {
+    background: rgba(96, 165, 250, 0.25);
+    border-color: rgba(96, 165, 250, 0.5);
+    color: #60a5fa;
+    opacity: 1;
+  }
+
+  &.download-btn:hover:not(:disabled) {
+    background: rgba(52, 211, 153, 0.25);
+    border-color: rgba(52, 211, 153, 0.5);
+    color: #34d399;
+  }
+
+  &.back-btn:hover:not(:disabled) {
+    background: rgba(251, 191, 36, 0.2);
+    border-color: rgba(251, 191, 36, 0.4);
+    color: #fbbf24;
+  }
+}
+
+// Slider 比對
+.compare-slider-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  user-select: none;
+}
+
+.compare-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.compare-img-original {
+  z-index: 1;
+}
+
+.compare-img-result {
+  z-index: 2;
+}
+
+.slider-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 4px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slider-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}
+
+.slider-grip {
+  position: relative;
+  z-index: 4;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  color: #333;
+  font-size: 0.9rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.compare-label {
+  position: absolute;
+  bottom: 1rem;
+  z-index: 5;
+  padding: 0.25rem 0.75rem;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+  color: white;
+  font-size: 0.75rem;
+  pointer-events: none;
+
+  &-left {
+    left: 1rem;
+  }
+
+  &-right {
+    right: 1rem;
+  }
 }
 
 .preview-tabs {

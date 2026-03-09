@@ -5,27 +5,34 @@ import { reactive } from 'vue'
 
 export type ToastType = 'info' | 'success' | 'error'
 
+export interface ToastAction {
+  label: string
+  callback: () => void
+}
+
 export interface Toast {
   id: number
   message: string
   type: ToastType
   icon?: string
+  action?: ToastAction
 }
 
 export interface ToastOptions {
   type?: ToastType
   icon?: string
   duration?: number
+  action?: ToastAction
 }
 
 const toasts = reactive<Toast[]>([])
 let nextId = 0
 
 function show(message: string, options: ToastOptions = {}) {
-  const { type = 'info', icon, duration = 5000 } = options
+  const { type = 'info', icon, duration = 5000, action } = options
 
   const id = nextId++
-  const toast: Toast = { id, message, type, icon }
+  const toast: Toast = { id, message, type, icon, action }
   toasts.push(toast)
 
   if (duration > 0) {

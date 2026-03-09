@@ -7,8 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.services.document.translate_service import get_translate_service
-from backend.core.models.base_translator import SUPPORTED_LANGUAGES
-from backend.core.models.translation import get_translator
+from backend.core.ai.translate import SUPPORTED_LANGUAGES, get_translator
 
 router = APIRouter()
 
@@ -37,9 +36,6 @@ class TranslateGemmaStatusResponse(BaseModel):
     available: bool
     model_size: str
     model_downloaded: bool
-    device: str
-    compute_type: str
-    device_name: str
 
 
 @router.get("/translategemma/status", response_model=TranslateGemmaStatusResponse)

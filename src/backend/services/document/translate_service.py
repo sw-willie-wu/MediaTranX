@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from backend.core.models.translation import get_translator
-from backend.services.file_service import FileService, get_file_service
+from backend.core.ai.translate import get_translator
+from backend.services.files.file_service import FileService, get_file_service
 from backend.workers.task_manager import TaskManager, get_task_manager
 
 logger = logging.getLogger(__name__)
@@ -243,44 +243,50 @@ class TranslateService:
         progress_callback(0.05, f"檔案讀取完成 ({len(text)} 字元)，準備翻譯...")
 
         # === 階段 2: 翻譯 (5~95%) ===
+        # GPU 排隊：同時只有一個任務使用 GPU，模型用完即卸載
+        from backend.core.ai.model_manager import get_model_manager
+        manager = get_model_manager()
+
         translator = get_translator(model_type)
 
         def translate_progress(percent: float, msg: str):
             overall = 0.05 + percent * 0.90
             progress_callback(overall, msg)
 
-        if is_subtitle:
-            # 字幕檔：解析 → 逐段翻譯 → 保留時間軸
-            if ext == ".vtt":
-                segments = _parse_vtt(text)
+        with manager.gpu_session():
+            if is_subtitle:
+                # 字幕檔：解析 → 逐段翻譯 → 保留時間軸
+                if ext == ".vtt":
+                    segments = _parse_vtt(text)
+                else:
+                    segments = _parse_srt(text)
+
+                logger.info(f"Parsed {len(segments)} subtitle segments from {ext} file")
+
+                translated_segments = translator.translate_segments(
+                    segments=segments,
+                    source_lang=source_language,
+                    target_lang=target_language,
+                    model_size=model_size,
+                    quantization=quantization,
+                    on_progress=translate_progress,
+                    glossary=glossary,
+                )
+                translated_text = None  # 由寫入函式處理
             else:
-                segments = _parse_srt(text)
-
-            logger.info(f"Parsed {len(segments)} subtitle segments from {ext} file")
-
-            translated_segments = translator.translate_segments(
-                segments=segments,
-                source_lang=source_language,
-                target_lang=target_language,
-                model_size=model_size,
-                quantization=quantization,
-                on_progress=translate_progress,
-                glossary=glossary,
-            )
-            translated_text = None  # 由寫入函式處理
-        else:
-            # 純文字檔：整段翻譯
-            result = translator.translate(
-                text=text,
-                source_lang=source_language,
-                target_lang=target_language,
-                model_size=model_size,
-                quantization=quantization,
-                on_progress=translate_progress,
-                glossary=glossary,
-            )
-            translated_text = result.text
-            translated_segments = None
+                # 純文字檔：整段翻譯
+                result = translator.translate(
+                    text=text,
+                    source_lang=source_language,
+                    target_lang=target_language,
+                    model_size=model_size,
+                    quantization=quantization,
+                    on_progress=translate_progress,
+                    glossary=glossary,
+                )
+                translated_text = result.text
+                translated_segments = None
+            # 翻譯模型已在 finally 中自動卸載
 
         # === 階段 3: 寫入輸出檔 (95~100%) ===
         progress_callback(0.95, "正在寫入輸出檔...")
