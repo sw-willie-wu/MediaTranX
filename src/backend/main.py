@@ -7,17 +7,31 @@ import sys
 import logging
 from pathlib import Path
 
-# --- 0. 修正編譯後的導入路徑 ---
-if getattr(sys, 'frozen', False):
+# --- 0. 偵測編譯模式 ---
+IS_FROZEN = getattr(sys, 'frozen', False) or "__compiled__" in globals() or hasattr(sys, "nuitka_binary")
+
+# --- 1. 修正編譯後的導入路徑 ---
+if IS_FROZEN:
     # 打包後，讓程式能找到同目錄下的模組
     _internal_path = os.path.dirname(sys.executable)
     if _internal_path not in sys.path:
         sys.path.insert(0, _internal_path)
 
+# --- 相容層：torchvision >= 0.16 移除了 functional_tensor 模組 ---
+import types as _types
+try:
+    import torchvision.transforms.functional_tensor  # noqa: F401
+except ImportError:
+    import torchvision.transforms.functional as _tvf
+    _compat = _types.ModuleType("torchvision.transforms.functional_tensor")
+    for _attr in dir(_tvf):
+        setattr(_compat, _attr, getattr(_tvf, _attr))
+    sys.modules["torchvision.transforms.functional_tensor"] = _compat
+
 from fastapi import FastAPI
 
-# --- 1. 環境與環境路徑注入 (BUILD_STRATEGY.md) ---
-_appdata = os.environ.get('APPDATA', '')
+# --- 2. 環境與環境路徑注入 (BUILD_STRATEGY.md) ---
+_appdata = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
 if _appdata:
     # 注入外部 .venv site-packages（即使目錄尚不存在也先加入，安裝後即可 import）
     _venv_site = os.path.join(_appdata, 'MediaTranX', '.venv', 'Lib', 'site-packages')
@@ -33,7 +47,8 @@ if _appdata:
             os.path.join(_venv_site, 'torch', 'lib'),      # torch CUDA DLL
             os.path.join(_venv_site, 'ctranslate2'),        # ctranslate2 DLL（faster-whisper 底層）
             os.path.join(_venv_site, 'tokenizers'),         # tokenizers .pyd 同層 DLL
-            os.path.join(_venv_site, 'llama_cpp', 'lib'),  # llama.dll / ggml.dll / ggml-cuda.dll
+            os.path.join(_venv_site, 'llama_cpp'),          # 部分 wheel DLL 在此
+            os.path.join(_venv_site, 'llama_cpp', 'lib'),  # 官方 wheel DLL 在此
         ]
         for _d in _dll_dirs:
             if os.path.isdir(_d):
@@ -80,7 +95,7 @@ if not getattr(sys, 'frozen', False):
         level=logging.INFO,
         format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
     )
-if getattr(sys, 'frozen', False):
+if IS_FROZEN:
     log_dir = Path(_appdata) / 'MediaTranX'
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / 'backend_internal.log'
@@ -94,7 +109,16 @@ if getattr(sys, 'frozen', False):
     )
     logging.info(f"Backend started in frozen mode. Log: {log_path}")
 
-# --- 3. App 定義與路由掛載 ---
+# --- 3. 啟動診斷 (Diagnostic) ---
+if IS_FROZEN:
+    try:
+        import llama_cpp
+        logging.info("Startup Diagnostic: llama-cpp-python imported successfully.")
+    except Exception as e:
+        logging.error(f"Startup Diagnostic: llama-cpp-python import failed: {e}")
+        # 嘗試印出環境變數
+        logging.info(f"Startup Diagnostic: PATH={os.environ.get('PATH', '')}")
+
 from backend.api import build_router
 
 app: FastAPI = FastAPI(title="MediaTranX API")

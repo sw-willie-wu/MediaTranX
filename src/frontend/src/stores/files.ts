@@ -5,7 +5,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { MediaFile, MediaType, FileUploadResponse } from '@/types/media'
 
-const API_BASE = '/api'
+import { getApiBase } from '@/composables/useApi'
 
 export const useFilesStore = defineStore('files', () => {
   // 狀態
@@ -45,7 +45,7 @@ export const useFilesStore = defineStore('files', () => {
       if (sourceDir) {
         // Electron 環境：直接註冊本機檔案路徑，不需複製
         const filePath = sourceDir.replace(/\\/g, '/') + '/' + file.name
-        const response = await fetch(`${API_BASE}/files/register`, {
+        const response = await fetch(`${getApiBase()}/files/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ file_path: filePath }),
@@ -61,7 +61,7 @@ export const useFilesStore = defineStore('files', () => {
         const formData = new FormData()
         formData.append('file', file)
 
-        const response = await fetch(`${API_BASE}/files/upload`, {
+        const response = await fetch(`${getApiBase()}/files/upload`, {
           method: 'POST',
           body: formData,
         })
@@ -118,7 +118,7 @@ export const useFilesStore = defineStore('files', () => {
     if (cached) return cached
 
     try {
-      const response = await fetch(`${API_BASE}/files/${fileId}`)
+      const response = await fetch(`${getApiBase()}/files/${fileId}`)
       if (!response.ok) return null
 
       const data = await response.json()
@@ -147,7 +147,7 @@ export const useFilesStore = defineStore('files', () => {
     const file = files.value.get(fileId)
     const filename = file?.originalName || 'download'
 
-    const response = await fetch(`${API_BASE}/files/${fileId}/download`)
+    const response = await fetch(`${getApiBase()}/files/${fileId}/download`)
     if (!response.ok) {
       throw new Error('Download failed')
     }
@@ -168,7 +168,7 @@ export const useFilesStore = defineStore('files', () => {
   // 刪除檔案
   async function deleteFile(fileId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE}/files/${fileId}`, {
+      const response = await fetch(`${getApiBase()}/files/${fileId}`, {
         method: 'DELETE',
       })
 

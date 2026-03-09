@@ -246,6 +246,16 @@ class SetupService:
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
+                        if total > 0:
+                            frac = downloaded / total
+                            # 映射到 0.75 -> 0.85 的進度區間
+                            prog = 0.75 + frac * 0.1
+                            tracker = get_progress_tracker()
+                            # 這裡使用 run_in_executor 呼叫非同步發布
+                            asyncio.run_coroutine_threadsafe(
+                                tracker.emit(task_id, prog, f"下載中... {downloaded//(1024*1024)} / {total//(1024*1024)} MB", stage="processing"),
+                                asyncio.get_running_loop()
+                            )
 
             logger.info(f"Downloaded llama wheel: {std_filename} ({downloaded // (1024*1024)}MB)")
             return local_path
@@ -419,33 +429,24 @@ class SetupService:
         base_progress: float = 0.1,
         end_progress: float = 0.95,
     ) -> None:
-        """透過 HuggingFace Hub 下載單一檔案"""
-        from huggingface_hub import hf_hub_download
-        import shutil
-        
-        progress_callback(base_progress, f"正在下載 {filename}...")
-        
-        # 確保目標目錄存在
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # 使用 hf_hub_download 直接下載到目標目錄
-        # local_dir_use_symlinks=False 確保檔案直接下載，不使用符號連結
+        """透過 HuggingFace Hub 下載單一檔案，支援即時進度回報"""
+        from huggingface_hub import hf_hub_url
         try:
-            downloaded_path = hf_hub_download(
-                repo_id=repo_id,
-                filename=filename,
-                local_dir=target_path.parent,
-                local_dir_use_symlinks=False,
-            )
+            # 1. 取得下載網址
+            url = hf_hub_url(repo_id=repo_id, filename=filename)
+            logger.info(f"Resolved HF URL for {filename}: {url}")
             
-            # 檢查下載的檔案大小
-            if target_path.exists():
-                size_mb = target_path.stat().st_size / 1024 / 1024
-                progress_callback(end_progress, f"下載完成 ({size_mb:.1f} MB)")
-            else:
-                progress_callback(end_progress, "下載完成")
+            # 2. 呼叫現有的 _download_from_url 邏輯，這會主動觸發 progress_callback
+            self._download_from_url(
+                url=url, 
+                target_path=target_path, 
+                progress_callback=progress_callback,
+                base_progress=base_progress,
+                end_progress=end_progress
+            )
         except Exception as e:
-            raise RuntimeError(f"下載失敗: {str(e)}")
+            logger.error(f"Streaming download failed for {filename}: {e}")
+            raise RuntimeError(f"下載失敗 ({filename}): {str(e)}")
 
     def _download_whisper(self, size: str, progress_callback: Callable, snapshot_download) -> None:
         from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_BIN
@@ -467,14 +468,14 @@ class SetupService:
             progress_callback(0.1, f"下載 Whisper {size} 模型中...")
             self._stream_download(repo_id, "model.bin", model_bin, progress_callback, 0.1, 0.9)
 
-        # 其餘設定小檔案用 snapshot_download 補齊（vocabulary.txt / tokenizer.json / config.json）
-        progress_callback(0.9, "下載設定檔...")
+        # 其餘設定小檔案用 snapshot_download 補齊
+        progress_callback(0.9, "下載設定檔與分詞器...")
         snapshot_download(
             repo_id=repo_id,
             local_dir=str(local_dir),
             ignore_patterns=["*.md", "model.bin", "model.safetensors"],
         )
-        progress_callback(0.95, "模型下載完成")
+        progress_callback(0.98, "模型檔案檢驗完成")
 
     def _download_translate(self, model_type: str, size: str, quant: str, progress_callback: Callable, hf_hub_download) -> None:
         from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_GGUF

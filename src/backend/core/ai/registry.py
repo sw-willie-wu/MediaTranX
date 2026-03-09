@@ -235,7 +235,7 @@ MODELS_REGISTRY = {
                     "arch": "RRDBNet",
                 },
                 "x4plus-anime": {
-                    "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.1/RealESRGAN_x4plus_anime_6B.pth",
+                    "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
                     "filename": "RealESRGAN_x4plus_anime_6B.pth",
                     "vram_mb": 2000,
                     "scale": 4,
@@ -250,7 +250,7 @@ MODELS_REGISTRY = {
             "description": "SwinIR Transformer 超解析",
             "variants": {
                 "lightweight-x4": {
-                    "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/005_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth",
+                    "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth",
                     "filename": "SwinIR-S_Lightweight_x4.pth",
                     "vram_mb": 1800,
                     "scale": 4,
@@ -382,72 +382,23 @@ MODELS_REGISTRY = {
                 },
             },
         },
+        
+        # ▸ Waifu2x 系列
+        "waifu2x": {
+            "slot": "waifu2x",
+            "description": "Waifu2x 動漫風格超解析",
+            "variants": {
+                "cunet": {
+                    "url": "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20250502.zip",
+                    "filename": "waifu2x_cunet_art.pth",
+                    "unzip": True,
+                    "archive_path": "pretrained_models/cunet/art/scale2x.pth",
+                    "vram_mb": 1200,
+                    "scale": 2,
+                },
+            },
+        },
     },
 }
 
-# ═══════════════════════════════════════════════════════════
-# 向後兼容層 (Backward Compatibility)
-# ═══════════════════════════════════════════════════════════
-
-# 保留舊的扁平結構引用，供尚未重構的代碼使用
-WHISPER_REGISTRY = MODELS_REGISTRY[FORMAT_BIN]["whisper"]["variants"]
-TRANSLATEGEMMA_REGISTRY = {
-    "variants": {
-        size: {
-            quant: spec
-            for quant, spec in MODELS_REGISTRY[FORMAT_GGUF]["translategemma"]["specs"][size]["variants"].items()
-        }
-        for size in MODELS_REGISTRY[FORMAT_GGUF]["translategemma"]["specs"]
-    },
-    "default_quant": MODELS_REGISTRY[FORMAT_GGUF]["translategemma"]["default_variant"],
-    "layers": {
-        size: MODELS_REGISTRY[FORMAT_GGUF]["translategemma"]["specs"][size]["layers"]
-        for size in MODELS_REGISTRY[FORMAT_GGUF]["translategemma"]["specs"]
-    },
-    "vram_overhead_mb": {
-        size: MODELS_REGISTRY[FORMAT_GGUF]["translategemma"]["specs"][size]["vram_overhead_mb"]
-        for size in MODELS_REGISTRY[FORMAT_GGUF]["translategemma"]["specs"]
-    },
-    "n_ctx": {
-        size: MODELS_REGISTRY[FORMAT_GGUF]["translategemma"]["specs"][size]["n_ctx"]
-        for size in MODELS_REGISTRY[FORMAT_GGUF]["translategemma"]["specs"]
-    },
-}
-
-QWEN3_REGISTRY = {
-    "variants": {
-        size: {
-            quant: spec
-            for quant, spec in MODELS_REGISTRY[FORMAT_GGUF]["qwen3"]["specs"][size]["variants"].items()
-        }
-        for size in MODELS_REGISTRY[FORMAT_GGUF]["qwen3"]["specs"]
-    },
-    "default_quant": MODELS_REGISTRY[FORMAT_GGUF]["qwen3"]["default_variant"],
-    "layers": {
-        size: MODELS_REGISTRY[FORMAT_GGUF]["qwen3"]["specs"][size]["layers"]
-        for size in MODELS_REGISTRY[FORMAT_GGUF]["qwen3"]["specs"]
-    },
-    "vram_overhead_mb": {
-        size: MODELS_REGISTRY[FORMAT_GGUF]["qwen3"]["specs"][size]["vram_overhead_mb"]
-        for size in MODELS_REGISTRY[FORMAT_GGUF]["qwen3"]["specs"]
-    },
-    "n_ctx": {
-        size: MODELS_REGISTRY[FORMAT_GGUF]["qwen3"]["specs"][size]["n_ctx"]
-        for size in MODELS_REGISTRY[FORMAT_GGUF]["qwen3"]["specs"]
-    },
-}
-
-UPSCALE_REGISTRY = {
-    "realesrgan-x4plus": {
-        "repo_id": "sberbank-ai/Real-ESRGAN",
-        "filename": "RealESRGAN_x4plus.pth",
-        "size_mb": 64,
-        "vram_mb": 2000,
-    },
-    "hat-l-x4": {
-        "repo_id": "Facea/HAT",
-        "filename": "HAT_L_X4.pth",
-        "size_mb": 200,
-        "vram_mb": 4000,
-    }
-}
+# 模型註冊表結束

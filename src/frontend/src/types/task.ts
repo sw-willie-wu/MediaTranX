@@ -24,6 +24,8 @@ export interface ProgressUpdate {
   stage: string
   message: string
   timestamp: string
+  result?: unknown
+  error?: string
 }
 
 export interface TaskSubmitParams {

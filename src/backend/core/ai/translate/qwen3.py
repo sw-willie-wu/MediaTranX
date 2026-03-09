@@ -12,7 +12,8 @@ TODO (未來重構):
 import logging
 from typing import Optional
 
-from backend.core.ai.registry import SLOT_LLM, MODELS_REGISTRY
+from backend.core.ai.registry import SLOT_LLM, MODELS_REGISTRY, FORMAT_GGUF
+from backend.core.paths import get_models_dir
 from .base import (
     BaseTranslator,
     LANG_NAMES_EN,
@@ -32,17 +33,26 @@ class Qwen3Wrapper(BaseTranslator):
     MODEL_NAME = "Qwen3"
     CATEGORY = "qwen3"
 
-    # 完整繼承自 registry.py 的配置
+    def __init__(self):
+        self._MODELS_DIR = get_models_dir(self.CATEGORY)
+        super().__init__()
+
     @property
-    def MODEL_VARIANTS(self): return MODELS_REGISTRY[self.CATEGORY]["variants"]
+    def _family(self): return MODELS_REGISTRY[FORMAT_GGUF][self.CATEGORY]
     @property
-    def DEFAULT_QUANT(self): return MODELS_REGISTRY[self.CATEGORY]["default_quant"]
+    def MODEL_VARIANTS(self):
+        return {size: spec["variants"] for size, spec in self._family["specs"].items()}
     @property
-    def _MODEL_LAYERS(self): return MODELS_REGISTRY[self.CATEGORY]["layers"]
+    def DEFAULT_QUANT(self): return self._family["default_variant"]
     @property
-    def _VRAM_OVERHEAD_MB(self): return MODELS_REGISTRY[self.CATEGORY]["vram_overhead_mb"]
+    def _MODEL_LAYERS(self):
+        return {size: spec["layers"] for size, spec in self._family["specs"].items()}
     @property
-    def _MODEL_N_CTX(self): return MODELS_REGISTRY[self.CATEGORY]["n_ctx"]
+    def _VRAM_OVERHEAD_MB(self):
+        return {size: spec["vram_overhead_mb"] for size, spec in self._family["specs"].items()}
+    @property
+    def _MODEL_N_CTX(self):
+        return {size: spec["n_ctx"] for size, spec in self._family["specs"].items()}
 
     def _generate_translation(
         self, text: str, source_lang: str, target_lang: str,

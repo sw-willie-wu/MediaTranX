@@ -36,9 +36,6 @@ class TranslateGemmaStatusResponse(BaseModel):
     available: bool
     model_size: str
     model_downloaded: bool
-    device: str
-    compute_type: str
-    device_name: str
 
 
 @router.get("/translategemma/status", response_model=TranslateGemmaStatusResponse)

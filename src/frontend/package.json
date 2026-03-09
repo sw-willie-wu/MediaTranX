@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "main": "main.js",
   "scripts": {
     "dev": "vite",
     "build": "run-p type-check \"build-only {@}\" --",
@@ -12,10 +11,7 @@
     "type-check": "vue-tsc --build",
     "lint": "eslint . --fix",
     "format": "prettier --write src/",
-    "electron": "electron .",
-    "electron:serve": "electron .",
-    "build:frontend": "vite build",
-    "build:electron": "npx electron-builder --win"
+    "build:frontend": "vite build"
   },
   "dependencies": {
     "bootstrap": "^5.3.5",
@@ -32,66 +28,15 @@
     "@vue/eslint-config-prettier": "^10.2.0",
     "@vue/eslint-config-typescript": "^14.5.0",
     "@vue/tsconfig": "^0.7.0",
-    "electron": "^35.1.5",
-    "electron-builder": "^26.0.0",
-    "electron-vite": "^3.1.0",
     "eslint": "^9.22.0",
     "eslint-plugin-vue": "~10.0.0",
     "jiti": "^2.4.2",
     "npm-run-all2": "^7.0.2",
     "prettier": "3.5.3",
     "sass-embedded": "^1.86.3",
-    "ts-node": "^10.9.2",
     "typescript": "~5.8.0",
     "vite": "^6.2.4",
     "vite-plugin-vue-devtools": "^7.7.2",
     "vue-tsc": "^2.2.8"
-  },
-  "build": {
-    "appId": "com.mediatranx.app",
-    "productName": "MediaTranX",
-    "directories": {
-      "output": "../../dist"
-    },
-    "files": [
-      "main.js",
-      "preload.cjs",
-      "splash.html",
-      "icon.ico"
-    ],
-    "extraResources": [
-      {
-        "from": "../../build/resources/core_service",
-        "to": "core_service",
-        "filter": ["**/*"]
-      },
-      {
-        "from": "../../build/resources/uv.exe",
-        "to": "uv.exe"
-      },
-      {
-        "from": "../../build/resources/pyproject.toml",
-        "to": "pyproject.toml"
-      },
-      {
-        "from": "../../build/resources/ffmpeg",
-        "to": "ffmpeg",
-        "filter": ["**/*"]
-      }
-    ],
-    "afterPack": "./scripts/afterPack.cjs",
-    "win": {
-      "target": "nsis",
-      "icon": "icon.ico",
-      "signAndEditExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "installerIcon": "icon.ico",
-      "uninstallerIcon": "icon.ico",
-      "include": "./scripts/installer.nsh"
-    }
   }
 }

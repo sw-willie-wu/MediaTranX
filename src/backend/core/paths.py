@@ -11,7 +11,17 @@ from pathlib import Path
 
 def _is_frozen() -> bool:
     """是否為編譯後的執行檔 (Nuitka 或 PyInstaller)"""
-    return getattr(sys, 'frozen', False)
+    # 1. 檢查標準打包標記
+    if getattr(sys, 'frozen', False) or hasattr(sys, "nuitka_binary"):
+        return True
+    # 2. 檢查 Nuitka 全域變數
+    if "__compiled__" in globals():
+        return True
+    # 3. 強制檢查執行檔檔名與路徑位置 (針對 Windows 打包環境)
+    exe_path = sys.executable.lower()
+    if exe_path.endswith('core.exe') or ('resources' in exe_path and 'python.exe' not in exe_path):
+        return True
+    return False
 
 
 def _get_internal_dir() -> Path:

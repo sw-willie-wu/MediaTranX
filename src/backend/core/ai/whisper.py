@@ -92,7 +92,7 @@ class WhisperWrapper(BINRuntime):
         audio_path = Path(audio_path)
         
         # 獲取 VRAM 需求
-        size_config = MODELS_REGISTRY[FORMAT_BIN]["whisper"]["sizes"].get(model_size)
+        size_config = MODELS_REGISTRY[FORMAT_BIN]["whisper"]["variants"].get(model_size)
         if not size_config:
             raise ValueError(f"Unknown Whisper model size: {model_size}")
         

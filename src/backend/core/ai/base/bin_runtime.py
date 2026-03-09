@@ -100,7 +100,7 @@ class BINRuntime(BaseRuntime):
         if not family:
             raise ValueError(f"Unknown BIN model: {model_id}")
         
-        size_config = family["sizes"].get(variant)
+        size_config = family["variants"].get(variant)
         if not size_config:
             raise ValueError(f"Unknown variant '{variant}' for {model_id}")
         

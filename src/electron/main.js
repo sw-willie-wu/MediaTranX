@@ -1,15 +1,11 @@
 // electron/main.js
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { spawn, execSync } from 'child_process';
-import http from 'http';
-import fs from 'fs';
-import os from 'os';
-import net from 'net';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { join, dirname } = require('path');
+const { spawn, execSync } = require('child_process');
+const http = require('http');
+const fs = require('fs');
+const os = require('os');
+const net = require('net');
 
 // 子進程
 let pythonProcess = null;
@@ -35,6 +31,15 @@ function findFreePort(startPort) {
 
 // 取得應用程式資料目錄
 function getAppDataPath() {
+  if (!app.isPackaged) {
+    // 開發階段：將資料存放在專案根目錄下的 data 檔案夾
+    const devPath = join(__dirname, '..', '..', 'data');
+    if (!fs.existsSync(devPath)) {
+      fs.mkdirSync(devPath, { recursive: true });
+    }
+    return devPath;
+  }
+
   const appData = process.env.APPDATA || (process.platform === 'darwin' ? join(os.homedir(), 'Library', 'Application Support') : join(os.homedir(), '.config'));
   const path = join(appData, 'MediaTranX');
   if (!fs.existsSync(path)) {
@@ -43,13 +48,19 @@ function getAppDataPath() {
   return path;
 }
 
+// 在開發階段，將 Electron 內建的資料路徑（如 Cache, LocalStorage）也導向專案內部
+if (!app.isPackaged) {
+  const devDataPath = getAppDataPath();
+  app.setPath('userData', join(devDataPath, 'electron_data'));
+}
+
 // 檢查並確保環境目錄存在 (BUILD_STRATEGY.md)
 async function ensureVenv(window) {
   if (!app.isPackaged) return;
 
   const appDataPath = getAppDataPath();
   const venvPath = join(appDataPath, '.venv');
-  
+
   if (!fs.existsSync(venvPath)) {
     console.log('Creating initial data directory...');
     fs.mkdirSync(venvPath, { recursive: true });
@@ -60,7 +71,7 @@ function startViteDevServer() {
   console.log('Starting Vite dev server on port', FRONTEND_DEV_PORT);
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   viteProcess = spawn(npmCmd, ['run', 'dev'], {
-    cwd: __dirname,
+    cwd: join(__dirname, '..', 'frontend'),
     stdio: ['pipe', 'pipe', 'pipe'],
     shell: true,
     env: { ...process.env, FORCE_COLOR: '1', VITE_BACKEND_PORT: String(BACKEND_PORT) }
@@ -103,22 +114,31 @@ function startPythonBackend() {
 
   if (isDev) {
     const projectRoot = join(__dirname, '..', '..');
+    const devLog = join(projectRoot, 'data', 'dev_backend.log');
+    const logStream = fs.createWriteStream(devLog, { flags: 'a' });
+    logStream.write(`\n--- Dev Backend Start: ${new Date().toISOString()} ---\n`);
+
     console.log(`Starting Python backend (dev) on port ${BACKEND_PORT} via uv run...`);
+    console.log(`Logs will be written to: ${devLog}`);
 
     pythonProcess = spawn('uv', [
       'run', '--project', projectRoot,
-      'python', '-m', 'backend.main',
+      'python', '-u', '-m', 'backend.main',
       '--host', '127.0.0.1',
       '--port', String(BACKEND_PORT)
     ], {
       cwd: join(projectRoot, 'src'),
       stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true
+      shell: true,
+      env: { ...process.env, PYTHONUNBUFFERED: '1' }
     });
+
+    pythonProcess.stdout.pipe(logStream);
+    pythonProcess.stderr.pipe(logStream);
   } else {
     // 生產模式：使用隨附的 core_service/core.exe
     const backendExe = join(process.resourcesPath, 'core_service', 'core.exe');
-    
+
     if (!fs.existsSync(backendExe)) {
       const errorMsg = `找不到核心後端組件：\n${backendExe}`;
       dialog.showErrorBox('啟動失敗', errorMsg);
@@ -141,7 +161,7 @@ function startPythonBackend() {
 
     pythonProcess.stdout.pipe(logStream);
     pythonProcess.stderr.pipe(logStream);
-    
+
     pythonProcess.on('error', (err) => {
       logStream.write(`Spawn Error: ${err.message}\n`);
     });
@@ -154,7 +174,7 @@ function startPythonBackend() {
 function stopPythonBackend() {
   if (pythonProcess) {
     if (process.platform === 'win32') {
-      try { execSync(`taskkill /f /t /pid ${pythonProcess.pid}`, { stdio: 'ignore' }); } catch (e) {}
+      try { execSync(`taskkill /f /t /pid ${pythonProcess.pid}`, { stdio: 'ignore' }); } catch (e) { }
     } else {
       pythonProcess.kill();
     }
@@ -176,7 +196,8 @@ function createWindow() {
       preload: join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      additionalArguments: [`--backend-port=${BACKEND_PORT}`]
     }
   });
 
@@ -205,15 +226,18 @@ function createWindow() {
     });
     return result.canceled ? null : result.filePaths[0];
   });
+  ipcMain.handle('get-api-config', () => {
+    return { port: BACKEND_PORT };
+  });
 }
 
 app.whenReady().then(async () => {
-  createWindow();
-  mainWindow.loadFile(join(__dirname, 'splash.html'));
-
   try {
     BACKEND_PORT = await findFreePort(8001);
     console.log(`Using port ${BACKEND_PORT} for backend.`);
+
+    createWindow();
+    mainWindow.loadFile(join(__dirname, 'splash.html'));
 
     const isDev = !app.isPackaged;
     if (isDev) {
@@ -228,7 +252,33 @@ app.whenReady().then(async () => {
       await ensureVenv(mainWindow);
       startPythonBackend();
       await waitForServer(BACKEND_PORT);
-      mainWindow.loadURL(`http://localhost:${BACKEND_PORT}/`);
+
+      // 優先載入本地靜態檔
+      let frontendPath = join(process.resourcesPath, 'frontend_dist', 'index.html');
+
+      const appDataPath = getAppDataPath();
+      const backendLog = join(appDataPath, 'core_debug.log');
+      fs.appendFileSync(backendLog, `\n--- Frontend Load Attempt: ${new Date().toISOString()} ---\n`);
+      fs.appendFileSync(backendLog, `Resources Path: ${process.resourcesPath}\n`);
+      fs.appendFileSync(backendLog, `Checking primary path: ${frontendPath}\n`);
+
+      if (!fs.existsSync(frontendPath)) {
+        // Fallback: 嘗試從 appDir 尋找 (處理 unpacked 或結構差異)
+        const appDir = dirname(app.getAppPath());
+        const fallbackPath = join(appDir, 'frontend_dist', 'index.html');
+        fs.appendFileSync(backendLog, `Primary path not found. Checking fallback: ${fallbackPath}\n`);
+        if (fs.existsSync(fallbackPath)) {
+          frontendPath = fallbackPath;
+        }
+      }
+
+      if (fs.existsSync(frontendPath)) {
+        fs.appendFileSync(backendLog, `Found! Loading via loadFile: ${frontendPath}\n`);
+        mainWindow.loadFile(frontendPath);
+      } else {
+        fs.appendFileSync(backendLog, `Failed! frontendPath not found, using loadURL (Backend Fallback)\n`);
+        mainWindow.loadURL(`http://localhost:${BACKEND_PORT}/`);
+      }
     }
   } catch (err) {
     console.error('Initialization failed:', err);

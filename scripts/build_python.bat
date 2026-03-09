@@ -9,15 +9,14 @@ echo ========================================
 :: 進入 src 目錄執行 Nuitka
 cd src
 echo Running Nuitka compilation...
-call uv run --with nuitka --with ordered-set nuitka ^
+call uv run --with nuitka --with ordered-set python -m nuitka ^
     --standalone ^
     --output-filename=core.exe ^
     --output-dir=../build/temp_nuitka ^
     --remove-output ^
     --include-module=_ssl ^
     --include-module=sqlite3 ^
-    --include-data-dir=backend/static=backend/static ^
-    --windows-icon-from-ico=frontend/src/assets/icon.ico ^
+    --windows-icon-from-ico=electron/icon.ico ^
     --company-name="MediaTranX Team" ^
     --product-name="MediaTranX Backend" ^
     --file-version=1.0.0.0 ^
@@ -29,6 +28,7 @@ call uv run --with nuitka --with ordered-set nuitka ^
     --nofollow-import-to=llama_cpp ^
     --nofollow-import-to=rembg ^
     --nofollow-import-to=onnxruntime ^
+    --no-deployment-flag=excluded-module-usage ^
     backend/main.py
 
 :: 整理目錄

@@ -71,31 +71,23 @@ class RealESRGANWrapper(PTHRuntime):
         self._manager.acquire(SLOT_PTH, required_vram_mb=vram_needed)
         
         try:
-            # 使用 PTHRuntime 的 acquire() 載入模型
             with self.acquire(
                 model_id="realesrgan",
                 variant=model_id,
                 on_progress=on_progress
             ) as model:
-                # 構建 RealESRGANer 推理器
-                from realesrgan import RealESRGANer
-                
-                upsampler = RealESRGANer(
-                    scale=scale,
-                    model_path=None,  # 已從 state_dict 載入
-                    model=model,
-                    tile=400,
-                    tile_pad=10,
-                    pre_pad=0,
-                    half=self._device and "cuda" in self._device,
-                    device=self._device,
-                )
-                
-                # 執行推理
-                img_bgr = np.array(image.convert("RGB"))[:, :, ::-1]
-                output_bgr, _ = upsampler.enhance(img_bgr, outscale=scale)
-                
-                return Image.fromarray(output_bgr[:, :, ::-1])
+                import torch
+                img_array = np.array(image.convert("RGB"))
+                img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+                img_tensor = img_tensor.to(self._device)
+
+                def infer_cb(p: float, m: str) -> None:
+                    if on_progress:
+                        on_progress(1.0 + p, m)
+
+                output_tensor = self.run_inference(model, img_tensor, scale=scale, on_progress=infer_cb)
+                output_array = (output_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+                return Image.fromarray(output_array)
         
         finally:
             # 卸載模型釋放 VRAM

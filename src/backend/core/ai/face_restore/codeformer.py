@@ -26,7 +26,7 @@ class CodeFormerWrapper(PTHRuntime):
     """
     
     def __init__(self):
-        super().__init__(slot=SLOT_PTH, use_spandrel=False)
+        super().__init__(slot=SLOT_PTH, use_spandrel=True)
         logger.info("CodeFormerWrapper initialized (PTHRuntime)")
     
     def restore(

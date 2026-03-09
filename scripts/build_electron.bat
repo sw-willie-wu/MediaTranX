@@ -17,9 +17,9 @@ if exist "build\resources\python" rmdir /s /q "build\resources\python"
 
 echo Collecting Manager and Configuration...
 :: 複製 uv.exe
-where uv >nul 2>nul
-if %ERRORLEVEL% EQU 0 (
-    for /f "tokens=*" %%i in ('where uv') do set UV_PATH=%%i
+set "UV_PATH="
+for /f "tokens=*" %%i in ('where uv 2^>nul') do set "UV_PATH=%%i"
+if defined UV_PATH (
     copy "!UV_PATH!" "build\resources\uv.exe" /y >nul
 )
 
@@ -27,18 +27,20 @@ if %ERRORLEVEL% EQU 0 (
 copy "pyproject.toml" "build\resources\pyproject.toml" /y >nul
 if exist "uv.lock" copy "uv.lock" "build\resources\uv.lock" /y >nul
 
-:: 複製 FFmpeg 二進位工具
+:: 複製 FFmpeg 二進位工具 (排除 ffplay 以節省空間)
 if exist "bin\ffmpeg" (
-    echo Copying FFmpeg binaries...
+    echo [Resources] Copying FFmpeg and FFprobe - skipping ffplay...
     if not exist "build\resources\ffmpeg" mkdir "build\resources\ffmpeg"
-    xcopy "bin\ffmpeg\*" "build\resources\ffmpeg\" /E /I /Y /Q >nul
+    copy "bin\ffmpeg\ffmpeg.exe" "build\resources\ffmpeg" /y >nul
+    copy "bin\ffmpeg\ffprobe.exe" "build\resources\ffmpeg" /y >nul
 )
 
 :: --- 執行 Electron 打包 ---
 echo.
 echo [2/2] Running Electron Builder...
-cd src\frontend
-call npx electron-builder --win
+cd src\electron
+call npm install
+call npm run build:electron
 if errorlevel 1 (
     echo ERROR: Electron packaging failed!
     exit /b 1

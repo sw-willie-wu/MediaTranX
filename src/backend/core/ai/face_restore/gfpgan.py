@@ -26,7 +26,7 @@ class GFPGANWrapper(PTHRuntime):
     """
     
     def __init__(self):
-        super().__init__(slot="gfpgan", use_spandrel=False)
+        super().__init__(slot="gfpgan", use_spandrel=True)
         logger.info("GFPGANWrapper initialized (PTHRuntime)")
     
     def restore(

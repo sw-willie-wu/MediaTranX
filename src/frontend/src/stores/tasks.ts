@@ -5,7 +5,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Task, ProgressUpdate } from '@/types/task'
 
-const API_BASE = '/api'
+import { getApiBase } from '@/composables/useApi'
 
 export const useTaskStore = defineStore('tasks', () => {
   // 狀態
@@ -36,7 +36,7 @@ export const useTaskStore = defineStore('tasks', () => {
     taskType: string,
     params: Record<string, unknown>
   ): Promise<string> {
-    const response = await fetch(`${API_BASE}/${taskType}`, {
+    const response = await fetch(`${getApiBase()}/${taskType}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -85,7 +85,7 @@ export const useTaskStore = defineStore('tasks', () => {
       existingSource.close()
     }
 
-    const eventSource = new EventSource(`${API_BASE}/tasks/${taskId}/progress`)
+    const eventSource = new EventSource(`${getApiBase()}/tasks/${taskId}/progress`)
     eventSources.value.set(taskId, eventSource)
 
     eventSource.onmessage = (event) => {
@@ -130,7 +130,7 @@ export const useTaskStore = defineStore('tasks', () => {
   // 取消任務
   async function cancelTask(taskId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE}/tasks/${taskId}/cancel`, {
+      const response = await fetch(`${getApiBase()}/tasks/${taskId}/cancel`, {
         method: 'POST',
       })
 
@@ -159,7 +159,7 @@ export const useTaskStore = defineStore('tasks', () => {
   // 移除任務
   async function removeTask(taskId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
+      const response = await fetch(`${getApiBase()}/tasks/${taskId}`, {
         method: 'DELETE',
       })
 
@@ -176,7 +176,7 @@ export const useTaskStore = defineStore('tasks', () => {
   // 重新載入任務列表
   async function refreshTasks(): Promise<void> {
     try {
-      const response = await fetch(`${API_BASE}/tasks`)
+      const response = await fetch(`${getApiBase()}/tasks`)
       const data = await response.json()
 
       const previousTasks = new Map(tasks.value)

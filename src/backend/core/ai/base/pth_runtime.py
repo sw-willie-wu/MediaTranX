@@ -3,7 +3,6 @@ PTHRuntime - PyTorch 格式執行器
 負責影像處理模型的載入（如 Real-ESRGAN, SwinIR）
 """
 import logging
-import torch
 from pathlib import Path
 from typing import Optional, Callable, Any
 
@@ -82,8 +81,15 @@ class PTHRuntime(BaseRuntime):
     
     def _load_with_torch(self, model_path: Path, device: str, config: dict) -> Any:
         """使用原生 PyTorch 載入（需子類提供架構）"""
+        import torch
         state_dict = torch.load(str(model_path), map_location=device)
-        
+
+        # 部分模型（如 Real-ESRGAN）weights 包在 params_ema / params 下
+        if "params_ema" in state_dict:
+            state_dict = state_dict["params_ema"]
+        elif "params" in state_dict:
+            state_dict = state_dict["params"]
+
         # 子類需覆寫 _build_arch() 提供模型架構
         if hasattr(self, '_build_arch'):
             model = self._build_arch(config)
@@ -96,6 +102,113 @@ class PTHRuntime(BaseRuntime):
                 "Subclass must implement _build_arch() or enable use_spandrel=True"
             )
     
+    def _get_tile_size(self) -> int:
+        """根據空閒 VRAM 動態決定 tile size"""
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                return 256
+            free_vram, _ = torch.cuda.mem_get_info()
+            free_gb = free_vram / 1024 ** 3
+            if free_gb >= 8:   return 1024
+            if free_gb >= 5:   return 768
+            if free_gb >= 3:   return 512
+            if free_gb >= 1.5: return 256
+            return 128
+        except Exception:
+            return 256
+
+    def _tile_inference(
+        self,
+        model,
+        img_tensor,
+        scale: int,
+        tile_size: int,
+        tile_pad: int = 32,
+        on_progress: Optional[Callable[[float, str], None]] = None,
+    ):
+        """分塊推理，避免大圖 OOM，支援進度回調"""
+        import math
+        import torch
+
+        _, _, h, w = img_tensor.shape
+        tiles_x = math.ceil(w / tile_size)
+        tiles_y = math.ceil(h / tile_size)
+        total = tiles_x * tiles_y
+
+        output = None
+        actual_scale = scale  # 初始用請求的 scale，第一塊推理後以實際輸出修正
+
+        for iy in range(tiles_y):
+            for ix in range(tiles_x):
+                x1, x2 = ix * tile_size, min((ix + 1) * tile_size, w)
+                y1, y2 = iy * tile_size, min((iy + 1) * tile_size, h)
+                x1p = max(x1 - tile_pad, 0)
+                x2p = min(x2 + tile_pad, w)
+                y1p = max(y1 - tile_pad, 0)
+                y2p = min(y2 + tile_pad, h)
+
+                tile = img_tensor[:, :, y1p:y2p, x1p:x2p]
+                with torch.no_grad():
+                    tile_out = model(tile)
+
+                # 從第一塊的實際輸出偵測 scale（防止模型 scale 與請求不符）
+                if output is None:
+                    actual_scale = tile_out.shape[3] // (x2p - x1p)
+                    output = img_tensor.new_zeros(
+                        (img_tensor.shape[0], img_tensor.shape[1], h * actual_scale, w * actual_scale)
+                    )
+
+                ox1 = (x1 - x1p) * actual_scale
+                ox2 = ox1 + (x2 - x1) * actual_scale
+                oy1 = (y1 - y1p) * actual_scale
+                oy2 = oy1 + (y2 - y1) * actual_scale
+                output[
+                    :, :, y1 * actual_scale:y2 * actual_scale, x1 * actual_scale:x2 * actual_scale
+                ] = tile_out[:, :, oy1:oy2, ox1:ox2]
+
+                done = iy * tiles_x + ix + 1
+                if on_progress:
+                    on_progress(done / total, f"分塊推理 {done}/{total}")
+
+        return output
+
+    def run_inference(
+        self,
+        model,
+        img_tensor,
+        scale: int = 4,
+        on_progress: Optional[Callable[[float, str], None]] = None,
+    ):
+        """智能推理：大圖自動分塊，小圖整張處理"""
+        import torch
+        import torch.nn.functional as F
+
+        _, _, h, w = img_tensor.shape
+        tile_size = self._get_tile_size()
+
+        # 部分模型（如 x2plus）用 pixel_unshuffle，要求 h/w 為 4 的倍數
+        pad_h = (4 - h % 4) % 4
+        pad_w = (4 - w % 4) % 4
+        if pad_h or pad_w:
+            img_padded = F.pad(img_tensor, (0, pad_w, 0, pad_h), mode='reflect')
+        else:
+            img_padded = img_tensor
+
+        if w > tile_size or h > tile_size:
+            logger.info(f"Image {w}×{h} > tile_size {tile_size}，啟用 tiling")
+            result = self._tile_inference(model, img_padded, scale, tile_size, on_progress=on_progress)
+        else:
+            with torch.no_grad():
+                result = model(img_padded)
+
+        # 裁掉 padding 還原原始尺寸
+        if pad_h or pad_w:
+            out_scale = result.shape[2] // img_padded.shape[2]
+            result = result[:, :, :h * out_scale, :w * out_scale]
+
+        return result
+
     def _select_device(self, preferred_device: Optional[str] = None) -> str:
         """
         選擇計算設備（預留 DirectML 擴展點）
@@ -110,8 +223,12 @@ class PTHRuntime(BaseRuntime):
             return preferred_device
         
         # CUDA 檢測
-        if torch.cuda.is_available():
-            return "cuda"
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return "cuda"
+        except ImportError:
+            pass
         
         # DirectML 檢測（預留）
         # if has_directml():
@@ -132,6 +249,7 @@ class PTHRuntime(BaseRuntime):
             # 清空 CUDA cache
             if self._device and "cuda" in self._device:
                 try:
+                    import torch
                     torch.cuda.empty_cache()
                     logger.info("CUDA cache cleared")
                 except Exception as e:

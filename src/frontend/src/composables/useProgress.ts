@@ -4,7 +4,7 @@
 import { ref, onUnmounted } from 'vue'
 import type { ProgressUpdate } from '@/types/task'
 
-const API_BASE = '/api'
+import { getApiBase } from '@/composables/useApi'
 
 export interface UseProgressOptions {
   onComplete?: (taskId: string) => void
@@ -28,7 +28,7 @@ export function useProgress(options: UseProgressOptions = {}) {
     // 先關閉現有連線
     unsubscribe()
 
-    eventSource = new EventSource(`${API_BASE}/tasks/${taskId}/progress`)
+    eventSource = new EventSource(`${getApiBase()}/tasks/${taskId}/progress`)
     isConnected.value = true
     error.value = null
 
@@ -113,7 +113,7 @@ export function useMultiProgress() {
   function subscribe(taskId: string): void {
     if (eventSources.has(taskId)) return
 
-    const eventSource = new EventSource(`${API_BASE}/tasks/${taskId}/progress`)
+    const eventSource = new EventSource(`${getApiBase()}/tasks/${taskId}/progress`)
     eventSources.set(taskId, eventSource)
 
     tasks.value.set(taskId, {

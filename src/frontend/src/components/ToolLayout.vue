@@ -22,6 +22,7 @@ const props = withDefaults(defineProps<{
   uploadAccept?: string
   hasResult?: boolean
   resultPreviewUrl?: string | null
+  canGoBack?: boolean
   executeDisabled?: boolean
   executeLoading?: boolean
   executeLabel?: string
@@ -41,6 +42,7 @@ const emit = defineEmits<{
   (e: 'file', file: File, sourceDir?: string): void
   (e: 'remove-file'): void
   (e: 'download'): void
+  (e: 'go-back'): void
 }>()
 
 const currentSubFunction = computed(() =>
@@ -269,6 +271,14 @@ function handleExecute() {
           @click="canShowResult && emit('download')"
         >
           <i class="bi bi-download"></i>
+        </button>
+        <button
+          v-if="canGoBack"
+          class="toolbar-btn back-btn"
+          data-tooltip="回到上一步"
+          @click="emit('go-back')"
+        >
+          <i class="bi bi-arrow-counterclockwise"></i>
         </button>
       </div>
 
@@ -586,6 +596,12 @@ function handleExecute() {
     background: rgba(52, 211, 153, 0.25);
     border-color: rgba(52, 211, 153, 0.5);
     color: #34d399;
+  }
+
+  &.back-btn:hover:not(:disabled) {
+    background: rgba(251, 191, 36, 0.2);
+    border-color: rgba(251, 191, 36, 0.4);
+    color: #fbbf24;
   }
 }
 
