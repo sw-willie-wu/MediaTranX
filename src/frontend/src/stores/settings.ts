@@ -5,7 +5,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { DeviceInfo } from '@/types/api'
 
-const API_BASE = '/api'
+import { apiFetch } from '@/composables/useApi'
 
 export const useSettingsStore = defineStore('settings', () => {
   // 狀態
@@ -31,7 +31,7 @@ export const useSettingsStore = defineStore('settings', () => {
   async function loadDeviceInfo(): Promise<void> {
     isLoading.value = true
     try {
-      const response = await fetch(`${API_BASE}/device`)
+      const response = await apiFetch('/device')
       if (response.ok) {
         deviceInfo.value = await response.json()
       }

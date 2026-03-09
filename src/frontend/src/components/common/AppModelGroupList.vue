@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useTaskStore } from '@/stores/tasks'
 
 interface ModelItem {
   id: string
@@ -22,6 +21,7 @@ interface ModelGroup {
 const props = defineProps<{
   items: ModelItem[]
   downloadingTaskId: Record<string, string>
+  downloadProgress: Record<string, number>
 }>()
 
 const emit = defineEmits<{
@@ -29,35 +29,29 @@ const emit = defineEmits<{
   remove: [id: string]
 }>()
 
-const taskStore = useTaskStore()
-
 // 按 family 分組
 const groups = computed<ModelGroup[]>(() => {
   const familyMap = new Map<string, ModelItem[]>()
-  
+
   props.items.forEach(item => {
     if (!familyMap.has(item.family)) {
       familyMap.set(item.family, [])
     }
     familyMap.get(item.family)!.push(item)
   })
-  
+
   return Array.from(familyMap.entries()).map(([family, variants]) => {
-    // 從第一個 variant 獲取家族信息
     const first = variants[0]
-    // 提取家族名稱（去掉尺寸和量化信息）
     let familyLabel = first.label
-    
-    // 如果有 ' - '，取前面部分（PTH 模型）
+
     if (familyLabel.includes(' - ')) {
       familyLabel = familyLabel.split(' - ')[0]
     } else {
-      // 去掉尺寸（如 TINY, 4B, 1.7B 等）和量化信息（如 Q4_K_M）
       familyLabel = familyLabel
         .replace(/\s+(TINY|BASE|SMALL|MEDIUM|LARGE-V3|\d+\.?\d*B)\s+Q[0-9A-Z_]+$/i, '')
         .replace(/\s+(TINY|BASE|SMALL|MEDIUM|LARGE-V3|\d+\.?\d*B)$/i, '')
     }
-    
+
     return {
       family,
       familyLabel,
@@ -67,15 +61,8 @@ const groups = computed<ModelGroup[]>(() => {
   })
 })
 
-// 展開狀態
+// 展開狀態（多 variant 的家族預設收合）
 const expandedGroups = ref<Set<string>>(new Set())
-
-// 默認全部展開單變體的家族
-groups.value.forEach(group => {
-  if (group.variants.length === 1) {
-    expandedGroups.value.add(group.family)
-  }
-})
 
 function toggleGroup(family: string) {
   if (expandedGroups.value.has(family)) {
@@ -83,12 +70,6 @@ function toggleGroup(family: string) {
   } else {
     expandedGroups.value.add(family)
   }
-}
-
-function getTask(id: string) {
-  const taskId = props.downloadingTaskId[id]
-  if (!taskId) return undefined
-  return taskStore.tasks.get(taskId)
 }
 
 function formatSize(mb: number): string {
@@ -100,52 +81,74 @@ function formatSize(mb: number): string {
 <template>
   <div class="model-group-list">
     <div v-for="group in groups" :key="group.family" class="model-group">
-      <!-- 家族標題 -->
-      <div 
-        class="group-header"
-        :class="{ 'single-variant': group.variants.length === 1 }"
-        @click="group.variants.length > 1 && toggleGroup(group.family)"
-      >
-        <div class="group-info">
-          <i 
-            v-if="group.variants.length > 1"
-            class="bi" 
-            :class="expandedGroups.has(group.family) ? 'bi-chevron-down' : 'bi-chevron-right'"
-          ></i>
-          <span class="group-label">{{ group.familyLabel }}</span>
-          <span class="group-count" v-if="group.variants.length > 1">
-            ({{ group.variants.length }} 個變體)
-          </span>
-        </div>
-        <span class="group-desc">{{ group.description }}</span>
-      </div>
 
-      <!-- 變體列表 -->
-      <Transition name="expand">
-        <div 
-          v-show="expandedGroups.has(group.family) || group.variants.length === 1" 
-          class="variants-container"
-        >
-          <TransitionGroup name="list">
-            <div 
-              v-for="item in group.variants" 
-              :key="item.id" 
-              class="model-item"
+      <!-- 單一 variant：直接顯示為一行，不顯示 group-header -->
+      <template v-if="group.variants.length === 1">
+        <div class="model-item">
+          <div class="model-info">
+            <span class="model-label">{{ group.familyLabel }}</span>
+            <span v-if="group.description" class="model-desc">{{ group.description }}</span>
+          </div>
+          <span class="model-size">{{ formatSize(group.variants[0].size_mb) }}</span>
+          <div class="model-action">
+            <template v-if="downloadingTaskId[group.variants[0].id]">
+              <div class="download-progress">
+                <div
+                  class="progress-bar"
+                  :style="{ width: `${((downloadProgress[group.variants[0].id] ?? 0) * 100).toFixed(0)}%` }"
+                ></div>
+              </div>
+              <span class="progress-label">
+                {{ ((downloadProgress[group.variants[0].id] ?? 0) * 100).toFixed(0) }}%
+              </span>
+            </template>
+            <template v-else-if="group.variants[0].downloaded">
+              <span class="status-badge installed">
+                <i class="bi bi-check-circle-fill"></i> 已安裝
+              </span>
+              <button class="remove-btn" title="移除模型" @click="emit('remove', group.variants[0].id)">
+                <i class="bi bi-trash3"></i>
+              </button>
+            </template>
+            <button v-else class="download-btn" @click="emit('download', group.variants[0].id)">
+              <i class="bi bi-download"></i> 安裝
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <!-- 多 variant：可折疊的 group-header + 子列表 -->
+      <template v-else>
+        <div class="group-header" @click="toggleGroup(group.family)">
+          <i class="bi toggle-icon" :class="expandedGroups.has(group.family) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+          <div class="group-info">
+            <span class="group-label">{{ group.familyLabel }}</span>
+            <span v-if="group.description" class="group-desc">{{ group.description }}</span>
+          </div>
+          <span class="group-count">{{ group.variants.length }} 個版本</span>
+        </div>
+
+        <Transition name="expand">
+          <div v-show="expandedGroups.has(group.family)" class="variants-container">
+            <div
+              v-for="item in group.variants"
+              :key="item.id"
+              class="model-item variant-item"
             >
               <div class="model-info">
                 <span class="model-label">{{ item.label }}</span>
               </div>
               <span class="model-size">{{ formatSize(item.size_mb) }}</span>
               <div class="model-action">
-                <template v-if="getTask(item.id)">
+                <template v-if="downloadingTaskId[item.id]">
                   <div class="download-progress">
                     <div
                       class="progress-bar"
-                      :style="{ width: `${(getTask(item.id)!.progress * 100).toFixed(0)}%` }"
+                      :style="{ width: `${((downloadProgress[item.id] ?? 0) * 100).toFixed(0)}%` }"
                     ></div>
                   </div>
                   <span class="progress-label">
-                    {{ (getTask(item.id)!.progress * 100).toFixed(0) }}%
+                    {{ ((downloadProgress[item.id] ?? 0) * 100).toFixed(0) }}%
                   </span>
                 </template>
                 <template v-else-if="item.downloaded">
@@ -161,9 +164,10 @@ function formatSize(mb: number): string {
                 </button>
               </div>
             </div>
-          </TransitionGroup>
-        </div>
-      </Transition>
+          </div>
+        </Transition>
+      </template>
+
     </div>
   </div>
 </template>
@@ -172,71 +176,82 @@ function formatSize(mb: number): string {
 .model-group-list {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.5rem;
   margin-bottom: 1rem;
 }
 
 .model-group {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.25rem;
 }
 
+// ── Group header（多 variant 才顯示）──────────────────────────
 .group-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  gap: 0.5rem;
+  padding: 0.6rem 0.875rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  
-  &:not(.single-variant):hover {
-    background: var(--surface-hover);
+  user-select: none;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: var(--panel-bg-hover);
   }
-  
-  &.single-variant {
-    cursor: default;
-  }
+}
+
+.toggle-icon {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  width: 12px;
 }
 
 .group-info {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.1rem;
   flex: 1;
+  min-width: 0;
 }
 
 .group-label {
   color: var(--text-primary);
-  font-size: 0.95rem;
+  font-size: 0.875rem;
   font-weight: 600;
-}
-
-.group-count {
-  color: var(--text-muted);
-  font-size: 0.8rem;
 }
 
 .group-desc {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 
+.group-count {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+// ── Variants container ────────────────────────────────────────
 .variants-container {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding-left: 1.5rem;
+  gap: 0.25rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--input-border);
+  margin-left: 0.5rem;
 }
 
+// ── Model item（單 variant 和多 variant 共用）─────────────────
 .model-item {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
+  gap: 0.75rem;
+  padding: 0.6rem 0.875rem;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
   border-radius: 8px;
@@ -259,11 +274,18 @@ function formatSize(mb: number): string {
   text-overflow: ellipsis;
 }
 
+.model-desc {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
 .model-size {
   color: var(--text-muted);
   font-size: 0.8rem;
   white-space: nowrap;
   flex-shrink: 0;
+  min-width: 52px;
+  text-align: right;
 }
 
 .model-action {
@@ -272,30 +294,34 @@ function formatSize(mb: number): string {
   justify-content: flex-end;
   gap: 0.5rem;
   flex-shrink: 0;
-  min-width: 130px;
+  min-width: 100px;
+  height: 2rem;
 }
 
+// ── Progress ──────────────────────────────────────────────────
 .download-progress {
-  background: var(--input-bg);
+  background: var(--panel-border);
   border-radius: 4px;
   overflow: hidden;
   height: 4px;
   flex: 1;
+  min-width: 60px;
 }
 
 .progress-bar {
   height: 100%;
-  background: var(--primary);
+  background: var(--color-primary);
   transition: width 0.3s ease;
 }
 
 .progress-label {
   font-size: 0.75rem;
   color: var(--text-muted);
-  min-width: 40px;
+  min-width: 32px;
   text-align: right;
 }
 
+// ── Badges & Buttons ──────────────────────────────────────────
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -304,12 +330,12 @@ function formatSize(mb: number): string {
   border-radius: 20px;
   font-size: 0.8rem;
   font-weight: 500;
-  
+
   &.installed {
     background: rgba(16, 185, 129, 0.12);
     color: #10b981;
   }
-  
+
   i { font-size: 0.72rem; }
 }
 
@@ -318,37 +344,40 @@ function formatSize(mb: number): string {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.4rem 0.75rem;
+  padding: 0.35rem 0.7rem;
   border: none;
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.8rem;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .download-btn {
-  background: var(--primary);
+  background: var(--color-primary);
   color: white;
-  
+
   &:hover {
-    background: var(--primary-hover);
+    opacity: 0.85;
   }
 }
 
 .remove-btn {
   background: transparent;
-  color: var(--danger);
-  padding: 0.4rem;
-  
+  color: var(--text-muted);
+  padding: 0.35rem;
+  border: 1px solid var(--input-border);
+
   &:hover {
-    background: var(--danger-bg);
+    color: #f87171;
+    border-color: rgba(248, 113, 113, 0.4);
+    background: rgba(248, 113, 113, 0.08);
   }
 }
 
-/* Expand transition */
+// ── Expand transition ─────────────────────────────────────────
 .expand-enter-active,
 .expand-leave-active {
-  transition: all 0.3s ease;
+  transition: all 0.25s ease;
   overflow: hidden;
 }
 
@@ -362,22 +391,5 @@ function formatSize(mb: number): string {
 .expand-leave-from {
   max-height: 2000px;
   opacity: 1;
-}
-
-/* List transition */
-.list-move,
-.list-enter-active,
-.list-leave-active {
-  transition: all 0.3s ease;
-}
-
-.list-enter-from,
-.list-leave-to {
-  opacity: 0;
-  transform: translateX(-10px);
-}
-
-.list-leave-active {
-  position: absolute;
 }
 </style>

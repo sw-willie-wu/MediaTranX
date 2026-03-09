@@ -126,6 +126,7 @@ async def get_models_status():
         "swinir":     {"label": "SwinIR",       "description": "Transformer 超解析"},
         "bsrgan":     {"label": "BSRGAN",       "description": "盲超解析"},
         "real-cugan": {"label": "Real-CUGAN",   "description": "動漫風格超解析"},
+        "waifu2x":    {"label": "Waifu2x",      "description": "經典動漫超解析"},
     }
     
     FACE_RESTORE_LABELS = {
@@ -149,6 +150,7 @@ async def get_models_status():
         "up3x-no-denoise": "3x 無降噪",
         "up4x-conservative": "4x 保守降噪",
         "up4x-no-denoise": "4x 無降噪",
+        "cunet": "CUnet 變體",
         "v1.4": "v1.4",
     }
     
@@ -182,6 +184,7 @@ async def get_models_status():
                 "description": family_meta["description"],
                 "downloaded":  downloaded,
                 "size_mb":     variant_spec.get("vram_mb", 0),
+                "max_scale":   variant_spec.get("scale", 4),
             })
 
     # ── Whisper STT 模型 ──

@@ -16,8 +16,9 @@ dist/
 .vscode/
 .idea/
 
-# Temp
+# Temp & Dev
 temp/
+data/
 output/
 *.log
 test_*.py

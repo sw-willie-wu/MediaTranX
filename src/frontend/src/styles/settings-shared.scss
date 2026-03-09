@@ -1,0 +1,43 @@
+// 設定頁各 Tab 元件共用樣式
+// 在各 tab 以非 scoped 方式引入：<style lang="scss">@use '@/styles/settings-shared';</style>
+
+.section-title {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+
+  &.mt {
+    margin-top: 2.5rem;
+  }
+}
+
+.section-subtitle {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.setting-item {
+  margin-bottom: 1rem;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--panel-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: settings-spin 0.8s linear infinite;
+}
+
+@keyframes settings-spin {
+  to { transform: rotate(360deg); }
+}

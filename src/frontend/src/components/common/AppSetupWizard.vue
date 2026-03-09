@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useTaskStore } from '@/stores/tasks'
 import { useSettingsStore } from '@/stores/settings'
+import { apiFetch } from '@/composables/useApi'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -73,7 +74,7 @@ async function checkStatus() {
 
   // 背景向後端確認最新狀態
   try {
-    const res = await fetch('/api/setup/status')
+    const res = await apiFetch('/setup/status')
     const data: StatusData = await res.json()
     statusData.value = data
     if (data.ai_env_ready && (data as any).llama_ready !== false) {
@@ -89,7 +90,7 @@ async function checkStatus() {
 async function startInstall() {
   state.value = 'installing'
   try {
-    const res = await fetch('/api/setup/initialize', { method: 'POST' })
+    const res = await apiFetch('/setup/initialize', { method: 'POST' })
     if (!res.ok) throw new Error('請求失敗')
     const { task_id } = await res.json()
     taskId.value = task_id

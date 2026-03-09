@@ -117,8 +117,8 @@ class ModelManager:
         family = MODELS_REGISTRY[fmt][model_id]
         
         if fmt == FORMAT_BIN:
-            # Whisper: sizes -> variant
-            return family["sizes"].get(variant) if variant else None
+            # Whisper: variants -> variant
+            return family["variants"].get(variant) if variant else None
         
         elif fmt == FORMAT_GGUF:
             # LLM: specs -> size -> variants -> quant
@@ -331,11 +331,16 @@ class ModelManager:
         return venv_path.exists() and len(list(venv_path.glob("**/site-packages/torch"))) > 0
 
     def is_llama_ready(self) -> bool:
-        """檢查 llama-cpp-python 是否已安裝"""
+        """檢查 llama-cpp-python 是否已安裝，並捕捉詳細錯誤"""
         try:
             import llama_cpp
             return True
-        except ImportError:
+        except ImportError as e:
+            logger.error(f"llama-cpp-python import failed (ImportError): {e}")
+            return False
+        except Exception as e:
+            logger.error(f"llama-cpp-python import failed (Other): {e}")
+            # 有可能是 DLL 載入失敗 (OSError)
             return False
 
     def unload_all(self):

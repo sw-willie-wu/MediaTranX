@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { RouterView } from 'vue-router'
+import { useRouter, RouterView } from 'vue-router'
 import Titlebar from './components/Titlebar.vue'
 import MainSidebar from './components/MainSidebar.vue'
 import AppToast from './components/AppToast.vue'
 import AppSetupWizard from './components/common/AppSetupWizard.vue'
 import { useTheme } from './composables/useTheme'
+import { apiFetch } from './composables/useApi'
+
+const router = useRouter()
 
 // 初始化主題
 useTheme()
@@ -37,7 +40,7 @@ function readAiCache(): { aiEnvReady: boolean; llamaReady: boolean } | null {
 
 async function fetchAndCacheStatus(): Promise<boolean> {
   try {
-    const res = await fetch('/api/setup/status')
+    const res = await apiFetch('/setup/status')
     const data = await res.json()
     const notReady = !data.ai_env_ready || !(data.llama_ready ?? false)
     localStorage.setItem(AI_CACHE_KEY, JSON.stringify({
@@ -54,6 +57,13 @@ async function fetchAndCacheStatus(): Promise<boolean> {
 
 // Vue 掛載後處理 splash 與 wizard 邏輯
 onMounted(async () => {
+  // 等待路由準備完成
+  await router.isReady()
+  
+  if (router.currentRoute.value.path === '/' && !window.location.hash) {
+    router.replace('/')
+  }
+  
   if (!isWizardEnabled()) {
     removeSplash()
     // 背景更新快取
@@ -63,15 +73,12 @@ onMounted(async () => {
 
   const cache = readAiCache()
   if (cache) {
-    // 有快取：同步決定，立刻移除 splash
     showWizard.value = !cache.aiEnvReady || !cache.llamaReady
     removeSplash()
-    // 背景更新快取；若狀態改變（例如用戶手動刪 .venv）則補顯示 wizard
     fetchAndCacheStatus().then((notReady) => {
       if (notReady) showWizard.value = true
     })
   } else {
-    // 第一次啟動：等後端回應才移除 splash
     const notReady = await fetchAndCacheStatus()
     showWizard.value = notReady
     removeSplash()
@@ -86,7 +93,7 @@ onMounted(async () => {
     <div class="app-content">
       <RouterView v-slot="{ Component }">
         <KeepAlive>
-          <component :is="Component" />
+          <component :is="Component" :key="$route.fullPath" />
         </KeepAlive>
       </RouterView>
     </div>

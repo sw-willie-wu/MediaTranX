@@ -28,6 +28,21 @@ class SwinIRWrapper(PTHRuntime):
     def __init__(self):
         super().__init__(slot="swinir", use_spandrel=True)
         logger.info("SwinIRWrapper initialized (PTHRuntime + Spandrel)")
+
+    def _get_tile_size(self) -> int:
+        """SwinIR Transformer 注意力是 O(n²)，需要比 CNN 更小的 tile"""
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                return 128
+            free_vram, _ = torch.cuda.mem_get_info()
+            free_gb = free_vram / 1024 ** 3
+            if free_gb >= 6:   return 512
+            if free_gb >= 3:   return 256
+            if free_gb >= 1.5: return 128
+            return 64
+        except Exception:
+            return 128
     
     def enhance(
         self,
@@ -63,28 +78,16 @@ class SwinIRWrapper(PTHRuntime):
                 variant=model_id,
                 on_progress=on_progress
             ) as model:
-                # Spandrel 自動處理推理
-                if hasattr(model, 'forward'):
-                    # Spandrel ModelDescriptor
-                    img_array = np.array(image.convert("RGB"))
-                    img_tensor = self._image_to_tensor(img_array)
-                    
-                    output_tensor = model(img_tensor)  # type: ignore
-                    output_array = self._tensor_to_image(output_tensor)
-                    
-                    return Image.fromarray(output_array)
-                else:
-                    # 直接是 PyTorch 模型
-                    import torch
-                    img_array = np.array(image.convert("RGB"))
-                    img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0).float() / 255.0
-                    img_tensor = img_tensor.to(self._device)
-                    
-                    with torch.no_grad():
-                        output_tensor = model(img_tensor)  # type: ignore
-                    
-                    output_array = (output_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
-                    return Image.fromarray(output_array)
+                img_array = np.array(image.convert("RGB"))
+                img_tensor = self._image_to_tensor(img_array)
+
+                def infer_cb(p: float, m: str) -> None:
+                    if on_progress:
+                        on_progress(1.0 + p, m)
+
+                output_tensor = self.run_inference(model, img_tensor, scale=scale, on_progress=infer_cb)
+                output_array = self._tensor_to_image(output_tensor)
+                return Image.fromarray(output_array)
         
         finally:
             self._unload_model()

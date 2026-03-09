@@ -128,7 +128,6 @@ class TaskManager:
             # 更新狀態為處理中
             task.status = TaskStatus.PROCESSING
             task.updated_at = datetime.now(timezone.utc)
-            await self._progress_tracker.emit(task_id, 0.0, "Starting task...")
 
             # 建立進度回調
             progress_callback = self._progress_tracker.create_callback(task_id)
@@ -155,25 +154,35 @@ class TaskManager:
 
         except Exception as e:
             # 任務失敗
+            import traceback
             task.status = TaskStatus.FAILED
             task.error = str(e)
             task.updated_at = datetime.now(timezone.utc)
             await self._progress_tracker.emit(task_id, task.progress, f"Error: {e}")
 
-            logger.error(f"Task failed: {task_id} - {e}")
+            logger.error(f"Task failed: {task_id} - {e}\n{traceback.format_exc()}")
 
     def get_task(self, task_id: str) -> Optional[TaskResponse]:
-        """取得任務狀態"""
-        return self._tasks.get(task_id)
+        """取得任務狀態（進行中的任務會從 progress_tracker 同步最新進度）"""
+        task = self._tasks.get(task_id)
+        if task is None:
+            return None
+        if task.status in (TaskStatus.PENDING, TaskStatus.PROCESSING):
+            latest = self._progress_tracker.get_progress(task_id)
+            if latest is not None:
+                task.progress = latest.progress
+                if latest.message:
+                    task.message = latest.message
+        return task
 
     def get_all_tasks(self) -> List[TaskResponse]:
-        """取得所有任務"""
-        return list(self._tasks.values())
+        """取得所有任務（進行中的任務會從 progress_tracker 同步最新進度）"""
+        return [self.get_task(task_id) for task_id in list(self._tasks)]
 
     def get_active_tasks(self) -> List[TaskResponse]:
         """取得進行中的任務"""
         return [
-            task for task in self._tasks.values()
+            self.get_task(task_id) for task_id, task in list(self._tasks.items())
             if task.status in [TaskStatus.PENDING, TaskStatus.PROCESSING]
         ]
 

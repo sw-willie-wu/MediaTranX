@@ -2,29 +2,28 @@
 import { ref, computed, watch, onUnmounted } from 'vue'
 import ToolLayout from '@/components/ToolLayout.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
-import AppSelect from '@/components/common/AppSelect.vue'
-import AppRange from '@/components/common/AppRange.vue'
+import VideoTranscodePanel from '@/components/video/panels/VideoTranscodePanel.vue'
+import VideoCutPanel from '@/components/video/panels/VideoCutPanel.vue'
 import AppMediaInfoBar from '@/components/common/AppMediaInfoBar.vue'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { useFileDownload } from '@/composables/useFileDownload'
-import type { Task } from '@/types/task'
+import { apiFetch } from '@/composables/useApi'
 
 const filesStore = useFilesStore()
 const taskStore = useTaskStore()
 const toast = useToast()
 const { downloadFile } = useFileDownload()
 
-const currentTaskId = ref<string | null>(null)
-
-// SubtitlePanel ref
+// Panel refs
+const transcodePanelRef = ref<InstanceType<typeof VideoTranscodePanel> | null>(null)
+const cutPanelRef = ref<InstanceType<typeof VideoCutPanel> | null>(null)
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
 
 // Video element ref
 const videoRef = ref<HTMLVideoElement | null>(null)
 
-// 子功能列表
 const subFunctions = [
   { id: 'transcode', name: '轉檔', icon: 'bi-arrow-repeat' },
   { id: 'cut', name: '剪輯', icon: 'bi-scissors' },
@@ -33,16 +32,14 @@ const subFunctions = [
 
 const currentFunction = ref('transcode')
 
-// View 專屬狀態
-const resultPreview = ref<string | null>(null)
-const isProcessing = ref(false)
 const hasFile = ref(false)
-
-// 上傳後的檔案 ID（用於需要後端處理的功能）
 const fileId = ref<string | null>(null)
 const isUploading = ref(false)
 const sourceDir = ref<string | undefined>(undefined)
 const currentFileName = ref<string>('')
+const currentTaskId = ref<string | null>(null)
+const resultPreview = ref<string | null>(null)
+const isProcessing = ref(false)
 
 // 媒體資訊
 interface MediaInfo {
@@ -73,7 +70,6 @@ const mediaInfoItems = computed(() => {
   ]
 })
 
-// 格式化工具
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
@@ -98,77 +94,22 @@ function formatBitrate(bps: number) {
 async function loadMediaInfo() {
   if (!fileId.value) return
   try {
-    const response = await fetch(`/api/video/info/${fileId.value}`)
-    if (response.ok) {
-      mediaInfo.value = await response.json()
-    }
+    const response = await apiFetch(`/video/info/${fileId.value}`)
+    if (response.ok) mediaInfo.value = await response.json()
   } catch (e) {
     console.error('Failed to load media info:', e)
   }
 }
 
-// ========== 轉檔設定 ==========
-const outputFormat = ref('mp4')
-const videoCodec = ref('h264')
-const resolution = ref('')
-const crf = ref(23)
-
-const audioFormatValues = ['mp3', 'aac', 'wav', 'flac']
-
-const formats = [
-  { value: 'mp4', label: 'MP4' },
-  { value: 'mkv', label: 'MKV' },
-  { value: 'webm', label: 'WebM' },
-  { value: 'avi', label: 'AVI' },
-  { value: 'mov', label: 'MOV' },
-  { value: 'mp3', label: 'MP3（純音訊）' },
-  { value: 'aac', label: 'AAC（純音訊）' },
-  { value: 'wav', label: 'WAV（純音訊）' },
-  { value: 'flac', label: 'FLAC（純音訊）' },
-]
-
-const isAudioFormat = computed(() => audioFormatValues.includes(outputFormat.value))
-
-const videoCodecs = [
-  { value: 'h264', label: 'H.264' },
-  { value: 'h265', label: 'H.265/HEVC' },
-  { value: 'vp9', label: 'VP9' },
-  { value: 'copy', label: '不重新編碼' },
-]
-
-const resolutions = [
-  { value: '', label: '保持原始' },
-  { value: '3840x2160', label: '4K (3840x2160)' },
-  { value: '2560x1440', label: '2K (2560x1440)' },
-  { value: '1920x1080', label: '1080p (1920x1080)' },
-  { value: '1280x720', label: '720p (1280x720)' },
-  { value: '854x480', label: '480p (854x480)' },
-  { value: 'custom', label: '自訂尺寸' },
-]
-const customResWidth = ref(1920)
-const customResHeight = ref(1080)
-
-const scaleAlgorithm = ref('bicubic')
-const scaleAlgorithms = [
-  { value: 'bicubic', label: 'Bicubic（預設）' },
-  { value: 'lanczos', label: 'Lanczos（高品質）' },
-  { value: 'spline', label: 'Spline（高品質）' },
-  { value: 'bilinear', label: 'Bilinear（快速）' },
-  { value: 'neighbor', label: 'Nearest Neighbor（像素風格）' },
-]
-
-// ========== 剪輯設定 ==========
+// ========== 剪輯狀態（共享給時間軸與 VideoCutPanel） ==========
 const cutStartTime = ref('00:00:00')
 const cutEndTime = ref('00:00:00')
 const cutStreamCopy = ref(true)
 
 function parseTimeToSeconds(time: string): number {
   const parts = time.split(':').map(Number)
-  if (parts.length === 3) {
-    return parts[0] * 3600 + parts[1] * 60 + parts[2]
-  } else if (parts.length === 2) {
-    return parts[0] * 60 + parts[1]
-  }
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
   return Number(time) || 0
 }
 
@@ -222,9 +163,7 @@ function onDragMove(e: MouseEvent | TouchEvent) {
     cutEndTime.value = secondsToTimeString(Math.max(seconds, startSec + 1))
   }
 
-  if (videoRef.value) {
-    videoRef.value.currentTime = seconds
-  }
+  if (videoRef.value) videoRef.value.currentTime = seconds
 }
 
 function onDragEnd() {
@@ -263,133 +202,47 @@ onUnmounted(() => {
   document.removeEventListener('touchend', onDragEnd)
 })
 
-// ========== 音訊位元率設定（轉檔用） ==========
-const audioBitrate = ref('192k')
-
-const audioBitrates = [
-  { value: '128k', label: '128 kbps' },
-  { value: '192k', label: '192 kbps' },
-  { value: '256k', label: '256 kbps' },
-  { value: '320k', label: '320 kbps' },
-]
-
-const showBitrateOption = computed(() => isAudioFormat.value && !['wav', 'flac'].includes(outputFormat.value))
-
+// ========== 路由執行 ==========
 function selectFunction(id: string) {
   currentFunction.value = id
 }
 
 function handleExecute() {
   switch (currentFunction.value) {
-    case 'transcode': executeTranscode(); break
-    case 'cut': executeCut(); break
+    case 'transcode': transcodePanelRef.value?.execute(); break
+    case 'cut': cutPanelRef.value?.execute(); break
     case 'subtitle': subtitlePanelRef.value?.submitGenerate(); break
   }
 }
 
 const executeDisabled = computed(() => {
-  if (currentFunction.value === 'subtitle') {
-    return subtitlePanelRef.value?.isDisabled ?? true
-  }
+  if (currentFunction.value === 'subtitle') return subtitlePanelRef.value?.isDisabled ?? true
+  if (currentFunction.value === 'transcode') return transcodePanelRef.value?.isDisabled ?? (!hasFile.value || isProcessing.value)
+  if (currentFunction.value === 'cut') return cutPanelRef.value?.isDisabled ?? (!hasFile.value || isProcessing.value)
   return !hasFile.value || isProcessing.value || isUploading.value
 })
 
 const executeLoading = computed(() => {
-  if (currentFunction.value === 'subtitle') {
-    return subtitlePanelRef.value?.isLoading ?? false
-  }
+  if (currentFunction.value === 'subtitle') return subtitlePanelRef.value?.isLoading ?? false
+  if (currentFunction.value === 'transcode') return transcodePanelRef.value?.isLoading ?? isProcessing.value
+  if (currentFunction.value === 'cut') return cutPanelRef.value?.isLoading ?? isProcessing.value
   return isProcessing.value
 })
 
-// ========== 通用任務提交 ==========
-async function submitTask(apiPath: string, body: Record<string, unknown>, label: string) {
-  if (!fileId.value) return
+function handlePanelSubmit(taskId: string) {
+  currentTaskId.value = taskId
+  resultPreview.value = 'submitted'
+}
 
+function handleSubtitleSubmit(_taskId: string) {
   isProcessing.value = true
-  try {
-    const response = await fetch(`/api/video/${apiPath}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.detail || '提交任務失敗')
-    }
-
-    const data = await response.json()
-    const taskId = data.task_id
-
-    const task: Task = {
-      taskId,
-      taskType: `video.${apiPath.replace('-', '_')}`,
-      status: 'pending',
-      progress: 0,
-      message: '任務已提交',
-      result: null,
-      error: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      label,
-      fileName: currentFileName.value,
-    }
-    taskStore.addTask(task)
-    currentTaskId.value = taskId
-
-    toast.show(`${label}任務已提交`, { type: 'success', icon: 'bi-check-circle' })
-    resultPreview.value = 'submitted'
-  } catch (e: any) {
-    toast.show(e.message || '提交任務失敗', { type: 'error', icon: 'bi-x-circle' })
-  } finally {
-    isProcessing.value = false
-  }
 }
 
-// ========== 各功能執行 ==========
-async function executeTranscode() {
-  if (isAudioFormat.value) {
-    await submitTask('extract-audio', {
-      file_id: fileId.value,
-      audio_format: outputFormat.value,
-      audio_bitrate: showBitrateOption.value ? audioBitrate.value : undefined,
-    }, '提取音訊')
-    return
-  }
-
-  let finalResolution = resolution.value
-  if (resolution.value === 'custom') {
-    finalResolution = `${customResWidth.value}x${customResHeight.value}`
-  }
-
-  await submitTask('transcode', {
-    file_id: fileId.value,
-    output_format: outputFormat.value,
-    video_codec: videoCodec.value,
-    audio_codec: 'aac',
-    crf: crf.value,
-    resolution: finalResolution || undefined,
-    scale_algorithm: finalResolution ? scaleAlgorithm.value : undefined,
-  }, '轉檔')
+function handleSubtitleComplete(_taskId: string) {
+  isProcessing.value = false
 }
 
-async function executeCut() {
-  const startSeconds = parseTimeToSeconds(cutStartTime.value)
-  const endSeconds = parseTimeToSeconds(cutEndTime.value)
-
-  if (endSeconds <= startSeconds) {
-    toast.show('結束時間必須大於開始時間', { type: 'error', icon: 'bi-x-circle' })
-    return
-  }
-
-  await submitTask('cut', {
-    file_id: fileId.value,
-    start_time: startSeconds,
-    end_time: endSeconds,
-    stream_copy: cutStreamCopy.value,
-  }, '剪輯')
-}
-
+// ========== 檔案處理 ==========
 async function handleFile(file: File, srcDir?: string) {
   hasFile.value = true
   sourceDir.value = srcDir
@@ -397,19 +250,16 @@ async function handleFile(file: File, srcDir?: string) {
   fileId.value = null
   mediaInfo.value = null
   currentFileName.value = file.name
-  // 自動上傳並取得媒體資訊
   await ensureFileUploaded(file)
 }
 
 async function ensureFileUploaded(file: File) {
   if (fileId.value || isUploading.value) return
-
   isUploading.value = true
   try {
     const id = await filesStore.uploadFile(file, sourceDir.value)
     fileId.value = id
     await loadMediaInfo()
-    // 設定剪輯預設結束時間
     if (mediaInfo.value) {
       cutEndTime.value = secondsToTimeString(mediaInfo.value.duration)
     }
@@ -427,18 +277,11 @@ function handleDownload() {
   if (!r.output_file_id) return
 
   const baseName = currentFileName.value.replace(/\.[^.]+$/, '')
-  const ext = isAudioFormat.value ? outputFormat.value : outputFormat.value
+  const isAudio = transcodePanelRef.value?.isAudioFormat ?? false
+  const fmt = transcodePanelRef.value?.outputFormat ?? 'mp4'
   const suffix = currentFunction.value === 'cut' ? '_cut' : '_transcoded'
-  const outputName = `${baseName}${suffix}.${ext}`
+  const outputName = `${baseName}${suffix}.${fmt}`
   downloadFile(r.output_file_id, outputName, sourceDir.value)
-}
-
-function handleSubtitleSubmit(taskId: string) {
-  isProcessing.value = true
-}
-
-function handleSubtitleComplete(taskId: string) {
-  isProcessing.value = false
 }
 
 // 監聽任務完成 → 帶下載的 toast
@@ -477,7 +320,7 @@ watch(
     @download="handleDownload"
   >
     <!-- 預覽區域 -->
-    <template #preview="{ file, previewUrl, mode }">
+    <template #preview="{ previewUrl }">
       <div class="preview-display">
         <div class="video-wrapper">
           <div class="video-container">
@@ -490,18 +333,25 @@ watch(
             ></video>
             <!-- 剪輯時間軸（覆蓋在影片底部） -->
             <div v-if="currentFunction === 'cut' && mediaInfo" class="cut-timeline">
-              <div class="timeline-track" ref="trackRef"
-                   @mousedown="onTrackMouseDown"
-                   @touchstart.prevent="onTrackTouchStart">
+              <div
+                class="timeline-track"
+                ref="trackRef"
+                @mousedown="onTrackMouseDown"
+                @touchstart.prevent="onTrackTouchStart"
+              >
                 <div class="timeline-selection" :style="selectionStyle"></div>
-                <div class="timeline-handle start" :style="{ left: startPercent + '%' }"
-                     @mousedown.stop="startDrag('start', $event)"
-                     @touchstart.stop.prevent="startDrag('start', $event)">
-                </div>
-                <div class="timeline-handle end" :style="{ left: endPercent + '%' }"
-                     @mousedown.stop="startDrag('end', $event)"
-                     @touchstart.stop.prevent="startDrag('end', $event)">
-                </div>
+                <div
+                  class="timeline-handle start"
+                  :style="{ left: startPercent + '%' }"
+                  @mousedown.stop="startDrag('start', $event)"
+                  @touchstart.stop.prevent="startDrag('start', $event)"
+                ></div>
+                <div
+                  class="timeline-handle end"
+                  :style="{ left: endPercent + '%' }"
+                  @mousedown.stop="startDrag('end', $event)"
+                  @touchstart.stop.prevent="startDrag('end', $event)"
+                ></div>
                 <div class="timeline-playhead" :style="{ left: playheadPercent + '%' }"></div>
                 <div class="timeline-times">
                   <span :style="{ left: startPercent + '%' }">{{ cutStartTime }}</span>
@@ -512,7 +362,6 @@ watch(
           </div>
         </div>
 
-        <!-- 媒體資訊 -->
         <AppMediaInfoBar
           v-if="mediaInfo || isUploading"
           :items="mediaInfoItems"
@@ -525,91 +374,26 @@ watch(
     <!-- 設定面板 -->
     <template #settings>
       <div class="settings-form">
-        <!-- 轉檔設定 -->
-        <div v-if="currentFunction === 'transcode'" class="function-settings">
-          <h6 class="settings-title"><i class="bi bi-arrow-repeat me-2"></i>轉檔</h6>
-          <div class="form-group">
-            <label>輸出格式</label>
-            <AppSelect v-model="outputFormat" :options="formats" />
-          </div>
+        <VideoTranscodePanel
+          v-if="currentFunction === 'transcode'"
+          ref="transcodePanelRef"
+          :file-id="fileId"
+          :current-file-name="currentFileName"
+          @submit="handlePanelSubmit"
+        />
 
-          <template v-if="!isAudioFormat">
-            <div class="form-group">
-              <label>影片編碼</label>
-              <AppSelect v-model="videoCodec" :options="videoCodecs" />
-            </div>
+        <VideoCutPanel
+          v-else-if="currentFunction === 'cut'"
+          ref="cutPanelRef"
+          :file-id="fileId"
+          :current-file-name="currentFileName"
+          v-model:start-time="cutStartTime"
+          v-model:end-time="cutEndTime"
+          v-model:stream-copy="cutStreamCopy"
+          @submit="handlePanelSubmit"
+        />
 
-            <div class="form-group">
-              <label>解析度</label>
-              <AppSelect v-model="resolution" :options="resolutions" />
-            </div>
-
-            <div v-if="resolution === 'custom'" class="form-group size-inputs">
-              <div class="size-input-group">
-                <label>寬度</label>
-                <input v-model.number="customResWidth" type="number" class="form-input" min="1" />
-              </div>
-              <span class="size-separator">x</span>
-              <div class="size-input-group">
-                <label>高度</label>
-                <input v-model.number="customResHeight" type="number" class="form-input" min="1" />
-              </div>
-            </div>
-
-            <div v-if="resolution" class="form-group">
-              <label>縮放演算法</label>
-              <AppSelect v-model="scaleAlgorithm" :options="scaleAlgorithms" />
-            </div>
-
-            <div class="form-group">
-              <label>品質 (CRF): {{ crf }}</label>
-              <AppRange v-model="crf" :min="0" :max="51" />
-              <small class="form-hint">數值越小品質越高、檔案越大（建議 18-28）</small>
-            </div>
-          </template>
-
-          <div v-if="showBitrateOption" class="form-group">
-            <label>位元率</label>
-            <AppSelect v-model="audioBitrate" :options="audioBitrates" />
-          </div>
-
-        </div>
-
-        <!-- 剪輯設定 -->
-        <div v-if="currentFunction === 'cut'" class="function-settings">
-          <h6 class="settings-title"><i class="bi bi-scissors me-2"></i>剪輯</h6>
-          <div class="form-group">
-            <label>開始時間 (HH:MM:SS)</label>
-            <input
-              v-model="cutStartTime"
-              type="text"
-              class="form-input"
-              placeholder="00:00:00"
-            />
-          </div>
-
-          <div class="form-group">
-            <label>結束時間 (HH:MM:SS)</label>
-            <input
-              v-model="cutEndTime"
-              type="text"
-              class="form-input"
-              placeholder="00:00:00"
-            />
-          </div>
-
-          <div class="form-group checkbox-group">
-            <label class="checkbox-label">
-              <input type="checkbox" v-model="cutStreamCopy" />
-              <span>快速模式（不重新編碼）</span>
-            </label>
-            <small class="form-hint">關閉可獲得精確剪輯點，但速度較慢</small>
-          </div>
-
-        </div>
-
-        <!-- 字幕設定 -->
-        <div v-if="currentFunction === 'subtitle'" class="function-settings">
+        <div v-else-if="currentFunction === 'subtitle'" class="function-settings">
           <h6 class="settings-title"><i class="bi bi-badge-cc-fill me-2"></i>字幕</h6>
           <SubtitlePanel
             ref="subtitlePanelRef"
@@ -619,7 +403,6 @@ watch(
             @complete="handleSubtitleComplete"
           />
         </div>
-
       </div>
     </template>
   </ToolLayout>
@@ -674,84 +457,6 @@ watch(
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--panel-border);
 }
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  label { font-size: 0.85rem; color: var(--text-secondary); }
-}
-
-.form-input {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  background: var(--input-bg);
-  border: 1px solid var(--input-border);
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-size: inherit;
-  font-family: inherit;
-  outline: none;
-  transition: all 0.15s ease;
-
-  &:focus {
-    background: var(--input-bg-focus);
-    border-color: var(--input-border-focus);
-  }
-
-  &::placeholder {
-    color: var(--text-muted);
-  }
-}
-
-.form-hint {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-top: 0.25rem;
-}
-
-.checkbox-group {
-  gap: 0.25rem;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  font-size: 0.9rem;
-  color: var(--text-primary);
-
-  input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--color-primary);
-  }
-}
-
-.size-inputs {
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 0.5rem;
-}
-
-.size-input-group {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-
-  label {
-    font-size: 0.75rem;
-  }
-}
-
-.size-separator {
-  padding-bottom: 0.5rem;
-  color: var(--text-muted);
-}
-
-.text-muted { color: var(--text-muted); }
 
 .cut-timeline {
   position: absolute;

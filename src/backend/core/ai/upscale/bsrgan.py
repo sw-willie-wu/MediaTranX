@@ -63,15 +63,16 @@ class BSRGANWrapper(PTHRuntime):
                 variant=model_id,
                 on_progress=on_progress
             ) as model:
-                # Spandrel 處理推理
                 import torch
                 img_array = np.array(image.convert("RGB"))
                 img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0).float() / 255.0
                 img_tensor = img_tensor.to(self._device)
-                
-                with torch.no_grad():
-                    output_tensor = model(img_tensor)  # type: ignore
-                
+
+                def infer_cb(p: float, m: str) -> None:
+                    if on_progress:
+                        on_progress(1.0 + p, m)
+
+                output_tensor = self.run_inference(model, img_tensor, scale=scale, on_progress=infer_cb)
                 output_array = (output_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
                 return Image.fromarray(output_array)
         

@@ -3,6 +3,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
+import { apiFetch, getApiBase } from '@/composables/useApi'
 
 const router = useRouter()
 const taskStore = useTaskStore()
@@ -17,7 +18,7 @@ const currentStep = ref('')
 // 獲取系統狀態
 async function fetchStatus() {
   try {
-    const res = await fetch('/api/setup/status')
+    const res = await apiFetch('/setup/status')
     systemStatus.value = await res.json()
   } catch (e) {
     console.error('Failed to fetch system status', e)
@@ -32,19 +33,19 @@ async function startSetup() {
   progress.value = 0
   
   try {
-    const res = await fetch('/api/setup/initialize', { method: 'POST' })
+    const res = await apiFetch('/setup/initialize', { method: 'POST' })
     const { task_id } = await res.json()
     
     // 訂閱 SSE 進度
     subscribeToSetup(task_id)
   } catch (e) {
-    toast.error('啟動安裝失敗')
+    toast.show('啟動安裝失敗', { type: 'error' })
     isInstalling.value = false
   }
 }
 
 function subscribeToSetup(taskId: string) {
-  const eventSource = new EventSource(`/api/tasks/${taskId}/progress`)
+  const eventSource = new EventSource(`${getApiBase()}/tasks/${taskId}/progress`)
   
   eventSource.onmessage = (event) => {
     const data = JSON.parse(event.data)
@@ -61,12 +62,12 @@ function subscribeToSetup(taskId: string) {
         })
       }
     } else if (data.stage === 'completed') {
-      toast.success('AI 環境安裝完成')
+      toast.show('AI 環境安裝完成', { type: 'success' })
       isInstalling.value = false
       eventSource.close()
       fetchStatus()
     } else if (data.stage === 'error') {
-      toast.error(`安裝出錯: ${data.message}`)
+      toast.show(`安裝出錯: ${data.message}`, { type: 'error' })
       isInstalling.value = false
       eventSource.close()
     }
