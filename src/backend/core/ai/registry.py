@@ -12,6 +12,7 @@ FORMAT_BIN = "BIN"     # CTranslate2 目錄型快照 (Whisper)
 FORMAT_GGUF = "GGUF"   # llama-cpp-python 單檔 (LLM)
 FORMAT_PTH = "PTH"     # PyTorch 權重檔 (CV)
 FORMAT_ONNX = "ONNX"   # ONNX Runtime (預留 DirectML 擴展)
+FORMAT_VLM = "VLM"     # 視覺語言模型（llama-server，主模型 + mmproj）
 
 # ═══════════════════════════════════════════════════════════
 # 插槽常數 (Slot Constants)
@@ -19,6 +20,7 @@ FORMAT_ONNX = "ONNX"   # ONNX Runtime (預留 DirectML 擴展)
 SLOT_WHISPER = "whisper"
 SLOT_LLM = "llm"      # LLM 模型共用（一次只載入一個）
 SLOT_PTH = "pth"      # PTH 模型共用（一次只載入一個）
+SLOT_VLM = "vlm"      # VLM 模型（一次只載入一個）
 
 # ═══════════════════════════════════════════════════════════
 # 格式優先註冊表 (Format-First Registry)
@@ -383,6 +385,19 @@ MODELS_REGISTRY = {
             },
         },
         
+        # ▸ MobileSAM（AI 物件移除用）
+        "mobilesam": {
+            "slot": "mobilesam",
+            "description": "MobileSAM 輕量物件分割",
+            "variants": {
+                "default": {
+                    "url": "https://huggingface.co/dhkim2810/MobileSAM/resolve/main/mobile_sam.pt",
+                    "filename": "mobile_sam.pt",
+                    "vram_mb": 500,
+                },
+            },
+        },
+
         # ▸ Waifu2x 系列
         "waifu2x": {
             "slot": "waifu2x",
@@ -396,6 +411,177 @@ MODELS_REGISTRY = {
                     "vram_mb": 1200,
                     "scale": 2,
                 },
+            },
+        },
+    },
+
+    # ───────────────────────────────────────────────────────
+    # VLM 格式：視覺語言模型（llama-server，主模型 + mmproj）
+    # ───────────────────────────────────────────────────────
+    FORMAT_VLM: {
+        # ▸ Qwen3-VL
+        "qwen3vl": {
+            "slot": SLOT_VLM,
+            "description": "Qwen3-VL 視覺語言模型（OCR）",
+            "specs": {
+                "2b": {
+                    "layers": 28,
+                    "n_ctx": 4096,
+                    "vram_overhead_mb": 500,
+                    "variants": {
+                        "Q4_K_M": {
+                            "repo_id": "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+                            "filename": "Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+                            "mmproj_repo_id": "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+                            "mmproj_filename": "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",
+                            "size_mb": 1110,
+                            "mmproj_size_mb": 445,
+                        },
+                        "Q8_0": {
+                            "repo_id": "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+                            "filename": "Qwen3VL-2B-Instruct-Q8_0.gguf",
+                            "mmproj_repo_id": "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+                            "mmproj_filename": "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",
+                            "size_mb": 1830,
+                            "mmproj_size_mb": 445,
+                        },
+                    },
+                },
+                "4b": {
+                    "layers": 36,
+                    "n_ctx": 4096,
+                    "vram_overhead_mb": 600,
+                    "variants": {
+                        "Q4_K_M": {
+                            "repo_id": "Qwen/Qwen3-VL-4B-Instruct-GGUF",
+                            "filename": "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+                            "mmproj_repo_id": "Qwen/Qwen3-VL-4B-Instruct-GGUF",
+                            "mmproj_filename": "mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf",
+                            "size_mb": 2500,
+                            "mmproj_size_mb": 454,
+                        },
+                        "Q8_0": {
+                            "repo_id": "Qwen/Qwen3-VL-4B-Instruct-GGUF",
+                            "filename": "Qwen3VL-4B-Instruct-Q8_0.gguf",
+                            "mmproj_repo_id": "Qwen/Qwen3-VL-4B-Instruct-GGUF",
+                            "mmproj_filename": "mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf",
+                            "size_mb": 4280,
+                            "mmproj_size_mb": 454,
+                        },
+                    },
+                },
+                "8b": {
+                    "layers": 36,
+                    "n_ctx": 4096,
+                    "vram_overhead_mb": 800,
+                    "variants": {
+                        "Q4_K_M": {
+                            "repo_id": "Qwen/Qwen3-VL-8B-Instruct-GGUF",
+                            "filename": "Qwen3VL-8B-Instruct-Q4_K_M.gguf",
+                            "mmproj_repo_id": "Qwen/Qwen3-VL-8B-Instruct-GGUF",
+                            "mmproj_filename": "mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf",
+                            "size_mb": 5030,
+                            "mmproj_size_mb": 752,
+                        },
+                    },
+                },
+            },
+            "default_variant": {
+                "2b": "Q4_K_M",
+                "4b": "Q4_K_M",
+                "8b": "Q4_K_M",
+            },
+        },
+
+        # ▸ InternVL2.5
+        "internvl2.5": {
+            "slot": SLOT_VLM,
+            "description": "InternVL2.5 視覺語言模型（OCR）",
+            "specs": {
+                "1b": {
+                    "layers": 24,
+                    "n_ctx": 4096,
+                    "vram_overhead_mb": 400,
+                    "variants": {
+                        "Q8_0": {
+                            "repo_id": "ggml-org/InternVL2_5-1B-GGUF",
+                            "filename": "InternVL2_5-1B-Q8_0.gguf",
+                            "mmproj_repo_id": "ggml-org/InternVL2_5-1B-GGUF",
+                            "mmproj_filename": "mmproj-InternVL2_5-1B-Q8_0.gguf",
+                            "size_mb": 675,
+                            "mmproj_size_mb": 333,
+                        },
+                    },
+                },
+                "4b": {
+                    "layers": 36,
+                    "n_ctx": 4096,
+                    "vram_overhead_mb": 600,
+                    "variants": {
+                        "Q4_K_M": {
+                            "repo_id": "ggml-org/InternVL2_5-4B-GGUF",
+                            "filename": "InternVL2_5-4B-Q4_K_M.gguf",
+                            "mmproj_repo_id": "ggml-org/InternVL2_5-4B-GGUF",
+                            "mmproj_filename": "mmproj-InternVL2_5-4B-Q8_0.gguf",
+                            "size_mb": 2100,
+                            "mmproj_size_mb": 341,
+                        },
+                        "Q8_0": {
+                            "repo_id": "ggml-org/InternVL2_5-4B-GGUF",
+                            "filename": "InternVL2_5-4B-Q8_0.gguf",
+                            "mmproj_repo_id": "ggml-org/InternVL2_5-4B-GGUF",
+                            "mmproj_filename": "mmproj-InternVL2_5-4B-Q8_0.gguf",
+                            "size_mb": 3610,
+                            "mmproj_size_mb": 341,
+                        },
+                    },
+                },
+            },
+            "default_variant": {
+                "1b": "Q8_0",
+                "4b": "Q4_K_M",
+            },
+        },
+
+        # ▸ Gemma 3
+        "gemma3": {
+            "slot": SLOT_VLM,
+            "description": "Gemma 3 視覺語言模型（OCR）",
+            "specs": {
+                "4b": {
+                    "layers": 34,
+                    "n_ctx": 4096,
+                    "vram_overhead_mb": 600,
+                    "variants": {
+                        "Q4_K_M": {
+                            "repo_id": "ggml-org/gemma-3-4b-it-GGUF",
+                            "filename": "gemma-3-4b-it-Q4_K_M.gguf",
+                            "mmproj_repo_id": "ggml-org/gemma-3-4b-it-GGUF",
+                            "mmproj_filename": "mmproj-model-f16.gguf",
+                            "size_mb": 2490,
+                            "mmproj_size_mb": 851,
+                        },
+                    },
+                },
+                "12b": {
+                    "layers": 46,
+                    "n_ctx": 4096,
+                    "vram_overhead_mb": 800,
+                    "variants": {
+                        "Q4_K_M": {
+                            "repo_id": "ggml-org/gemma-3-12b-it-GGUF",
+                            "filename": "gemma-3-12b-it-Q4_K_M.gguf",
+                            "mmproj_repo_id": "ggml-org/gemma-3-12b-it-GGUF",
+                            "mmproj_filename": "mmproj-model-f16.gguf",
+                            "size_mb": 7300,
+                            "mmproj_size_mb": 854,
+                        },
+                    },
+                },
+            },
+            "default_variant": {
+                "4b": "Q4_K_M",
+                "12b": "Q4_K_M",
             },
         },
     },

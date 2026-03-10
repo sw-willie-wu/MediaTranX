@@ -20,6 +20,7 @@ class DocumentTranslateRequest(BaseModel):
     model_size: str = Field(default="4b", description="模型大小 (4b, 12b, 27b)")
     model_type: str = Field(default="translategemma", description="翻譯模型類型 (translategemma, qwen3)")
     quantization: Optional[str] = Field(default=None, description="模型量化精度 (Q4_K_M, Q3_K_M 等)")
+    translate_style: str = Field(default="colloquial", description="翻譯風格 (colloquial, formal, literal)")
     glossary: Optional[dict[str, str]] = Field(default=None, description="專有名詞對照表 {原文: 譯文}")
     output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
     output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
@@ -72,6 +73,7 @@ async def translate_document(request: DocumentTranslateRequest):
             model_size=request.model_size,
             model_type=request.model_type,
             quantization=request.quantization,
+            translate_style=request.translate_style,
             glossary=request.glossary,
             output_dir=request.output_dir,
             output_filename=request.output_filename,

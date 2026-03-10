@@ -144,93 +144,36 @@ class TranslateTestRequest(BaseModel):
     text: str = Field(..., description="要翻譯的文字（可以是 SRT 格式）")
     target_language: str = Field(default="zh-TW", description="目標語言")
     source_language: str = Field(default="ja", description="來源語言")
-    prompt_style: str = Field(
-        default="gemma_chat",
-        description="Prompt 風格: gemma_chat, chinese, english, simple"
-    )
-    model_size: str = Field(
-        default="4b",
-        description="模型大小: 4b, 12b, 27b"
-    )
+    model_size: str = Field(default="4b", description="模型大小: 4b, 12b")
 
 
 @router.post("/translategemma/test", response_model=TranslateTestResponse)
 async def test_translate(request: TranslateTestRequest):
     """
-    測試翻譯 prompt（開發用）
-
-    直接呼叫模型測試翻譯效果，支援多種 prompt 風格
+    測試翻譯（開發用）— 使用 llama-server messages API
     """
     try:
+        from backend.core.ai.translate.base import LANG_NAMES_EN
         tg = get_translategemma()
+        source_name = LANG_NAMES_EN.get(request.source_language, request.source_language)
+        target_name = LANG_NAMES_EN.get(request.target_language, request.target_language)
+        variant = request.model_size
 
-        # 手動載入模型
-        tg._load_model(request.model_size)
-
-        # 語言名稱
-        lang_names_zh = {
-            "zh-TW": "繁體中文", "zh-CN": "簡體中文", "en": "英文",
-            "ja": "日文", "ko": "韓文", "fr": "法文", "de": "德文",
-            "es": "西班牙文", "ru": "俄文", "pt": "葡萄牙文", "it": "義大利文",
-        }
-        lang_names_en = {
-            "zh-TW": "Traditional Chinese", "zh-CN": "Simplified Chinese", "en": "English",
-            "ja": "Japanese", "ko": "Korean", "fr": "French", "de": "German",
-            "es": "Spanish", "ru": "Russian", "pt": "Portuguese", "it": "Italian",
-        }
-        target_zh = lang_names_zh.get(request.target_language, request.target_language)
-        target_en = lang_names_en.get(request.target_language, request.target_language)
-        source_en = lang_names_en.get(request.source_language, request.source_language)
-
-        # 根據風格選擇 prompt
-        if request.prompt_style == "gemma_chat":
-            # Gemma 2 chat template 格式 + 保留人名（用中文指示可能更好）
-            user_msg = f"""將以下日文字幕翻譯成繁體中文。
-
-翻譯規則：
-- 保持 SRT 格式和時間標籤不變
-- 使用口語化的翻譯風格
-- 【重要】人名保持原文不翻譯，例如：アノン、友理、MyGO 等名字要保留日文原文
-- 只輸出翻譯結果
-
-字幕：
-{request.text}"""
-            prompt = f"<start_of_turn>user\n{user_msg}<end_of_turn>\n<start_of_turn>model\n"
-            stop = ["<end_of_turn>"]
-        elif request.prompt_style == "chinese":
-            # 中文 prompt（你之前在 Ollama 測試成功的版本）
-            prompt = (
-                f"你是一個專業的影視翻譯員。"
-                f"請將以下 SRT 格式的字幕翻譯成{target_zh}，並調整為對應的文法。"
-                f"請保持時間標籤不變，翻譯風格偏口語，遇到人名或專有名詞保持原文。"
-                f"以下是原始字幕\n{request.text}"
-            )
-            stop = None
-        elif request.prompt_style == "english":
-            # 官方英文 prompt
-            prompt = (
-                f"You are a professional {source_en} to {target_en} translator. "
-                f"Translate the following SRT subtitles. Keep timestamps unchanged. "
-                f"Output only the translated SRT, no explanations.\n\n{request.text}"
-            )
-            stop = None
-        else:  # simple
-            # 極簡 prompt
-            prompt = f"Translate to {target_en}:\n{request.text}\n\nTranslation:"
-            stop = None
-
-        # 呼叫模型
-        output = tg._model(
-            prompt,
-            max_tokens=len(request.text) * 3,
-            temperature=0.1,  # 降低溫度減少幻覺
-            echo=False,
-            stop=stop,
+        user_msg = (
+            f"Translate the following {source_name} subtitles to {target_name}. "
+            f"Keep SRT format and timestamps unchanged. Output only the translation.\n\n"
+            f"{request.text}"
         )
+        messages = [{"role": "user", "content": user_msg}]
 
-        result = output["choices"][0]["text"].strip()
+        with tg._runtime.acquire(tg.MODEL_ID, variant):
+            result = tg._runtime.chat(
+                messages=messages,
+                max_tokens=len(request.text) * 3,
+                temperature=0.1,
+            )
 
-        return TranslateTestResponse(result=result, prompt=prompt)
+        return TranslateTestResponse(result=result, prompt=user_msg)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

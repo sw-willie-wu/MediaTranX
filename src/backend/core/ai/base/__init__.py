@@ -7,10 +7,12 @@ from .runtime import BaseRuntime
 from .bin_runtime import BINRuntime
 from .gguf_runtime import GGUFRuntime
 from .pth_runtime import PTHRuntime
+from .llama_server_runtime import LlamaServerRuntime
 
 __all__ = [
     "BaseRuntime",
     "BINRuntime",
     "GGUFRuntime",
     "PTHRuntime",
+    "LlamaServerRuntime",
 ]

@@ -38,6 +38,13 @@ async def initialize_env(background_tasks: BackgroundTasks):
     return {"task_id": task_id}
 
 
+@router.get("/translate-styles")
+async def get_translate_styles():
+    """取得翻譯風格選項列表"""
+    from backend.core.ai.translate.base import STYLE_OPTIONS
+    return STYLE_OPTIONS
+
+
 # ─── 模型管理 ──────────────────────────────────────────────────────────────────
 
 # 展示用的 Whisper 模型清單（size → size_mb）
@@ -60,6 +67,19 @@ _SIZE_DESC = {
         "4b":   "輕量，速度快",
         "8b":   "平衡精度與速度",
         "14b":  "高精度翻譯",
+    },
+    "qwen3vl": {
+        "2b": "超輕量 OCR",
+        "4b": "輕量 OCR（推薦）",
+        "8b": "高精度 OCR",
+    },
+    "internvl2.5": {
+        "1b": "超輕量 OCR",
+        "4b": "輕量 OCR（推薦）",
+    },
+    "gemma3": {
+        "4b":  "輕量 OCR（推薦）",
+        "12b": "高精度 OCR",
     },
 }
 
@@ -111,6 +131,49 @@ def _enumerate_translate_models() -> list[dict]:
     return items
 
 
+_VLM_FAMILY_LABELS = {
+    "qwen3vl":    "Qwen3-VL",
+    "internvl2.5": "InternVL2.5",
+    "gemma3":     "Gemma 3",
+}
+
+
+def _enumerate_vlm_models() -> list[dict]:
+    """從 registry 動態枚舉所有 VLM OCR 模型"""
+    from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_VLM
+
+    items = []
+    vlm_models = MODELS_REGISTRY.get(FORMAT_VLM, {})
+
+    for model_family, config in vlm_models.items():
+        slot = config.get("slot", "vlm")
+        target_dir = get_models_dir() / slot
+        specs = config.get("specs", {})
+        family_label = _VLM_FAMILY_LABELS.get(model_family, model_family)
+
+        for size, size_spec in specs.items():
+            variants = size_spec.get("variants", {})
+            for quant, quant_spec in variants.items():
+                main_path = target_dir / quant_spec["filename"]
+                mmproj_path = target_dir / quant_spec.get("mmproj_filename", "")
+                downloaded = main_path.exists() and (
+                    not quant_spec.get("mmproj_filename") or mmproj_path.exists()
+                )
+                total_mb = quant_spec.get("size_mb", 0) + quant_spec.get("mmproj_size_mb", 0)
+                quant_desc = _QUANT_DESC.get(quant, quant)
+                items.append({
+                    "id":          f"{model_family}-{size}-{quant}",
+                    "family":      model_family,
+                    "variant":     f"{size}:{quant}",
+                    "label":       f"{family_label} {size.upper()} {quant}",
+                    "description": f"{_SIZE_DESC.get(model_family, {}).get(size, '')} · {quant_desc}",
+                    "category":    "vlm",
+                    "downloaded":  downloaded,
+                    "size_mb":     total_mb,
+                })
+    return items
+
+
 @router.get("/models")
 async def get_models_status():
     """取得所有工具/模型的安裝/下載狀態（枚舉所有變體）"""
@@ -132,6 +195,10 @@ async def get_models_status():
     FACE_RESTORE_LABELS = {
         "codeformer": {"label": "CodeFormer",   "description": "VQ-GAN 人臉修復"},
         "gfpgan":     {"label": "GFPGAN",       "description": "GAN 人臉修復"},
+    }
+
+    SEGMENT_LABELS = {
+        "mobilesam": {"label": "MobileSAM", "description": "輕量物件分割（AI 移除用）"},
     }
     
     # 變體描述映射
@@ -163,6 +230,9 @@ async def get_models_status():
         elif model_family in FACE_RESTORE_LABELS:
             category = "face_restore"
             family_meta = FACE_RESTORE_LABELS[model_family]
+        elif model_family in SEGMENT_LABELS:
+            category = "segment"
+            family_meta = SEGMENT_LABELS[model_family]
         else:
             continue
         
@@ -207,6 +277,10 @@ async def get_models_status():
     # ── 翻譯模型 (GGUF)：從 registry 動態枚舉所有變體 ──
     translate_models = _enumerate_translate_models()
     all_models.extend(translate_models)
+
+    # ── VLM 模型（OCR）：從 registry 動態枚舉 ──
+    vlm_models = _enumerate_vlm_models()
+    all_models.extend(vlm_models)
 
     return {
         "models": all_models,

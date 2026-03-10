@@ -12,12 +12,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Dict, Callable, Set
 
-from backend.core.paths import get_models_dir, get_base_data_dir
+from backend.core.paths import get_models_dir, get_base_data_dir, get_llama_bin_dir
 from .registry import (
     MODELS_REGISTRY,
     FORMAT_BIN,
     FORMAT_GGUF,
     FORMAT_PTH,
+    FORMAT_VLM,
 )
 
 logger = logging.getLogger(__name__)
@@ -98,8 +99,8 @@ class ModelManager:
         Returns:
             FORMAT_BIN / FORMAT_GGUF / FORMAT_PTH / None
         """
-        for fmt in [FORMAT_BIN, FORMAT_GGUF, FORMAT_PTH]:
-            if model_id in MODELS_REGISTRY[fmt]:
+        for fmt in [FORMAT_BIN, FORMAT_GGUF, FORMAT_PTH, FORMAT_VLM]:
+            if model_id in MODELS_REGISTRY.get(fmt, {}):
                 return fmt
         return None
     
@@ -149,7 +150,32 @@ class ModelManager:
         elif fmt == FORMAT_PTH:
             # PTH: variants -> variant
             return family["variants"].get(variant) if variant else None
-        
+
+        elif fmt == FORMAT_VLM:
+            # VLM: specs -> size -> variants -> quant（與 GGUF 相同結構，但含 mmproj 欄位）
+            if not variant:
+                return None
+            if ":" in variant:
+                size, quant = variant.split(":", 1)
+            else:
+                size = variant
+                quant = family["default_variant"].get(size)
+
+            spec = family["specs"].get(size)
+            if not spec:
+                return None
+
+            variant_spec = spec["variants"].get(quant)
+            if not variant_spec:
+                return None
+
+            return {
+                **variant_spec,
+                "layers": spec["layers"],
+                "n_ctx": spec["n_ctx"],
+                "vram_overhead_mb": spec["vram_overhead_mb"],
+            }
+
         return None
     
     def get_vram_requirement(self, model_id: str, variant: Optional[str] = None) -> int:
@@ -167,10 +193,10 @@ class ModelManager:
         if "vram_mb" in config:
             return config["vram_mb"]
         
-        # GGUF 格式：size_mb + vram_overhead_mb
+        # GGUF / VLM 格式：size_mb + mmproj_size_mb + vram_overhead_mb
         if "size_mb" in config and "vram_overhead_mb" in config:
-            return config["size_mb"] + config["vram_overhead_mb"]
-        
+            return config["size_mb"] + config.get("mmproj_size_mb", 0) + config["vram_overhead_mb"]
+
         return 0
     
     def get_model_path(self, model_id: str, variant: Optional[str] = None) -> Optional[Path]:
@@ -218,7 +244,15 @@ class ModelManager:
                 return None
             target = base_dir / variant_spec["filename"]
             return target if target.exists() else None
-        
+
+        # VLM 格式（單檔型，主模型；mmproj 由 runtime 另行解析）
+        elif fmt == FORMAT_VLM:
+            config = self.get_model_config(model_id, variant)
+            if not config or "filename" not in config:
+                return None
+            target = base_dir / config["filename"]
+            return target if target.exists() else None
+
         return None
 
 
@@ -266,12 +300,47 @@ class ModelManager:
             )
             return Path(path)
         
+        # VLM 格式（雙檔：主模型 + mmproj）
+        elif fmt == FORMAT_VLM:
+            config = self.get_model_config(model_id, variant)
+            if not config or "repo_id" not in config or "filename" not in config:
+                raise ValueError(f"Invalid VLM config for {model_id}/{variant}")
+
+            # 下載主模型
+            def _prog_main(p, msg):
+                if on_progress:
+                    on_progress(p * 0.7, msg)
+
+            path = await self._async_hf_hub_download(
+                repo_id=config["repo_id"],
+                filename=config["filename"],
+                local_dir=str(base_dir),
+                on_progress=_prog_main,
+            )
+
+            # 下載 mmproj（視覺編碼器）
+            if "mmproj_filename" in config:
+                def _prog_mm(p, msg):
+                    if on_progress:
+                        on_progress(0.7 + p * 0.3, f"[mmproj] {msg}")
+
+                await self._async_hf_hub_download(
+                    repo_id=config.get("mmproj_repo_id", config["repo_id"]),
+                    filename=config["mmproj_filename"],
+                    local_dir=str(base_dir),
+                    on_progress=_prog_mm,
+                )
+
+            if on_progress:
+                on_progress(1.0, "下載完成")
+            return Path(path)
+
         # GGUF 或 PTH 格式（單檔）
         else:
             config = self.get_model_config(model_id, variant)
             if not config or "repo_id" not in config or "filename" not in config:
                 raise ValueError(f"Invalid config for {model_id}/{variant}")
-            
+
             path = await self._async_hf_hub_download(
                 repo_id=config["repo_id"],
                 filename=config["filename"],
@@ -331,17 +400,10 @@ class ModelManager:
         return venv_path.exists() and len(list(venv_path.glob("**/site-packages/torch"))) > 0
 
     def is_llama_ready(self) -> bool:
-        """檢查 llama-cpp-python 是否已安裝，並捕捉詳細錯誤"""
-        try:
-            import llama_cpp
-            return True
-        except ImportError as e:
-            logger.error(f"llama-cpp-python import failed (ImportError): {e}")
-            return False
-        except Exception as e:
-            logger.error(f"llama-cpp-python import failed (Other): {e}")
-            # 有可能是 DLL 載入失敗 (OSError)
-            return False
+        """檢查 llama-server 二進位是否存在"""
+        import sys
+        exe_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
+        return (get_llama_bin_dir() / exe_name).exists()
 
     def unload_all(self):
         """強制清空所有已註冊的模型顯存"""

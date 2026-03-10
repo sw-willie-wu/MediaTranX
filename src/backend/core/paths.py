@@ -66,10 +66,21 @@ def get_ffmpeg_dir() -> Path:
     Dev:      bin/ffmpeg/
     """
     if _is_frozen():
-        # ffmpeg 位於與 core_service 同層的 resources/ 下
         return Path(sys.executable).parent.parent.parent / "ffmpeg"
     else:
         return _get_app_root() / "bin" / "ffmpeg"
+
+
+def get_llama_bin_dir() -> Path:
+    """
+    llama-server 二進位目錄
+    Packaged: resources/llama-bin/
+    Dev:      bin/llama/
+    """
+    if _is_frozen():
+        return Path(sys.executable).parent.parent.parent / "llama-bin"
+    else:
+        return _get_app_root() / "bin" / "llama"
 
 
 def get_app_config() -> dict:

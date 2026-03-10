@@ -61,11 +61,12 @@ class SetupService:
         """
         透過 uv 安裝 AI 運行環境：
           GPU 模式（3 步）：
-            Step 1: uv sync --extra ai --no-dev --no-install-package torch torchvision llama-cpp-python
+            Step 1: uv sync --extra ai --no-dev --no-install-package torch torchvision
             Step 2: uv pip install --no-deps --index-url <pytorch_whl> torch torchvision
-            Step 3: uv pip install --no-deps --index-url <llama_whl> llama-cpp-python
-          CPU 模式（1 步）：
+            Step 3: 下載 llama-server 二進位（CUDA 版）
+          CPU 模式（2 步）：
             Step 1: uv sync --extra ai --no-dev  （全部從 PyPI 安裝）
+            Step 2: 下載 llama-server 二進位（CPU 版）
         """
         async with self._setup_lock:
             tracker = get_progress_tracker()
@@ -116,14 +117,13 @@ class SetupService:
                 has_gpu = torch_variant != "cpu"
 
                 if has_gpu:
-                    # ── GPU 模式：3 步，torch / llama-cpp-python 直接裝 CUDA 版，不繞 CPU ──
-                    # Step 1: 安裝其餘所有套件，排除 torch / torchvision / llama-cpp-python
+                    # ── GPU 模式：3 步，torch 直接裝 CUDA 版 ──
+                    # Step 1: 安裝其餘所有套件，排除 torch / torchvision
                     await tracker.emit(task_id, 0.1, "安裝基礎 AI 套件中（Step 1/3）...", stage="processing")
                     rc = await run_uv([
                         str(uv_exe), "sync", "--extra", "ai", "--no-dev",
                         "--no-install-package", "torch",
                         "--no-install-package", "torchvision",
-                        "--no-install-package", "llama-cpp-python",
                     ], 0.3)
                     if rc != 0:
                         await tracker.emit(task_id, 1.0, f"安裝失敗 (Code {rc})，請查看日誌。", stage="error")
@@ -142,63 +142,36 @@ class SetupService:
                         await tracker.emit(task_id, 1.0, f"CUDA Torch 安裝失敗 (Code {rc})，請查看日誌。", stage="error")
                         return
 
-                    # Step 3: 直接安裝 CUDA llama-cpp-python（支援 Qwen3）
-                    # abetlen 官方 index 的 Windows wheel 最高只有 0.3.4，不支援 Qwen3 架構。
-                    # Windows 改用社群預編譯 wheel (0.3.9 + CUDA 12.4 + Qwen3)。
-                    # 注意：該 wheel 檔名非標準格式，需下載後重命名才能讓 uv/pip 接受。
-                    import platform as _platform
-                    if _platform.system() == "Windows":
-                        qwen3_whl_url = (
-                            "https://github.com/boneylizard/llama-cpp-python-cu128-gemma3/"
-                            "releases/download/v0.3.9%2Bcuda124-cp312-qwen3/"
-                            "llama_cpp_python-0.3.9-cp312-cp312-win_amd64-qwen3_cuda124.whl"
-                        )
-                        await tracker.emit(task_id, 0.75, "下載 llama-cpp-python（支援 Qwen3）（Step 3/3）...", stage="processing")
-                        local_whl = await asyncio.get_running_loop().run_in_executor(
-                            None, self._download_llama_wheel, qwen3_whl_url, task_id
-                        )
-                        if local_whl:
-                            rc = await run_uv([
-                                str(uv_exe), "pip", "install",
-                                "--python", str(venv_python),
-                                "--no-deps",
-                                local_whl,
-                            ], 0.9)
-                            # 清理暫存檔
-                            try:
-                                Path(local_whl).unlink(missing_ok=True)
-                            except Exception:
-                                pass
-                        else:
-                            rc = 1
-                    else:
-                        llama_index = f"https://abetlen.github.io/llama-cpp-python/whl/{torch_variant}"
-                        await tracker.emit(task_id, 0.75, f"安裝 CUDA llama-cpp-python ({torch_variant.upper()})（Step 3/3）...", stage="processing")
-                        rc = await run_uv([
-                            str(uv_exe), "pip", "install",
-                            "--python", str(venv_python),
-                            "--no-deps",
-                            "--index-url", llama_index,
-                            "llama-cpp-python",
-                        ], 0.9)
-                    if rc != 0:
-                        # llama CUDA 版失敗不中止，後續可手動重裝
-                        logger.warning(f"CUDA llama-cpp-python 安裝失敗 (Code {rc})，請查看日誌。")
+                    # Step 3: 下載 llama-server 二進位（CUDA 版）
+                    await tracker.emit(task_id, 0.75, "下載 llama-server 二進位（Step 3/3）...", stage="processing")
+                    ok = await asyncio.get_running_loop().run_in_executor(
+                        None, self._download_llama_server, torch_variant, task_id
+                    )
+                    if not ok:
+                        logger.warning("llama-server 下載失敗，請稍後手動重試。")
 
                 else:
-                    # ── CPU 模式：1 步，全部從 PyPI 安裝 ──
-                    await tracker.emit(task_id, 0.15, "安裝 AI 套件中（Step 1/1）...", stage="processing")
-                    rc = await run_uv([str(uv_exe), "sync", "--extra", "ai", "--no-dev"], 0.9)
+                    # ── CPU 模式：2 步 ──
+                    await tracker.emit(task_id, 0.15, "安裝 AI 套件中（Step 1/2）...", stage="processing")
+                    rc = await run_uv([str(uv_exe), "sync", "--extra", "ai", "--no-dev"], 0.7)
                     if rc != 0:
                         await tracker.emit(task_id, 1.0, f"安裝失敗 (Code {rc})，請查看日誌。", stage="error")
                         return
+
+                    # Step 2: 下載 llama-server CPU 版
+                    await tracker.emit(task_id, 0.75, "下載 llama-server 二進位（Step 2/2）...", stage="processing")
+                    ok = await asyncio.get_running_loop().run_in_executor(
+                        None, self._download_llama_server, "cpu", task_id
+                    )
+                    if not ok:
+                        logger.warning("llama-server 下載失敗，請稍後手動重試。")
 
                 # 清除裝置偵測快取，讓下次 /api/device 重新偵測 CUDA
                 from backend.core.device import refresh_device_cache
                 refresh_device_cache()
 
                 # 安裝完成後，將 .venv site-packages 注入目前執行中的 sys.path
-                # 讓同一個 session 內的 import llama_cpp / import torch 立即生效
+                # 讓同一個 session 內的 import torch 立即生效
                 import sys as _sys
                 venv_site = str(get_base_data_dir() / ".venv" / "Lib" / "site-packages")
                 if venv_site not in _sys.path:
@@ -215,54 +188,163 @@ class SetupService:
                 logger.error(f"Setup error: {e}")
                 await tracker.emit(task_id, 1.0, f"系統錯誤: {str(e)}", stage="error")
 
-    def _download_llama_wheel(self, url: str, task_id: str) -> str | None:
+    def _download_llama_server(self, torch_variant: str, task_id: str) -> bool:
         """
-        下載 llama-cpp-python wheel 到臨時目錄，重命名為標準格式（去除非標準後綴），
-        回傳本地路徑供 uv pip install 使用。失敗時回傳 None。
+        從 llama.cpp GitHub releases 下載 llama-server 二進位，
+        解壓後放置到 bin/llama/ 目錄。失敗時回傳 False。
+        動態查詢 GitHub API 取最新 release，再依平台選擇 asset。
         """
-        import requests, tempfile
+        import json as _json
+        import platform as _platform
+        import tempfile, zipfile, urllib.request, urllib.error
+
         try:
-            resp = requests.get(url, stream=True, timeout=60, allow_redirects=True)
-            resp.raise_for_status()
-            total = int(resp.headers.get("content-length", 0))
-            downloaded = 0
-            chunk_size = 4 * 1024 * 1024
+            from backend.core.paths import get_llama_bin_dir
+            llama_bin = get_llama_bin_dir()
+            llama_bin.mkdir(parents=True, exist_ok=True)
 
-            # 重命名：去除 wheel 名稱中的非標準後綴（如 -qwen3_cuda124）
-            orig_filename = url.split("/")[-1]
-            parts = orig_filename.rsplit(".whl", 1)[0].split("-")
-            # 標準格式：name-version-pytag-abitag-platformtag（5 段）
-            if len(parts) >= 6:
-                # 合併多餘的 platform tag parts（如 win_amd64-qwen3_cuda124 → win_amd64）
-                std_filename = "-".join(parts[:5]) + ".whl"
+            system = _platform.system()
+            exe_name = "llama-server.exe" if system == "Windows" else "llama-server"
+
+            # 查詢 GitHub API 取最新 release assets
+            api_url = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+            req = urllib.request.Request(api_url, headers={"User-Agent": "MediaTranX/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                release = _json.loads(resp.read())
+
+            tag = release["tag_name"]   # e.g. "b5660"
+            assets = {a["name"]: a["browser_download_url"] for a in release.get("assets", [])}
+            logger.info(f"Latest llama.cpp release: {tag}, assets: {list(assets.keys())}")
+
+            # 依平台選擇 asset（優先 CUDA 版，fallback 到 CPU/AVX）
+            url = None
+            cudart_url = None  # Windows CUDA 版需要額外下載 cudart DLL 包
+            if system == "Windows":
+                if torch_variant != "cpu":
+                    # 嘗試 CUDA 12.4，找不到就找任意 cuda 版
+                    # 必須以 "llama-" 開頭排除 cudart- DLL 包
+                    for name, asset_url in assets.items():
+                        if name.startswith("llama-") and "win" in name and "cuda-12.4" in name and name.endswith(".zip"):
+                            url = asset_url
+                            break
+                    if not url:
+                        for name, asset_url in assets.items():
+                            if name.startswith("llama-") and "win" in name and "cuda" in name and name.endswith(".zip"):
+                                url = asset_url
+                                break
+                    # 找對應的 cudart DLL 包（同 CUDA 版本）
+                    if url:
+                        cuda_ver = None
+                        for seg in url.split("/")[-1].split("-"):
+                            if seg.startswith("cuda-"):
+                                cuda_ver = seg  # e.g. "cuda-12.4"
+                                break
+                        for name, asset_url in assets.items():
+                            if name.startswith("cudart-") and "win" in name and name.endswith(".zip"):
+                                if cuda_ver and cuda_ver in name:
+                                    cudart_url = asset_url
+                                    break
+                        if not cudart_url:
+                            # fallback：任意 cudart win zip
+                            for name, asset_url in assets.items():
+                                if name.startswith("cudart-") and "win" in name and name.endswith(".zip"):
+                                    cudart_url = asset_url
+                                    break
+                if not url:
+                    # CPU fallback
+                    for name, asset_url in assets.items():
+                        if "win" in name and "avx2" in name and name.endswith(".zip"):
+                            url = asset_url
+                            break
+                    if not url:
+                        for name, asset_url in assets.items():
+                            if "win" in name and name.endswith(".zip") and "cuda" not in name:
+                                url = asset_url
+                                break
             else:
-                std_filename = orig_filename
+                for name, asset_url in assets.items():
+                    if "ubuntu" in name and "x64" in name and name.endswith(".zip"):
+                        url = asset_url
+                        break
 
-            tmpdir = tempfile.mkdtemp(prefix="mediatranx_llama_")
-            local_path = os.path.join(tmpdir, std_filename)
+            if not url:
+                logger.error(f"No suitable llama-server asset found in release {tag}")
+                return False
 
-            with open(local_path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=chunk_size):
-                    if chunk:
+            logger.info(f"Downloading llama-server from {url}")
+            if cudart_url:
+                logger.info(f"Will also download cudart DLLs from {cudart_url}")
+
+            tracker = get_progress_tracker()
+
+            with tempfile.TemporaryDirectory(prefix="mediatranx_llama_") as tmpdir:
+                archive = Path(tmpdir) / url.split("/")[-1]
+
+                # 下載
+                req = urllib.request.urlopen(url, timeout=120)
+                total = int(req.headers.get("Content-Length", 0))
+                downloaded = 0
+                chunk_size = 4 * 1024 * 1024
+
+                with open(archive, "wb") as f:
+                    while True:
+                        chunk = req.read(chunk_size)
+                        if not chunk:
+                            break
                         f.write(chunk)
                         downloaded += len(chunk)
                         if total > 0:
                             frac = downloaded / total
-                            # 映射到 0.75 -> 0.85 的進度區間
-                            prog = 0.75 + frac * 0.1
-                            tracker = get_progress_tracker()
-                            # 這裡使用 run_in_executor 呼叫非同步發布
-                            asyncio.run_coroutine_threadsafe(
-                                tracker.emit(task_id, prog, f"下載中... {downloaded//(1024*1024)} / {total//(1024*1024)} MB", stage="processing"),
-                                asyncio.get_running_loop()
-                            )
+                            prog = 0.75 + frac * 0.2
+                            mb_done = downloaded // (1024 * 1024)
+                            mb_total = total // (1024 * 1024)
+                            try:
+                                asyncio.run_coroutine_threadsafe(
+                                    tracker.emit(task_id, prog, f"下載 llama-server... {mb_done}/{mb_total} MB", stage="processing"),
+                                    asyncio.get_running_loop(),
+                                )
+                            except RuntimeError:
+                                pass
 
-            logger.info(f"Downloaded llama wheel: {std_filename} ({downloaded // (1024*1024)}MB)")
-            return local_path
+                # 解壓 llama-server 執行檔（及 Windows 必要 DLL）
+                with zipfile.ZipFile(archive, "r") as zf:
+                    for entry in zf.namelist():
+                        basename = Path(entry).name
+                        if basename == exe_name:
+                            data = zf.read(entry)
+                            (llama_bin / basename).write_bytes(data)
+                            if system != "Windows":
+                                (llama_bin / basename).chmod(0o755)
+                            logger.info(f"Extracted {basename} → {llama_bin}")
+                        elif system == "Windows" and basename.endswith(".dll"):
+                            data = zf.read(entry)
+                            (llama_bin / basename).write_bytes(data)
+                            logger.info(f"Extracted DLL: {basename}")
+
+                # Windows CUDA 版：下載 cudart DLL 包並解壓所有 DLL
+                if cudart_url:
+                    cudart_archive = Path(tmpdir) / cudart_url.split("/")[-1]
+                    try:
+                        asyncio.run_coroutine_threadsafe(
+                            tracker.emit(task_id, 0.95, "下載 CUDA runtime DLLs...", stage="processing"),
+                            asyncio.get_running_loop(),
+                        )
+                    except RuntimeError:
+                        pass
+                    with urllib.request.urlopen(cudart_url, timeout=120) as r:
+                        cudart_archive.write_bytes(r.read())
+                    with zipfile.ZipFile(cudart_archive, "r") as zf:
+                        for entry in zf.namelist():
+                            basename = Path(entry).name
+                            if basename.endswith(".dll"):
+                                (llama_bin / basename).write_bytes(zf.read(entry))
+                                logger.info(f"Extracted cudart DLL: {basename}")
+
+            return (llama_bin / exe_name).exists()
 
         except Exception as e:
-            logger.error(f"Failed to download llama wheel: {e}")
-            return None
+            logger.error(f"Failed to download llama-server: {e}")
+            return False
 
     # ─── 模型移除 ──────────────────────────────────────────────────────────────
 
@@ -306,6 +388,28 @@ class SetupService:
                 if p.exists():
                     p.unlink()
                     logger.info(f"Removed qwen3 model: {item_id}")
+
+        elif item_id.startswith(("qwen3vl-", "internvl2.5-", "gemma3-")):
+            # VLM 模型：qwen3vl-4b-Q4_K_M
+            parts = item_id.rsplit("-", 1)
+            quant = parts[1]
+            family_size = parts[0]
+            size_parts = family_size.rsplit("-", 1)
+            model_family = size_parts[0]
+            size = size_parts[1]
+
+            from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_VLM
+            config = MODELS_REGISTRY.get(FORMAT_VLM, {}).get(model_family, {})
+            variant = config.get("specs", {}).get(size, {}).get("variants", {}).get(quant)
+            if variant:
+                slot = config.get("slot", "vlm")
+                target_dir = get_models_dir() / slot
+                for fname in [variant.get("filename"), variant.get("mmproj_filename")]:
+                    if fname:
+                        p = target_dir / fname
+                        if p.exists():
+                            p.unlink()
+                            logger.info(f"Removed VLM file: {fname}")
 
         else:
             # PTH 模型（upscale / face_restore）: {family}-{variant}
@@ -376,6 +480,17 @@ class SetupService:
             parts = item_id.split("-", 2)
             size, quant = parts[1], parts[2]
             self._download_translate("qwen3", size, quant, progress_callback, hf_hub_download)
+
+        elif item_id.startswith(("qwen3vl-", "internvl2.5-", "gemma3-")):
+            # VLM 模型：qwen3vl-4b-Q4_K_M / internvl2.5-4b-Q4_K_M / gemma3-4b-Q4_K_M
+            # 找到最後一個 '-' 前的部分作為 model_id + size
+            parts = item_id.rsplit("-", 1)  # ["qwen3vl-4b", "Q4_K_M"]
+            quant = parts[1]
+            family_size = parts[0]          # "qwen3vl-4b"
+            size_parts = family_size.rsplit("-", 1)  # ["qwen3vl", "4b"]
+            model_family = size_parts[0]
+            size = size_parts[1]
+            self._download_vlm(model_family, size, quant, progress_callback)
 
         else:
             # PTH 模型（upscale / face_restore）
@@ -476,6 +591,46 @@ class SetupService:
             ignore_patterns=["*.md", "model.bin", "model.safetensors"],
         )
         progress_callback(0.98, "模型檔案檢驗完成")
+
+    def _download_vlm(self, model_family: str, size: str, quant: str, progress_callback: Callable) -> None:
+        """下載 VLM 模型（主模型 + mmproj）"""
+        from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_VLM
+
+        config = MODELS_REGISTRY.get(FORMAT_VLM, {}).get(model_family, {})
+        specs = config.get("specs", {})
+        variant = specs.get(size, {}).get("variants", {}).get(quant)
+
+        if not variant:
+            raise ValueError(f"未知的 VLM 模型變體: {model_family}-{size}-{quant}")
+
+        slot = config.get("slot", "vlm")
+        target_dir = get_models_dir() / slot
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        # 下載主模型（70%進度）
+        progress_callback(0.05, f"下載 {model_family} {size} {quant} 主模型...")
+        self._stream_download(
+            repo_id=variant["repo_id"],
+            filename=variant["filename"],
+            target_path=target_dir / variant["filename"],
+            progress_callback=progress_callback,
+            base_progress=0.05,
+            end_progress=0.65,
+        )
+
+        # 下載 mmproj（30%進度）
+        if "mmproj_filename" in variant:
+            progress_callback(0.65, f"下載 mmproj（視覺編碼器）...")
+            self._stream_download(
+                repo_id=variant.get("mmproj_repo_id", variant["repo_id"]),
+                filename=variant["mmproj_filename"],
+                target_path=target_dir / variant["mmproj_filename"],
+                progress_callback=progress_callback,
+                base_progress=0.65,
+                end_progress=0.95,
+            )
+
+        progress_callback(0.95, "VLM 模型下載完成")
 
     def _download_translate(self, model_type: str, size: str, quant: str, progress_callback: Callable, hf_hub_download) -> None:
         from backend.core.ai.registry import MODELS_REGISTRY, FORMAT_GGUF

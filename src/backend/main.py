@@ -47,8 +47,7 @@ if _appdata:
             os.path.join(_venv_site, 'torch', 'lib'),      # torch CUDA DLL
             os.path.join(_venv_site, 'ctranslate2'),        # ctranslate2 DLL（faster-whisper 底層）
             os.path.join(_venv_site, 'tokenizers'),         # tokenizers .pyd 同層 DLL
-            os.path.join(_venv_site, 'llama_cpp'),          # 部分 wheel DLL 在此
-            os.path.join(_venv_site, 'llama_cpp', 'lib'),  # 官方 wheel DLL 在此
+            # llama_cpp DLL 目錄已移除（改用 llama-server subprocess）
         ]
         for _d in _dll_dirs:
             if os.path.isdir(_d):
@@ -112,12 +111,11 @@ if IS_FROZEN:
 # --- 3. 啟動診斷 (Diagnostic) ---
 if IS_FROZEN:
     try:
-        import llama_cpp
-        logging.info("Startup Diagnostic: llama-cpp-python imported successfully.")
+        from backend.core.ai.model_manager import get_model_manager
+        llama_ok = get_model_manager().is_llama_ready()
+        logging.info(f"Startup Diagnostic: llama-server binary {'found' if llama_ok else 'NOT found'}")
     except Exception as e:
-        logging.error(f"Startup Diagnostic: llama-cpp-python import failed: {e}")
-        # 嘗試印出環境變數
-        logging.info(f"Startup Diagnostic: PATH={os.environ.get('PATH', '')}")
+        logging.error(f"Startup Diagnostic: llama-server check failed: {e}")
 
 from backend.api import build_router
 

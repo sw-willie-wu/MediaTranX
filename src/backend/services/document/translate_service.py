@@ -152,6 +152,7 @@ class TranslateService:
         model_size: str = "4b",
         model_type: str = "translategemma",
         quantization: Optional[str] = None,
+        translate_style: str = "colloquial",
         glossary: Optional[dict[str, str]] = None,
         output_dir: Optional[str] = None,
         output_filename: Optional[str] = None,
@@ -181,6 +182,7 @@ class TranslateService:
             "model_size": model_size,
             "model_type": model_type,
             "quantization": quantization,
+            "translate_style": translate_style,
             "glossary": glossary,
             "output_dir": output_dir,
             "output_filename": output_filename,
@@ -230,6 +232,7 @@ class TranslateService:
         model_size = params.get("model_size", "4b")
         model_type = params.get("model_type", "translategemma")
         quantization = params.get("quantization")
+        translate_style = params.get("translate_style", "colloquial")
         glossary = params.get("glossary")
 
         # === 階段 1: 讀取檔案 (0~5%) ===
@@ -270,6 +273,7 @@ class TranslateService:
                     model_size=model_size,
                     quantization=quantization,
                     on_progress=translate_progress,
+                    style=translate_style,
                     glossary=glossary,
                 )
                 translated_text = None  # 由寫入函式處理
@@ -282,6 +286,7 @@ class TranslateService:
                     model_size=model_size,
                     quantization=quantization,
                     on_progress=translate_progress,
+                    style=translate_style,
                     glossary=glossary,
                 )
                 translated_text = result.text
