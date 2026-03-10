@@ -261,6 +261,10 @@ onMounted(() => {
   </Teleport>
 </template>
 
+<style lang="scss">
+@use '@/styles/tool-panels-shared';
+</style>
+
 <style lang="scss" scoped>
 .wizard-overlay {
   position: fixed;
@@ -481,32 +485,12 @@ onMounted(() => {
 .btn-primary {
   width: 100%;
   padding: 0.65rem 1rem;
-  background: var(--color-primary, #60a5fa);
-  color: #fff;
-  border: none;
-  border-radius: 8px;
   font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: opacity 0.15s ease;
-
-  &:hover { opacity: 0.88; }
 }
 
 .btn-secondary {
   width: 100%;
   padding: 0.6rem 1rem;
-  background: transparent;
-  color: var(--text-muted);
-  border: 1px solid var(--input-border, rgba(255,255,255,0.1));
-  border-radius: 8px;
   font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:hover {
-    background: var(--panel-bg-hover, rgba(255,255,255,0.05));
-    color: var(--text-secondary);
-  }
 }
 </style>

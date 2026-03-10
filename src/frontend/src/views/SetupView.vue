@@ -215,10 +215,6 @@ onMounted(() => {
   padding: 1rem 3rem;
   font-size: 1.2rem;
   border-radius: 50px;
-  background: var(--color-primary);
-  color: white;
-  border: none;
-  cursor: pointer;
   box-shadow: 0 4px 15px rgba(var(--color-primary-rgb), 0.3);
   &:hover { transform: translateY(-2px); filter: brightness(1.1); }
 }

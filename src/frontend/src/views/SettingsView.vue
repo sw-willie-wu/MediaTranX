@@ -26,7 +26,7 @@ const sections: { id: SectionId; icon: string; label: string }[] = [
           v-for="s in sections"
           :key="s.id"
           class="sidebar-item"
-          :class="{ active: activeSection === s.id }"
+          :class="{ 'is-active': activeSection === s.id }"
           @click="activeSection = s.id"
         >
           <i :class="['bi', s.icon]"></i>
@@ -92,7 +92,7 @@ const sections: { id: SectionId; icon: string; label: string }[] = [
   i    { font-size: 1.1rem; width: 22px; }
   span { font-size: 0.9rem; }
 
-  &:hover, &.active {
+  &:hover, &.is-active {
     color: var(--text-primary);
     background: var(--panel-bg);
   }

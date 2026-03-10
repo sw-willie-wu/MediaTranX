@@ -1,0 +1,179 @@
+<script setup lang="ts">
+import { ref, computed, watch } from 'vue'
+import AppSelect from '@/components/common/AppSelect.vue'
+import AppToggle from '@/components/common/AppToggle.vue'
+import { useSubmitTask } from '@/composables/useSubmitTask'
+
+interface ImageInfo {
+  width: number
+  height: number
+  format: string
+  mode: string
+  file_size: number
+}
+
+const props = defineProps<{
+  fileId: string | null
+  currentFileName: string
+  imageInfo: ImageInfo | null
+  canvasCropRect?: { x: number; y: number; w: number; h: number } | null
+}>()
+
+const emit = defineEmits<{
+  submit: [taskId: string]
+  'update:showCropOverlay': [value: boolean]
+  'update:aspectRatio': [value: string]
+}>()
+
+const { submitTask, isProcessing } = useSubmitTask()
+
+const showCropOverlay = ref(false)
+watch(showCropOverlay, (val) => emit('update:showCropOverlay', val))
+
+const x = ref(0)
+const y = ref(0)
+const cropWidth = ref<number | null>(null)
+const cropHeight = ref<number | null>(null)
+const aspectRatio = ref('free')
+watch(aspectRatio, (val) => emit('update:aspectRatio', val))
+
+const aspectOptions = [
+  { value: 'free', label: '自由裁切' },
+  { value: '1:1', label: '1:1 正方形' },
+  { value: '4:3', label: '4:3' },
+  { value: '3:4', label: '3:4' },
+  { value: '16:9', label: '16:9' },
+  { value: '9:16', label: '9:16' },
+]
+
+watch(() => props.imageInfo, (info) => {
+  if (info) {
+    cropWidth.value = info.width
+    cropHeight.value = info.height
+  }
+}, { immediate: true })
+
+watch(() => props.canvasCropRect, (rect) => {
+  if (!rect) return
+  x.value = rect.x
+  y.value = rect.y
+  cropWidth.value  = rect.w
+  cropHeight.value = rect.h
+})
+
+watch([aspectRatio, cropWidth], ([ratio]) => {
+  if (ratio === 'free' || !cropWidth.value) return
+  const [wRatio, hRatio] = ratio.split(':').map(Number)
+  cropHeight.value = Math.round(cropWidth.value * hRatio / wRatio)
+})
+
+const maxW = computed(() => props.imageInfo ? props.imageInfo.width - x.value : 9999)
+const maxH = computed(() => props.imageInfo ? props.imageInfo.height - y.value : 9999)
+
+const isDisabled = computed(() => !props.fileId || isProcessing.value || !cropWidth.value || !cropHeight.value)
+const isLoading = computed(() => isProcessing.value)
+
+async function execute() {
+  if (!props.fileId || !cropWidth.value || !cropHeight.value) return
+  const taskId = await submitTask(
+    '/image/crop',
+    {
+      file_id: props.fileId,
+      x: x.value,
+      y: y.value,
+      width: cropWidth.value,
+      height: cropHeight.value,
+    },
+    '圖片裁切',
+    'image.crop',
+    props.currentFileName,
+  )
+  if (taskId) emit('submit', taskId)
+}
+
+defineExpose({ execute, isDisabled, isLoading, showCropOverlay, aspectRatio })
+</script>
+
+<template>
+  <div class="function-settings">
+    <h6 class="settings-title"><i class="bi bi-crop me-2"></i>裁切設定</h6>
+    <p class="form-hint">在左側圖片上拖曳選取裁切範圍，支援自由或固定比例。</p>
+
+    <div class="form-group">
+      <label>裁切遮罩</label>
+      <AppToggle v-model="showCropOverlay">{{ showCropOverlay ? '顯示中' : '已隱藏' }}</AppToggle>
+    </div>
+
+    <div class="form-group">
+      <label>長寬比</label>
+      <AppSelect v-model="aspectRatio" :options="aspectOptions" />
+    </div>
+
+    <div class="form-group">
+      <label>起始位置（左上角）</label>
+      <div class="coord-row">
+        <div class="coord-field">
+          <span class="coord-label">X</span>
+          <input type="number" class="form-input" v-model.number="x"
+            :min="0" :max="imageInfo ? imageInfo.width - 1 : 9999" placeholder="0" />
+        </div>
+        <div class="coord-field">
+          <span class="coord-label">Y</span>
+          <input type="number" class="form-input" v-model.number="y"
+            :min="0" :max="imageInfo ? imageInfo.height - 1 : 9999" placeholder="0" />
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>裁切尺寸</label>
+      <div class="coord-row">
+        <div class="coord-field">
+          <span class="coord-label">寬</span>
+          <input type="number" class="form-input" v-model.number="cropWidth"
+            :min="1" :max="maxW" placeholder="px" />
+        </div>
+        <div class="coord-field">
+          <span class="coord-label">高</span>
+          <input type="number" class="form-input" v-model.number="cropHeight"
+            :min="1" :max="maxH" placeholder="px"
+            :disabled="aspectRatio !== 'free'" />
+        </div>
+      </div>
+    </div>
+
+    <small v-if="imageInfo" class="form-hint">
+      原圖：{{ imageInfo.width }} × {{ imageInfo.height }} px
+    </small>
+  </div>
+</template>
+
+<style lang="scss">
+@use '@/styles/tool-panels-shared';
+</style>
+
+<style lang="scss" scoped>
+.coord-row {
+  display: flex;
+  gap: 8px;
+}
+
+.coord-field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  .coord-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    min-width: 12px;
+  }
+
+  .form-input {
+    flex: 1;
+    min-width: 0;
+  }
+}
+</style>

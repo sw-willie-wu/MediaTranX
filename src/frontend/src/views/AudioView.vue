@@ -1,85 +1,101 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import ToolLayout from '@/components/ToolLayout.vue'
-import AppSelect from '@/components/common/AppSelect.vue'
-import AppMediaInfoBar from '@/components/common/AppMediaInfoBar.vue'
-import { useToast } from '@/composables/useToast'
+import AudioPreview from '@/components/audio/AudioPreview.vue'
+import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
+import AudioTranscodePanel  from '@/components/audio/panels/AudioTranscodePanel.vue'
+import AudioCutPanel        from '@/components/audio/panels/AudioCutPanel.vue'
+import AudioVolumePanel     from '@/components/audio/panels/AudioVolumePanel.vue'
+import AudioTranscribePanel from '@/components/audio/panels/AudioTranscribePanel.vue'
+import { useAudioWorkspace } from '@/composables/useAudioWorkspace'
 
-const toast = useToast()
+const {
+  hasFile, fileId, isUploading, currentFileName, hasResult, audioInfo,
+  handleFile, handleRemoveFile, handlePanelSubmit, handleDownload,
+} = useAudioWorkspace()
 
-// 子功能列表
+// Panel refs
+const transcodePanelRef  = ref<InstanceType<typeof AudioTranscodePanel>  | null>(null)
+const cutPanelRef        = ref<InstanceType<typeof AudioCutPanel>        | null>(null)
+const volumePanelRef     = ref<InstanceType<typeof AudioVolumePanel>     | null>(null)
+const transcribePanelRef = ref<InstanceType<typeof AudioTranscribePanel> | null>(null)
+
 const subFunctions = [
-  { id: 'transcode', name: '轉檔', icon: 'bi-arrow-repeat' },
-  { id: 'cut', name: '剪輯', icon: 'bi-scissors', comingSoon: true },
-  { id: 'volume', name: '音量調整', icon: 'bi-volume-up-fill', comingSoon: true },
-  { id: 'normalize', name: '音量正規化', icon: 'bi-soundwave', comingSoon: true },
-  { id: 'merge', name: '合併', icon: 'bi-union', comingSoon: true },
+  { id: 'transcode',  name: '轉檔',     icon: 'bi-arrow-repeat' },
+  { id: 'cut',        name: '剪輯',     icon: 'bi-scissors' },
+  { id: 'volume',     name: '音量調整', icon: 'bi-volume-up-fill' },
+  { id: 'transcribe', name: '逐字稿',   icon: 'bi-mic-fill' },
 ]
 
 const currentFunction = ref('transcode')
 
-// View 專屬狀態
-const resultPreview = ref<string | null>(null)
-const isProcessing = ref(false)
-const hasFile = ref(false)
-const currentFileName = ref('')
+const executeDisabled = computed(() => {
+  if (currentFunction.value === 'transcode')  return transcodePanelRef.value?.isDisabled  ?? !hasFile.value
+  if (currentFunction.value === 'cut')        return cutPanelRef.value?.isDisabled        ?? !hasFile.value
+  if (currentFunction.value === 'volume')     return volumePanelRef.value?.isDisabled     ?? !hasFile.value
+  if (currentFunction.value === 'transcribe') return transcribePanelRef.value?.isDisabled ?? !hasFile.value
+  return !hasFile.value
+})
 
-const hasResult = computed(() => !!resultPreview.value)
+const executeLoading = computed(() => {
+  if (currentFunction.value === 'transcode')  return transcodePanelRef.value?.isLoading  ?? false
+  if (currentFunction.value === 'cut')        return cutPanelRef.value?.isLoading        ?? false
+  if (currentFunction.value === 'volume')     return volumePanelRef.value?.isLoading     ?? false
+  if (currentFunction.value === 'transcribe') return transcribePanelRef.value?.isLoading ?? false
+  return false
+})
 
-// 轉檔設定
-const outputFormat = ref('mp3')
-const bitrate = ref('192k')
-const sampleRate = ref('')
-
-const formats = [
-  { value: 'mp3', label: 'MP3' },
-  { value: 'aac', label: 'AAC' },
-  { value: 'flac', label: 'FLAC (無損)' },
-  { value: 'wav', label: 'WAV' },
-  { value: 'ogg', label: 'OGG' },
-  { value: 'm4a', label: 'M4A' },
-]
-
-const bitrates = [
-  { value: '128k', label: '128 kbps' },
-  { value: '192k', label: '192 kbps' },
-  { value: '256k', label: '256 kbps' },
-  { value: '320k', label: '320 kbps' },
-]
-
-const sampleRates = [
-  { value: '', label: '保持原始' },
-  { value: '44100', label: '44.1 kHz' },
-  { value: '48000', label: '48 kHz' },
-]
-
-function selectFunction(id: string) {
-  currentFunction.value = id
+function handleExecute() {
+  switch (currentFunction.value) {
+    case 'transcode':  transcodePanelRef.value?.execute();  break
+    case 'cut':        cutPanelRef.value?.execute();        break
+    case 'volume':     volumePanelRef.value?.execute();     break
+    case 'transcribe': transcribePanelRef.value?.execute(); break
+  }
 }
 
-function executeProcess() {
-  // TODO: 接後端 API
-  toast.show('此功能尚未實作', { type: 'info', icon: 'bi-info-circle' })
+function formatDuration(s: number): string {
+  const h   = Math.floor(s / 3600)
+  const m   = Math.floor((s % 3600) / 60)
+  const sec = Math.floor(s % 60)
+  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
+  return `${m}:${sec.toString().padStart(2, '0')}`
+}
+function formatSize(b: number): string {
+  if (b < 1024) return `${b} B`
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`
+}
+function formatBitrate(bps: number): string {
+  if (bps < 1000) return `${bps} bps`
+  if (bps < 1_000_000) return `${(bps / 1000).toFixed(0)} Kbps`
+  return `${(bps / 1_000_000).toFixed(1)} Mbps`
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
+const audioInfoItems = computed<InfoItem[]>(() => {
+  if (audioInfo.value) {
+    const a = audioInfo.value
+    return [
+      { icon: 'bi-clock',             label: formatDuration(a.duration) },
+      { icon: 'bi-music-note-beamed', label: a.codec.toUpperCase() },
+      { icon: 'bi-soundwave',         label: `${(a.sample_rate / 1000).toFixed(1)} kHz` },
+      { icon: 'bi-reception-4',       label: a.channels === 1 ? 'Mono' : 'Stereo' },
+      { icon: 'bi-speedometer2',      label: formatBitrate(a.bitrate) },
+      { icon: 'bi-hdd',               label: formatSize(a.file_size) },
+    ]
+  }
+  return []
+})
 
-function getAudioInfoItems(file: File) {
-  const ext = file.name.split('.').pop()?.toUpperCase() ?? '—'
-  return [
-    { icon: 'bi-file-earmark-music', label: ext },
-    { icon: 'bi-hdd', label: formatSize(file.size) },
-  ]
-}
-
-function handleFile(file: File, srcDir?: string) {
-  hasFile.value = true
-  currentFileName.value = file.name
-  resultPreview.value = null
+function onDownload() {
+  const fmtMap: Record<string, [string, string]> = {
+    transcode:  [transcodePanelRef.value ? '' : 'mp3', '_transcoded'],
+    cut:        ['', '_cut'],
+    volume:     ['', '_adjusted'],
+    transcribe: ['', '_transcript'],
+  }
+  const [fmt, suffix] = fmtMap[currentFunction.value] ?? ['', '_output']
+  handleDownload(fmt || undefined, suffix)
 }
 </script>
 
@@ -88,165 +104,76 @@ function handleFile(file: File, srcDir?: string) {
     title="音訊工具"
     accept-type="audio"
     upload-icon="bi-music-note-beamed"
-    upload-label="拖曳音訊檔案到這裡"
+    upload-label="拖曳音訊到這裡"
+    upload-hint="支援 MP3、WAV、FLAC、AAC 等格式"
     upload-accept="audio/*"
     hide-preview-tabs
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"
-    :execute-disabled="!hasFile || isProcessing"
-    :execute-loading="isProcessing"
-    execute-label="執行轉檔"
-    @select-function="selectFunction"
-    @execute="executeProcess"
+    :execute-disabled="executeDisabled"
+    :execute-loading="executeLoading"
+    @select-function="currentFunction = $event"
+    @execute="handleExecute"
     @file="handleFile"
+    @remove-file="handleRemoveFile"
+    @download="onDownload"
   >
-    <!-- 預覽區域 -->
     <template #preview="{ file, previewUrl }">
-      <div class="preview-display">
-        <div class="audio-preview">
-          <div class="audio-icon">
-            <i class="bi bi-music-note-beamed"></i>
-          </div>
-          <div class="audio-info">
-            <p class="filename">{{ file.name }}</p>
-            <audio
-              :src="previewUrl"
-              controls
-              class="audio-player"
-            ></audio>
-          </div>
-        </div>
-        <AppMediaInfoBar :items="getAudioInfoItems(file)" />
-      </div>
+      <AudioPreview
+        :preview-url="previewUrl"
+        :file="file"
+      />
     </template>
 
-    <!-- 設定面板 -->
+    <template #info-bar>
+      <AppMediaInfoBar
+        v-if="audioInfo || isUploading"
+        :items="audioInfoItems"
+        :loading="isUploading && !audioInfo"
+        loading-text="讀取音訊資訊..."
+      />
+    </template>
+
     <template #settings>
       <div class="settings-form">
-        <!-- 轉檔設定 -->
-        <div v-if="currentFunction === 'transcode'" class="function-settings">
-          <h6 class="settings-title">
-            <i class="bi bi-arrow-repeat me-2"></i>轉檔設定
-          </h6>
+        <AudioTranscodePanel
+          v-if="currentFunction === 'transcode'"
+          ref="transcodePanelRef"
+          :file-id="fileId"
+          :current-file-name="currentFileName"
+          @submit="handlePanelSubmit"
+        />
 
-          <div class="form-group">
-            <label>輸出格式</label>
-            <AppSelect v-model="outputFormat" :options="formats" />
-          </div>
+        <AudioCutPanel
+          v-else-if="currentFunction === 'cut'"
+          ref="cutPanelRef"
+          :file-id="fileId"
+          :current-file-name="currentFileName"
+          :duration="audioInfo?.duration"
+          @submit="handlePanelSubmit"
+        />
 
-          <div class="form-group">
-            <label>位元率</label>
-            <AppSelect v-model="bitrate" :options="bitrates" />
-          </div>
+        <AudioVolumePanel
+          v-else-if="currentFunction === 'volume'"
+          ref="volumePanelRef"
+          :file-id="fileId"
+          :current-file-name="currentFileName"
+          @submit="handlePanelSubmit"
+        />
 
-          <div class="form-group">
-            <label>取樣率</label>
-            <AppSelect v-model="sampleRate" :options="sampleRates" />
-          </div>
-        </div>
-
-        <!-- 其他功能 -->
-        <div v-if="currentFunction === 'cut'" class="function-settings">
-          <h6 class="settings-title"><i class="bi bi-scissors me-2"></i>剪輯設定</h6>
-          <p class="text-muted">即將推出</p>
-        </div>
-
-        <div v-if="currentFunction === 'volume'" class="function-settings">
-          <h6 class="settings-title"><i class="bi bi-volume-up-fill me-2"></i>音量調整</h6>
-          <p class="text-muted">即將推出</p>
-        </div>
-
-        <div v-if="currentFunction === 'normalize'" class="function-settings">
-          <h6 class="settings-title"><i class="bi bi-soundwave me-2"></i>音量正規化</h6>
-          <p class="text-muted">即將推出</p>
-        </div>
-
-        <div v-if="currentFunction === 'merge'" class="function-settings">
-          <h6 class="settings-title"><i class="bi bi-union me-2"></i>合併音訊</h6>
-          <p class="text-muted">即將推出</p>
-        </div>
+        <AudioTranscribePanel
+          v-else-if="currentFunction === 'transcribe'"
+          ref="transcribePanelRef"
+          :file-id="fileId"
+          :current-file-name="currentFileName"
+          @submit="handlePanelSubmit"
+        />
       </div>
     </template>
   </ToolLayout>
 </template>
 
 <style lang="scss" scoped>
-.preview-display {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.audio-preview {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.5rem;
-  padding: 2rem;
-  background: var(--input-bg);
-  border-radius: 16px;
-  min-width: 400px;
-}
-
-.audio-icon {
-  width: 100px;
-  height: 100px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--color-warning) 0%, #d97706 100%);
-  border-radius: 20px;
-
-  i {
-    font-size: 3rem;
-    color: white;
-  }
-}
-
-.audio-info {
-  text-align: center;
-  width: 100%;
-}
-
-.filename {
-  color: var(--text-primary);
-  font-size: 1rem;
-  margin-bottom: 1rem;
-  word-break: break-all;
-}
-
-.audio-player {
-  width: 100%;
-  max-width: 350px;
-}
-
 .settings-form { color: var(--text-primary); }
-
-.function-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.settings-title {
-  display: flex;
-  align-items: center;
-  font-size: 1rem;
-  font-weight: 500;
-  margin: 0;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--panel-border);
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  label { font-size: 0.85rem; color: var(--text-secondary); }
-}
-
-.text-muted { color: var(--text-muted); }
 </style>

@@ -1,39 +1,73 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed } from 'vue'
 import ToolLayout from '@/components/ToolLayout.vue'
-import AppMediaInfoBar from '@/components/common/AppMediaInfoBar.vue'
-import DocumentTranslatePanel from '@/components/document/panels/DocumentTranslatePanel.vue'
-import { useFilesStore } from '@/stores/files'
-import { useTaskStore } from '@/stores/tasks'
-import { useToast } from '@/composables/useToast'
-import { useFileDownload } from '@/composables/useFileDownload'
+import DocumentPreview from '@/components/document/DocumentPreview.vue'
+import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
+import DocumentTranslatePanel   from '@/components/document/panels/DocumentTranslatePanel.vue'
+import DocumentPdfConvertPanel  from '@/components/document/panels/DocumentPdfConvertPanel.vue'
+import DocumentOcrPanel         from '@/components/document/panels/DocumentOcrPanel.vue'
+import DocumentSplitPanel       from '@/components/document/panels/DocumentSplitPanel.vue'
+import OcrResultModal           from '@/components/image/OcrResultModal.vue'
+import { useDocumentWorkspace } from '@/composables/useDocumentWorkspace'
+
+const {
+  hasFile, fileId, isUploading, currentFileName, hasResult,
+  textResultContent, textResultFilename,
+  handleFile, handleRemoveFile, handlePanelSubmit, handleDownload, handleTextDownload,
+} = useDocumentWorkspace()
+
+// Panel refs
+const translatePanelRef  = ref<InstanceType<typeof DocumentTranslatePanel>  | null>(null)
+const pdfConvertPanelRef = ref<InstanceType<typeof DocumentPdfConvertPanel> | null>(null)
+const ocrPanelRef        = ref<InstanceType<typeof DocumentOcrPanel>        | null>(null)
+const splitPanelRef      = ref<InstanceType<typeof DocumentSplitPanel>      | null>(null)
+const showOcrModal       = ref(false)
 
 const subFunctions = [
-  { id: 'translate', name: '翻譯', icon: 'bi-translate' },
-  { id: 'pdf-convert', name: 'PDF 轉換', icon: 'bi-file-earmark-pdf-fill', comingSoon: true },
-  { id: 'ocr', name: '文字辨識', icon: 'bi-type', comingSoon: true },
-  { id: 'merge', name: '合併文件', icon: 'bi-union', comingSoon: true },
-  { id: 'split', name: '分割文件', icon: 'bi-layout-split', comingSoon: true },
+  { id: 'translate',   name: '翻譯',     icon: 'bi-translate' },
+  { id: 'pdf-convert', name: 'PDF 轉換', icon: 'bi-file-earmark-pdf-fill' },
+  { id: 'ocr',         name: '文字辨識', icon: 'bi-type' },
+  { id: 'split',       name: '分割文件', icon: 'bi-layout-split' },
 ]
 
 const currentFunction = ref('translate')
 
-const filesStore = useFilesStore()
-const taskStore = useTaskStore()
-const toast = useToast()
-const { downloadFile } = useFileDownload()
+const currentFileExt = computed(() => {
+  const parts = currentFileName.value.split('.')
+  return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : ''
+})
 
-const currentTranslateTaskId = ref<string | null>(null)
+const executeDisabled = computed(() => {
+  if (currentFunction.value === 'translate')   return translatePanelRef.value?.isDisabled   ?? !hasFile.value
+  if (currentFunction.value === 'pdf-convert') return pdfConvertPanelRef.value?.isDisabled  ?? !hasFile.value
+  if (currentFunction.value === 'ocr')         return ocrPanelRef.value?.isDisabled         ?? !hasFile.value
+  if (currentFunction.value === 'split')       return splitPanelRef.value?.isDisabled       ?? !hasFile.value
+  return !hasFile.value
+})
 
-const hasFile = ref(false)
-const hasResult = ref(false)
-const currentFileName = ref('')
-const sourceDir = ref<string | undefined>(undefined)
-const fileId = ref<string | null>(null)
-const isUploading = ref(false)
+const executeLoading = computed(() => {
+  if (currentFunction.value === 'translate')   return translatePanelRef.value?.isLoading   ?? false
+  if (currentFunction.value === 'pdf-convert') return pdfConvertPanelRef.value?.isLoading  ?? false
+  if (currentFunction.value === 'ocr')         return ocrPanelRef.value?.isLoading         ?? false
+  if (currentFunction.value === 'split')       return splitPanelRef.value?.isLoading       ?? false
+  return false
+})
 
-function selectFunction(id: string) {
-  currentFunction.value = id
+function handleExecute() {
+  switch (currentFunction.value) {
+    case 'translate':   translatePanelRef.value?.execute();   break
+    case 'pdf-convert': pdfConvertPanelRef.value?.execute();  break
+    case 'ocr':         ocrPanelRef.value?.execute();         break
+    case 'split':       splitPanelRef.value?.execute();       break
+  }
+}
+
+function onDownload() {
+  if (currentFunction.value === 'ocr') {
+    handleTextDownload()
+  } else {
+    handleDownload()
+  }
 }
 
 function formatSize(bytes: number): string {
@@ -42,59 +76,26 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function getDocInfoItems(file: File) {
-  const ext = file.name.split('.').pop()?.toUpperCase() ?? '—'
+const currentFile = ref<File | null>(null)
+
+const documentInfoItems = computed<InfoItem[]>(() => {
+  if (!currentFile.value) return []
+  const ext = currentFile.value.name.split('.').pop()?.toUpperCase() ?? '—'
   return [
     { icon: 'bi-file-earmark-text', label: ext },
-    { icon: 'bi-hdd', label: formatSize(file.size) },
+    { icon: 'bi-hdd',               label: formatSize(currentFile.value.size) },
   ]
+})
+
+function onFile(file: File, sourceDir?: string) {
+  currentFile.value = file
+  handleFile(file, sourceDir)
 }
 
-async function handleFile(file: File, srcDir?: string) {
-  hasFile.value = true
-  currentFileName.value = file.name
-  sourceDir.value = srcDir
-  isUploading.value = true
-
-  try {
-    const id = await filesStore.uploadFile(file, srcDir)
-    fileId.value = id
-  } catch (e) {
-    fileId.value = null
-  } finally {
-    isUploading.value = false
-  }
+function onRemoveFile() {
+  currentFile.value = null
+  handleRemoveFile()
 }
-
-function handleTranslateSubmit(taskId: string) {
-  currentTranslateTaskId.value = taskId
-}
-
-function handleDownload() {
-  const task = currentTranslateTaskId.value ? taskStore.tasks.get(currentTranslateTaskId.value) : null
-  if (!task?.result) return
-  const r = task.result as { output_file_id?: string }
-  if (!r.output_file_id) return
-  const baseName = currentFileName.value.replace(/\.[^.]+$/, '')
-  downloadFile(r.output_file_id, `${baseName}_translated.srt`, sourceDir.value)
-}
-
-// 監聽翻譯任務完成 → 帶下載的 toast
-watch(
-  () => currentTranslateTaskId.value ? taskStore.tasks.get(currentTranslateTaskId.value) : null,
-  (task) => {
-    if (!task || task.status !== 'completed' || !task.result) return
-    const r = task.result as { output_file_id?: string }
-    if (!r.output_file_id) return
-    hasResult.value = true
-    toast.show('文件翻譯完成', {
-      type: 'success',
-      icon: 'bi-check-circle',
-      action: { label: '下載', callback: () => handleDownload() },
-    })
-  },
-  { deep: true }
-)
 </script>
 
 <template>
@@ -103,112 +104,92 @@ watch(
     accept-type="document"
     upload-icon="bi-file-earmark-text-fill"
     upload-label="拖曳文件到這裡"
+    upload-hint="支援 PDF、DOCX、TXT、SRT 等格式"
     upload-accept=".pdf,.doc,.docx,.txt,.srt,.vtt,.md,.csv,.json"
     hide-preview-tabs
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"
-    @select-function="selectFunction"
-    @file="handleFile"
-    @download="handleDownload"
+    :execute-disabled="executeDisabled"
+    :execute-loading="executeLoading"
+    @select-function="currentFunction = $event"
+    @execute="handleExecute"
+    @file="onFile"
+    @remove-file="onRemoveFile"
+    @download="onDownload"
   >
-    <!-- 預覽區域 -->
-    <template #preview="{ file }">
-      <div class="preview-display">
-        <div class="document-preview">
-          <i class="bi bi-file-earmark-text-fill"></i>
-          <p class="filename">{{ file.name }}</p>
-          <p v-if="isUploading" class="upload-hint">上傳中...</p>
-        </div>
-        <AppMediaInfoBar
-          :items="getDocInfoItems(file)"
-          :loading="isUploading"
-          loading-text="上傳中..."
-        />
-      </div>
+    <template #toolbar-extra>
+      <button
+        v-if="currentFunction === 'ocr' && textResultContent"
+        class="toolbar-btn ocr-result-btn"
+        data-tooltip="查看 OCR 結果"
+        @click="showOcrModal = true"
+      >
+        <i class="bi bi-file-text"></i>
+      </button>
     </template>
 
-    <!-- 設定面板 -->
+    <template #preview="{ file }">
+      <DocumentPreview :file="file" :is-uploading="isUploading" />
+    </template>
+
+    <template #info-bar>
+      <AppMediaInfoBar
+        v-if="currentFile || isUploading"
+        :items="documentInfoItems"
+        :loading="isUploading"
+        loading-text="上傳中..."
+      />
+    </template>
+
     <template #settings>
       <div class="settings-form">
         <DocumentTranslatePanel
           v-if="currentFunction === 'translate'"
+          ref="translatePanelRef"
           :file-id="fileId"
           :current-file-name="currentFileName"
-          @submit="handleTranslateSubmit"
+          @submit="handlePanelSubmit"
         />
 
-        <div v-else class="function-settings">
-          <h6 class="settings-title">
-            <i
-              class="bi me-2"
-              :class="{
-                'bi-file-earmark-pdf-fill': currentFunction === 'pdf-convert',
-                'bi-type': currentFunction === 'ocr',
-                'bi-union': currentFunction === 'merge',
-                'bi-layout-split': currentFunction === 'split',
-              }"
-            ></i>
-            {{ { 'pdf-convert': 'PDF 轉換', ocr: '文字辨識 (OCR)', merge: '合併文件', split: '分割文件' }[currentFunction] }}
-          </h6>
-          <p class="text-muted">即將推出</p>
-        </div>
+        <DocumentPdfConvertPanel
+          v-else-if="currentFunction === 'pdf-convert'"
+          ref="pdfConvertPanelRef"
+          :file-id="fileId"
+          :current-file-name="currentFileName"
+          :current-file-ext="currentFileExt"
+          @submit="handlePanelSubmit"
+        />
+
+        <DocumentOcrPanel
+          v-else-if="currentFunction === 'ocr'"
+          ref="ocrPanelRef"
+          :file-id="fileId"
+          :current-file-name="currentFileName"
+          :current-file-ext="currentFileExt"
+          @submit="handlePanelSubmit"
+        />
+
+        <DocumentSplitPanel
+          v-else-if="currentFunction === 'split'"
+          ref="splitPanelRef"
+          :file-id="fileId"
+          :current-file-name="currentFileName"
+          @submit="handlePanelSubmit"
+        />
       </div>
     </template>
   </ToolLayout>
+
+  <OcrResultModal
+    v-if="showOcrModal && textResultContent"
+    :text="textResultContent"
+    :format="ocrPanelRef?.outputFormat ?? 'md'"
+    :filename="textResultFilename"
+    @close="showOcrModal = false"
+  />
 </template>
 
 <style lang="scss" scoped>
-.preview-display {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.document-preview {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  padding: 2rem;
-  background: var(--input-bg);
-  border-radius: 16px;
-
-  i {
-    font-size: 4rem;
-    color: var(--color-info);
-  }
-
-  .filename {
-    color: var(--text-primary);
-    font-size: 1rem;
-  }
-
-  .upload-hint {
-    color: var(--text-muted);
-    font-size: 0.85rem;
-  }
-}
-
 .settings-form { color: var(--text-primary); }
-
-.function-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.settings-title {
-  display: flex;
-  align-items: center;
-  font-size: 1rem;
-  font-weight: 500;
-  margin: 0;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--panel-border);
-}
-
-.text-muted { color: var(--text-muted); }
 </style>

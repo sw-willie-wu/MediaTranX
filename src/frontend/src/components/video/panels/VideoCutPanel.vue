@@ -64,7 +64,8 @@ defineExpose({ execute, isDisabled, isLoading })
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-scissors me-2"></i>剪輯</h6>
+    <h6 class="settings-title"><i class="bi bi-scissors me-2"></i>剪輯設定</h6>
+    <p class="form-hint">設定起始與結束時間點，擷取影片片段。</p>
 
     <div class="form-group">
       <label>開始時間 (HH:MM:SS)</label>

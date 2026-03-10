@@ -69,7 +69,8 @@ defineExpose({ execute, isDisabled, isLoading, convertFormat })
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-arrow-repeat me-2"></i>轉檔</h6>
+    <h6 class="settings-title"><i class="bi bi-arrow-repeat me-2"></i>轉檔設定</h6>
+    <p class="form-hint">轉換圖片格式，可調整輸出品質。</p>
 
     <div class="form-group">
       <label>輸出格式</label>

@@ -2,7 +2,6 @@
 import { ref, computed } from 'vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
-import { useToast } from '@/composables/useToast'
 
 const props = defineProps<{
   fileId: string | null
@@ -13,22 +12,29 @@ const emit = defineEmits<{
   submit: [taskId: string]
 }>()
 
-const toast = useToast()
-const { isProcessing } = useSubmitTask()
+const { submitTask, isProcessing } = useSubmitTask()
 
 const removeBgMode = ref('auto')
 const removeBgModes = [
-  { value: 'auto', label: '自動偵測' },
-  { value: 'person', label: '人物' },
+  { value: 'auto',    label: '自動偵測' },
+  { value: 'person',  label: '人物' },
   { value: 'product', label: '商品' },
-  { value: 'animal', label: '動物' },
+  { value: 'animal',  label: '動物' },
 ]
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
 
-function execute() {
-  toast.show('此功能尚未實作', { type: 'info', icon: 'bi-info-circle' })
+async function execute() {
+  if (!props.fileId) return
+  const taskId = await submitTask(
+    '/image/remove-bg',
+    { file_id: props.fileId, mode: removeBgMode.value },
+    '去背',
+    'image.remove_bg',
+    props.currentFileName,
+  )
+  if (taskId) emit('submit', taskId)
 }
 
 defineExpose({ execute, isDisabled, isLoading })
@@ -39,10 +45,12 @@ defineExpose({ execute, isDisabled, isLoading })
     <h6 class="settings-title">
       <i class="bi bi-eraser-fill me-2"></i>去背設定
     </h6>
+    <p class="form-hint">自動移除圖片背景，輸出透明底 PNG。</p>
 
     <div class="form-group">
-      <label>模式</label>
+      <label>主體模式</label>
       <AppSelect v-model="removeBgMode" :options="removeBgModes" />
+      <small class="form-hint">自動偵測適合大多數場景</small>
     </div>
   </div>
 </template>

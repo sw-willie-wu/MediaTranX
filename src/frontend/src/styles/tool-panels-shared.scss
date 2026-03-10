@@ -1,8 +1,17 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// MediaTranX — Tool Panel Design System
+// 所有 panel 組件共用的樣式規範
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── 容器 ──────────────────────────────────────────────────────────────────────
+
 .function-settings {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
+
+// ── 標題 ──────────────────────────────────────────────────────────────────────
 
 .settings-title {
   display: flex;
@@ -13,6 +22,8 @@
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--panel-border);
 }
+
+// ── 表單 ──────────────────────────────────────────────────────────────────────
 
 .form-group {
   display: flex;
@@ -32,7 +43,7 @@
   border: 1px solid var(--input-border);
   border-radius: 6px;
   color: var(--text-primary);
-  font-size: inherit;
+  font-size: 0.85rem;
   font-family: inherit;
   outline: none;
   transition: all 0.15s ease;
@@ -42,35 +53,260 @@
     border-color: var(--input-border-focus);
   }
 
-  &::placeholder {
-    color: var(--text-muted);
-  }
+  &::placeholder { color: var(--text-muted); }
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
 .form-hint {
   font-size: 0.75rem;
   color: var(--text-muted);
-  margin-top: 0.25rem;
+  line-height: 1.5;
+
+  code {
+    padding: 0.1em 0.3em;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    font-family: monospace;
+  }
 }
 
-.checkbox-group {
-  gap: 0.25rem;
-}
+// ── Checkbox / Toggle ─────────────────────────────────────────────────────────
+
+.checkbox-group { gap: 0.25rem; }
 
 .checkbox-label {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: var(--text-primary);
 
   input[type='checkbox'] {
     width: 16px;
     height: 16px;
     accent-color: var(--color-primary);
+    cursor: pointer;
   }
 }
+
+// ── Buttons ───────────────────────────────────────────────────────────────────
+
+// 次要操作按鈕：重設、清除、一般動作
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.75rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--panel-bg-hover);
+    color: var(--text-primary);
+    border-color: var(--panel-border-hover);
+  }
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+// 主要 CTA 按鈕：安裝、啟動
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem;
+  background: var(--color-primary);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(124, 111, 173, 0.35);
+  }
+
+  &:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
+}
+
+// tool panel 內按鈕一律滿版寬（flex column 容器）
+.function-settings .btn-primary,
+.function-settings .btn-secondary {
+  width: 100%;
+}
+
+// 選擇型按鈕群：倍率、模式選擇
+.btn-choice-group {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-choice {
+  flex: 1;
+  padding: 0.35rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+
+  &:hover { background: var(--panel-bg-hover); color: var(--text-primary); }
+
+  &.is-active {
+    background: rgba(124, 111, 173, 0.15);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+}
+
+// ── Range 輔助 ────────────────────────────────────────────────────────────────
+
+// 顯示在 label 旁的數值
+.param-value {
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-left: 6px;
+}
+
+// Range 底部刻度行
+.range-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 0 2px;
+  margin-top: 2px;
+}
+
+// ── Info / Alert Box ──────────────────────────────────────────────────────────
+
+.info-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+
+  > i { flex-shrink: 0; margin-top: 1px; }
+
+  .info-box-body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .info-box-action {
+    margin-left: auto;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    border: 1px solid currentColor;
+    background: transparent;
+    transition: background 0.15s;
+    color: inherit;
+
+    &:hover { background: rgba(255, 255, 255, 0.1); }
+  }
+
+  &.info-box--info {
+    background: rgba(124, 111, 173, 0.08);
+    border: 1px solid rgba(124, 111, 173, 0.2);
+    color: var(--text-secondary);
+  }
+
+  &.info-box--warn {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    color: #fbbf24;
+  }
+
+  &.info-box--error {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: #ef4444;
+  }
+}
+
+// ── 次級參數區塊 ──────────────────────────────────────────────────────────────
+
+.sub-params {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+}
+
+.sub-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+// ── 檔案路徑選擇 ──────────────────────────────────────────────────────────────
+
+.file-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: var(--input-bg-focus);
+    border-color: var(--input-border-focus);
+  }
+
+  .file-select-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    margin-right: 0.5rem;
+    color: var(--text-secondary);
+  }
+
+  i { color: var(--text-muted); flex-shrink: 0; }
+}
+
+// ── 尺寸輸入 ──────────────────────────────────────────────────────────────────
 
 .size-inputs {
   flex-direction: row;
@@ -92,6 +328,4 @@
   color: var(--text-muted);
 }
 
-.text-muted {
-  color: var(--text-muted);
-}
+.text-muted { color: var(--text-muted); }

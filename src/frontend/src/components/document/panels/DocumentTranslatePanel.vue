@@ -3,7 +3,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
-import { apiFetch, getApiBase } from '@/composables/useApi'
+import { apiFetch } from '@/composables/useApi'
+import { useSubmitTask } from '@/composables/useSubmitTask'
 
 const props = defineProps<{
   fileId: string | null
@@ -16,93 +17,158 @@ const emit = defineEmits<{
 
 const taskStore = useTaskStore()
 const toast = useToast()
+const { submitTask, isProcessing } = useSubmitTask()
 
-const sourceLanguage = ref('en')
-const targetLanguage = ref('zh-TW')
-const translateModelSize = ref('4b')
-const translateLanguages = ref<{ code: string; name: string }[]>([])
-const translateStatus = ref<{
-  available: boolean
-  model_size: string
-  model_downloaded: boolean
-} | null>(null)
+// ── 翻譯模型（從 /setup/models 載入，含 badge）────────────────────────────
 
-const isSubmitting = ref(false)
+interface TranslateModelItem {
+  key: string
+  label: string
+  desc: string
+  sizeMb: number
+  downloaded: boolean
+}
+
+const selectedTranslateModel = ref('translategemma:4b:Q4_K_M')
+const translateEnvAvailable  = ref<boolean | null>(null)
+const translateModelsFromApi = ref<TranslateModelItem[]>([])
 const isInstalling = ref(false)
 const error = ref<string | null>(null)
 
-const translateModelSizes = [
-  { value: '4b', label: '4B (~2.5 GB)', desc: '推薦' },
-  { value: '12b', label: '12B (~7.3 GB)', desc: '較佳品質' },
-  { value: '27b', label: '27B (~16.5 GB)', desc: '最佳品質' },
-]
+const translateModelOptions = computed(() =>
+  translateModelsFromApi.value.map(m => ({
+    value: m.key,
+    label: m.label,
+    desc:  m.desc,
+    badge: m.downloaded ? 'ok' as const : 'err' as const,
+  }))
+)
+
+async function loadTranslateModels() {
+  try {
+    const [statusRes, modelsRes] = await Promise.all([
+      apiFetch('/setup/status'),
+      apiFetch('/setup/models'),
+    ])
+    if (statusRes.ok) {
+      const s = await statusRes.json()
+      translateEnvAvailable.value = s.ai_env_ready ?? null
+    }
+    if (!modelsRes.ok) return
+    const data = await modelsRes.json()
+    translateModelsFromApi.value = (data.models as any[])
+      .filter((m: any) => m.category === 'translate')
+      .sort((a: any, b: any) => a.size_mb - b.size_mb)
+      .map((m: any) => {
+        const dashIdx = m.variant.indexOf('-')
+        const size  = m.variant.slice(0, dashIdx)
+        const quant = m.variant.slice(dashIdx + 1)
+        const sizeGb = (m.size_mb / 1024).toFixed(1)
+        const desc = m.description ? `${sizeGb} GB · ${m.description}` : `${sizeGb} GB`
+        return { key: `${m.family}:${size}:${quant}`, label: m.label, desc, sizeMb: m.size_mb, downloaded: m.downloaded }
+      })
+
+    // 從 localStorage 還原上次選擇
+    const saved = loadPreferences()
+    if (saved && translateModelsFromApi.value.some(m => m.key === saved)) {
+      selectedTranslateModel.value = saved
+    }
+  } catch {}
+}
+
+// ── localStorage 持久化 ────────────────────────────────────────────────────
+
+const STORAGE_KEY = 'doc-translate-preferences'
+
+function savePreferences() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ translateModel: selectedTranslateModel.value }))
+}
+function loadPreferences(): string | null {
+  const saved = localStorage.getItem(STORAGE_KEY)
+  if (!saved) return null
+  try { return JSON.parse(saved).translateModel ?? null } catch { return null }
+}
+
+watch(selectedTranslateModel, savePreferences)
+
+// ── 語言 ──────────────────────────────────────────────────────────────────
+
+const sourceLanguage = ref('en')
+const targetLanguage = ref('zh-TW')
+const translateLanguages = ref<{ code: string; name: string }[]>([])
 
 const languageOptions = computed(() =>
   translateLanguages.value.map(l => ({ value: l.code, label: l.name }))
 )
 
-async function loadTranslateLanguages() {
+async function loadLanguages() {
   try {
-    const response = await apiFetch('/document/translategemma/languages')
-    if (response.ok) {
-      translateLanguages.value = await response.json()
-    }
-  } catch (e) {
-    console.error('Failed to load translate languages:', e)
-  }
+    const res = await apiFetch('/document/translategemma/languages')
+    if (res.ok) translateLanguages.value = await res.json()
+  } catch {}
 }
 
-async function loadTranslateStatus() {
+// ── 翻譯風格 ──────────────────────────────────────────────────────────────
+
+const translateStyle = ref('colloquial')
+const translateStyles = ref<{ value: string; label: string }[]>([])
+
+async function loadTranslateStyles() {
   try {
-    const response = await fetch(`${getApiBase()}/document/translategemma/status?model_size=${translateModelSize.value}`)
-    if (response.ok) {
-      translateStatus.value = await response.json()
-    }
-  } catch (e) {
-    console.error('Failed to load translate status:', e)
-  }
+    const res = await apiFetch('/setup/translate-styles')
+    if (res.ok) translateStyles.value = await res.json()
+  } catch {}
 }
 
-watch(translateModelSize, () => loadTranslateStatus())
+// ── 專有名詞字典 ──────────────────────────────────────────────────────────
+
+const glossaryText = ref('')
+
+function parseGlossary(): Record<string, string> | undefined {
+  const text = glossaryText.value.trim()
+  if (!text) return undefined
+  const dict: Record<string, string> = {}
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const sep = trimmed.includes('→') ? '→' : '='
+    const parts = trimmed.split(sep)
+    if (parts.length >= 2) {
+      const src = parts[0].trim()
+      const tgt = parts.slice(1).join(sep).trim()
+      if (src && tgt) dict[src] = tgt
+    }
+  }
+  return Object.keys(dict).length > 0 ? dict : undefined
+}
+
+// ── 安裝 ──────────────────────────────────────────────────────────────────
 
 async function installTranslate() {
   isInstalling.value = true
   error.value = null
-
   try {
     const response = await apiFetch('/setup/install', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ feature: 'translategemma' }),
     })
-
     if (!response.ok) {
       const err = await response.json()
       throw new Error(err.detail || '安裝失敗')
     }
-
     const result = await response.json()
-
     if (!result.task_id) {
       toast.show('翻譯功能已就緒', { type: 'success' })
-      await loadTranslateStatus()
+      await loadTranslateModels()
       return
     }
-
     taskStore.addTask({
-      taskId: result.task_id,
-      taskType: 'setup/install',
-      status: 'pending',
-      progress: 0,
-      message: null,
-      result: null,
-      error: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      label: '安裝翻譯功能',
+      taskId: result.task_id, taskType: 'setup/install', status: 'pending',
+      progress: 0, message: null, result: null, error: null,
+      createdAt: new Date(), updatedAt: new Date(), label: '安裝翻譯功能',
     })
     toast.show('開始安裝翻譯功能，請稍候...', { type: 'info', icon: 'bi-download' })
-
     const checkDone = setInterval(async () => {
       const task = taskStore.tasks.get(result.task_id)
       if (task && (task.status === 'completed' || task.status === 'failed')) {
@@ -110,7 +176,7 @@ async function installTranslate() {
         isInstalling.value = false
         if (task.status === 'completed') {
           toast.show('翻譯功能安裝完成', { type: 'success' })
-          await loadTranslateStatus()
+          await loadTranslateModels()
         } else {
           error.value = '安裝失敗，請查看任務列表'
         }
@@ -122,116 +188,92 @@ async function installTranslate() {
   }
 }
 
+// ── 執行 ──────────────────────────────────────────────────────────────────
+
+const isDisabled = computed(() => !props.fileId || isProcessing.value || translateEnvAvailable.value === false)
+const isLoading  = computed(() => isProcessing.value)
+
 async function execute() {
   if (!props.fileId) return
-
-  isSubmitting.value = true
-  error.value = null
-
-  try {
-    const response = await apiFetch('/document/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        file_id: props.fileId,
-        source_language: sourceLanguage.value,
-        target_language: targetLanguage.value,
-        model_size: translateModelSize.value,
-      }),
-    })
-
-    if (!response.ok) {
-      const err = await response.json()
-      throw new Error(err.detail || '翻譯提交失敗')
-    }
-
-    const result = await response.json()
-    taskStore.addTask({
-      taskId: result.task_id,
-      taskType: 'document/translate',
-      status: 'pending',
-      progress: 0,
-      message: null,
-      result: null,
-      error: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      label: '文件翻譯',
-      fileName: props.currentFileName,
-    })
-    toast.show('開始文件翻譯', { type: 'info', icon: 'bi-translate' })
-    emit('submit', result.task_id)
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : '發生錯誤'
-  } finally {
-    isSubmitting.value = false
+  const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
+  const body: Record<string, any> = {
+    file_id: props.fileId,
+    source_language: sourceLanguage.value,
+    target_language: targetLanguage.value,
+    model_type: tmType,
+    model_size: tmSize,
+    quantization: tmQuant,
+    translate_style: translateStyle.value,
   }
+  const glossary = parseGlossary()
+  if (glossary) body.glossary = glossary
+
+  const taskId = await submitTask('/document/translate', body, '文件翻譯', 'document.translate', props.currentFileName)
+  if (taskId) emit('submit', taskId)
 }
 
-onMounted(() => {
-  loadTranslateLanguages()
-  loadTranslateStatus()
-})
+onMounted(() => { loadTranslateModels(); loadLanguages(); loadTranslateStyles() })
 
-defineExpose({ execute })
+defineExpose({ execute, isDisabled, isLoading })
 </script>
 
 <template>
   <div class="function-settings">
     <h6 class="settings-title">
-      <i class="bi bi-translate me-2"></i>翻譯
+      <i class="bi bi-translate me-2"></i>翻譯設定
     </h6>
+    <p class="form-hint">使用 AI 翻譯文件內容，支援多種語言與翻譯風格。</p>
 
-    <div v-if="error" class="error-msg">{{ error }}</div>
+    <div v-if="error" class="info-box info-box--error">
+      <i class="bi bi-exclamation-circle"></i>
+      <span>{{ error }}</span>
+    </div>
 
     <!-- 未安裝：顯示安裝按鈕 -->
-    <div v-if="translateStatus && !translateStatus.available" class="install-prompt">
-      <p class="install-hint">翻譯功能需要額外元件，首次使用前請先安裝</p>
-      <button
-        class="install-btn"
-        :disabled="isInstalling"
-        @click="installTranslate"
-      >
-        <span v-if="isInstalling" class="spinner-border spinner-border-sm me-2"></span>
-        <i v-else class="bi bi-download me-1"></i>
+    <div v-if="translateEnvAvailable === false" class="install-prompt">
+      <p class="form-hint">翻譯功能需要 AI 推理環境，首次使用前請先安裝</p>
+      <button class="btn-primary" :disabled="isInstalling" @click="installTranslate">
+        <span v-if="isInstalling" class="spinner-border spinner-border-sm"></span>
+        <i v-else class="bi bi-download"></i>
         {{ isInstalling ? '安裝中...' : '安裝翻譯功能' }}
       </button>
     </div>
 
-    <!-- 已安裝：顯示設定 -->
-    <template v-else-if="!translateStatus || translateStatus.available">
+    <template v-else>
+      <!-- 翻譯模型 -->
+      <div class="form-group">
+        <label>翻譯模型</label>
+        <AppSelect v-model="selectedTranslateModel" :options="translateModelOptions" size="sm" />
+      </div>
+
+      <!-- 來源語言 -->
       <div class="form-group">
         <label>來源語言</label>
         <AppSelect v-model="sourceLanguage" :options="languageOptions" size="sm" />
       </div>
 
+      <!-- 目標語言 -->
       <div class="form-group">
         <label>目標語言</label>
         <AppSelect v-model="targetLanguage" :options="languageOptions" size="sm" />
       </div>
 
+      <!-- 翻譯風格 -->
       <div class="form-group">
-        <label>翻譯模型</label>
-        <AppSelect v-model="translateModelSize" :options="translateModelSizes" size="sm" />
-        <div v-if="translateStatus" class="model-status">
-          <span class="status-item">
-            <i
-              class="bi"
-              :class="translateStatus.model_downloaded ? 'bi-check-circle-fill status-ok' : 'bi-exclamation-circle-fill status-warn'"
-            ></i>
-            {{ translateStatus.model_downloaded ? '模型已掛載' : '首次使用自動下載模型' }}
-          </span>
-        </div>
+        <label>翻譯風格</label>
+        <AppSelect v-model="translateStyle" :options="translateStyles" size="sm" />
       </div>
 
-      <button
-        class="execute-btn"
-        :disabled="isSubmitting || !fileId"
-        @click="execute"
-      >
-        <span v-if="isSubmitting" class="spinner-border spinner-border-sm me-2"></span>
-        開始翻譯
-      </button>
+      <!-- 專有名詞字典 -->
+      <div class="form-group">
+        <label>專有名詞字典 <span class="label-hint">（選填）</span></label>
+        <textarea
+          v-model="glossaryText"
+          class="form-input glossary-input"
+          placeholder="每行一條，格式：原文→譯文 或 原文=譯文&#10;例：Apple→蘋果"
+          rows="4"
+        ></textarea>
+      </div>
     </template>
   </div>
 </template>
@@ -241,98 +283,21 @@ defineExpose({ execute })
 </style>
 
 <style lang="scss" scoped>
-.error-msg {
-  padding: 0.75rem;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 6px;
-  color: #ef4444;
-  font-size: 0.85rem;
+.label-hint {
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--text-muted);
 }
-
-.model-status {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 1rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--input-bg);
-  border-radius: 6px;
-  font-size: 0.8rem;
-}
-
-.status-item {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  color: var(--text-secondary);
-  i { font-size: 0.75rem; }
-}
-
-.status-ok { color: #10b981 !important; }
-.status-warn { color: #f59e0b !important; }
 
 .install-prompt {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem 0;
-  text-align: center;
 }
 
-.install-hint {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  margin: 0;
-}
-
-.install-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 0.6rem 1rem;
-  background: linear-gradient(135deg, var(--color-info) 0%, var(--color-primary) 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 0.85rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-
-  &:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(96, 165, 250, 0.3);
-  }
-
-  &:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-  }
-}
-
-.execute-btn {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  margin-top: 0.5rem;
-
-  &:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(124, 111, 173, 0.4);
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
+.glossary-input {
+  resize: vertical;
+  font-family: monospace;
+  line-height: 1.6;
 }
 </style>

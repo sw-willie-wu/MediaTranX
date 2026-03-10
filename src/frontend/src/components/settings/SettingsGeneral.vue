@@ -3,6 +3,7 @@ import { ref, watch, onMounted } from 'vue'
 import { useTheme, type ThemeMode } from '@/composables/useTheme'
 import { apiFetch } from '@/composables/useApi'
 import AppSelect from '@/components/common/AppSelect.vue'
+import AppToggle from '@/components/common/AppToggle.vue'
 
 const { themeMode, setTheme } = useTheme()
 
@@ -108,41 +109,39 @@ function restartApp() {
     <AppSelect v-model="settings.language" :options="languages" size="sm" />
   </div>
 
-  <div class="setting-item toggle-item" @click="settings.showSetupWizard = !settings.showSetupWizard">
-    <span>啟動時提示安裝AI模組</span>
-    <span class="toggle" :class="{ on: settings.showSetupWizard }"><span class="toggle-thumb"></span></span>
+  <div class="setting-item">
+    <AppToggle v-model="settings.showSetupWizard">啟動時提示安裝AI模組</AppToggle>
   </div>
 
   <h6 class="section-title mt">檔案路徑</h6>
 
   <div class="setting-item">
     <label class="section-subtitle">暫存資料夾</label>
-    <div class="path-input">
-      <input type="text" :value="tempDir || effectiveTempDir" class="form-control" readonly />
-      <button class="browse-btn" @click="selectTempDir"><i class="bi bi-folder2-open"></i></button>
-    </div>
+    <button class="btn-secondary path-btn" @click="selectTempDir">
+      <span class="path-text">{{ tempDir || effectiveTempDir }}</span>
+      <i class="bi bi-folder2-open"></i>
+    </button>
   </div>
 
   <div class="setting-item">
     <label class="section-subtitle">AI 模型存放目錄</label>
-    <div class="path-input">
-      <input type="text" :value="modelsDir || effectiveModelsDir" class="form-control" readonly />
-      <button class="browse-btn" @click="selectModelsDir"><i class="bi bi-folder2-open"></i></button>
-    </div>
+    <button class="btn-secondary path-btn" @click="selectModelsDir">
+      <span class="path-text">{{ modelsDir || effectiveModelsDir }}</span>
+      <i class="bi bi-folder2-open"></i>
+    </button>
     <p v-if="dirSaved" class="setting-hint setting-hint-warn">
       <i class="bi bi-exclamation-triangle-fill"></i> 重新啟動後生效
     </p>
   </div>
 
-  <div class="setting-item toggle-item" @click="settings.autoCleanTemp = !settings.autoCleanTemp">
-    <span>關閉時自動清理暫存檔</span>
-    <span class="toggle" :class="{ on: settings.autoCleanTemp }"><span class="toggle-thumb"></span></span>
+  <div class="setting-item">
+    <AppToggle v-model="settings.autoCleanTemp">關閉時自動清理暫存檔</AppToggle>
   </div>
 
   <h6 class="section-title mt">重新啟動</h6>
 
   <div class="setting-item">
-    <button class="restart-app-btn" @click="restartApp()">
+    <button class="btn-secondary" @click="restartApp()">
       <i class="bi bi-arrow-counterclockwise"></i> 重新啟動應用程式
     </button>
   </div>
@@ -153,106 +152,27 @@ function restartApp() {
 </style>
 
 <style lang="scss" scoped>
-.form-control {
+.path-btn {
   width: 100%;
-  padding: 0.375rem 0.75rem;
-  background: var(--input-bg);
-  border: 1px solid var(--input-border);
-  border-radius: 8px;
-  color: var(--text-primary);
-  font-size: 0.875rem;
-
-  &::placeholder { color: var(--text-muted); }
-
-  &:focus {
-    outline: none;
-    border-color: var(--input-border-focus);
-    background: var(--input-bg-focus);
-  }
-}
-
-.path-input {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
-  .form-control { flex: 1; }
+  .path-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+  }
+  i { flex-shrink: 0; }
 }
 
 .setting-hint {
   font-size: 0.75rem;
   color: var(--text-muted);
   margin: 0.15rem 0 0 0;
-  &.setting-hint-warn { color: #f59e0b; }
-}
-
-.browse-btn {
-  padding: 0.375rem 0.75rem;
-  background: var(--panel-bg);
-  border: 1px solid var(--input-border);
-  border-radius: 8px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  &:hover { background: var(--panel-bg-hover); color: var(--text-primary); }
-}
-
-.toggle-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.375rem 0.875rem;
-  background: var(--input-bg);
-  border: 1px solid var(--input-border);
-  border-radius: 8px;
-  cursor: pointer;
-  user-select: none;
-  transition: all 0.15s ease;
-
-  &:hover { background: var(--panel-bg-hover); border-color: var(--input-border-focus); }
-
-  > span:first-child {
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-  }
-}
-
-.toggle {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  background: var(--input-border);
-  border-radius: 10px;
-  flex-shrink: 0;
-  transition: background 0.2s ease;
-
-  .toggle-thumb {
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 14px;
-    height: 14px;
-    background: white;
-    border-radius: 50%;
-    transition: transform 0.2s ease;
-  }
-
-  &.on {
-    background: var(--color-primary);
-    .toggle-thumb { transform: translateX(16px); }
-  }
-}
-
-.restart-app-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.375rem 0.875rem;
-  background: var(--panel-bg);
-  border: 1px solid var(--input-border);
-  border-radius: 8px;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  &:hover { background: var(--panel-bg-hover); color: var(--text-primary); border-color: var(--input-border-focus); }
+  &.setting-hint-warn { color: var(--color-warning); }
 }
 </style>

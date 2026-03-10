@@ -41,3 +41,87 @@
 @keyframes settings-spin {
   to { transform: rotate(360deg); }
 }
+
+// ── 按鈕（設定頁不強制 width:100%，使用 inline-flex）──────────────────────
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  background: var(--color-primary);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(124, 111, 173, 0.35);
+  }
+  &:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.875rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover:not(:disabled) { background: var(--panel-bg-hover); color: var(--text-primary); border-color: var(--input-border-focus); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.btn-success {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.875rem;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  color: var(--color-success);
+  font-size: 0.875rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover:not(:disabled) { background: rgba(16, 185, 129, 0.2); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+// ── 輸入框 ──────────────────────────────────────────────────────────────────
+
+.form-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.4rem 0.75rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+
+  &::placeholder { color: var(--text-muted); }
+  &:focus { border-color: var(--input-border-focus); background: var(--input-bg-focus); }
+  &:read-only { color: var(--text-secondary); cursor: default; }
+}

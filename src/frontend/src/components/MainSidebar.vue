@@ -78,7 +78,7 @@ function navigate(path: string) {
         :key="item.path"
         :ref="(el) => setButtonRef(item.path, el as HTMLElement)"
         class="nav-btn"
-        :class="{ active: isActive(item.path) }"
+        :class="{ 'is-active': isActive(item.path) }"
         :data-tooltip="item.label"
         @click="navigate(item.path)"
       >
@@ -91,7 +91,7 @@ function navigate(path: string) {
         :key="item.path"
         :ref="(el) => setButtonRef(item.path, el as HTMLElement)"
         class="nav-btn"
-        :class="{ active: isActive(item.path) }"
+        :class="{ 'is-active': isActive(item.path) }"
         :data-tooltip="item.label"
         @click="navigate(item.path)"
       >
@@ -174,7 +174,7 @@ function navigate(path: string) {
     background: var(--panel-bg-active);
   }
 
-  &.active {
+  &.is-active {
     color: var(--text-primary);
   }
 

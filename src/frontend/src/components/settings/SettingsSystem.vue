@@ -69,12 +69,12 @@ function formatRam(bytes: number | null): string {
   <div v-else class="sys-error-state">
     <i class="bi bi-exclamation-circle"></i>
     <p>無法讀取硬體狀態</p>
-    <button class="retry-btn" @click="settingsStore.loadDeviceInfo()">重新偵測</button>
+    <button class="btn-primary" @click="settingsStore.loadDeviceInfo()">重新偵測</button>
   </div>
 
   <button
     v-if="!settingsStore.isLoading"
-    class="refresh-btn"
+    class="btn-secondary refresh-btn"
     @click="settingsStore.loadDeviceInfo()"
     :disabled="settingsStore.isLoading"
   >
@@ -148,32 +148,8 @@ function formatRam(bytes: number | null): string {
   p { margin-bottom: 1.5rem; }
 }
 
-.retry-btn {
-  padding: 0.6rem 2rem;
-  background: var(--color-primary);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  &:hover { opacity: 0.9; }
-}
-
 .refresh-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
   margin-top: 1rem;
-  padding: 0.4rem 0.875rem;
-  background: transparent;
-  border: 1px solid var(--input-border);
-  border-radius: 6px;
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  &:hover { background: var(--panel-bg-hover); color: var(--text-primary); }
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
-
   i.spin { animation: settings-spin 1s linear infinite; }
 }
 </style>

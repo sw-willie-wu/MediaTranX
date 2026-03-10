@@ -23,9 +23,9 @@ function restartApp() {
 
   <h6 class="section-title mt">支援與連結</h6>
   <div class="about-links">
-    <button class="about-link-btn"><i class="bi bi-github"></i> GitHub</button>
-    <button class="about-link-btn"><i class="bi bi-chat-dots"></i> 意見回饋</button>
-    <button class="about-link-btn"><i class="bi bi-globe"></i> 官方網站</button>
+    <button class="btn-secondary about-link-btn"><i class="bi bi-github"></i> GitHub</button>
+    <button class="btn-secondary about-link-btn"><i class="bi bi-chat-dots"></i> 意見回饋</button>
+    <button class="btn-secondary about-link-btn"><i class="bi bi-globe"></i> 官方網站</button>
   </div>
 
   <h6 class="section-title mt">技術致謝</h6>
@@ -90,20 +90,6 @@ function restartApp() {
 
 .about-link-btn {
   flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  background: var(--input-bg);
-  border: 1px solid var(--input-border);
-  border-radius: 8px;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:hover { background: var(--panel-bg-hover); color: var(--text-primary); border-color: var(--input-border-focus); }
 }
 
 .credits-text {

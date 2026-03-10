@@ -124,7 +124,8 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, isAudioFormat })
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-arrow-repeat me-2"></i>轉檔</h6>
+    <h6 class="settings-title"><i class="bi bi-arrow-repeat me-2"></i>轉檔設定</h6>
+    <p class="form-hint">轉換影片格式，可調整解析度、畫質與音訊設定。</p>
 
     <div class="form-group">
       <label>輸出格式</label>

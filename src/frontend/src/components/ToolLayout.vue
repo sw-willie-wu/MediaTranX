@@ -2,8 +2,10 @@
 import { ref, computed, onActivated, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import AppUploadZone from '@/components/common/AppUploadZone.vue'
+import ComparisonSlider from '@/components/ComparisonSlider.vue'
+import UnsupportedFileOverlay from '@/components/UnsupportedFileOverlay.vue'
 import { useFilesStore } from '@/stores/files'
-import { detectMediaType, getToolLabel, getToolPath, type ToolType } from '@/utils/mediaType'
+import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
 
 interface SubFunction {
   id: string
@@ -19,6 +21,7 @@ const props = withDefaults(defineProps<{
   acceptType?: ToolType
   uploadIcon?: string
   uploadLabel?: string
+  uploadHint?: string
   uploadAccept?: string
   hasResult?: boolean
   resultPreviewUrl?: string | null
@@ -31,6 +34,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   uploadIcon: 'bi-cloud-arrow-up-fill',
   uploadLabel: '拖曳檔案到這裡',
+  uploadHint: '或點擊選擇檔案',
   uploadAccept: '*',
   executeLabel: '開始執行',
   resultPreviewUrl: null,
@@ -56,46 +60,13 @@ const filesStore = useFilesStore()
 // 預覽模式
 type PreviewMode = 'original' | 'result' | 'compare'
 const previewMode = ref<PreviewMode>('original')
-
 const canShowResult = computed(() => props.hasResult)
 
 // Slider 比對模式
 const isComparing = ref(false)
-const sliderPosition = ref(50)
-const isDraggingSlider = ref(false)
-const compareContainerRef = ref<HTMLElement | null>(null)
 
 function toggleCompare() {
   isComparing.value = !isComparing.value
-  if (isComparing.value) {
-    sliderPosition.value = 50
-  }
-}
-
-function startSliderDrag(e: MouseEvent | TouchEvent) {
-  e.preventDefault()
-  isDraggingSlider.value = true
-  document.addEventListener('mousemove', onSliderDrag)
-  document.addEventListener('mouseup', stopSliderDrag)
-  document.addEventListener('touchmove', onSliderDrag)
-  document.addEventListener('touchend', stopSliderDrag)
-}
-
-function onSliderDrag(e: MouseEvent | TouchEvent) {
-  if (!isDraggingSlider.value || !compareContainerRef.value) return
-  const rect = compareContainerRef.value.getBoundingClientRect()
-  const clientX = e instanceof MouseEvent ? e.clientX : e.touches[0].clientX
-  const x = clientX - rect.left
-  const pct = Math.max(0, Math.min(100, (x / rect.width) * 100))
-  sliderPosition.value = pct
-}
-
-function stopSliderDrag() {
-  isDraggingSlider.value = false
-  document.removeEventListener('mousemove', onSliderDrag)
-  document.removeEventListener('mouseup', stopSliderDrag)
-  document.removeEventListener('touchmove', onSliderDrag)
-  document.removeEventListener('touchend', stopSliderDrag)
 }
 
 // 內部檔案管理
@@ -112,10 +83,7 @@ let unsupportedTimer: ReturnType<typeof setTimeout> | null = null
 const isDragOver = ref(false)
 
 function setFile(file: File, sourceDir?: string) {
-  // 釋放舊的 blob URL
-  if (previewUrl.value) {
-    URL.revokeObjectURL(previewUrl.value)
-  }
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   currentFile.value = file
   previewUrl.value = URL.createObjectURL(file)
   previewMode.value = 'original'
@@ -123,14 +91,11 @@ function setFile(file: File, sourceDir?: string) {
 }
 
 function removeFile() {
-  if (previewUrl.value) {
-    URL.revokeObjectURL(previewUrl.value)
-  }
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   currentFile.value = null
   previewUrl.value = null
   previewMode.value = 'original'
   isComparing.value = false
-  sliderPosition.value = 50
   emit('remove-file')
 }
 
@@ -182,9 +147,7 @@ function showUnsupportedOverlay(target: ToolType | null) {
   unsupportedTarget.value = target
   showUnsupported.value = true
   if (unsupportedTimer) clearTimeout(unsupportedTimer)
-  unsupportedTimer = setTimeout(() => {
-    showUnsupported.value = false
-  }, 3000)
+  unsupportedTimer = setTimeout(() => { showUnsupported.value = false }, 3000)
 }
 
 function dismissUnsupported() {
@@ -193,35 +156,20 @@ function dismissUnsupported() {
 }
 
 function goToTool() {
-  if (unsupportedTarget.value) {
-    router.push(getToolPath(unsupportedTarget.value))
-  }
+  if (unsupportedTarget.value) router.push(getToolPath(unsupportedTarget.value))
   dismissUnsupported()
 }
 
 // KeepAlive: 每次 activated 時檢查 pending file
 onActivated(() => {
   const pending = filesStore.consumePendingFile()
-  if (pending) {
-    setFile(pending.file, pending.sourceDir)
-  }
+  if (pending) setFile(pending.file, pending.sourceDir)
 })
 
-// 清理
 onBeforeUnmount(() => {
-  if (previewUrl.value) {
-    URL.revokeObjectURL(previewUrl.value)
-  }
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   if (unsupportedTimer) clearTimeout(unsupportedTimer)
 })
-
-function selectFunction(id: string) {
-  emit('select-function', id)
-}
-
-function handleExecute() {
-  emit('execute')
-}
 </script>
 
 <template>
@@ -233,8 +181,8 @@ function handleExecute() {
           v-for="fn in subFunctions"
           :key="fn.id"
           class="function-item"
-          :class="{ active: currentFunction === fn.id, 'coming-soon': fn.comingSoon }"
-          @click="selectFunction(fn.id)"
+          :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon }"
+          @click="emit('select-function', fn.id)"
         >
           <i :class="['bi', fn.icon]"></i>
           <span>{{ fn.name }}</span>
@@ -247,22 +195,19 @@ function handleExecute() {
     <main class="preview-area">
       <!-- 右上角直排按鈕群（有檔案才顯示） -->
       <div v-if="hasFile" class="preview-toolbar">
-        <button
-          class="toolbar-btn remove-btn"
-          data-tooltip="移除檔案"
-          @click="removeFile"
-        >
+        <button class="toolbar-btn remove-btn" data-tooltip="移除檔案" @click="removeFile">
           <i class="bi bi-x-lg"></i>
         </button>
         <button
           class="toolbar-btn compare-btn"
-          :class="{ active: isComparing, disabled: !canShowResult }"
+          :class="{ 'is-active': isComparing, disabled: !canShowResult }"
           :disabled="!canShowResult"
           data-tooltip="比對原圖與成果"
           @click="canShowResult && toggleCompare()"
         >
           <i class="bi bi-layout-split"></i>
         </button>
+        <slot name="toolbar-extra" />
         <button
           class="toolbar-btn download-btn"
           :class="{ disabled: !canShowResult }"
@@ -283,30 +228,24 @@ function handleExecute() {
       </div>
 
       <!-- 預覽模式切換 (for non-image views) -->
-      <div class="preview-tabs" v-if="hasFile && !props.hidePreviewTabs">
+      <div v-if="hasFile && !props.hidePreviewTabs" class="preview-tabs">
         <button
           class="preview-tab"
-          :class="{ active: previewMode === 'original' }"
+          :class="{ 'is-active': previewMode === 'original' }"
           @click="previewMode = 'original'"
-        >
-          原圖
-        </button>
+        >原圖</button>
         <button
           class="preview-tab"
-          :class="{ active: previewMode === 'result', disabled: !canShowResult }"
+          :class="{ 'is-active': previewMode === 'result', disabled: !canShowResult }"
           :disabled="!canShowResult"
           @click="previewMode = 'result'"
-        >
-          成果
-        </button>
+        >成果</button>
         <button
           class="preview-tab"
-          :class="{ active: previewMode === 'compare', disabled: !canShowResult }"
+          :class="{ 'is-active': previewMode === 'compare', disabled: !canShowResult }"
           :disabled="!canShowResult"
           @click="previewMode = 'compare'"
-        >
-          並排比對
-        </button>
+        >並排比對</button>
       </div>
 
       <!-- 預覽內容 -->
@@ -317,18 +256,12 @@ function handleExecute() {
         @drop="handleDrop"
       >
         <!-- 不支援類型 overlay -->
-        <Transition name="overlay-fade">
-          <div v-if="showUnsupported" class="unsupported-overlay" @click.self="dismissUnsupported">
-            <div class="unsupported-card">
-              <i class="bi bi-exclamation-triangle"></i>
-              <p>此工具不支援此檔案格式</p>
-              <button v-if="unsupportedTarget" class="goto-btn" @click="goToTool">
-                前往{{ getToolLabel(unsupportedTarget) }}
-              </button>
-              <button class="dismiss-btn" @click="dismissUnsupported">關閉</button>
-            </div>
-          </div>
-        </Transition>
+        <UnsupportedFileOverlay
+          :visible="showUnsupported"
+          :target="unsupportedTarget"
+          @dismiss="dismissUnsupported"
+          @go-to-tool="goToTool"
+        />
 
         <!-- 拖曳 hover 效果 -->
         <div v-if="isDragOver" class="drag-hover-overlay">
@@ -341,37 +274,17 @@ function handleExecute() {
           v-if="!hasFile"
           :icon="uploadIcon"
           :label="uploadLabel"
+          :hint="uploadHint"
           :accept="uploadAccept"
           @file="handleUploadFile"
         />
 
         <!-- Slider 比對模式 -->
-        <div
+        <ComparisonSlider
           v-else-if="isComparing && resultPreviewUrl"
-          ref="compareContainerRef"
-          class="compare-slider-container"
-        >
-          <img :src="previewUrl!" alt="原圖" class="compare-img compare-img-original" />
-          <img
-            :src="resultPreviewUrl"
-            alt="成果"
-            class="compare-img compare-img-result"
-            :style="{ clipPath: `inset(0 0 0 ${sliderPosition}%)` }"
-          />
-          <div
-            class="slider-handle"
-            :style="{ left: `${sliderPosition}%` }"
-            @mousedown="startSliderDrag"
-            @touchstart="startSliderDrag"
-          >
-            <div class="slider-line"></div>
-            <div class="slider-grip">
-              <i class="bi bi-grip-vertical"></i>
-            </div>
-          </div>
-          <span class="compare-label compare-label-left">原圖</span>
-          <span class="compare-label compare-label-right">成果</span>
-        </div>
+          :original-url="previewUrl!"
+          :result-url="resultPreviewUrl"
+        />
 
         <!-- 有檔案時顯示預覽 slot -->
         <slot
@@ -386,6 +299,11 @@ function handleExecute() {
             <p>請選擇或拖曳檔案</p>
           </div>
         </slot>
+      </div>
+
+      <!-- 資訊列（與右側 execute-section 同層對齊） -->
+      <div v-if="hasFile" class="preview-info-bar">
+        <slot name="info-bar" />
       </div>
     </main>
 
@@ -402,7 +320,7 @@ function handleExecute() {
         <button
           class="execute-btn"
           :disabled="executeDisabled"
-          @click="handleExecute"
+          @click="emit('execute')"
         >
           <span v-if="executeLoading" class="spinner-border spinner-border-sm me-2"></span>
           <i v-else class="bi bi-play-fill me-2"></i>
@@ -457,21 +375,12 @@ function handleExecute() {
   transition: all 0.15s ease;
   text-align: left;
 
-  i {
-    font-size: 1.1rem;
-    width: 22px;
-  }
+  i    { font-size: 1.1rem; width: 22px; }
+  span { font-size: 0.9rem; }
 
-  span {
-    font-size: 0.9rem;
-  }
+  &:hover { color: var(--text-primary); background: var(--panel-bg-hover); }
 
-  &:hover {
-    color: var(--text-primary);
-    background: var(--panel-bg-hover);
-  }
-
-  &.active {
+  &.is-active {
     color: var(--text-primary);
     background: var(--panel-bg-active);
 
@@ -487,9 +396,7 @@ function handleExecute() {
     }
   }
 
-  &.coming-soon {
-    opacity: 0.5;
-  }
+  &.coming-soon { opacity: 0.5; }
 }
 
 .coming-badge {
@@ -528,7 +435,8 @@ function handleExecute() {
   gap: 0.35rem;
 }
 
-.toolbar-btn {
+.toolbar-btn,
+:slotted(.toolbar-btn) {
   position: relative;
   width: 32px;
   height: 32px;
@@ -544,14 +452,9 @@ function handleExecute() {
   transition: all 0.15s ease;
   opacity: 0.75;
 
-  &:hover:not(:disabled) {
-    opacity: 1;
-  }
+  &:hover:not(:disabled) { opacity: 1; }
 
-  &.disabled, &:disabled {
-    opacity: 0.25;
-    cursor: not-allowed;
-  }
+  &.disabled, &:disabled { opacity: 0.25; cursor: not-allowed; }
 
   // Tooltip — 左側浮出
   &::after {
@@ -574,9 +477,7 @@ function handleExecute() {
     transition: opacity 0.15s ease;
   }
 
-  &:hover:not(:disabled)::after {
-    opacity: 1;
-  }
+  &:hover:not(:disabled)::after { opacity: 1; }
 
   &.remove-btn:hover:not(:disabled) {
     background: rgba(220, 53, 69, 0.75);
@@ -585,7 +486,7 @@ function handleExecute() {
   }
 
   &.compare-btn:hover:not(:disabled),
-  &.compare-btn.active {
+  &.compare-btn.is-active {
     background: rgba(96, 165, 250, 0.25);
     border-color: rgba(96, 165, 250, 0.5);
     color: #60a5fa;
@@ -602,92 +503,6 @@ function handleExecute() {
     background: rgba(251, 191, 36, 0.2);
     border-color: rgba(251, 191, 36, 0.4);
     color: #fbbf24;
-  }
-}
-
-// Slider 比對
-.compare-slider-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  user-select: none;
-}
-
-.compare-img {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.compare-img-original {
-  z-index: 1;
-}
-
-.compare-img-result {
-  z-index: 2;
-}
-
-.slider-handle {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: 3;
-  width: 4px;
-  transform: translateX(-50%);
-  cursor: col-resize;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.slider-line {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: rgba(255, 255, 255, 0.8);
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
-}
-
-.slider-grip {
-  position: relative;
-  z-index: 4;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 50%;
-  color: #333;
-  font-size: 0.9rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-.compare-label {
-  position: absolute;
-  bottom: 1rem;
-  z-index: 5;
-  padding: 0.25rem 0.75rem;
-  background: rgba(0, 0, 0, 0.6);
-  border-radius: 4px;
-  color: white;
-  font-size: 0.75rem;
-  pointer-events: none;
-
-  &-left {
-    left: 1rem;
-  }
-
-  &-right {
-    right: 1rem;
   }
 }
 
@@ -708,20 +523,9 @@ function handleExecute() {
   cursor: pointer;
   transition: all 0.15s ease;
 
-  &:hover:not(.disabled) {
-    background: var(--panel-bg-hover);
-    color: var(--text-primary);
-  }
-
-  &.active {
-    background: var(--panel-bg-active);
-    color: var(--text-primary);
-  }
-
-  &.disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
+  &:hover:not(.disabled) { background: var(--panel-bg-hover); color: var(--text-primary); }
+  &.is-active { background: var(--panel-bg-active); color: var(--text-primary); }
+  &.disabled { opacity: 0.4; cursor: not-allowed; }
 }
 
 .preview-content {
@@ -738,95 +542,8 @@ function handleExecute() {
   text-align: center;
   color: var(--text-muted);
 
-  i {
-    font-size: 4rem;
-    margin-bottom: 1rem;
-  }
-
-  p {
-    font-size: 1rem;
-  }
-}
-
-// 不支援 overlay
-.unsupported-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.unsupported-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 2rem 2.5rem;
-  background: var(--panel-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--panel-border);
-  border-radius: 16px;
-  text-align: center;
-
-  > i {
-    font-size: 2.5rem;
-    color: var(--color-warning);
-  }
-
-  > p {
-    color: var(--text-primary);
-    font-size: 1rem;
-    margin: 0;
-  }
-}
-
-.goto-btn {
-  padding: 0.5rem 1.25rem;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 0.85rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(124, 111, 173, 0.4);
-  }
-}
-
-.dismiss-btn {
-  padding: 0.35rem 1rem;
-  background: transparent;
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:hover {
-    color: var(--text-primary);
-    border-color: var(--text-muted);
-  }
-}
-
-.overlay-fade-enter-active,
-.overlay-fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.overlay-fade-enter-from,
-.overlay-fade-leave-to {
-  opacity: 0;
+  i { font-size: 4rem; margin-bottom: 1rem; }
+  p { font-size: 1rem; }
 }
 
 // 拖曳 hover
@@ -844,16 +561,8 @@ function handleExecute() {
   border-radius: 8px;
   pointer-events: none;
 
-  i {
-    font-size: 2.5rem;
-    color: var(--color-accent);
-  }
-
-  p {
-    color: var(--color-accent);
-    font-size: 0.95rem;
-    margin: 0;
-  }
+  i { font-size: 2.5rem; color: var(--color-accent); }
+  p { color: var(--color-accent); font-size: 0.95rem; margin: 0; }
 }
 
 // 右側設定面板
@@ -881,30 +590,41 @@ function handleExecute() {
   border-top: 1px solid var(--panel-border);
 }
 
+.preview-info-bar {
+  min-height: 4.85rem;
+  padding: 1rem;
+  border-top: 1px solid var(--panel-border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+
+  :deep(.media-info-bar) {
+    border-top: none;
+    padding: 0;
+  }
+}
+
 .execute-btn {
   width: 100%;
   padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+  background: var(--color-primary);
   border: none;
   border-radius: 8px;
   color: white;
   font-size: 0.9rem;
   font-weight: 500;
+  font-family: inherit;
   cursor: pointer;
   transition: all 0.2s ease;
 
   &:hover:not(:disabled) {
+    background: var(--color-primary-hover);
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(124, 111, 173, 0.4);
   }
 
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
-.text-muted {
-  color: var(--text-muted);
-}
+.text-muted { color: var(--text-muted); }
 </style>
