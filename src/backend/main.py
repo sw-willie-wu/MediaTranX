@@ -17,17 +17,6 @@ if IS_FROZEN:
     if _internal_path not in sys.path:
         sys.path.insert(0, _internal_path)
 
-# --- 相容層：torchvision >= 0.16 移除了 functional_tensor 模組 ---
-import types as _types
-try:
-    import torchvision.transforms.functional_tensor  # noqa: F401
-except ImportError:
-    import torchvision.transforms.functional as _tvf
-    _compat = _types.ModuleType("torchvision.transforms.functional_tensor")
-    for _attr in dir(_tvf):
-        setattr(_compat, _attr, getattr(_tvf, _attr))
-    sys.modules["torchvision.transforms.functional_tensor"] = _compat
-
 from fastapi import FastAPI
 
 # --- 2. 環境與環境路徑注入 (BUILD_STRATEGY.md) ---
@@ -78,6 +67,21 @@ if _appdata:
                                 except Exception: pass
                             break
             except Exception: pass
+
+# --- 相容層：torchvision >= 0.16 移除了 functional_tensor 模組 ---
+# 必須在 sys.path 注入後執行，否則 frozen 模式下找不到 torchvision
+import types as _types
+try:
+    import torchvision.transforms.functional_tensor  # noqa: F401
+except ImportError:
+    try:
+        import torchvision.transforms.functional as _tvf
+        _compat = _types.ModuleType("torchvision.transforms.functional_tensor")
+        for _attr in dir(_tvf):
+            setattr(_compat, _attr, getattr(_tvf, _attr))
+        sys.modules["torchvision.transforms.functional_tensor"] = _compat
+    except ImportError:
+        pass  # torchvision 尚未安裝，跳過相容層
 
 # CUDA DLL 路徑注入 (Windows)
 if sys.platform == "win32" and _appdata:

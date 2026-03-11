@@ -114,14 +114,13 @@ class DocumentPdfConvertService:
         }
 
     def _extract_pdf_text(self, path: Path, progress_callback) -> str:
-        import fitz  # pymupdf
-        doc = fitz.open(str(path))
+        import pypdf
+        reader = pypdf.PdfReader(str(path))
         parts = []
-        total = len(doc)
-        for i, page in enumerate(doc):
-            parts.append(page.get_text())
+        total = len(reader.pages)
+        for i, page in enumerate(reader.pages):
+            parts.append(page.extract_text() or "")
             progress_callback(0.1 + (i + 1) / total * 0.8, f"提取頁面 {i+1}/{total}...")
-        doc.close()
         return "\n\n".join(p.strip() for p in parts if p.strip())
 
     def _extract_docx_text(self, path: Path, progress_callback) -> str:
@@ -135,15 +134,17 @@ class DocumentPdfConvertService:
         return text  # 純文字已夠可讀，直接回傳
 
     def _pdf_to_images(self, src_path: Path, output_path: Path, progress_callback):
-        import fitz
-        doc = fitz.open(str(src_path))
+        import pypdfium2
+        doc = pypdfium2.PdfDocument(str(src_path))
         total = len(doc)
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for i, page in enumerate(doc):
-                mat = fitz.Matrix(2.0, 2.0)
-                pix = page.get_pixmap(matrix=mat)
-                zf.writestr(f"page_{i + 1:03d}.png", pix.tobytes("png"))
+                bitmap = page.render(scale=2.0)
+                img = bitmap.to_pil()
+                img_buf = io.BytesIO()
+                img.save(img_buf, format="PNG")
+                zf.writestr(f"page_{i + 1:03d}.png", img_buf.getvalue())
                 progress_callback(0.1 + (i + 1) / total * 0.85, f"渲染頁面 {i+1}/{total}...")
         doc.close()
         output_path.write_bytes(buf.getvalue())

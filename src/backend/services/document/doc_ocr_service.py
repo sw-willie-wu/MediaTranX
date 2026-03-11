@@ -126,16 +126,19 @@ class DocumentOcrService:
         }
 
     def _ocr_pdf(self, src_path: Path, model_id, size, quantization, fmt, progress_callback) -> str:
-        import fitz
-        doc = fitz.open(str(src_path))
+        import io as _io
+        import pypdfium2
+        doc = pypdfium2.PdfDocument(str(src_path))
         total = len(doc)
         page_results = []
 
         for i, page in enumerate(doc):
             progress_callback(0.1 + i / total * 0.85, f"辨識頁面 {i+1}/{total}...")
-            mat = fitz.Matrix(2.0, 2.0)
-            pix = page.get_pixmap(matrix=mat)
-            img_bytes = pix.tobytes("png")
+            bitmap = page.render(scale=2.0)
+            img = bitmap.to_pil()
+            img_buf = _io.BytesIO()
+            img.save(img_buf, format="PNG")
+            img_bytes = img_buf.getvalue()
 
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 tmp.write(img_bytes)
