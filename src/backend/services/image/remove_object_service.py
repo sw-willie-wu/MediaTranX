@@ -4,7 +4,6 @@ AI 物件移除服務（MobileSAM + LaMa Inpainting）
 import base64
 import io
 import logging
-import numpy as np
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
@@ -82,6 +81,7 @@ class ImageRemoveObjectService:
 
     def _run_inpaint(self, image_pil: Image.Image, mask_pil: Image.Image) -> Image.Image:
         """用 LaMa 填補遮罩區域（裁切包圍框處理，支援大圖），fallback 至 OpenCV。"""
+        import numpy as np
         LAMA_MAX_SIZE = 1024  # LaMa 最大處理邊長
 
         try:
@@ -163,7 +163,8 @@ class ImageRemoveObjectService:
             result_bgr = cv2.inpaint(img_bgr, mask_cv, 10, cv2.INPAINT_TELEA)
             return Image.fromarray(cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB))
 
-    def _decode_mask(self, mask_data: str, target_w: int, target_h: int) -> np.ndarray:
+    def _decode_mask(self, mask_data: str, target_w: int, target_h: int):
+        import numpy as np
         if "," in mask_data:
             mask_data = mask_data.split(",")[1]
         mask_bytes = base64.b64decode(mask_data)
@@ -171,7 +172,8 @@ class ImageRemoveObjectService:
         mask_img = mask_img.resize((target_w, target_h), Image.NEAREST)
         return np.array(mask_img)
 
-    def _refine_with_sam(self, image_rgb: np.ndarray, rough_mask: np.ndarray) -> np.ndarray:
+    def _refine_with_sam(self, image_rgb, rough_mask):
+        import numpy as np
         from mobile_sam import SamPredictor
 
         predictor = SamPredictor(self._load_sam())
@@ -196,6 +198,8 @@ class ImageRemoveObjectService:
         mask_data = params["mask_data"]
 
         file_info = self._file_service.get_file(file_id)
+
+        import numpy as np
 
         with Image.open(file_info.file_path) as img:
             img = img.convert("RGB").copy()
