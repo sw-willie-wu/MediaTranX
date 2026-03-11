@@ -24,23 +24,21 @@ output/
 test_*.py
 test_*.txt
 
-# Build output
+# Build artifacts
 src/backend/static/
-build/dist/
-build/work/
-build/*
-src/frontend/dist_electron/
 
 # Binaries (keep README)
 bin/**/*.exe
 bin/**/*.dll
+bin/**/*.so
 models/
 
-# Env
-.env*
+# Env (保留 .env.production)
+.env
+.env.local
+.env.*.local
 
 # Agents
 .claude/
 CLAUDE.md
 .gemini/
-nul
