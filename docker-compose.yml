@@ -8,7 +8,7 @@ services:
     volumes:
       - ./models:/app/models
       - ./data:/app/data
-      - ./bin:/app/bin
+      - ./backend/bin:/app/bin
     environment:
       - PYTHONUNBUFFERED=1
     deploy:
@@ -21,7 +21,8 @@ services:
 
   frontend:
     build:
-      context: ./src/frontend
+      context: ./frontend
+      dockerfile: ../Dockerfile.frontend
     ports:
       - "8000:8000"
     depends_on:
