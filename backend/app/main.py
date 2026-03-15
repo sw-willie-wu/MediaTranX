@@ -115,7 +115,7 @@ if IS_FROZEN:
 # --- 3. 啟動診斷 (Diagnostic) ---
 if IS_FROZEN:
     try:
-        from app.core.ai.model_manager import get_model_manager
+        from app.engine.ai.model_manager import get_model_manager
         llama_ok = get_model_manager().is_llama_ready()
         logging.info(f"Startup Diagnostic: llama-server binary {'found' if llama_ok else 'NOT found'}")
     except Exception as e:

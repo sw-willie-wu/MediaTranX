@@ -13,7 +13,7 @@ from typing import Dict, Optional
 from uuid import uuid4
 
 from app.api.schemas.common import FileInfo
-from app.core.paths import get_temp_dir, get_output_dir
+from app.engine.paths import get_temp_dir, get_output_dir
 
 logger = logging.getLogger(__name__)
 

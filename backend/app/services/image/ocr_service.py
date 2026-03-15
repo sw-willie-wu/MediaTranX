@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.core.ai.ocr import get_vlm_ocr, DEFAULT_VLM_MODEL
+from app.engine.ai.llama.vlm import get_vlm_ocr, DEFAULT_VLM_MODEL
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 

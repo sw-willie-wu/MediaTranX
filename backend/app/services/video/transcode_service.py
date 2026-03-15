@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
-from app.core.ffmpeg import (
+from app.engine.ffmpeg import (
     FFmpeg,
     FFmpegError,
     TranscodeOptions,

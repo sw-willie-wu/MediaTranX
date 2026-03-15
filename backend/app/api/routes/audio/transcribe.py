@@ -18,7 +18,7 @@ class AudioTranscribeResponse(BaseModel):
 @router.get("/transcribe/languages")
 async def get_transcribe_languages():
     """取得 Whisper 支援的語言列表"""
-    from app.core.ai.translate.base import WHISPER_LANGUAGE_OPTIONS
+    from app.engine.ai.base.translate import WHISPER_LANGUAGE_OPTIONS
     return WHISPER_LANGUAGE_OPTIONS
 
 

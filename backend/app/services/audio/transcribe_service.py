@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.core.ai.whisper import WhisperWrapper, get_whisper, TranscribeResult
+from app.engine.ai.bin.whisper import WhisperWrapper, get_whisper, TranscribeResult
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 

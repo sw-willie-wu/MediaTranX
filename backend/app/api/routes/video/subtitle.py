@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.services.video.subtitle_service import get_subtitle_service
-from app.core.ai.translate import SUPPORTED_LANGUAGES, get_translategemma, get_translator
+from app.engine.ai.llama import SUPPORTED_LANGUAGES, get_translategemma, get_translator
 
 router = APIRouter()
 
@@ -153,7 +153,7 @@ async def test_translate(request: TranslateTestRequest):
     測試翻譯（開發用）— 使用 llama-server messages API
     """
     try:
-        from app.core.ai.translate.base import LANG_NAMES_EN
+        from app.engine.ai.base.translate import LANG_NAMES_EN
         tg = get_translategemma()
         source_name = LANG_NAMES_EN.get(request.source_language, request.source_language)
         target_name = LANG_NAMES_EN.get(request.target_language, request.target_language)

@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
-from app.core.ffmpeg import FFmpeg, FFmpegError, get_ffmpeg
-from app.core.ai.whisper import WhisperWrapper, get_whisper, TranscribeResult
-from app.core.ai.translate import get_translator
+from app.engine.ffmpeg import FFmpeg, FFmpegError, get_ffmpeg
+from app.engine.ai.bin.whisper import WhisperWrapper, get_whisper, TranscribeResult
+from app.engine.ai.llama import get_translator
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 
@@ -245,7 +245,7 @@ class SubtitleService:
 
             # === GPU 排隊管線 ===
             # 同時只有一個任務使用 GPU，模型用完即卸載
-            from app.core.ai.model_manager import get_model_manager
+            from app.engine.ai.model_manager import get_model_manager
             manager = get_model_manager()
 
             with manager.gpu_session():
@@ -271,7 +271,7 @@ class SubtitleService:
                 # Whisper 已在 transcribe() 的 finally 中自動卸載
 
                 # === 階段 3 (選用): 翻譯字幕 (70~95%) ===
-                from app.core.ai.whisper import TranscribeSegment
+                from app.engine.ai.bin.whisper import TranscribeSegment
 
                 # 保存原始 segments（用於翻譯時輸出雙語字幕）
                 original_segments = list(result.segments)
@@ -338,7 +338,7 @@ class SubtitleService:
                 source_path = output_dir_path / source_filename
 
                 # 建立原始語言的 result（使用翻譯前的 segments）
-                from app.core.ai.whisper import TranscribeResult
+                from app.engine.ai.bin.whisper import TranscribeResult
                 original_result = TranscribeResult(
                     language=result.language,
                     language_probability=result.language_probability,

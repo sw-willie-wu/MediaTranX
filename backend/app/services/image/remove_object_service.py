@@ -11,7 +11,7 @@ from PIL import Image
 
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
-from app.core.paths import get_models_dir
+from app.engine.paths import get_models_dir
 
 logger = logging.getLogger(__name__)
 

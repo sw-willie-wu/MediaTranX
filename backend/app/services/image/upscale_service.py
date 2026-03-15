@@ -93,11 +93,11 @@ class ImageUpscaleService:
         upscale_family, upscale_variant = _parse_model_id(model_id, _UPSCALE_FAMILIES)
         progress_callback(0.05, f"正在載入模型: {model_id}...")
 
-        from app.core.ai.upscale import get_upscaler
+        from app.engine.ai.pth import get_upscaler
         upscaler = get_upscaler(upscale_family)
 
         # 查詢模型的原生 scale
-        from app.core.ai.registry import MODELS_REGISTRY, FORMAT_PTH
+        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
         native_scale = MODELS_REGISTRY.get(FORMAT_PTH, {}).get(upscale_family, {}).get(
             "variants", {}
         ).get(upscale_variant, {}).get("scale", 4)
@@ -134,7 +134,7 @@ class ImageUpscaleService:
                 face_upscale = params.get("face_restore_upscale", 2)
                 progress_callback(0.75, f"正在載入人臉修復模型: {face_restore_model_id}...")
 
-                from app.core.ai.face_restore import get_face_restorer
+                from app.engine.ai.pth import get_face_restorer
                 restorer = get_face_restorer(face_family)
 
                 restore_kwargs: dict = {"model_id": face_variant, "on_progress": lambda p, m: progress_callback(0.75 + p * 0.15, m)}

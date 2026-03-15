@@ -2,7 +2,7 @@
 健康檢查端點
 """
 from fastapi import APIRouter
-from app.core.device import get_device_info, refresh_device_cache
+from app.engine.device import get_device_info, refresh_device_cache
 
 router = APIRouter()
 

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.services.video.transcode_service import get_transcode_service
-from app.core.ffmpeg import FFmpeg
+from app.engine.ffmpeg import FFmpeg
 
 router = APIRouter()
 

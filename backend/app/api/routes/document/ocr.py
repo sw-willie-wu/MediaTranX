@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.ai.ocr import DEFAULT_VLM_MODEL
+from app.engine.ai.llama.vlm import DEFAULT_VLM_MODEL
 from app.services.document.doc_ocr_service import get_doc_ocr_service
 
 router = APIRouter()
