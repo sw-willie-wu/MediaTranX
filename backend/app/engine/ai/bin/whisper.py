@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from .base import BINRuntime
-from .registry import SLOT_WHISPER, FORMAT_BIN, MODELS_REGISTRY
+from app.engine.ai.base import BINRuntime
+from app.engine.ai.registry import SLOT_WHISPER, FORMAT_BIN, MODELS_REGISTRY
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class WhisperWrapper(BINRuntime):
         """查詢模型狀態"""
         model_path = self._manager.get_model_path("whisper", model_size)
         
-        from app.core.paths import get_base_data_dir
+        from app.engine.paths import get_base_data_dir
         venv_fw = get_base_data_dir() / ".venv" / "Lib" / "site-packages" / "faster_whisper"
         available = venv_fw.is_dir()
 

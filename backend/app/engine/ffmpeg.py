@@ -10,7 +10,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Optional
 
-from app.core.paths import get_ffmpeg_dir
+from app.engine.paths import get_ffmpeg_dir
 
 
 class VideoCodec(str, Enum):

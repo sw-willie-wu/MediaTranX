@@ -5,8 +5,8 @@ Qwen3 翻譯模組（LlamaServerRuntime 版）
 import logging
 from typing import Optional
 
-from app.core.ai.registry import SLOT_LLM
-from .base import (
+from app.engine.ai.registry import SLOT_LLM
+from app.engine.ai.base.translate import (
     BaseTranslator,
     LANG_NAMES_EN,
     LANG_NAMES_ZH,

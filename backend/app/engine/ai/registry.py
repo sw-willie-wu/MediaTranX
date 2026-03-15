@@ -37,28 +37,33 @@ MODELS_REGISTRY = {
             "variants": {
                 "tiny": {
                     "repo_id": "Systran/faster-whisper-tiny",
+                    "size_mb": 75,
                     "vram_mb": 500,
-                    "description": "極速辨識 (150MB)",
+                    "description": "極速辨識",
                 },
                 "base": {
                     "repo_id": "Systran/faster-whisper-base",
+                    "size_mb": 145,
                     "vram_mb": 700,
-                    "description": "快速辨識 (300MB)",
+                    "description": "快速辨識",
                 },
                 "small": {
                     "repo_id": "Systran/faster-whisper-small",
+                    "size_mb": 465,
                     "vram_mb": 1500,
-                    "description": "平衡辨識 (500MB)",
+                    "description": "輕量辨識",
                 },
                 "medium": {
-                    "repo_id": "Systran/faster-whisper-medium", 
+                    "repo_id": "Systran/faster-whisper-medium",
+                    "size_mb": 1534,
                     "vram_mb": 3000,
-                    "description": "精準辨識 (1.5GB)",
+                    "description": "精準辨識",
                 },
                 "large-v3": {
                     "repo_id": "Systran/faster-whisper-large-v3",
+                    "size_mb": 3072,
                     "vram_mb": 5000,
-                    "description": "最精準辨識 (3GB)",
+                    "description": "最精準辨識",
                 },
             },
         },
@@ -225,6 +230,7 @@ MODELS_REGISTRY = {
                 "x2plus": {
                     "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth",
                     "filename": "RealESRGAN_x2plus.pth",
+                    "size_mb": 64,
                     "vram_mb": 1500,
                     "scale": 2,
                     "arch": "RRDBNet",
@@ -232,6 +238,7 @@ MODELS_REGISTRY = {
                 "x4plus": {
                     "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
                     "filename": "RealESRGAN_x4plus.pth",
+                    "size_mb": 64,
                     "vram_mb": 2000,
                     "scale": 4,
                     "arch": "RRDBNet",
@@ -239,6 +246,7 @@ MODELS_REGISTRY = {
                 "x4plus-anime": {
                     "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
                     "filename": "RealESRGAN_x4plus_anime_6B.pth",
+                    "size_mb": 18,
                     "vram_mb": 2000,
                     "scale": 4,
                     "arch": "RRDBNet",
@@ -254,18 +262,21 @@ MODELS_REGISTRY = {
                 "lightweight-x4": {
                     "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth",
                     "filename": "SwinIR-S_Lightweight_x4.pth",
+                    "size_mb": 12,
                     "vram_mb": 1800,
                     "scale": 4,
                 },
                 "classical-x4": {
                     "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DIV2K_s48w8_SwinIR-M_x4.pth",
                     "filename": "SwinIR-M_Classical_x4.pth",
+                    "size_mb": 28,
                     "vram_mb": 2500,
                     "scale": 4,
                 },
                 "realworld-x4": {
                     "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth",
                     "filename": "SwinIR-L_RealWorld_x4.pth",
+                    "size_mb": 129,
                     "vram_mb": 3500,
                     "scale": 4,
                 },
@@ -280,6 +291,7 @@ MODELS_REGISTRY = {
                 "default": {
                     "url": "https://github.com/cszn/KAIR/releases/download/v1.0/BSRGAN.pth",
                     "filename": "BSRGAN.pth",
+                    "size_mb": 64,
                     "vram_mb": 2200,
                     "scale": 4,
                 },
@@ -298,6 +310,7 @@ MODELS_REGISTRY = {
                     "filename": "real-cugan-up2x-conservative.pth",
                     "unzip": True,
                     "archive_path": "updated_weights/up2x-latest-conservative.pth",
+                    "size_mb": 16,
                     "vram_mb": 1200,
                     "scale": 2,
                     "denoise_level": 0,
@@ -307,6 +320,7 @@ MODELS_REGISTRY = {
                     "filename": "real-cugan-up2x-denoise3x.pth",
                     "unzip": True,
                     "archive_path": "updated_weights/up2x-latest-denoise3x.pth",
+                    "size_mb": 16,
                     "vram_mb": 1200,
                     "scale": 2,
                     "denoise_level": 3,
@@ -316,6 +330,7 @@ MODELS_REGISTRY = {
                     "filename": "real-cugan-up2x-no-denoise.pth",
                     "unzip": True,
                     "archive_path": "updated_weights/up2x-latest-no-denoise.pth",
+                    "size_mb": 16,
                     "vram_mb": 1000,
                     "scale": 2,
                     "denoise_level": -1,
@@ -325,6 +340,7 @@ MODELS_REGISTRY = {
                     "filename": "real-cugan-up3x-conservative.pth",
                     "unzip": True,
                     "archive_path": "updated_weights/up3x-latest-conservative.pth",
+                    "size_mb": 16,
                     "vram_mb": 1500,
                     "scale": 3,
                     "denoise_level": 0,
@@ -334,6 +350,7 @@ MODELS_REGISTRY = {
                     "filename": "real-cugan-up3x-no-denoise.pth",
                     "unzip": True,
                     "archive_path": "updated_weights/up3x-latest-no-denoise.pth",
+                    "size_mb": 16,
                     "vram_mb": 1300,
                     "scale": 3,
                     "denoise_level": -1,
@@ -343,6 +360,7 @@ MODELS_REGISTRY = {
                     "filename": "real-cugan-up4x-conservative.pth",
                     "unzip": True,
                     "archive_path": "updated_weights/up4x-latest-conservative.pth",
+                    "size_mb": 16,
                     "vram_mb": 1800,
                     "scale": 4,
                     "denoise_level": 0,
@@ -352,6 +370,7 @@ MODELS_REGISTRY = {
                     "filename": "real-cugan-up4x-no-denoise.pth",
                     "unzip": True,
                     "archive_path": "updated_weights/up4x-latest-no-denoise.pth",
+                    "size_mb": 16,
                     "vram_mb": 1600,
                     "scale": 4,
                     "denoise_level": -1,
@@ -367,11 +386,12 @@ MODELS_REGISTRY = {
                 "default": {
                     "url": "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth",
                     "filename": "codeformer.pth",
+                    "size_mb": 357,
                     "vram_mb": 2500,
                 },
             },
         },
-        
+
         # ▸ GFPGAN
         "gfpgan": {
             "slot": "gfpgan",
@@ -380,11 +400,12 @@ MODELS_REGISTRY = {
                 "v1.4": {
                     "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth",
                     "filename": "GFPGANv1.4.pth",
+                    "size_mb": 348,
                     "vram_mb": 2000,
                 },
             },
         },
-        
+
         # ▸ MobileSAM（AI 物件移除用）
         "mobilesam": {
             "slot": "mobilesam",
@@ -393,6 +414,7 @@ MODELS_REGISTRY = {
                 "default": {
                     "url": "https://huggingface.co/dhkim2810/MobileSAM/resolve/main/mobile_sam.pt",
                     "filename": "mobile_sam.pt",
+                    "size_mb": 39,
                     "vram_mb": 500,
                 },
             },
@@ -408,6 +430,7 @@ MODELS_REGISTRY = {
                     "filename": "waifu2x_cunet_art.pth",
                     "unzip": True,
                     "archive_path": "pretrained_models/cunet/art/scale2x.pth",
+                    "size_mb": 17,
                     "vram_mb": 1200,
                     "scale": 2,
                 },

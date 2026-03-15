@@ -32,7 +32,7 @@ class BaseRuntime(ABC):
         self._current_config: Optional[dict] = None
         
         # 延遲 import 避免循環依賴
-        from app.core.ai.model_manager import get_model_manager
+        from app.engine.ai.model_manager import get_model_manager
         self._manager = get_model_manager()
         
         # 註冊卸載回調

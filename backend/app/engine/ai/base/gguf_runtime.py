@@ -41,7 +41,7 @@ class GGUFRuntime(BaseRuntime):
             on_progress(0.2, "正在初始化 llama.cpp...")
         
         from llama_cpp import Llama
-        from app.core.device import has_nvidia_gpu
+        from app.engine.device import has_nvidia_gpu
         
         # 從配置提取參數
         n_ctx = config.get("n_ctx", 2048)
@@ -97,7 +97,7 @@ class GGUFRuntime(BaseRuntime):
         - 需指定 size 與 quantization
         - 從 registry 讀取 layers, n_ctx 等參數
         """
-        from app.core.ai.registry import FORMAT_GGUF, MODELS_REGISTRY
+        from app.engine.ai.registry import FORMAT_GGUF, MODELS_REGISTRY
         
         family = MODELS_REGISTRY[FORMAT_GGUF].get(model_id)
         if not family:

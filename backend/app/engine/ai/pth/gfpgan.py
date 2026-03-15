@@ -9,8 +9,8 @@ from typing import Optional, Callable
 import numpy as np
 from PIL import Image
 
-from ..base import PTHRuntime
-from ..registry import FORMAT_PTH, MODELS_REGISTRY, SLOT_PTH
+from app.engine.ai.base import PTHRuntime
+from app.engine.ai.registry import FORMAT_PTH, MODELS_REGISTRY, SLOT_PTH
 
 logger = logging.getLogger(__name__)
 

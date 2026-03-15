@@ -7,13 +7,13 @@ from .registry import (
     SLOT_LLM,
     SLOT_PTH,
 )
-from .whisper import (
+from .bin import (
     WhisperWrapper,
     get_whisper,
     TranscribeSegment,
     TranscribeResult,
 )
-from .translate import (
+from .llama import (
     BaseTranslator,
     TranslateResult,
     SUPPORTED_LANGUAGES,
@@ -32,6 +32,4 @@ __all__ = [
     "BaseTranslator", "TranslateResult", "SUPPORTED_LANGUAGES", "WHISPER_TO_BCP47",
     "get_translator", "get_translategemma", "get_qwen3",
     "TranslateGemmaWrapper", "Qwen3Wrapper",
-    # upscale: import lazily via backend.core.ai.upscale
 ]
-

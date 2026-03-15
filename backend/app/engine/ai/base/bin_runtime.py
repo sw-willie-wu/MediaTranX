@@ -46,7 +46,7 @@ class BINRuntime(BaseRuntime):
             on_progress(0.2, "正在初始化 CTranslate2...")
         
         from faster_whisper import WhisperModel
-        from app.core.device import get_device, get_compute_type
+        from app.engine.device import get_device, get_compute_type
         
         device = config.get("device", get_device())
         compute_type = config.get("compute_type", get_compute_type())
@@ -94,7 +94,7 @@ class BINRuntime(BaseRuntime):
         - 是目錄（非單檔）
         - 從 HuggingFace 下載完整 snapshot
         """
-        from app.core.ai.registry import FORMAT_BIN, MODELS_REGISTRY
+        from app.engine.ai.registry import FORMAT_BIN, MODELS_REGISTRY
         
         family = MODELS_REGISTRY[FORMAT_BIN].get(model_id)
         if not family:

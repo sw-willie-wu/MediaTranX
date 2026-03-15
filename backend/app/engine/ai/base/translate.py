@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from app.core.ai.model_manager import get_model_manager
+from app.engine.ai.model_manager import get_model_manager
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +172,7 @@ class BaseTranslator:
     MODEL_ID: str = ""      # registry 中的 model_id（如 "qwen3", "translategemma"）
 
     def __init__(self):
-        from app.core.ai.base.llama_server_runtime import LlamaServerRuntime
+        from .llama_server_runtime import LlamaServerRuntime
         self._runtime = LlamaServerRuntime(self.SLOT)
         self._lock = threading.RLock()
         # LlamaServerRuntime.__init__ 已透過 BaseRuntime 自動向 ModelManager 註冊 unloader

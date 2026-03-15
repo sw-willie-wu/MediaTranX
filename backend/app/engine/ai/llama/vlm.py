@@ -7,9 +7,9 @@ import logging
 from pathlib import Path
 from typing import Optional, Callable
 
-from app.core.ai.registry import SLOT_VLM
-from app.core.ai.base.llama_server_runtime import LlamaServerRuntime
-from app.core.ai.model_manager import get_model_manager
+from app.engine.ai.registry import SLOT_VLM
+from app.engine.ai.base.llama_server_runtime import LlamaServerRuntime
+from app.engine.ai.model_manager import get_model_manager
 
 logger = logging.getLogger(__name__)
 

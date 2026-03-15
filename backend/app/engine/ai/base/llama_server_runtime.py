@@ -53,8 +53,8 @@ class LlamaServerRuntime(BaseRuntime):
         config: dict,
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
-        from app.core.device import has_nvidia_gpu
-        from app.core.paths import get_llama_bin_dir
+        from app.engine.device import has_nvidia_gpu
+        from app.engine.paths import get_llama_bin_dir
 
         if on_progress:
             on_progress(0.05, "正在準備 llama-server...")
@@ -125,7 +125,7 @@ class LlamaServerRuntime(BaseRuntime):
             self._port = None
 
     def _resolve_model_path(self, model_id: str, variant: Optional[str] = None):
-        from app.core.ai.registry import FORMAT_GGUF, FORMAT_VLM, MODELS_REGISTRY
+        from app.engine.ai.registry import FORMAT_GGUF, FORMAT_VLM, MODELS_REGISTRY
 
         if model_id in MODELS_REGISTRY.get(FORMAT_GGUF, {}):
             return self._resolve_gguf_path(model_id, variant)
@@ -186,7 +186,7 @@ class LlamaServerRuntime(BaseRuntime):
     # ─────────────────────────────────────────────
 
     def _resolve_gguf_path(self, model_id: str, variant: Optional[str]):
-        from app.core.ai.registry import FORMAT_GGUF, MODELS_REGISTRY
+        from app.engine.ai.registry import FORMAT_GGUF, MODELS_REGISTRY
 
         family = MODELS_REGISTRY[FORMAT_GGUF][model_id]
 
@@ -223,8 +223,8 @@ class LlamaServerRuntime(BaseRuntime):
         return model_path, config
 
     def _resolve_vlm_path(self, model_id: str, variant: Optional[str]):
-        from app.core.ai.registry import FORMAT_VLM, MODELS_REGISTRY
-        from app.core.paths import get_models_dir
+        from app.engine.ai.registry import FORMAT_VLM, MODELS_REGISTRY
+        from app.engine.paths import get_models_dir
 
         family = MODELS_REGISTRY[FORMAT_VLM][model_id]
 

@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Dict, Callable, Set
 
-from app.core.paths import get_models_dir, get_base_data_dir, get_llama_bin_dir
+from app.engine.paths import get_models_dir, get_base_data_dir, get_llama_bin_dir
 from .registry import (
     MODELS_REGISTRY,
     FORMAT_BIN,
@@ -226,12 +226,12 @@ class ModelManager:
             marker = target / "model.bin"
             return target if marker.exists() else None
         
-        # GGUF 格式（單檔型）
+        # GGUF 格式（單檔型，存放於 models/{model_id}/）
         elif fmt == FORMAT_GGUF:
             config = self.get_model_config(model_id, variant)
             if not config or "filename" not in config:
                 return None
-            target = base_dir / config["filename"]
+            target = get_models_dir(model_id) / config["filename"]
             return target if target.exists() else None
         
         # PTH 格式（單檔型）

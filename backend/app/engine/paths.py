@@ -57,7 +57,7 @@ def _get_app_root() -> Path:
     root = os.environ.get('MEDIATRANX_ROOT')
     if root:
         return Path(root)
-    # fallback: __file__ = .../backend/app/core/paths.py
+    # fallback: __file__ = .../backend/app/engine/paths.py
     return Path(__file__).parent.parent.parent
 
 
@@ -148,28 +148,3 @@ def get_output_dir() -> Path:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
-
-def get_static_dir() -> Path:
-    """
-    前端靜態檔目錄
-    Packaged: core_service/backend/static/
-    Dev:      src/backend/static/
-    """
-    if _is_frozen():
-        return Path(sys.executable).parent / "backend" / "static"
-    else:
-        return Path(__file__).parent.parent / "static"
-
-
-# --- Deprecated (即將移除) ---
-def get_waifu2x_dir() -> Path:
-    """[DEPRECATED] 改用純 Python 推理"""
-    return _get_app_root() / "bin" / "waifu2x"
-
-def get_realesrgan_dir() -> Path:
-    """[DEPRECATED] 改用純 Python 推理"""
-    return _get_app_root() / "bin" / "realesrgan"
-
-def get_cuda_dir() -> Path:
-    """[DEPRECATED] CUDA 現在由 uv 管理在 .venv 內"""
-    return get_base_data_dir() / "cuda"

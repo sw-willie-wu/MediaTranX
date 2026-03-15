@@ -263,7 +263,7 @@ class PTHRuntime(BaseRuntime):
         - 單檔 .pth
         - 可能有多個變體（如 x2plus, x4plus）
         """
-        from app.core.ai.registry import FORMAT_PTH, MODELS_REGISTRY
+        from app.engine.ai.registry import FORMAT_PTH, MODELS_REGISTRY
         
         family = MODELS_REGISTRY[FORMAT_PTH].get(model_id)
         if not family:
@@ -281,7 +281,7 @@ class PTHRuntime(BaseRuntime):
         model_path = self._manager.get_model_path(model_id, variant)
         if not model_path:
             # PTH 格式可能是本地檔案（無 repo_id）
-            from app.core.paths import get_models_dir
+            from app.engine.paths import get_models_dir
             local_path = get_models_dir() / family["slot"] / variant_spec["filename"]
             if local_path.exists():
                 model_path = local_path

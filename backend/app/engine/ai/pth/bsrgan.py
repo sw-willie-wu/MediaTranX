@@ -1,7 +1,7 @@
 """
-Real-CUGAN 動漫風格超解析封裝 (Three-Layer Architecture V3)
+BSRGAN 盲超解析封裝 (Three-Layer Architecture V3)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-重構：繼承 PTHRuntime，支援多種去噪等級與放大倍數
+重構：繼承 PTHRuntime，支援 Spandrel 通用載入
 """
 import logging
 from typing import Optional, Callable
@@ -9,49 +9,49 @@ from typing import Optional, Callable
 import numpy as np
 from PIL import Image
 
-from app.core.ai.base import PTHRuntime
-from app.core.ai.registry import FORMAT_PTH, MODELS_REGISTRY, SLOT_PTH
+from app.engine.ai.base import PTHRuntime
+from app.engine.ai.registry import FORMAT_PTH, MODELS_REGISTRY, SLOT_PTH
 
 logger = logging.getLogger(__name__)
 
 
-class RealCUGANWrapper(PTHRuntime):
+class BSRGANWrapper(PTHRuntime):
     """
-    Real-CUGAN 動漫風格超解析封裝
+    BSRGAN 盲超解析封裝
     
     特性：
-    1. 針對動漫/二次元影像優化
-    2. 支援 2x/3x/4x 放大
-    3. 可選去噪等級（-1/0/3）
+    1. 針對真實世界退化影像
+    2. 4x 超解析
+    3. 使用 Spandrel 自動識別架構
     """
     
     def __init__(self):
-        super().__init__(slot="real-cugan", use_spandrel=True)
-        logger.info("RealCUGANWrapper initialized (PTHRuntime + Spandrel)")
+        super().__init__(slot="bsrgan", use_spandrel=True)
+        logger.info("BSRGANWrapper initialized (PTHRuntime + Spandrel)")
     
     def enhance(
         self,
         image: Image.Image,
-        model_id: str = "up4x-conservative",
+        model_id: str = "default",
         scale: int = 4,  # noqa: ARG002
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Image.Image:
         """
-        執行 Real-CUGAN 超解析推理
+        執行 BSRGAN 超解析推理
         
         Args:
             image: 輸入影像
-            model_id: 模型變體（up2x-*/up3x-*/up4x-*）
-            scale: 放大倍數（2/3/4）
+            model_id: 模型變體（目前僅 "default"）
+            scale: 放大倍數（固定為 4）
             on_progress: 進度回調
             
         Returns:
             增強後的影像
         """
         # 獲取 VRAM 需求
-        variant_spec = MODELS_REGISTRY[FORMAT_PTH]["real-cugan"]["variants"].get(model_id)
+        variant_spec = MODELS_REGISTRY[FORMAT_PTH]["bsrgan"]["variants"].get(model_id)
         if not variant_spec:
-            raise ValueError(f"Unknown Real-CUGAN variant: {model_id}")
+            raise ValueError(f"Unknown BSRGAN variant: {model_id}")
         
         vram_needed = variant_spec["vram_mb"]
         self._manager.acquire(SLOT_PTH, required_vram_mb=vram_needed)
@@ -59,7 +59,7 @@ class RealCUGANWrapper(PTHRuntime):
         try:
             # 使用 PTHRuntime 載入模型
             with self.acquire(
-                model_id="real-cugan",
+                model_id="bsrgan",
                 variant=model_id,
                 on_progress=on_progress
             ) as model:
@@ -83,11 +83,11 @@ class RealCUGANWrapper(PTHRuntime):
 # ═══════════════════════════════════════════════════════════
 # 單例工廠函數
 # ═══════════════════════════════════════════════════════════
-_real_cugan: Optional[RealCUGANWrapper] = None
+_bsrgan: Optional[BSRGANWrapper] = None
 
-def get_real_cugan() -> RealCUGANWrapper:
-    """取得 RealCUGANWrapper 單例"""
-    global _real_cugan
-    if _real_cugan is None:
-        _real_cugan = RealCUGANWrapper()
-    return _real_cugan
+def get_bsrgan() -> BSRGANWrapper:
+    """取得 BSRGANWrapper 單例"""
+    global _bsrgan
+    if _bsrgan is None:
+        _bsrgan = BSRGANWrapper()
+    return _bsrgan
