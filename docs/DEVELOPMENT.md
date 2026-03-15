@@ -6,21 +6,13 @@
 
 ## 目錄結構
 
-本專案為雙 repo 架構：`core`（公開）+ `MediaTranX-App`（私有，包含 core 作為 submodule）
-
 ```
-core/                           # 此 repo（公開）
+MediaTranX/
 ├── backend/                    # Python FastAPI 後端
 │   ├── app/                    # 後端主程式
 │   └── pyproject.toml          # Python 依賴（uv 管理）
 ├── frontend/                   # Vue 3 前端（純 Vite，無 Electron）
 └── docs/                       # 文件
-
-MediaTranX-App/                 # 私有 repo
-├── core/                       # ↑ submodule
-├── electron/                   # Electron 主進程（main.js, preload.cjs）
-├── scripts/                    # Build scripts
-└── docs/                       # 私有文件（打包策略等）
 ```
 
 > AI 模型與 `.venv` 存放於 `%APPDATA%/MediaTranX/`，不在專案目錄內。
@@ -450,28 +442,13 @@ def get_mytool_dir() -> Path:
 
 ### 啟動
 
-```bash
-cd electron
-npm run electron
-```
-
-自動啟動：Vite dev server (port 8000) + Python FastAPI (port 8001) + Electron
-
-### 重啟
-
-```bash
-taskkill //F //IM electron.exe
-taskkill //F //IM node.exe
-taskkill //F //IM python.exe
-# 等 2 秒後再啟動
-cd electron && npm run electron
-```
+透過 Electron 主進程啟動（自動帶起 Vite dev server port 8000 + Python FastAPI port 8001）。
 
 ### Python 虛擬環境
 
 ```bash
-# 執行單個腳本（在 core/backend 目錄下）
-cd core/backend
+# 執行單個腳本（在 backend/ 目錄下）
+cd backend
 .venv/Scripts/python.exe <script>
 
 # 確認 import 正常
@@ -483,7 +460,5 @@ cd core/backend
 ## 打包（Production）
 
 - Python 後端：Nuitka 編譯為 `backend.exe`，`engine/paths.py` 的 `_is_frozen()` 自動切換路徑
-- 前端：`npm run build` 產出靜態檔案
-- Electron 打包：`cd electron && npm run build:installer`
+- 前端：`cd frontend && npm run build` 產出靜態檔案
 - 打包後二進位工具路徑：`resources/<tool-name>/`（相對於 `sys.executable` 父目錄的父目錄）
-- 詳細打包策略見私有 repo 的 `docs/BUILD_STRATEGY.md`
