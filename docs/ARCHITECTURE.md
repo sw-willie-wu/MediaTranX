@@ -26,14 +26,14 @@ MediaTranX 採用 **Client-Server** 架構，前後端分離：
 
 1. **API 路由層 (`api/routes/`)**：接收 HTTP 請求、Pydantic 參數驗證，呼叫 Service 層
 2. **Service 業務層 (`services/`)**：協調多個 Core 組件，處理任務提交
-3. **Core 底層封裝 (`core/`)**：
+3. **Engine 底層封裝 (`engine/`)**：
    - **Device**: 硬體自動偵測（CUDA / CPU）
    - **Paths**: 統一路徑管理（相容開發與打包環境）
    - **AI**: 封裝 AI 模型推理
 
 ### 2.2 AI 模型系統（三層架構）
 
-**Registry (`core/ai/registry.py`)**：格式優先樹狀結構，Single Source of Truth
+**Registry (`engine/ai/registry.py`)**：格式優先樹狀結構，Single Source of Truth
 
 ```
 MODELS_REGISTRY[FORMAT][model_id] → { slot, description, variants/specs }
@@ -46,7 +46,7 @@ MODELS_REGISTRY[FORMAT][model_id] → { slot, description, variants/specs }
 | `FORMAT_PTH` | PyTorch 權重（超解析、人臉修復） |
 | `FORMAT_VLM` | VLM（llama-server，雙檔：主模型 + mmproj） |
 
-**Runtime 基礎層 (`core/ai/base/`)**：
+**Runtime 基礎層 (`engine/ai/base/`)**：
 
 | Runtime | 說明 |
 |---|---|
@@ -116,7 +116,7 @@ MODELS_REGISTRY[FORMAT][model_id] → { slot, description, variants/specs }
 
 ## 4. 資料路徑規範
 
-所有路徑透過 `core/paths.py` 管理，優先級：
+所有路徑透過 `engine/paths.py` 管理，優先級：
 
 1. `MEDIATRANX_HOME` 環境變數
 2. `config.json` 中的自定義路徑
@@ -145,7 +145,7 @@ MODELS_REGISTRY[FORMAT][model_id] → { slot, description, variants/specs }
 
 ## 6. 打包與部署
 
-- **Backend**: PyInstaller 封裝 FastAPI 為 `core.exe`
+- **Backend**: Nuitka 編譯 FastAPI 為 `backend.exe`（native binary，原始碼保護）
 - **Frontend**: Vite 建置靜態檔，Electron Builder 打包
 - **Third-party Binaries**: FFmpeg（`bin/ffmpeg/`）、llama-server（`bin/llama/`），打包時移至 `resources/`
 - **生產環境**：Electron 用 `loadFile()` 載入本地 HTML（`file://` 協議），CORS 需包含 `"null"` origin
