@@ -28,9 +28,9 @@ test_*.txt
 src/backend/static/
 
 # Binaries (keep README)
-bin/**/*.exe
-bin/**/*.dll
-bin/**/*.so
+**/*.exe
+**/*.dll
+**/*.so
 models/
 
 # Env (保留 .env.production)
