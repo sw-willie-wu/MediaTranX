@@ -2,7 +2,6 @@
 任務管理端點
 """
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
 from typing import List
 
 from app.workers.task_manager import get_task_manager
@@ -41,38 +40,6 @@ async def get_task(task_id: str):
 
     return task
 
-
-@router.get("/{task_id}/progress")
-async def stream_progress(task_id: str):
-    """
-    任務進度 SSE 串流
-
-    Args:
-        task_id: 任務 ID
-
-    Returns:
-        Server-Sent Events 串流
-    """
-    task_manager = get_task_manager()
-    task = task_manager.get_task(task_id)
-
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    async def event_generator():
-        async for event in task_manager.progress_tracker.subscribe(task_id):
-            if event is not None:
-                yield f"data: {event.to_json()}\n\n"
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # 禁用 nginx 緩衝
-        }
-    )
 
 
 @router.post("/{task_id}/cancel")

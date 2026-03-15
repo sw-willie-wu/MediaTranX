@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useTaskStore } from '@/stores/tasks'
 import { apiFetch } from '@/composables/useApi'
 import AppModelGroupList from '@/components/common/AppModelGroupList.vue'
@@ -24,9 +24,14 @@ interface ModelsStatus {
 const modelStatus = ref<ModelsStatus | null>(null)
 const modelStatusLoading = ref(false)
 const downloadingTaskId = ref<Record<string, string>>({})
-const downloadProgress = ref<Record<string, number>>({})
 
-const _pollers = new Map<string, ReturnType<typeof setInterval>>()
+const downloadProgress = computed(() => {
+  const result: Record<string, number> = {}
+  for (const [id, taskId] of Object.entries(downloadingTaskId.value)) {
+    result[id] = taskStore.tasks.get(taskId)?.progress ?? 0
+  }
+  return result
+})
 
 async function loadModelStatus() {
   modelStatusLoading.value = true
@@ -50,7 +55,7 @@ async function downloadItem(id: string) {
   const { task_id } = await res.json()
   downloadingTaskId.value[id] = task_id
 
-  taskStore.tasks.set(task_id, {
+  taskStore.addTask({
     taskId: task_id,
     taskType: 'setup.download',
     status: 'pending',
@@ -62,27 +67,6 @@ async function downloadItem(id: string) {
     createdAt: new Date(),
     updatedAt: new Date(),
   })
-
-  async function doPoll() {
-    try {
-      const pollRes = await apiFetch(`/tasks/${task_id}`)
-      if (!pollRes.ok) return
-      const data = await pollRes.json()
-      const task = taskStore.tasks.get(task_id)
-      if (!task) { clearInterval(poller); _pollers.delete(id); return }
-      const isDone = data.status === 'completed' || data.status === 'failed'
-      const progress = data.progress ?? task.progress
-      downloadProgress.value[id] = progress
-      task.progress = progress
-      task.status = isDone ? data.status : 'processing'
-      task.updatedAt = new Date()
-      if (isDone) { clearInterval(poller); _pollers.delete(id) }
-    } catch { /* ignore, retry next interval */ }
-  }
-
-  setTimeout(doPoll, 300)
-  const poller = setInterval(doPoll, 1500)
-  _pollers.set(id, poller)
 }
 
 async function removeItem(id: string) {
@@ -117,10 +101,6 @@ watch(
 )
 
 onMounted(loadModelStatus)
-
-onUnmounted(() => {
-  for (const poller of _pollers.values()) clearInterval(poller)
-})
 </script>
 
 <template>

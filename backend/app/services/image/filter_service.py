@@ -1,12 +1,13 @@
 """
-圖片濾鏡服務
+圖片調整服務
 """
 import logging
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from PIL import Image, ImageEnhance
+import numpy as np
+from PIL import Image, ImageEnhance, ImageFilter
 
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
@@ -17,9 +18,7 @@ TASK_TYPE_IMAGE_FILTER = "image.filter"
 
 
 class ImageFilterService:
-    """
-    圖片濾鏡服務
-    """
+    """圖片調整服務"""
 
     _instance: Optional["ImageFilterService"] = None
 
@@ -46,91 +45,268 @@ class ImageFilterService:
 
     async def submit_filter(
         self,
-        file_id: str,
+        file_id:    str,
         brightness: float = 1.0,
-        contrast: float = 1.0,
+        contrast:   float = 1.0,
         saturation: float = 1.0,
-        sharpness: float = 1.0,
-        grayscale: bool = False,
+        hue:        float = 0.0,
+        sharpness:  float = 1.0,
+        warmth:     float = 0.0,
+        grayscale:  float = 0.0,
+        sepia:      float = 0.0,
+        invert:     float = 0.0,
+        blur:       float = 0.0,
+        vignette:   float = 0.0,
         output_dir: Optional[str] = None,
     ) -> str:
-        """提交圖片濾鏡任務"""
+        """提交圖片調整任務"""
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
         params = {
-            "file_id": file_id,
+            "file_id":    file_id,
             "brightness": brightness,
-            "contrast": contrast,
+            "contrast":   contrast,
             "saturation": saturation,
-            "sharpness": sharpness,
-            "grayscale": grayscale,
+            "hue":        hue,
+            "sharpness":  sharpness,
+            "warmth":     warmth,
+            "grayscale":  grayscale,
+            "sepia":      sepia,
+            "invert":     invert,
+            "blur":       blur,
+            "vignette":   vignette,
             "output_dir": output_dir,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_FILTER, params)
         logger.info(f"Image filter task submitted: {task_id}")
-
         return task_id
 
     def _handle_filter_task(
         self,
         params: dict,
-        progress_callback: Callable[[float, str], None]
+        progress_callback: Callable[[float, str], None],
     ) -> dict:
-        """處理濾鏡任務（同步）"""
         return self._execute_filter(params, progress_callback)
 
-    def _execute_filter(
-        self,
-        params: dict,
-        progress_callback: Callable[[float, str], None]
-    ) -> dict:
-        """執行圖片濾鏡"""
-        file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
+    # ── 調整方法 ───────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _apply_hue(img: Image.Image, degrees: float) -> Image.Image:
+        """色相旋轉（向量化 HSV 轉換）"""
+        if degrees == 0:
+            return img
+
+        arr = np.array(img.convert("RGB"), dtype=np.float32) / 255.0
+        r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+
+        cmax  = np.maximum(np.maximum(r, g), b)
+        cmin  = np.minimum(np.minimum(r, g), b)
+        delta = cmax - cmin
+        eps   = 1e-6
+
+        v = cmax
+        s = np.where(cmax > eps, delta / cmax, 0.0)
+
+        h = np.zeros_like(cmax)
+        mr = (cmax == r) & (delta > eps)
+        mg = (cmax == g) & (delta > eps)
+        mb = (cmax == b) & (delta > eps)
+        h[mr] = ((g[mr] - b[mr]) / delta[mr]) % 6
+        h[mg] = (b[mg] - r[mg]) / delta[mg] + 2
+        h[mb] = (r[mb] - g[mb]) / delta[mb] + 4
+        h /= 6.0
+        h = (h + degrees / 360.0) % 1.0
+
+        h6   = h * 6.0
+        i    = np.floor(h6).astype(np.int32)
+        f    = h6 - i
+        p    = v * (1 - s)
+        q    = v * (1 - s * f)
+        t    = v * (1 - s * (1 - f))
+        im   = i % 6
+
+        r2 = np.select([im==0, im==1, im==2, im==3, im==4, im==5], [v, q, p, p, t, v])
+        g2 = np.select([im==0, im==1, im==2, im==3, im==4, im==5], [t, v, v, q, p, p])
+        b2 = np.select([im==0, im==1, im==2, im==3, im==4, im==5], [p, p, t, v, v, q])
+
+        result = np.clip(np.stack([r2, g2, b2], axis=2) * 255, 0, 255).astype(np.uint8)
+        return Image.fromarray(result, "RGB")
+
+    @staticmethod
+    def _apply_warmth(img: Image.Image, warmth: float) -> Image.Image:
+        """色溫調整（正值暖色、負值冷色）"""
+        if warmth == 0:
+            return img
+
+        arr = np.array(img.convert("RGB"), dtype=np.float32)
+        if warmth > 0:
+            arr[:, :, 0] = np.clip(arr[:, :, 0] + warmth * 30, 0, 255)
+            arr[:, :, 2] = np.clip(arr[:, :, 2] - warmth * 20, 0, 255)
+        else:
+            arr[:, :, 0] = np.clip(arr[:, :, 0] + warmth * 20, 0, 255)
+            arr[:, :, 2] = np.clip(arr[:, :, 2] - warmth * 30, 0, 255)
+
+        return Image.fromarray(arr.astype(np.uint8), "RGB")
+
+    @staticmethod
+    def _apply_sepia(img: Image.Image, intensity: float) -> Image.Image:
+        """復古色調"""
+        if intensity <= 0:
+            return img
+
+        arr = np.array(img.convert("RGB"), dtype=np.float32)
+        r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+
+        sr = np.clip(r * 0.393 + g * 0.769 + b * 0.189, 0, 255)
+        sg = np.clip(r * 0.349 + g * 0.686 + b * 0.168, 0, 255)
+        sb = np.clip(r * 0.272 + g * 0.534 + b * 0.131, 0, 255)
+
+        sepia_arr = np.stack([sr, sg, sb], axis=2)
+        result = arr * (1 - intensity) + sepia_arr * intensity
+        return Image.fromarray(result.astype(np.uint8), "RGB")
+
+    @staticmethod
+    def _apply_invert(img: Image.Image, intensity: float) -> Image.Image:
+        """負片"""
+        if intensity <= 0:
+            return img
+
+        arr      = np.array(img.convert("RGB"), dtype=np.float32)
+        inverted = 255 - arr
+        result   = arr * (1 - intensity) + inverted * intensity
+        return Image.fromarray(result.astype(np.uint8), "RGB")
+
+    @staticmethod
+    def _apply_vignette(img: Image.Image, intensity: float) -> Image.Image:
+        """暈影（徑向漸層暗角）"""
+        if intensity <= 0:
+            return img
+
+        w, h = img.size
+        Y, X = np.ogrid[:h, :w]
+        cx, cy = w / 2.0, h / 2.0
+
+        dist    = np.sqrt(((X - cx) / (w / 2.0)) ** 2 + ((Y - cy) / (h / 2.0)) ** 2)
+        spread  = max(0.01, 1.0 - intensity * 0.6)
+        mask    = np.clip((dist - spread) / (1.0 - spread + 1e-6), 0, 1)
+        darken  = 1.0 - mask * intensity * 0.85
+
+        arr          = np.array(img.convert("RGB"), dtype=np.float32)
+        arr[:, :, 0] *= darken
+        arr[:, :, 1] *= darken
+        arr[:, :, 2] *= darken
+
+        return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB")
+
+    # ── 預覽（同步，降解析度）──────────────────────────────────────────────────
+
+    def generate_preview(self, file_id: str, params: dict, max_size: int = 900) -> str:
+        """同步生成預覽圖，縮圖後套用所有效果，回傳 base64 JPEG 字串"""
+        import base64
+        import io
+
+        file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        progress_callback(0.1, "載入圖片...")
+        img = Image.open(file_info.file_path).convert("RGB")
+        img.thumbnail((max_size, max_size), Image.LANCZOS)
 
-        img = Image.open(file_info.file_path)
+        # 套用與 _execute_filter 相同的效果順序（不需要 progress callback）
+        def noop(_p, _m): pass
+        img = self._apply_all(img, params, noop)
 
-        progress_callback(0.2, "套用濾鏡...")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        return base64.b64encode(buf.getvalue()).decode()
 
-        # 灰階處理
-        if params.get("grayscale"):
-            img = img.convert("L").convert("RGB")
+    def _apply_all(self, img: Image.Image, params: dict, progress_callback) -> Image.Image:
+        """套用所有調整（供 generate_preview 與 _execute_filter 共用）"""
+        grayscale = params.get("grayscale", 0.0)
+        if grayscale > 0:
+            gray = img.convert("L").convert("RGB")
+            if grayscale >= 1.0:
+                img = gray
+            else:
+                arr_orig = np.array(img, dtype=np.float32)
+                arr_gray = np.array(gray, dtype=np.float32)
+                img = Image.fromarray(
+                    np.clip(arr_orig * (1 - grayscale) + arr_gray * grayscale, 0, 255).astype(np.uint8), "RGB"
+                )
 
-        # 亮度
         brightness = params.get("brightness", 1.0)
         if brightness != 1.0:
             img = ImageEnhance.Brightness(img).enhance(brightness)
 
-        # 對比度
         contrast = params.get("contrast", 1.0)
         if contrast != 1.0:
             img = ImageEnhance.Contrast(img).enhance(contrast)
 
-        # 飽和度
         saturation = params.get("saturation", 1.0)
         if saturation != 1.0:
             img = ImageEnhance.Color(img).enhance(saturation)
 
-        # 銳利度
+        progress_callback(0.35, "套用色彩調整...")
+
+        hue = params.get("hue", 0.0)
+        if hue != 0:
+            img = self._apply_hue(img, hue)
+
+        warmth = params.get("warmth", 0.0)
+        if warmth != 0:
+            img = self._apply_warmth(img, warmth)
+
         sharpness = params.get("sharpness", 1.0)
         if sharpness != 1.0:
             img = ImageEnhance.Sharpness(img).enhance(sharpness)
 
-        progress_callback(0.7, "儲存檔案...")
+        progress_callback(0.55, "套用濾鏡效果...")
 
-        # 建立輸出路徑
+        sepia = params.get("sepia", 0.0)
+        if sepia > 0:
+            img = self._apply_sepia(img, sepia)
+
+        invert = params.get("invert", 0.0)
+        if invert > 0:
+            img = self._apply_invert(img, invert)
+
+        blur = params.get("blur", 0.0)
+        if blur > 0:
+            img = img.filter(ImageFilter.GaussianBlur(radius=blur))
+
+        vignette = params.get("vignette", 0.0)
+        if vignette > 0:
+            img = self._apply_vignette(img, vignette)
+
+        return img
+
+    # ── 主執行流程 ─────────────────────────────────────────────────────────────
+
+    def _execute_filter(
+        self,
+        params: dict,
+        progress_callback: Callable[[float, str], None],
+    ) -> dict:
+        file_id   = params["file_id"]
+        file_info = self._file_service.get_file(file_id)
+        if file_info is None:
+            raise ValueError(f"File not found: {file_id}")
+
+        progress_callback(0.05, "載入圖片...")
+        img = Image.open(file_info.file_path).convert("RGB")
+
+        progress_callback(0.15, "套用調整...")
+        img = self._apply_all(img, params, progress_callback)
+
+        progress_callback(0.75, "儲存檔案...")
+
         custom_output_dir = params.get("output_dir")
-        output_file_id = str(uuid4())
-        original_stem = Path(file_info.original_filename).stem
-        final_filename = f"{original_stem}_filtered_{output_file_id[:8]}.png"
+        output_file_id    = str(uuid4())
+        original_stem     = Path(file_info.original_filename).stem
+        final_filename    = f"{original_stem}_adjusted_{output_file_id[:8]}.png"
 
         if custom_output_dir:
             output_dir_path = Path(custom_output_dir)
@@ -138,23 +314,23 @@ class ImageFilterService:
             output_dir_path = Path(file_info.source_dir)
         else:
             output_dir_path = self._file_service.output_dir
+
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 
         img.save(str(output_path), format="PNG")
         img.close()
 
-        # 註冊輸出檔案
         output_info = self._file_service.register_output(
             file_id=output_file_id,
             file_path=output_path,
             original_filename=file_info.original_filename,
         )
 
-        progress_callback(1.0, "濾鏡套用完成")
+        progress_callback(1.0, "調整完成")
 
         return {
-            "output_file_id": output_file_id,
+            "output_file_id":  output_file_id,
             "output_filename": output_info.filename,
         }
 

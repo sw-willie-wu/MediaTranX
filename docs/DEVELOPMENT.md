@@ -10,12 +10,14 @@
 MediaTranX/
 ├── backend/                    # Python FastAPI 後端
 │   ├── app/                    # 後端主程式
-│   └── pyproject.toml          # Python 依賴（uv 管理）
+│   ├── pyproject.toml          # Python 依賴（uv 管理）
+│   ├── .venv/                  # Python 虛擬環境（uv 管理，不進 git）
+│   └── models/                 # AI 模型（按需下載，不進 git）
 ├── frontend/                   # Vue 3 前端（純 Vite，無 Electron）
 └── docs/                       # 文件
 ```
 
-> AI 模型與 `.venv` 存放於 `%APPDATA%/MediaTranX/`，不在專案目錄內。
+> 打包後 `.venv` 與 `models/` 改存至 `%APPDATA%/MediaTranX/`。
 
 ---
 
