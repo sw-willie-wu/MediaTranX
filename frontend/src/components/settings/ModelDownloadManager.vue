@@ -125,6 +125,7 @@ onUnmounted(() => {
 
 <template>
   <h6 class="section-title mt">模型與工具</h6>
+  <p class="download-hint"><i class="bi bi-info-circle"></i> 最多同時進行 4 個下載，超過將自動排隊</p>
 
   <div v-if="modelStatusLoading" class="models-loading">
     <div class="spinner"></div>
@@ -207,4 +208,13 @@ onUnmounted(() => {
 }
 
 .refresh-btn { margin-top: 1rem; }
+
+.download-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
 </style>

@@ -9,6 +9,7 @@ interface ModelItem {
   description?: string
   downloaded: boolean
   size_mb: number
+  vram_mb?: number
 }
 
 interface ModelGroup {
@@ -89,18 +90,26 @@ function formatSize(mb: number): string {
             <span class="model-label">{{ group.familyLabel }}</span>
             <span v-if="group.description" class="model-desc">{{ group.description }}</span>
           </div>
-          <span class="model-size">{{ formatSize(group.variants[0].size_mb) }}</span>
+          <div class="model-size">
+            <span>{{ formatSize(group.variants[0].size_mb) }}</span>
+            <span v-if="group.variants[0].vram_mb" class="vram-label">{{ formatSize(group.variants[0].vram_mb) }} VRAM</span>
+          </div>
           <div class="model-action">
             <template v-if="downloadingTaskId[group.variants[0].id]">
-              <div class="download-progress">
-                <div
-                  class="progress-bar"
-                  :style="{ width: `${((downloadProgress[group.variants[0].id] ?? 0) * 100).toFixed(0)}%` }"
-                ></div>
-              </div>
-              <span class="progress-label">
-                {{ ((downloadProgress[group.variants[0].id] ?? 0) * 100).toFixed(0) }}%
-              </span>
+              <template v-if="(downloadProgress[group.variants[0].id] ?? 0) === 0">
+                <span class="status-queued">等待中...</span>
+              </template>
+              <template v-else>
+                <div class="download-progress">
+                  <div
+                    class="progress-bar"
+                    :style="{ width: `${((downloadProgress[group.variants[0].id] ?? 0) * 100).toFixed(0)}%` }"
+                  ></div>
+                </div>
+                <span class="progress-label">
+                  {{ ((downloadProgress[group.variants[0].id] ?? 0) * 100).toFixed(0) }}%
+                </span>
+              </template>
             </template>
             <template v-else-if="group.variants[0].downloaded">
               <span class="status-badge installed">
@@ -138,18 +147,26 @@ function formatSize(mb: number): string {
               <div class="model-info">
                 <span class="model-label">{{ item.label }}</span>
               </div>
-              <span class="model-size">{{ formatSize(item.size_mb) }}</span>
+              <div class="model-size">
+                <span>{{ formatSize(item.size_mb) }}</span>
+                <span v-if="item.vram_mb" class="vram-label">{{ formatSize(item.vram_mb) }} VRAM</span>
+              </div>
               <div class="model-action">
                 <template v-if="downloadingTaskId[item.id]">
-                  <div class="download-progress">
-                    <div
-                      class="progress-bar"
-                      :style="{ width: `${((downloadProgress[item.id] ?? 0) * 100).toFixed(0)}%` }"
-                    ></div>
-                  </div>
-                  <span class="progress-label">
-                    {{ ((downloadProgress[item.id] ?? 0) * 100).toFixed(0) }}%
-                  </span>
+                  <template v-if="(downloadProgress[item.id] ?? 0) === 0">
+                    <span class="status-queued">等待中...</span>
+                  </template>
+                  <template v-else>
+                    <div class="download-progress">
+                      <div
+                        class="progress-bar"
+                        :style="{ width: `${((downloadProgress[item.id] ?? 0) * 100).toFixed(0)}%` }"
+                      ></div>
+                    </div>
+                    <span class="progress-label">
+                      {{ ((downloadProgress[item.id] ?? 0) * 100).toFixed(0) }}%
+                    </span>
+                  </template>
                 </template>
                 <template v-else-if="item.downloaded">
                   <span class="status-badge installed">
@@ -280,12 +297,23 @@ function formatSize(mb: number): string {
 }
 
 .model-size {
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
   flex-shrink: 0;
-  min-width: 52px;
-  text-align: right;
+  min-width: 60px;
+
+  span {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+}
+
+.vram-label {
+  font-size: 0.7rem !important;
+  opacity: 0.7;
 }
 
 .model-action {
@@ -322,6 +350,12 @@ function formatSize(mb: number): string {
 }
 
 // ── Badges & Buttons ──────────────────────────────────────────
+.status-queued {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;
