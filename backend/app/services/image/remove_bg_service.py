@@ -5,8 +5,6 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
-from PIL import Image
-
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 
@@ -19,6 +17,7 @@ _MODE_TO_MODEL = {
     "person":  "u2net_human_seg",
     "product": "isnet-general-use",
     "animal":  "u2net",
+    "anime":   "isnet-anime",
 }
 
 
@@ -57,6 +56,7 @@ class ImageRemoveBgService:
         return task_id
 
     def _handle_remove_bg_task(self, params: dict, progress_callback: Callable) -> dict:
+        from PIL import Image
         from rembg import remove, new_session
 
         file_id = params["file_id"]
@@ -96,5 +96,11 @@ class ImageRemoveBgService:
         return target_dir / f"{Path(file_info.original_filename).stem}_nobg_{uuid4().hex[:8]}.png"
 
 
+_image_remove_bg_service: Optional[ImageRemoveBgService] = None
+
+
 def get_image_remove_bg_service() -> ImageRemoveBgService:
-    return ImageRemoveBgService()
+    global _image_remove_bg_service
+    if _image_remove_bg_service is None:
+        _image_remove_bg_service = ImageRemoveBgService()
+    return _image_remove_bg_service

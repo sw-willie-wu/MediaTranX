@@ -6,8 +6,6 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from PIL import Image
-
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 
@@ -82,6 +80,7 @@ class ImageCompressService:
         progress_callback: Callable[[float, str], None]
     ) -> dict:
         """執行圖片壓縮"""
+        from PIL import Image
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
 

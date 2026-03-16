@@ -1,13 +1,12 @@
 """
 圖片調整服務
 """
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
-
-import numpy as np
-from PIL import Image, ImageEnhance, ImageFilter
 
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
@@ -96,6 +95,8 @@ class ImageFilterService:
     @staticmethod
     def _apply_hue(img: Image.Image, degrees: float) -> Image.Image:
         """色相旋轉（向量化 HSV 轉換）"""
+        import numpy as np
+        from PIL import Image
         if degrees == 0:
             return img
 
@@ -138,6 +139,8 @@ class ImageFilterService:
     @staticmethod
     def _apply_warmth(img: Image.Image, warmth: float) -> Image.Image:
         """色溫調整（正值暖色、負值冷色）"""
+        import numpy as np
+        from PIL import Image
         if warmth == 0:
             return img
 
@@ -154,6 +157,8 @@ class ImageFilterService:
     @staticmethod
     def _apply_sepia(img: Image.Image, intensity: float) -> Image.Image:
         """復古色調"""
+        import numpy as np
+        from PIL import Image
         if intensity <= 0:
             return img
 
@@ -171,6 +176,8 @@ class ImageFilterService:
     @staticmethod
     def _apply_invert(img: Image.Image, intensity: float) -> Image.Image:
         """負片"""
+        import numpy as np
+        from PIL import Image
         if intensity <= 0:
             return img
 
@@ -182,6 +189,8 @@ class ImageFilterService:
     @staticmethod
     def _apply_vignette(img: Image.Image, intensity: float) -> Image.Image:
         """暈影（徑向漸層暗角）"""
+        import numpy as np
+        from PIL import Image
         if intensity <= 0:
             return img
 
@@ -207,6 +216,7 @@ class ImageFilterService:
         """同步生成預覽圖，縮圖後套用所有效果，回傳 base64 JPEG 字串"""
         import base64
         import io
+        from PIL import Image
 
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -225,6 +235,8 @@ class ImageFilterService:
 
     def _apply_all(self, img: Image.Image, params: dict, progress_callback) -> Image.Image:
         """套用所有調整（供 generate_preview 與 _execute_filter 共用）"""
+        import numpy as np
+        from PIL import Image, ImageEnhance, ImageFilter
         grayscale = params.get("grayscale", 0.0)
         if grayscale > 0:
             gray = img.convert("L").convert("RGB")
@@ -295,11 +307,26 @@ class ImageFilterService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
+        from PIL import Image
         progress_callback(0.05, "載入圖片...")
-        img = Image.open(file_info.file_path).convert("RGB")
+        with Image.open(file_info.file_path) as _raw:
+            _raw = _raw.copy()
+        # 保留 alpha 通道，濾鏡只處理 RGB
+        _rgba = _raw.convert("RGBA")
+        alpha_channel = _rgba.split()[3]
+        has_alpha = alpha_channel.getextrema()[0] < 255
+        if not has_alpha:
+            alpha_channel = None
+        img = _rgba.convert("RGB")
 
         progress_callback(0.15, "套用調整...")
         img = self._apply_all(img, params, progress_callback)
+
+        # 還原 alpha 通道
+        if alpha_channel is not None:
+            result_rgba = img.convert("RGBA")
+            result_rgba.putalpha(alpha_channel)
+            img = result_rgba
 
         progress_callback(0.75, "儲存檔案...")
 
