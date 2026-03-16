@@ -1,4 +1,4 @@
-import { ref, type Ref } from 'vue'
+import { ref, watch, type Ref } from 'vue'
 
 export function useCanvasMask(
   imgRef: Ref<HTMLImageElement | null>,
@@ -12,6 +12,9 @@ export function useCanvasMask(
   let maskCanvas: HTMLCanvasElement | null = null
   let cursorX = -1
   let cursorY = -1
+
+  // 筆刷大小改變時立即刷新游標圓圈
+  watch(brushSize, () => redraw())
 
   function getMaskCanvas(w: number, h: number): HTMLCanvasElement {
     if (!maskCanvas || maskCanvas.width !== w || maskCanvas.height !== h) {

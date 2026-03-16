@@ -38,9 +38,25 @@ export function useImageZoom(
 
   function onWheel(e: WheelEvent) {
     e.preventDefault()
+    if (!containerRef.value) return
+
+    const oldZoom = zoomLevel.value
     const step = e.deltaY > 0 ? -0.1 : 0.1
-    zoomLevel.value = Math.max(0.1, Math.min(10, +(zoomLevel.value + step).toFixed(1)))
-    const c = clampPan(panX.value, panY.value)
+    const newZoom = Math.max(0.1, Math.min(10, +(oldZoom + step).toFixed(1)))
+    if (newZoom === oldZoom) return
+
+    // 滑鼠相對於容器中心的偏移（transform-origin 是容器中心）
+    const rect = containerRef.value.getBoundingClientRect()
+    const mx = e.clientX - rect.left - rect.width / 2
+    const my = e.clientY - rect.top - rect.height / 2
+
+    // 游標下的圖片坐標（縮放前）
+    const imgX = (mx - panX.value) / oldZoom
+    const imgY = (my - panY.value) / oldZoom
+
+    // 縮放後調整 pan，讓同一圖片點留在游標位置
+    zoomLevel.value = newZoom
+    const c = clampPan(mx - imgX * newZoom, my - imgY * newZoom)
     panX.value = c.x
     panY.value = c.y
   }

@@ -13,6 +13,7 @@ const props = defineProps<{
   showCropOverlay: boolean
   cropAspectRatio?: string
   filterPreview?: FilterPreview | null
+  brushSize?: number
 }>()
 
 const emit = defineEmits<{
@@ -42,6 +43,9 @@ const {
   hasMask,
   exportMask,
 } = useCanvasMask(imgRef, containerRef)
+
+// 同步外部 brushSize prop 到 composable
+watch(() => props.brushSize, (v) => { if (v !== undefined) brushSize.value = v })
 
 // ── Crop Rect ─────────────────────────────────────────────────────────────
 const cropAspectRatioRef = computed(() => props.cropAspectRatio ?? 'free')
@@ -128,7 +132,7 @@ const vignetteStyle = computed(() => {
 })
 
 defineExpose({
-  clearMask, exportMask, hasMask, brushSize, syncToImage,
+  clearMask, exportMask, hasMask, syncToImage,
   cropRect, clearCropRect, syncCropCanvas,
   isAiRemoveActive: () => props.isAiRemoveMode, zoomPercent,
 })

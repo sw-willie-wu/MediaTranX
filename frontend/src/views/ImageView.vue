@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import ToolLayout from '@/components/ToolLayout.vue'
+import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import ImagePreview from '@/components/image/ImagePreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ImageConvertPanel  from '@/components/image/panels/ImageConvertPanel.vue'
 import ImageUpscalePanel  from '@/components/image/panels/ImageUpscalePanel.vue'
 import ImageRemoveBgPanel from '@/components/image/panels/ImageRemoveBgPanel.vue'
 import ImageAiRemovePanel from '@/components/image/panels/ImageAiRemovePanel.vue'
-import ImageAdjustPanel   from '@/components/image/panels/ImageAdjustPanel.vue'
-import ImageFilterPanel   from '@/components/image/panels/ImageFilterPanel.vue'
+import ImageAdjustPanel, { type AdjustState } from '@/components/image/panels/ImageAdjustPanel.vue'
+import ImageFilterPanel, { type FilterState } from '@/components/image/panels/ImageFilterPanel.vue'
 import ImageCropPanel     from '@/components/image/panels/ImageCropPanel.vue'
 import ImageCompressPanel from '@/components/image/panels/ImageCompressPanel.vue'
 import ImageOcrPanel      from '@/components/image/panels/ImageOcrPanel.vue'
@@ -19,13 +20,15 @@ import { useImageWorkspace } from '@/composables/useImageWorkspace'
 const {
   hasFile, fileId, isUploading, currentFileName, imageInfo, isLoadingInfo,
   aiEnvReady, canGoBack, activeFileId, activePreviewUrl, hasResult,
-  goBack, checkAiEnvironment, handleFile, handleRemoveFile, handlePanelSubmit,
+  goBack, checkAiEnvironment, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
   handleDownload, handleTextDownload, textResultFileId, textResultFilename, textResultContent,
+  collection, activeId, selectedIds,
 } = useImageWorkspace()
 
 
-// Preview ref (exposes clearMask, exportMask, hasMask, brushSize)
+// Preview ref (exposes clearMask, exportMask, hasMask, syncToImage)
 const previewRef = ref<InstanceType<typeof ImagePreview> | null>(null)
+const brushSize = ref(10)
 
 // Panel refs
 const convertPanelRef  = ref<InstanceType<typeof ImageConvertPanel>  | null>(null)
@@ -54,6 +57,29 @@ const subFunctions = [
 const currentFunction     = ref('convert')
 const filterPreviewParams = ref<FilterPreview | null>(null)
 
+// ── Per-entry panel settings cache ───────────────────────────────────────────
+interface EntryPanelSettings {
+  adjust?: AdjustState
+  filter?: FilterState
+}
+const entrySettingsCache = new Map<string, EntryPanelSettings>()
+
+function savePanelSettings(entryId: string) {
+  const s = entrySettingsCache.get(entryId) ?? {}
+  if (adjustPanelRef.value) s.adjust = adjustPanelRef.value.getState()
+  if (filterPanelRef.value) s.filter = filterPanelRef.value.getState()
+  entrySettingsCache.set(entryId, s)
+}
+
+function restorePanelSettings(entryId: string) {
+  const s = entrySettingsCache.get(entryId)
+  if (!s) return
+  nextTick(() => {
+    if (s.adjust && adjustPanelRef.value) adjustPanelRef.value.setState(s.adjust)
+    if (s.filter && filterPanelRef.value) filterPanelRef.value.setState(s.filter)
+  })
+}
+
 const isAiRemoveMode = computed(() => currentFunction.value === 'ai-remove' && hasFile.value)
 const isCropMode     = computed(() => currentFunction.value === 'crop'      && hasFile.value)
 
@@ -68,7 +94,13 @@ watch(isCropMode, (active) => {
   if (!active) cropOverlayVisible.value = false
 })
 
-watch(currentFunction, (val) => {
+watch(currentFunction, (val, oldVal) => {
+  // Save settings for the panel that's about to unmount
+  const id = collection.activeId.value
+  if (id && (oldVal === 'adjust' || oldVal === 'filter')) {
+    savePanelSettings(id)
+  }
+
   if (val !== 'adjust' && val !== 'filter') {
     filterPreviewParams.value = null
   }
@@ -76,6 +108,17 @@ watch(currentFunction, (val) => {
   if (val === 'ai-remove') {
     nextTick(() => previewRef.value?.syncToImage())
   }
+
+  // Restore settings for newly mounted panel
+  if (id && (val === 'adjust' || val === 'filter')) {
+    restorePanelSettings(id)
+  }
+})
+
+// Save/restore per-entry settings when switching filmstrip entries
+watch(() => collection.activeId.value, (newId, oldId) => {
+  if (oldId) savePanelSettings(oldId)
+  if (newId) restorePanelSettings(newId)
 })
 
 // 後端結果回來後清除 preview（新圖片已含效果）
@@ -156,6 +199,26 @@ const imageInfoItems = computed<InfoItem[]>(() => {
     { icon: 'bi-zoom-in',      label: `${zoom}%` },
   ]
 })
+
+// ── Filmstrip ────────────────────────────────────────────────────────────────
+
+const filmstripItems = computed(() =>
+  collection.entriesList.value.map(e => ({
+    id: e.id,
+    thumbnailUrl: e.thumbnailUrl,
+    status: e.status,
+    progress: e.progress,
+  }))
+)
+
+function onFilmstripSelect(id: string, ctrlKey: boolean) {
+  collection.selectEntry(id, ctrlKey)
+}
+
+function onFilmstripRemove(id: string) {
+  entrySettingsCache.delete(id)
+  collection.removeEntry(id)
+}
 </script>
 
 <template>
@@ -167,16 +230,20 @@ const imageInfoItems = computed<InfoItem[]>(() => {
     upload-hint="支援 JPG、PNG、WebP、BMP 等格式"
     upload-accept="image/*"
     hide-preview-tabs
+    show-filmstrip
+    :collection-size="filmstripItems.length"
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"
     :result-preview-url="activePreviewUrl"
+    :original-preview-url="collection.activeEntry.value?.previewUrl ?? null"
     :can-go-back="canGoBack"
     :execute-disabled="executeDisabled"
     :execute-loading="executeLoading"
     @select-function="currentFunction = $event"
     @execute="handleExecute"
     @file="handleFile"
+    @files="handleFiles"
     @remove-file="handleRemoveFile"
     @download="currentFunction === 'ocr' ? handleTextDownload() : handleDownload()"
     @go-back="goBack"
@@ -198,6 +265,7 @@ const imageInfoItems = computed<InfoItem[]>(() => {
         :preview-url="activePreviewUrl ?? previewUrl"
         :image-info="imageInfo"
         :is-ai-remove-mode="isAiRemoveMode"
+        :brush-size="brushSize"
         :show-crop-overlay="showCropOverlay"
         :crop-aspect-ratio="cropAspectRatio"
         :filter-preview="filterPreviewParams"
@@ -211,6 +279,16 @@ const imageInfoItems = computed<InfoItem[]>(() => {
         :items="imageInfoItems"
         :loading="(isLoadingInfo || isUploading) && !imageInfo"
         loading-text="讀取圖片資訊..."
+      />
+    </template>
+
+    <template #filmstrip>
+      <AppFilmstrip
+        :items="filmstripItems"
+        :activeId="activeId"
+        :selectedIds="selectedIds"
+        @select="onFilmstripSelect"
+        @remove="onFilmstripRemove"
       />
     </template>
 
@@ -247,10 +325,9 @@ const imageInfoItems = computed<InfoItem[]>(() => {
           ref="aiRemovePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :brush-size="previewRef?.brushSize.value ?? 10"
+          v-model:brush-size="brushSize"
           :get-mask="() => previewRef?.exportMask() ?? null"
           :has-mask="() => previewRef?.hasMask() ?? false"
-          @update:brush-size="v => previewRef && (previewRef.brushSize.value = v)"
           @clear-mask="previewRef?.clearMask()"
           @submit="onPanelSubmit"
         />
