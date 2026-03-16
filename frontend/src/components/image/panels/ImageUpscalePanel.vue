@@ -99,6 +99,20 @@ onMounted(async () => {
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
 
+function getParams(): Record<string, unknown> {
+  return {
+    model_id: selectedModelId.value,
+    scale: upscaleScale.value,
+    sharpen: sharpen.value,
+    face_fix: faceRestore.value,
+    face_restore_model_id: faceRestore.value && selectedFaceModelId.value
+      ? selectedFaceModelId.value
+      : null,
+    face_restore_fidelity: faceRestoreFidelity.value,
+    face_restore_upscale: faceRestoreUpscale.value,
+  }
+}
+
 async function execute() {
   if (!props.fileId || !selectedModelId.value) return
 
@@ -106,15 +120,7 @@ async function execute() {
     '/image/upscale',
     {
       file_id: props.fileId,
-      model_id: selectedModelId.value,
-      scale: upscaleScale.value,
-      sharpen: sharpen.value,
-      face_fix: faceRestore.value,
-      face_restore_model_id: faceRestore.value && selectedFaceModelId.value
-        ? selectedFaceModelId.value
-        : null,
-      face_restore_fidelity: faceRestoreFidelity.value,
-      face_restore_upscale: faceRestoreUpscale.value,
+      ...getParams(),
     },
     `超解析 ${upscaleScale.value}x`,
     'image.upscale',
@@ -124,7 +130,7 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading, upscaleScale })
+defineExpose({ execute, isDisabled, isLoading, upscaleScale, getParams })
 </script>
 
 <template>

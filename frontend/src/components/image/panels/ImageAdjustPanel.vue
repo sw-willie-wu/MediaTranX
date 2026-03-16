@@ -42,6 +42,35 @@ const preview = computed<FilterPreview>(() => ({
 
 watch(preview, (val) => emit('preview-change', val), { immediate: true })
 
+export interface AdjustState {
+  brightness: number
+  contrast:   number
+  saturation: number
+  hue:        number
+  sharpness:  number
+  warmth:     number
+}
+
+function getState(): AdjustState {
+  return {
+    brightness: brightness.value,
+    contrast:   contrast.value,
+    saturation: saturation.value,
+    hue:        hue.value,
+    sharpness:  sharpness.value,
+    warmth:     warmth.value,
+  }
+}
+
+function setState(s: AdjustState) {
+  brightness.value = s.brightness
+  contrast.value   = s.contrast
+  saturation.value = s.saturation
+  hue.value        = s.hue
+  sharpness.value  = s.sharpness
+  warmth.value     = s.warmth
+}
+
 function reset() {
   brightness.value = 100
   contrast.value   = 100
@@ -71,7 +100,7 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading })
+defineExpose({ execute, isDisabled, isLoading, getState, setState })
 </script>
 
 <template>

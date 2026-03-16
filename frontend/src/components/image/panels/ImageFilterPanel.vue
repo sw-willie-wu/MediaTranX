@@ -25,6 +25,16 @@ const vignette  = ref(0)
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading  = computed(() => isProcessing.value)
 
+function getParams(): Record<string, unknown> {
+  return {
+    grayscale: grayscale.value / 100,
+    sepia:     sepia.value / 100,
+    invert:    invert.value / 100,
+    blur:      blur.value,
+    vignette:  vignette.value / 100,
+  }
+}
+
 const preview = computed<FilterPreview>(() => ({
   brightness: 1,
   contrast:   1,
@@ -41,6 +51,32 @@ const preview = computed<FilterPreview>(() => ({
 
 watch(preview, (val) => emit('preview-change', val), { immediate: true })
 
+export interface FilterState {
+  grayscale: number
+  sepia:     number
+  invert:    number
+  blur:      number
+  vignette:  number
+}
+
+function getState(): FilterState {
+  return {
+    grayscale: grayscale.value,
+    sepia:     sepia.value,
+    invert:    invert.value,
+    blur:      blur.value,
+    vignette:  vignette.value,
+  }
+}
+
+function setState(s: FilterState) {
+  grayscale.value = s.grayscale
+  sepia.value     = s.sepia
+  invert.value    = s.invert
+  blur.value      = s.blur
+  vignette.value  = s.vignette
+}
+
 function reset() {
   grayscale.value = 0
   sepia.value     = 0
@@ -54,12 +90,8 @@ async function execute() {
   const taskId = await submitTask(
     '/image/filter',
     {
-      file_id:  props.fileId,
-      grayscale: grayscale.value / 100,
-      sepia:    sepia.value / 100,
-      invert:   invert.value / 100,
-      blur:     blur.value,
-      vignette: vignette.value / 100,
+      file_id: props.fileId,
+      ...getParams(),
     },
     '圖片濾鏡',
     'image.filter',
@@ -68,7 +100,7 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading })
+defineExpose({ execute, isDisabled, isLoading, getParams, getState, setState })
 </script>
 
 <template>

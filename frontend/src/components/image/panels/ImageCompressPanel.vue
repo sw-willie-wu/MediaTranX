@@ -44,14 +44,20 @@ const fileSizeText = computed(() => {
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
 
+function getParams(): Record<string, unknown> {
+  return {
+    output_format: outputFormat.value,
+    quality: quality.value,
+  }
+}
+
 async function execute() {
   if (!props.fileId) return
   const taskId = await submitTask(
     '/image/compress',
     {
       file_id: props.fileId,
-      output_format: outputFormat.value,
-      quality: quality.value,
+      ...getParams(),
     },
     '圖片壓縮',
     'image.compress',
@@ -60,7 +66,7 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading })
+defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
 
 <template>

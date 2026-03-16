@@ -26,11 +26,17 @@ const removeBgModes = [
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
 
+function getParams(): Record<string, unknown> {
+  return {
+    mode: removeBgMode.value,
+  }
+}
+
 async function execute() {
   if (!props.fileId) return
   const taskId = await submitTask(
     '/image/remove-bg',
-    { file_id: props.fileId, mode: removeBgMode.value },
+    { file_id: props.fileId, ...getParams() },
     '去背',
     'image.remove_bg',
     props.currentFileName,
@@ -38,7 +44,7 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading })
+defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
 
 <template>

@@ -43,6 +43,16 @@ const convertHeight = ref<number | null>(null)
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
 
+function getParams(): Record<string, unknown> {
+  return {
+    output_format: convertFormat.value,
+    quality: convertQuality.value,
+    scale: convertResizeMode.value === 'scale' ? convertScale.value / 100 : undefined,
+    width: convertResizeMode.value === 'custom' ? convertWidth.value ?? undefined : undefined,
+    height: convertResizeMode.value === 'custom' ? convertHeight.value ?? undefined : undefined,
+  }
+}
+
 async function execute() {
   if (!props.fileId) return
 
@@ -50,11 +60,7 @@ async function execute() {
     '/image/convert',
     {
       file_id: props.fileId,
-      output_format: convertFormat.value,
-      quality: convertQuality.value,
-      scale: convertResizeMode.value === 'scale' ? convertScale.value / 100 : undefined,
-      width: convertResizeMode.value === 'custom' ? convertWidth.value ?? undefined : undefined,
-      height: convertResizeMode.value === 'custom' ? convertHeight.value ?? undefined : undefined,
+      ...getParams(),
     },
     '圖片轉檔',
     'image.convert',
@@ -64,7 +70,7 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading, convertFormat })
+defineExpose({ execute, isDisabled, isLoading, convertFormat, getParams })
 </script>
 
 <template>
