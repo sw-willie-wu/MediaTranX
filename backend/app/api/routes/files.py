@@ -114,6 +114,17 @@ async def download_file(file_id: str):
     )
 
 
+@router.post("/cleanup")
+async def cleanup_all_files():
+    """
+    清除本次 session 所有暫存與輸出檔案。
+    由 Electron 在應用程式關閉前呼叫（autoCleanTemp 設定啟用時）。
+    """
+    file_service = get_file_service()
+    count = file_service.cleanup_all()
+    return {"status": "ok", "deleted": count}
+
+
 @router.delete("/{file_id}")
 async def delete_file(file_id: str):
     """

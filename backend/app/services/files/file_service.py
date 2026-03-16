@@ -13,7 +13,7 @@ from typing import Dict, Optional
 from uuid import uuid4
 
 from app.api.schemas.common import FileInfo
-from app.engine.paths import get_temp_dir, get_output_dir
+from app.engine.paths import get_temp_dir
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +37,10 @@ class FileService:
         if self._initialized:
             return
 
-        # 設定基礎目錄
-        if base_dir:
-            self._upload_dir = Path(base_dir) / "temp" / "uploads"
-            self._output_dir = Path(base_dir) / "output"
-        else:
-            self._upload_dir = get_temp_dir() / "uploads"
-            self._output_dir = get_output_dir()
+        # 設定基礎目錄（所有中間產物統一放 temp，使用者存檔時才透過 saveFileDialog 選目的地）
+        base_temp = Path(base_dir) / "temp" if base_dir else get_temp_dir()
+        self._upload_dir = base_temp / "uploads"
+        self._output_dir = base_temp / "results"
 
         # 確保目錄存在
         self._upload_dir.mkdir(parents=True, exist_ok=True)
@@ -301,7 +298,7 @@ class FileService:
 
     def cleanup_temp(self, max_age_hours: int = 24) -> int:
         """
-        清理過期的暫存檔案
+        清理過期的暫存檔案（僅 upload_dir，依時間過濾）
 
         Args:
             max_age_hours: 最大保留時間（小時）
@@ -321,6 +318,30 @@ class FileService:
         for file_id in to_delete:
             self.delete_file(file_id)
 
+        return len(to_delete)
+
+    def cleanup_all(self) -> int:
+        """
+        清除本次 session 所有暫存檔案（upload_dir + output_dir）。
+        供關閉應用程式時呼叫。
+
+        Returns:
+            清理的檔案數量
+        """
+        to_delete = list(self._files.keys())
+        for file_id in to_delete:
+            self.delete_file(file_id)
+
+        # 補清目錄內殘留的實體檔案（未被索引的）
+        for directory in (self._upload_dir, self._output_dir):
+            try:
+                for f in directory.iterdir():
+                    if f.is_file():
+                        f.unlink(missing_ok=True)
+            except Exception as e:
+                logger.warning(f"cleanup_all: failed to clean {directory}: {e}")
+
+        logger.info(f"cleanup_all: removed {len(to_delete)} session files")
         return len(to_delete)
 
 
