@@ -13,7 +13,7 @@ router = APIRouter()
 
 class ImageRemoveBgRequest(BaseModel):
     file_id: str = Field(..., description="輸入檔案 ID")
-    mode: str = Field(default="auto", description="去背模式 (auto/person/product/animal)")
+    mode: str = Field(default="auto", description="去背模式 (auto/person/product/animal/anime)")
     output_dir: Optional[str] = Field(default=None)
 
 
@@ -34,6 +34,6 @@ async def remove_bg(request: ImageRemoveBgRequest):
         )
         return ImageRemoveBgResponse(task_id=task_id)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

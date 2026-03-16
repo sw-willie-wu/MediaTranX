@@ -3,11 +3,10 @@ CodeFormer 人臉修復封裝 (Three-Layer Architecture V3)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 重構：繼承 PTHRuntime，支援自然度調整
 """
+from __future__ import annotations
+
 import logging
 from typing import Optional, Callable
-
-import numpy as np
-from PIL import Image
 
 from app.engine.ai.base import PTHRuntime
 from app.engine.ai.registry import FORMAT_PTH, MODELS_REGISTRY, SLOT_PTH
@@ -66,6 +65,8 @@ class CodeFormerWrapper(PTHRuntime):
                 on_progress=on_progress
             ) as model:
                 # 簡易推理流程（實際使用需要完整的人臉檢測 pipeline）
+                import numpy as np
+                from PIL import Image
                 import torch
                 img_array = np.array(image.convert("RGB"))
                 img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0).float() / 255.0

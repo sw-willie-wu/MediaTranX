@@ -29,6 +29,6 @@ async def split_document(request: DocumentSplitRequest):
         )
         return {"task_id": task_id, "message": "PDF 分割任務已提交"}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
