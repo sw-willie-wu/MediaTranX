@@ -45,6 +45,9 @@
   /* Misc */
   --drop-zone-border: rgba(255, 255, 255, 0.2);
   --drop-zone-border-hover: rgba(255, 255, 255, 0.4);
+  --drag-over-bg: rgba(124, 111, 173, 0.15);
+  --filmstrip-glow-active: rgba(124, 111, 173, 0.8);
+  --filmstrip-glow-selected: rgba(168, 156, 200, 0.75);
   --scrollbar-thumb: rgba(255, 255, 255, 0.2);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
 }
@@ -82,6 +85,9 @@
   /* Misc */
   --drop-zone-border: rgba(0, 0, 0, 0.15);
   --drop-zone-border-hover: rgba(0, 0, 0, 0.3);
+  --drag-over-bg: rgba(124, 111, 173, 0.08);
+  --filmstrip-glow-active: rgba(124, 111, 173, 0.5);
+  --filmstrip-glow-selected: rgba(168, 156, 200, 0.45);
   --scrollbar-thumb: rgba(0, 0, 0, 0.2);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
 }
