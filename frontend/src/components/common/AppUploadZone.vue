@@ -6,18 +6,22 @@ const props = withDefaults(defineProps<{
   label?: string
   hint?: string
   accept?: string
+  multiple?: boolean
 }>(), {
   icon: 'bi-cloud-arrow-up-fill',
   label: '拖曳檔案到這裡',
   hint: '或點擊選擇檔案',
   accept: '*',
+  multiple: false,
 })
 
 const emit = defineEmits<{
   (e: 'file', file: File, sourceDir: string | undefined): void
+  (e: 'files', files: File[]): void
 }>()
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const isDragOver = ref(false)
 
 function handleClick() {
   fileInputRef.value?.click()
@@ -30,18 +34,28 @@ function extractSourceDir(file: File): string | undefined {
 function handleFileInput(e: Event) {
   const input = e.target as HTMLInputElement
   if (input.files && input.files.length > 0) {
-    const file = input.files[0]
-    emit('file', file, extractSourceDir(file))
+    if (props.multiple && input.files.length > 1) {
+      emit('files', Array.from(input.files))
+    } else {
+      const file = input.files[0]
+      emit('file', file, extractSourceDir(file))
+    }
     input.value = ''
   }
 }
 
 function handleDrop(e: DragEvent) {
   e.preventDefault()
+  e.stopPropagation()
+  isDragOver.value = false
   const files = e.dataTransfer?.files
   if (files && files.length > 0) {
-    const file = files[0]
-    emit('file', file, extractSourceDir(file))
+    if (props.multiple && files.length > 1) {
+      emit('files', Array.from(files))
+    } else {
+      const file = files[0]
+      emit('file', file, extractSourceDir(file))
+    }
   }
 }
 </script>
@@ -49,11 +63,13 @@ function handleDrop(e: DragEvent) {
 <template>
   <div
     class="upload-zone"
-    @dragover.prevent
+    :class="{ 'is-dragover': isDragOver }"
+    @dragover.prevent="isDragOver = true"
+    @dragleave="isDragOver = false"
     @drop="handleDrop"
     @click="handleClick"
   >
-    <input ref="fileInputRef" type="file" :accept="accept" hidden @change="handleFileInput" />
+    <input ref="fileInputRef" type="file" :accept="accept" :multiple="multiple" hidden @change="handleFileInput" />
     <i :class="['bi', icon]"></i>
     <p>{{ label }}</p>
     <p class="hint">{{ hint }}</p>
@@ -75,7 +91,8 @@ function handleDrop(e: DragEvent) {
   transition: all 0.2s ease;
 }
 
-.upload-zone:hover {
+.upload-zone:hover,
+.upload-zone.is-dragover {
   border-color: var(--drop-zone-border-hover);
   background: var(--input-bg);
 }

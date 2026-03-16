@@ -4,15 +4,18 @@ export interface InfoItem {
   label: string
 }
 
-defineProps<{
+withDefaults(defineProps<{
   items?: InfoItem[]
   loading?: boolean
   loadingText?: string
-}>()
+  overlay?: boolean
+}>(), {
+  overlay: false,
+})
 </script>
 
 <template>
-  <div class="media-info-bar" :class="{ loading }">
+  <div class="media-info-bar" :class="{ loading, 'is-overlay': overlay }">
     <template v-if="loading">
       <div class="spinner-border spinner-border-sm" role="status"></div>
       <span>{{ loadingText ?? '讀取資訊...' }}</span>
@@ -40,6 +43,14 @@ defineProps<{
     gap: 0.5rem;
     color: var(--text-muted);
     font-size: 0.85rem;
+  }
+
+  &.is-overlay {
+    border-top: none;
+    padding: 0.35rem 0.65rem;
+    gap: 0.3rem 0.8rem;
+    background: transparent;
+    justify-content: center;
   }
 }
 

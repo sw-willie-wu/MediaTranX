@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onActivated, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onActivated, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import AppUploadZone from '@/components/common/AppUploadZone.vue'
 import ComparisonSlider from '@/components/ComparisonSlider.vue'
@@ -31,6 +31,9 @@ const props = withDefaults(defineProps<{
   executeLabel?: string
   hideExecute?: boolean
   hidePreviewTabs?: boolean
+  showFilmstrip?: boolean
+  collectionSize?: number
+  originalPreviewUrl?: string | null
 }>(), {
   uploadIcon: 'bi-cloud-arrow-up-fill',
   uploadLabel: '拖曳檔案到這裡',
@@ -38,12 +41,14 @@ const props = withDefaults(defineProps<{
   uploadAccept: '*',
   executeLabel: '開始執行',
   resultPreviewUrl: null,
+  showFilmstrip: false,
 })
 
 const emit = defineEmits<{
   (e: 'select-function', id: string): void
   (e: 'execute'): void
   (e: 'file', file: File, sourceDir?: string): void
+  (e: 'files', files: File[]): void
   (e: 'remove-file'): void
   (e: 'download'): void
   (e: 'go-back'): void
@@ -72,7 +77,25 @@ function toggleCompare() {
 // 內部檔案管理
 const currentFile = ref<File | null>(null)
 const previewUrl = ref<string | null>(null)
-const hasFile = computed(() => !!currentFile.value)
+// In filmstrip mode: use collectionSize from parent OR currentFile as immediate fallback
+// (addEntry is async, so collectionSize lags behind the synchronous setFile call)
+const hasFile = computed(() =>
+  props.showFilmstrip
+    ? (props.collectionSize ?? 0) > 0 || !!currentFile.value
+    : !!currentFile.value
+)
+
+// When collection is cleared externally (all entries removed), reset internal state
+watch(
+  () => props.collectionSize,
+  (size) => {
+    if (props.showFilmstrip && (size ?? 0) === 0) {
+      if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+      currentFile.value = null
+      previewUrl.value = null
+    }
+  },
+)
 
 // 不支援類型 overlay
 const showUnsupported = ref(false)
@@ -110,11 +133,30 @@ function handleUploadFile(file: File, sourceDir?: string) {
   setFile(file, sourceDir)
 }
 
+function handleUploadFiles(files: File[]) {
+  emit('files', files)
+}
+
 function handleDrop(e: DragEvent) {
   e.preventDefault()
   isDragOver.value = false
   const files = e.dataTransfer?.files
   if (!files || files.length === 0) return
+
+  // Multi-file drop in filmstrip mode: validate type then forward all files to parent.
+  // Set currentFile temporarily so the upload zone hides immediately while async addEntry runs.
+  if (props.showFilmstrip && files.length > 1) {
+    const validFiles = props.acceptType
+      ? Array.from(files).filter(f => {
+          const detected = detectMediaType(f)
+          return detected === props.acceptType
+        })
+      : Array.from(files)
+    if (validFiles.length === 0) { showUnsupportedOverlay(null); return }
+    currentFile.value = validFiles[0]
+    emit('files', validFiles)
+    return
+  }
 
   const file = files[0]
   const sourceDir = window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
@@ -192,10 +234,10 @@ onBeforeUnmount(() => {
     </aside>
 
     <!-- 中間：預覽區域 -->
-    <main class="preview-area">
+    <main class="preview-area" :class="{ 'is-drag-over': isDragOver && hasFile }">
       <!-- 右上角直排按鈕群（有檔案才顯示） -->
       <div v-if="hasFile" class="preview-toolbar">
-        <button class="toolbar-btn remove-btn" data-tooltip="移除檔案" @click="removeFile">
+        <button v-if="!showFilmstrip" class="toolbar-btn remove-btn" data-tooltip="移除檔案" @click="removeFile">
           <i class="bi bi-x-lg"></i>
         </button>
         <button
@@ -253,6 +295,7 @@ onBeforeUnmount(() => {
         class="preview-content"
         @dragover="handleDragOver"
         @dragleave="handleDragLeave"
+        @drop.capture="isDragOver = false"
         @drop="handleDrop"
       >
         <!-- 不支援類型 overlay -->
@@ -263,12 +306,6 @@ onBeforeUnmount(() => {
           @go-to-tool="goToTool"
         />
 
-        <!-- 拖曳 hover 效果 -->
-        <div v-if="isDragOver" class="drag-hover-overlay">
-          <i class="bi bi-cloud-arrow-up-fill"></i>
-          <p>放開以載入檔案</p>
-        </div>
-
         <!-- 無檔案時顯示上傳區 -->
         <AppUploadZone
           v-if="!hasFile"
@@ -276,13 +313,15 @@ onBeforeUnmount(() => {
           :label="uploadLabel"
           :hint="uploadHint"
           :accept="uploadAccept"
+          :multiple="showFilmstrip"
           @file="handleUploadFile"
+          @files="handleUploadFiles"
         />
 
         <!-- Slider 比對模式 -->
         <ComparisonSlider
           v-else-if="isComparing && resultPreviewUrl"
-          :original-url="previewUrl!"
+          :original-url="props.originalPreviewUrl ?? previewUrl!"
           :result-url="resultPreviewUrl"
         />
 
@@ -299,10 +338,20 @@ onBeforeUnmount(() => {
             <p>請選擇或拖曳檔案</p>
           </div>
         </slot>
+
+        <!-- 資訊列：overlay 模式（showFilmstrip 為 true 時） -->
+        <div v-if="showFilmstrip && hasFile" class="preview-info-bar preview-info-bar--overlay">
+          <slot name="info-bar" />
+        </div>
       </div>
 
-      <!-- 資訊列（與右側 execute-section 同層對齊） -->
-      <div v-if="hasFile" class="preview-info-bar">
+      <!-- Filmstrip slot — 固定在 preview-area 底部，不參與 preview-content 的捲動 -->
+      <div v-if="showFilmstrip && hasFile" class="filmstrip-slot">
+        <slot name="filmstrip" />
+      </div>
+
+      <!-- 資訊列（標準模式，showFilmstrip 為 false 時，與右側 execute-section 同層對齊） -->
+      <div v-if="!showFilmstrip && hasFile" class="preview-info-bar">
         <slot name="info-bar" />
       </div>
     </main>
@@ -534,7 +583,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
+  padding: 2.5rem;
   overflow: auto;
 }
 
@@ -546,23 +595,17 @@ onBeforeUnmount(() => {
   p { font-size: 1rem; }
 }
 
-// 拖曳 hover
-.drag-hover-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  background: rgba(96, 165, 250, 0.1);
-  border: 2px dashed var(--color-accent);
-  border-radius: 8px;
-  pointer-events: none;
+// 拖曳 hover（有檔案時：整個 preview-area 變色，不顯示 icon/文字）
+.preview-area.is-drag-over {
+  border-color: var(--color-primary);
+  background: var(--drag-over-bg);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
 
-  i { font-size: 2.5rem; color: var(--color-accent); }
-  p { color: var(--color-accent); font-size: 0.95rem; margin: 0; }
+// Filmstrip slot container — direct flex child of preview-area, fixed at bottom
+.filmstrip-slot {
+  flex-shrink: 0;
+  border-top: 1px solid var(--panel-border);
 }
 
 // 右側設定面板
@@ -590,6 +633,7 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--panel-border);
 }
 
+// Standard info bar (showFilmstrip = false)
 .preview-info-bar {
   min-height: 4.85rem;
   padding: 1rem;
@@ -601,6 +645,24 @@ onBeforeUnmount(() => {
   :deep(.media-info-bar) {
     border-top: none;
     padding: 0;
+  }
+
+  // Overlay mode (showFilmstrip = true) — absolute, bottom-center of preview-content
+  &--overlay {
+    position: absolute;
+    bottom: 0.25rem;
+    left: 50%;
+    transform: translateX(-50%);
+    min-height: unset;
+    padding: 0.35rem 0.9rem;
+    border-top: none;
+    z-index: 5;
+    max-width: min(480px, 90%);
+
+    :deep(.media-info-bar) {
+      border-top: none;
+      padding: 0;
+    }
   }
 }
 
