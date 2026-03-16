@@ -52,7 +52,7 @@ export function useCanvasMask(
     }
   }
 
-  /** 同步 canvas 位置與尺寸到圖片元素 */
+  /** 同步 canvas 位置與尺寸到圖片元素（排除 object-fit: contain 的 letterbox 區域） */
   function syncToImage() {
     const img = imgRef.value
     const container = containerRef.value
@@ -62,12 +62,21 @@ export function useCanvasMask(
     const imgRect = img.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
 
-    canvas.style.left = `${imgRect.left - containerRect.left}px`
-    canvas.style.top = `${imgRect.top - containerRect.top}px`
-    canvas.style.width = `${imgRect.width}px`
-    canvas.style.height = `${imgRect.height}px`
-    canvas.width = img.naturalWidth
-    canvas.height = img.naturalHeight
+    // 計算 object-fit: contain 後實際圖片內容的渲染尺寸（排除 letterbox）
+    const nw = img.naturalWidth
+    const nh = img.naturalHeight
+    const scale = Math.min(imgRect.width / nw, imgRect.height / nh)
+    const contentW = nw * scale
+    const contentH = nh * scale
+    const contentLeft = imgRect.left + (imgRect.width - contentW) / 2
+    const contentTop = imgRect.top + (imgRect.height - contentH) / 2
+
+    canvas.style.left = `${contentLeft - containerRect.left}px`
+    canvas.style.top = `${contentTop - containerRect.top}px`
+    canvas.style.width = `${contentW}px`
+    canvas.style.height = `${contentH}px`
+    canvas.width = nw
+    canvas.height = nh
     // 同步 offscreen 遮罩尺寸（保留已畫內容）
     getMaskCanvas(canvas.width, canvas.height)
     redraw()

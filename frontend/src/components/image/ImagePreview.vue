@@ -91,6 +91,7 @@ const svgWarmMatrix = computed(() => {
   return `1 0 0 0 ${rOff}  0 1 0 0 0  0 0 1 0 ${bOff}  0 0 0 1 0`
 })
 
+
 const needsSvgFilter = computed(() => {
   const f = props.filterPreview
   if (!f) return false
@@ -252,6 +253,7 @@ function handleMouseDown(e: MouseEvent) {
     display: block;
   }
 }
+
 
 .mask-canvas {
   position: absolute;

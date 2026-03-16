@@ -38,7 +38,12 @@ function stopSliderDrag() {
 
 <template>
   <div ref="containerRef" class="compare-slider-container">
-    <img :src="originalUrl" alt="原圖" class="compare-img compare-img-original" />
+    <img
+      :src="originalUrl"
+      alt="原圖"
+      class="compare-img compare-img-original"
+      :style="{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }"
+    />
     <img
       :src="resultUrl"
       alt="成果"
