@@ -286,7 +286,12 @@ class FileService:
 
         try:
             file_path = Path(file_info.file_path)
-            if file_path.exists():
+            # 只刪除 temp 目錄內的檔案，避免誤刪使用者原始檔案（register_local_file 的路徑）
+            is_managed = (
+                str(file_path).startswith(str(self._upload_dir)) or
+                str(file_path).startswith(str(self._output_dir))
+            )
+            if is_managed and file_path.exists():
                 file_path.unlink()
 
             del self._files[file_id]
