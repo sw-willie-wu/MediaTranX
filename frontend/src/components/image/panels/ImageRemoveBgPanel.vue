@@ -20,6 +20,7 @@ const removeBgModes = [
   { value: 'person',  label: '人物' },
   { value: 'product', label: '商品' },
   { value: 'animal',  label: '動物' },
+  { value: 'anime',   label: '動漫 / 插畫' },
 ]
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)

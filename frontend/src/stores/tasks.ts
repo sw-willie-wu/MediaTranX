@@ -3,14 +3,14 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Task, ProgressUpdate } from '@/types/task'
+import type { Task } from '@/types/task'
 
 import { getApiBase } from '@/composables/useApi'
 
 export const useTaskStore = defineStore('tasks', () => {
   // 狀態
   const tasks = ref<Map<string, Task>>(new Map())
-  const eventSources = ref<Map<string, EventSource>>(new Map())
+  const pollingInterval = ref<ReturnType<typeof setInterval> | null>(null)
 
   // 計算屬性
   const activeTasks = computed(() =>
@@ -31,6 +31,18 @@ export const useTaskStore = defineStore('tasks', () => {
 
   const activeCount = computed(() => activeTasks.value.length)
 
+  function startPolling() {
+    if (pollingInterval.value !== null) return
+    pollingInterval.value = setInterval(refreshTasks, 1000)
+  }
+
+  function stopPolling() {
+    if (pollingInterval.value !== null) {
+      clearInterval(pollingInterval.value)
+      pollingInterval.value = null
+    }
+  }
+
   // 提交任務
   async function submitTask(
     taskType: string,
@@ -49,7 +61,6 @@ export const useTaskStore = defineStore('tasks', () => {
     const data = await response.json()
     const taskId = data.task_id
 
-    // 建立本地任務記錄
     const task: Task = {
       taskId,
       taskType,
@@ -62,68 +73,16 @@ export const useTaskStore = defineStore('tasks', () => {
       updatedAt: new Date(),
     }
     tasks.value.set(taskId, task)
-
-    // 訂閱進度更新
-    subscribeToProgress(taskId)
+    startPolling()
 
     return taskId
   }
 
-  // 註冊任務並自動訂閱 SSE
+  // 註冊任務並啟動輪詢
   function addTask(task: Task) {
     tasks.value.set(task.taskId, task)
     if (task.status === 'pending' || task.status === 'processing') {
-      subscribeToProgress(task.taskId)
-    }
-  }
-
-  // 訂閱 SSE 進度更新
-  function subscribeToProgress(taskId: string) {
-    // 如果已經有訂閱，先關閉
-    const existingSource = eventSources.value.get(taskId)
-    if (existingSource) {
-      existingSource.close()
-    }
-
-    const eventSource = new EventSource(`${getApiBase()}/tasks/${taskId}/progress`)
-    eventSources.value.set(taskId, eventSource)
-
-    eventSource.onmessage = (event) => {
-      const data: ProgressUpdate = JSON.parse(event.data)
-      const task = tasks.value.get(taskId)
-
-      if (task) {
-        task.progress = data.progress
-        task.message = data.message
-        task.updatedAt = new Date()
-
-        // 判斷狀態
-        if (data.stage === 'completed') {
-          task.status = 'completed'
-          task.progress = 1.0
-          if (data.result) task.result = data.result
-          eventSource.close()
-          eventSources.value.delete(taskId)
-        } else if (data.stage === 'error') {
-          task.status = 'failed'
-          task.error = data.message
-          eventSource.close()
-          eventSources.value.delete(taskId)
-        } else {
-          task.status = 'processing'
-        }
-      }
-    }
-
-    eventSource.onerror = () => {
-      eventSource.close()
-      eventSources.value.delete(taskId)
-
-      const task = tasks.value.get(taskId)
-      if (task && task.status === 'processing') {
-        task.status = 'failed'
-        task.error = 'Connection lost'
-      }
+      startPolling()
     }
   }
 
@@ -140,14 +99,6 @@ export const useTaskStore = defineStore('tasks', () => {
           task.status = 'cancelled'
           task.updatedAt = new Date()
         }
-
-        // 關閉 SSE 連線
-        const eventSource = eventSources.value.get(taskId)
-        if (eventSource) {
-          eventSource.close()
-          eventSources.value.delete(taskId)
-        }
-
         return true
       }
     } catch (error) {
@@ -173,7 +124,7 @@ export const useTaskStore = defineStore('tasks', () => {
     return false
   }
 
-  // 重新載入任務列表
+  // 重新載入任務列表（輪詢核心）
   async function refreshTasks(): Promise<void> {
     try {
       const response = await fetch(`${getApiBase()}/tasks`)
@@ -197,11 +148,11 @@ export const useTaskStore = defineStore('tasks', () => {
           fileName: existing?.fileName ?? taskData.file_name,
         }
         tasks.value.set(task.taskId, task)
+      }
 
-        // 對進行中的任務重新訂閱
-        if (task.status === 'pending' || task.status === 'processing') {
-          subscribeToProgress(task.taskId)
-        }
+      // 沒有 active task 時停止輪詢
+      if (activeTasks.value.length === 0) {
+        stopPolling()
       }
     } catch (error) {
       console.error('Failed to refresh tasks:', error)
@@ -210,27 +161,21 @@ export const useTaskStore = defineStore('tasks', () => {
 
   // 清理
   function cleanup() {
-    for (const eventSource of eventSources.value.values()) {
-      eventSource.close()
-    }
-    eventSources.value.clear()
+    stopPolling()
   }
 
   return {
-    // 狀態
     tasks,
     activeTasks,
     completedTasks,
     failedTasks,
     allTasks,
     activeCount,
-    // 方法
     addTask,
     submitTask,
     cancelTask,
     removeTask,
     refreshTasks,
-    subscribeToProgress,
     cleanup,
   }
 })

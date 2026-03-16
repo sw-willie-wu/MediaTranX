@@ -8,17 +8,16 @@
 
 ```
 MediaTranX/
-├── bin/                        # 第三方二進位工具（不進 git）
-│   └── ffmpeg/                 # FFmpeg 執行檔
-├── src/
-│   ├── backend/                # Python FastAPI 後端
-│   ├── frontend/               # Vue 3 前端（純 Vite，無 Electron）
-│   └── electron/               # Electron 主進程（main.js, preload.cjs, splash.html）
-├── docs/                       # 文件
-└── .venv/                      # Python 虛擬環境（uv 管理）
+├── backend/                    # Python FastAPI 後端
+│   ├── app/                    # 後端主程式
+│   ├── pyproject.toml          # Python 依賴（uv 管理）
+│   ├── .venv/                  # Python 虛擬環境（uv 管理，不進 git）
+│   └── models/                 # AI 模型（按需下載，不進 git）
+├── frontend/                   # Vue 3 前端（純 Vite，無 Electron）
+└── docs/                       # 文件
 ```
 
-> AI 模型與 `.venv` 存放於 `%APPDATA%/MediaTranX/`，不在專案目錄內。
+> 打包後 `.venv` 與 `models/` 改存至 `%APPDATA%/MediaTranX/`。
 
 ---
 
@@ -32,79 +31,72 @@ MediaTranX/
 API 路由層 (api/routes/)
     └─ 接收 HTTP 請求，驗證參數，呼叫 Service
 Service 層 (services/)
-    └─ 業務邏輯、任務提交、協調 Core
-Core 層 (core/)
+    └─ 業務邏輯、任務提交、協調 Engine
+Engine 層 (engine/)
     └─ 與外部工具/AI 模型互動的底層封裝
 ```
 
-**規則：路由只呼叫 Service，Service 呼叫 Core，不可跨層跳躍。**
+**規則：路由只呼叫 Service，Service 呼叫 Engine，不可跨層跳躍。**
 
 ### 目錄結構
 
 ```
-src/backend/
+backend/app/
 ├── main.py                     # FastAPI app 建立，掛載 build_router()
-├── run_server.py               # 打包後的進入點（uvicorn 啟動）
 ├── api/
 │   ├── __init__.py             # build_router(app) → 掛載 /api 路由
-│   ├── middleware.py           # CORS 等中間件
 │   ├── routes/
 │   │   ├── __init__.py         # 彙總所有子路由
 │   │   ├── health.py           # GET /api/health, /api/device
 │   │   ├── files.py            # GET/POST /api/files/...
 │   │   ├── tasks.py            # GET/POST/DELETE /api/tasks/... + SSE
-│   │   ├── setup.py            # GET /api/setup/... (首次設定)
+│   │   ├── setup/              # /api/setup/... (AI 環境設定)
+│   │   │   ├── status.py       # GET /status, POST /initialize
+│   │   │   ├── models.py       # GET /models, POST /models/download|remove
+│   │   │   └── config.py       # GET/POST /config
 │   │   ├── video/
 │   │   │   ├── transcode.py    # POST /api/video/transcode
 │   │   │   └── subtitle.py     # POST /api/video/subtitle/...
 │   │   ├── audio/
-│   │   │   └── transcode.py    # POST /api/audio/transcode
+│   │   │   └── transcribe.py   # POST /api/audio/transcribe
 │   │   ├── image/
-│   │   │   ├── convert.py      # GET /api/image/info/{id}, POST /api/image/convert
-│   │   │   └── upscale.py      # GET /api/image/upscale/status, POST /api/image/upscale
+│   │   │   ├── ocr.py          # POST /api/image/ocr
+│   │   │   └── upscale.py      # POST /api/image/upscale
 │   │   └── document/
+│   │       ├── ocr.py          # POST /api/document/ocr
 │   │       └── translate.py    # POST /api/document/translate
-│   └── schemas/
-│       └── common.py           # 共用 Pydantic schema（FileInfo, TaskResponse 等）
-├── core/
+├── engine/                     # 底層封裝（硬體、路徑、AI）
 │   ├── device.py               # GPU/CPU 自動偵測
 │   ├── ffmpeg.py               # FFmpeg 封裝（影音處理）
 │   ├── paths.py                # 路徑管理（dev/packaged 雙模式）
-│   └── ai/                     # AI 模型封裝
-│       ├── model_manager.py    # VRAM 管理（LRU 驅逐）
-│       ├── base_translator.py  # 翻譯基礎類別
-│       ├── whisper.py          # faster-whisper STT
-│       ├── translategemma.py   # TranslateGemma (Gemma 2)
-│       ├── qwen3.py            # Qwen3 翻譯
-│       └── translation.py      # get_translator() 分發器
+│   └── ai/                     # AI 模型封裝（按 runtime 分類）
+│       ├── registry.py         # 模型 registry（Single Source of Truth）
+│       ├── model_manager.py    # VRAM 調度（Slot 機制）
+│       ├── base/               # Runtime 抽象 + 跨 runtime task base
+│       ├── bin/                # CTranslate2（Whisper）
+│       ├── pth/                # PyTorch（超解析、人臉修復）
+│       └── llama/              # llama-server（翻譯 LLM、VLM OCR）
 ├── workers/
 │   ├── task_manager.py         # ThreadPoolExecutor 任務佇列
 │   └── progress_tracker.py     # SSE 進度推送（ProgressEvent）
 └── services/
-    ├── __init__.py             # 匯出所有 Service 和 get_xxx() 函數
     ├── files/
-    │   └── file_service.py     # 檔案管理（上傳、下載、本地註冊）
     ├── video/
-    │   ├── transcode_service.py
-    │   └── subtitle_service.py
     ├── audio/
-    │   └── transcode_service.py
     ├── image/
-    │   ├── convert_service.py  # PIL 圖片格式轉換
-    │   └── upscale_service.py  # Real-ESRGAN / waifu2x 超解析
-    └── document/
-        └── translate_service.py
+    ├── document/
+    └── setup/                  # AI 環境安裝、模型下載/移除
 ```
 
 ### paths.py — 路徑管理規範
 
-所有外部工具/資源路徑**必須**透過 `core/paths.py` 取得，不可在其他地方 hardcode 路徑。
+所有外部工具/資源路徑**必須**透過 `engine/paths.py` 取得，不可在其他地方 hardcode 路徑。
 
 ```python
-# 每個路徑函數都處理 dev（bin/） 和 packaged（PyInstaller frozen）兩種模式
-from backend.core.paths import get_ffmpeg_dir, get_realesrgan_dir, get_waifu2x_dir
+# 每個路徑函數都處理 dev（bin/） 和 packaged（Nuitka frozen）兩種模式
+from app.engine.paths import get_ffmpeg_dir, get_models_dir
 
-exe = get_realesrgan_dir() / "realesrgan-ncnn-vulkan.exe"
+exe = get_ffmpeg_dir() / "ffmpeg.exe"
 ```
 
 新增二進位工具時，在 `paths.py` 加對應的 `get_xxx_dir()` 函數。
@@ -213,7 +205,7 @@ async def my_endpoint(request: MyRequest):
 ### 目錄結構
 
 ```
-src/frontend/src/
+frontend/src/
 ├── main.ts                     # 應用入口，掛載 Pinia + Router
 ├── App.vue                     # 根元件（Titlebar + RouterView + MainSidebar + AppToast）
 ├── router/
@@ -403,13 +395,13 @@ var(--color-accent)        // 強調色
 
 新增需要外部執行檔的功能（如圖像處理工具）：
 
-1. **放置位置**：`bin/<tool-name>/`（執行檔 + 必要模型/資源）
-2. **路徑函數**：在 `core/paths.py` 新增 `get_<tool>_dir()` 函數
+1. **放置位置**：`backend/bin/<tool-name>/`（執行檔 + 必要模型/資源）
+2. **路徑函數**：在 `engine/paths.py` 新增 `get_<tool>_dir()` 函數
 3. **可用性檢查**：Service 提供 `is_<tool>_available() -> bool` 方法
 4. **狀態 API**：路由提供 `GET /api/<domain>/<tool>/status` 端點，前端據此決定是否顯示選項
 
 ```python
-# core/paths.py 範例
+# engine/paths.py 範例
 def get_mytool_dir() -> Path:
     if _is_frozen():
         return Path(sys.executable).parent.parent / "mytool"
@@ -452,38 +444,23 @@ def get_mytool_dir() -> Path:
 
 ### 啟動
 
-```bash
-cd src/electron
-npm run electron
-```
-
-自動啟動：Vite dev server (port 8000) + Python FastAPI (port 8001) + Electron
-
-### 重啟
-
-```bash
-taskkill //F //IM electron.exe
-taskkill //F //IM node.exe
-taskkill //F //IM python.exe
-# 等 2 秒後再啟動
-cd src/electron && npm run electron
-```
+透過 Electron 主進程啟動（自動帶起 Vite dev server port 8000 + Python FastAPI port 8001）。
 
 ### Python 虛擬環境
 
 ```bash
-# 執行單個腳本
+# 執行單個腳本（在 backend/ 目錄下）
+cd backend
 .venv/Scripts/python.exe <script>
 
-# 確認 import 正常（在 src/ 目錄下執行）
-cd src && ../.venv/Scripts/python.exe -c "from backend.main import app; print('OK')"
+# 確認 import 正常
+.venv/Scripts/python.exe -c "from app.main import app; print('OK')"
 ```
 
 ---
 
 ## 打包（Production）
 
-- Python 後端：PyInstaller，`core/paths.py` 的 `_is_frozen()` 自動切換路徑
-- 前端：`npm run build` 產出靜態檔案
-- Electron 打包：`npm run electron:build`
+- Python 後端：Nuitka 編譯為 `backend.exe`，`engine/paths.py` 的 `_is_frozen()` 自動切換路徑
+- 前端：`cd frontend && npm run build` 產出靜態檔案
 - 打包後二進位工具路徑：`resources/<tool-name>/`（相對於 `sys.executable` 父目錄的父目錄）

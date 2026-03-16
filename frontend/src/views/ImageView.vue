@@ -7,11 +7,13 @@ import ImageConvertPanel  from '@/components/image/panels/ImageConvertPanel.vue'
 import ImageUpscalePanel  from '@/components/image/panels/ImageUpscalePanel.vue'
 import ImageRemoveBgPanel from '@/components/image/panels/ImageRemoveBgPanel.vue'
 import ImageAiRemovePanel from '@/components/image/panels/ImageAiRemovePanel.vue'
+import ImageAdjustPanel   from '@/components/image/panels/ImageAdjustPanel.vue'
 import ImageFilterPanel   from '@/components/image/panels/ImageFilterPanel.vue'
 import ImageCropPanel     from '@/components/image/panels/ImageCropPanel.vue'
 import ImageCompressPanel from '@/components/image/panels/ImageCompressPanel.vue'
 import ImageOcrPanel      from '@/components/image/panels/ImageOcrPanel.vue'
 import OcrResultModal     from '@/components/image/OcrResultModal.vue'
+import type { FilterPreview } from '@/components/image/panels/filterTypes'
 import { useImageWorkspace } from '@/composables/useImageWorkspace'
 
 const {
@@ -30,6 +32,7 @@ const convertPanelRef  = ref<InstanceType<typeof ImageConvertPanel>  | null>(nul
 const upscalePanelRef  = ref<InstanceType<typeof ImageUpscalePanel>  | null>(null)
 const removeBgPanelRef = ref<InstanceType<typeof ImageRemoveBgPanel> | null>(null)
 const aiRemovePanelRef = ref<InstanceType<typeof ImageAiRemovePanel> | null>(null)
+const adjustPanelRef   = ref<InstanceType<typeof ImageAdjustPanel>   | null>(null)
 const filterPanelRef   = ref<InstanceType<typeof ImageFilterPanel>   | null>(null)
 const cropPanelRef     = ref<InstanceType<typeof ImageCropPanel>     | null>(null)
 const compressPanelRef = ref<InstanceType<typeof ImageCompressPanel> | null>(null)
@@ -41,13 +44,15 @@ const subFunctions = [
   { id: 'remove-bg', name: '去背',    icon: 'bi-eraser-fill' },
   { id: 'ai-remove', name: '物件移除', icon: 'bi-magic' },
   { id: 'upscale',   name: '超解析',  icon: 'bi-arrows-angle-expand' },
+  { id: 'adjust',    name: '調整',    icon: 'bi-sliders' },
   { id: 'filter',    name: '濾鏡',    icon: 'bi-palette-fill' },
   { id: 'crop',      name: '裁切',    icon: 'bi-crop' },
   { id: 'compress',  name: '壓縮',    icon: 'bi-file-zip-fill' },
   { id: 'ocr',       name: '文字辨識', icon: 'bi-type' },
 ]
 
-const currentFunction = ref('convert')
+const currentFunction     = ref('convert')
+const filterPreviewParams = ref<FilterPreview | null>(null)
 
 const isAiRemoveMode = computed(() => currentFunction.value === 'ai-remove' && hasFile.value)
 const isCropMode     = computed(() => currentFunction.value === 'crop'      && hasFile.value)
@@ -64,9 +69,19 @@ watch(isCropMode, (active) => {
 })
 
 watch(currentFunction, (val) => {
+  if (val !== 'adjust' && val !== 'filter') {
+    filterPreviewParams.value = null
+  }
   if (val === 'upscale' || val === 'ai-remove') checkAiEnvironment(val)
   if (val === 'ai-remove') {
     nextTick(() => previewRef.value?.syncToImage())
+  }
+})
+
+// 後端結果回來後清除 preview（新圖片已含效果）
+watch(activePreviewUrl, (newUrl, oldUrl) => {
+  if (newUrl !== oldUrl && (currentFunction.value === 'adjust' || currentFunction.value === 'filter')) {
+    filterPreviewParams.value = null
   }
 })
 
@@ -89,6 +104,7 @@ const executeLoading = computed(() => {
   if (currentFunction.value === 'upscale')   return upscalePanelRef.value?.isLoading   ?? false
   if (currentFunction.value === 'remove-bg') return removeBgPanelRef.value?.isLoading  ?? false
   if (currentFunction.value === 'ai-remove') return aiRemovePanelRef.value?.isLoading  ?? false
+  if (currentFunction.value === 'adjust')    return adjustPanelRef.value?.isLoading    ?? false
   if (currentFunction.value === 'filter')    return filterPanelRef.value?.isLoading    ?? false
   if (currentFunction.value === 'crop')      return cropPanelRef.value?.isLoading      ?? false
   if (currentFunction.value === 'compress')  return compressPanelRef.value?.isLoading  ?? false
@@ -102,6 +118,7 @@ function handleExecute() {
     case 'upscale':   upscalePanelRef.value?.execute();  break
     case 'remove-bg': removeBgPanelRef.value?.execute(); break
     case 'ai-remove': aiRemovePanelRef.value?.execute(); break
+    case 'adjust':    adjustPanelRef.value?.execute();   break
     case 'filter':    filterPanelRef.value?.execute();   break
     case 'crop':      cropPanelRef.value?.execute();     break
     case 'compress':  compressPanelRef.value?.execute(); break
@@ -111,7 +128,6 @@ function handleExecute() {
 
 function onPanelSubmit(taskId: string) {
   handlePanelSubmit(taskId)
-  // 任務完成後清除筆刷（由 workspace watch 觸發，這裡無需重複）
 }
 
 // 任務完成後清除 AI 移除筆刷
@@ -184,6 +200,7 @@ const imageInfoItems = computed<InfoItem[]>(() => {
         :is-ai-remove-mode="isAiRemoveMode"
         :show-crop-overlay="showCropOverlay"
         :crop-aspect-ratio="cropAspectRatio"
+        :filter-preview="filterPreviewParams"
         @crop-rect-change="canvasCropRect = $event"
       />
     </template>
@@ -238,12 +255,22 @@ const imageInfoItems = computed<InfoItem[]>(() => {
           @submit="onPanelSubmit"
         />
 
+        <ImageAdjustPanel
+          v-else-if="currentFunction === 'adjust'"
+          ref="adjustPanelRef"
+          :file-id="activeFileId"
+          :current-file-name="currentFileName"
+          @submit="onPanelSubmit"
+          @preview-change="filterPreviewParams = $event"
+        />
+
         <ImageFilterPanel
           v-else-if="currentFunction === 'filter'"
           ref="filterPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           @submit="onPanelSubmit"
+          @preview-change="filterPreviewParams = $event"
         />
 
         <ImageCropPanel

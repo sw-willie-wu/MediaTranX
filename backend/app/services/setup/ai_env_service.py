@@ -14,7 +14,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-from app.engine.paths import get_base_data_dir, get_llama_bin_dir, _get_app_root
+from app.engine.paths import get_base_data_dir, get_llama_bin_dir, _get_app_root, _is_frozen
 from app.engine.device import get_device_info, select_torch_index
 from app.workers.progress_tracker import get_progress_tracker
 
@@ -37,8 +37,9 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
         await tracker.emit(task_id, 0.05, "開始診斷硬體環境...", stage="processing")
 
         app_root = _get_app_root()
-        uv_exe = app_root / "resources" / "uv.exe" if getattr(sys, 'frozen', False) else "uv"
-        cwd = str(app_root / "resources") if getattr(sys, 'frozen', False) else str(app_root)
+        uv_exe = app_root / "resources" / "uv.exe" if _is_frozen() else "uv"
+        cwd = str(app_root / "resources") if _is_frozen() else str(app_root)
+        logger.info(f"uv setup: app_root={app_root}, cwd={cwd}, uv={uv_exe}")
 
         device = get_device_info()
         torch_variant = select_torch_index()
@@ -71,7 +72,10 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
                             break
                         msg = line.decode('utf-8', errors='replace').strip()
                         if msg:
-                            logger.info(f"[uv-{label}] {msg}")
+                            if label == "err":
+                                logger.warning(f"[uv-err] {msg}")
+                            else:
+                                logger.info(f"[uv-out] {msg}")
                             # 只在 uv 安裝套件時（+ package==version）才更新前端進度
                             if msg.startswith('+'):
                                 pkg = msg[1:].strip().split('==')[0]
@@ -92,7 +96,7 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
                 # 進度：套件裝完→30%，Torch 裝完→55%，llama-server→80%，cudart→100%
                 await tracker.emit(task_id, 0.1, "安裝基礎 AI 套件中（Step 1/3）...", stage="processing")
                 rc = await run_uv([
-                    str(uv_exe), "sync", "--extra", "ai", "--no-dev",
+                    str(uv_exe), "--project", cwd, "sync", "--extra", "ai", "--no-dev",
                     "--no-install-package", "torch",
                     "--no-install-package", "torchvision",
                 ], 0.1, 0.29)
@@ -121,18 +125,34 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
                     logger.warning("llama-server 下載失敗，請稍後手動重試。")
 
             else:
-                # ── CPU 模式：2 步 ──
-                # 進度：套件裝完→80%，llama-server→100%
-                await tracker.emit(task_id, 0.1, "安裝 AI 套件中（Step 1/2）...", stage="processing")
-                rc = await run_uv([str(uv_exe), "sync", "--extra", "ai", "--no-dev"], 0.1, 0.79)
+                # ── CPU 模式：3 步（與 GPU 路徑對稱）──
+                # 進度：非 torch 套件→30%，CPU Torch→55%，llama-server→100%
+                await tracker.emit(task_id, 0.1, "安裝基礎 AI 套件中（Step 1/3）...", stage="processing")
+                rc = await run_uv([
+                    str(uv_exe), "--project", cwd, "sync", "--extra", "ai", "--no-dev",
+                    "--no-install-package", "torch",
+                    "--no-install-package", "torchvision",
+                ], 0.1, 0.29)
                 if rc != 0:
                     await tracker.emit(task_id, 1.0, f"安裝失敗 (Code {rc})，請查看日誌。", stage="error")
                     return
 
-                await tracker.emit(task_id, 0.8, "下載 llama-server 二進位（Step 2/2）...", stage="processing")
+                await tracker.emit(task_id, 0.3, "安裝 CPU Torch（Step 2/3）...", stage="processing")
+                rc = await run_uv([
+                    str(uv_exe), "pip", "install",
+                    "--python", str(venv_python),
+                    "--no-deps",
+                    "--index-url", index_url,
+                    "torch", "torchvision",
+                ], 0.3, 0.54)
+                if rc != 0:
+                    await tracker.emit(task_id, 1.0, f"CPU Torch 安裝失敗 (Code {rc})，請查看日誌。", stage="error")
+                    return
+
+                await tracker.emit(task_id, 0.55, "下載 llama-server 二進位（Step 3/3）...", stage="processing")
                 loop = asyncio.get_running_loop()
                 ok = await loop.run_in_executor(
-                    None, download_llama_server, "cpu", task_id, loop, 0.8, 1.0, 1.0
+                    None, download_llama_server, "cpu", task_id, loop, 0.55, 0.80, 1.0
                 )
                 if not ok:
                     logger.warning("llama-server 下載失敗，請稍後手動重試。")

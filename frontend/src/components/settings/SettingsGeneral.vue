@@ -34,11 +34,16 @@ onMounted(() => {
     } catch { /* ignore */ }
   }
   settings.value.theme = themeMode.value
+  window.electron?.setAutoClean(settings.value.autoCleanTemp)
   loadDirConfig()
 })
 
 watch(() => settings.value.theme, (newTheme) => {
   setTheme(newTheme)
+})
+
+watch(() => settings.value.autoCleanTemp, (val) => {
+  window.electron?.setAutoClean(val)
 })
 
 watch(settings, () => {

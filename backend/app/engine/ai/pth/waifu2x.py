@@ -3,11 +3,10 @@ Waifu2x 動漫風格超解析封裝 (Three-Layer Architecture V3)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 繼承 PTHRuntime + Spandrel，支援 CUNet art 模型
 """
+from __future__ import annotations
+
 import logging
 from typing import Optional, Callable
-
-import numpy as np
-from PIL import Image
 
 from app.engine.ai.base import PTHRuntime
 from app.engine.ai.registry import FORMAT_PTH, MODELS_REGISTRY, SLOT_PTH
@@ -61,6 +60,8 @@ class Waifu2xWrapper(PTHRuntime):
                 variant=model_id,
                 on_progress=on_progress,
             ) as model:
+                import numpy as np
+                from PIL import Image
                 import torch
                 img_array = np.array(image.convert("RGB"))
                 img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0).float() / 255.0

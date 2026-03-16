@@ -5,8 +5,6 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
-from PIL import Image
-
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 logger = logging.getLogger(__name__)
@@ -81,6 +79,7 @@ class ImageUpscaleService:
         return task_id
 
     def _handle_upscale_task(self, params: dict, progress_callback: Callable) -> dict:
+        from PIL import Image
         file_id  = params["file_id"]
         model_id = params["model_id"]
         scale    = params["scale"]
@@ -105,11 +104,17 @@ class ImageUpscaleService:
         with Image.open(file_info.file_path) as img:
             img = img.copy()
 
+        # 保留 alpha 通道（engine 內部會 convert("RGB") 丟掉透明度）
+        img_rgba = img.convert("RGBA")
+        alpha_channel = img_rgba.split()[3]
+        has_alpha = alpha_channel.getextrema()[0] < 255
+        img_to_process = img_rgba.convert("RGB") if has_alpha else img.convert("RGB")
+
         upscale_end = 0.7 if face_fix else 0.85
 
         # 載入階段佔 5-40%；p=1.0 時改顯示「推理中」訊息
         result_img = upscaler.enhance(
-            img,
+            img_to_process,
             model_id=upscale_variant,
             scale=native_scale,
             on_progress=lambda p, m: progress_callback(
@@ -122,6 +127,13 @@ class ImageUpscaleService:
         if scale < native_scale:
             orig_w, orig_h = img.size
             result_img = result_img.resize((orig_w * scale, orig_h * scale), Image.LANCZOS)
+
+        # 還原 alpha 通道（等比放大 alpha 到輸出尺寸）
+        if has_alpha:
+            alpha_upscaled = alpha_channel.resize(result_img.size, Image.LANCZOS)
+            result_rgba = result_img.convert("RGBA")
+            result_rgba.putalpha(alpha_upscaled)
+            result_img = result_rgba
 
         # inference 完成後跳至目標進度
         progress_callback(upscale_end, "超解析完成")
@@ -170,5 +182,11 @@ class ImageUpscaleService:
         return target_dir / f"{Path(file_info.original_filename).stem}_x{scale}_{uuid4().hex[:8]}.png"
 
 
+_image_upscale_service: Optional[ImageUpscaleService] = None
+
+
 def get_image_upscale_service() -> ImageUpscaleService:
-    return ImageUpscaleService()
+    global _image_upscale_service
+    if _image_upscale_service is None:
+        _image_upscale_service = ImageUpscaleService()
+    return _image_upscale_service

@@ -25,8 +25,7 @@ dependencies = [
 # AI Extensions (Downloaded on-demand via uv)
 ai = [
     # --- Inference Runtimes ---
-    "torch>=2.5.1",
-    "torchvision>=0.20.1",
+    # torch / torchvision 由 setup 依硬體偵測另外安裝（CPU / CUDA），不列入 lock
     "ctranslate2>=4.7.1",
     "onnxruntime>=1.17.0",
     # --- Media Processing Libraries ---

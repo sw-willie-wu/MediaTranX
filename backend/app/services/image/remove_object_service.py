@@ -1,13 +1,14 @@
 """
 AI 物件移除服務（MobileSAM + LaMa Inpainting）
 """
+from __future__ import annotations
+
 import base64
 import io
 import logging
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
-from PIL import Image
 
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
@@ -82,6 +83,7 @@ class ImageRemoveObjectService:
     def _run_inpaint(self, image_pil: Image.Image, mask_pil: Image.Image) -> Image.Image:
         """用 LaMa 填補遮罩區域（裁切包圍框處理，支援大圖），fallback 至 OpenCV。"""
         import numpy as np
+        from PIL import Image
         LAMA_MAX_SIZE = 1024  # LaMa 最大處理邊長
 
         try:
@@ -165,6 +167,7 @@ class ImageRemoveObjectService:
 
     def _decode_mask(self, mask_data: str, target_w: int, target_h: int):
         import numpy as np
+        from PIL import Image
         if "," in mask_data:
             mask_data = mask_data.split(",")[1]
         mask_bytes = base64.b64decode(mask_data)
@@ -200,11 +203,21 @@ class ImageRemoveObjectService:
         file_info = self._file_service.get_file(file_id)
 
         import numpy as np
+        from PIL import Image
 
         with Image.open(file_info.file_path) as img:
-            img = img.convert("RGB").copy()
+            img = img.copy()
 
-        image_rgb = np.array(img)
+        # 保留 alpha 通道，inpaint 只處理 RGB
+        # 統一轉 RGBA 以支援 P/PA/LA 等所有含透明資訊的模式
+        img_rgba = img.convert("RGBA")
+        alpha_channel = img_rgba.split()[3]
+        has_alpha = alpha_channel.getextrema()[0] < 255
+        if not has_alpha:
+            alpha_channel = None
+        img_rgb = img_rgba.convert("RGB")
+
+        image_rgb = np.array(img_rgb)
         h, w = image_rgb.shape[:2]
 
         progress_callback(0.1, "解析遮罩...")
@@ -218,7 +231,13 @@ class ImageRemoveObjectService:
 
         progress_callback(0.6, "填補背景中...")
         mask_pil = Image.fromarray(precise_mask).convert("L")
-        result_img = self._run_inpaint(img, mask_pil)
+        result_img = self._run_inpaint(img_rgb, mask_pil)
+
+        # 還原 alpha 通道
+        if alpha_channel is not None:
+            result_rgba = result_img.convert("RGBA")
+            result_rgba.putalpha(alpha_channel)
+            result_img = result_rgba
 
         output_file_id = str(uuid4())
         output_path = self._generate_output_path(file_info, params.get("output_dir"))
@@ -242,5 +261,11 @@ class ImageRemoveObjectService:
         return target_dir / f"{Path(file_info.original_filename).stem}_removed_{uuid4().hex[:8]}.png"
 
 
+_image_remove_object_service: Optional[ImageRemoveObjectService] = None
+
+
 def get_image_remove_object_service() -> ImageRemoveObjectService:
-    return ImageRemoveObjectService()
+    global _image_remove_object_service
+    if _image_remove_object_service is None:
+        _image_remove_object_service = ImageRemoveObjectService()
+    return _image_remove_object_service

@@ -64,11 +64,11 @@ def _get_app_root() -> Path:
 def get_ffmpeg_dir() -> Path:
     """
     FFmpeg 二進位目錄
-    Packaged: resources/ffmpeg/
+    Packaged: %APPDATA%/MediaTranX/bin/ffmpeg/（由 Electron 啟動時從 resources 複製，版本更新自動覆寫）
     Dev:      bin/ffmpeg/
     """
     if _is_frozen():
-        return Path(sys.executable).parent.parent.parent / "ffmpeg"
+        return get_base_data_dir() / "bin" / "ffmpeg"
     else:
         return _get_app_root() / "bin" / "ffmpeg"
 
@@ -76,11 +76,11 @@ def get_ffmpeg_dir() -> Path:
 def get_llama_bin_dir() -> Path:
     """
     llama-server 二進位目錄
-    Packaged: resources/llama-bin/
+    Packaged: %APPDATA%/MediaTranX/llama-bin/（持久，重裝 exe 不影響）
     Dev:      bin/llama/
     """
     if _is_frozen():
-        return Path(sys.executable).parent.parent.parent / "llama-bin"
+        return get_base_data_dir() / "llama-bin"
     else:
         return _get_app_root() / "bin" / "llama"
 
@@ -134,7 +134,10 @@ def get_temp_dir() -> Path:
 
 
 def get_output_dir() -> Path:
-    """輸出目錄 (預設為 AppRoot/output，若無權限則回退至 APPDATA)"""
+    """
+    已棄用：中間產物改存 temp/results，由 FileService 管理。
+    輸出目錄 (預設為 AppRoot/output，若無權限則回退至 APPDATA)
+    """
     try:
         d = _get_app_root() / "output"
         d.mkdir(parents=True, exist_ok=True)

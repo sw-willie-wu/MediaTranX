@@ -93,24 +93,27 @@ if sys.platform == "win32" and _appdata:
             except Exception: pass
 
 # --- 2. 日誌配置 ---
-if not getattr(sys, 'frozen', False):
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    )
+_log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+_handlers: list[logging.Handler] = [logging.StreamHandler()]  # stdout → Electron pipe → app.log
+
 if IS_FROZEN:
-    log_dir = Path(_appdata) / 'MediaTranX'
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / 'backend_internal.log'
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-        handlers=[
-            logging.FileHandler(str(log_path), encoding='utf-8'),
-            logging.StreamHandler(),
-        ],
-    )
-    logging.info(f"Backend started in frozen mode. Log: {log_path}")
+    # Electron 傳入 core_error.log 路徑，Python 直寫 WARNING+
+    _error_log = os.environ.get('MEDIATRANX_ERROR_LOG')
+    if not _error_log:
+        _error_log = str(Path(_appdata) / 'MediaTranX' / 'logs' / 'core_error.log')
+    Path(_error_log).parent.mkdir(parents=True, exist_ok=True)
+    _error_handler = logging.FileHandler(_error_log, encoding='utf-8')
+    _error_handler.setLevel(logging.WARNING)
+    _error_handler.setFormatter(_log_formatter)
+    _handlers.append(_error_handler)
+
+for _h in _handlers:
+    _h.setFormatter(_log_formatter)
+
+logging.basicConfig(level=logging.INFO, handlers=_handlers)
+
+if IS_FROZEN:
+    logging.info(f"Backend started in frozen mode. Error log: {_error_log}")
 
 # --- 3. 啟動診斷 (Diagnostic) ---
 if IS_FROZEN:
