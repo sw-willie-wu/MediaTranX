@@ -92,15 +92,28 @@ class ImageCompressService:
         # 記錄輸入檔案大小
         input_size = file_info.file_size
 
-        img = Image.open(file_info.file_path)
-
-        progress_callback(0.3, "處理圖片模式...")
+        from app.engine.gif_utils import animation_format, extract_frames, save_animated
 
         output_format = params["output_format"].lower()
         save_format = output_format.upper()
 
+        # 壓縮只在輸出格式與輸入動畫格式相符時保留動畫
+        _fmt_upper = output_format.upper()
+        with Image.open(file_info.file_path) as raw:
+            src_anim_fmt = animation_format(raw)
+            keep_anim = src_anim_fmt and (
+                (src_anim_fmt == "GIF" and _fmt_upper == "GIF") or
+                (src_anim_fmt == "PNG" and _fmt_upper == "PNG")
+            )
+            if keep_anim:
+                anim_frames = extract_frames(raw)
+            else:
+                img = raw.copy()
+
+        progress_callback(0.3, "處理圖片模式...")
+
         # JPEG 不支援 alpha channel
-        if output_format in ["jpeg", "jpg"] and img.mode in ["RGBA", "P"]:
+        if not keep_anim and output_format in ["jpeg", "jpg"] and img.mode in ["RGBA", "P"]:
             img = img.convert("RGB")
             save_format = "JPEG"
 
@@ -130,13 +143,14 @@ class ImageCompressService:
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 
-        # 儲存選項
-        save_kwargs = {"quality": params.get("quality", 80)}
-        if output_format == "png":
-            save_kwargs = {"optimize": True}
-
-        img.save(str(output_path), format=save_format, **save_kwargs)
-        img.close()
+        if keep_anim:
+            save_animated(anim_frames, output_path, src_anim_fmt)
+        else:
+            save_kwargs = {"quality": params.get("quality", 80)}
+            if output_format == "png":
+                save_kwargs = {"optimize": True}
+            img.save(str(output_path), format=save_format, **save_kwargs)
+            img.close()
 
         # 計算壓縮率
         output_size = output_path.stat().st_size

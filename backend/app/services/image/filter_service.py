@@ -308,32 +308,44 @@ class ImageFilterService:
             raise ValueError(f"File not found: {file_id}")
 
         from PIL import Image
+        from app.engine.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
+
         progress_callback(0.05, "載入圖片...")
-        with Image.open(file_info.file_path) as _raw:
-            _raw = _raw.copy()
-        # 保留 alpha 通道，濾鏡只處理 RGB
-        _rgba = _raw.convert("RGBA")
-        alpha_channel = _rgba.split()[3]
-        has_alpha = alpha_channel.getextrema()[0] < 255
-        if not has_alpha:
-            alpha_channel = None
-        img = _rgba.convert("RGB")
 
-        progress_callback(0.15, "套用調整...")
-        img = self._apply_all(img, params, progress_callback)
+        def _filter_single(frame: Image.Image) -> Image.Image:
+            _rgba = frame.convert("RGBA")
+            alpha_ch = _rgba.split()[3]
+            has_alpha = alpha_ch.getextrema()[0] < 255
+            rgb = _rgba.convert("RGB")
+            def noop(p, m): pass
+            rgb = self._apply_all(rgb, params, noop)
+            if has_alpha:
+                out = rgb.convert("RGBA")
+                out.putalpha(alpha_ch)
+                return out
+            return rgb
 
-        # 還原 alpha 通道
-        if alpha_channel is not None:
-            result_rgba = img.convert("RGBA")
-            result_rgba.putalpha(alpha_channel)
-            img = result_rgba
+        with Image.open(file_info.file_path) as raw:
+            anim_fmt = animation_format(raw)
+            if anim_fmt:
+                def _process_frame(frame, idx, total):
+                    progress_callback(0.15 + idx / total * 0.6, f"套用調整 ({idx + 1}/{total})...")
+                    return _filter_single(frame)
+                result_frames = process_gif_frames(raw, _process_frame)
+            else:
+                raw = raw.copy()
+
+        if not anim_fmt:
+            progress_callback(0.15, "套用調整...")
+            img = _filter_single(raw)
 
         progress_callback(0.75, "儲存檔案...")
 
         custom_output_dir = params.get("output_dir")
         output_file_id    = str(uuid4())
         original_stem     = Path(file_info.original_filename).stem
-        final_filename    = f"{original_stem}_adjusted_{output_file_id[:8]}.png"
+        ext               = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
+        final_filename    = f"{original_stem}_adjusted_{output_file_id[:8]}.{ext}"
 
         if custom_output_dir:
             output_dir_path = Path(custom_output_dir)
@@ -345,8 +357,11 @@ class ImageFilterService:
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 
-        img.save(str(output_path), format="PNG")
-        img.close()
+        if anim_fmt:
+            save_animated(result_frames, output_path, anim_fmt)
+        else:
+            img.save(str(output_path), format="PNG")
+            img.close()
 
         output_info = self._file_service.register_output(
             file_id=output_file_id,

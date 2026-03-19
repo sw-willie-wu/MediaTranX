@@ -85,6 +85,8 @@ class ImageCropService:
     ) -> dict:
         """執行圖片裁切"""
         from PIL import Image
+        from app.engine.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
+
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
 
@@ -93,22 +95,24 @@ class ImageCropService:
 
         progress_callback(0.1, "載入圖片...")
 
-        img = Image.open(file_info.file_path)
-        img_width, img_height = img.size
+        with Image.open(file_info.file_path) as raw:
+            img_width, img_height = raw.size
+            anim_fmt = animation_format(raw)
 
-        progress_callback(0.3, "計算裁切範圍...")
+            progress_callback(0.3, "計算裁切範圍...")
+            x = max(0, min(params["x"], img_width - 1))
+            y = max(0, min(params["y"], img_height - 1))
+            crop_width  = max(1, min(params["width"],  img_width  - x))
+            crop_height = max(1, min(params["height"], img_height - y))
+            box = (x, y, x + crop_width, y + crop_height)
 
-        # 限制 x、y 在圖片範圍內
-        x = max(0, min(params["x"], img_width - 1))
-        y = max(0, min(params["y"], img_height - 1))
-
-        # 限制 width、height 不超出圖片邊界
-        crop_width = max(1, min(params["width"], img_width - x))
-        crop_height = max(1, min(params["height"], img_height - y))
-
-        progress_callback(0.5, "裁切圖片...")
-
-        img = img.crop((x, y, x + crop_width, y + crop_height))
+            if anim_fmt:
+                def _crop_frame(frame, idx, total):
+                    progress_callback(0.4 + idx / total * 0.4, f"裁切中 ({idx + 1}/{total})...")
+                    return frame.crop(box)
+                result_frames = process_gif_frames(raw, _crop_frame)
+            else:
+                img = raw.copy().crop(box)
 
         progress_callback(0.7, "儲存檔案...")
 
@@ -116,7 +120,8 @@ class ImageCropService:
         custom_output_dir = params.get("output_dir")
         output_file_id = str(uuid4())
         original_stem = Path(file_info.original_filename).stem
-        final_filename = f"{original_stem}_cropped_{output_file_id[:8]}.png"
+        ext = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
+        final_filename = f"{original_stem}_cropped_{output_file_id[:8]}.{ext}"
 
         if custom_output_dir:
             output_dir_path = Path(custom_output_dir)
@@ -127,8 +132,11 @@ class ImageCropService:
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 
-        img.save(str(output_path), format="PNG")
-        img.close()
+        if anim_fmt:
+            save_animated(result_frames, output_path, anim_fmt)
+        else:
+            img.save(str(output_path), format="PNG")
+            img.close()
 
         # 註冊輸出檔案
         output_info = self._file_service.register_output(
