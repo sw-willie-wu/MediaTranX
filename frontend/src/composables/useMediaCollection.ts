@@ -136,6 +136,10 @@ export function useMediaCollection() {
     }
   }
 
+  function clearSelection(): void {
+    selectedIds.value = new Set(activeId.value ? [activeId.value] : [])
+  }
+
   function updateEntry(id: string, patch: Partial<MediaEntry>): void {
     const entry = entries.value.get(id)
     if (!entry) return
@@ -203,6 +207,7 @@ export function useMediaCollection() {
     removeEntry,
     removeAllEntries,
     selectEntry,
+    clearSelection,
     updateEntry,
     registerTask,
   }

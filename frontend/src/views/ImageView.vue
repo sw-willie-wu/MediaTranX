@@ -16,6 +16,7 @@ import ImageOcrPanel      from '@/components/image/panels/ImageOcrPanel.vue'
 import OcrResultModal     from '@/components/image/OcrResultModal.vue'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
 import { useImageWorkspace } from '@/composables/useImageWorkspace'
+import { useMultiSubmit } from '@/composables/useMultiSubmit'
 
 const {
   hasFile, fileId, isUploading, currentFileName, imageInfo, isLoadingInfo,
@@ -24,6 +25,9 @@ const {
   handleDownload, handleTextDownload, textResultFileId, textResultFilename, textResultContent,
   collection, activeId, selectedIds,
 } = useImageWorkspace()
+
+const { submitToAll } = useMultiSubmit(collection)
+const isMultiSelect = computed(() => selectedIds.value.size > 1)
 
 
 // Preview ref (exposes clearMask, exportMask, hasMask, syncToImage)
@@ -63,6 +67,10 @@ interface EntryPanelSettings {
   filter?: FilterState
 }
 const entrySettingsCache = new Map<string, EntryPanelSettings>()
+
+// ── Per-entry zoom cache ──────────────────────────────────────────────────────
+interface ZoomState { zoomLevel: number; panX: number; panY: number }
+const zoomCache = new Map<string, ZoomState>()
 
 function savePanelSettings(entryId: string) {
   const s = entrySettingsCache.get(entryId) ?? {}
@@ -117,8 +125,36 @@ watch(currentFunction, (val, oldVal) => {
 
 // Save/restore per-entry settings when switching filmstrip entries
 watch(() => collection.activeId.value, (newId, oldId) => {
-  if (oldId) savePanelSettings(oldId)
-  if (newId) restorePanelSettings(newId)
+  if (oldId) {
+    savePanelSettings(oldId)
+    // Save zoom state for the outgoing entry
+    const z = previewRef.value?.getZoomState()
+    if (z) zoomCache.set(oldId, z)
+  }
+  if (newId) {
+    restorePanelSettings(newId)
+    // Restore zoom state (or reset if first visit)
+    const savedZoom = zoomCache.get(newId)
+    nextTick(() => {
+      if (savedZoom) previewRef.value?.setZoomState(savedZoom)
+      else previewRef.value?.resetZoom()
+    })
+    // Re-apply live preview after entry switch.
+    // watch(activePreviewUrl) clears filterPreviewParams when the URL changes,
+    // but the panel's `preview` computed may not have changed (same settings),
+    // so its watcher won't re-emit. Manually re-apply when entry has no result yet.
+    nextTick(() => nextTick(() => {
+      const entry = collection.entries.value.get(newId)
+      const hasResult = (entry?.historyStack.length ?? 0) > 0
+      if (!hasResult) {
+        if (currentFunction.value === 'adjust') {
+          filterPreviewParams.value = adjustPanelRef.value?.getPreview() ?? null
+        } else if (currentFunction.value === 'filter') {
+          filterPreviewParams.value = filterPanelRef.value?.getPreview() ?? null
+        }
+      }
+    }))
+  }
 })
 
 // 後端結果回來後清除 preview（新圖片已含效果）
@@ -156,6 +192,14 @@ const executeLoading = computed(() => {
 })
 
 function handleExecute() {
+  if (isMultiSelect.value) {
+    handleMultiExecute()
+  } else {
+    handleSingleExecute()
+  }
+}
+
+function handleSingleExecute() {
   switch (currentFunction.value) {
     case 'convert':   convertPanelRef.value?.execute();  break
     case 'upscale':   upscalePanelRef.value?.execute();  break
@@ -166,6 +210,29 @@ function handleExecute() {
     case 'crop':      cropPanelRef.value?.execute();     break
     case 'compress':  compressPanelRef.value?.execute(); break
     case 'ocr':       ocrPanelRef.value?.execute();      break
+  }
+}
+
+function handleMultiExecute() {
+  const noop = () => {}
+  switch (currentFunction.value) {
+    case 'convert':
+      submitToAll('/image/convert',   () => convertPanelRef.value!.getParams(),  '格式轉換',      'image.convert',    noop); break
+    case 'upscale':
+      submitToAll('/image/upscale',   () => upscalePanelRef.value!.getParams(),  '超解析',        'image.upscale',    noop); break
+    case 'remove-bg':
+      submitToAll('/image/remove-bg', () => removeBgPanelRef.value!.getParams(), '去背',          'image.remove_bg',  noop); break
+    case 'adjust':
+      submitToAll('/image/filter',    () => adjustPanelRef.value!.getParams(),   '圖片調整',      'image.filter',     noop); break
+    case 'filter':
+      submitToAll('/image/filter',    () => filterPanelRef.value!.getParams(),   '圖片濾鏡',      'image.filter',     noop); break
+    case 'compress':
+      submitToAll('/image/compress',  () => compressPanelRef.value!.getParams(), '圖片壓縮',      'image.compress',   noop); break
+    case 'ocr':
+      submitToAll('/image/ocr',       () => ocrPanelRef.value!.getParams(),      'OCR 文字辨識',  'image.ocr',        noop); break
+    // ai-remove、crop 不支援批次（需筆刷/裁切互動），退回單張
+    default:
+      handleSingleExecute()
   }
 }
 
@@ -289,6 +356,7 @@ function onFilmstripRemove(id: string) {
         :selectedIds="selectedIds"
         @select="onFilmstripSelect"
         @remove="onFilmstripRemove"
+        @clear-selection="collection.clearSelection()"
       />
     </template>
 

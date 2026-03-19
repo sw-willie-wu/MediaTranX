@@ -22,6 +22,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   select: [id: string, ctrlKey: boolean]
   remove: [id: string]
+  clearSelection: []
 }>()
 
 // --- Refs ---
@@ -76,6 +77,11 @@ function isActive(id: string) {
 }
 
 function isSelected(id: string) {
+  if (isDragSelecting.value) {
+    // 框碰過的：以目前是否在框內為準；從沒碰過的：維持 snapshot
+    if (dragVisitedIds.value.has(id)) return dragHitIds.value.has(id)
+    return selectionSnapshot.has(id)
+  }
   return props.selectedIds.has(id)
 }
 
@@ -85,8 +91,12 @@ function progressPct(item: FilmstripItem) {
 
 // --- Shift+drag box select ---
 const isDragSelecting = ref(false)
+const justDragSelected = ref(false)
 const dragStartVP = ref({ x: 0, y: 0 })   // viewport coords
 const dragCurrentVP = ref({ x: 0, y: 0 })
+const dragHitIds = ref<Set<string>>(new Set())
+const dragVisitedIds = ref<Set<string>>(new Set())
+let selectionSnapshot: Set<string> = new Set()
 
 const dragSelectStyle = computed(() => {
   if (!isDragSelecting.value) return null
@@ -102,10 +112,30 @@ const dragSelectStyle = computed(() => {
   }
 })
 
+function computeHits(): string[] {
+  if (!scrollEl.value) return []
+  const selX1 = Math.min(dragStartVP.value.x, dragCurrentVP.value.x)
+  const selY1 = Math.min(dragStartVP.value.y, dragCurrentVP.value.y)
+  const selX2 = Math.max(dragStartVP.value.x, dragCurrentVP.value.x)
+  const selY2 = Math.max(dragStartVP.value.y, dragCurrentVP.value.y)
+  const itemEls = scrollEl.value.querySelectorAll<HTMLElement>('.filmstrip-item')
+  const hit: string[] = []
+  itemEls.forEach((el, i) => {
+    const r = el.getBoundingClientRect()
+    if (r.left < selX2 && r.right > selX1 && r.top < selY2 && r.bottom > selY1) {
+      hit.push(props.items[i].id)
+    }
+  })
+  return hit
+}
+
 function onTrackMouseDown(e: MouseEvent) {
   if (!e.shiftKey || e.button !== 0) return
   e.preventDefault()
+  selectionSnapshot = new Set(props.selectedIds)
   isDragSelecting.value = true
+  dragHitIds.value = new Set()
+  dragVisitedIds.value = new Set()
   dragStartVP.value   = { x: e.clientX, y: e.clientY }
   dragCurrentVP.value = { x: e.clientX, y: e.clientY }
   document.addEventListener('mousemove', onDragMove)
@@ -115,33 +145,36 @@ function onTrackMouseDown(e: MouseEvent) {
 function onDragMove(e: MouseEvent) {
   if (!isDragSelecting.value) return
   dragCurrentVP.value = { x: e.clientX, y: e.clientY }
+  const hits = new Set(computeHits())
+  // 累積所有曾被框碰過的 id
+  hits.forEach(id => dragVisitedIds.value.add(id))
+  dragHitIds.value = hits
 }
 
 function onDragEnd() {
-  if (!isDragSelecting.value || !scrollEl.value) return
+  if (!isDragSelecting.value) return
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup',   onDragEnd)
 
-  // 選框的 viewport 範圍
-  const selX1 = Math.min(dragStartVP.value.x, dragCurrentVP.value.x)
-  const selY1 = Math.min(dragStartVP.value.y, dragCurrentVP.value.y)
-  const selX2 = Math.max(dragStartVP.value.x, dragCurrentVP.value.x)
-  const selY2 = Math.max(dragStartVP.value.y, dragCurrentVP.value.y)
-
-  // 比對各縮圖的 viewport rect
-  const itemEls = scrollEl.value.querySelectorAll<HTMLElement>('.filmstrip-item')
-  const hit: string[] = []
-  itemEls.forEach((el, i) => {
-    const r = el.getBoundingClientRect()
-    if (r.left < selX2 && r.right > selX1 && r.top < selY2 && r.bottom > selY1) {
-      hit.push(props.items[i].id)
-    }
-  })
-
-  // 第一個設為 active，其餘 ctrl-append
-  hit.forEach((id, i) => emit('select', id, i > 0))
+  const finalHits = new Set(computeHits())
+  // snapshot 中「從沒被框碰過」的保留；「碰過但不在最終框內」的排除
+  const merged = [
+    ...[...selectionSnapshot].filter(id => !dragVisitedIds.value.has(id) || finalHits.has(id)),
+    ...[...finalHits].filter(id => !selectionSnapshot.has(id)),
+  ]
+  merged.forEach((id, i) => emit('select', id, i > 0))
 
   isDragSelecting.value = false
+  dragHitIds.value = new Set()
+  dragVisitedIds.value = new Set()
+  if (merged.length > 0) {
+    justDragSelected.value = true
+    setTimeout(() => { justDragSelected.value = false }, 0)
+  }
+}
+
+function onTrackClick() {
+  if (!justDragSelected.value) emit('clearSelection')
 }
 
 onBeforeUnmount(() => {
@@ -174,6 +207,7 @@ onBeforeUnmount(() => {
       @wheel.passive="false"
       @wheel="onWheel"
       @mousedown="onTrackMouseDown"
+      @click.self="onTrackClick"
     >
       <div
         v-for="item in items"
