@@ -293,6 +293,7 @@ onBeforeUnmount(() => {
       <!-- 預覽內容 -->
       <div
         class="preview-content"
+        :class="{ 'has-file': hasFile }"
         @dragover="handleDragOver"
         @dragleave="handleDragLeave"
         @drop.capture="isDragOver = false"
@@ -583,8 +584,12 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2.5rem;
+  padding: 1rem;
   overflow: auto;
+
+  &.has-file {
+    padding: 2.5rem;
+  }
 }
 
 .preview-placeholder {
@@ -597,8 +602,8 @@ onBeforeUnmount(() => {
 
 // 拖曳 hover（有檔案時：整個 preview-area 變色，不顯示 icon/文字）
 .preview-area.is-drag-over {
-  border-color: var(--color-primary);
-  background: var(--drag-over-bg);
+  border-color: var(--drop-zone-border-hover);
+  background: var(--input-bg);
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 

@@ -135,6 +135,13 @@ defineExpose({
   clearMask, exportMask, hasMask, syncToImage,
   cropRect, clearCropRect, syncCropCanvas,
   isAiRemoveActive: () => props.isAiRemoveMode, zoomPercent,
+  getZoomState: () => ({ zoomLevel: zoomLevel.value, panX: panX.value, panY: panY.value }),
+  setZoomState: (s: { zoomLevel: number; panX: number; panY: number }) => {
+    zoomLevel.value = s.zoomLevel
+    panX.value = s.panX
+    panY.value = s.panY
+  },
+  resetZoom: reset,
 })
 
 function handleImageLoad() {
@@ -236,7 +243,7 @@ function handleMouseDown(e: MouseEvent) {
 
   &.dragging  { cursor: grabbing; }
   &.draw-mode { cursor: crosshair; }
-  &.crop-mode { cursor: crosshair; }
+  &.crop-mode { cursor: crosshair; overflow: visible; }
 
 }
 

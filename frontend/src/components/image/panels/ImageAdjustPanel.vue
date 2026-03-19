@@ -80,19 +80,22 @@ function reset() {
   warmth.value     = 0
 }
 
+function getParams(): Record<string, unknown> {
+  return {
+    brightness: brightness.value / 100,
+    contrast:   contrast.value / 100,
+    saturation: saturation.value / 100,
+    hue:        hue.value,
+    sharpness:  sharpness.value / 100,
+    warmth:     warmth.value / 100,
+  }
+}
+
 async function execute() {
   if (!props.fileId) return
   const taskId = await submitTask(
     '/image/filter',
-    {
-      file_id:    props.fileId,
-      brightness: brightness.value / 100,
-      contrast:   contrast.value / 100,
-      saturation: saturation.value / 100,
-      hue:        hue.value,
-      sharpness:  sharpness.value / 100,
-      warmth:     warmth.value / 100,
-    },
+    { file_id: props.fileId, ...getParams() },
     '圖片調整',
     'image.filter',
     props.currentFileName,
@@ -100,7 +103,7 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading, getState, setState })
+defineExpose({ execute, isDisabled, isLoading, getState, setState, getParams, getPreview: () => preview.value })
 </script>
 
 <template>
