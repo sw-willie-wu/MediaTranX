@@ -13,7 +13,7 @@ api_router = APIRouter()
 
 api_router.include_router(health_router, tags=["health"])
 api_router.include_router(files_router, prefix="/files", tags=["files"])
-api_router.include_router(tasks_router, prefix="/tasks", tags=["tasks"])
+api_router.include_router(tasks_router)
 api_router.include_router(setup_router, prefix="/setup", tags=["setup"])
 api_router.include_router(video_router)
 api_router.include_router(audio_router)
