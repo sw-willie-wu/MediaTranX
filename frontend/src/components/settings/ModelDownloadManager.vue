@@ -8,6 +8,7 @@ import AppModelGroupList from '@/components/common/AppModelGroupList.vue'
 const taskStore = useTaskStore()
 const modelStore = useModelStore()
 
+const activeTab = ref('')
 const downloadingTaskId = ref<Record<string, string>>({})
 
 const downloadProgress = computed(() => {
@@ -17,6 +18,13 @@ const downloadProgress = computed(() => {
   }
   return result
 })
+
+// 初始化：載入模型後選中第一個 tab
+watch(() => modelStore.categories, (cats) => {
+  if (cats.length && !activeTab.value) {
+    activeTab.value = cats[0].key
+  }
+}, { immediate: true })
 
 async function downloadItem(id: string) {
   const res = await apiFetch('/setup/models/download', {
@@ -79,54 +87,20 @@ onMounted(() => modelStore.fetchModels())
   </div>
 
   <template v-else-if="modelStore.loaded">
-    <label class="section-subtitle">超解析工具</label>
-    <AppModelGroupList
-      :items="modelStore.byCategory('upscale')"
-      :downloadingTaskId="downloadingTaskId"
-      :downloadProgress="downloadProgress"
-      @download="downloadItem"
-      @remove="removeItem"
-    />
+    <!-- Category tabs -->
+    <div class="category-tabs">
+      <button
+        v-for="cat in modelStore.categories"
+        :key="cat.key"
+        class="category-tab"
+        :class="{ 'is-active': activeTab === cat.key }"
+        @click="activeTab = cat.key"
+      >{{ cat.label }}</button>
+    </div>
 
-    <label class="section-subtitle">人臉修復</label>
+    <!-- Active tab content -->
     <AppModelGroupList
-      :items="modelStore.byCategory('face_restore')"
-      :downloadingTaskId="downloadingTaskId"
-      :downloadProgress="downloadProgress"
-      @download="downloadItem"
-      @remove="removeItem"
-    />
-
-    <label class="section-subtitle">語音識別</label>
-    <AppModelGroupList
-      :items="modelStore.byCategory('stt')"
-      :downloadingTaskId="downloadingTaskId"
-      :downloadProgress="downloadProgress"
-      @download="downloadItem"
-      @remove="removeItem"
-    />
-
-    <label class="section-subtitle">翻譯模型</label>
-    <AppModelGroupList
-      :items="modelStore.byCategory('translate')"
-      :downloadingTaskId="downloadingTaskId"
-      :downloadProgress="downloadProgress"
-      @download="downloadItem"
-      @remove="removeItem"
-    />
-
-    <label class="section-subtitle">VLM OCR 模型</label>
-    <AppModelGroupList
-      :items="modelStore.byCategory('vlm')"
-      :downloadingTaskId="downloadingTaskId"
-      :downloadProgress="downloadProgress"
-      @download="downloadItem"
-      @remove="removeItem"
-    />
-
-    <label class="section-subtitle">圖像分割</label>
-    <AppModelGroupList
-      :items="modelStore.byCategory('segment')"
+      :items="modelStore.byCategory(activeTab)"
       :downloadingTaskId="downloadingTaskId"
       :downloadProgress="downloadProgress"
       @download="downloadItem"
@@ -162,5 +136,41 @@ onMounted(() => modelStore.fetchModels())
   font-size: 0.75rem;
   color: var(--text-muted);
   margin-bottom: 0.5rem;
+}
+
+// ── Category tabs ─────────────────────────────────────────────
+.category-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  padding: 0.25rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+}
+
+.category-tab {
+  flex: 1;
+  padding: 0.4rem 0.5rem;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+
+  &:hover:not(.is-active) {
+    color: var(--text-secondary);
+    background: var(--panel-bg-hover);
+  }
+
+  &.is-active {
+    background: var(--color-primary);
+    color: white;
+    font-weight: 500;
+  }
 }
 </style>

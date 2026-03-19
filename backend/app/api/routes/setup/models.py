@@ -11,6 +11,17 @@ from app.engine.paths import get_models_dir
 router = APIRouter()
 
 
+# ─── 分類定義（前端 tab 動態產生）────────────────────────────────────────────
+
+MODEL_CATEGORIES = [
+    {"key": "upscale",      "label": "超解析",  "order": 0},
+    {"key": "face_restore", "label": "人臉修復", "order": 1},
+    {"key": "stt",          "label": "語音辨識", "order": 2},
+    {"key": "translate",    "label": "翻譯",    "order": 3},
+    {"key": "vlm",          "label": "OCR",     "order": 4},
+    {"key": "segment",      "label": "分割",    "order": 5},
+]
+
 # ─── 顯示用常數 ──────────────────────────────────────────────────────────────
 
 _WHISPER_DISPLAY = [
@@ -251,7 +262,7 @@ async def get_models_status():
     # ── VLM 模型（OCR） ──
     all_models.extend(_enumerate_vlm_models())
 
-    return {"models": all_models}
+    return {"categories": MODEL_CATEGORIES, "models": all_models}
 
 
 class DownloadRequest(BaseModel):

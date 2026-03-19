@@ -15,8 +15,15 @@ export interface ModelItem {
   max_scale?: number
 }
 
+export interface ModelCategory {
+  key: string
+  label: string
+  order: number
+}
+
 export const useModelStore = defineStore('models', () => {
   const models = ref<ModelItem[]>([])
+  const categories = ref<ModelCategory[]>([])
   const loading = ref(false)
   const loaded = ref(false)
 
@@ -27,6 +34,7 @@ export const useModelStore = defineStore('models', () => {
       if (res.ok) {
         const data = await res.json()
         models.value = data.models as ModelItem[]
+        categories.value = (data.categories as ModelCategory[]).sort((a, b) => a.order - b.order)
         loaded.value = true
       }
     } catch (e) {
@@ -50,5 +58,5 @@ export const useModelStore = defineStore('models', () => {
     return models.value.filter(m => m.category === category)
   }
 
-  return { models, loading, loaded, fetchModels, ensureLoaded, setDownloaded, byCategory }
+  return { models, categories, loading, loaded, fetchModels, ensureLoaded, setDownloaded, byCategory }
 })
