@@ -42,6 +42,7 @@ class LlamaServerRuntime(BaseRuntime):
         super().__init__(slot)
         self._process: Optional[subprocess.Popen] = None
         self._port: Optional[int] = None
+        self._log_file = None
 
     # ─────────────────────────────────────────────
     # BaseRuntime 介面實作
@@ -80,7 +81,7 @@ class LlamaServerRuntime(BaseRuntime):
             "--host", "127.0.0.1",
             "--ctx-size", str(n_ctx),
             "--n-gpu-layers", str(n_gpu_layers),
-            "--log-disable",
+            "--no-jinja",
         ]
 
         mmproj_path = config.get("mmproj_path")
@@ -95,10 +96,18 @@ class LlamaServerRuntime(BaseRuntime):
         if on_progress:
             on_progress(0.2, f"啟動 llama-server（port {self._port}）...")
 
+        from app.engine.paths import get_base_data_dir, _is_frozen
+        base = get_base_data_dir()
+        log_dir = base / "logs" if _is_frozen() else base
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "llama_server.log"
+        self._log_file = open(str(log_path), "a", encoding="utf-8")  # noqa: SIM115
+
         self._process = subprocess.Popen(
             cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=self._log_file,
+            stderr=self._log_file,
+            cwd=str(llama_bin),
         )
 
         self._wait_ready(on_progress)
@@ -123,6 +132,12 @@ class LlamaServerRuntime(BaseRuntime):
                     pass
             self._process = None
             self._port = None
+        if self._log_file is not None:
+            try:
+                self._log_file.close()
+            except Exception:
+                pass
+            self._log_file = None
 
     def _resolve_model_path(self, model_id: str, variant: Optional[str] = None):
         from app.engine.ai.registry import FORMAT_GGUF, FORMAT_VLM, MODELS_REGISTRY
