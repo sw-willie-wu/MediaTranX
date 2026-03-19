@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { onMounted, onActivated, computed } from 'vue'
+import { onMounted, onActivated, onBeforeUnmount, computed, ref } from 'vue'
 import { useTaskStore } from '@/stores/tasks'
 import ProgressBar from '@/components/common/ProgressBar.vue'
 
 const taskStore = useTaskStore()
+
+const PAGE_SIZE = 20
+const displayCount = ref(PAGE_SIZE)
 
 function isCoreTasks(taskType: string) {
   return taskType.startsWith('ai.') || taskType.startsWith('setup.')
@@ -16,8 +19,30 @@ const sortedTasks = computed(() =>
   )
 )
 
-const coreTasks = computed(() => sortedTasks.value.filter(t => isCoreTasks(t.taskType)))
-const toolTasks = computed(() => sortedTasks.value.filter(t => !isCoreTasks(t.taskType)))
+const visibleTasks = computed(() => sortedTasks.value.slice(0, displayCount.value))
+const hasMore = computed(() => displayCount.value < sortedTasks.value.length)
+
+const coreTasks = computed(() => visibleTasks.value.filter(t => isCoreTasks(t.taskType)))
+const toolTasks = computed(() => visibleTasks.value.filter(t => !isCoreTasks(t.taskType)))
+
+function loadMore() {
+  displayCount.value += PAGE_SIZE
+}
+
+// IntersectionObserver for infinite scroll
+const sentinelRef = ref<HTMLElement | null>(null)
+let observer: IntersectionObserver | null = null
+
+function setupObserver() {
+  if (observer) observer.disconnect()
+  observer = new IntersectionObserver(
+    (entries) => { if (entries[0].isIntersecting && hasMore.value) loadMore() },
+    { threshold: 0.1 }
+  )
+  if (sentinelRef.value) observer.observe(sentinelRef.value)
+}
+
+onBeforeUnmount(() => observer?.disconnect())
 
 function statusLabel(status: string) {
   switch (status) {
@@ -44,10 +69,13 @@ function handleRemove(taskId: string) {
 
 onMounted(() => {
   taskStore.refreshTasks()
+  setupObserver()
 })
 
 onActivated(() => {
   taskStore.refreshTasks()
+  displayCount.value = PAGE_SIZE
+  setupObserver()
 })
 </script>
 
@@ -154,6 +182,11 @@ onActivated(() => {
           </TransitionGroup>
         </div>
       </template>
+
+      <!-- Infinite scroll sentinel -->
+      <div v-if="hasMore" ref="sentinelRef" class="scroll-sentinel">
+        <div class="spinner-sm"></div>
+      </div>
     </div>
   </div>
 </template>
@@ -374,6 +407,25 @@ onActivated(() => {
   font-size: 0.72rem;
   color: var(--text-muted);
   opacity: 0.7;
+}
+
+.scroll-sentinel {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 0 0.5rem;
+}
+
+.spinner-sm {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 // Transition
