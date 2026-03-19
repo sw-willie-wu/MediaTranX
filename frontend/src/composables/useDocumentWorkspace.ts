@@ -75,10 +75,13 @@ export function useDocumentWorkspace() {
     downloadFile(textResultFileId.value, textResultFilename.value, sourceDir.value)
   }
 
+  const _notifiedTaskIds = new Set<string>()
   watch(
     () => currentTaskId.value ? taskStore.tasks.get(currentTaskId.value) : null,
     async (task) => {
       if (!task || task.status !== 'completed' || !task.result) return
+      if (_notifiedTaskIds.has(task.taskId)) return
+      _notifiedTaskIds.add(task.taskId)
       const r = task.result as { output_file_id?: string; output_filename?: string }
       if (!r.output_file_id) return
       hasResult.value = true

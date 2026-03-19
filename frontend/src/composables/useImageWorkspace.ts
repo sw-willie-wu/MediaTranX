@@ -268,6 +268,7 @@ export function useImageWorkspace() {
 
   // Watch for task completion on the active entry to handle TEXT results.
   // Image results are already pushed into historyStack by useMediaCollection's watcher.
+  const _notifiedTaskIds = new Set<string>()
   watch(
     () => {
       const taskId = currentTaskId.value
@@ -276,6 +277,8 @@ export function useImageWorkspace() {
     (task) => {
       if (!task) return
       if (task.status === 'completed' && task.result) {
+        if (_notifiedTaskIds.has(task.taskId)) return
+        _notifiedTaskIds.add(task.taskId)
         const r = task.result as { output_file_id?: string; output_filename?: string }
         if (r.output_file_id) {
           const isText = /\.(txt|md|json|csv|srt|vtt)$/i.test(r.output_filename ?? '')

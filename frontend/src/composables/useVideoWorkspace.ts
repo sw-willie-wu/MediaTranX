@@ -87,10 +87,13 @@ export function useVideoWorkspace() {
     downloadFile(r.output_file_id, `${baseName}${sfx}.${fmt}`, sourceDir.value)
   }
 
+  const _notifiedTaskIds = new Set<string>()
   watch(
     () => currentTaskId.value ? taskStore.tasks.get(currentTaskId.value) : null,
     (task) => {
       if (!task || task.status !== 'completed' || !task.result) return
+      if (_notifiedTaskIds.has(task.taskId)) return
+      _notifiedTaskIds.add(task.taskId)
       const r = task.result as { output_file_id?: string }
       if (!r.output_file_id) return
       toast.show(`${task.label ?? '處理'} 完成`, {
