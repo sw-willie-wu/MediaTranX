@@ -8,9 +8,11 @@
 
 ```
 API 路由層 (api/routes/)     ← 只做參數驗證、呼叫 Service、回傳 Response
+  api/schemas/               ← Pydantic response models（API 專用）
 Service 業務層 (services/)    ← 協調 FileService + TaskManager，執行業務邏輯
 Engine 底層封裝 (engine/)     ← AI 推理、硬體偵測、路徑解析、FFmpeg
 Workers (workers/)            ← TaskManager、ProgressTracker
+Models (models/)              ← 跨層共用 domain types（enum、dataclass）
 ```
 
 ### 禁止事項
@@ -19,6 +21,19 @@ Workers (workers/)            ← TaskManager、ProgressTracker
 - **Service 不可**直接操作 VRAM 或啟動 subprocess，必須透過 Engine
 - **Engine 不可**包含業務邏輯（不知道「壓縮」「轉檔」的概念，只提供技術能力）
 - **不可跨層跳躍**：Route → Engine ✗，必須經過 Service
+- **Workers 不可**依賴 API 層：Workers → `app.api.*` ✗
+
+### 跨層共用型別
+
+跨層共用的 domain models 放在 `app/models/`（純 Python dataclass + enum），避免 workers/services 反向依賴 API 層：
+
+```
+app/models/
+  task.py   ← TaskStatus (enum) + TaskData (dataclass)
+  file.py   ← FileData (dataclass)
+```
+
+API 層的 Pydantic models（`TaskResponse`、`FileInfo`）在 `api/schemas/common.py`，routes 透過 `from_task_data()` / `from_file_data()` 轉換。
 
 ---
 
