@@ -10,7 +10,7 @@ from app.api.schemas.common import TaskResponse
 router = APIRouter()
 
 
-@router.get("", response_model=List[TaskResponse])
+@router.get("/", response_model=List[TaskResponse])
 async def list_tasks():
     """列出所有任務"""
     task_manager = get_task_manager()
