@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Optional
 from uuid import uuid4
 
-from app.api.schemas.common import FileInfo
+from app.models.file import FileData
 from app.engine.paths import get_temp_dir
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class FileService:
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
         # 檔案索引
-        self._files: Dict[str, FileInfo] = {}
+        self._files: Dict[str, FileData] = {}
 
         self._initialized = True
         logger.info(f"FileService initialized. Upload dir: {self._upload_dir}")
@@ -66,7 +66,7 @@ class FileService:
         content: bytes,
         mime_type: Optional[str] = None,
         source_dir: Optional[str] = None
-    ) -> FileInfo:
+    ) -> FileData:
         """
         儲存上傳的檔案
 
@@ -77,7 +77,7 @@ class FileService:
             source_dir: 來源目錄（檔案在使用者電腦上的原始目錄）
 
         Returns:
-            FileInfo: 檔案資訊
+            FileData: 檔案資訊
         """
         file_id = str(uuid4())
         ext = Path(filename).suffix
@@ -95,7 +95,7 @@ class FileService:
                 mime_type = "application/octet-stream"
 
         # 建立檔案資訊
-        file_info = FileInfo(
+        file_info = FileData(
             file_id=file_id,
             filename=safe_filename,
             original_filename=filename,
@@ -111,7 +111,7 @@ class FileService:
 
         return file_info
 
-    def register_local_file(self, file_path: str) -> FileInfo:
+    def register_local_file(self, file_path: str) -> FileData:
         """
         直接註冊本機檔案（不複製），適用於 Electron 本地環境。
         """
@@ -124,7 +124,7 @@ class FileService:
         if mime_type is None:
             mime_type = "application/octet-stream"
 
-        file_info = FileInfo(
+        file_info = FileData(
             file_id=file_id,
             filename=path.name,
             original_filename=path.name,
@@ -144,7 +144,7 @@ class FileService:
         filename: str,
         file_stream,
         mime_type: Optional[str] = None
-    ) -> FileInfo:
+    ) -> FileData:
         """
         串流方式儲存上傳的檔案
 
@@ -154,7 +154,7 @@ class FileService:
             mime_type: MIME 類型
 
         Returns:
-            FileInfo: 檔案資訊
+            FileData: 檔案資訊
         """
         file_id = str(uuid4())
         ext = Path(filename).suffix
@@ -174,7 +174,7 @@ class FileService:
             if mime_type is None:
                 mime_type = "application/octet-stream"
 
-        file_info = FileInfo(
+        file_info = FileData(
             file_id=file_id,
             filename=safe_filename,
             original_filename=filename,
@@ -189,7 +189,7 @@ class FileService:
 
         return file_info
 
-    def get_file(self, file_id: str) -> Optional[FileInfo]:
+    def get_file(self, file_id: str) -> Optional[FileData]:
         """取得檔案資訊"""
         return self._files.get(file_id)
 
@@ -234,7 +234,7 @@ class FileService:
         file_path: Path,
         original_filename: str,
         mime_type: Optional[str] = None
-    ) -> FileInfo:
+    ) -> FileData:
         """
         註冊輸出檔案
 
@@ -245,7 +245,7 @@ class FileService:
             mime_type: MIME 類型
 
         Returns:
-            FileInfo: 檔案資訊
+            FileData: 檔案資訊
         """
         if not file_path.exists():
             raise FileNotFoundError(f"Output file not found: {file_path}")
@@ -255,7 +255,7 @@ class FileService:
             if mime_type is None:
                 mime_type = "application/octet-stream"
 
-        file_info = FileInfo(
+        file_info = FileData(
             file_id=file_id,
             filename=file_path.name,
             original_filename=original_filename,

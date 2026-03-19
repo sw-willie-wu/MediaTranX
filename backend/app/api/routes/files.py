@@ -32,7 +32,7 @@ async def upload_file(
     file_service = get_file_service()
 
     content = await file.read()
-    file_info = await file_service.save_upload(
+    file_data = await file_service.save_upload(
         filename=file.filename or "unnamed",
         content=content,
         mime_type=file.content_type,
@@ -40,10 +40,10 @@ async def upload_file(
     )
 
     return FileUploadResponse(
-        file_id=file_info.file_id,
-        filename=file_info.original_filename,
-        file_size=file_info.file_size,
-        mime_type=file_info.mime_type
+        file_id=file_data.file_id,
+        filename=file_data.original_filename,
+        file_size=file_data.file_size,
+        mime_type=file_data.mime_type
     )
 
 
@@ -60,15 +60,15 @@ async def register_local_file(req: RegisterRequest):
     file_service = get_file_service()
 
     try:
-        file_info = file_service.register_local_file(req.file_path)
+        file_data = file_service.register_local_file(req.file_path)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
     return FileUploadResponse(
-        file_id=file_info.file_id,
-        filename=file_info.original_filename,
-        file_size=file_info.file_size,
-        mime_type=file_info.mime_type
+        file_id=file_data.file_id,
+        filename=file_data.original_filename,
+        file_size=file_data.file_size,
+        mime_type=file_data.mime_type
     )
 
 
@@ -81,12 +81,12 @@ async def get_file_info(file_id: str):
         file_id: 檔案 ID
     """
     file_service = get_file_service()
-    file_info = file_service.get_file(file_id)
+    file_data = file_service.get_file(file_id)
 
-    if file_info is None:
+    if file_data is None:
         raise HTTPException(status_code=404, detail="File not found")
 
-    return file_info
+    return FileInfo.from_file_data(file_data)
 
 
 @router.get("/{file_id}/download")
@@ -98,19 +98,19 @@ async def download_file(file_id: str):
         file_id: 檔案 ID
     """
     file_service = get_file_service()
-    file_info = file_service.get_file(file_id)
+    file_data = file_service.get_file(file_id)
 
-    if file_info is None:
+    if file_data is None:
         raise HTTPException(status_code=404, detail="File not found")
 
-    file_path = Path(file_info.file_path)
+    file_path = Path(file_data.file_path)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
     return FileResponse(
         path=file_path,
-        filename=file_info.original_filename,
-        media_type=file_info.mime_type
+        filename=file_data.original_filename,
+        media_type=file_data.mime_type
     )
 
 
