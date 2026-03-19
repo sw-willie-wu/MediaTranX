@@ -5,6 +5,7 @@ import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { apiFetch } from '@/composables/useApi'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useModelStore } from '@/stores/models'
 
 const props = defineProps<{
   fileId: string | null
@@ -18,59 +19,42 @@ const emit = defineEmits<{
 const taskStore = useTaskStore()
 const toast = useToast()
 const { submitTask, isProcessing } = useSubmitTask()
+const modelStore = useModelStore()
 
-// ── 翻譯模型（從 /setup/models 載入，含 badge）────────────────────────────
-
-interface TranslateModelItem {
-  key: string
-  label: string
-  desc: string
-  sizeMb: number
-  downloaded: boolean
-}
+// ── 翻譯模型（從 modelStore 取得）────────────────────────────────────────
 
 const selectedTranslateModel = ref('translategemma:4b:Q4_K_M')
 const translateEnvAvailable  = ref<boolean | null>(null)
-const translateModelsFromApi = ref<TranslateModelItem[]>([])
 const isInstalling = ref(false)
 const error = ref<string | null>(null)
 
 const translateModelOptions = computed(() =>
-  translateModelsFromApi.value.map(m => ({
-    value: m.key,
-    label: m.label,
-    desc:  m.desc,
-    badge: m.downloaded ? 'ok' as const : 'err' as const,
-  }))
+  modelStore.byCategory('translate')
+    .slice()
+    .sort((a, b) => a.size_mb - b.size_mb)
+    .map(m => {
+      const dashIdx = m.variant.indexOf('-')
+      const size  = m.variant.slice(0, dashIdx)
+      const quant = m.variant.slice(dashIdx + 1)
+      const sizeGb = (m.size_mb / 1024).toFixed(1)
+      const desc = m.description ? `${sizeGb} GB · ${m.description}` : `${sizeGb} GB`
+      const key = `${m.family}:${size}:${quant}`
+      return { value: key, label: m.label, desc, badge: m.downloaded ? 'ok' as const : 'err' as const }
+    })
 )
 
 async function loadTranslateModels() {
   try {
-    const [statusRes, modelsRes] = await Promise.all([
-      apiFetch('/setup/status'),
-      apiFetch('/setup/models'),
-    ])
+    const statusRes = await apiFetch('/setup/status')
     if (statusRes.ok) {
       const s = await statusRes.json()
       translateEnvAvailable.value = s.ai_env_ready ?? null
     }
-    if (!modelsRes.ok) return
-    const data = await modelsRes.json()
-    translateModelsFromApi.value = (data.models as any[])
-      .filter((m: any) => m.category === 'translate')
-      .sort((a: any, b: any) => a.size_mb - b.size_mb)
-      .map((m: any) => {
-        const dashIdx = m.variant.indexOf('-')
-        const size  = m.variant.slice(0, dashIdx)
-        const quant = m.variant.slice(dashIdx + 1)
-        const sizeGb = (m.size_mb / 1024).toFixed(1)
-        const desc = m.description ? `${sizeGb} GB · ${m.description}` : `${sizeGb} GB`
-        return { key: `${m.family}:${size}:${quant}`, label: m.label, desc, sizeMb: m.size_mb, downloaded: m.downloaded }
-      })
+    await modelStore.fetchModels()
 
     // 從 localStorage 還原上次選擇
     const saved = loadPreferences()
-    if (saved && translateModelsFromApi.value.some(m => m.key === saved)) {
+    if (saved && translateModelOptions.value.some(m => m.value === saved)) {
       selectedTranslateModel.value = saved
     }
   } catch {}

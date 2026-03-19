@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { apiFetch } from '@/composables/useApi'
+import { useModelStore } from '@/stores/models'
 
 const props = defineProps<{
   fileId: string | null
@@ -16,17 +17,31 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const { submitTask, isProcessing } = useSubmitTask()
+const modelStore = useModelStore()
 
 const selectedModel = ref('qwen3vl:4b')
 const available = ref<boolean | null>(null)
-const vlmModelsFromApi = ref<{ value: string; label: string; desc: string; downloaded: boolean }[]>([])
 
-const modelOptions = computed(() =>
-  vlmModelsFromApi.value.map(opt => ({
+// 從 store 的 vlm 模型列表聚合（依 family:size 去重）
+const modelOptions = computed(() => {
+  const seen = new Map<string, { value: string; label: string; desc: string; downloaded: boolean }>()
+  for (const m of modelStore.byCategory('vlm')) {
+    const [size] = m.variant.split(':')
+    const key = `${m.family}:${size}`
+    if (!seen.has(key)) {
+      const labelNoQuant = m.label.split(' ').slice(0, -1).join(' ')
+      const descBase = (m.description ?? '').split(' · ')[0]
+      const sizeGb = (m.size_mb / 1024).toFixed(1)
+      seen.set(key, { value: key, label: labelNoQuant, desc: `~${sizeGb} GB — ${descBase}`, downloaded: m.downloaded })
+    } else if (m.downloaded) {
+      seen.get(key)!.downloaded = true
+    }
+  }
+  return [...seen.values()].map(opt => ({
     ...opt,
     badge: opt.downloaded ? 'ok' as const : 'err' as const,
   }))
-)
+})
 
 const outputFormat = ref<'md' | 'txt'>('md')
 const outputPath = ref('')
@@ -66,29 +81,6 @@ async function selectOutputFile() {
 watch(() => props.fileId, () => { outputPath.value = '' })
 watch(outputFormat,       () => { outputPath.value = '' })
 
-async function loadVlmStatus() {
-  try {
-    const res = await apiFetch('/setup/models')
-    if (!res.ok) return
-    const data = await res.json()
-    const seen = new Map<string, { value: string; label: string; desc: string; downloaded: boolean }>()
-    for (const m of (data.models as any[])) {
-      if (m.category !== 'vlm') continue
-      const [size] = m.variant.split(':')
-      const key = `${m.family}:${size}`
-      if (!seen.has(key)) {
-        const labelNoQuant = m.label.split(' ').slice(0, -1).join(' ')
-        const descBase = m.description.split(' · ')[0]
-        const sizeGb = (m.size_mb / 1024).toFixed(1)
-        seen.set(key, { value: key, label: labelNoQuant, desc: `~${sizeGb} GB — ${descBase}`, downloaded: m.downloaded })
-      } else if (m.downloaded) {
-        seen.get(key)!.downloaded = true
-      }
-    }
-    vlmModelsFromApi.value = [...seen.values()]
-  } catch {}
-}
-
 async function checkAvailable() {
   try {
     const [family, size] = selectedModel.value.split(':')
@@ -99,39 +91,45 @@ async function checkAvailable() {
   } catch {}
 }
 
-onMounted(() => { loadVlmStatus(); checkAvailable() })
+onMounted(() => { modelStore.ensureLoaded(); checkAvailable() })
 watch(selectedModel, checkAvailable)
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value || available.value === false)
 const isLoading  = computed(() => isProcessing.value)
 
-async function execute() {
-  if (!props.fileId) return
+function getParams(): Record<string, unknown> {
   const [family, size] = selectedModel.value.split(':')
-
-  const body: Record<string, any> = {
-    file_id: props.fileId,
+  const params: Record<string, unknown> = {
     model_id: family,
     size,
     format: outputFormat.value,
   }
-
   if (outputPath.value) {
     const path = outputPath.value.replace(/\\/g, '/')
     const lastSlash = path.lastIndexOf('/')
     if (lastSlash > 0) {
-      body.output_dir      = path.substring(0, lastSlash)
-      body.output_filename = path.substring(lastSlash + 1)
+      params.output_dir      = path.substring(0, lastSlash)
+      params.output_filename = path.substring(lastSlash + 1)
     } else {
-      body.output_filename = path
+      params.output_filename = path
     }
   }
+  return params
+}
 
-  const taskId = await submitTask('/image/ocr', body, 'OCR 文字辨識', 'image.ocr', props.currentFileName)
+async function execute() {
+  if (!props.fileId) return
+  const taskId = await submitTask(
+    '/image/ocr',
+    { file_id: props.fileId, ...getParams() },
+    'OCR 文字辨識',
+    'image.ocr',
+    props.currentFileName,
+  )
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading, outputFormat })
+defineExpose({ execute, isDisabled, isLoading, outputFormat, getParams })
 </script>
 
 <template>

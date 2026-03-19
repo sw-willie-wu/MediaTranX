@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useTaskStore } from '@/stores/tasks'
 import { useSettingsStore } from '@/stores/settings'
+import { useModelStore } from '@/stores/models'
 import { useToast } from '@/composables/useToast'
 import { apiFetch } from '@/composables/useApi'
 import AppSelect from '@/components/common/AppSelect.vue'
@@ -9,29 +10,27 @@ import AppToggle from '@/components/common/AppToggle.vue'
 
 const taskStore = useTaskStore()
 const settings = useSettingsStore()
+const modelStore = useModelStore()
 const toast = useToast()
-
-interface TranslateModelItem {
-  key: string
-  label: string
-  desc: string
-  sizeMb: number
-  downloaded: boolean
-}
 
 const enableTranslation = ref(false)
 const selectedTranslateModel = ref('translategemma:4b:Q4_K_M')
 const translateEnvAvailable = ref<boolean | null>(null)
-const translateModelsFromApi = ref<TranslateModelItem[]>([])
 const isInstalling = ref(false)
 
 const translateModelOptions = computed(() =>
-  translateModelsFromApi.value.map(m => ({
-    value: m.key,
-    label: m.label,
-    desc: m.desc,
-    badge: m.downloaded ? 'ok' as const : 'err' as const,
-  }))
+  modelStore.byCategory('translate')
+    .slice()
+    .sort((a, b) => a.size_mb - b.size_mb)
+    .map(m => {
+      const dashIdx = m.variant.indexOf('-')
+      const size = m.variant.slice(0, dashIdx)
+      const quant = m.variant.slice(dashIdx + 1)
+      const sizeGb = (m.size_mb / 1024).toFixed(1)
+      const desc = m.description ? `${sizeGb} GB · ${m.description}` : `${sizeGb} GB`
+      const key = `${m.family}:${size}:${quant}`
+      return { value: key, label: m.label, desc, sizeMb: m.size_mb, badge: m.downloaded ? 'ok' as const : 'err' as const }
+    })
 )
 
 const targetLanguage = ref('zh-TW')
@@ -84,9 +83,9 @@ async function autoRecommend() {
   const totalBytes = settings.deviceInfo?.memory_total
   if (!totalBytes) return
   const usableMb = totalBytes / (1024 * 1024) - 1500
-  const sorted = [...translateModelsFromApi.value].sort((a, b) => b.sizeMb - a.sizeMb)
-  const best = sorted.find(m => m.sizeMb <= usableMb)
-  if (best) selectedTranslateModel.value = best.key
+  const sorted = [...translateModelOptions.value].sort((a, b) => (b.sizeMb ?? 0) - (a.sizeMb ?? 0))
+  const best = sorted.find(m => (m.sizeMb ?? 0) <= usableMb)
+  if (best) selectedTranslateModel.value = best.value
 }
 
 function parseGlossary(): Record<string, string> | undefined {
@@ -109,27 +108,12 @@ function parseGlossary(): Record<string, string> | undefined {
 
 async function loadTranslateModels() {
   try {
-    const [statusRes, modelsRes] = await Promise.all([
-      apiFetch('/setup/status'),
-      apiFetch('/setup/models'),
-    ])
+    const statusRes = await apiFetch('/setup/status')
     if (statusRes.ok) {
       const s = await statusRes.json()
       translateEnvAvailable.value = s.ai_env_ready ?? null
     }
-    if (!modelsRes.ok) return
-    const data = await modelsRes.json()
-    translateModelsFromApi.value = (data.models as any[])
-      .filter((m: any) => m.category === 'translate')
-      .sort((a: any, b: any) => a.size_mb - b.size_mb)
-      .map((m: any) => {
-        const dashIdx = m.variant.indexOf('-')
-        const size = m.variant.slice(0, dashIdx)
-        const quant = m.variant.slice(dashIdx + 1)
-        const sizeGb = (m.size_mb / 1024).toFixed(1)
-        const desc = m.description ? `${sizeGb} GB · ${m.description}` : `${sizeGb} GB`
-        return { key: `${m.family}:${size}:${quant}`, label: m.label, desc, sizeMb: m.size_mb, downloaded: m.downloaded }
-      })
+    await modelStore.fetchModels()
   } catch {}
 }
 
@@ -192,7 +176,7 @@ onMounted(async () => {
   await Promise.all([loadTranslateModels(), loadTranslateStyles()])
   settings.loadDeviceInfo()
   const saved = loadPreferences()
-  if (saved && translateModelsFromApi.value.some(m => m.key === saved)) {
+  if (saved && translateModelOptions.value.some(m => m.value === saved)) {
     selectedTranslateModel.value = saved
   } else {
     await autoRecommend()

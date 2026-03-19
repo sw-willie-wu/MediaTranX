@@ -4,16 +4,8 @@ import AppToggle from '@/components/common/AppToggle.vue'
 import AppRange from '@/components/common/AppRange.vue'
 import AppSelect, { type SelectOption } from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
-import { apiFetch } from '@/composables/useApi'
+import { useModelStore } from '@/stores/models'
 
-interface ModelItem {
-  id: string
-  label: string
-  description: string
-  downloaded: boolean
-  category: string
-  max_scale?: number
-}
 
 const props = defineProps<{
   fileId: string | null
@@ -26,9 +18,8 @@ const emit = defineEmits<{
 }>()
 
 const { submitTask, isProcessing } = useSubmitTask()
+const modelStore = useModelStore()
 
-const upscaleModels = ref<ModelItem[]>([])
-const faceRestoreModels = ref<ModelItem[]>([])
 const selectedModelId = ref('')
 const selectedFaceModelId = ref('')
 const upscaleScale = ref(4)
@@ -36,7 +27,9 @@ const sharpen = ref(false)
 const faceRestore = ref(false)
 const faceRestoreFidelity = ref(0.7)
 const faceRestoreUpscale = ref(2)
-const isLoadingModels = ref(false)
+
+const upscaleModels = computed(() => modelStore.byCategory('upscale'))
+const faceRestoreModels = computed(() => modelStore.byCategory('face_restore'))
 
 const selectedUpscaleModel = computed(() => upscaleModels.value.find(m => m.id === selectedModelId.value))
 const maxScale = computed(() => selectedUpscaleModel.value?.max_scale ?? 4)
@@ -79,22 +72,22 @@ function selectFaceModel(id: string) {
   if (model?.downloaded) selectedFaceModelId.value = id
 }
 
-onMounted(async () => {
-  isLoadingModels.value = true
-  try {
-    const res = await apiFetch('/setup/models')
-    if (!res.ok) return
-    const data = await res.json()
-    upscaleModels.value = (data.models as ModelItem[]).filter(m => m.category === 'upscale')
-    faceRestoreModels.value = (data.models as ModelItem[]).filter(m => m.category === 'face_restore')
-    const firstDownloaded = upscaleModels.value.find(m => m.downloaded)
-    if (firstDownloaded) selectedModelId.value = firstDownloaded.id
-    const firstFace = faceRestoreModels.value.find(m => m.downloaded)
-    if (firstFace) selectedFaceModelId.value = firstFace.id
-  } finally {
-    isLoadingModels.value = false
+// 當模型列表載入完成後自動選取第一個已下載的模型
+watch(upscaleModels, (models) => {
+  if (!selectedModelId.value) {
+    const first = models.find(m => m.downloaded)
+    if (first) selectedModelId.value = first.id
   }
-})
+}, { immediate: true })
+
+watch(faceRestoreModels, (models) => {
+  if (!selectedFaceModelId.value) {
+    const first = models.find(m => m.downloaded)
+    if (first) selectedFaceModelId.value = first.id
+  }
+}, { immediate: true })
+
+onMounted(() => modelStore.ensureLoaded())
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
@@ -144,11 +137,11 @@ defineExpose({ execute, isDisabled, isLoading, upscaleScale, getParams })
       <AppSelect
         :model-value="selectedModelId"
         :options="upscaleOptions"
-        :disabled="isLoadingModels"
+        :disabled="modelStore.loading"
         placeholder="載入中..."
         @update:model-value="selectUpscaleModel"
       />
-      <div v-if="!selectedModelId && !isLoadingModels" class="info-box info-box--warn">
+      <div v-if="!selectedModelId && !modelStore.loading" class="info-box info-box--warn">
         <i class="bi bi-exclamation-circle"></i>
         <span>無已下載模型，請至設定下載</span>
       </div>

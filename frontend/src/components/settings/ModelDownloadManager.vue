@@ -1,28 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useTaskStore } from '@/stores/tasks'
+import { useModelStore } from '@/stores/models'
 import { apiFetch } from '@/composables/useApi'
 import AppModelGroupList from '@/components/common/AppModelGroupList.vue'
 
 const taskStore = useTaskStore()
+const modelStore = useModelStore()
 
-interface ModelItem {
-  id: string
-  label: string
-  category: string
-  downloaded: boolean
-  size_mb: number
-  family: string
-  variant: string
-  description?: string
-}
-
-interface ModelsStatus {
-  models: ModelItem[]
-}
-
-const modelStatus = ref<ModelsStatus | null>(null)
-const modelStatusLoading = ref(false)
 const downloadingTaskId = ref<Record<string, string>>({})
 
 const downloadProgress = computed(() => {
@@ -32,18 +17,6 @@ const downloadProgress = computed(() => {
   }
   return result
 })
-
-async function loadModelStatus() {
-  modelStatusLoading.value = true
-  try {
-    const res = await apiFetch('/setup/models')
-    if (res.ok) modelStatus.value = await res.json()
-  } catch (e) {
-    console.error('Failed to load model status', e)
-  } finally {
-    modelStatusLoading.value = false
-  }
-}
 
 async function downloadItem(id: string) {
   const res = await apiFetch('/setup/models/download', {
@@ -75,10 +48,7 @@ async function removeItem(id: string) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id }),
   })
-  if (res.ok && modelStatus.value) {
-    const model = modelStatus.value.models.find(m => m.id === id)
-    if (model) model.downloaded = false
-  }
+  if (res.ok) modelStore.setDownloaded(id, false)
 }
 
 watch(
@@ -90,32 +60,28 @@ watch(
       const task = taskStore.tasks.get(taskId)
       if (task && (task.status === 'completed' || task.status === 'failed')) {
         delete downloadingTaskId.value[itemId]
-        delete downloadProgress.value[itemId]
-        if (task.status === 'completed' && modelStatus.value) {
-          const model = modelStatus.value.models.find(m => m.id === itemId)
-          if (model) model.downloaded = true
-        }
+        if (task.status === 'completed') modelStore.setDownloaded(itemId, true)
       }
     }
   },
 )
 
-onMounted(loadModelStatus)
+onMounted(() => modelStore.fetchModels())
 </script>
 
 <template>
   <h6 class="section-title mt">模型與工具</h6>
   <p class="download-hint"><i class="bi bi-info-circle"></i> 最多同時進行 4 個下載，超過將自動排隊</p>
 
-  <div v-if="modelStatusLoading" class="models-loading">
+  <div v-if="modelStore.loading && !modelStore.loaded" class="models-loading">
     <div class="spinner"></div>
     <span>載入中...</span>
   </div>
 
-  <template v-else-if="modelStatus">
+  <template v-else-if="modelStore.loaded">
     <label class="section-subtitle">超解析工具</label>
     <AppModelGroupList
-      :items="modelStatus.models.filter(m => m.category === 'upscale')"
+      :items="modelStore.byCategory('upscale')"
       :downloadingTaskId="downloadingTaskId"
       :downloadProgress="downloadProgress"
       @download="downloadItem"
@@ -124,7 +90,7 @@ onMounted(loadModelStatus)
 
     <label class="section-subtitle">人臉修復</label>
     <AppModelGroupList
-      :items="modelStatus.models.filter(m => m.category === 'face_restore')"
+      :items="modelStore.byCategory('face_restore')"
       :downloadingTaskId="downloadingTaskId"
       :downloadProgress="downloadProgress"
       @download="downloadItem"
@@ -133,7 +99,7 @@ onMounted(loadModelStatus)
 
     <label class="section-subtitle">語音識別</label>
     <AppModelGroupList
-      :items="modelStatus.models.filter(m => m.category === 'stt')"
+      :items="modelStore.byCategory('stt')"
       :downloadingTaskId="downloadingTaskId"
       :downloadProgress="downloadProgress"
       @download="downloadItem"
@@ -142,7 +108,7 @@ onMounted(loadModelStatus)
 
     <label class="section-subtitle">翻譯模型</label>
     <AppModelGroupList
-      :items="modelStatus.models.filter(m => m.category === 'translate')"
+      :items="modelStore.byCategory('translate')"
       :downloadingTaskId="downloadingTaskId"
       :downloadProgress="downloadProgress"
       @download="downloadItem"
@@ -151,7 +117,7 @@ onMounted(loadModelStatus)
 
     <label class="section-subtitle">VLM OCR 模型</label>
     <AppModelGroupList
-      :items="modelStatus.models.filter(m => m.category === 'vlm')"
+      :items="modelStore.byCategory('vlm')"
       :downloadingTaskId="downloadingTaskId"
       :downloadProgress="downloadProgress"
       @download="downloadItem"
@@ -160,14 +126,14 @@ onMounted(loadModelStatus)
 
     <label class="section-subtitle">圖像分割</label>
     <AppModelGroupList
-      :items="modelStatus.models.filter(m => m.category === 'segment')"
+      :items="modelStore.byCategory('segment')"
       :downloadingTaskId="downloadingTaskId"
       :downloadProgress="downloadProgress"
       @download="downloadItem"
       @remove="removeItem"
     />
 
-    <button class="btn-secondary refresh-btn" @click="loadModelStatus">
+    <button class="btn-secondary refresh-btn" @click="modelStore.fetchModels()">
       <i class="bi bi-arrow-clockwise"></i> 重新整理
     </button>
   </template>

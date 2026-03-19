@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { apiFetch } from '@/composables/useApi'
+import { useModelStore } from '@/stores/models'
 
 const props = defineProps<{
   fileId: string | null
@@ -17,19 +18,32 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const { submitTask, isProcessing } = useSubmitTask()
+const modelStore = useModelStore()
 
 // ── 模型 ──────────────────────────────────────────────────────────────────
 
 const selectedModel = ref('qwen3vl:4b')
 const available = ref<boolean | null>(null)
-const vlmModelsFromApi = ref<{ value: string; label: string; desc: string; downloaded: boolean }[]>([])
 
-const modelOptions = computed(() =>
-  vlmModelsFromApi.value.map(opt => ({
+const modelOptions = computed(() => {
+  const seen = new Map<string, { value: string; label: string; desc: string; downloaded: boolean }>()
+  for (const m of modelStore.byCategory('vlm')) {
+    const [size] = m.variant.split(':')
+    const key = `${m.family}:${size}`
+    if (!seen.has(key)) {
+      const labelNoQuant = m.label.split(' ').slice(0, -1).join(' ')
+      const descBase = (m.description ?? '').split(' · ')[0]
+      const sizeGb = (m.size_mb / 1024).toFixed(1)
+      seen.set(key, { value: key, label: labelNoQuant, desc: `~${sizeGb} GB — ${descBase}`, downloaded: m.downloaded })
+    } else if (m.downloaded) {
+      seen.get(key)!.downloaded = true
+    }
+  }
+  return [...seen.values()].map(opt => ({
     ...opt,
     badge: opt.downloaded ? 'ok' as const : 'err' as const,
   }))
-)
+})
 
 // ── 輸出選項 ──────────────────────────────────────────────────────────────
 
@@ -78,29 +92,6 @@ watch(outputFormat,       () => { outputPath.value = '' })
 
 // ── 狀態載入 ──────────────────────────────────────────────────────────────
 
-async function loadVlmStatus() {
-  try {
-    const res = await apiFetch('/setup/models')
-    if (!res.ok) return
-    const data = await res.json()
-    const seen = new Map<string, { value: string; label: string; desc: string; downloaded: boolean }>()
-    for (const m of (data.models as any[])) {
-      if (m.category !== 'vlm') continue
-      const [size] = m.variant.split(':')
-      const key = `${m.family}:${size}`
-      if (!seen.has(key)) {
-        const labelNoQuant = m.label.split(' ').slice(0, -1).join(' ')
-        const descBase = m.description.split(' · ')[0]
-        const sizeGb = (m.size_mb / 1024).toFixed(1)
-        seen.set(key, { value: key, label: labelNoQuant, desc: `~${sizeGb} GB — ${descBase}`, downloaded: m.downloaded })
-      } else if (m.downloaded) {
-        seen.get(key)!.downloaded = true
-      }
-    }
-    vlmModelsFromApi.value = [...seen.values()]
-  } catch {}
-}
-
 async function checkAvailable() {
   try {
     const [family, size] = selectedModel.value.split(':')
@@ -111,7 +102,7 @@ async function checkAvailable() {
   } catch {}
 }
 
-onMounted(() => { loadVlmStatus(); checkAvailable() })
+onMounted(() => { modelStore.ensureLoaded(); checkAvailable() })
 watch(selectedModel, checkAvailable)
 
 // ── 執行 ──────────────────────────────────────────────────────────────────
