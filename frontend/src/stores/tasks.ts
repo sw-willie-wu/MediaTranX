@@ -100,8 +100,13 @@ export const useTaskStore = defineStore('tasks', () => {
       if (response.ok) {
         const task = tasks.value.get(taskId)
         if (task) {
-          task.status = 'cancelled'
-          task.updatedAt = new Date()
+          // pending 立即取消；processing 由 polling 同步真實狀態
+          if (task.status === 'pending') {
+            task.status = 'cancelled'
+            task.updatedAt = new Date()
+          } else {
+            task.message = '取消中…'
+          }
         }
         return true
       }

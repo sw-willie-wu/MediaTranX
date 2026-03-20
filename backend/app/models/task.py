@@ -10,6 +10,10 @@ from enum import Enum
 from typing import Any, Optional
 
 
+class TaskCancelledError(Exception):
+    """任務被取消時由 progress_callback 拋出"""
+
+
 class TaskStatus(str, Enum):
     """任務狀態"""
     PENDING = "pending"
