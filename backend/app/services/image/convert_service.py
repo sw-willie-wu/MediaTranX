@@ -188,13 +188,8 @@ class ImageConvertService:
             original_stem = Path(file_info.original_filename).stem
             final_filename = f"{original_stem}_converted_{output_file_id[:8]}.{ext}"
 
-        # 決定輸出目錄（優先自訂 > 來源目錄 > 預設 output）
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        elif file_info.source_dir:
-            output_dir_path = Path(file_info.source_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
+        # 決定輸出目錄（優先自訂 > 預設 temp/results）
+        output_dir_path = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 

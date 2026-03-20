@@ -6,6 +6,9 @@ import ComparisonSlider from '@/components/ComparisonSlider.vue'
 import UnsupportedFileOverlay from '@/components/UnsupportedFileOverlay.vue'
 import { useFilesStore } from '@/stores/files'
 import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('ToolLayout')
 
 interface SubFunction {
   id: string
@@ -25,6 +28,7 @@ const props = withDefaults(defineProps<{
   uploadAccept?: string
   hasResult?: boolean
   resultPreviewUrl?: string | null
+  resultMeta?: Record<string, unknown>
   canGoBack?: boolean
   executeDisabled?: boolean
   executeLoading?: boolean
@@ -34,6 +38,7 @@ const props = withDefaults(defineProps<{
   showFilmstrip?: boolean
   collectionSize?: number
   originalPreviewUrl?: string | null
+  functionsLocked?: boolean
 }>(), {
   uploadIcon: 'bi-cloud-arrow-up-fill',
   uploadLabel: '拖曳檔案到這裡',
@@ -106,6 +111,7 @@ let unsupportedTimer: ReturnType<typeof setTimeout> | null = null
 const isDragOver = ref(false)
 
 function setFile(file: File, sourceDir?: string) {
+  log.info('setFile', { fileName: file.name, size: file.size, sourceDir })
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   currentFile.value = file
   previewUrl.value = URL.createObjectURL(file)
@@ -114,6 +120,7 @@ function setFile(file: File, sourceDir?: string) {
 }
 
 function removeFile() {
+  log.info('removeFile')
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   currentFile.value = null
   previewUrl.value = null
@@ -126,6 +133,7 @@ function handleUploadFile(file: File, sourceDir?: string) {
   if (props.acceptType) {
     const detected = detectMediaType(file)
     if (detected && detected !== props.acceptType) {
+      log.warn('unsupported file type', { fileName: file.name, detected, expected: props.acceptType })
       showUnsupportedOverlay(detected)
       return
     }
@@ -223,7 +231,8 @@ onBeforeUnmount(() => {
           v-for="fn in subFunctions"
           :key="fn.id"
           class="function-item"
-          :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon }"
+          :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon, 'is-locked': functionsLocked && currentFunction !== fn.id }"
+          :disabled="functionsLocked && currentFunction !== fn.id"
           @click="emit('select-function', fn.id)"
         >
           <i :class="['bi', fn.icon]"></i>
@@ -324,6 +333,7 @@ onBeforeUnmount(() => {
           v-else-if="isComparing && resultPreviewUrl"
           :original-url="props.originalPreviewUrl ?? previewUrl!"
           :result-url="resultPreviewUrl"
+          :result-meta="props.resultMeta"
         />
 
         <!-- 有檔案時顯示預覽 slot -->
@@ -447,6 +457,7 @@ onBeforeUnmount(() => {
   }
 
   &.coming-soon { opacity: 0.5; }
+  &.is-locked { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 }
 
 .coming-badge {

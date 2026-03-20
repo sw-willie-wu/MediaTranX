@@ -6,7 +6,10 @@ import { useToast } from '@/composables/useToast'
 import { useFileDownload } from '@/composables/useFileDownload'
 import { apiFetch } from '@/composables/useApi'
 import { useMediaCollection } from '@/composables/useMediaCollection'
+import { createLogger } from '@/utils/logger'
 import type { HistoryEntry } from '@/composables/useMediaCollection'
+
+const log = createLogger('ImageWorkspace')
 
 export interface ImageInfo {
   width: number
@@ -71,7 +74,13 @@ export function useImageWorkspace() {
   const { downloadFile } = useFileDownload()
 
   // ── Collection (multi-image state) ──────────────────────────────────────────
-  const collection = useMediaCollection()
+  const TEXT_RE = /\.(txt|md|json|csv|srt|vtt)$/i
+  const collection = useMediaCollection({
+    shouldAddToHistory: (result) => {
+      const filename = result.output_filename as string | undefined
+      return !TEXT_RE.test(filename ?? '')
+    },
+  })
 
   // ── Image-specific state (not per-entry, lives here) ────────────────────────
   const imageInfo = ref<ImageInfo | null>(null)
@@ -126,6 +135,75 @@ export function useImageWorkspace() {
 
   const hasResult = computed(() => canGoBack.value || !!textResultFileId.value)
 
+  /**
+   * Compute cumulative spatial transform from history stack.
+   * Each crop records its offset/size relative to its input image; an upscale
+   * changes the pixel grid but not the represented region in the original.
+   * We walk the stack and compose a viewport (vx, vy, vw, vh) in original-image
+   * coordinates so ComparisonSlider can correctly align multi-step results.
+   */
+  const activeResultMeta = computed<Record<string, unknown> | undefined>(() => {
+    const stack = historyStack.value
+    if (stack.length === 0) return undefined
+
+    const hasCrop = stack.some((e) => e.meta?.crop_x != null)
+    if (!hasCrop) {
+      // No spatial crop — simple merge (e.g. upscale-only, filter-only)
+      const merged: Record<string, unknown> = {}
+      for (const entry of stack) {
+        if (entry.meta) Object.assign(merged, entry.meta)
+      }
+      return Object.keys(merged).length > 0 ? merged : undefined
+    }
+
+    // Accumulate a viewport in original-image coordinates
+    let vx = 0
+    let vy = 0
+    let vw: number | null = null
+    let vh: number | null = null
+    let baseW: number | null = null
+    let baseH: number | null = null
+
+    for (const entry of stack) {
+      const m = entry.meta
+      if (!m || m.crop_x == null) continue
+
+      const cropX = m.crop_x as number
+      const cropY = m.crop_y as number
+      const cropW = m.crop_width as number
+      const cropH = m.crop_height as number
+      const srcW = m.source_width as number
+      const srcH = m.source_height as number
+
+      if (vw == null || vh == null) {
+        // First crop — initialise viewport from its source (= original or upscaled original)
+        baseW = srcW
+        baseH = srcH
+        vw = srcW
+        vh = srcH
+      }
+
+      // Map crop coordinates from the current pixel grid back to original-image coordinates
+      const sx = vw / srcW
+      const sy = vh / srcH
+      vx += cropX * sx
+      vy += cropY * sy
+      vw = cropW * sx
+      vh = cropH * sy
+    }
+
+    if (vw == null || baseW == null) return undefined
+
+    return {
+      crop_x: vx,
+      crop_y: vy,
+      crop_width: vw,
+      crop_height: vh,
+      source_width: baseW,
+      source_height: baseH,
+    }
+  })
+
   /** Current task ID being processed for the active entry */
   const currentTaskId = computed<string | null>(
     () => collection.activeEntry.value?.currentTaskId ?? null,
@@ -170,6 +248,7 @@ export function useImageWorkspace() {
    * Replaces the old handleFile(file, srcDir) signature exactly.
    */
   async function handleFile(file: File, srcDir?: string) {
+    log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
     // Clear text results from the previous entry
     textResultFileId.value = null
     textResultFilename.value = null
@@ -181,9 +260,11 @@ export function useImageWorkspace() {
 
     try {
       const uploadedFileId = await filesStore.uploadFile(file, srcDir)
+      log.info('handleFile uploaded', { fileName: file.name, fileId: uploadedFileId })
       collection.updateEntry(entryId, { fileId: uploadedFileId, status: 'idle' })
       await loadImageInfo()
     } catch (e: any) {
+      log.error('handleFile upload failed', { fileName: file.name, error: e.message })
       collection.updateEntry(entryId, { status: 'idle' })
       toast.show(e.message || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
     }
@@ -214,6 +295,7 @@ export function useImageWorkspace() {
 
   function handlePanelSubmit(taskId: string) {
     const id = collection.activeId.value
+    log.info('handlePanelSubmit', { taskId, entryId: id })
     if (id) {
       collection.registerTask(taskId, id)
       collection.updateEntry(id, { currentTaskId: taskId, status: 'processing' })
@@ -237,6 +319,7 @@ export function useImageWorkspace() {
   function goBack() {
     const id = collection.activeId.value
     if (!id) return
+    log.info('goBack', { entryId: id, fromDepth: historyStack.value.length })
     const stack = historyStack.value.slice(0, -1)
     collection.updateEntry(id, { historyStack: stack })
     loadImageInfo()
@@ -282,8 +365,17 @@ export function useImageWorkspace() {
         const r = task.result as { output_file_id?: string; output_filename?: string }
         if (r.output_file_id) {
           const isText = /\.(txt|md|json|csv|srt|vtt)$/i.test(r.output_filename ?? '')
+          log.info('task completed', {
+            taskId: task.taskId, taskType: task.taskType,
+            outputFileId: r.output_file_id, isText,
+          })
           if (isText) {
-            // Text output (OCR etc.): store for preview/download, do not push to historyStack
+            // Text output (OCR etc.): useMediaCollection skipped historyStack
+            // but kept currentTaskId so this watcher fires. Clear it now.
+            const entryId = collection.activeId.value
+            if (entryId) {
+              collection.updateEntry(entryId, { currentTaskId: null })
+            }
             textResultFileId.value = r.output_file_id
             textResultFilename.value =
               r.output_filename ??
@@ -331,6 +423,7 @@ export function useImageWorkspace() {
     activeFileId,
     activePreviewUrl,
     hasResult,
+    activeResultMeta,
     historyStack,
     textResultFileId,
     textResultFilename,

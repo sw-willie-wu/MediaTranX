@@ -23,7 +23,6 @@ interface HistoryResponse {
 
 const TASK_TYPE_LABELS: Record<string, string> = {
   'image.upscale': '圖片超解析',
-  'image.compress': '圖片壓縮',
   'image.convert': '圖片轉檔',
   'image.filter': '圖片濾鏡',
   'image.crop': '圖片裁切',

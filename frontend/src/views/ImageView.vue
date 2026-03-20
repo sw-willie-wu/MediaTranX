@@ -11,7 +11,6 @@ import ImageAiRemovePanel from '@/components/image/panels/ImageAiRemovePanel.vue
 import ImageAdjustPanel, { type AdjustState } from '@/components/image/panels/ImageAdjustPanel.vue'
 import ImageFilterPanel, { type FilterState } from '@/components/image/panels/ImageFilterPanel.vue'
 import ImageCropPanel     from '@/components/image/panels/ImageCropPanel.vue'
-import ImageCompressPanel from '@/components/image/panels/ImageCompressPanel.vue'
 import ImageOcrPanel      from '@/components/image/panels/ImageOcrPanel.vue'
 import OcrResultModal     from '@/components/image/OcrResultModal.vue'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
@@ -20,7 +19,7 @@ import { useMultiSubmit } from '@/composables/useMultiSubmit'
 
 const {
   hasFile, fileId, isUploading, currentFileName, imageInfo, isLoadingInfo,
-  aiEnvReady, canGoBack, activeFileId, activePreviewUrl, hasResult,
+  aiEnvReady, canGoBack, activeFileId, activePreviewUrl, hasResult, activeResultMeta,
   goBack, checkAiEnvironment, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
   handleDownload, handleTextDownload, textResultFileId, textResultFilename, textResultContent,
   collection, activeId, selectedIds,
@@ -33,6 +32,7 @@ const isMultiSelect = computed(() => selectedIds.value.size > 1)
 // Preview ref (exposes clearMask, exportMask, hasMask, syncToImage)
 const previewRef = ref<InstanceType<typeof ImagePreview> | null>(null)
 const brushSize = ref(10)
+const maskToolMode = ref<'brush' | 'polygon' | 'bezier'>('brush')
 
 // Panel refs
 const convertPanelRef  = ref<InstanceType<typeof ImageConvertPanel>  | null>(null)
@@ -42,7 +42,6 @@ const aiRemovePanelRef = ref<InstanceType<typeof ImageAiRemovePanel> | null>(nul
 const adjustPanelRef   = ref<InstanceType<typeof ImageAdjustPanel>   | null>(null)
 const filterPanelRef   = ref<InstanceType<typeof ImageFilterPanel>   | null>(null)
 const cropPanelRef     = ref<InstanceType<typeof ImageCropPanel>     | null>(null)
-const compressPanelRef = ref<InstanceType<typeof ImageCompressPanel> | null>(null)
 const ocrPanelRef      = ref<InstanceType<typeof ImageOcrPanel>      | null>(null)
 const showOcrModal     = ref(false)
 
@@ -54,7 +53,6 @@ const subFunctions = [
   { id: 'adjust',    name: '調整',    icon: 'bi-sliders' },
   { id: 'filter',    name: '濾鏡',    icon: 'bi-palette-fill' },
   { id: 'crop',      name: '裁切',    icon: 'bi-crop' },
-  { id: 'compress',  name: '壓縮',    icon: 'bi-file-zip-fill' },
   { id: 'ocr',       name: '文字辨識', icon: 'bi-type' },
 ]
 
@@ -173,12 +171,27 @@ watch(showCropOverlay, (active) => {
 // 同步 canvas 裁切矩形 → panel（由 ImagePreview emit 事件驅動）
 const canvasCropRect = ref<{ x: number; y: number; w: number; h: number } | null>(null)
 
+// 當前圖片正在處理中（entry status） 或 任一 panel 正在提交 → 全域鎖定
+const isAnyProcessing = computed(() =>
+  collection.activeEntry.value?.status === 'processing'
+  || (convertPanelRef.value?.isLoading ?? false)
+  || (upscalePanelRef.value?.isLoading ?? false)
+  || (removeBgPanelRef.value?.isLoading ?? false)
+  || (aiRemovePanelRef.value?.isLoading ?? false)
+  || (adjustPanelRef.value?.isLoading ?? false)
+  || (filterPanelRef.value?.isLoading ?? false)
+  || (cropPanelRef.value?.isLoading ?? false)
+  || (ocrPanelRef.value?.isLoading ?? false),
+)
+
 const executeDisabled = computed(() => {
+  if (isAnyProcessing.value) return true
   if (currentFunction.value === 'ocr') return ocrPanelRef.value?.isDisabled ?? !hasFile.value
   return !hasFile.value || !fileId.value || isUploading.value
 })
 
 const executeLoading = computed(() => {
+  if (collection.activeEntry.value?.status === 'processing') return true
   if (currentFunction.value === 'convert')   return convertPanelRef.value?.isLoading   ?? false
   if (currentFunction.value === 'upscale')   return upscalePanelRef.value?.isLoading   ?? false
   if (currentFunction.value === 'remove-bg') return removeBgPanelRef.value?.isLoading  ?? false
@@ -186,12 +199,12 @@ const executeLoading = computed(() => {
   if (currentFunction.value === 'adjust')    return adjustPanelRef.value?.isLoading    ?? false
   if (currentFunction.value === 'filter')    return filterPanelRef.value?.isLoading    ?? false
   if (currentFunction.value === 'crop')      return cropPanelRef.value?.isLoading      ?? false
-  if (currentFunction.value === 'compress')  return compressPanelRef.value?.isLoading  ?? false
   if (currentFunction.value === 'ocr')       return ocrPanelRef.value?.isLoading       ?? false
   return false
 })
 
 function handleExecute() {
+  if (isAnyProcessing.value) return
   if (isMultiSelect.value) {
     handleMultiExecute()
   } else {
@@ -208,7 +221,6 @@ function handleSingleExecute() {
     case 'adjust':    adjustPanelRef.value?.execute();   break
     case 'filter':    filterPanelRef.value?.execute();   break
     case 'crop':      cropPanelRef.value?.execute();     break
-    case 'compress':  compressPanelRef.value?.execute(); break
     case 'ocr':       ocrPanelRef.value?.execute();      break
   }
 }
@@ -226,8 +238,6 @@ function handleMultiExecute() {
       submitToAll('/image/filter',    () => adjustPanelRef.value!.getParams(),   '圖片調整',      'image.filter',     noop); break
     case 'filter':
       submitToAll('/image/filter',    () => filterPanelRef.value!.getParams(),   '圖片濾鏡',      'image.filter',     noop); break
-    case 'compress':
-      submitToAll('/image/compress',  () => compressPanelRef.value!.getParams(), '圖片壓縮',      'image.compress',   noop); break
     case 'ocr':
       submitToAll('/image/ocr',       () => ocrPanelRef.value!.getParams(),      'OCR 文字辨識',  'image.ocr',        noop); break
     // ai-remove、crop 不支援批次（需筆刷/裁切互動），退回單張
@@ -303,10 +313,12 @@ function onFilmstripRemove(id: string) {
     :current-function="currentFunction"
     :has-result="hasResult"
     :result-preview-url="activePreviewUrl"
+    :result-meta="activeResultMeta"
     :original-preview-url="collection.activeEntry.value?.previewUrl ?? null"
     :can-go-back="canGoBack"
     :execute-disabled="executeDisabled"
     :execute-loading="executeLoading"
+    :functions-locked="isAnyProcessing"
     @select-function="currentFunction = $event"
     @execute="handleExecute"
     @file="handleFile"
@@ -333,6 +345,7 @@ function onFilmstripRemove(id: string) {
         :image-info="imageInfo"
         :is-ai-remove-mode="isAiRemoveMode"
         :brush-size="brushSize"
+        :tool-mode="maskToolMode"
         :show-crop-overlay="showCropOverlay"
         :crop-aspect-ratio="cropAspectRatio"
         :filter-preview="filterPreviewParams"
@@ -394,6 +407,7 @@ function onFilmstripRemove(id: string) {
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           v-model:brush-size="brushSize"
+          v-model:tool-mode="maskToolMode"
           :get-mask="() => previewRef?.exportMask() ?? null"
           :has-mask="() => previewRef?.hasMask() ?? false"
           @clear-mask="previewRef?.clearMask()"
@@ -428,15 +442,6 @@ function onFilmstripRemove(id: string) {
           @submit="onPanelSubmit"
           @update:show-crop-overlay="cropOverlayVisible = $event"
           @update:aspect-ratio="cropAspectRatio = $event"
-        />
-
-        <ImageCompressPanel
-          v-else-if="currentFunction === 'compress'"
-          ref="compressPanelRef"
-          :file-id="activeFileId"
-          :current-file-name="currentFileName"
-          :image-info="imageInfo"
-          @submit="onPanelSubmit"
         />
 
         <ImageOcrPanel

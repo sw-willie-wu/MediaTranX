@@ -1,11 +1,15 @@
 import { ref, computed, watch } from 'vue'
 import { useTaskStore } from '@/stores/tasks'
 import { getApiBase } from '@/composables/useApi'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('MediaCollection')
 
 export interface HistoryEntry {
   fileId: string
   previewUrl: string
   outputFilename: string
+  meta?: Record<string, unknown>
 }
 
 export interface MediaEntry {
@@ -21,7 +25,12 @@ export interface MediaEntry {
   currentTaskId: string | null
 }
 
-export function useMediaCollection() {
+export interface MediaCollectionOptions {
+  /** Return false to skip adding this result to historyStack (e.g. text-only results like OCR) */
+  shouldAddToHistory?: (result: Record<string, unknown>) => boolean
+}
+
+export function useMediaCollection(options?: MediaCollectionOptions) {
   const taskStore = useTaskStore()
 
   // --- State ---
@@ -72,6 +81,7 @@ export function useMediaCollection() {
     entries.value.set(id, entry)
     activeId.value = id
     selectedIds.value = new Set()
+    log.info('addEntry', { id, fileName: file.name, hasSrcDir: !!srcDir })
 
     return id
   }
@@ -79,6 +89,7 @@ export function useMediaCollection() {
   function removeEntry(id: string): void {
     const entry = entries.value.get(id)
     if (!entry) return
+    log.info('removeEntry', { id, fileName: entry.file.name })
 
     URL.revokeObjectURL(entry.previewUrl)
     if (entry.thumbnailUrl !== entry.previewUrl && entry.thumbnailUrl.startsWith('blob:')) {
@@ -148,6 +159,7 @@ export function useMediaCollection() {
 
   function registerTask(taskId: string, entryId: string): void {
     taskEntryMap.set(taskId, entryId)
+    log.info('registerTask', { taskId, entryId })
   }
 
   // --- Task completion watcher ---
@@ -159,17 +171,39 @@ export function useMediaCollection() {
         if (!entryId) continue
 
         if (task.status === 'completed' && task.result) {
-          const r = task.result as { output_file_id?: string; output_filename?: string }
-          if (r.output_file_id) {
-            const previewUrl = `${getApiBase()}/files/${r.output_file_id}/download`
+          const r = task.result as Record<string, unknown>
+          const outputFileId = r.output_file_id as string | undefined
+          const outputFilename = r.output_filename as string | undefined
+          if (outputFileId) {
             const entry = entries.value.get(entryId)
             if (!entry) continue
 
-            const historyEntry: HistoryEntry = {
-              fileId: r.output_file_id,
-              previewUrl,
-              outputFilename: r.output_filename ?? entry.file.name,
+            // Allow consumer to skip historyStack for non-image results (e.g. OCR text).
+            // Keep currentTaskId so the consumer's watcher can still process it.
+            if (options?.shouldAddToHistory && !options.shouldAddToHistory(r)) {
+              log.info('task completed (skipped history)', { taskId, entryId, outputFileId })
+              updateEntry(entryId, { status: 'done' })
+              taskEntryMap.delete(taskId)
+              continue
             }
+
+            const previewUrl = `${getApiBase()}/files/${outputFileId}/download`
+
+            // Collect extra metadata (e.g. crop_x, crop_y) excluding standard fields
+            const { output_file_id: _, output_filename: __, ...meta } = r
+
+            const historyEntry: HistoryEntry = {
+              fileId: outputFileId,
+              previewUrl,
+              outputFilename: outputFilename ?? entry.file.name,
+              meta: Object.keys(meta).length > 0 ? meta : undefined,
+            }
+
+            log.info('task completed → history push', {
+              taskId, entryId, outputFileId,
+              historyDepth: entry.historyStack.length + 1,
+              meta: historyEntry.meta,
+            })
 
             updateEntry(entryId, {
               historyStack: [...entry.historyStack, historyEntry],
@@ -178,9 +212,16 @@ export function useMediaCollection() {
             })
             taskEntryMap.delete(taskId)
           }
+        } else if (task.status === 'processing') {
+          const entry = entries.value.get(entryId)
+          if (!entry) continue
+          if (entry.progress !== task.progress) {
+            updateEntry(entryId, { progress: task.progress })
+          }
         } else if (task.status === 'failed') {
           const entry = entries.value.get(entryId)
           if (!entry) continue
+          log.warn('task failed', { taskId, entryId, error: task.error })
           updateEntry(entryId, {
             status: 'idle',
             currentTaskId: null,

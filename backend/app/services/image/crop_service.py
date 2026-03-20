@@ -123,12 +123,7 @@ class ImageCropService:
         ext = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
         final_filename = f"{original_stem}_cropped_{output_file_id[:8]}.{ext}"
 
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        elif file_info.source_dir:
-            output_dir_path = Path(file_info.source_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
+        output_dir_path = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 
@@ -150,8 +145,12 @@ class ImageCropService:
         return {
             "output_file_id": output_file_id,
             "output_filename": output_info.filename,
-            "width": crop_width,
-            "height": crop_height,
+            "crop_width": crop_width,
+            "crop_height": crop_height,
+            "crop_x": x,
+            "crop_y": y,
+            "source_width": img_width,
+            "source_height": img_height,
         }
 
 
