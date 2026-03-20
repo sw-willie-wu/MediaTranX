@@ -60,6 +60,14 @@ function isActive(path: string) {
 function navigate(path: string) {
   router.push(path)
 }
+
+function restartApp() {
+  if (window.electron?.restart) {
+    window.electron.restart()
+  } else {
+    window.location.reload()
+  }
+}
 </script>
 
 <template>
@@ -100,6 +108,13 @@ function navigate(path: string) {
           v-if="item.path === '/tasks' && taskStore.activeCount > 0"
           class="nav-badge"
         >{{ taskStore.activeCount }}</span>
+      </button>
+      <button
+        class="nav-btn restart-btn"
+        data-tooltip="重新啟動"
+        @click="restartApp"
+      >
+        <i class="bi bi-arrow-clockwise"></i>
       </button>
     </div>
   </nav>
