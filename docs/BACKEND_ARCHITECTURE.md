@@ -193,17 +193,13 @@ def get_xxx_service() -> XxxService:
 
 ### 3.3 輸出路徑決定順序
 
-```python
-# 1. 使用者指定的 output_dir
-# 2. 原始檔案的 source_dir（Electron 本地檔案的來源目錄）
-# 3. FileService.output_dir（預設輸出目錄）
+處理結果一律先存到暫存目錄，使用者確認後透過下載按鈕自行儲存到目標位置。
 
-if custom_output_dir:
-    output_dir = Path(custom_output_dir)
-elif file_info.source_dir:
-    output_dir = Path(file_info.source_dir)
-else:
-    output_dir = self._file_service.output_dir
+```python
+# 1. 使用者指定的 output_dir（如有）
+# 2. FileService.output_dir（預設 temp/results）
+
+output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
 ```
 
 ---
