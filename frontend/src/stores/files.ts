@@ -6,6 +6,9 @@ import { ref, computed } from 'vue'
 import type { MediaFile, MediaType, FileUploadResponse } from '@/types/media'
 
 import { getApiBase } from '@/composables/useApi'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('FilesStore')
 
 export const useFilesStore = defineStore('files', () => {
   // 狀態
@@ -38,6 +41,7 @@ export const useFilesStore = defineStore('files', () => {
   async function uploadFile(file: File, sourceDir?: string): Promise<string> {
     isUploading.value = true
     uploadProgress.value = 0
+    log.info('uploadFile', { fileName: file.name, size: file.size, mode: sourceDir ? 'register' : 'upload' })
 
     try {
       let data: FileUploadResponse
@@ -88,6 +92,7 @@ export const useFilesStore = defineStore('files', () => {
 
       files.value.set(data.file_id, mediaFile)
       currentFile.value = mediaFile
+      log.info('uploadFile done', { fileId: data.file_id, mimeType: data.mime_type })
 
       return data.file_id
     } finally {
@@ -167,6 +172,7 @@ export const useFilesStore = defineStore('files', () => {
 
   // 刪除檔案
   async function deleteFile(fileId: string): Promise<boolean> {
+    log.info('deleteFile', { fileId })
     try {
       const response = await fetch(`${getApiBase()}/files/${fileId}`, {
         method: 'DELETE',

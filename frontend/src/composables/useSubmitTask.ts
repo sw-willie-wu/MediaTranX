@@ -2,7 +2,10 @@ import { ref } from 'vue'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { getApiBase } from '@/composables/useApi'
+import { createLogger } from '@/utils/logger'
 import type { Task } from '@/types/task'
+
+const log = createLogger('SubmitTask')
 
 export function useSubmitTask() {
   const taskStore = useTaskStore()
@@ -17,6 +20,7 @@ export function useSubmitTask() {
     fileName: string = '',
   ): Promise<string | null> {
     isProcessing.value = true
+    log.info('submit', { apiPath, taskType, fileName, params: body })
     try {
       const resp = await fetch(`${getApiBase()}${apiPath}`, {
         method: 'POST',
@@ -30,6 +34,7 @@ export function useSubmitTask() {
       }
 
       const { task_id: taskId } = await resp.json()
+      log.info('submitted', { taskId, taskType, fileName })
 
       const task: Task = {
         taskId,
@@ -48,6 +53,7 @@ export function useSubmitTask() {
       toast.show(`${label}任務已提交`, { type: 'success', icon: 'bi-check-circle' })
       return taskId
     } catch (e: any) {
+      log.error('submit failed', { apiPath, taskType, error: e.message })
       toast.show(e.message || '提交失敗', { type: 'error', icon: 'bi-x-circle' })
       return null
     } finally {

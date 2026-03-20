@@ -4,6 +4,9 @@ import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { useFileDownload } from '@/composables/useFileDownload'
 import { apiFetch } from '@/composables/useApi'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('AudioWorkspace')
 
 export interface AudioInfo {
   duration: number
@@ -40,6 +43,7 @@ export function useAudioWorkspace() {
   }
 
   async function handleFile(file: File, srcDir?: string) {
+    log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
     hasFile.value = true
     sourceDir.value = srcDir
     currentFileName.value = file.name
@@ -49,9 +53,10 @@ export function useAudioWorkspace() {
     audioInfo.value = null
     try {
       fileId.value = await filesStore.uploadFile(file, srcDir)
+      log.info('handleFile uploaded', { fileName: file.name, fileId: fileId.value })
       await loadAudioInfo()
     } catch (e) {
-      console.error('File upload failed:', e)
+      log.error('handleFile upload failed', { fileName: file.name, error: e })
     } finally {
       isUploading.value = false
     }
@@ -69,6 +74,7 @@ export function useAudioWorkspace() {
   }
 
   function handlePanelSubmit(taskId: string) {
+    log.info('handlePanelSubmit', { taskId })
     currentTaskId.value = taskId
     hasResult.value = true
   }
@@ -91,6 +97,7 @@ export function useAudioWorkspace() {
       _notifiedTaskIds.add(task.taskId)
       const r = task.result as { output_file_id?: string }
       if (!r.output_file_id) return
+      log.info('task completed', { taskId: task.taskId, taskType: task.taskType, outputFileId: r.output_file_id })
       toast.show(`${task.label ?? '處理'} 完成`, {
         type: 'success',
         icon: 'bi-check-circle',

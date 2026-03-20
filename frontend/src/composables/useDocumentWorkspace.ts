@@ -4,6 +4,9 @@ import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { useFileDownload } from '@/composables/useFileDownload'
 import { apiFetch } from '@/composables/useApi'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('DocumentWorkspace')
 
 export function useDocumentWorkspace() {
   const filesStore = useFilesStore()
@@ -25,6 +28,7 @@ export function useDocumentWorkspace() {
   const textResultContent  = ref<string | null>(null)
 
   async function handleFile(file: File, srcDir?: string) {
+    log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
     hasFile.value = true
     sourceDir.value = srcDir
     currentFileName.value = file.name
@@ -36,8 +40,9 @@ export function useDocumentWorkspace() {
     textResultFilename.value = null
     try {
       fileId.value = await filesStore.uploadFile(file, srcDir)
+      log.info('handleFile uploaded', { fileName: file.name, fileId: fileId.value })
     } catch (e) {
-      console.error('File upload failed:', e)
+      log.error('handleFile upload failed', { fileName: file.name, error: e })
     } finally {
       isUploading.value = false
     }
@@ -57,6 +62,7 @@ export function useDocumentWorkspace() {
   }
 
   function handlePanelSubmit(taskId: string) {
+    log.info('handlePanelSubmit', { taskId })
     currentTaskId.value = taskId
   }
 
@@ -84,6 +90,7 @@ export function useDocumentWorkspace() {
       _notifiedTaskIds.add(task.taskId)
       const r = task.result as { output_file_id?: string; output_filename?: string }
       if (!r.output_file_id) return
+      log.info('task completed', { taskId: task.taskId, taskType: task.taskType, outputFileId: r.output_file_id })
       hasResult.value = true
 
       // OCR 任務：額外載入文字內容供 modal 顯示

@@ -4,8 +4,10 @@
  */
 import { useToast } from './useToast'
 import { getApiBase } from './useApi'
+import { createLogger } from '@/utils/logger'
 
 const toast = useToast()
+const log = createLogger('FileDownload')
 
 export function useFileDownload() {
   async function downloadFile(fileId: string, defaultName: string, defaultDir?: string) {
@@ -28,13 +30,16 @@ export function useFileDownload() {
     })
     if (!destPath) return
 
+    log.info('downloadFile', { fileId, destPath })
     try {
       await window.electron.downloadToPath(
         `${getApiBase()}/files/${fileId}/download`,
         destPath,
       )
+      log.info('downloadFile done', { fileId, destPath })
       toast.show('已儲存至指定位置', { type: 'success', icon: 'bi-check-circle' })
-    } catch {
+    } catch (e) {
+      log.error('downloadFile failed', { fileId, destPath, error: e })
       toast.show('儲存失敗', { type: 'error', icon: 'bi-x-circle' })
     }
   }
@@ -45,6 +50,7 @@ export function useFileDownload() {
     const destDir = await window.electron.selectFolder()
     if (!destDir) return
 
+    log.info('downloadBatch', { destDir, count: entries.length })
     try {
       await Promise.all(
         entries.map(({ fileId, filename }) => {
@@ -53,8 +59,10 @@ export function useFileDownload() {
           return window.electron!.downloadToPath(url, destPath)
         }),
       )
+      log.info('downloadBatch done', { count: entries.length })
       toast.show(`已儲存 ${entries.length} 個檔案`, { type: 'success', icon: 'bi-check-circle' })
-    } catch {
+    } catch (e) {
+      log.error('downloadBatch failed', { error: e })
       toast.show('批次儲存失敗', { type: 'error', icon: 'bi-x-circle' })
     }
   }

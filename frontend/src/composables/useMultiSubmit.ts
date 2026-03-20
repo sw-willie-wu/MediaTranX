@@ -1,7 +1,10 @@
 import { computed } from 'vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useToast } from '@/composables/useToast'
+import { createLogger } from '@/utils/logger'
 import type { useMediaCollection } from '@/composables/useMediaCollection'
+
+const log = createLogger('MultiSubmit')
 
 export function useMultiSubmit(collection: ReturnType<typeof useMediaCollection>) {
   const toast = useToast()
@@ -40,10 +43,12 @@ export function useMultiSubmit(collection: ReturnType<typeof useMediaCollection>
       )
 
     if (targets.length === 0) {
+      log.warn('submitToAll: no eligible targets')
       toast.show('沒有可提交的項目', { type: 'info', icon: 'bi-info-circle' })
       return
     }
 
+    log.info('submitToAll', { apiPath, taskType, targetCount: targets.length })
     const sharedParams = getParams()
 
     const results = await Promise.all(
@@ -67,6 +72,7 @@ export function useMultiSubmit(collection: ReturnType<typeof useMediaCollection>
     )
 
     const successCount = results.filter(Boolean).length
+    log.info('submitToAll done', { successCount, totalCount: targets.length })
 
     if (successCount > 0) {
       toast.show(`已提交 ${successCount} 個任務`, { type: 'success', icon: 'bi-check-circle' })
