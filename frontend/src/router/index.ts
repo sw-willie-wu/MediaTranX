@@ -30,14 +30,13 @@ const router = createRouter({
       component: () => import('../views/DocumentView.vue'),
     },
     {
-      path: '/history',
-      name: 'history',
-      component: () => import('../views/HistoryView.vue'),
-    },
-    {
       path: '/tasks',
       name: 'tasks',
       component: () => import('../views/TasksView.vue'),
+    },
+    {
+      path: '/history',
+      redirect: '/tasks?tab=history',
     },
     {
       path: '/settings',

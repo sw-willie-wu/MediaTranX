@@ -22,8 +22,7 @@ const topNav: NavItem[] = [
 ]
 
 const bottomNav: NavItem[] = [
-  { path: '/history', icon: 'bi-clock-history', label: '歷史紀錄' },
-  { path: '/tasks', icon: 'bi-list-task', label: '執行任務' },
+  { path: '/tasks', icon: 'bi-list-task', label: '任務' },
   { path: '/settings', icon: 'bi-gear-fill', label: '設定' },
 ]
 
@@ -227,8 +226,8 @@ function restartApp() {
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  background: var(--color-accent, #f87171);
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--text-primary);
   font-size: 0.6rem;
   font-weight: 600;
   line-height: 16px;

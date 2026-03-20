@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import { apiFetch } from '@/composables/useApi'
 
 interface HistoryItem {
@@ -56,6 +56,7 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 30
 const loading = ref(false)
+const loaded = ref(false)
 const filterStatus = ref<string | null>(null)
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
@@ -75,6 +76,7 @@ async function fetchHistory() {
     console.error('Failed to fetch history:', e)
   } finally {
     loading.value = false
+    loaded.value = true
   }
 }
 
@@ -135,168 +137,102 @@ function formatDate(iso: string): string {
   })
 }
 
-onMounted(fetchHistory)
+onMounted(() => fetchHistory())
+onActivated(() => fetchHistory())
 </script>
 
 <template>
-  <div class="history-page">
-    <div class="history-container">
-      <div class="page-header">
-        <h2 class="page-title">
-          <i class="bi bi-clock-history"></i>
-          歷史紀錄
-        </h2>
-        <button
-          v-if="items.length > 0"
-          class="clear-btn"
-          @click="clearAll"
-        >
-          <i class="bi bi-trash3"></i>
-          清空
-        </button>
-      </div>
+  <h6 class="section-title">歷史紀錄</h6>
 
-      <!-- 篩選 -->
-      <div class="filter-bar">
-        <button
-          class="filter-chip"
-          :class="{ 'is-active': filterStatus === null }"
-          @click="setFilter(null)"
-        >全部</button>
-        <button
-          class="filter-chip"
-          :class="{ 'is-active': filterStatus === 'completed' }"
-          @click="setFilter('completed')"
-        >已完成</button>
-        <button
-          class="filter-chip"
-          :class="{ 'is-active': filterStatus === 'failed' }"
-          @click="setFilter('failed')"
-        >失敗</button>
-        <button
-          class="filter-chip"
-          :class="{ 'is-active': filterStatus === 'cancelled' }"
-          @click="setFilter('cancelled')"
-        >已取消</button>
-      </div>
+  <div class="history-toolbar">
+    <div class="filter-bar">
+      <button class="filter-chip" :class="{ 'is-active': filterStatus === null }" @click="setFilter(null)">全部</button>
+      <button class="filter-chip" :class="{ 'is-active': filterStatus === 'completed' }" @click="setFilter('completed')">已完成</button>
+      <button class="filter-chip" :class="{ 'is-active': filterStatus === 'failed' }" @click="setFilter('failed')">失敗</button>
+      <button class="filter-chip" :class="{ 'is-active': filterStatus === 'cancelled' }" @click="setFilter('cancelled')">已取消</button>
+    </div>
+    <button v-if="items.length > 0" class="clear-btn" @click="clearAll">
+      <i class="bi bi-trash3"></i>
+      清空
+    </button>
+  </div>
 
-      <!-- 載入中 -->
-      <div v-if="loading && items.length === 0" class="loading-state">
-        <div class="spinner-sm"></div>
-      </div>
+  <div v-if="loading && items.length === 0" class="loading-state">
+    <div class="spinner-sm"></div>
+  </div>
 
-      <!-- 空狀態 -->
-      <div v-else-if="items.length === 0" class="empty-state">
-        <i class="bi bi-inbox"></i>
-        <p>尚無歷史紀錄</p>
-      </div>
+  <div v-else-if="items.length === 0" class="empty-state">
+    <i class="bi bi-inbox"></i>
+    <p>尚無歷史紀錄</p>
+  </div>
 
-      <!-- 歷史列表 -->
-      <div v-else class="history-list">
-        <div
-          v-for="item in items"
-          :key="item.task_id"
-          class="history-card glass-card"
-        >
-          <div class="card-header">
-            <div class="card-title">
-              <span class="card-label">{{ taskLabel(item) }}</span>
-              <span v-if="fileName(item)" class="card-filename">{{ fileName(item) }}</span>
-            </div>
-            <span class="card-badge" :class="`badge-${item.status}`">
-              {{ STATUS_LABELS[item.status] || item.status }}
-            </span>
-          </div>
-          <div v-if="item.status === 'failed' && item.error" class="card-error">
-            <i class="bi bi-exclamation-circle-fill"></i>
-            <span>{{ item.error }}</span>
-          </div>
-          <div class="card-footer">
-            <span class="card-time">{{ formatDate(item.completed_at) }}</span>
-            <button class="remove-btn" @click="deleteItem(item.task_id)">
-              <i class="bi bi-trash3"></i>
-            </button>
-          </div>
+  <div v-else class="task-list">
+    <div v-for="item in items" :key="item.task_id" class="task-card">
+      <div class="task-header">
+        <div class="task-title">
+          <span class="task-label">{{ taskLabel(item) }}</span>
+          <span v-if="fileName(item)" class="task-filename">{{ fileName(item) }}</span>
+        </div>
+        <span class="task-badge" :class="`badge-${item.status}`">
+          {{ STATUS_LABELS[item.status] || item.status }}
+        </span>
+      </div>
+      <div v-if="item.status === 'failed' && item.error" class="task-error">
+        <div class="error-info">
+          <i class="bi bi-exclamation-circle-fill"></i>
+          <span>{{ item.error }}</span>
         </div>
       </div>
-
-      <!-- 分頁 -->
-      <div v-if="totalPages > 1" class="pagination">
-        <button
-          class="page-btn"
-          :disabled="page <= 1"
-          @click="goPage(page - 1)"
-        >
-          <i class="bi bi-chevron-left"></i>
-        </button>
-        <span class="page-info">{{ page }} / {{ totalPages }}</span>
-        <button
-          class="page-btn"
-          :disabled="page >= totalPages"
-          @click="goPage(page + 1)"
-        >
-          <i class="bi bi-chevron-right"></i>
+      <div class="task-footer">
+        <span class="task-time">{{ formatDate(item.completed_at) }}</span>
+        <button class="remove-btn show-on-hover" @click="deleteItem(item.task_id)">
+          <i class="bi bi-trash3"></i>
         </button>
       </div>
     </div>
   </div>
+
+  <div v-if="totalPages > 1" class="pagination">
+    <button class="page-btn" :disabled="page <= 1" @click="goPage(page - 1)">
+      <i class="bi bi-chevron-left"></i>
+    </button>
+    <span class="page-info">{{ page }} / {{ totalPages }}</span>
+    <button class="page-btn" :disabled="page >= totalPages" @click="goPage(page + 1)">
+      <i class="bi bi-chevron-right"></i>
+    </button>
+  </div>
 </template>
 
 <style lang="scss" scoped>
-.history-page {
+.section-title {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.empty-state {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  min-height: calc(100vh - 40px);
-  padding: 2rem 1rem;
+  padding: 4rem 1rem;
+  color: var(--text-muted);
+
+  i { font-size: 3rem; margin-bottom: 1rem; opacity: 0.5; }
+  p { font-size: 0.95rem; margin: 0; }
 }
 
-.history-container {
-  width: 100%;
-  max-width: 640px;
-}
-
-.page-header {
+.history-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 1rem;
 }
 
-.page-title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 1.3rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-
-  i { font-size: 1.2rem; }
-}
-
-.clear-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  background: none;
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  padding: 0.3rem 0.6rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:hover {
-    color: var(--color-danger);
-    border-color: var(--color-danger);
-  }
-}
-
 .filter-bar {
   display: flex;
   gap: 0.4rem;
-  margin-bottom: 1.25rem;
 }
 
 .filter-chip {
@@ -310,7 +246,7 @@ onMounted(fetchHistory)
   transition: all 0.15s ease;
 
   &.is-active {
-    background: rgba(168, 156, 200, 0.15);
+    background: color-mix(in srgb, var(--color-accent) 15%, transparent);
     border-color: var(--color-accent);
     color: var(--color-accent);
   }
@@ -321,72 +257,60 @@ onMounted(fetchHistory)
   }
 }
 
-.loading-state {
+.clear-btn {
   display: flex;
-  justify-content: center;
-  padding: 4rem 0;
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 4rem 1rem;
+  gap: 0.25rem;
+  background: none;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
   color: var(--text-muted);
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
 
-  i {
-    font-size: 3rem;
-    margin-bottom: 1rem;
-    opacity: 0.5;
-  }
-
-  p {
-    font-size: 0.95rem;
-    margin: 0;
+  &:hover {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
   }
 }
 
-.history-list {
+.task-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0.5rem;
 }
 
-.glass-card {
+.task-card {
+  padding: 14px 16px;
   background: var(--panel-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--panel-border);
   border-radius: 12px;
 }
 
-.history-card {
-  padding: 14px 16px;
-}
-
-.card-header {
+.task-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
 }
 
-.card-title {
+.task-title {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.card-label {
-  font-size: 0.9rem;
+.task-label {
+  font-size: 0.85rem;
   font-weight: 500;
   color: var(--text-primary);
 }
 
-.card-filename {
+.task-filename {
   font-size: 0.78rem;
   color: var(--text-muted);
   overflow: hidden;
@@ -394,7 +318,7 @@ onMounted(fetchHistory)
   white-space: nowrap;
 }
 
-.card-badge {
+.task-badge {
   flex-shrink: 0;
   font-size: 0.72rem;
   font-weight: 500;
@@ -402,44 +326,47 @@ onMounted(fetchHistory)
   border-radius: 6px;
 
   &.badge-completed {
-    background: rgba(52, 211, 153, 0.15);
+    background: color-mix(in srgb, var(--color-success) 15%, transparent);
     color: var(--color-success);
   }
 
   &.badge-failed {
-    background: rgba(248, 113, 113, 0.15);
+    background: color-mix(in srgb, var(--color-danger) 15%, transparent);
     color: var(--color-danger);
   }
 
   &.badge-cancelled {
-    background: rgba(156, 163, 175, 0.15);
+    background: color-mix(in srgb, var(--text-muted) 15%, transparent);
     color: var(--text-muted);
   }
 }
 
-.card-error {
+.task-error {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
-  color: var(--color-danger);
+  gap: 0.5rem;
   margin-bottom: 4px;
 
-  i { flex-shrink: 0; font-size: 0.82rem; }
-  span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .error-info {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--color-danger);
+    min-width: 0;
+
+    i { flex-shrink: 0; font-size: 0.85rem; }
+    span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   }
 }
 
-.card-footer {
+.task-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.card-time {
+.task-time {
   font-size: 0.72rem;
   color: var(--text-muted);
   opacity: 0.7;
@@ -455,14 +382,22 @@ onMounted(fetchHistory)
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.15s ease;
-  opacity: 0;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
 
-  .history-card:hover & { opacity: 1; }
-
-  i { font-size: 0.82rem; }
-
+  i { font-size: 0.85rem; }
   &:hover { color: var(--color-danger); }
+
+  &.show-on-hover {
+    opacity: 0;
+    .task-card:hover & { opacity: 1; }
+  }
+}
+
+.loading-state {
+  display: flex;
+  justify-content: center;
+  padding: 4rem 0;
 }
 
 .pagination {
@@ -491,10 +426,7 @@ onMounted(fetchHistory)
     color: var(--text-primary);
   }
 
-  &:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-  }
+  &:disabled { opacity: 0.3; cursor: not-allowed; }
 }
 
 .page-info {
@@ -505,13 +437,11 @@ onMounted(fetchHistory)
 .spinner-sm {
   width: 20px;
   height: 20px;
-  border: 2px solid var(--border-color);
+  border: 2px solid var(--panel-border);
   border-top-color: var(--color-accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
