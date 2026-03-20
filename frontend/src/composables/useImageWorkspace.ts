@@ -128,6 +128,26 @@ export function useImageWorkspace() {
     () => historyStack.value.at(-1)?.fileId ?? fileId.value,
   )
 
+  /**
+   * Base file-id for non-destructive filter operations.
+   * Walks history backwards past any trailing image.filter entries to find the
+   * last structural operation (crop/upscale/remove_bg/remove_object) result,
+   * or falls back to the original upload.
+   * Filter panels should use this instead of activeFileId.
+   */
+  const FILTER_TASK_TYPE = 'image.filter'
+  const baseFileId = computed<string | null>(() => {
+    const stack = historyStack.value
+    // Find the last non-filter entry from the end
+    for (let i = stack.length - 1; i >= 0; i--) {
+      if (stack[i].taskType !== FILTER_TASK_TYPE) {
+        return stack[i].fileId
+      }
+    }
+    // All entries are filters (or stack is empty) — use original upload
+    return fileId.value
+  })
+
   /** Preview URL: latest result if available, otherwise original file preview */
   const activePreviewUrl = computed<string | null>(
     () => historyStack.value.at(-1)?.previewUrl ?? collection.activeEntry.value?.previewUrl ?? null,
@@ -421,6 +441,7 @@ export function useImageWorkspace() {
     aiEnvReady,
     canGoBack,
     activeFileId,
+    baseFileId,
     activePreviewUrl,
     hasResult,
     activeResultMeta,

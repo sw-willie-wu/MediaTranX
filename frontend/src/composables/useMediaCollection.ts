@@ -9,6 +9,7 @@ export interface HistoryEntry {
   fileId: string
   previewUrl: string
   outputFilename: string
+  taskType?: string
   meta?: Record<string, unknown>
 }
 
@@ -196,17 +197,35 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
               fileId: outputFileId,
               previewUrl,
               outputFilename: outputFilename ?? entry.file.name,
+              taskType: task.taskType,
               meta: Object.keys(meta).length > 0 ? meta : undefined,
             }
 
             log.info('task completed → history push', {
               taskId, entryId, outputFileId,
               historyDepth: entry.historyStack.length + 1,
+              taskType: task.taskType,
               meta: historyEntry.meta,
             })
 
+            // Non-destructive filter: replace previous filter entry instead of stacking
+            const FILTER_TYPE = 'image.filter'
+            let newStack: HistoryEntry[]
+            if (task.taskType === FILTER_TYPE) {
+              const lastIdx = entry.historyStack.findLastIndex(e => e.taskType === FILTER_TYPE)
+              if (lastIdx >= 0) {
+                // Replace the previous filter result
+                newStack = [...entry.historyStack]
+                newStack[lastIdx] = historyEntry
+              } else {
+                newStack = [...entry.historyStack, historyEntry]
+              }
+            } else {
+              newStack = [...entry.historyStack, historyEntry]
+            }
+
             updateEntry(entryId, {
-              historyStack: [...entry.historyStack, historyEntry],
+              historyStack: newStack,
               status: 'done',
               currentTaskId: null,
             })

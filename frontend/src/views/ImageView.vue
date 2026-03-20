@@ -19,7 +19,7 @@ import { useMultiSubmit } from '@/composables/useMultiSubmit'
 
 const {
   hasFile, fileId, isUploading, currentFileName, imageInfo, isLoadingInfo,
-  aiEnvReady, canGoBack, activeFileId, activePreviewUrl, hasResult, activeResultMeta,
+  aiEnvReady, canGoBack, activeFileId, baseFileId, activePreviewUrl, hasResult, activeResultMeta,
   goBack, checkAiEnvironment, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
   handleDownload, handleTextDownload, textResultFileId, textResultFilename, textResultContent,
   collection, activeId, selectedIds,
@@ -417,7 +417,7 @@ function onFilmstripRemove(id: string) {
         <ImageAdjustPanel
           v-else-if="currentFunction === 'adjust'"
           ref="adjustPanelRef"
-          :file-id="activeFileId"
+          :file-id="baseFileId"
           :current-file-name="currentFileName"
           @submit="onPanelSubmit"
           @preview-change="filterPreviewParams = $event"
@@ -426,7 +426,7 @@ function onFilmstripRemove(id: string) {
         <ImageFilterPanel
           v-else-if="currentFunction === 'filter'"
           ref="filterPanelRef"
-          :file-id="activeFileId"
+          :file-id="baseFileId"
           :current-file-name="currentFileName"
           @submit="onPanelSubmit"
           @preview-change="filterPreviewParams = $event"
