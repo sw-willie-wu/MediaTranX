@@ -21,6 +21,33 @@ from app.workers.progress_tracker import get_progress_tracker
 logger = logging.getLogger(__name__)
 
 
+def _check_ai_deps(venv_python: Path) -> bool:
+    """檢查基礎 AI 套件（非 torch）是否已安裝"""
+    site_packages = venv_python.parent.parent / "Lib" / "site-packages"
+    # 抽查幾個關鍵套件
+    key_packages = ["faster_whisper", "simple_lama_inpainting", "huggingface_hub"]
+    return all((site_packages / pkg).is_dir() for pkg in key_packages)
+
+
+def _check_torch_variant(expected_variant: str) -> bool:
+    """檢查已安裝的 torch 版本是否符合預期 variant（如 cu124、cpu）"""
+    try:
+        import torch
+        version = torch.__version__  # e.g. '2.10.0+cu124'
+        plus = version.find('+')
+        installed = version[plus + 1:] if plus >= 0 else ''
+        return installed == expected_variant
+    except ImportError:
+        return False
+
+
+def _check_llama_server() -> bool:
+    """檢查 llama-server 二進位是否存在"""
+    import sys as _sys
+    exe_name = "llama-server.exe" if _sys.platform == "win32" else "llama-server"
+    return (get_llama_bin_dir() / exe_name).exists()
+
+
 async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
     """
     透過 uv 安裝 AI 運行環境：
@@ -91,9 +118,26 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
 
             has_gpu = torch_variant != "cpu"
 
-            if has_gpu:
-                # ── GPU 模式：3 步，torch 直接裝 CUDA 版 ──
-                # 進度：套件裝完→30%，Torch 裝完→55%，llama-server→80%，cudart→100%
+            # ── 檢查哪些步驟可以跳過 ──
+            deps_ok = _check_ai_deps(venv_python)
+            torch_ok = _check_torch_variant(torch_variant)
+            llama_ok = _check_llama_server()
+
+            all_ok = deps_ok and torch_ok and llama_ok
+            if all_ok:
+                logger.info("All AI components already installed and match, skipping.")
+                await tracker.emit(task_id, 1.0, "所有核心模組已是最新，無需重新安裝。", stage="completed")
+                return
+
+            skip_summary = []
+            if deps_ok: skip_summary.append("基礎套件")
+            if torch_ok: skip_summary.append(f"Torch {torch_variant.upper()}")
+            if llama_ok: skip_summary.append("llama-server")
+            if skip_summary:
+                logger.info(f"Skipping already installed: {', '.join(skip_summary)}")
+
+            # Step 1: 基礎 AI 套件
+            if not deps_ok:
                 await tracker.emit(task_id, 0.1, "安裝基礎 AI 套件中（Step 1/3）...", stage="processing")
                 rc = await run_uv([
                     str(uv_exe), "--project", cwd, "sync", "--extra", "ai", "--no-dev",
@@ -103,41 +147,13 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
                 if rc != 0:
                     await tracker.emit(task_id, 1.0, f"安裝失敗 (Code {rc})，請查看日誌。", stage="error")
                     return
-
-                await tracker.emit(task_id, 0.3, f"安裝 CUDA Torch ({torch_variant.upper()})（Step 2/3）...", stage="processing")
-                rc = await run_uv([
-                    str(uv_exe), "pip", "install",
-                    "--python", str(venv_python),
-                    "--no-deps",
-                    "--index-url", index_url,
-                    "torch", "torchvision",
-                ], 0.3, 0.54)
-                if rc != 0:
-                    await tracker.emit(task_id, 1.0, f"CUDA Torch 安裝失敗 (Code {rc})，請查看日誌。", stage="error")
-                    return
-
-                await tracker.emit(task_id, 0.55, "下載 llama-server 二進位（Step 3/3）...", stage="processing")
-                loop = asyncio.get_running_loop()
-                ok = await loop.run_in_executor(
-                    None, download_llama_server, torch_variant, task_id, loop, 0.55, 0.80, 1.0
-                )
-                if not ok:
-                    logger.warning("llama-server 下載失敗，請稍後手動重試。")
-
             else:
-                # ── CPU 模式：3 步（與 GPU 路徑對稱）──
-                # 進度：非 torch 套件→30%，CPU Torch→55%，llama-server→100%
-                await tracker.emit(task_id, 0.1, "安裝基礎 AI 套件中（Step 1/3）...", stage="processing")
-                rc = await run_uv([
-                    str(uv_exe), "--project", cwd, "sync", "--extra", "ai", "--no-dev",
-                    "--no-install-package", "torch",
-                    "--no-install-package", "torchvision",
-                ], 0.1, 0.29)
-                if rc != 0:
-                    await tracker.emit(task_id, 1.0, f"安裝失敗 (Code {rc})，請查看日誌。", stage="error")
-                    return
+                await tracker.emit(task_id, 0.29, "基礎 AI 套件已安裝，跳過 Step 1/3", stage="processing")
 
-                await tracker.emit(task_id, 0.3, "安裝 CPU Torch（Step 2/3）...", stage="processing")
+            # Step 2: PyTorch（CUDA 或 CPU）
+            if not torch_ok:
+                label = f"CUDA Torch ({torch_variant.upper()})" if has_gpu else "CPU Torch"
+                await tracker.emit(task_id, 0.3, f"安裝 {label}（Step 2/3）...", stage="processing")
                 rc = await run_uv([
                     str(uv_exe), "pip", "install",
                     "--python", str(venv_python),
@@ -146,16 +162,23 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
                     "torch", "torchvision",
                 ], 0.3, 0.54)
                 if rc != 0:
-                    await tracker.emit(task_id, 1.0, f"CPU Torch 安裝失敗 (Code {rc})，請查看日誌。", stage="error")
+                    await tracker.emit(task_id, 1.0, f"{label} 安裝失敗 (Code {rc})，請查看日誌。", stage="error")
                     return
+            else:
+                await tracker.emit(task_id, 0.54, f"Torch {torch_variant.upper()} 已安裝，跳過 Step 2/3", stage="processing")
 
+            # Step 3: llama-server
+            if not llama_ok:
                 await tracker.emit(task_id, 0.55, "下載 llama-server 二進位（Step 3/3）...", stage="processing")
+                llama_variant = torch_variant if has_gpu else "cpu"
                 loop = asyncio.get_running_loop()
                 ok = await loop.run_in_executor(
-                    None, download_llama_server, "cpu", task_id, loop, 0.55, 0.80, 1.0
+                    None, download_llama_server, llama_variant, task_id, loop, 0.55, 0.80, 1.0
                 )
                 if not ok:
                     logger.warning("llama-server 下載失敗，請稍後手動重試。")
+            else:
+                await tracker.emit(task_id, 0.95, "llama-server 已存在，跳過 Step 3/3", stage="processing")
 
             # 清除裝置偵測快取
             from app.engine.device import refresh_device_cache

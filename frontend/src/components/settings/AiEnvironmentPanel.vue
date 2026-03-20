@@ -9,6 +9,7 @@ const aiEnvLoading = ref(true)
 const aiEnvReady = ref(false)
 const llamaReady = ref(false)
 const aiTorchIndex = ref('cpu')
+const aiTorchInstalled = ref<string | null>(null)
 const aiDriverVersion = ref<string | null>(null)
 const aiInstallTaskId = ref<string | null>(null)
 const aiInstalling = ref(false)
@@ -38,6 +39,7 @@ async function loadAiEnvStatus() {
     aiEnvReady.value = cache.aiEnvReady
     llamaReady.value = cache.llamaReady
     aiTorchIndex.value = cache.torchIndex ?? 'cpu'
+    aiTorchInstalled.value = cache.torchInstalled ?? null
     aiDriverVersion.value = cache.driverVersion ?? null
     aiEnvLoading.value = false
   }
@@ -49,12 +51,14 @@ async function loadAiEnvStatus() {
     aiEnvReady.value = data.ai_env_ready
     llamaReady.value = data.llama_ready ?? false
     aiTorchIndex.value = data.torch_index ?? 'cpu'
+    aiTorchInstalled.value = data.torch_installed ?? null
     aiDriverVersion.value = data.device?.driver_version ?? null
     aiEnvLoading.value = false
     writeAiCache({
       aiEnvReady: data.ai_env_ready,
       llamaReady: data.llama_ready ?? false,
       torchIndex: data.torch_index ?? 'cpu',
+      torchInstalled: data.torch_installed ?? null,
       driverVersion: data.device?.driver_version ?? null,
     })
   } catch (e) {
@@ -97,16 +101,32 @@ watch(
         aiInstalled.value = true
         aiEnvReady.value = true
         llamaReady.value = true
-        writeAiCache({ aiEnvReady: true, llamaReady: true, torchIndex: aiTorchIndex.value, driverVersion: aiDriverVersion.value })
+        writeAiCache({ aiEnvReady: true, llamaReady: true, torchIndex: aiTorchIndex.value, torchInstalled: null, driverVersion: aiDriverVersion.value })
       }
     }
   },
 )
 
+/** 從實際安裝版本解析 variant (e.g. '2.10.0+cu124' → 'cu124', '2.10.0+cpu' → 'cpu') */
+function parseTorchVariant(version: string | null): string {
+  if (!version) return ''
+  const plus = version.indexOf('+')
+  return plus >= 0 ? version.slice(plus + 1) : ''
+}
+
+const torchMismatch = computed(() => {
+  if (!aiTorchInstalled.value) return false
+  const installed = parseTorchVariant(aiTorchInstalled.value)
+  return installed !== '' && installed !== aiTorchIndex.value
+})
+
 const coreModules = computed(() => {
-  const tag = aiTorchIndex.value === 'cpu' ? 'CPU' : aiTorchIndex.value.toUpperCase()
+  const installed = parseTorchVariant(aiTorchInstalled.value)
+  const tag = installed
+    ? installed.toUpperCase()
+    : (aiTorchIndex.value === 'cpu' ? 'CPU' : aiTorchIndex.value.toUpperCase())
   return [
-    { key: 'torch',   icon: 'bi-lightning-charge', name: 'PyTorch',         tag,   desc: '深度學習推理框架',              ready: aiEnvReady.value },
+    { key: 'torch',   icon: 'bi-lightning-charge', name: 'PyTorch',         tag,   desc: '深度學習推理框架',              ready: aiEnvReady.value, warn: torchMismatch.value },
     { key: 'whisper', icon: 'bi-mic',              name: 'faster-whisper',  tag: '', desc: '語音辨識引擎',                 ready: aiEnvReady.value },
     { key: 'llama',   icon: 'bi-translate',        name: 'llama-server',    tag,   desc: '翻譯 / VLM 推理引擎（GGUF）',  ready: llamaReady.value },
     { key: 'hf',      icon: 'bi-cloud-download',   name: 'huggingface-hub', tag: '', desc: 'AI 模型下載管理',              ready: aiEnvReady.value },
@@ -127,14 +147,17 @@ onMounted(loadAiEnvStatus)
     <div v-for="mod in coreModules" :key="mod.key" class="module-item">
       <div class="module-info">
         <span class="module-label">{{ mod.desc }}</span>
-        <span class="module-sub">{{ mod.name }}<template v-if="mod.tag"> ({{ mod.tag.toLowerCase() }})</template></span>
+        <span class="module-sub">
+          {{ mod.name }}<template v-if="mod.tag"> ({{ mod.tag.toLowerCase() }})</template>
+          <template v-if="mod.warn"> — 驅動建議 {{ aiTorchIndex }}，請重新安裝</template>
+        </span>
       </div>
       <span v-if="aiEnvLoading" class="module-badge badge-loading">
         <i class="bi bi-three-dots"></i>
       </span>
-      <span v-else class="module-badge" :class="mod.ready ? 'badge-ok' : 'badge-off'">
-        <i class="bi" :class="mod.ready ? 'bi-check-circle-fill' : 'bi-x-circle-fill'"></i>
-        {{ mod.ready ? '已安裝' : '未安裝' }}
+      <span v-else class="module-badge" :class="mod.warn ? 'badge-warn' : mod.ready ? 'badge-ok' : 'badge-off'">
+        <i class="bi" :class="mod.warn ? 'bi-exclamation-triangle-fill' : mod.ready ? 'bi-check-circle-fill' : 'bi-x-circle-fill'"></i>
+        {{ mod.warn ? '版本不符' : mod.ready ? '已安裝' : '未安裝' }}
       </span>
     </div>
   </div>
@@ -231,6 +254,7 @@ onMounted(loadAiEnvStatus)
   flex-shrink: 0;
 
   &.badge-ok      { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  &.badge-warn    { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
   &.badge-off     { background: rgba(239, 68, 68, 0.1);   color: #f87171; }
   &.badge-loading { background: transparent; color: var(--text-muted); }
 

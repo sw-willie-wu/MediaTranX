@@ -17,6 +17,15 @@ from .model_removal_service import remove_model
 logger = logging.getLogger(__name__)
 
 
+def _detect_installed_torch() -> str | None:
+    """偵測 .venv 中實際安裝的 torch 版本，回傳如 '2.10.0+cu124' 或 None。"""
+    try:
+        import torch
+        return torch.__version__
+    except ImportError:
+        return None
+
+
 class SetupService:
     """環境設置單例"""
     _instance: Optional["SetupService"] = None
@@ -53,6 +62,7 @@ class SetupService:
             "base_dir": str(get_base_data_dir()),
             "python_version": sys.version.split()[0],
             "torch_index": torch_idx,
+            "torch_installed": _detect_installed_torch(),
         }
 
     async def initialize_ai_env(self, task_id: str):
