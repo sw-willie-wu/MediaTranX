@@ -21,6 +21,9 @@ temp/
 data/
 output/
 *.log
+*.db
+*.db-shm
+*.db-wal
 test_*.py
 test_*.txt
 
