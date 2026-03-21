@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AudioPreview from '@/components/audio/AudioPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
@@ -8,6 +9,8 @@ import AudioCutPanel        from '@/components/audio/panels/AudioCutPanel.vue'
 import AudioVolumePanel     from '@/components/audio/panels/AudioVolumePanel.vue'
 import AudioTranscribePanel from '@/components/audio/panels/AudioTranscribePanel.vue'
 import { useAudioWorkspace } from '@/composables/useAudioWorkspace'
+
+const { t } = useI18n()
 
 const {
   hasFile, fileId, isUploading, currentFileName, hasResult, audioInfo,
@@ -20,12 +23,12 @@ const cutPanelRef        = ref<InstanceType<typeof AudioCutPanel>        | null>
 const volumePanelRef     = ref<InstanceType<typeof AudioVolumePanel>     | null>(null)
 const transcribePanelRef = ref<InstanceType<typeof AudioTranscribePanel> | null>(null)
 
-const subFunctions = [
-  { id: 'transcode',  name: '轉檔',     icon: 'bi-arrow-repeat' },
-  { id: 'cut',        name: '剪輯',     icon: 'bi-scissors' },
-  { id: 'volume',     name: '音量調整', icon: 'bi-volume-up-fill' },
-  { id: 'transcribe', name: '逐字稿',   icon: 'bi-mic-fill' },
-]
+const subFunctions = computed(() => [
+  { id: 'transcode',  name: t('audio.functions.transcode'),  icon: 'bi-arrow-repeat' },
+  { id: 'cut',        name: t('audio.functions.cut'),        icon: 'bi-scissors' },
+  { id: 'volume',     name: t('audio.functions.volume'),     icon: 'bi-volume-up-fill' },
+  { id: 'transcribe', name: t('audio.functions.transcribe'), icon: 'bi-mic-fill' },
+])
 
 const currentFunction = ref('transcode')
 
@@ -101,11 +104,11 @@ function onDownload() {
 
 <template>
   <ToolLayout
-    title="音訊工具"
+    :title="$t('audio.title')"
     accept-type="audio"
     upload-icon="bi-music-note-beamed"
-    upload-label="拖曳音訊到這裡"
-    upload-hint="支援 MP3、WAV、FLAC、AAC 等格式"
+    :upload-label="$t('audio.upload_label')"
+    :upload-hint="$t('audio.upload_hint')"
     upload-accept="audio/*"
     hide-preview-tabs
     :sub-functions="subFunctions"
@@ -131,7 +134,7 @@ function onDownload() {
         v-if="audioInfo || isUploading"
         :items="audioInfoItems"
         :loading="isUploading && !audioInfo"
-        loading-text="讀取音訊資訊..."
+        :loading-text="$t('audio.loading')"
       />
     </template>
 

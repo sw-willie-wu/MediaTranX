@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppRange from '@/components/common/AppRange.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import type { FilterPreview } from './filterTypes'
@@ -14,6 +15,7 @@ const emit = defineEmits<{
   'preview-change': [preview: FilterPreview]
 }>()
 
+const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
 const grayscale = ref(0)
@@ -90,7 +92,7 @@ async function execute() {
   const taskId = await submitTask(
     '/image/filter',
     { file_id: props.fileId, ...getParams() },
-    '圖片濾鏡',
+    t('image.filter.task_label'),
     'image.filter',
     props.currentFileName,
   )
@@ -102,37 +104,37 @@ defineExpose({ execute, isDisabled, isLoading, getParams, getState, setState, re
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-palette-fill me-2"></i>濾鏡設定</h6>
-    <p class="form-hint">套用視覺風格效果，所有變更即時反映於預覽。</p>
+    <h6 class="settings-title"><i class="bi bi-palette-fill me-2"></i>{{ $t('image.filter.title') }}</h6>
+    <p class="form-hint">{{ $t('image.filter.description') }}</p>
 
     <div class="form-group">
-      <label>灰階 <span class="param-value">{{ grayscale }}%</span></label>
+      <label>{{ $t('image.filter.grayscale') }} <span class="param-value">{{ grayscale }}%</span></label>
       <AppRange v-model="grayscale" :min="0" :max="100" :step="5" />
     </div>
 
     <div class="form-group">
-      <label>復古 <span class="param-value">{{ sepia }}%</span></label>
+      <label>{{ $t('image.filter.sepia') }} <span class="param-value">{{ sepia }}%</span></label>
       <AppRange v-model="sepia" :min="0" :max="100" :step="5" />
     </div>
 
     <div class="form-group">
-      <label>負片 <span class="param-value">{{ invert }}%</span></label>
+      <label>{{ $t('image.filter.invert') }} <span class="param-value">{{ invert }}%</span></label>
       <AppRange v-model="invert" :min="0" :max="100" :step="5" />
     </div>
 
     <div class="form-group">
-      <label>模糊 <span class="param-value">{{ blur }}px</span></label>
+      <label>{{ $t('image.filter.blur') }} <span class="param-value">{{ blur }}px</span></label>
       <AppRange v-model="blur" :min="0" :max="20" :step="1" />
     </div>
 
     <div class="form-group">
-      <label>暈影 <span class="param-value">{{ vignette }}%</span></label>
+      <label>{{ $t('image.filter.vignette') }} <span class="param-value">{{ vignette }}%</span></label>
       <AppRange v-model="vignette" :min="0" :max="100" :step="5" />
     </div>
 
     <div class="form-group">
       <button class="btn-secondary" @click="reset">
-        <i class="bi bi-arrow-counterclockwise"></i>重設濾鏡
+        <i class="bi bi-arrow-counterclockwise"></i>{{ $t('image.filter.reset') }}
       </button>
     </div>
   </div>

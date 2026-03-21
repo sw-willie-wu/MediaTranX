@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import ImagePreview from '@/components/image/ImagePreview.vue'
@@ -28,6 +29,8 @@ const {
 const { submitToAll } = useMultiSubmit(collection)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
 
+const { t } = useI18n()
+
 
 // Preview ref (exposes clearMask, exportMask, hasMask, syncToImage)
 const previewRef = ref<InstanceType<typeof ImagePreview> | null>(null)
@@ -45,16 +48,16 @@ const cropPanelRef     = ref<InstanceType<typeof ImageCropPanel>     | null>(nul
 const ocrPanelRef      = ref<InstanceType<typeof ImageOcrPanel>      | null>(null)
 const showOcrModal     = ref(false)
 
-const subFunctions = [
-  { id: 'convert',   name: '轉檔',    icon: 'bi-arrow-repeat' },
-  { id: 'remove-bg', name: '去背',    icon: 'bi-eraser-fill' },
-  { id: 'ai-remove', name: '物件移除', icon: 'bi-magic' },
-  { id: 'upscale',   name: '超解析',  icon: 'bi-arrows-angle-expand' },
-  { id: 'adjust',    name: '調整',    icon: 'bi-sliders' },
-  { id: 'filter',    name: '濾鏡',    icon: 'bi-palette-fill' },
-  { id: 'crop',      name: '裁切',    icon: 'bi-crop' },
-  { id: 'ocr',       name: '文字辨識', icon: 'bi-type' },
-]
+const subFunctions = computed(() => [
+  { id: 'convert',   name: t('image.functions.convert'),   icon: 'bi-arrow-repeat' },
+  { id: 'remove-bg', name: t('image.functions.remove_bg'), icon: 'bi-eraser-fill' },
+  { id: 'ai-remove', name: t('image.functions.ai_remove'), icon: 'bi-magic' },
+  { id: 'upscale',   name: t('image.functions.upscale'),   icon: 'bi-arrows-angle-expand' },
+  { id: 'adjust',    name: t('image.functions.adjust'),    icon: 'bi-sliders' },
+  { id: 'filter',    name: t('image.functions.filter'),    icon: 'bi-palette-fill' },
+  { id: 'crop',      name: t('image.functions.crop'),      icon: 'bi-crop' },
+  { id: 'ocr',       name: t('image.functions.ocr'),       icon: 'bi-type' },
+])
 
 const currentFunction     = ref('convert')
 const filterPreviewParams = ref<FilterPreview | null>(null)
@@ -257,17 +260,17 @@ function handleMultiExecute() {
   const noop = () => {}
   switch (currentFunction.value) {
     case 'convert':
-      submitToAll('/image/convert',   () => convertPanelRef.value!.getParams(),  '格式轉換',      'image.convert',    noop); break
+      submitToAll('/image/convert',   () => convertPanelRef.value!.getParams(),  t('image.convert.task_label'),    'image.convert',    noop); break
     case 'upscale':
-      submitToAll('/image/upscale',   () => upscalePanelRef.value!.getParams(),  '超解析',        'image.upscale',    noop); break
+      submitToAll('/image/upscale',   () => upscalePanelRef.value!.getParams(),  t('image.upscale.task_label'),    'image.upscale',    noop); break
     case 'remove-bg':
-      submitToAll('/image/remove-bg', () => removeBgPanelRef.value!.getParams(), '去背',          'image.remove_bg',  noop); break
+      submitToAll('/image/remove-bg', () => removeBgPanelRef.value!.getParams(), t('image.remove_bg.task_label'), 'image.remove_bg',  noop); break
     case 'adjust':
-      submitToAll('/image/filter',    () => adjustPanelRef.value!.getParams(),   '圖片調整',      'image.filter',     noop); break
+      submitToAll('/image/filter',    () => adjustPanelRef.value!.getParams(),   t('image.adjust.task_label'),    'image.filter',     noop); break
     case 'filter':
-      submitToAll('/image/filter',    () => filterPanelRef.value!.getParams(),   '圖片濾鏡',      'image.filter',     noop); break
+      submitToAll('/image/filter',    () => filterPanelRef.value!.getParams(),   t('image.filter.task_label'),    'image.filter',     noop); break
     case 'ocr':
-      submitToAll('/image/ocr',       () => ocrPanelRef.value!.getParams(),      'OCR 文字辨識',  'image.ocr',        noop); break
+      submitToAll('/image/ocr',       () => ocrPanelRef.value!.getParams(),      t('image.ocr.task_label'),       'image.ocr',        noop); break
     // ai-remove、crop 不支援批次（需筆刷/裁切互動），退回單張
     default:
       handleSingleExecute()
@@ -330,11 +333,11 @@ function onFilmstripRemove(id: string) {
 
 <template>
   <ToolLayout
-    title="圖片工具"
+    :title="$t('image.title')"
     accept-type="image"
     upload-icon="bi-image"
-    upload-label="拖曳圖片到這裡"
-    upload-hint="支援 JPG、PNG、WebP、BMP 等格式"
+    :upload-label="$t('image.upload_label')"
+    :upload-hint="$t('image.upload_hint')"
     upload-accept="image/*"
     hide-preview-tabs
     show-filmstrip
@@ -361,7 +364,7 @@ function onFilmstripRemove(id: string) {
       <button
         v-if="currentFunction === 'ocr' && textResultContent"
         class="toolbar-btn ocr-result-btn"
-        data-tooltip="查看 OCR 結果"
+        :data-tooltip="$t('common.view_ocr_result')"
         @click="showOcrModal = true"
       >
         <i class="bi bi-file-text"></i>
@@ -381,8 +384,8 @@ function onFilmstripRemove(id: string) {
         :filter-preview="effectiveFilterPreview"
         @crop-rect-change="canvasCropRect = $event"
       />
-      <span v-if="showAnimFilterHint" class="anim-hint"><i class="bi bi-info-circle"></i> 靜態預覽，執行後套用全部幀</span>
-      <span v-else-if="showAnimRemoveHint" class="anim-hint"><i class="bi bi-info-circle"></i> 物件移除不支援動態圖片</span>
+      <span v-if="showAnimFilterHint" class="anim-hint"><i class="bi bi-info-circle"></i> {{ $t('common.static_preview_hint') }}</span>
+      <span v-else-if="showAnimRemoveHint" class="anim-hint"><i class="bi bi-info-circle"></i> {{ $t('common.remove_not_supported') }}</span>
     </template>
 
     <template #info-bar>
@@ -390,7 +393,7 @@ function onFilmstripRemove(id: string) {
         v-if="imageInfo || isLoadingInfo || isUploading"
         :items="imageInfoItems"
         :loading="(isLoadingInfo || isUploading) && !imageInfo"
-        loading-text="讀取圖片資訊..."
+        :loading-text="$t('image.loading')"
       />
     </template>
 

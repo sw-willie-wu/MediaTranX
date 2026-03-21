@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
@@ -7,6 +8,8 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
 import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
 import { apiFetch, getApiBase } from '@/composables/useApi'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   fileId: string | null
@@ -39,11 +42,11 @@ const whisperAvailable = ref<boolean | null>(null)
 const whisperDownloadedMap = ref<Record<string, boolean | null>>({})
 
 const baseModelSizes = [
-  { value: 'tiny',     label: 'Tiny (~75 MB)',    desc: '最快，精度較低' },
-  { value: 'base',     label: 'Base (~145 MB)',   desc: '快速' },
-  { value: 'small',    label: 'Small (~484 MB)',  desc: '平衡' },
-  { value: 'medium',   label: 'Medium (~1.5 GB)', desc: '推薦' },
-  { value: 'large-v3', label: 'Large-v3 (~3 GB)', desc: '最佳精度' },
+  { value: 'tiny',     label: 'Tiny (~75 MB)' },
+  { value: 'base',     label: 'Base (~145 MB)' },
+  { value: 'small',    label: 'Small (~484 MB)' },
+  { value: 'medium',   label: 'Medium (~1.5 GB)' },
+  { value: 'large-v3', label: 'Large-v3 (~3 GB)' },
 ]
 
 const modelSizesWithBadge = computed(() =>
@@ -71,19 +74,25 @@ const modelSize = ref('medium')
 const outputFormat = ref('srt')
 const outputPath = ref('')
 
-const languages = ref<{ value: string; label: string }[]>([])
+const rawLanguages = ref<{ value: string; label: string }[]>([])
+
+const languages = computed(() =>
+  rawLanguages.value.map(item =>
+    item.value === '' ? { ...item, label: t('common.auto_detect') } : item
+  )
+)
 
 async function loadLanguages() {
   try {
     const res = await apiFetch('/audio/transcribe/languages')
-    if (res.ok) languages.value = await res.json()
+    if (res.ok) rawLanguages.value = await res.json()
   } catch {}
 }
 
-const outputFormats = [
-  { value: 'srt', label: 'SRT' },
-  { value: 'vtt', label: 'VTT (WebVTT)' },
-]
+const outputFormats = computed(() => [
+  { value: 'srt', label: t('video.subtitle.srt') },
+  { value: 'vtt', label: t('video.subtitle.vtt') },
+])
 
 // ── 輸出路徑 ────────────────────────────────────────────────────
 const sourceBaseName = computed(() => {
@@ -107,9 +116,9 @@ const displayOutputPath = computed(() => {
 async function selectOutputFile() {
   if (window.electron?.saveFileDialog) {
     const result = await window.electron.saveFileDialog({
-      title: '選擇輸出位置',
+      title: t('video.subtitle.select_output'),
       defaultPath: defaultOutputName.value,
-      filters: [{ name: '字幕檔案', extensions: [outputFormat.value] }],
+      filters: [{ name: t('video.subtitle.file_type'), extensions: [outputFormat.value] }],
     })
     if (result) outputPath.value = result
   }
@@ -175,12 +184,14 @@ async function submitGenerate() {
 
     if (!response.ok) {
       const err = await response.json()
-      throw new Error(err.detail || '字幕生成失敗')
+      throw new Error(err.detail || 'Subtitle generation failed')
     }
 
     const result = await response.json()
     const fileName = filesStore.currentFile?.originalName ?? undefined
-    const label = translationOptions.value?.enableTranslation ? '字幕提取 + 翻譯' : '字幕提取'
+    const label = translationOptions.value?.enableTranslation
+      ? t('video.subtitle.task_label_with_translate')
+      : t('video.subtitle.task_label')
     taskStore.addTask({
       taskId: result.task_id,
       taskType: 'subtitle/generate',
@@ -194,10 +205,10 @@ async function submitGenerate() {
       label,
       fileName,
     })
-    toast.show(`開始${label}`, { type: 'info', icon: 'bi-badge-cc-fill' })
+    toast.show(`${t('video.subtitle.start')} ${label}`, { type: 'info', icon: 'bi-badge-cc-fill' })
     emit('submit', result.task_id)
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '發生錯誤'
+    error.value = e instanceof Error ? e.message : String(e)
   } finally {
     isLoading.value = false
   }
@@ -220,26 +231,26 @@ onMounted(() => { loadAllWhisperStatus(); loadLanguages() })
     </div>
 
     <div class="form-group">
-      <label>語言</label>
+      <label>{{ $t('video.subtitle.language') }}</label>
       <AppSelect v-model="language" :options="languages" size="sm" />
     </div>
 
     <div class="form-group">
-      <label>模型設定</label>
+      <label>{{ $t('video.subtitle.model_settings') }}</label>
       <AppSelect v-model="modelSize" :options="modelSizesWithBadge" size="sm" />
     </div>
 
     <WhisperAdvancedSettings ref="whisperAdvanced" />
 
     <div class="form-group">
-      <label>輸出格式</label>
+      <label>{{ $t('video.subtitle.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" size="sm" />
     </div>
 
     <TranslationOptionsPanel ref="translationOptions" />
 
     <div class="form-group">
-      <label>輸出檔案</label>
+      <label>{{ $t('video.subtitle.file_type') }}</label>
       <div class="file-select" @click="selectOutputFile">
         <span class="file-select-path">{{ displayOutputPath }}</span>
         <i class="bi bi-folder2-open"></i>

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { apiFetch, getApiBase } from '@/composables/useApi'
 
+const { t } = useI18n()
 const router = useRouter()
 const taskStore = useTaskStore()
 const toast = useToast()
@@ -39,7 +41,7 @@ async function startSetup() {
     // 訂閱 SSE 進度
     subscribeToSetup(task_id)
   } catch (e) {
-    toast.show('啟動安裝失敗', { type: 'error' })
+    toast.show(t('wizard.start_install_failed'), { type: 'error' })
     isInstalling.value = false
   }
 }
@@ -62,12 +64,12 @@ function subscribeToSetup(taskId: string) {
         })
       }
     } else if (data.stage === 'completed') {
-      toast.show('AI 環境安裝完成', { type: 'success' })
+      toast.show(t('wizard.install_complete_toast'), { type: 'success' })
       isInstalling.value = false
       eventSource.close()
       fetchStatus()
     } else if (data.stage === 'error') {
-      toast.show(`安裝出錯: ${data.message}`, { type: 'error' })
+      toast.show(t('wizard.install_error_toast', { message: data.message }), { type: 'error' })
       isInstalling.value = false
       eventSource.close()
     }
@@ -91,8 +93,8 @@ onMounted(() => {
 <template>
   <div class="setup-view">
     <div class="header">
-      <h1>AI 核心管理員</h1>
-      <p class="subtitle">MediaTranX 需要高效能 AI 運行環境來執行超解析與翻譯任務。</p>
+      <h1>{{ $t('wizard.manager_title') }}</h1>
+      <p class="subtitle">{{ $t('wizard.manager_subtitle') }}</p>
     </div>
 
     <div class="status-grid" v-if="systemStatus">
@@ -101,21 +103,21 @@ onMounted(() => {
           <i class="bi" :class="systemStatus.ai_env_ready ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'"></i>
         </div>
         <div class="card-content">
-          <h3>運行環境狀態</h3>
-          <p>{{ systemStatus.ai_env_ready ? '核心環境已就緒' : '尚未安裝 AI 核心插件' }}</p>
+          <h3>{{ $t('wizard.env_status') }}</h3>
+          <p>{{ systemStatus.ai_env_ready ? $t('wizard.env_ready') : $t('wizard.env_not_ready') }}</p>
         </div>
       </div>
 
       <div class="status-card">
         <div class="card-icon"><i class="bi bi-gpu-card"></i></div>
         <div class="card-content">
-          <h3>偵測到的硬體</h3>
+          <h3>{{ $t('wizard.detected_hardware') }}</h3>
           <p>{{ systemStatus.device.device_name }}</p>
           <small v-if="systemStatus.device.has_nvidia_gpu" class="text-success">
-            支援 CUDA 加速 (推薦)
+            {{ $t('wizard.cuda_supported') }}
           </small>
           <small v-else class="text-warning">
-            無相容 GPU，將使用 CPU 模式
+            {{ $t('wizard.no_gpu_cpu_mode') }}
           </small>
         </div>
       </div>
@@ -123,9 +125,9 @@ onMounted(() => {
 
     <div class="setup-panel" v-if="!systemStatus?.ai_env_ready || isInstalling">
       <div class="setup-action" v-if="!isInstalling">
-        <h2>安裝 AI 運行環境</h2>
-        <p>這將下載約 2GB 的必要套件（Torch, llama-cpp 等），建議在穩定的網路環境下進行。</p>
-        <button class="btn-primary large" @click="startSetup">一鍵安裝 AI 核心</button>
+        <h2>{{ $t('wizard.install_env_title') }}</h2>
+        <p>{{ $t('wizard.install_env_desc') }}</p>
+        <button class="btn-primary large" @click="startSetup">{{ $t('wizard.install_one_click') }}</button>
       </div>
 
       <div class="install-progress" v-else>
@@ -147,9 +149,9 @@ onMounted(() => {
 
     <div class="ready-panel" v-else>
       <i class="bi bi-stars"></i>
-      <h2>太棒了！一切就緒</h2>
-      <p>你可以開始體驗 HAT 超解析、Qwen 翻譯等強大功能了。</p>
-      <button class="btn-secondary" @click="router.push('/')">回到首頁</button>
+      <h2>{{ $t('wizard.all_ready_title') }}</h2>
+      <p>{{ $t('wizard.all_ready_desc') }}</p>
+      <button class="btn-secondary" @click="router.push('/')">{{ $t('wizard.go_home') }}</button>
     </div>
   </div>
 </template>

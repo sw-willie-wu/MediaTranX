@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   icon?: string
@@ -9,11 +12,12 @@ const props = withDefaults(defineProps<{
   multiple?: boolean
 }>(), {
   icon: 'bi-cloud-arrow-up-fill',
-  label: '拖曳檔案到這裡',
-  hint: '或點擊選擇檔案',
   accept: '*',
   multiple: false,
 })
+
+const effectiveLabel = computed(() => props.label ?? t('common.drop_files'))
+const effectiveHint = computed(() => props.hint ?? t('common.drop_hint'))
 
 const emit = defineEmits<{
   (e: 'file', file: File, sourceDir: string | undefined): void
@@ -71,8 +75,8 @@ function handleDrop(e: DragEvent) {
   >
     <input ref="fileInputRef" type="file" :accept="accept" :multiple="multiple" hidden @change="handleFileInput" />
     <i :class="['bi', icon]"></i>
-    <p>{{ label }}</p>
-    <p class="hint">{{ hint }}</p>
+    <p>{{ effectiveLabel }}</p>
+    <p class="hint">{{ effectiveHint }}</p>
   </div>
 </template>
 

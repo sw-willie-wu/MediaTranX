@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onMounted, onActivated, computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useTaskStore } from '@/stores/tasks'
 import ProgressBar from '@/components/common/ProgressBar.vue'
 
+const { t } = useI18n()
 const taskStore = useTaskStore()
 
 const activeTasks = computed(() =>
@@ -12,7 +14,7 @@ const activeTasks = computed(() =>
 )
 
 function statusLabel(status: string) {
-  return status === 'pending' ? '等待中' : '進行中'
+  return status === 'pending' ? t('tasks.active.pending') : t('tasks.active.processing')
 }
 
 function formatTime(date: Date) {
@@ -36,11 +38,11 @@ onActivated(() => taskStore.refreshTasks())
 </script>
 
 <template>
-  <h6 class="section-title">執行中的任務</h6>
+  <h6 class="section-title">{{ $t('tasks.active.title') }}</h6>
 
   <div v-if="activeTasks.length === 0" class="empty-state">
     <i class="bi bi-inbox"></i>
-    <p>目前沒有任務</p>
+    <p>{{ $t('tasks.active.empty') }}</p>
   </div>
 
   <TransitionGroup v-else name="task-list" tag="div" class="task-list">
@@ -64,7 +66,7 @@ onActivated(() => taskStore.refreshTasks())
           :disabled="cancelling.has(task.taskId)"
           @click="handleCancel(task.taskId)"
         >
-          <i class="bi bi-x-circle"></i>取消
+          <i class="bi bi-x-circle"></i>{{ $t('tasks.active.cancel') }}
         </button>
       </div>
     </div>

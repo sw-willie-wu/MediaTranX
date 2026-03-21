@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
 
+const { t } = useI18n()
 const log = createLogger('ComparisonSlider')
 
 const props = defineProps<{
@@ -175,14 +177,14 @@ onBeforeUnmount(() => {
   <div ref="containerRef" class="compare-slider-container">
     <img
       :src="originalUrl"
-      alt="原圖"
+      :alt="$t('common.original')"
       class="compare-img compare-img-original"
       :style="{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }"
       @load="onOriginalLoad"
     />
     <img
       :src="effectiveResultUrl"
-      alt="成果"
+      :alt="$t('common.result')"
       class="compare-img compare-img-result"
       :style="{ clipPath: `inset(0 0 0 ${sliderPosition}%)` }"
     />
@@ -197,8 +199,8 @@ onBeforeUnmount(() => {
         <i class="bi bi-grip-vertical"></i>
       </div>
     </div>
-    <span class="compare-label compare-label-left">原圖</span>
-    <span class="compare-label compare-label-right">成果</span>
+    <span class="compare-label compare-label-left">{{ $t('common.original') }}</span>
+    <span class="compare-label compare-label-right">{{ $t('common.result') }}</span>
   </div>
 </template>
 

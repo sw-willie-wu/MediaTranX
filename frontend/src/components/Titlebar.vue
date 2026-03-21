@@ -5,25 +5,27 @@ import IconRestore from './icons/IconRestore.vue'
 import IconClose from './icons/IconClose.vue'
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 
 const route = useRoute()
 const isMaximized = ref(false)
+const { t } = useI18n()
 
 // 頁面標題對應
-const pageTitles: Record<string, string> = {
+const pageTitleKeys: Record<string, string> = {
   '/': '',
-  '/image': '圖片工具',
-  '/video': '影片工具',
-  '/audio': '音訊工具',
-  '/document': '文件工具',
-  '/history': '歷史紀錄',
-  '/tasks': '執行任務',
-  '/settings': '設定',
+  '/image': 'titlebar.image',
+  '/video': 'titlebar.video',
+  '/audio': 'titlebar.audio',
+  '/document': 'titlebar.document',
+  '/history': 'titlebar.history',
+  '/tasks': 'titlebar.tasks',
+  '/settings': 'titlebar.settings',
 }
 
 const pageTitle = computed(() => {
-  const title = pageTitles[route.path]
-  return title ? ` - ${title}` : ''
+  const key = pageTitleKeys[route.path]
+  return key ? ` - ${t(key)}` : ''
 })
 
 function minimize() {
@@ -59,14 +61,14 @@ onMounted(async () => {
     <!-- 右側：視窗控制 -->
     <div class="titlebar-right">
       <div class="window-controls">
-        <button class="window-btn" @click="minimize" title="最小化">
+        <button class="window-btn" @click="minimize" :title="$t('titlebar.minimize')">
           <IconMinimize />
         </button>
-        <button class="window-btn" @click="toggleFullScreen" :title="isMaximized ? '還原' : '最大化'">
+        <button class="window-btn" @click="toggleFullScreen" :title="isMaximized ? $t('titlebar.restore') : $t('titlebar.maximize')">
           <IconMaximize v-if="!isMaximized" />
           <IconRestore v-else />
         </button>
-        <button class="window-btn close" @click="close" title="關閉">
+        <button class="window-btn close" @click="close" :title="$t('titlebar.close')">
           <IconClose />
         </button>
       </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppToggle from '@/components/common/AppToggle.vue'
 import AppRange from '@/components/common/AppRange.vue'
 import AppSelect, { type SelectOption } from '@/components/common/AppSelect.vue'
@@ -17,6 +18,7 @@ const emit = defineEmits<{
   submit: [taskId: string]
 }>()
 
+const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
 
@@ -49,7 +51,6 @@ const upscaleOptions = computed<SelectOption[]>(() =>
   upscaleModels.value.map(m => ({
     value: m.id,
     label: m.label,
-    desc: m.description,
     badge: (m.downloaded ? 'ok' : 'err') as 'ok' | 'err',
   }))
 )
@@ -115,7 +116,7 @@ async function execute() {
       file_id: props.fileId,
       ...getParams(),
     },
-    `超解析 ${upscaleScale.value}x`,
+    t('image.upscale.task_label'),
     'image.upscale',
     props.currentFileName,
   )
@@ -128,70 +129,70 @@ defineExpose({ execute, isDisabled, isLoading, upscaleScale, getParams })
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-arrows-angle-expand me-2"></i>超解析設定</h6>
-    <p class="form-hint">使用 AI 模型放大圖片解析度，可選擇倍率與是否修復人臉。</p>
+    <h6 class="settings-title"><i class="bi bi-arrows-angle-expand me-2"></i>{{ $t('image.upscale.title') }}</h6>
+    <p class="form-hint">{{ $t('image.upscale.description') }}</p>
 
-    <!-- 模型選擇 -->
+    <!-- model selection -->
     <div class="form-group">
-      <label>超解析模型</label>
+      <label>{{ $t('image.upscale.model') }}</label>
       <AppSelect
         :model-value="selectedModelId"
         :options="upscaleOptions"
         :disabled="modelStore.loading"
-        placeholder="載入中..."
+        :placeholder="$t('common.loading_info')"
         @update:model-value="selectUpscaleModel"
       />
       <div v-if="!selectedModelId && !modelStore.loading" class="info-box info-box--warn">
         <i class="bi bi-exclamation-circle"></i>
-        <span>無已下載模型，請至設定下載</span>
+        <span>{{ $t('image.upscale.no_model') }}</span>
       </div>
     </div>
 
-    <!-- 放大倍率 -->
+    <!-- scale factor -->
     <div class="form-group">
       <label>
-        放大倍率
+        {{ $t('image.upscale.scale') }}
         <span class="param-value">{{ upscaleScale }}x</span>
       </label>
       <AppRange v-model="upscaleScale" :min="2" :max="maxScale" :step="1" :disabled="maxScale <= 2" />
       <div class="range-ticks">
-        <span v-for="t in scaleTicks" :key="t">{{ t }}x</span>
+        <span v-for="tick in scaleTicks" :key="tick">{{ tick }}x</span>
       </div>
     </div>
 
-    <!-- 銳化 -->
+    <!-- sharpen -->
     <div class="form-group">
-      <AppToggle v-model="sharpen">銳化後處理</AppToggle>
-      <small class="form-hint">補強邊緣銳利度，可改善油畫感</small>
+      <AppToggle v-model="sharpen">{{ $t('image.upscale.sharpen') }}</AppToggle>
+      <small class="form-hint">{{ $t('image.upscale.sharpen_hint') }}</small>
     </div>
 
-    <!-- 人臉修復 -->
+    <!-- face restore -->
     <div class="form-group">
-      <AppToggle v-model="faceRestore">人臉修復</AppToggle>
-      <small class="form-hint">超解析後對人臉進行修復增強</small>
+      <AppToggle v-model="faceRestore">{{ $t('image.upscale.face_restore') }}</AppToggle>
+      <small class="form-hint">{{ $t('image.upscale.face_restore_hint') }}</small>
 
       <div v-if="faceRestore" class="sub-params">
         <AppSelect
           :model-value="selectedFaceModelId"
           :options="faceOptions"
           size="sm"
-          placeholder="選擇人臉修復模型"
+          :placeholder="$t('common.select_function')"
           @update:model-value="selectFaceModel"
         />
 
         <!-- CodeFormer: fidelity -->
         <template v-if="selectedFaceFamily === 'codeformer'">
           <label class="sub-label">
-            自然度
+            {{ $t('image.upscale.fidelity') }}
             <span class="param-value">{{ faceRestoreFidelity.toFixed(1) }}</span>
           </label>
           <AppRange v-model="faceRestoreFidelity" :min="0" :max="1" :step="0.1" />
-          <div class="range-ticks"><span>強修復</span><span>保留原貌</span></div>
+          <div class="range-ticks"><span>{{ $t('image.upscale.strong_restore') }}</span><span>{{ $t('image.upscale.preserve_original') }}</span></div>
         </template>
 
         <!-- GFPGAN: upscale -->
         <template v-if="selectedFaceFamily === 'gfpgan'">
-          <label class="sub-label">修復放大倍率</label>
+          <label class="sub-label">{{ $t('image.upscale.face_scale') }}</label>
           <div class="btn-choice-group">
             <button
               v-for="v in [1, 2, 4]"

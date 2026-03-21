@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onActivated } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { apiFetch } from '@/composables/useApi'
+
+const { t } = useI18n()
 
 interface HistoryItem {
   task_id: string
@@ -21,34 +24,16 @@ interface HistoryResponse {
   page_size: number
 }
 
-const TASK_TYPE_LABELS: Record<string, string> = {
-  'image.upscale': '圖片超解析',
-  'image.convert': '圖片轉檔',
-  'image.filter': '圖片濾鏡',
-  'image.crop': '圖片裁切',
-  'image.remove_bg': '圖片去背',
-  'image.remove_object': '物件移除',
-  'image.ocr': '圖片文字辨識',
-  'video.transcode': '影片轉檔',
-  'video.cut': '影片剪輯',
-  'video.extract_audio': '音軌提取',
-  'video.subtitle_generate': '字幕產生',
-  'audio.transcode': '音訊轉檔',
-  'audio.cut': '音訊剪輯',
-  'audio.volume': '音量調整',
-  'audio.transcribe': '語音轉文字',
-  'document.ocr': '文件辨識',
-  'document.translate': '文件翻譯',
-  'document.pdf_convert': 'PDF 轉換',
-  'document.split': '文件分割',
-  'setup.model_download': '模型下載',
-  'ai.setup': 'AI 環境初始化',
+function getTaskTypeLabel(taskType: string): string {
+  const key = `tasks.types.${taskType}`
+  const translated = t(key)
+  return translated !== key ? translated : taskType
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  completed: '已完成',
-  failed: '失敗',
-  cancelled: '已取消',
+function getStatusLabel(status: string): string {
+  const key = `tasks.history.${status}`
+  const translated = t(key)
+  return translated !== key ? translated : status
 }
 
 const items = ref<HistoryItem[]>([])
@@ -118,7 +103,7 @@ async function clearAll() {
 }
 
 function taskLabel(item: HistoryItem): string {
-  return item.label || TASK_TYPE_LABELS[item.task_type] || item.task_type
+  return item.label || getTaskTypeLabel(item.task_type)
 }
 
 function fileName(item: HistoryItem): string | null {
@@ -142,18 +127,18 @@ onActivated(() => fetchHistory())
 </script>
 
 <template>
-  <h6 class="section-title">歷史紀錄</h6>
+  <h6 class="section-title">{{ $t('tasks.history.title') }}</h6>
 
   <div class="history-toolbar">
     <div class="filter-bar">
-      <button class="filter-chip" :class="{ 'is-active': filterStatus === null }" @click="setFilter(null)">全部</button>
-      <button class="filter-chip" :class="{ 'is-active': filterStatus === 'completed' }" @click="setFilter('completed')">已完成</button>
-      <button class="filter-chip" :class="{ 'is-active': filterStatus === 'failed' }" @click="setFilter('failed')">失敗</button>
-      <button class="filter-chip" :class="{ 'is-active': filterStatus === 'cancelled' }" @click="setFilter('cancelled')">已取消</button>
+      <button class="filter-chip" :class="{ 'is-active': filterStatus === null }" @click="setFilter(null)">{{ $t('tasks.history.all') }}</button>
+      <button class="filter-chip" :class="{ 'is-active': filterStatus === 'completed' }" @click="setFilter('completed')">{{ $t('tasks.history.completed') }}</button>
+      <button class="filter-chip" :class="{ 'is-active': filterStatus === 'failed' }" @click="setFilter('failed')">{{ $t('tasks.history.failed') }}</button>
+      <button class="filter-chip" :class="{ 'is-active': filterStatus === 'cancelled' }" @click="setFilter('cancelled')">{{ $t('tasks.history.cancelled') }}</button>
     </div>
     <button v-if="items.length > 0" class="clear-btn" @click="clearAll">
       <i class="bi bi-trash3"></i>
-      清空
+      {{ $t('tasks.history.clear') }}
     </button>
   </div>
 
@@ -163,7 +148,7 @@ onActivated(() => fetchHistory())
 
   <div v-else-if="items.length === 0" class="empty-state">
     <i class="bi bi-inbox"></i>
-    <p>尚無歷史紀錄</p>
+    <p>{{ $t('tasks.history.empty') }}</p>
   </div>
 
   <div v-else class="task-list">
@@ -174,7 +159,7 @@ onActivated(() => fetchHistory())
           <span v-if="fileName(item)" class="task-filename">{{ fileName(item) }}</span>
         </div>
         <span class="task-badge" :class="`badge-${item.status}`">
-          {{ STATUS_LABELS[item.status] || item.status }}
+          {{ getStatusLabel(item.status) }}
         </span>
       </div>
       <div v-if="item.status === 'failed' && item.error" class="task-error">

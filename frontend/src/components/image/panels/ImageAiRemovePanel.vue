@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppRange from '@/components/common/AppRange.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useToast } from '@/composables/useToast'
@@ -22,6 +23,7 @@ const emit = defineEmits<{
   clearMask: []
 }>()
 
+const { t } = useI18n()
 const toast = useToast()
 const { submitTask, isProcessing } = useSubmitTask()
 
@@ -32,17 +34,17 @@ const isAnimated = computed(() => {
 const isDisabled = computed(() => !props.fileId || isProcessing.value || isAnimated.value)
 const isLoading = computed(() => isProcessing.value)
 
-const tools: { mode: MaskToolMode; icon: string; label: string }[] = [
-  { mode: 'brush',   icon: 'bi-brush-fill',  label: '筆刷' },
-  { mode: 'polygon', icon: 'bi-pentagon',     label: '多邊形' },
-  { mode: 'bezier',  icon: 'bi-bezier2',      label: '曲線' },
-  { mode: 'eraser',  icon: 'bi-eraser-fill', label: '橡皮擦' },
-]
+const tools = computed<{ mode: MaskToolMode; icon: string; label: string }[]>(() => [
+  { mode: 'brush',   icon: 'bi-brush-fill',  label: t('image.remove_object.brush') },
+  { mode: 'polygon', icon: 'bi-pentagon',     label: t('image.remove_object.polygon') },
+  { mode: 'bezier',  icon: 'bi-bezier2',      label: t('image.remove_object.bezier') },
+  { mode: 'eraser',  icon: 'bi-eraser-fill',  label: t('image.remove_object.eraser') },
+])
 
 async function execute() {
   if (!props.fileId) return
   if (!props.hasMask()) {
-    toast.show('請先在圖片上標記要移除的區域', { type: 'info', icon: 'bi-info-circle' })
+    toast.show(t('toast.mark_area_first'), { type: 'info', icon: 'bi-info-circle' })
     return
   }
   const maskData = props.getMask()
@@ -51,7 +53,7 @@ async function execute() {
   const taskId = await submitTask(
     '/image/remove-object',
     { file_id: props.fileId, mask_data: maskData },
-    'AI 物件移除',
+    t('image.remove_object.task_label'),
     'image.remove_object',
     props.currentFileName,
   )
@@ -64,13 +66,13 @@ defineExpose({ execute, isDisabled, isLoading })
 <template>
   <div class="function-settings">
     <h6 class="settings-title">
-      <i class="bi bi-magic me-2"></i>物件移除設定
+      <i class="bi bi-magic me-2"></i>{{ $t('image.remove_object.title') }}
     </h6>
 
-    <p class="form-hint">在圖片上標記要移除的物件，AI 將自動填補背景</p>
+    <p class="form-hint">{{ $t('image.remove_object.description') }}</p>
 
     <div class="form-group">
-      <label>選取工具</label>
+      <label>{{ $t('image.remove_object.tools') }}</label>
       <div class="mask-tool-selector">
         <button
           v-for="t in tools"
@@ -87,7 +89,7 @@ defineExpose({ execute, isDisabled, isLoading })
 
     <div v-if="toolMode === 'brush' || toolMode === 'eraser'" class="form-group">
       <label>
-        {{ toolMode === 'eraser' ? '橡皮擦大小' : '筆刷大小' }}
+        {{ toolMode === 'eraser' ? $t('image.remove_object.eraser_size') : $t('image.remove_object.brush_size') }}
         <span class="param-value">{{ brushSize }}</span>
       </label>
       <AppRange
@@ -98,21 +100,21 @@ defineExpose({ execute, isDisabled, isLoading })
         @update:model-value="emit('update:brushSize', $event)"
       />
       <div class="range-ticks">
-        <span>細</span><span>粗</span>
+        <span>{{ $t('image.remove_object.thin') }}</span><span>{{ $t('image.remove_object.thick') }}</span>
       </div>
-      <p v-if="toolMode === 'brush'" class="form-hint">畫圓圈圍起來的區域會自動填滿</p>
+      <p v-if="toolMode === 'brush'" class="form-hint">{{ $t('image.remove_object.brush_hint') }}</p>
     </div>
 
     <div v-else class="form-group">
       <p class="form-hint">
-        點擊新增節點，靠近起點或雙擊封閉區域<br>
-        右鍵撤回上一點 · <kbd>Esc</kbd> 全部取消
+        {{ $t('image.remove_object.polygon_hint') }}<br>
+        {{ $t('image.remove_object.polygon_controls', { esc: 'Esc' }) }}
       </p>
     </div>
 
     <div class="form-group">
       <button class="btn-secondary" :disabled="isDisabled" @click="emit('clearMask')">
-        <i class="bi bi-trash"></i>清除標記
+        <i class="bi bi-trash"></i>{{ $t('image.remove_object.clear') }}
       </button>
     </div>
   </div>

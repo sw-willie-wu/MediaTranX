@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 
@@ -12,16 +13,17 @@ const emit = defineEmits<{
   submit: [taskId: string]
 }>()
 
+const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
 const removeBgMode = ref('auto')
-const removeBgModes = [
-  { value: 'auto',    label: '自動偵測' },
-  { value: 'person',  label: '人物' },
-  { value: 'product', label: '商品' },
-  { value: 'animal',  label: '動物' },
-  { value: 'anime',   label: '動漫 / 插畫' },
-]
+const removeBgModes = computed(() => [
+  { value: 'auto',    label: t('image.remove_bg.auto') },
+  { value: 'person',  label: t('image.remove_bg.person') },
+  { value: 'product', label: t('image.remove_bg.product') },
+  { value: 'animal',  label: t('image.remove_bg.animal') },
+  { value: 'anime',   label: t('image.remove_bg.anime') },
+])
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
@@ -37,7 +39,7 @@ async function execute() {
   const taskId = await submitTask(
     '/image/remove-bg',
     { file_id: props.fileId, ...getParams() },
-    '去背',
+    t('image.remove_bg.task_label'),
     'image.remove_bg',
     props.currentFileName,
   )
@@ -50,14 +52,14 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
 <template>
   <div class="function-settings">
     <h6 class="settings-title">
-      <i class="bi bi-eraser-fill me-2"></i>去背設定
+      <i class="bi bi-eraser-fill me-2"></i>{{ $t('image.remove_bg.title') }}
     </h6>
-    <p class="form-hint">自動移除圖片背景，輸出透明底 PNG。</p>
+    <p class="form-hint">{{ $t('image.remove_bg.description') }}</p>
 
     <div class="form-group">
-      <label>主體模式</label>
+      <label>{{ $t('image.remove_bg.mode') }}</label>
       <AppSelect v-model="removeBgMode" :options="removeBgModes" />
-      <small class="form-hint">自動偵測適合大多數場景</small>
+      <small class="form-hint">{{ $t('image.remove_bg.auto_hint') }}</small>
     </div>
   </div>
 </template>

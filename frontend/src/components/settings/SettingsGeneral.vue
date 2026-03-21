@@ -1,32 +1,31 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useTheme, type ThemeMode } from '@/composables/useTheme'
 import { useResizableLayout } from '@/composables/useResizableLayout'
 import { apiFetch } from '@/composables/useApi'
+import { LOCALE_OPTIONS, resolveLocale, saveLocalePreference, getSavedPreference } from '@/i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 
+const { locale, t } = useI18n()
 const { themeMode, setTheme } = useTheme()
 const { resetLayout } = useResizableLayout()
 
 const settings = ref({
   theme: 'system' as ThemeMode,
-  language: 'zh-TW',
+  language: getSavedPreference(),
   autoCleanTemp: true,
   showSetupWizard: true,
 })
 
-const themes = [
-  { value: 'system', label: '跟隨系統' },
-  { value: 'dark', label: '深色' },
-  { value: 'light', label: '淺色' },
-]
+const themes = computed(() => [
+  { value: 'system', label: t('settings.general.system_theme') },
+  { value: 'dark', label: t('settings.general.dark_theme') },
+  { value: 'light', label: t('settings.general.light_theme') },
+])
 
-const languages = [
-  { value: 'zh-TW', label: '繁體中文' },
-  { value: 'zh-CN', label: '简体中文' },
-  { value: 'en', label: 'English' },
-]
+const languages = LOCALE_OPTIONS
 
 onMounted(() => {
   const saved = localStorage.getItem('app-settings')
@@ -42,6 +41,11 @@ onMounted(() => {
 
 watch(() => settings.value.theme, (newTheme) => {
   setTheme(newTheme)
+})
+
+watch(() => settings.value.language, (val) => {
+  saveLocalePreference(val as any)
+  locale.value = val
 })
 
 watch(() => settings.value.autoCleanTemp, (val) => {
@@ -104,34 +108,34 @@ function restartApp() {
 </script>
 
 <template>
-  <h6 class="section-title">外觀選項</h6>
+  <h6 class="section-title">{{ $t('settings.general.appearance') }}</h6>
 
   <div class="setting-item">
-    <label class="section-subtitle">主題</label>
+    <label class="section-subtitle">{{ $t('settings.general.theme') }}</label>
     <AppSelect v-model="settings.theme" :options="themes" size="sm" />
   </div>
 
   <div class="setting-item">
-    <label class="section-subtitle">語言</label>
+    <label class="section-subtitle">{{ $t('settings.general.language') }}</label>
     <AppSelect v-model="settings.language" :options="languages" size="sm" />
   </div>
 
   <div class="setting-item">
-    <AppToggle v-model="settings.showSetupWizard">啟動時提示安裝AI模組</AppToggle>
+    <AppToggle v-model="settings.showSetupWizard">{{ $t('settings.general.show_setup_wizard') }}</AppToggle>
   </div>
 
-  <h6 class="section-title mt">佈局</h6>
+  <h6 class="section-title mt">{{ $t('settings.general.layout') }}</h6>
 
   <div class="setting-item">
     <button class="btn-secondary" @click="resetLayout()">
-      <i class="bi bi-layout-three-columns"></i> 重設面板寬度
+      <i class="bi bi-layout-three-columns"></i> {{ $t('settings.general.reset_layout') }}
     </button>
   </div>
 
-  <h6 class="section-title mt">檔案路徑</h6>
+  <h6 class="section-title mt">{{ $t('settings.general.file_paths') }}</h6>
 
   <div class="setting-item">
-    <label class="section-subtitle">暫存資料夾</label>
+    <label class="section-subtitle">{{ $t('settings.general.temp_folder') }}</label>
     <button class="btn-secondary path-btn" @click="selectTempDir">
       <span class="path-text">{{ tempDir || effectiveTempDir }}</span>
       <i class="bi bi-folder2-open"></i>
@@ -139,25 +143,25 @@ function restartApp() {
   </div>
 
   <div class="setting-item">
-    <label class="section-subtitle">AI 模型存放目錄</label>
+    <label class="section-subtitle">{{ $t('settings.general.models_dir') }}</label>
     <button class="btn-secondary path-btn" @click="selectModelsDir">
       <span class="path-text">{{ modelsDir || effectiveModelsDir }}</span>
       <i class="bi bi-folder2-open"></i>
     </button>
     <p v-if="dirSaved" class="setting-hint setting-hint-warn">
-      <i class="bi bi-exclamation-triangle-fill"></i> 重新啟動後生效
+      <i class="bi bi-exclamation-triangle-fill"></i> {{ $t('settings.general.restart_required') }}
     </p>
   </div>
 
   <div class="setting-item">
-    <AppToggle v-model="settings.autoCleanTemp">關閉時自動清理暫存檔</AppToggle>
+    <AppToggle v-model="settings.autoCleanTemp">{{ $t('settings.general.auto_clean_temp') }}</AppToggle>
   </div>
 
-  <h6 class="section-title mt">重新啟動</h6>
+  <h6 class="section-title mt">{{ $t('settings.general.restart_section') }}</h6>
 
   <div class="setting-item">
     <button class="btn-secondary" @click="restartApp()">
-      <i class="bi bi-arrow-counterclockwise"></i> 重新啟動應用程式
+      <i class="bi bi-arrow-counterclockwise"></i> {{ $t('settings.general.restart_app') }}
     </button>
   </div>
 </template>

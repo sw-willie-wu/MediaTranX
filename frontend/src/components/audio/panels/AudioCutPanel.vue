@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 
 const props = defineProps<{
@@ -12,6 +13,7 @@ const emit = defineEmits<{
   submit: [taskId: string]
 }>()
 
+const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
 const startTime = ref('00:00:00')
@@ -25,7 +27,7 @@ async function execute() {
   const taskId = await submitTask(
     '/audio/cut',
     { file_id: props.fileId, start_time: startTime.value, end_time: endTime.value },
-    '音訊剪輯',
+    t('audio.cut.task_label'),
     'audio.cut',
     props.currentFileName,
   )
@@ -37,19 +39,19 @@ defineExpose({ execute, isDisabled, isLoading })
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-scissors me-2"></i>剪輯設定</h6>
-    <p class="form-hint">設定起始與結束時間點，擷取音訊片段。</p>
+    <h6 class="settings-title"><i class="bi bi-scissors me-2"></i>{{ $t('audio.cut.title') }}</h6>
+    <p class="form-hint">{{ $t('audio.cut.description') }}</p>
 
     <div class="form-group">
-      <label>開始時間</label>
+      <label>{{ $t('audio.cut.start_time') }}</label>
       <input type="text" class="form-input" v-model="startTime" placeholder="00:00:00" />
     </div>
 
     <div class="form-group">
-      <label>結束時間</label>
+      <label>{{ $t('audio.cut.end_time') }}</label>
       <input type="text" class="form-input" v-model="endTime" placeholder="00:00:00" />
       <small v-if="duration" class="form-hint">
-        音訊長度：{{ Math.floor(duration / 60) }}:{{ String(Math.floor(duration % 60)).padStart(2, '0') }}
+        {{ $t('audio.cut.duration') }} {{ Math.floor(duration / 60) }}:{{ String(Math.floor(duration % 60)).padStart(2, '0') }}
       </small>
     </div>
   </div>

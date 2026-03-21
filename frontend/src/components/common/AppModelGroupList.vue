@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 interface ModelItem {
   id: string
@@ -98,7 +101,7 @@ function formatSize(mb: number): string {
           <div class="row-action">
             <template v-if="downloadingTaskId[group.items[0].id]">
               <template v-if="(downloadProgress[group.items[0].id] ?? 0) === 0">
-                <span class="status-queued">等待中...</span>
+                <span class="status-queued">{{ $t('tasks.active.pending') }}...</span>
               </template>
               <template v-else>
                 <div class="download-progress">
@@ -108,10 +111,10 @@ function formatSize(mb: number): string {
               </template>
             </template>
             <template v-else-if="group.items[0].downloaded">
-              <span class="status-installed"><i class="bi bi-check-circle-fill"></i> 已安裝</span>
-              <button class="remove-btn" title="移除模型" @click="emit('remove', group.items[0].id)"><i class="bi bi-trash3"></i></button>
+              <span class="status-installed"><i class="bi bi-check-circle-fill"></i> {{ $t('settings.ai.installed') }}</span>
+              <button class="remove-btn" :title="$t('settings.models.remove_model')" @click="emit('remove', group.items[0].id)"><i class="bi bi-trash3"></i></button>
             </template>
-            <button v-else class="download-btn" @click="emit('download', group.items[0].id)"><i class="bi bi-download"></i> 安裝</button>
+            <button v-else class="download-btn" @click="emit('download', group.items[0].id)"><i class="bi bi-download"></i> {{ $t('settings.models.install') }}</button>
           </div>
         </div>
       </template>
@@ -130,7 +133,7 @@ function formatSize(mb: number): string {
           <div class="row-action">
             <template v-if="downloadingTaskId[item.id]">
               <template v-if="(downloadProgress[item.id] ?? 0) === 0">
-                <span class="status-queued">等待中...</span>
+                <span class="status-queued">{{ $t('tasks.active.pending') }}...</span>
               </template>
               <template v-else>
                 <div class="download-progress">
@@ -140,10 +143,10 @@ function formatSize(mb: number): string {
               </template>
             </template>
             <template v-else-if="item.downloaded">
-              <span class="status-installed"><i class="bi bi-check-circle-fill"></i> 已安裝</span>
-              <button class="remove-btn" title="移除模型" @click="emit('remove', item.id)"><i class="bi bi-trash3"></i></button>
+              <span class="status-installed"><i class="bi bi-check-circle-fill"></i> {{ $t('settings.ai.installed') }}</span>
+              <button class="remove-btn" :title="$t('settings.models.remove_model')" @click="emit('remove', item.id)"><i class="bi bi-trash3"></i></button>
             </template>
-            <button v-else class="download-btn" @click="emit('download', item.id)"><i class="bi bi-download"></i> 安裝</button>
+            <button v-else class="download-btn" @click="emit('download', item.id)"><i class="bi bi-download"></i> {{ $t('settings.models.install') }}</button>
           </div>
         </div>
       </template>

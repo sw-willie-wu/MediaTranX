@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/assets/icon.svg'
+
+const { t } = useI18n()
 
 function restartApp() {
   ;(window as any).electron?.restart()
@@ -13,29 +16,29 @@ function restartApp() {
     </div>
     <div class="about-title-group">
       <h4 class="about-name">MediaTranX</h4>
-      <p class="about-version">版本 1.0.0 (Production Build)</p>
+      <p class="about-version">{{ $t('settings.about.version') }}</p>
     </div>
   </div>
 
   <p class="about-desc">
-    本地 AI 驅動的多媒體處理工具，支援影片字幕提取、翻譯、音訊處理、圖片處理等功能。所有 AI 模型均在本機運行，無需上傳資料至雲端，保護您的隱私。
+    {{ $t('settings.about.description') }}
   </p>
 
-  <h6 class="section-title mt">支援與連結</h6>
+  <h6 class="section-title mt">{{ $t('settings.about.support') }}</h6>
   <div class="about-links">
-    <a href="https://github.com/sw-willie-wu/MediaTranX" target="_blank" class="btn-secondary about-link-btn"><i class="bi bi-github"></i> GitHub</a>
-    <button class="btn-secondary about-link-btn"><i class="bi bi-chat-dots"></i> 意見回饋</button>
-    <button class="btn-secondary about-link-btn"><i class="bi bi-globe"></i> 官方網站</button>
+    <a href="https://github.com/sw-willie-wu/MediaTranX" target="_blank" class="btn-secondary about-link-btn"><i class="bi bi-github"></i> {{ $t('settings.about.github') }}</a>
+    <button class="btn-secondary about-link-btn"><i class="bi bi-chat-dots"></i> {{ $t('settings.about.feedback') }}</button>
+    <button class="btn-secondary about-link-btn"><i class="bi bi-globe"></i> {{ $t('settings.about.website') }}</button>
   </div>
 
-  <h6 class="section-title mt">技術致謝</h6>
+  <h6 class="section-title mt">{{ $t('settings.about.credits') }}</h6>
   <p class="credits-text">
-    MediaTranX 建立在眾多卓越的開源技術之上：<br/>
-    Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, TranslateGemma, Llama-cpp-python 等。
+    {{ $t('settings.about.credits_intro') }}<br/>
+    {{ $t('settings.about.credits_list') }}
   </p>
 
   <div class="about-footer">
-    <p>© 2026 MediaTranX Project. All rights reserved.</p>
+    <p>{{ $t('settings.about.copyright') }}</p>
   </div>
 </template>
 

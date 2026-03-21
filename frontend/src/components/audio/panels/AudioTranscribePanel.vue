@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { apiFetch } from '@/composables/useApi'
@@ -13,6 +14,7 @@ const emit = defineEmits<{
   submit: [taskId: string]
 }>()
 
+const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
 const modelSize = ref('medium')
@@ -22,11 +24,11 @@ const whisperAvailable = ref<boolean | null>(null)
 const whisperDownloadedMap = ref<Record<string, boolean | null>>({})
 
 const BASE_MODEL_SIZES = [
-  { value: 'tiny',     label: 'Tiny',     desc: '~75 MB — 最快' },
-  { value: 'base',     label: 'Base',     desc: '~145 MB' },
-  { value: 'small',    label: 'Small',    desc: '~484 MB' },
-  { value: 'medium',   label: 'Medium',   desc: '~1.5 GB — 推薦' },
-  { value: 'large-v3', label: 'Large-v3', desc: '~3 GB — 最佳' },
+  { value: 'tiny',     label: 'Tiny (~75 MB)' },
+  { value: 'base',     label: 'Base (~145 MB)' },
+  { value: 'small',    label: 'Small (~484 MB)' },
+  { value: 'medium',   label: 'Medium (~1.5 GB)' },
+  { value: 'large-v3', label: 'Large-v3 (~3 GB)' },
 ]
 
 const modelSizes = computed(() =>
@@ -36,19 +38,25 @@ const modelSizes = computed(() =>
   })
 )
 
-const languages = ref<{ value: string; label: string }[]>([])
+const rawLanguages = ref<{ value: string; label: string }[]>([])
+
+const languages = computed(() =>
+  rawLanguages.value.map(item =>
+    item.value === '' ? { ...item, label: t('common.auto_detect') } : item
+  )
+)
 
 async function loadLanguages() {
   try {
     const res = await apiFetch('/audio/transcribe/languages')
-    if (res.ok) languages.value = await res.json()
+    if (res.ok) rawLanguages.value = await res.json()
   } catch {}
 }
 
-const outputFormats = [
-  { value: 'txt', label: 'TXT（純文字）' },
-  { value: 'srt', label: 'SRT（含時間碼）' },
-]
+const outputFormats = computed(() => [
+  { value: 'txt', label: t('audio.transcribe.txt_format') },
+  { value: 'srt', label: t('audio.transcribe.srt_format') },
+])
 
 async function loadAllModelStatus() {
   await Promise.allSettled(BASE_MODEL_SIZES.map(async ({ value: size }) => {
@@ -77,7 +85,7 @@ async function execute() {
       model_size: modelSize.value,
       output_format: outputFormat.value,
     },
-    '逐字稿轉譯',
+    t('audio.transcribe.task_label'),
     'audio.transcribe',
     props.currentFileName,
   )
@@ -89,29 +97,29 @@ defineExpose({ execute, isDisabled, isLoading })
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-mic-fill me-2"></i>逐字稿設定</h6>
-    <p class="form-hint">使用 Whisper 將音訊內容轉為文字或 SRT 字幕檔。</p>
+    <h6 class="settings-title"><i class="bi bi-mic-fill me-2"></i>{{ $t('audio.transcribe.title') }}</h6>
+    <p class="form-hint">{{ $t('audio.transcribe.description') }}</p>
 
     <div v-if="whisperAvailable === false" class="info-box info-box--warn">
       <i class="bi bi-exclamation-triangle"></i>
-      <span>AI 核心環境未安裝，請先至設定頁面安裝。</span>
+      <span>{{ $t('audio.transcribe.not_installed') }}</span>
     </div>
 
     <div class="form-group">
-      <label>辨識模型</label>
+      <label>{{ $t('audio.transcribe.model') }}</label>
       <AppSelect v-model="modelSize" :options="modelSizes" />
     </div>
 
     <div class="form-group">
-      <label>語言</label>
+      <label>{{ $t('audio.transcribe.language') }}</label>
       <AppSelect v-model="language" :options="languages" />
     </div>
 
     <div class="form-group">
-      <label>輸出格式</label>
+      <label>{{ $t('audio.transcribe.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
       <small class="form-hint">
-        {{ outputFormat === 'srt' ? '輸出含時間碼的 SRT 字幕格式' : '輸出純文字逐字稿' }}
+        {{ outputFormat === 'srt' ? $t('audio.transcribe.srt_hint') : $t('audio.transcribe.txt_hint') }}
       </small>
     </div>
   </div>

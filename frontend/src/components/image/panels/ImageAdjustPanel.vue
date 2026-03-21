@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppRange from '@/components/common/AppRange.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import type { FilterPreview } from './filterTypes'
@@ -14,6 +15,7 @@ const emit = defineEmits<{
   'preview-change': [preview: FilterPreview]
 }>()
 
+const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
 const brightness = ref(100)
@@ -96,7 +98,7 @@ async function execute() {
   const taskId = await submitTask(
     '/image/filter',
     { file_id: props.fileId, ...getParams() },
-    '圖片調整',
+    t('image.adjust.task_label'),
     'image.filter',
     props.currentFileName,
   )
@@ -108,39 +110,39 @@ defineExpose({ execute, isDisabled, isLoading, getState, setState, reset, getPar
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-sliders me-2"></i>調整設定</h6>
-    <p class="form-hint">調整影像基本色調參數，所有變更即時反映於預覽。</p>
+    <h6 class="settings-title"><i class="bi bi-sliders me-2"></i>{{ $t('image.adjust.title') }}</h6>
+    <p class="form-hint">{{ $t('image.adjust.description') }}</p>
 
     <div class="form-group">
-      <label>亮度 <span class="param-value">{{ brightness }}%</span></label>
+      <label>{{ $t('image.adjust.brightness') }} <span class="param-value">{{ brightness }}%</span></label>
       <AppRange v-model="brightness" :min="10" :max="300" :step="5" />
     </div>
 
     <div class="form-group">
-      <label>對比度 <span class="param-value">{{ contrast }}%</span></label>
+      <label>{{ $t('image.adjust.contrast') }} <span class="param-value">{{ contrast }}%</span></label>
       <AppRange v-model="contrast" :min="10" :max="300" :step="5" />
     </div>
 
     <div class="form-group">
-      <label>飽和度 <span class="param-value">{{ saturation }}%</span></label>
+      <label>{{ $t('image.adjust.saturation') }} <span class="param-value">{{ saturation }}%</span></label>
       <AppRange v-model="saturation" :min="0" :max="300" :step="5" />
     </div>
 
     <div class="form-group">
-      <label>色相 <span class="param-value">{{ hue > 0 ? '+' : '' }}{{ hue }}°</span></label>
+      <label>{{ $t('image.adjust.hue') }} <span class="param-value">{{ hue > 0 ? '+' : '' }}{{ hue }}°</span></label>
       <AppRange v-model="hue" :min="-180" :max="180" :step="5" />
     </div>
 
     <div class="form-group">
-      <label>銳利度 <span class="param-value">{{ sharpness }}%</span></label>
+      <label>{{ $t('image.adjust.sharpness') }} <span class="param-value">{{ sharpness }}%</span></label>
       <AppRange v-model="sharpness" :min="0" :max="300" :step="5" />
     </div>
 
     <div class="form-group">
       <label>
-        色溫
+        {{ $t('image.adjust.warmth') }}
         <span class="param-value">
-          {{ warmth > 0 ? `暖 +${warmth}` : warmth < 0 ? `冷 ${warmth}` : '0' }}
+          {{ warmth > 0 ? `${$t('image.adjust.warm')} +${warmth}` : warmth < 0 ? `${$t('image.adjust.cool')} ${warmth}` : '0' }}
         </span>
       </label>
       <AppRange v-model="warmth" :min="-100" :max="100" :step="5" />
@@ -148,7 +150,7 @@ defineExpose({ execute, isDisabled, isLoading, getState, setState, reset, getPar
 
     <div class="form-group">
       <button class="btn-secondary" @click="reset">
-        <i class="bi bi-arrow-counterclockwise"></i>重設調整
+        <i class="bi bi-arrow-counterclockwise"></i>{{ $t('image.adjust.reset') }}
       </button>
     </div>
   </div>

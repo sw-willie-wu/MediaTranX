@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 
@@ -13,6 +14,7 @@ const emit = defineEmits<{
   submit: [taskId: string]
 }>()
 
+const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
 const outputFormat = ref('txt')
@@ -22,10 +24,10 @@ const isPdf = computed(() => props.currentFileExt === 'pdf')
 
 const outputFormatOptions = computed(() => {
   const opts = [
-    { value: 'txt', label: '純文字 (.txt)' },
+    { value: 'txt', label: t('document.pdf_convert.text_format') },
     { value: 'md',  label: 'Markdown (.md)' },
   ]
-  if (isPdf.value) opts.push({ value: 'images', label: '頁面圖片 (.zip)' })
+  if (isPdf.value) opts.push({ value: 'images', label: t('document.pdf_convert.images_format') })
   return opts
 })
 
@@ -47,12 +49,12 @@ const displayOutputPath = computed(() => {
 async function selectOutputFile() {
   if ((window as any).electron?.saveFileDialog) {
     const filterMap: Record<string, { name: string; extensions: string[] }> = {
-      txt:    { name: '純文字', extensions: ['txt'] },
+      txt:    { name: 'Plain Text', extensions: ['txt'] },
       md:     { name: 'Markdown', extensions: ['md'] },
-      images: { name: 'ZIP 壓縮檔', extensions: ['zip'] },
+      images: { name: t('document.pdf_convert.zip_type'), extensions: ['zip'] },
     }
     const result = await (window as any).electron.saveFileDialog({
-      title: '選擇輸出位置',
+      title: t('document.pdf_convert.select_output'),
       defaultPath: defaultOutputName.value,
       filters: [filterMap[outputFormat.value]],
     })
@@ -82,7 +84,7 @@ async function execute() {
       body.output_filename = path
     }
   }
-  const taskId = await submitTask('/document/pdf-convert', body, 'PDF 轉換', 'document.pdf_convert', props.currentFileName)
+  const taskId = await submitTask('/document/pdf-convert', body, t('document.pdf_convert.task_label'), 'document.pdf_convert', props.currentFileName)
   if (taskId) emit('submit', taskId)
 }
 
@@ -91,18 +93,18 @@ defineExpose({ execute, isDisabled, isLoading })
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-file-earmark-pdf-fill me-2"></i>PDF 轉換設定</h6>
-    <p class="form-hint">將 PDF 轉換為純文字、Markdown 或頁面圖片。</p>
+    <h6 class="settings-title"><i class="bi bi-file-earmark-pdf-fill me-2"></i>{{ $t('document.pdf_convert.title') }}</h6>
+    <p class="form-hint">{{ $t('document.pdf_convert.description') }}</p>
 
     <!-- 輸出格式 -->
     <div class="form-group">
-      <label>輸出格式</label>
+      <label>{{ $t('document.pdf_convert.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormatOptions" size="sm" />
     </div>
 
     <!-- 輸出檔案 -->
     <div class="form-group">
-      <label>輸出檔案</label>
+      <label>{{ $t('document.pdf_convert.output_file') }}</label>
       <div class="file-select" @click="selectOutputFile">
         <span class="file-select-path">{{ displayOutputPath }}</span>
         <i class="bi bi-folder2-open"></i>

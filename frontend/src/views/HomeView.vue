@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useFilesStore } from '@/stores/files'
 import { detectMediaType, getToolPath } from '@/utils/mediaType'
 
 const router = useRouter()
 const filesStore = useFilesStore()
+const { t } = useI18n()
 const isDragging = ref(false)
 
 // 工具類別
-const tools = [
-  { id: 'video', name: '影片', icon: 'bi-film', color: '#ef4444', path: '/video' },
-  { id: 'audio', name: '音訊', icon: 'bi-music-note-beamed', color: '#f59e0b', path: '/audio' },
-  { id: 'image', name: '圖片', icon: 'bi-image-fill', color: '#10b981', path: '/image' },
-  { id: 'document', name: '文件', icon: 'bi-file-earmark-text-fill', color: '#6366f1', path: '/document' },
+const toolsDef = [
+  { id: 'video', nameKey: 'home.video', icon: 'bi-film', color: '#ef4444', path: '/video' },
+  { id: 'audio', nameKey: 'home.audio', icon: 'bi-music-note-beamed', color: '#f59e0b', path: '/audio' },
+  { id: 'image', nameKey: 'home.image', icon: 'bi-image-fill', color: '#10b981', path: '/image' },
+  { id: 'document', nameKey: 'home.document', icon: 'bi-file-earmark-text-fill', color: '#6366f1', path: '/document' },
 ]
+
+const tools = computed(() => toolsDef.map(tool => ({ ...tool, name: t(tool.nameKey) })))
 
 function goToTool(path: string) {
   router.push(path)
@@ -46,7 +50,7 @@ function handleDrop(e: DragEvent) {
     filesStore.pendingSourceDir = srcDir
     router.push(getToolPath(fileType))
   } else {
-    alert('無法識別此檔案類型')
+    alert(t('home.unknown_file_type'))
   }
 }
 </script>
@@ -56,7 +60,7 @@ function handleDrop(e: DragEvent) {
     <div class="home-content">
       <!-- 快速功能區 -->
       <div class="quick-tools">
-        <h2 class="section-title">選擇工具</h2>
+        <h2 class="section-title">{{ $t('home.select_tool') }}</h2>
         <div class="tools-grid">
           <button
             v-for="tool in tools"
@@ -84,8 +88,8 @@ function handleDrop(e: DragEvent) {
         >
           <div class="drop-content">
             <i class="bi bi-cloud-arrow-up-fill drop-icon"></i>
-            <p class="drop-text">將檔案拖曳至此</p>
-            <p class="drop-hint">自動識別檔案類型並進入對應工具</p>
+            <p class="drop-text">{{ $t('home.drop_text') }}</p>
+            <p class="drop-hint">{{ $t('home.drop_hint') }}</p>
           </div>
         </div>
       </div>

@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppToggle from '@/components/common/AppToggle.vue'
 import AppRange from '@/components/common/AppRange.vue'
+
+const { t } = useI18n()
 
 const showAdvanced = ref(false)
 const wordTimestamps = ref(false)
@@ -15,7 +18,7 @@ defineExpose({ wordTimestamps, conditionOnPreviousText, minSilenceDurationMs, va
 <template>
   <div class="form-group">
     <AppToggle v-model="showAdvanced">
-      進階分句設定 <span class="label-hint">（適合多人對話）</span>
+      {{ $t('video.whisper_advanced.title') }} <span class="label-hint">{{ $t('video.whisper_advanced.title_hint') }}</span>
     </AppToggle>
 
     <div v-if="showAdvanced" class="sub-params">
@@ -23,31 +26,31 @@ defineExpose({ wordTimestamps, conditionOnPreviousText, minSilenceDurationMs, va
         <AppToggle
           :modelValue="!conditionOnPreviousText"
           @update:modelValue="v => conditionOnPreviousText = !v"
-        >獨立辨識每段語音</AppToggle>
-        <span class="form-hint">關閉上下文關聯，避免句子合併</span>
+        >{{ $t('video.whisper_advanced.independent_segments') }}</AppToggle>
+        <span class="form-hint">{{ $t('video.whisper_advanced.independent_hint') }}</span>
       </div>
 
       <div class="option-row">
-        <AppToggle v-model="wordTimestamps">詞級時間戳</AppToggle>
-        <span class="form-hint">更精確的分句邊界</span>
+        <AppToggle v-model="wordTimestamps">{{ $t('video.whisper_advanced.word_timestamps') }}</AppToggle>
+        <span class="form-hint">{{ $t('video.whisper_advanced.word_timestamps_hint') }}</span>
       </div>
 
       <div class="form-group">
         <label class="sub-label">
-          最小靜音時長
-          <span class="param-value">{{ minSilenceDurationMs }} ms</span>
+          {{ $t('video.whisper_advanced.min_silence') }}
+          <span class="param-value">{{ minSilenceDurationMs }} {{ $t('video.whisper_advanced.milliseconds') }}</span>
         </label>
         <AppRange v-model="minSilenceDurationMs" :min="100" :max="2000" :step="100" />
-        <small class="form-hint">停頓超過此時長會分句（預設 200ms）</small>
+        <small class="form-hint">{{ $t('video.whisper_advanced.min_silence_hint') }}</small>
       </div>
 
       <div class="form-group">
         <label class="sub-label">
-          VAD 敏感度
+          {{ $t('video.whisper_advanced.vad_threshold') }}
           <span class="param-value">{{ vadThreshold.toFixed(1) }}</span>
         </label>
         <AppRange v-model="vadThreshold" :min="0.1" :max="0.9" :step="0.1" />
-        <small class="form-hint">越低越敏感，更容易分句（預設 0.3）</small>
+        <small class="form-hint">{{ $t('video.whisper_advanced.vad_threshold_hint') }}</small>
       </div>
     </div>
   </div>

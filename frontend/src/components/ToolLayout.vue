@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onActivated, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import AppUploadZone from '@/components/common/AppUploadZone.vue'
 import ComparisonSlider from '@/components/ComparisonSlider.vue'
 import UnsupportedFileOverlay from '@/components/UnsupportedFileOverlay.vue'
@@ -9,6 +10,7 @@ import { useResizableLayout } from '@/composables/useResizableLayout'
 import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
 import { createLogger } from '@/utils/logger'
 
+const { t } = useI18n()
 const log = createLogger('ToolLayout')
 const { sidebarWidth, settingsWidth, startResize } = useResizableLayout()
 
@@ -43,13 +45,14 @@ const props = withDefaults(defineProps<{
   functionsLocked?: boolean
 }>(), {
   uploadIcon: 'bi-cloud-arrow-up-fill',
-  uploadLabel: '拖曳檔案到這裡',
-  uploadHint: '或點擊選擇檔案',
   uploadAccept: '*',
-  executeLabel: '開始執行',
   resultPreviewUrl: null,
   showFilmstrip: false,
 })
+
+const effectiveUploadLabel = computed(() => props.uploadLabel ?? t('common.drop_files'))
+const effectiveUploadHint = computed(() => props.uploadHint ?? t('common.drop_hint'))
+const effectiveExecuteLabel = computed(() => props.executeLabel ?? t('common.execute'))
 
 const emit = defineEmits<{
   (e: 'select-function', id: string): void
@@ -239,7 +242,7 @@ onBeforeUnmount(() => {
         >
           <i :class="['bi', fn.icon]"></i>
           <span>{{ fn.name }}</span>
-          <span v-if="fn.comingSoon" class="coming-badge">即將</span>
+          <span v-if="fn.comingSoon" class="coming-badge">{{ $t('common.coming_soon') }}</span>
         </button>
       </div>
     </aside>
@@ -250,14 +253,14 @@ onBeforeUnmount(() => {
     <main class="preview-area" :class="{ 'is-drag-over': isDragOver && hasFile }">
       <!-- 右上角直排按鈕群（有檔案才顯示） -->
       <div v-if="hasFile" class="preview-toolbar">
-        <button v-if="!showFilmstrip" class="toolbar-btn remove-btn" data-tooltip="移除檔案" @click="removeFile">
+        <button v-if="!showFilmstrip" class="toolbar-btn remove-btn" :data-tooltip="$t('common.remove_file')" @click="removeFile">
           <i class="bi bi-x-lg"></i>
         </button>
         <button
           class="toolbar-btn compare-btn"
           :class="{ 'is-active': isComparing, disabled: !canShowResult }"
           :disabled="!canShowResult"
-          data-tooltip="比對原圖與成果"
+          :data-tooltip="$t('common.compare')"
           @click="canShowResult && toggleCompare()"
         >
           <i class="bi bi-layout-split"></i>
@@ -267,7 +270,7 @@ onBeforeUnmount(() => {
           class="toolbar-btn download-btn"
           :class="{ disabled: !canShowResult }"
           :disabled="!canShowResult"
-          data-tooltip="儲存結果"
+          :data-tooltip="$t('common.save')"
           @click="canShowResult && emit('download')"
         >
           <i class="bi bi-download"></i>
@@ -275,7 +278,7 @@ onBeforeUnmount(() => {
         <button
           v-if="canGoBack"
           class="toolbar-btn back-btn"
-          data-tooltip="回到上一步"
+          :data-tooltip="$t('common.go_back')"
           @click="emit('go-back')"
         >
           <i class="bi bi-arrow-counterclockwise"></i>
@@ -288,19 +291,19 @@ onBeforeUnmount(() => {
           class="preview-tab"
           :class="{ 'is-active': previewMode === 'original' }"
           @click="previewMode = 'original'"
-        >原圖</button>
+        >{{ $t('common.original') }}</button>
         <button
           class="preview-tab"
           :class="{ 'is-active': previewMode === 'result', disabled: !canShowResult }"
           :disabled="!canShowResult"
           @click="previewMode = 'result'"
-        >成果</button>
+        >{{ $t('common.result') }}</button>
         <button
           class="preview-tab"
           :class="{ 'is-active': previewMode === 'compare', disabled: !canShowResult }"
           :disabled="!canShowResult"
           @click="previewMode = 'compare'"
-        >並排比對</button>
+        >{{ $t('common.side_by_side') }}</button>
       </div>
 
       <!-- 預覽內容 -->
@@ -324,8 +327,8 @@ onBeforeUnmount(() => {
         <AppUploadZone
           v-if="!hasFile"
           :icon="uploadIcon"
-          :label="uploadLabel"
-          :hint="uploadHint"
+          :label="effectiveUploadLabel"
+          :hint="effectiveUploadHint"
           :accept="uploadAccept"
           :multiple="showFilmstrip"
           @file="handleUploadFile"
@@ -350,7 +353,7 @@ onBeforeUnmount(() => {
         >
           <div class="preview-placeholder">
             <i class="bi bi-image"></i>
-            <p>請選擇或拖曳檔案</p>
+            <p>{{ $t('common.select_or_drop') }}</p>
           </div>
         </slot>
 
@@ -377,7 +380,7 @@ onBeforeUnmount(() => {
     <aside class="settings-panel" :style="{ width: settingsWidth + 'px', minWidth: settingsWidth + 'px' }">
       <div class="settings-content">
         <slot name="settings">
-          <p class="text-muted">請選擇功能</p>
+          <p class="text-muted">{{ $t('common.select_function') }}</p>
         </slot>
       </div>
 
@@ -390,7 +393,7 @@ onBeforeUnmount(() => {
         >
           <span v-if="executeLoading" class="spinner-border spinner-border-sm me-2"></span>
           <i v-else class="bi bi-play-fill me-2"></i>
-          {{ executeLoading ? '處理中...' : executeLabel }}
+          {{ executeLoading ? $t('common.processing') : effectiveExecuteLabel }}
         </button>
       </div>
     </aside>

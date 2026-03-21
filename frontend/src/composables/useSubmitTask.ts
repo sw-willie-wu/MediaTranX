@@ -4,8 +4,10 @@ import { useToast } from '@/composables/useToast'
 import { getApiBase } from '@/composables/useApi'
 import { createLogger } from '@/utils/logger'
 import type { Task } from '@/types/task'
+import i18n from '@/i18n'
 
 const log = createLogger('SubmitTask')
+const { t } = i18n.global
 
 export function useSubmitTask() {
   const taskStore = useTaskStore()
@@ -30,7 +32,7 @@ export function useSubmitTask() {
 
       if (!resp.ok) {
         const errData = await resp.json().catch(() => ({}))
-        throw new Error(errData.detail || '提交任務失敗')
+        throw new Error(errData.detail || t('toast.submit_error'))
       }
 
       const { task_id: taskId } = await resp.json()
@@ -41,7 +43,7 @@ export function useSubmitTask() {
         taskType,
         status: 'pending',
         progress: 0,
-        message: '任務已提交',
+        message: t('toast.task_submitted', { label }),
         result: null,
         error: null,
         createdAt: new Date(),
@@ -50,11 +52,11 @@ export function useSubmitTask() {
         fileName,
       }
       taskStore.addTask(task)
-      toast.show(`${label}任務已提交`, { type: 'success', icon: 'bi-check-circle' })
+      toast.show(t('toast.task_submitted', { label }), { type: 'success', icon: 'bi-check-circle' })
       return taskId
     } catch (e: any) {
       log.error('submit failed', { apiPath, taskType, error: e.message })
-      toast.show(e.message || '提交失敗', { type: 'error', icon: 'bi-x-circle' })
+      toast.show(e.message || t('toast.submit_failed'), { type: 'error', icon: 'bi-x-circle' })
       return null
     } finally {
       isProcessing.value = false

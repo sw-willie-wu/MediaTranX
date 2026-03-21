@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 export interface InfoItem {
   icon: string
   label: string
@@ -18,7 +22,7 @@ withDefaults(defineProps<{
   <div class="media-info-bar" :class="{ loading, 'is-overlay': overlay }">
     <template v-if="loading">
       <div class="spinner-border spinner-border-sm" role="status"></div>
-      <span>{{ loadingText ?? '讀取資訊...' }}</span>
+      <span>{{ loadingText ?? t('common.loading_info') }}</span>
     </template>
     <template v-else-if="items?.length">
       <div v-for="(item, i) in items" :key="i" class="info-item">

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
@@ -16,6 +17,7 @@ const emit = defineEmits<{
   submit: [taskId: string]
 }>()
 
+const { t } = useI18n()
 const taskStore = useTaskStore()
 const toast = useToast()
 const { submitTask, isProcessing } = useSubmitTask()
@@ -95,12 +97,25 @@ async function loadLanguages() {
 // ── 翻譯風格 ──────────────────────────────────────────────────────────────
 
 const translateStyle = ref('colloquial')
-const translateStyles = ref<{ value: string; label: string }[]>([])
+const rawTranslateStyles = ref<{ value: string; label: string }[]>([])
+
+const styleI18nKey: Record<string, string> = {
+  colloquial: 'video.translate.style_colloquial',
+  formal: 'video.translate.style_formal',
+  literal: 'video.translate.style_literal',
+}
+
+const translateStyles = computed(() =>
+  rawTranslateStyles.value.map(item => ({
+    ...item,
+    label: styleI18nKey[item.value] ? t(styleI18nKey[item.value]) : item.label,
+  }))
+)
 
 async function loadTranslateStyles() {
   try {
     const res = await apiFetch('/setup/translate-styles')
-    if (res.ok) translateStyles.value = await res.json()
+    if (res.ok) rawTranslateStyles.value = await res.json()
   } catch {}
 }
 
@@ -139,35 +154,35 @@ async function installTranslate() {
     })
     if (!response.ok) {
       const err = await response.json()
-      throw new Error(err.detail || '安裝失敗')
+      throw new Error(err.detail || t('document.translate.install_error'))
     }
     const result = await response.json()
     if (!result.task_id) {
-      toast.show('翻譯功能已就緒', { type: 'success' })
+      toast.show(t('document.translate.install_complete'), { type: 'success' })
       await loadTranslateModels()
       return
     }
     taskStore.addTask({
       taskId: result.task_id, taskType: 'setup/install', status: 'pending',
       progress: 0, message: null, result: null, error: null,
-      createdAt: new Date(), updatedAt: new Date(), label: '安裝翻譯功能',
+      createdAt: new Date(), updatedAt: new Date(), label: t('document.translate.install_button'),
     })
-    toast.show('開始安裝翻譯功能，請稍候...', { type: 'info', icon: 'bi-download' })
+    toast.show(t('document.translate.installing_toast'), { type: 'info', icon: 'bi-download' })
     const checkDone = setInterval(async () => {
       const task = taskStore.tasks.get(result.task_id)
       if (task && (task.status === 'completed' || task.status === 'failed')) {
         clearInterval(checkDone)
         isInstalling.value = false
         if (task.status === 'completed') {
-          toast.show('翻譯功能安裝完成', { type: 'success' })
+          toast.show(t('document.translate.install_complete'), { type: 'success' })
           await loadTranslateModels()
         } else {
-          error.value = '安裝失敗，請查看任務列表'
+          error.value = t('document.translate.install_error')
         }
       }
     }, 2000)
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '安裝失敗'
+    error.value = e instanceof Error ? e.message : t('document.translate.install_error')
     isInstalling.value = false
   }
 }
@@ -192,7 +207,7 @@ async function execute() {
   const glossary = parseGlossary()
   if (glossary) body.glossary = glossary
 
-  const taskId = await submitTask('/document/translate', body, '文件翻譯', 'document.translate', props.currentFileName)
+  const taskId = await submitTask('/document/translate', body, t('document.translate.task_label'), 'document.translate', props.currentFileName)
   if (taskId) emit('submit', taskId)
 }
 
@@ -204,9 +219,9 @@ defineExpose({ execute, isDisabled, isLoading })
 <template>
   <div class="function-settings">
     <h6 class="settings-title">
-      <i class="bi bi-translate me-2"></i>翻譯設定
+      <i class="bi bi-translate me-2"></i>{{ $t('document.translate.title') }}
     </h6>
-    <p class="form-hint">使用 AI 翻譯文件內容，支援多種語言與翻譯風格。</p>
+    <p class="form-hint">{{ $t('document.translate.description') }}</p>
 
     <div v-if="error" class="info-box info-box--error">
       <i class="bi bi-exclamation-circle"></i>
@@ -215,46 +230,46 @@ defineExpose({ execute, isDisabled, isLoading })
 
     <!-- 未安裝：顯示安裝按鈕 -->
     <div v-if="translateEnvAvailable === false" class="install-prompt">
-      <p class="form-hint">翻譯功能需要 AI 推理環境，首次使用前請先安裝</p>
+      <p class="form-hint">{{ $t('document.translate.need_install') }}</p>
       <button class="btn-primary" :disabled="isInstalling" @click="installTranslate">
         <span v-if="isInstalling" class="spinner-border spinner-border-sm"></span>
         <i v-else class="bi bi-download"></i>
-        {{ isInstalling ? '安裝中...' : '安裝翻譯功能' }}
+        {{ isInstalling ? $t('document.translate.installing') : $t('document.translate.install_button') }}
       </button>
     </div>
 
     <template v-else>
       <!-- 翻譯模型 -->
       <div class="form-group">
-        <label>翻譯模型</label>
+        <label>{{ $t('document.translate.model') }}</label>
         <AppSelect v-model="selectedTranslateModel" :options="translateModelOptions" size="sm" />
       </div>
 
       <!-- 來源語言 -->
       <div class="form-group">
-        <label>來源語言</label>
+        <label>{{ $t('document.translate.source_language') }}</label>
         <AppSelect v-model="sourceLanguage" :options="languageOptions" size="sm" />
       </div>
 
       <!-- 目標語言 -->
       <div class="form-group">
-        <label>目標語言</label>
+        <label>{{ $t('document.translate.target_language') }}</label>
         <AppSelect v-model="targetLanguage" :options="languageOptions" size="sm" />
       </div>
 
       <!-- 翻譯風格 -->
       <div class="form-group">
-        <label>翻譯風格</label>
+        <label>{{ $t('document.translate.style') }}</label>
         <AppSelect v-model="translateStyle" :options="translateStyles" size="sm" />
       </div>
 
       <!-- 專有名詞字典 -->
       <div class="form-group">
-        <label>專有名詞字典 <span class="label-hint">（選填）</span></label>
+        <label>{{ $t('document.translate.glossary') }} <span class="label-hint">{{ $t('document.translate.optional') }}</span></label>
         <textarea
           v-model="glossaryText"
           class="form-input glossary-input"
-          placeholder="每行一條，格式：原文→譯文 或 原文=譯文&#10;例：Apple→蘋果"
+          :placeholder="$t('document.translate.glossary_format')"
           rows="4"
         ></textarea>
       </div>

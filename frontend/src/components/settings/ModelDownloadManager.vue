@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useTaskStore } from '@/stores/tasks'
 import { useModelStore } from '@/stores/models'
 import { apiFetch } from '@/composables/useApi'
 import AppModelGroupList from '@/components/common/AppModelGroupList.vue'
+
+const { t } = useI18n()
 
 const taskStore = useTaskStore()
 const modelStore = useModelStore()
@@ -41,10 +44,10 @@ async function downloadItem(id: string) {
     taskType: 'setup.download',
     status: 'pending',
     progress: 0,
-    message: `下載 ${id}`,
+    message: `${t('settings.models.title')} ${id}`,
     result: null,
     error: null,
-    label: `下載 ${id}`,
+    label: `${t('settings.models.title')} ${id}`,
     createdAt: new Date(),
     updatedAt: new Date(),
   })
@@ -78,12 +81,12 @@ onMounted(() => modelStore.fetchModels())
 </script>
 
 <template>
-  <h6 class="section-title mt">模型與工具</h6>
-  <p class="download-hint"><i class="bi bi-info-circle"></i> 最多同時進行 4 個下載，超過將自動排隊</p>
+  <h6 class="section-title mt">{{ $t('settings.models.title') }}</h6>
+  <p class="download-hint"><i class="bi bi-info-circle"></i> {{ $t('settings.models.hint') }}</p>
 
   <div v-if="modelStore.loading && !modelStore.loaded" class="models-loading">
     <div class="spinner"></div>
-    <span>載入中...</span>
+    <span>{{ $t('settings.models.loading') }}</span>
   </div>
 
   <template v-else-if="modelStore.loaded">
@@ -95,7 +98,7 @@ onMounted(() => modelStore.fetchModels())
         class="category-tab"
         :class="{ 'is-active': activeTab === cat.key }"
         @click="activeTab = cat.key"
-      >{{ cat.label }}</button>
+      >{{ $t(`settings.models.category_${cat.key}`) }}</button>
     </div>
 
     <!-- Active tab content -->
@@ -108,7 +111,7 @@ onMounted(() => modelStore.fetchModels())
     />
 
     <button class="btn-secondary refresh-btn" @click="modelStore.fetchModels()">
-      <i class="bi bi-arrow-clockwise"></i> 重新整理
+      <i class="bi bi-arrow-clockwise"></i> {{ $t('settings.models.refresh') }}
     </button>
   </template>
 </template>
