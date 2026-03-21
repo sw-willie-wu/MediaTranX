@@ -8,6 +8,7 @@ import type { MaskToolMode } from '@/composables/useCanvasMask'
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  imageInfo: { format?: string } | null
   brushSize: number
   toolMode: MaskToolMode
   getMask: () => string | null
@@ -24,7 +25,11 @@ const emit = defineEmits<{
 const toast = useToast()
 const { submitTask, isProcessing } = useSubmitTask()
 
-const isDisabled = computed(() => !props.fileId || isProcessing.value)
+const isAnimated = computed(() => {
+  const fmt = props.imageInfo?.format?.toUpperCase()
+  return fmt === 'GIF' || fmt === 'APNG'
+})
+const isDisabled = computed(() => !props.fileId || isProcessing.value || isAnimated.value)
 const isLoading = computed(() => isProcessing.value)
 
 const tools: { mode: MaskToolMode; icon: string; label: string }[] = [

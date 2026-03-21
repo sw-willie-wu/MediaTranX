@@ -15,9 +15,9 @@ interface NavItem {
 
 const topNav: NavItem[] = [
   { path: '/', icon: 'bi-house-fill', label: '主畫面' },
-  { path: '/video', icon: 'bi-film', label: '影片工具' },
-  { path: '/audio', icon: 'bi-music-note-beamed', label: '音訊工具' },
   { path: '/image', icon: 'bi-image-fill', label: '圖片工具' },
+  { path: '/audio', icon: 'bi-music-note-beamed', label: '音訊工具' },
+  { path: '/video', icon: 'bi-film', label: '影片工具' },
   { path: '/document', icon: 'bi-file-earmark-text-fill', label: '文件工具' },
 ]
 

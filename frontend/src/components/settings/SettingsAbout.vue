@@ -23,7 +23,7 @@ function restartApp() {
 
   <h6 class="section-title mt">支援與連結</h6>
   <div class="about-links">
-    <button class="btn-secondary about-link-btn"><i class="bi bi-github"></i> GitHub</button>
+    <a href="https://github.com/sw-willie-wu/MediaTranX" target="_blank" class="btn-secondary about-link-btn"><i class="bi bi-github"></i> GitHub</a>
     <button class="btn-secondary about-link-btn"><i class="bi bi-chat-dots"></i> 意見回饋</button>
     <button class="btn-secondary about-link-btn"><i class="bi bi-globe"></i> 官方網站</button>
   </div>
@@ -90,6 +90,7 @@ function restartApp() {
 
 .about-link-btn {
   flex: 1;
+  text-decoration: none;
 }
 
 .credits-text {

@@ -46,16 +46,23 @@ class ImageConvertService:
     async def get_image_info(self, file_id: str) -> dict:
         """取得圖片資訊"""
         from PIL import Image
+        from app.engine.gif_utils import is_animated
+
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
         # 用 PIL 讀取圖片資訊
         with Image.open(file_info.file_path) as img:
+            fmt = img.format or "UNKNOWN"
+            # PIL 對 APNG 只回傳 "PNG"，需用多幀偵測區分
+            if fmt == "PNG" and is_animated(img):
+                fmt = "APNG"
+
             return {
                 "width": img.width,
                 "height": img.height,
-                "format": img.format,
+                "format": fmt,
                 "mode": img.mode,
                 "file_size": file_info.file_size,
             }
