@@ -101,45 +101,55 @@ class ImageUpscaleService:
             "variants", {}
         ).get(upscale_variant, {}).get("scale", 4)
 
-        with Image.open(file_info.file_path) as img:
-            img = img.copy()
-
-        # 保留 alpha 通道（engine 內部會 convert("RGB") 丟掉透明度）
-        img_rgba = img.convert("RGBA")
-        alpha_channel = img_rgba.split()[3]
-        has_alpha = alpha_channel.getextrema()[0] < 255
-        img_to_process = img_rgba.convert("RGB") if has_alpha else img.convert("RGB")
+        from app.engine.gif_utils import animation_format, extract_frames, save_animated, animation_ext
 
         upscale_end = 0.7 if face_fix else 0.85
 
-        # 載入階段佔 5-40%；p=1.0 時改顯示「推理中」訊息
-        result_img = upscaler.enhance(
-            img_to_process,
-            model_id=upscale_variant,
-            scale=native_scale,
-            on_progress=lambda p, m: progress_callback(
-                0.05 + p * 0.35 if p <= 1.0 else 0.40 + (p - 1.0) * 0.30,
-                m,
-            ),
-        )
+        def _upscale_single(img: Image.Image, progress_start: float, progress_end: float) -> Image.Image:
+            """Upscale one frame, preserving alpha if present."""
+            img_rgba = img.convert("RGBA")
+            alpha_channel = img_rgba.split()[3]
+            has_alpha = alpha_channel.getextrema()[0] < 255
+            img_to_process = img_rgba.convert("RGB") if has_alpha else img.convert("RGB")
 
-        # 若使用者要求的倍率小於模型原生倍率，LANCZOS 縮到目標尺寸
-        if scale < native_scale:
-            orig_w, orig_h = img.size
-            result_img = result_img.resize((orig_w * scale, orig_h * scale), Image.LANCZOS)
+            span = progress_end - progress_start
+            result = upscaler.enhance(
+                img_to_process,
+                model_id=upscale_variant,
+                scale=native_scale,
+                on_progress=lambda p, m: progress_callback(
+                    progress_start + (0.05 + p * 0.35 if p <= 1.0 else 0.40 + (p - 1.0) * 0.30) * span,
+                    m,
+                ),
+            )
+            if scale < native_scale:
+                orig_w, orig_h = img.size
+                result = result.resize((orig_w * scale, orig_h * scale), Image.LANCZOS)
+            if has_alpha:
+                alpha_upscaled = alpha_channel.resize(result.size, Image.LANCZOS)
+                result_rgba = result.convert("RGBA")
+                result_rgba.putalpha(alpha_upscaled)
+                result = result_rgba
+            return result
 
-        # 還原 alpha 通道（等比放大 alpha 到輸出尺寸）
-        if has_alpha:
-            alpha_upscaled = alpha_channel.resize(result_img.size, Image.LANCZOS)
-            result_rgba = result_img.convert("RGBA")
-            result_rgba.putalpha(alpha_upscaled)
-            result_img = result_rgba
+        with Image.open(file_info.file_path) as raw:
+            anim_fmt = animation_format(raw)
+            if anim_fmt:
+                frames = extract_frames(raw)
+                total = len(frames)
+                result_frames = []
+                for i, (frame, duration) in enumerate(frames):
+                    progress_callback(0.05 + i / total * 0.60, f"超解析中 ({i + 1}/{total})...")
+                    result_frame = _upscale_single(frame, 0.0, 1.0 / total)
+                    result_frames.append((result_frame, duration))
+            else:
+                img = raw.copy()
+                result_img = _upscale_single(img, 0.0, 1.0)
 
-        # inference 完成後跳至目標進度
         progress_callback(upscale_end, "超解析完成")
 
-        # ── 人臉修復（可選）──────────────────────────────────
-        if face_fix and face_restore_model_id:
+        # ── 人臉修復（可選，僅靜態圖）──────────────────────────────────
+        if not anim_fmt and face_fix and face_restore_model_id:
             try:
                 face_family, face_variant = _parse_model_id(face_restore_model_id, _FACE_FAMILIES)
                 fidelity = params.get("face_restore_fidelity", 0.7)
@@ -161,7 +171,11 @@ class ImageUpscaleService:
 
         output_file_id = str(uuid4())
         output_path = self._generate_output_path(file_info, scale, params.get("output_dir"))
-        result_img.save(output_path, "PNG")
+        if anim_fmt:
+            output_path = output_path.with_suffix(animation_ext(anim_fmt))
+            save_animated(result_frames, output_path, anim_fmt)
+        else:
+            result_img.save(output_path, "PNG")
 
         progress_callback(0.95, "正在註冊結果...")
         output_info = self._file_service.register_output(

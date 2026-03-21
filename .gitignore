@@ -21,6 +21,9 @@ temp/
 data/
 output/
 *.log
+*.db
+*.db-shm
+*.db-wal
 test_*.py
 test_*.txt
 
@@ -32,6 +35,7 @@ src/backend/static/
 **/*.dll
 **/*.so
 models/
+!backend/app/models/
 
 # Env (保留 .env.production)
 .env

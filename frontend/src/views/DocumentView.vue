@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import DocumentPreview from '@/components/document/DocumentPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
@@ -9,6 +10,8 @@ import DocumentOcrPanel         from '@/components/document/panels/DocumentOcrPa
 import DocumentSplitPanel       from '@/components/document/panels/DocumentSplitPanel.vue'
 import OcrResultModal           from '@/components/image/OcrResultModal.vue'
 import { useDocumentWorkspace } from '@/composables/useDocumentWorkspace'
+
+const { t } = useI18n()
 
 const {
   hasFile, fileId, isUploading, currentFileName, hasResult,
@@ -23,12 +26,12 @@ const ocrPanelRef        = ref<InstanceType<typeof DocumentOcrPanel>        | nu
 const splitPanelRef      = ref<InstanceType<typeof DocumentSplitPanel>      | null>(null)
 const showOcrModal       = ref(false)
 
-const subFunctions = [
-  { id: 'translate',   name: '翻譯',     icon: 'bi-translate' },
-  { id: 'pdf-convert', name: 'PDF 轉換', icon: 'bi-file-earmark-pdf-fill' },
-  { id: 'ocr',         name: '文字辨識', icon: 'bi-type' },
-  { id: 'split',       name: '分割文件', icon: 'bi-layout-split' },
-]
+const subFunctions = computed(() => [
+  { id: 'translate',   name: t('document.functions.translate'),    icon: 'bi-translate' },
+  { id: 'pdf-convert', name: t('document.functions.pdf_convert'),  icon: 'bi-file-earmark-pdf-fill' },
+  { id: 'ocr',         name: t('document.functions.ocr'),          icon: 'bi-type' },
+  { id: 'split',       name: t('document.functions.split'),        icon: 'bi-layout-split' },
+])
 
 const currentFunction = ref('translate')
 
@@ -100,11 +103,11 @@ function onRemoveFile() {
 
 <template>
   <ToolLayout
-    title="文件工具"
+    :title="$t('document.title')"
     accept-type="document"
     upload-icon="bi-file-earmark-text-fill"
-    upload-label="拖曳文件到這裡"
-    upload-hint="支援 PDF、DOCX、TXT、SRT 等格式"
+    :upload-label="$t('document.upload_label')"
+    :upload-hint="$t('document.upload_hint')"
     upload-accept=".pdf,.doc,.docx,.txt,.srt,.vtt,.md,.csv,.json"
     hide-preview-tabs
     :sub-functions="subFunctions"
@@ -122,7 +125,7 @@ function onRemoveFile() {
       <button
         v-if="currentFunction === 'ocr' && textResultContent"
         class="toolbar-btn ocr-result-btn"
-        data-tooltip="查看 OCR 結果"
+        :data-tooltip="$t('common.view_ocr_result')"
         @click="showOcrModal = true"
       >
         <i class="bi bi-file-text"></i>
@@ -138,7 +141,7 @@ function onRemoveFile() {
         v-if="currentFile || isUploading"
         :items="documentInfoItems"
         :loading="isUploading"
-        loading-text="上傳中..."
+        :loading-text="$t('document.loading')"
       />
     </template>
 

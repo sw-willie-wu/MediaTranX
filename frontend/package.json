@@ -1,6 +1,6 @@
 {
   "name": "mediatranx",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,6 +19,7 @@
     "bootstrap5": "^1.1.9",
     "pinia": "^3.0.4",
     "vue": "^3.5.13",
+    "vue-i18n": "^10.0.8",
     "vue-router": "^4.5.0"
   },
   "devDependencies": {

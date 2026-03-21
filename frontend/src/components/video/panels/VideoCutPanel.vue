@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useToast } from '@/composables/useToast'
 import AppToggle from '@/components/common/AppToggle.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   fileId: string | null
@@ -39,7 +42,7 @@ async function execute() {
   const endSeconds = parseTimeToSeconds(props.endTime)
 
   if (endSeconds <= startSeconds) {
-    toast.show('結束時間必須大於開始時間', { type: 'error', icon: 'bi-x-circle' })
+    toast.show(t('video.cut.time_error'), { type: 'error', icon: 'bi-x-circle' })
     return
   }
 
@@ -51,7 +54,7 @@ async function execute() {
       end_time: endSeconds,
       stream_copy: props.streamCopy,
     },
-    '剪輯',
+    t('video.cut.task_label'),
     'video.cut',
     props.currentFileName,
   )
@@ -64,11 +67,11 @@ defineExpose({ execute, isDisabled, isLoading })
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-scissors me-2"></i>剪輯設定</h6>
-    <p class="form-hint">設定起始與結束時間點，擷取影片片段。</p>
+    <h6 class="settings-title"><i class="bi bi-scissors me-2"></i>{{ $t('video.cut.title') }}</h6>
+    <p class="form-hint">{{ $t('video.cut.description') }}</p>
 
     <div class="form-group">
-      <label>開始時間 (HH:MM:SS)</label>
+      <label>{{ $t('video.cut.start_time') }}</label>
       <input
         :value="startTime"
         type="text"
@@ -79,7 +82,7 @@ defineExpose({ execute, isDisabled, isLoading })
     </div>
 
     <div class="form-group">
-      <label>結束時間 (HH:MM:SS)</label>
+      <label>{{ $t('video.cut.end_time') }}</label>
       <input
         :value="endTime"
         type="text"
@@ -93,8 +96,8 @@ defineExpose({ execute, isDisabled, isLoading })
       <AppToggle
         :modelValue="streamCopy"
         @update:modelValue="emit('update:streamCopy', $event)"
-      >快速模式（不重新編碼）</AppToggle>
-      <small class="form-hint">關閉可獲得精確剪輯點，但速度較慢</small>
+      >{{ $t('video.cut.fast_mode') }}</AppToggle>
+      <small class="form-hint">{{ $t('video.cut.fast_mode_hint') }}</small>
     </div>
   </div>
 </template>

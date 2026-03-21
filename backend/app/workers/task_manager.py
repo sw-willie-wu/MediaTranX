@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
-from app.api.schemas.common import TaskResponse, TaskStatus
+from app.models.task import TaskCancelledError, TaskData, TaskStatus
 from .progress_tracker import ProgressTracker, get_progress_tracker
 
 logger = logging.getLogger(__name__)
@@ -34,11 +34,13 @@ class TaskManager:
         if self._initialized:
             return
 
-        self._tasks: Dict[str, TaskResponse] = {}
+        self._tasks: Dict[str, TaskData] = {}
         self._futures: Dict[str, asyncio.Future] = {}
+        self._cancelled_ids: set[str] = set()
         self._progress_tracker = get_progress_tracker()
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._handlers: Dict[str, Callable] = {}
+        self._on_terminal_callbacks: List[Callable[[TaskData], None]] = []
         self._initialized = True
 
         logger.info(f"TaskManager initialized with {max_workers} workers")
@@ -47,22 +49,35 @@ class TaskManager:
     def progress_tracker(self) -> ProgressTracker:
         return self._progress_tracker
 
+    def on_terminal(self, callback: Callable[[TaskData], None]) -> None:
+        """註冊任務進入終態時的回調"""
+        self._on_terminal_callbacks.append(callback)
+
+    def _notify_terminal(self, task: TaskData) -> None:
+        for cb in self._on_terminal_callbacks:
+            try:
+                cb(task)
+            except Exception as e:
+                logger.warning(f"on_terminal callback error: {e}")
+
     def register_task(self, task_id: str, task_type: str) -> None:
         """
         手動登記外部管理的任務（適用於 asyncio-based 長任務）
         任務由外部程式碼負責執行與 progress_tracker.emit，
         此方法只確保 task_id 存在於 _tasks 供 SSE 端點查詢。
         """
-        task = TaskResponse(
+        task = TaskData(
             task_id=task_id,
             task_type=task_type,
             status=TaskStatus.PROCESSING,
             progress=0.0,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc)
         )
         self._tasks[task_id] = task
         logger.info(f"Task registered (external): {task_id} ({task_type})")
+
+    def is_cancelled(self, task_id: str) -> bool:
+        """檢查任務是否已被請求取消"""
+        return task_id in self._cancelled_ids
 
     def register_handler(self, task_type: str, handler: Callable) -> None:
         """
@@ -94,13 +109,11 @@ class TaskManager:
         """
         task_id = str(uuid4())
 
-        task = TaskResponse(
+        task = TaskData(
             task_id=task_id,
             task_type=task_type,
             status=TaskStatus.PENDING,
             progress=0.0,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc)
         )
         self._tasks[task_id] = task
 
@@ -109,6 +122,17 @@ class TaskManager:
 
         logger.info(f"Task submitted: {task_id} ({task_type})")
         return task_id
+
+    def _create_cancellable_callback(self, task_id: str) -> Callable[[float, str], None]:
+        """建立可取消的進度回調，handler 每次回報進度時檢查取消旗標"""
+        base_callback = self._progress_tracker.create_callback(task_id)
+
+        def callback(progress: float, message: str = "") -> None:
+            if task_id in self._cancelled_ids:
+                raise TaskCancelledError(f"Task {task_id} cancelled")
+            base_callback(progress, message)
+
+        return callback
 
     async def _execute_task(
         self,
@@ -129,8 +153,8 @@ class TaskManager:
             task.status = TaskStatus.PROCESSING
             task.updated_at = datetime.now(timezone.utc)
 
-            # 建立進度回調
-            progress_callback = self._progress_tracker.create_callback(task_id)
+            # 建立可取消的進度回調
+            progress_callback = self._create_cancellable_callback(task_id)
 
             # 在 executor 中執行（支援 CPU 密集型任務）
             loop = asyncio.get_event_loop()
@@ -151,6 +175,15 @@ class TaskManager:
             )
 
             logger.info(f"Task completed: {task_id}")
+            self._notify_terminal(task)
+
+        except TaskCancelledError:
+            task.status = TaskStatus.CANCELLED
+            task.updated_at = datetime.now(timezone.utc)
+            self._cancelled_ids.discard(task_id)
+            await self._progress_tracker.emit(task_id, task.progress, "Task cancelled")
+            logger.info(f"Task cancelled (in handler): {task_id}")
+            self._notify_terminal(task)
 
         except Exception as e:
             # 任務失敗
@@ -161,8 +194,9 @@ class TaskManager:
             await self._progress_tracker.emit(task_id, task.progress, f"Error: {e}")
 
             logger.error(f"Task failed: {task_id} - {e}\n{traceback.format_exc()}")
+            self._notify_terminal(task)
 
-    def get_task(self, task_id: str) -> Optional[TaskResponse]:
+    def get_task(self, task_id: str) -> Optional[TaskData]:
         """取得任務狀態（進行中的任務會從 progress_tracker 同步最新進度）"""
         task = self._tasks.get(task_id)
         if task is None:
@@ -175,11 +209,11 @@ class TaskManager:
                     task.message = latest.message
         return task
 
-    def get_all_tasks(self) -> List[TaskResponse]:
+    def get_all_tasks(self) -> List[TaskData]:
         """取得所有任務（進行中的任務會從 progress_tracker 同步最新進度）"""
         return [self.get_task(task_id) for task_id in list(self._tasks)]
 
-    def get_active_tasks(self) -> List[TaskResponse]:
+    def get_active_tasks(self) -> List[TaskData]:
         """取得進行中的任務"""
         return [
             self.get_task(task_id) for task_id, task in list(self._tasks.items())
@@ -190,8 +224,8 @@ class TaskManager:
         """
         取消任務
 
-        Args:
-            task_id: 任務 ID
+        PENDING 任務立即標記取消；PROCESSING 任務設旗標，
+        handler 下次呼叫 progress_callback 時會拋出 TaskCancelledError。
 
         Returns:
             是否成功取消
@@ -200,11 +234,17 @@ class TaskManager:
         if task is None:
             return False
 
-        if task.status in [TaskStatus.PENDING, TaskStatus.PROCESSING]:
+        if task.status == TaskStatus.PENDING:
             task.status = TaskStatus.CANCELLED
             task.updated_at = datetime.now(timezone.utc)
             await self._progress_tracker.emit(task_id, task.progress, "Task cancelled")
-            logger.info(f"Task cancelled: {task_id}")
+            logger.info(f"Task cancelled (pending): {task_id}")
+            self._notify_terminal(task)
+            return True
+
+        if task.status == TaskStatus.PROCESSING:
+            self._cancelled_ids.add(task_id)
+            logger.info(f"Task cancel requested: {task_id}")
             return True
 
         return False
@@ -225,6 +265,7 @@ class TaskManager:
 
         if task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
             del self._tasks[task_id]
+            self._cancelled_ids.discard(task_id)
             self._progress_tracker.cleanup(task_id)
             logger.info(f"Task removed: {task_id}")
             return True

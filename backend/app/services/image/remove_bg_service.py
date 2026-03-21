@@ -68,17 +68,28 @@ class ImageRemoveBgService:
         progress_callback(0.1, "載入去背模型...")
         session = new_session(model_name)
 
-        progress_callback(0.4, "去除背景中...")
-        with Image.open(file_info.file_path) as img:
-            img = img.copy()
+        from app.engine.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
 
-        result_img = remove(img, session=session)
+        with Image.open(file_info.file_path) as raw:
+            anim_fmt = animation_format(raw)
+            if anim_fmt:
+                def _remove_frame(frame, idx, total):
+                    progress_callback(0.4 + idx / total * 0.5, f"去除背景中 ({idx + 1}/{total})...")
+                    return remove(frame, session=session)
+                result_frames = process_gif_frames(raw, _remove_frame)
+            else:
+                img = raw.copy()
 
         output_file_id = str(uuid4())
         output_path = self._generate_output_path(file_info, params.get("output_dir"))
 
         progress_callback(0.9, "儲存結果...")
-        result_img.save(output_path, "PNG")
+        if anim_fmt:
+            output_path = output_path.with_suffix(animation_ext(anim_fmt))
+            save_animated(result_frames, output_path, anim_fmt)
+        else:
+            result_img = remove(img, session=session)
+            result_img.save(output_path, "PNG")
 
         output_info = self._file_service.register_output(
             file_id=output_file_id,

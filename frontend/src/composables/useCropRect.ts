@@ -10,6 +10,10 @@ const HANDLE_CURSORS: Record<Handle, string> = {
   BL: 'nesw-resize', L: 'ew-resize',   move: 'move',
 }
 
+// Extra pixels (in natural-resolution space) added to each side of the canvas
+// so handles at image edges can extend beyond the image boundary.
+const CANVAS_PAD = 20
+
 export function useCropRect(
   imgRef: Ref<HTMLImageElement | null>,
   containerRef: Ref<HTMLElement | null>,
@@ -32,20 +36,29 @@ export function useCropRect(
     return w && h ? w / h : null
   }
 
+  // ── 影像尺寸（去掉 padding 後的實際寬高）────────────────────────────────
+
+  function imgDims(): { W: number; H: number } {
+    const canvas = canvasRef.value
+    if (!canvas) return { W: 99999, H: 99999 }
+    return { W: canvas.width - 2 * CANVAS_PAD, H: canvas.height - 2 * CANVAS_PAD }
+  }
+
   // ── 座標轉換 ─────────────────────────────────────────────────────────────
+  // getCoords 回傳「影像空間」座標（已去除 padding offset）
 
   function getCoords(e: MouseEvent): { x: number; y: number } {
     const canvas = canvasRef.value!
     const rect = canvas.getBoundingClientRect()
     return {
-      x: (e.clientX - rect.left) * (canvas.width  / rect.width),
-      y: (e.clientY - rect.top)  * (canvas.height / rect.height),
+      x: (e.clientX - rect.left) * (canvas.width  / rect.width)  - CANVAS_PAD,
+      y: (e.clientY - rect.top)  * (canvas.height / rect.height) - CANVAS_PAD,
     }
   }
 
   function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)) }
 
-  // ── 把手位置 ─────────────────────────────────────────────────────────────
+  // ── 把手位置（影像空間）──────────────────────────────────────────────────
 
   function handles(r: CropRect): Record<Handle, [number, number]> {
     return {
@@ -65,6 +78,7 @@ export function useCropRect(
     const canvas = canvasRef.value
     if (!canvas) return 12
     const rect = canvas.getBoundingClientRect()
+    // canvas.width includes 2*CANVAS_PAD; display scale is rect.width / canvas.width
     return Math.max(10, 14 * (canvas.width / rect.width))
   }
 
@@ -89,9 +103,7 @@ export function useCropRect(
   function applyResize(handle: Handle, dx: number, dy: number): CropRect {
     const s = dragStartRect!
     const ratio = getRatio()
-    const canvas = canvasRef.value
-    const W = canvas?.width  ?? 99999
-    const H = canvas?.height ?? 99999
+    const { W, H } = imgDims()
     const MIN = 20
 
     let { x, y, w, h } = s
@@ -158,6 +170,7 @@ export function useCropRect(
   }
 
   // ── 繪製 ─────────────────────────────────────────────────────────────────
+  // 所有座標在 canvas 空間（需加上 CANVAS_PAD offset）
 
   function redraw() {
     const canvas = canvasRef.value
@@ -167,53 +180,56 @@ export function useCropRect(
     const r = cropRect.value
     if (!r) return
 
-    // 暗化外部
+    // 將影像空間座標轉為 canvas 空間（加 padding）
+    const P = CANVAS_PAD
+    const rx = r.x + P, ry = r.y + P
+
+    // 暗化外部（只暗影像區域）
+    const { W, H } = imgDims()
     ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.clearRect(r.x, r.y, r.w, r.h)
+    ctx.fillRect(P, P, W, H)
+    ctx.clearRect(rx, ry, r.w, r.h)
 
     // 邊框（外層黑色陰影 + 內層亮色）
-    // 內縮半個線寬，避免在 canvas 邊緣被裁切
-    const lw = Math.max(3, canvas.width / 150)
+    const lw = Math.max(1.5, W / 300)
     const half = (lw + 2) / 2
-    const bx = r.x + half, by = r.y + half, bw = r.w - half * 2, bh = r.h - half * 2
     ctx.save()
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)'
     ctx.lineWidth = lw + 2
     ctx.setLineDash([])
-    ctx.strokeRect(bx, by, bw, bh)
+    ctx.strokeRect(rx + half, ry + half, r.w - half * 2, r.h - half * 2)
     ctx.restore()
 
     const half2 = lw / 2
-    const cx = r.x + half2, cy = r.y + half2, cw = r.w - half2 * 2, ch = r.h - half2 * 2
     ctx.save()
     ctx.strokeStyle = 'rgba(96, 165, 250, 1)'
     ctx.lineWidth = lw
     ctx.setLineDash([])
-    ctx.strokeRect(cx, cy, cw, ch)
+    ctx.strokeRect(rx + half2, ry + half2, r.w - half2 * 2, r.h - half2 * 2)
     ctx.restore()
 
     // 三分線
     ctx.save()
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)'
-    ctx.lineWidth = Math.max(1, canvas.width / 1000)
+    ctx.lineWidth = Math.max(1, W / 1000)
     ctx.beginPath()
     for (let i = 1; i < 3; i++) {
-      ctx.moveTo(r.x + r.w * i / 3, r.y); ctx.lineTo(r.x + r.w * i / 3, r.y + r.h)
-      ctx.moveTo(r.x, r.y + r.h * i / 3); ctx.lineTo(r.x + r.w, r.y + r.h * i / 3)
+      ctx.moveTo(rx + r.w * i / 3, ry);      ctx.lineTo(rx + r.w * i / 3, ry + r.h)
+      ctx.moveTo(rx,               ry + r.h * i / 3); ctx.lineTo(rx + r.w, ry + r.h * i / 3)
     }
     ctx.stroke()
     ctx.restore()
 
-    // 8 個把手（藍色填充 + 白色邊框，內縮避免邊緣裁切）
+    // 8 個把手（藍色填充 + 白色邊框）
+    // 把手中心 = 邊線中心點（影像空間）+ padding → canvas 空間
     const hmap = handles(r)
-    const hs = Math.max(10, canvas.width / 60)
-    const hlw = Math.max(1.5, canvas.width / 600)
-    const W = canvas.width, H = canvas.height
+    const hs = Math.max(5, W / 120)
+    const hlw = Math.max(1, W / 800)
     for (const key of ['TL','T','TR','R','BR','B','BL','L'] as Handle[]) {
       const [hx, hy] = hmap[key]
-      const hxi = clamp(hx - hs / 2, hlw / 2, W - hs - hlw / 2)
-      const hyi = clamp(hy - hs / 2, hlw / 2, H - hs - hlw / 2)
+      // canvas 空間 = 影像空間 + P，置中 = - hs/2
+      const hxi = hx + P - hs / 2
+      const hyi = hy + P - hs / 2
       ctx.fillStyle = 'rgba(96, 165, 250, 1)'
       ctx.strokeStyle = 'white'
       ctx.lineWidth = hlw
@@ -225,9 +241,8 @@ export function useCropRect(
   // ── syncToImage & 初始化 ────────────────────────────────────────────────
 
   function initDefaultRect() {
-    const canvas = canvasRef.value
-    if (!canvas || !canvas.width) return
-    const W = canvas.width, H = canvas.height
+    const { W, H } = imgDims()
+    if (!W || W === 99999) return
     const ratio = getRatio()
     if (!ratio) {
       cropRect.value = { x: 0, y: 0, w: W, h: H }
@@ -243,6 +258,7 @@ export function useCropRect(
   }
 
   // 只更新 canvas 的 CSS 位置/尺寸，不重置裁切矩形（用於縮放/拖曳時）
+  // canvas 比影像大 CANVAS_PAD 圈，所以 CSS 要向外偏移
   function repositionCanvas() {
     const img = imgRef.value
     const container = containerRef.value
@@ -252,10 +268,14 @@ export function useCropRect(
     const imgRect = img.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
 
-    canvas.style.left   = `${imgRect.left - containerRect.left}px`
-    canvas.style.top    = `${imgRect.top  - containerRect.top}px`
-    canvas.style.width  = `${imgRect.width}px`
-    canvas.style.height = `${imgRect.height}px`
+    // displayScale: CSS px per natural px
+    const displayScale = img.naturalWidth ? imgRect.width / img.naturalWidth : 1
+    const padCSS = CANVAS_PAD * displayScale
+
+    canvas.style.left   = `${imgRect.left - containerRect.left - padCSS}px`
+    canvas.style.top    = `${imgRect.top  - containerRect.top  - padCSS}px`
+    canvas.style.width  = `${imgRect.width  + 2 * padCSS}px`
+    canvas.style.height = `${imgRect.height + 2 * padCSS}px`
   }
 
   function syncToImage() {
@@ -265,8 +285,8 @@ export function useCropRect(
     if (!img || !container || !canvas || !img.naturalWidth) return
 
     repositionCanvas()
-    canvas.width  = img.naturalWidth
-    canvas.height = img.naturalHeight
+    canvas.width  = img.naturalWidth  + 2 * CANVAS_PAD
+    canvas.height = img.naturalHeight + 2 * CANVAS_PAD
 
     initDefaultRect()
     redraw()

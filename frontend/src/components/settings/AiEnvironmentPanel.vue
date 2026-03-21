@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useTaskStore } from '@/stores/tasks'
 import { apiFetch } from '@/composables/useApi'
+
+const { t } = useI18n()
 
 const taskStore = useTaskStore()
 
@@ -9,6 +12,7 @@ const aiEnvLoading = ref(true)
 const aiEnvReady = ref(false)
 const llamaReady = ref(false)
 const aiTorchIndex = ref('cpu')
+const aiTorchInstalled = ref<string | null>(null)
 const aiDriverVersion = ref<string | null>(null)
 const aiInstallTaskId = ref<string | null>(null)
 const aiInstalling = ref(false)
@@ -38,6 +42,7 @@ async function loadAiEnvStatus() {
     aiEnvReady.value = cache.aiEnvReady
     llamaReady.value = cache.llamaReady
     aiTorchIndex.value = cache.torchIndex ?? 'cpu'
+    aiTorchInstalled.value = cache.torchInstalled ?? null
     aiDriverVersion.value = cache.driverVersion ?? null
     aiEnvLoading.value = false
   }
@@ -49,12 +54,14 @@ async function loadAiEnvStatus() {
     aiEnvReady.value = data.ai_env_ready
     llamaReady.value = data.llama_ready ?? false
     aiTorchIndex.value = data.torch_index ?? 'cpu'
+    aiTorchInstalled.value = data.torch_installed ?? null
     aiDriverVersion.value = data.device?.driver_version ?? null
     aiEnvLoading.value = false
     writeAiCache({
       aiEnvReady: data.ai_env_ready,
       llamaReady: data.llama_ready ?? false,
       torchIndex: data.torch_index ?? 'cpu',
+      torchInstalled: data.torch_installed ?? null,
       driverVersion: data.device?.driver_version ?? null,
     })
   } catch (e) {
@@ -75,10 +82,10 @@ async function installAiEnv() {
       taskType: 'ai.setup',
       status: 'pending',
       progress: 0,
-      message: '準備安裝...',
+      message: t('settings.ai.preparing'),
       result: null,
       error: null,
-      label: '安裝 AI 推理環境',
+      label: t('settings.ai.installing_toast'),
       createdAt: new Date(),
       updatedAt: new Date(),
     })
@@ -97,19 +104,35 @@ watch(
         aiInstalled.value = true
         aiEnvReady.value = true
         llamaReady.value = true
-        writeAiCache({ aiEnvReady: true, llamaReady: true, torchIndex: aiTorchIndex.value, driverVersion: aiDriverVersion.value })
+        writeAiCache({ aiEnvReady: true, llamaReady: true, torchIndex: aiTorchIndex.value, torchInstalled: null, driverVersion: aiDriverVersion.value })
       }
     }
   },
 )
 
+/** 從實際安裝版本解析 variant (e.g. '2.10.0+cu124' → 'cu124', '2.10.0+cpu' → 'cpu') */
+function parseTorchVariant(version: string | null): string {
+  if (!version) return ''
+  const plus = version.indexOf('+')
+  return plus >= 0 ? version.slice(plus + 1) : ''
+}
+
+const torchMismatch = computed(() => {
+  if (!aiTorchInstalled.value) return false
+  const installed = parseTorchVariant(aiTorchInstalled.value)
+  return installed !== '' && installed !== aiTorchIndex.value
+})
+
 const coreModules = computed(() => {
-  const tag = aiTorchIndex.value === 'cpu' ? 'CPU' : aiTorchIndex.value.toUpperCase()
+  const installed = parseTorchVariant(aiTorchInstalled.value)
+  const tag = installed
+    ? installed.toUpperCase()
+    : (aiTorchIndex.value === 'cpu' ? 'CPU' : aiTorchIndex.value.toUpperCase())
   return [
-    { key: 'torch',   icon: 'bi-lightning-charge', name: 'PyTorch',         tag,   desc: '深度學習推理框架',              ready: aiEnvReady.value },
-    { key: 'whisper', icon: 'bi-mic',              name: 'faster-whisper',  tag: '', desc: '語音辨識引擎',                 ready: aiEnvReady.value },
-    { key: 'llama',   icon: 'bi-translate',        name: 'llama-server',    tag,   desc: '翻譯 / VLM 推理引擎（GGUF）',  ready: llamaReady.value },
-    { key: 'hf',      icon: 'bi-cloud-download',   name: 'huggingface-hub', tag: '', desc: 'AI 模型下載管理',              ready: aiEnvReady.value },
+    { key: 'torch',   icon: 'bi-lightning-charge', name: 'PyTorch',         tag,   desc: t('wizard.pytorch_desc'),         ready: aiEnvReady.value, warn: torchMismatch.value },
+    { key: 'whisper', icon: 'bi-mic',              name: 'faster-whisper',  tag: '', desc: t('wizard.faster_whisper_desc'), ready: aiEnvReady.value },
+    { key: 'llama',   icon: 'bi-translate',        name: 'llama-server',    tag,   desc: t('wizard.llama_cpp_desc'),        ready: llamaReady.value },
+    { key: 'hf',      icon: 'bi-cloud-download',   name: 'huggingface-hub', tag: '', desc: t('wizard.huggingface_hub_desc'), ready: aiEnvReady.value },
   ]
 })
 
@@ -121,25 +144,28 @@ onMounted(loadAiEnvStatus)
 </script>
 
 <template>
-  <h6 class="section-title">核心模組</h6>
+  <h6 class="section-title">{{ $t('settings.ai.core_modules') }}</h6>
 
   <div class="module-list">
     <div v-for="mod in coreModules" :key="mod.key" class="module-item">
       <div class="module-info">
         <span class="module-label">{{ mod.desc }}</span>
-        <span class="module-sub">{{ mod.name }}<template v-if="mod.tag"> ({{ mod.tag.toLowerCase() }})</template></span>
+        <span class="module-sub">
+          {{ mod.name }}<template v-if="mod.tag"> ({{ mod.tag.toLowerCase() }})</template>
+          <template v-if="mod.warn"> — {{ $t('settings.ai.driver_recommended') }} {{ aiTorchIndex }}, {{ $t('settings.ai.reinstall') }}</template>
+        </span>
       </div>
       <span v-if="aiEnvLoading" class="module-badge badge-loading">
         <i class="bi bi-three-dots"></i>
       </span>
-      <span v-else class="module-badge" :class="mod.ready ? 'badge-ok' : 'badge-off'">
-        <i class="bi" :class="mod.ready ? 'bi-check-circle-fill' : 'bi-x-circle-fill'"></i>
-        {{ mod.ready ? '已安裝' : '未安裝' }}
+      <span v-else class="module-badge" :class="mod.warn ? 'badge-warn' : mod.ready ? 'badge-ok' : 'badge-off'">
+        <i class="bi" :class="mod.warn ? 'bi-exclamation-triangle-fill' : mod.ready ? 'bi-check-circle-fill' : 'bi-x-circle-fill'"></i>
+        {{ mod.warn ? $t('settings.ai.version_mismatch') : mod.ready ? $t('settings.ai.installed') : $t('settings.ai.not_installed') }}
       </span>
     </div>
   </div>
 
-  <!-- 安裝進行中 -->
+  <!-- Installing in progress -->
   <div v-if="!aiEnvLoading && aiInstallTask" class="ai-env-card ai-env-installing">
     <div class="ai-env-body">
       <span class="ai-env-name">{{ aiInstallTask.message }}</span>
@@ -152,37 +178,37 @@ onMounted(loadAiEnvStatus)
     </div>
   </div>
 
-  <!-- 安裝完成，需重啟 -->
+  <!-- Installation complete, needs restart -->
   <div v-else-if="!aiEnvLoading && aiInstalled" class="ai-env-card ai-env-ok">
     <i class="bi bi-check-circle-fill"></i>
     <div class="ai-env-body">
-      <span class="ai-env-name">安裝完成</span>
-      <span class="ai-env-hint">請重新啟動應用程式以套用</span>
+      <span class="ai-env-name">{{ $t('settings.ai.installed_title') }}</span>
+      <span class="ai-env-hint">{{ $t('settings.ai.restart_to_apply') }}</span>
       <button class="btn-success cuda-restart-btn" @click="restartApp">
-        <i class="bi bi-arrow-counterclockwise"></i> 立即重啟
+        <i class="bi bi-arrow-counterclockwise"></i> {{ $t('settings.ai.restart_now') }}
       </button>
     </div>
   </div>
 
-  <!-- 所有模組就緒 → 重新安裝按鈕 -->
+  <!-- All modules ready → reinstall button -->
   <div v-else-if="!aiEnvLoading && aiEnvReady && llamaReady" class="reinstall-row">
     <button class="btn-secondary reinstall-btn" :disabled="aiInstalling" @click="installAiEnv">
-      <i class="bi bi-arrow-repeat"></i> 重新安裝核心模組
+      <i class="bi bi-arrow-repeat"></i> {{ $t('settings.ai.reinstall_button') }}
     </button>
   </div>
 
-  <!-- 有模組未啟用 → 安裝按鈕 -->
+  <!-- Some modules not ready → install button -->
   <div v-else-if="!aiEnvLoading && (!aiEnvReady || !llamaReady)" class="ai-env-card ai-env-warn">
     <i class="bi bi-exclamation-triangle-fill"></i>
     <div class="ai-env-body">
-      <span class="ai-env-name">核心模組未完整安裝</span>
+      <span class="ai-env-name">{{ $t('settings.ai.incomplete_title') }}</span>
       <span class="ai-env-hint">
-        將安裝 <strong>Torch {{ aiTorchIndex.toUpperCase() }}</strong> + llama-server
-        <template v-if="aiDriverVersion">（驅動 {{ aiDriverVersion }}）</template>
-        <template v-else>（CPU 模式）</template>
+        {{ $t('settings.ai.will_install', { index: aiTorchIndex.toUpperCase() }) }}
+        <template v-if="aiDriverVersion">{{ $t('settings.ai.with_driver', { version: aiDriverVersion }) }}</template>
+        <template v-else>{{ $t('settings.ai.cpu_mode') }}</template>
       </span>
       <button class="btn-primary cuda-download-btn" :disabled="aiInstalling" @click="installAiEnv">
-        <i class="bi bi-download"></i> 安裝核心模組
+        <i class="bi bi-download"></i> {{ $t('settings.ai.install_button') }}
       </button>
     </div>
   </div>
@@ -231,6 +257,7 @@ onMounted(loadAiEnvStatus)
   flex-shrink: 0;
 
   &.badge-ok      { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  &.badge-warn    { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
   &.badge-off     { background: rgba(239, 68, 68, 0.1);   color: #f87171; }
   &.badge-loading { background: transparent; color: var(--text-muted); }
 

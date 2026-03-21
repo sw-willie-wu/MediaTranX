@@ -8,9 +8,11 @@
 
 ```
 API 路由層 (api/routes/)     ← 只做參數驗證、呼叫 Service、回傳 Response
+  api/schemas/               ← Pydantic response models（API 專用）
 Service 業務層 (services/)    ← 協調 FileService + TaskManager，執行業務邏輯
 Engine 底層封裝 (engine/)     ← AI 推理、硬體偵測、路徑解析、FFmpeg
 Workers (workers/)            ← TaskManager、ProgressTracker
+Models (models/)              ← 跨層共用 domain types（enum、dataclass）
 ```
 
 ### 禁止事項
@@ -19,6 +21,19 @@ Workers (workers/)            ← TaskManager、ProgressTracker
 - **Service 不可**直接操作 VRAM 或啟動 subprocess，必須透過 Engine
 - **Engine 不可**包含業務邏輯（不知道「壓縮」「轉檔」的概念，只提供技術能力）
 - **不可跨層跳躍**：Route → Engine ✗，必須經過 Service
+- **Workers 不可**依賴 API 層：Workers → `app.api.*` ✗
+
+### 跨層共用型別
+
+跨層共用的 domain models 放在 `app/models/`（純 Python dataclass + enum），避免 workers/services 反向依賴 API 層：
+
+```
+app/models/
+  task.py   ← TaskStatus (enum) + TaskData (dataclass)
+  file.py   ← FileData (dataclass)
+```
+
+API 層的 Pydantic models（`TaskResponse`、`FileInfo`）在 `api/schemas/common.py`，routes 透過 `from_task_data()` / `from_file_data()` 轉換。
 
 ---
 
@@ -178,17 +193,13 @@ def get_xxx_service() -> XxxService:
 
 ### 3.3 輸出路徑決定順序
 
-```python
-# 1. 使用者指定的 output_dir
-# 2. 原始檔案的 source_dir（Electron 本地檔案的來源目錄）
-# 3. FileService.output_dir（預設輸出目錄）
+處理結果一律先存到暫存目錄，使用者確認後透過下載按鈕自行儲存到目標位置。
 
-if custom_output_dir:
-    output_dir = Path(custom_output_dir)
-elif file_info.source_dir:
-    output_dir = Path(file_info.source_dir)
-else:
-    output_dir = self._file_service.output_dir
+```python
+# 1. 使用者指定的 output_dir（如有）
+# 2. FileService.output_dir（預設 temp/results）
+
+output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
 ```
 
 ---

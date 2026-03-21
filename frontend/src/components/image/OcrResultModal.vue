@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   text: string
@@ -24,13 +27,13 @@ async function copyText() {
           <div class="ocr-modal-header">
             <div class="ocr-modal-title">
               <i class="bi bi-file-text me-2"></i>
-              <span>OCR 辨識結果</span>
+              <span>{{ $t('image.ocr.result_title') }}</span>
               <span v-if="filename" class="ocr-modal-filename">{{ filename }}</span>
             </div>
             <div class="ocr-modal-actions">
-              <button class="action-btn" title="複製全文" @click="copyText">
+              <button class="action-btn" :title="$t('common.copy_all')" @click="copyText">
                 <i class="bi bi-clipboard"></i>
-                <span>複製</span>
+                <span>{{ $t('common.copy') }}</span>
               </button>
               <button class="close-btn" @click="emit('close')">
                 <i class="bi bi-x-lg"></i>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import VideoPreview from '@/components/video/VideoPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
@@ -7,6 +8,8 @@ import VideoTranscodePanel from '@/components/video/panels/VideoTranscodePanel.v
 import VideoCutPanel from '@/components/video/panels/VideoCutPanel.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
+
+const { t } = useI18n()
 
 const {
   hasFile, fileId, isUploading, currentFileName, mediaInfo, hasResult,
@@ -32,11 +35,11 @@ const transcodePanelRef = ref<InstanceType<typeof VideoTranscodePanel> | null>(n
 const cutPanelRef = ref<InstanceType<typeof VideoCutPanel> | null>(null)
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
 
-const subFunctions = [
-  { id: 'transcode', name: '轉檔', icon: 'bi-arrow-repeat' },
-  { id: 'cut',       name: '剪輯', icon: 'bi-scissors' },
-  { id: 'subtitle',  name: '字幕', icon: 'bi-badge-cc-fill' },
-]
+const subFunctions = computed(() => [
+  { id: 'transcode', name: t('video.functions.transcode'), icon: 'bi-arrow-repeat' },
+  { id: 'cut',       name: t('video.functions.cut'),       icon: 'bi-scissors' },
+  { id: 'subtitle',  name: t('video.functions.subtitle'),  icon: 'bi-badge-cc-fill' },
+])
 
 const currentFunction = ref('transcode')
 
@@ -109,11 +112,11 @@ const mediaInfoItems = computed<InfoItem[]>(() => {
 
 <template>
   <ToolLayout
-    title="影片工具"
+    :title="$t('video.title')"
     accept-type="video"
     upload-icon="bi-film"
-    upload-label="拖曳影片到這裡"
-    upload-hint="支援 MP4、MKV、MOV、AVI 等格式"
+    :upload-label="$t('video.upload_label')"
+    :upload-hint="$t('video.upload_hint')"
     upload-accept="video/*"
     hide-preview-tabs
     :sub-functions="subFunctions"
@@ -142,7 +145,7 @@ const mediaInfoItems = computed<InfoItem[]>(() => {
         v-if="mediaInfo || isUploading"
         :items="mediaInfoItems"
         :loading="isUploading && !mediaInfo"
-        loading-text="讀取媒體資訊..."
+        :loading-text="$t('video.loading')"
       />
     </template>
 
@@ -168,7 +171,7 @@ const mediaInfoItems = computed<InfoItem[]>(() => {
         />
 
         <div v-else-if="currentFunction === 'subtitle'" class="function-settings">
-          <h6 class="settings-title"><i class="bi bi-badge-cc-fill me-2"></i>字幕設定</h6>
+          <h6 class="settings-title"><i class="bi bi-badge-cc-fill me-2"></i>{{ $t('video.subtitle.title') }}</h6>
           <SubtitlePanel
             ref="subtitlePanelRef"
             :fileId="fileId"

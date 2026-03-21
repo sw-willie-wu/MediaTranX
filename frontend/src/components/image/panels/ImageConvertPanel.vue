@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
@@ -22,6 +23,7 @@ const emit = defineEmits<{
   submit: [taskId: string]
 }>()
 
+const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
 const convertFormat = ref('png')
@@ -43,6 +45,16 @@ const convertHeight = ref<number | null>(null)
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
 
+function getParams(): Record<string, unknown> {
+  return {
+    output_format: convertFormat.value,
+    quality: convertQuality.value,
+    scale: convertResizeMode.value === 'scale' ? convertScale.value / 100 : undefined,
+    width: convertResizeMode.value === 'custom' ? convertWidth.value ?? undefined : undefined,
+    height: convertResizeMode.value === 'custom' ? convertHeight.value ?? undefined : undefined,
+  }
+}
+
 async function execute() {
   if (!props.fileId) return
 
@@ -50,13 +62,9 @@ async function execute() {
     '/image/convert',
     {
       file_id: props.fileId,
-      output_format: convertFormat.value,
-      quality: convertQuality.value,
-      scale: convertResizeMode.value === 'scale' ? convertScale.value / 100 : undefined,
-      width: convertResizeMode.value === 'custom' ? convertWidth.value ?? undefined : undefined,
-      height: convertResizeMode.value === 'custom' ? convertHeight.value ?? undefined : undefined,
+      ...getParams(),
     },
-    '圖片轉檔',
+    t('image.convert.task_label'),
     'image.convert',
     props.currentFileName,
   )
@@ -64,39 +72,39 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading, convertFormat })
+defineExpose({ execute, isDisabled, isLoading, convertFormat, getParams })
 </script>
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-arrow-repeat me-2"></i>轉檔設定</h6>
-    <p class="form-hint">轉換圖片格式，可調整輸出品質。</p>
+    <h6 class="settings-title"><i class="bi bi-arrow-repeat me-2"></i>{{ $t('image.convert.title') }}</h6>
+    <p class="form-hint">{{ $t('image.convert.description') }}</p>
 
     <div class="form-group">
-      <label>輸出格式</label>
+      <label>{{ $t('image.convert.output_format') }}</label>
       <AppSelect v-model="convertFormat" :options="convertFormats" />
     </div>
 
     <div v-if="convertFormat === 'jpg' || convertFormat === 'webp'" class="form-group">
-      <label>品質: {{ convertQuality }}%</label>
+      <label>{{ $t('image.convert.quality') }} {{ convertQuality }}%</label>
       <AppRange v-model="convertQuality" :min="1" :max="100" />
-      <small class="form-hint">數值越高品質越好、檔案越大</small>
+      <small class="form-hint">{{ $t('image.convert.quality_hint') }}</small>
     </div>
 
     <div class="form-group">
-      <label>尺寸調整</label>
+      <label>{{ $t('image.convert.resize_mode') }}</label>
       <AppSelect
         v-model="convertResizeMode"
         :options="[
-          { value: 'original', label: '原始尺寸' },
-          { value: 'scale', label: '縮放比例' },
-          { value: 'custom', label: '自訂尺寸' },
+          { value: 'original', label: $t('image.convert.original_size') },
+          { value: 'scale', label: $t('image.convert.scale') },
+          { value: 'custom', label: $t('image.convert.custom_size') },
         ]"
       />
     </div>
 
     <div v-if="convertResizeMode === 'scale'" class="form-group">
-      <label>縮放比例: {{ convertScale }}%</label>
+      <label>{{ $t('image.convert.scale_label') }} {{ convertScale }}%</label>
       <AppRange v-model="convertScale" :min="10" :max="200" />
       <small class="form-hint">
         {{
@@ -109,7 +117,7 @@ defineExpose({ execute, isDisabled, isLoading, convertFormat })
 
     <div v-if="convertResizeMode === 'custom'" class="form-group size-inputs">
       <div class="size-input-group">
-        <label>寬度</label>
+        <label>{{ $t('image.convert.width') }}</label>
         <input
           type="number"
           class="form-input"
@@ -121,7 +129,7 @@ defineExpose({ execute, isDisabled, isLoading, convertFormat })
       </div>
       <span class="size-separator">×</span>
       <div class="size-input-group">
-        <label>高度</label>
+        <label>{{ $t('image.convert.height') }}</label>
         <input
           type="number"
           class="form-input"
@@ -132,7 +140,7 @@ defineExpose({ execute, isDisabled, isLoading, convertFormat })
         />
       </div>
     </div>
-    <small v-if="convertResizeMode === 'custom'" class="form-hint">留空則等比縮放</small>
+    <small v-if="convertResizeMode === 'custom'" class="form-hint">{{ $t('image.convert.aspect_ratio_hint') }}</small>
   </div>
 </template>
 

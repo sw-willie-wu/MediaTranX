@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 export interface SelectOption {
   value: any
@@ -7,6 +8,8 @@ export interface SelectOption {
   desc?: string
   badge?: 'ok' | 'err' | null
 }
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   modelValue: any
@@ -16,7 +19,6 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
 }>(), {
   size: 'default',
-  placeholder: '請選擇',
   disabled: false,
 })
 
@@ -31,7 +33,7 @@ const dropdownStyle = ref<Record<string, string>>({})
 
 const selectedLabel = computed(() => {
   const found = props.options.find(o => o.value === props.modelValue)
-  return found ? found.label : props.placeholder
+  return found ? found.label : (props.placeholder ?? t('common.select'))
 })
 
 function toggle() {

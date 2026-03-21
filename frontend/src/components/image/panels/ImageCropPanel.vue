@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
@@ -25,6 +26,7 @@ const emit = defineEmits<{
   'update:aspectRatio': [value: string]
 }>()
 
+const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
 const showCropOverlay = ref(false)
@@ -37,14 +39,14 @@ const cropHeight = ref<number | null>(null)
 const aspectRatio = ref('free')
 watch(aspectRatio, (val) => emit('update:aspectRatio', val))
 
-const aspectOptions = [
-  { value: 'free', label: '自由裁切' },
-  { value: '1:1', label: '1:1 正方形' },
+const aspectOptions = computed(() => [
+  { value: 'free', label: t('image.crop.free') },
+  { value: '1:1', label: t('image.crop.square') },
   { value: '4:3', label: '4:3' },
   { value: '3:4', label: '3:4' },
   { value: '16:9', label: '16:9' },
   { value: '9:16', label: '9:16' },
-]
+])
 
 watch(() => props.imageInfo, (info) => {
   if (info) {
@@ -84,7 +86,7 @@ async function execute() {
       width: cropWidth.value,
       height: cropHeight.value,
     },
-    '圖片裁切',
+    t('image.crop.task_label'),
     'image.crop',
     props.currentFileName,
   )
@@ -96,21 +98,21 @@ defineExpose({ execute, isDisabled, isLoading, showCropOverlay, aspectRatio })
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-crop me-2"></i>裁切設定</h6>
-    <p class="form-hint">在左側圖片上拖曳選取裁切範圍，支援自由或固定比例。</p>
+    <h6 class="settings-title"><i class="bi bi-crop me-2"></i>{{ $t('image.crop.title') }}</h6>
+    <p class="form-hint">{{ $t('image.crop.description') }}</p>
 
     <div class="form-group">
-      <label>裁切遮罩</label>
-      <AppToggle v-model="showCropOverlay">{{ showCropOverlay ? '顯示中' : '已隱藏' }}</AppToggle>
+      <label>{{ $t('image.crop.mask') }}</label>
+      <AppToggle v-model="showCropOverlay">{{ showCropOverlay ? $t('image.crop.mask_show') : $t('image.crop.mask_hide') }}</AppToggle>
     </div>
 
     <div class="form-group">
-      <label>長寬比</label>
+      <label>{{ $t('image.crop.aspect_ratio') }}</label>
       <AppSelect v-model="aspectRatio" :options="aspectOptions" />
     </div>
 
     <div class="form-group">
-      <label>起始位置（左上角）</label>
+      <label>{{ $t('image.crop.start_position') }}</label>
       <div class="coord-row">
         <div class="coord-field">
           <span class="coord-label">X</span>
@@ -126,15 +128,15 @@ defineExpose({ execute, isDisabled, isLoading, showCropOverlay, aspectRatio })
     </div>
 
     <div class="form-group">
-      <label>裁切尺寸</label>
+      <label>{{ $t('image.crop.crop_size') }}</label>
       <div class="coord-row">
         <div class="coord-field">
-          <span class="coord-label">寬</span>
+          <span class="coord-label">{{ $t('image.convert.width') }}</span>
           <input type="number" class="form-input" v-model.number="cropWidth"
             :min="1" :max="maxW" placeholder="px" />
         </div>
         <div class="coord-field">
-          <span class="coord-label">高</span>
+          <span class="coord-label">{{ $t('image.convert.height') }}</span>
           <input type="number" class="form-input" v-model.number="cropHeight"
             :min="1" :max="maxH" placeholder="px"
             :disabled="aspectRatio !== 'free'" />
@@ -143,7 +145,7 @@ defineExpose({ execute, isDisabled, isLoading, showCropOverlay, aspectRatio })
     </div>
 
     <small v-if="imageInfo" class="form-hint">
-      原圖：{{ imageInfo.width }} × {{ imageInfo.height }} px
+      {{ $t('image.crop.original_image') }} {{ imageInfo.width }} × {{ imageInfo.height }} px
     </small>
   </div>
 </template>

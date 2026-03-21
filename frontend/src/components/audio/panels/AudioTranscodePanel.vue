@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 
@@ -12,6 +13,7 @@ const emit = defineEmits<{
   submit: [taskId: string]
 }>()
 
+const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
 const outputFormat = ref('mp3')
@@ -21,7 +23,7 @@ const sampleRate = ref('')
 const formats = [
   { value: 'mp3',  label: 'MP3' },
   { value: 'aac',  label: 'AAC' },
-  { value: 'flac', label: 'FLAC（無損）' },
+  { value: 'flac', label: t('audio.transcode.flac_lossless') },
   { value: 'wav',  label: 'WAV' },
   { value: 'ogg',  label: 'OGG' },
   { value: 'm4a',  label: 'M4A' },
@@ -34,11 +36,11 @@ const bitrates = [
   { value: '320k', label: '320 kbps' },
 ]
 
-const sampleRates = [
-  { value: '',      label: '保持原始' },
+const sampleRates = computed(() => [
+  { value: '',      label: t('audio.transcode.keep_original') },
   { value: '44100', label: '44.1 kHz' },
   { value: '48000', label: '48 kHz' },
-]
+])
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
@@ -53,7 +55,7 @@ async function execute() {
       audio_bitrate: bitrate.value,
       sample_rate: sampleRate.value ? parseInt(sampleRate.value) : null,
     },
-    '音訊轉檔',
+    t('audio.transcode.task_label'),
     'audio.transcode',
     props.currentFileName,
   )
@@ -65,21 +67,21 @@ defineExpose({ execute, isDisabled, isLoading })
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-arrow-repeat me-2"></i>轉檔設定</h6>
-    <p class="form-hint">轉換音訊格式，可調整位元率與取樣率。</p>
+    <h6 class="settings-title"><i class="bi bi-arrow-repeat me-2"></i>{{ $t('audio.transcode.title') }}</h6>
+    <p class="form-hint">{{ $t('audio.transcode.description') }}</p>
 
     <div class="form-group">
-      <label>輸出格式</label>
+      <label>{{ $t('audio.transcode.format') }}</label>
       <AppSelect v-model="outputFormat" :options="formats" />
     </div>
 
     <div class="form-group">
-      <label>位元率</label>
+      <label>{{ $t('audio.transcode.bitrate') }}</label>
       <AppSelect v-model="bitrate" :options="bitrates" />
     </div>
 
     <div class="form-group">
-      <label>取樣率</label>
+      <label>{{ $t('audio.transcode.sample_rate') }}</label>
       <AppSelect v-model="sampleRate" :options="sampleRates" />
     </div>
   </div>

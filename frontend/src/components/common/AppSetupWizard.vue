@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useTaskStore } from '@/stores/tasks'
 import { useSettingsStore } from '@/stores/settings'
 import { apiFetch } from '@/composables/useApi'
@@ -8,6 +9,7 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
+const { t } = useI18n()
 const taskStore = useTaskStore()
 const settingsStore = useSettingsStore()
 
@@ -30,7 +32,7 @@ const statusData = ref<StatusData | null>(null)
 
 const task = computed(() => taskId.value ? taskStore.tasks.get(taskId.value) : null)
 const progress = computed(() => Math.round((task.value?.progress ?? 0) * 100))
-const progressMessage = computed(() => task.value?.message ?? '準備中...')
+const progressMessage = computed(() => task.value?.message ?? t('settings.ai.preparing'))
 
 const torchLabel = computed(() => {
   const idx = statusData.value?.torch_index ?? 'cpu'
@@ -91,7 +93,7 @@ async function startInstall() {
   state.value = 'installing'
   try {
     const res = await apiFetch('/setup/initialize', { method: 'POST' })
-    if (!res.ok) throw new Error('請求失敗')
+    if (!res.ok) throw new Error(t('toast.submit_error'))
     const { task_id } = await res.json()
     taskId.value = task_id
     taskStore.addTask({
@@ -99,15 +101,15 @@ async function startInstall() {
       taskType: 'ai.setup',
       status: 'pending',
       progress: 0,
-      message: '準備安裝...',
+      message: t('settings.ai.preparing'),
       result: null,
       error: null,
-      label: '安裝 AI 核心模組',
+      label: t('settings.ai.reinstall_button'),
       createdAt: new Date(),
       updatedAt: new Date(),
     })
   } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : '啟動安裝失敗'
+    errorMessage.value = e instanceof Error ? e.message : t('wizard.error_title')
     state.value = 'error'
   }
 }
@@ -120,7 +122,7 @@ watch(
       settingsStore.loadDeviceInfo()
     }
     else if (status === 'failed') {
-      errorMessage.value = task.value?.error ?? '安裝失敗，請查看任務列表'
+      errorMessage.value = task.value?.error ?? t('document.translate.install_error')
       state.value = 'error'
     }
   },
@@ -145,7 +147,7 @@ onMounted(() => {
           <div class="wizard-icon spin">
             <i class="bi bi-arrow-repeat"></i>
           </div>
-          <p class="wizard-subtitle">正在偵測環境...</p>
+          <p class="wizard-subtitle">{{ $t('wizard.checking') }}</p>
         </template>
 
         <!-- Idle: prompt to install -->
@@ -153,49 +155,49 @@ onMounted(() => {
           <div class="wizard-icon">
             <i class="bi bi-boxes"></i>
           </div>
-          <h3 class="wizard-title">AI 核心模組未安裝</h3>
+          <h3 class="wizard-title">{{ $t('wizard.title') }}</h3>
 
           <div class="pkg-list">
-            <p class="pkg-list-label">將安裝以下套件</p>
+            <p class="pkg-list-label">{{ $t('wizard.will_install') }}</p>
             <div class="pkg-item">
               <i class="bi bi-lightning-charge"></i>
               <div class="pkg-info">
-                <span class="pkg-name">PyTorch <span class="pkg-tag">{{ torchLabel }}</span></span>
-                <span class="pkg-desc">深度學習推理框架</span>
+                <span class="pkg-name">{{ $t('wizard.pytorch') }} <span class="pkg-tag">{{ torchLabel }}</span></span>
+                <span class="pkg-desc">{{ $t('wizard.pytorch_desc') }}</span>
               </div>
             </div>
             <div class="pkg-item">
               <i class="bi bi-mic"></i>
               <div class="pkg-info">
-                <span class="pkg-name">faster-whisper</span>
-                <span class="pkg-desc">語音辨識引擎</span>
+                <span class="pkg-name">{{ $t('wizard.faster_whisper') }}</span>
+                <span class="pkg-desc">{{ $t('wizard.faster_whisper_desc') }}</span>
               </div>
             </div>
             <div class="pkg-item">
               <i class="bi bi-translate"></i>
               <div class="pkg-info">
-                <span class="pkg-name">llama-cpp-python <span class="pkg-tag">{{ torchLabel }}</span></span>
-                <span class="pkg-desc">翻譯推理引擎（GGUF）</span>
+                <span class="pkg-name">{{ $t('wizard.llama_cpp') }} <span class="pkg-tag">{{ torchLabel }}</span></span>
+                <span class="pkg-desc">{{ $t('wizard.llama_cpp_desc') }}</span>
               </div>
             </div>
             <div class="pkg-item">
               <i class="bi bi-cloud-download"></i>
               <div class="pkg-info">
-                <span class="pkg-name">huggingface-hub</span>
-                <span class="pkg-desc">AI 模型下載管理</span>
+                <span class="pkg-name">{{ $t('wizard.huggingface_hub') }}</span>
+                <span class="pkg-desc">{{ $t('wizard.huggingface_hub_desc') }}</span>
               </div>
             </div>
             <div class="pkg-size-row">
               <i class="bi bi-hdd"></i>
-              <span>預計下載 <strong>{{ downloadSize }}</strong></span>
+              <span>{{ $t('wizard.estimated_download') }} <strong>{{ downloadSize }}</strong></span>
             </div>
           </div>
 
           <div class="wizard-actions">
             <button class="btn-primary" @click="startInstall">
-              <i class="bi bi-download me-1"></i>現在安裝
+              <i class="bi bi-download me-1"></i>{{ $t('wizard.install_now') }}
             </button>
-            <button class="btn-secondary" @click="emit('close')">稍後安裝</button>
+            <button class="btn-secondary" @click="emit('close')">{{ $t('wizard.install_later') }}</button>
           </div>
         </template>
 
@@ -204,8 +206,8 @@ onMounted(() => {
           <div class="wizard-icon installing">
             <i class="bi bi-boxes"></i>
           </div>
-          <h3 class="wizard-title">正在安裝 AI 核心模組</h3>
-          <p class="wizard-subtitle">{{ torchLabel }} 版本 · {{ downloadSize }}</p>
+          <h3 class="wizard-title">{{ $t('wizard.installing_title') }}</h3>
+          <p class="wizard-subtitle">{{ $t('wizard.version_label') }}{{ torchLabel }} · {{ downloadSize }}</p>
 
           <div class="progress-wrap">
             <div class="progress-bar">
@@ -217,11 +219,11 @@ onMounted(() => {
             </div>
           </div>
 
-          <p class="wizard-hint">安裝需要幾分鐘，您可以繼續使用轉檔等功能。</p>
+          <p class="wizard-hint">{{ $t('wizard.installing_hint') }}</p>
 
           <div class="wizard-actions">
             <button class="btn-secondary" @click="emit('close')">
-              <i class="bi bi-arrow-right me-1"></i>繼續使用
+              <i class="bi bi-arrow-right me-1"></i>{{ $t('wizard.continue_using') }}
             </button>
           </div>
         </template>
@@ -231,13 +233,13 @@ onMounted(() => {
           <div class="wizard-icon success">
             <i class="bi bi-check-circle-fill"></i>
           </div>
-          <h3 class="wizard-title">安裝完成</h3>
-          <p class="wizard-hint">AI 核心模組已就緒，請重新啟動應用程式以套用變更。</p>
+          <h3 class="wizard-title">{{ $t('wizard.completed_title') }}</h3>
+          <p class="wizard-hint">{{ $t('wizard.completed_hint') }}</p>
           <div class="wizard-actions">
             <button class="btn-primary" @click="restartApp()">
-              <i class="bi bi-arrow-counterclockwise me-1"></i>立即重新啟動
+              <i class="bi bi-arrow-counterclockwise me-1"></i>{{ $t('wizard.restart_now') }}
             </button>
-            <button class="btn-secondary" @click="emit('close')">稍後重啟</button>
+            <button class="btn-secondary" @click="emit('close')">{{ $t('wizard.restart_later') }}</button>
           </div>
         </template>
 
@@ -246,13 +248,13 @@ onMounted(() => {
           <div class="wizard-icon error">
             <i class="bi bi-x-circle-fill"></i>
           </div>
-          <h3 class="wizard-title">安裝失敗</h3>
+          <h3 class="wizard-title">{{ $t('wizard.error_title') }}</h3>
           <p class="wizard-hint error-text">{{ errorMessage }}</p>
           <div class="wizard-actions">
             <button class="btn-primary" @click="startInstall">
-              <i class="bi bi-arrow-clockwise me-1"></i>重試
+              <i class="bi bi-arrow-clockwise me-1"></i>{{ $t('common.retry') }}
             </button>
-            <button class="btn-secondary" @click="emit('close')">關閉</button>
+            <button class="btn-secondary" @click="emit('close')">{{ $t('common.close') }}</button>
           </div>
         </template>
 

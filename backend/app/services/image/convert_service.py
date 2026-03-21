@@ -46,16 +46,23 @@ class ImageConvertService:
     async def get_image_info(self, file_id: str) -> dict:
         """取得圖片資訊"""
         from PIL import Image
+        from app.engine.gif_utils import is_animated
+
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
         # 用 PIL 讀取圖片資訊
         with Image.open(file_info.file_path) as img:
+            fmt = img.format or "UNKNOWN"
+            # PIL 對 APNG 只回傳 "PNG"，需用多幀偵測區分
+            if fmt == "PNG" and is_animated(img):
+                fmt = "APNG"
+
             return {
                 "width": img.width,
                 "height": img.height,
-                "format": img.format,
+                "format": fmt,
                 "mode": img.mode,
                 "file_size": file_info.file_size,
             }
@@ -113,36 +120,53 @@ class ImageConvertService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
+        from app.engine.gif_utils import animation_format, process_gif_frames, save_animated
+
         progress_callback(0.1, "載入圖片...")
 
-        # 開啟圖片
-        img = Image.open(file_info.file_path)
-
-        # 處理 RGBA 到 RGB 轉換（JPEG 不支援 alpha）
         output_format = params["output_format"].upper()
-        if output_format in ["JPEG", "JPG"] and img.mode in ["RGBA", "P"]:
-            img = img.convert("RGB")
+
+        def _resize_frame(frame: Image.Image) -> Image.Image:
+            if params.get("scale"):
+                nw = int(frame.width * params["scale"])
+                nh = int(frame.height * params["scale"])
+                return frame.resize((nw, nh), Image.Resampling.LANCZOS)
+            elif params.get("width") or params.get("height"):
+                nw = params.get("width") or frame.width
+                nh = params.get("height") or frame.height
+                if params.get("width") and not params.get("height"):
+                    nh = int(frame.height * (params["width"] / frame.width))
+                elif params.get("height") and not params.get("width"):
+                    nw = int(frame.width * (params["height"] / frame.height))
+                return frame.resize((nw, nh), Image.Resampling.LANCZOS)
+            return frame
+
+        with Image.open(file_info.file_path) as raw:
+            src_anim_fmt = animation_format(raw)
+            # 保留動畫：輸出格式與來源動畫格式相符
+            keep_anim_fmt = src_anim_fmt if (
+                src_anim_fmt and (
+                    (src_anim_fmt == "GIF" and output_format == "GIF") or
+                    (src_anim_fmt == "PNG" and output_format == "PNG")
+                )
+            ) else None
+            if keep_anim_fmt:
+                def _convert_frame(frame, idx, total):
+                    progress_callback(0.1 + idx / total * 0.5, f"轉換中 ({idx + 1}/{total})...")
+                    return _resize_frame(frame)
+                anim_frames = process_gif_frames(raw, _convert_frame)
+            else:
+                img = raw.copy()
+
+        if not keep_anim_fmt:
+            # 處理 RGBA 到 RGB 轉換（JPEG 不支援 alpha）
+            if output_format in ["JPEG", "JPG"] and img.mode in ["RGBA", "P"]:
+                img = img.convert("RGB")
 
         progress_callback(0.3, "調整尺寸...")
 
-        # 調整尺寸
-        if params.get("scale"):
-            new_width = int(img.width * params["scale"])
-            new_height = int(img.height * params["scale"])
-            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        elif params.get("width") or params.get("height"):
-            new_width = params.get("width") or img.width
-            new_height = params.get("height") or img.height
-
-            # 如果只指定一邊，等比縮放
-            if params.get("width") and not params.get("height"):
-                ratio = params["width"] / img.width
-                new_height = int(img.height * ratio)
-            elif params.get("height") and not params.get("width"):
-                ratio = params["height"] / img.height
-                new_width = int(img.width * ratio)
-
-            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        if not keep_anim_fmt:
+            img = _resize_frame(img)
 
         progress_callback(0.6, "轉換格式...")
 
@@ -171,32 +195,29 @@ class ImageConvertService:
             original_stem = Path(file_info.original_filename).stem
             final_filename = f"{original_stem}_converted_{output_file_id[:8]}.{ext}"
 
-        # 決定輸出目錄（優先自訂 > 來源目錄 > 預設 output）
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        elif file_info.source_dir:
-            output_dir_path = Path(file_info.source_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
+        # 決定輸出目錄（優先自訂 > 預設 temp/results）
+        output_dir_path = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 
         progress_callback(0.8, "儲存檔案...")
 
-        # 儲存選項
-        save_kwargs = {}
-        if output_format in ["JPEG", "JPG", "WEBP"]:
-            save_kwargs["quality"] = params.get("quality", 85)
-        if output_format == "PNG":
-            save_kwargs["optimize"] = True
+        if keep_anim_fmt:
+            save_animated(anim_frames, output_path, keep_anim_fmt)
+        else:
+            # 儲存選項
+            save_kwargs = {}
+            if output_format in ["JPEG", "JPG", "WEBP"]:
+                save_kwargs["quality"] = params.get("quality", 85)
+            if output_format == "PNG":
+                save_kwargs["optimize"] = True
 
-        # 處理特殊格式
-        save_format = output_format
-        if output_format == "JPG":
-            save_format = "JPEG"
+            save_format = output_format
+            if output_format == "JPG":
+                save_format = "JPEG"
 
-        img.save(str(output_path), format=save_format, **save_kwargs)
-        img.close()
+            img.save(str(output_path), format=save_format, **save_kwargs)
+            img.close()
 
         # 註冊輸出檔案
         output_info = self._file_service.register_output(

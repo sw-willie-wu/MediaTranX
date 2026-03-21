@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 interface ModelItem {
   id: string
@@ -12,11 +15,11 @@ interface ModelItem {
   vram_mb?: number
 }
 
-interface ModelGroup {
+interface FamilyGroup {
   family: string
   familyLabel: string
   description: string
-  variants: ModelItem[]
+  items: ModelItem[]
 }
 
 const props = defineProps<{
@@ -30,8 +33,7 @@ const emit = defineEmits<{
   remove: [id: string]
 }>()
 
-// 按 family 分組
-const groups = computed<ModelGroup[]>(() => {
+const groups = computed<FamilyGroup[]>(() => {
   const familyMap = new Map<string, ModelItem[]>()
 
   props.items.forEach(item => {
@@ -41,10 +43,11 @@ const groups = computed<ModelGroup[]>(() => {
     familyMap.get(item.family)!.push(item)
   })
 
-  return Array.from(familyMap.entries()).map(([family, variants]) => {
-    const first = variants[0]
+  return Array.from(familyMap.entries()).map(([family, items]) => {
+    const first = items[0]
     let familyLabel = first.label
 
+    // 從 label 中提取 family 名稱（去除 variant 部分）
     if (familyLabel.includes(' - ')) {
       familyLabel = familyLabel.split(' - ')[0]
     } else {
@@ -57,20 +60,20 @@ const groups = computed<ModelGroup[]>(() => {
       family,
       familyLabel,
       description: first.description || '',
-      variants: variants.sort((a, b) => a.label.localeCompare(b.label))
+      items: items.sort((a, b) => a.size_mb - b.size_mb),
     }
   })
 })
 
-// 展開狀態（多 variant 的家族預設收合）
-const expandedGroups = ref<Set<string>>(new Set())
-
-function toggleGroup(family: string) {
-  if (expandedGroups.value.has(family)) {
-    expandedGroups.value.delete(family)
-  } else {
-    expandedGroups.value.add(family)
-  }
+/** 從完整 label 提取 variant 部分（去掉 family 前綴） */
+function variantLabel(item: ModelItem, group: FamilyGroup): string {
+  if (group.items.length === 1) return group.familyLabel
+  const label = item.label
+  if (label.includes(' - ')) return label.split(' - ').slice(1).join(' - ')
+  // GGUF/VLM: "TranslateGemma 4B Q4_K_M" → "4B Q4_K_M"
+  const prefix = group.familyLabel
+  if (label.startsWith(prefix)) return label.slice(prefix.length).trim()
+  return label
 }
 
 function formatSize(mb: number): string {
@@ -81,110 +84,72 @@ function formatSize(mb: number): string {
 
 <template>
   <div class="model-group-list">
-    <div v-for="group in groups" :key="group.family" class="model-group">
+    <div v-for="group in groups" :key="group.family" class="family-card">
+      <!-- Family header -->
+      <div class="family-header">
+        <span class="family-label">{{ group.familyLabel }}</span>
+        <span v-if="group.description" class="family-desc">{{ group.description }}</span>
+      </div>
 
-      <!-- 單一 variant：直接顯示為一行，不顯示 group-header -->
-      <template v-if="group.variants.length === 1">
-        <div class="model-item">
-          <div class="model-info">
-            <span class="model-label">{{ group.familyLabel }}</span>
-            <span v-if="group.description" class="model-desc">{{ group.description }}</span>
-          </div>
-          <div class="model-size">
-            <span>{{ formatSize(group.variants[0].size_mb) }}</span>
-            <span v-if="group.variants[0].vram_mb" class="vram-label">{{ formatSize(group.variants[0].vram_mb) }} VRAM</span>
-          </div>
-          <div class="model-action">
-            <template v-if="downloadingTaskId[group.variants[0].id]">
-              <template v-if="(downloadProgress[group.variants[0].id] ?? 0) === 0">
-                <span class="status-queued">等待中...</span>
+      <!-- Single variant: action in header row -->
+      <template v-if="group.items.length === 1">
+        <div class="model-row">
+          <span class="row-label">{{ group.description }}</span>
+          <span class="row-size">{{ formatSize(group.items[0].size_mb) }}</span>
+          <span v-if="group.items[0].vram_mb" class="row-vram">{{ formatSize(group.items[0].vram_mb) }} VRAM</span>
+          <span v-else class="row-vram"></span>
+          <div class="row-action">
+            <template v-if="downloadingTaskId[group.items[0].id]">
+              <template v-if="(downloadProgress[group.items[0].id] ?? 0) === 0">
+                <span class="status-queued">{{ $t('tasks.active.pending') }}...</span>
               </template>
               <template v-else>
                 <div class="download-progress">
-                  <div
-                    class="progress-bar"
-                    :style="{ width: `${((downloadProgress[group.variants[0].id] ?? 0) * 100).toFixed(0)}%` }"
-                  ></div>
+                  <div class="progress-bar" :style="{ width: `${((downloadProgress[group.items[0].id] ?? 0) * 100).toFixed(0)}%` }"></div>
                 </div>
-                <span class="progress-label">
-                  {{ ((downloadProgress[group.variants[0].id] ?? 0) * 100).toFixed(0) }}%
-                </span>
+                <span class="progress-label">{{ ((downloadProgress[group.items[0].id] ?? 0) * 100).toFixed(0) }}%</span>
               </template>
             </template>
-            <template v-else-if="group.variants[0].downloaded">
-              <span class="status-badge installed">
-                <i class="bi bi-check-circle-fill"></i> 已安裝
-              </span>
-              <button class="remove-btn" title="移除模型" @click="emit('remove', group.variants[0].id)">
-                <i class="bi bi-trash3"></i>
-              </button>
+            <template v-else-if="group.items[0].downloaded">
+              <span class="status-installed"><i class="bi bi-check-circle-fill"></i> {{ $t('settings.ai.installed') }}</span>
+              <button class="remove-btn" :title="$t('settings.models.remove_model')" @click="emit('remove', group.items[0].id)"><i class="bi bi-trash3"></i></button>
             </template>
-            <button v-else class="download-btn" @click="emit('download', group.variants[0].id)">
-              <i class="bi bi-download"></i> 安裝
-            </button>
+            <button v-else class="download-btn" @click="emit('download', group.items[0].id)"><i class="bi bi-download"></i> {{ $t('settings.models.install') }}</button>
           </div>
         </div>
       </template>
 
-      <!-- 多 variant：可折疊的 group-header + 子列表 -->
+      <!-- Multiple variants: list rows -->
       <template v-else>
-        <div class="group-header" @click="toggleGroup(group.family)">
-          <i class="bi toggle-icon" :class="expandedGroups.has(group.family) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-          <div class="group-info">
-            <span class="group-label">{{ group.familyLabel }}</span>
-            <span v-if="group.description" class="group-desc">{{ group.description }}</span>
+        <div
+          v-for="item in group.items"
+          :key="item.id"
+          class="model-row"
+        >
+          <span class="row-label">{{ variantLabel(item, group) }}</span>
+          <span class="row-size">{{ formatSize(item.size_mb) }}</span>
+          <span v-if="item.vram_mb" class="row-vram">{{ formatSize(item.vram_mb) }} VRAM</span>
+          <span v-else class="row-vram"></span>
+          <div class="row-action">
+            <template v-if="downloadingTaskId[item.id]">
+              <template v-if="(downloadProgress[item.id] ?? 0) === 0">
+                <span class="status-queued">{{ $t('tasks.active.pending') }}...</span>
+              </template>
+              <template v-else>
+                <div class="download-progress">
+                  <div class="progress-bar" :style="{ width: `${((downloadProgress[item.id] ?? 0) * 100).toFixed(0)}%` }"></div>
+                </div>
+                <span class="progress-label">{{ ((downloadProgress[item.id] ?? 0) * 100).toFixed(0) }}%</span>
+              </template>
+            </template>
+            <template v-else-if="item.downloaded">
+              <span class="status-installed"><i class="bi bi-check-circle-fill"></i> {{ $t('settings.ai.installed') }}</span>
+              <button class="remove-btn" :title="$t('settings.models.remove_model')" @click="emit('remove', item.id)"><i class="bi bi-trash3"></i></button>
+            </template>
+            <button v-else class="download-btn" @click="emit('download', item.id)"><i class="bi bi-download"></i> {{ $t('settings.models.install') }}</button>
           </div>
-          <span class="group-count">{{ group.variants.length }} 個版本</span>
         </div>
-
-        <Transition name="expand">
-          <div v-show="expandedGroups.has(group.family)" class="variants-container">
-            <div
-              v-for="item in group.variants"
-              :key="item.id"
-              class="model-item variant-item"
-            >
-              <div class="model-info">
-                <span class="model-label">{{ item.label }}</span>
-              </div>
-              <div class="model-size">
-                <span>{{ formatSize(item.size_mb) }}</span>
-                <span v-if="item.vram_mb" class="vram-label">{{ formatSize(item.vram_mb) }} VRAM</span>
-              </div>
-              <div class="model-action">
-                <template v-if="downloadingTaskId[item.id]">
-                  <template v-if="(downloadProgress[item.id] ?? 0) === 0">
-                    <span class="status-queued">等待中...</span>
-                  </template>
-                  <template v-else>
-                    <div class="download-progress">
-                      <div
-                        class="progress-bar"
-                        :style="{ width: `${((downloadProgress[item.id] ?? 0) * 100).toFixed(0)}%` }"
-                      ></div>
-                    </div>
-                    <span class="progress-label">
-                      {{ ((downloadProgress[item.id] ?? 0) * 100).toFixed(0) }}%
-                    </span>
-                  </template>
-                </template>
-                <template v-else-if="item.downloaded">
-                  <span class="status-badge installed">
-                    <i class="bi bi-check-circle-fill"></i> 已安裝
-                  </span>
-                  <button class="remove-btn" title="移除模型" @click="emit('remove', item.id)">
-                    <i class="bi bi-trash3"></i>
-                  </button>
-                </template>
-                <button v-else class="download-btn" @click="emit('download', item.id)">
-                  <i class="bi bi-download"></i> 安裝
-                </button>
-              </div>
-            </div>
-          </div>
-        </Transition>
       </template>
-
     </div>
   </div>
 </template>
@@ -193,137 +158,88 @@ function formatSize(mb: number): string {
 .model-group-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  gap: 0.75rem;
 }
 
-.model-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-// ── Group header（多 variant 才顯示）──────────────────────────
-.group-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 0.875rem;
+// ── Family card ───────────────────────────────────────────────
+.family-card {
   background: var(--input-bg);
   border: 1px solid var(--input-border);
-  border-radius: 8px;
-  cursor: pointer;
-  user-select: none;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.family-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.6rem 0.875rem 0.25rem;
+}
+
+.family-label {
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.family-desc {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+// ── Model row（統一四欄排版）──────────────────────────────────
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.875rem;
   transition: background 0.15s ease;
 
   &:hover {
     background: var(--panel-bg-hover);
   }
+
+  &:last-child {
+    padding-bottom: 0.6rem;
+  }
 }
 
-.toggle-icon {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  flex-shrink: 0;
-  width: 12px;
-}
-
-.group-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
+.row-label {
   flex: 1;
   min-width: 0;
-}
-
-.group-label {
-  color: var(--text-primary);
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.group-desc {
-  color: var(--text-muted);
-  font-size: 0.75rem;
-}
-
-.group-count {
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  flex-shrink: 0;
-}
-
-// ── Variants container ────────────────────────────────────────
-.variants-container {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding-left: 0.75rem;
-  border-left: 2px solid var(--input-border);
-  margin-left: 0.5rem;
-}
-
-// ── Model item（單 variant 和多 variant 共用）─────────────────
-.model-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.6rem 0.875rem;
-  background: var(--input-bg);
-  border: 1px solid var(--input-border);
-  border-radius: 8px;
-}
-
-.model-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-
-.model-label {
-  color: var(--text-primary);
-  font-size: 0.875rem;
-  font-weight: 500;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.model-desc {
-  color: var(--text-muted);
-  font-size: 0.75rem;
-}
-
-.model-size {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.1rem;
+.row-size {
   flex-shrink: 0;
-  min-width: 60px;
-
-  span {
-    color: var(--text-muted);
-    font-size: 0.8rem;
-    white-space: nowrap;
-  }
+  min-width: 56px;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 
-.vram-label {
-  font-size: 0.7rem !important;
+.row-vram {
+  flex-shrink: 0;
+  min-width: 80px;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 0.72rem;
   opacity: 0.7;
 }
 
-.model-action {
+// ── Action column ─────────────────────────────────────────────
+.row-action {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 0.4rem;
   flex-shrink: 0;
-  min-width: 100px;
-  height: 2rem;
+  min-width: 90px;
+  height: 1.75rem;
 }
 
 // ── Progress ──────────────────────────────────────────────────
@@ -333,7 +249,7 @@ function formatSize(mb: number): string {
   overflow: hidden;
   height: 4px;
   flex: 1;
-  min-width: 60px;
+  min-width: 50px;
 }
 
 .progress-bar {
@@ -343,46 +259,41 @@ function formatSize(mb: number): string {
 }
 
 .progress-label {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
-  min-width: 32px;
+  min-width: 28px;
   text-align: right;
 }
 
-// ── Badges & Buttons ──────────────────────────────────────────
+// ── Status & Buttons ──────────────────────────────────────────
 .status-queued {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
   font-style: italic;
 }
 
-.status-badge {
+.status-installed {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.2rem 0.6rem;
-  border-radius: 20px;
-  font-size: 0.8rem;
+  gap: 0.25rem;
+  font-size: 0.75rem;
   font-weight: 500;
+  color: var(--color-success);
 
-  &.installed {
-    background: rgba(16, 185, 129, 0.12);
-    color: #10b981;
-  }
-
-  i { font-size: 0.72rem; }
+  i { font-size: 0.68rem; }
 }
 
 .download-btn,
 .remove-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.35rem 0.7rem;
+  gap: 0.2rem;
+  padding: 0.25rem 0.6rem;
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  font-family: inherit;
   transition: all 0.15s ease;
 }
 
@@ -390,40 +301,19 @@ function formatSize(mb: number): string {
   background: var(--color-primary);
   color: white;
 
-  &:hover {
-    opacity: 0.85;
-  }
+  &:hover { opacity: 0.85; }
 }
 
 .remove-btn {
   background: transparent;
   color: var(--text-muted);
-  padding: 0.35rem;
+  padding: 0.25rem;
   border: 1px solid var(--input-border);
 
   &:hover {
-    color: #f87171;
-    border-color: rgba(248, 113, 113, 0.4);
-    background: rgba(248, 113, 113, 0.08);
+    color: var(--color-danger);
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.08);
   }
-}
-
-// ── Expand transition ─────────────────────────────────────────
-.expand-enter-active,
-.expand-leave-active {
-  transition: all 0.25s ease;
-  overflow: hidden;
-}
-
-.expand-enter-from,
-.expand-leave-to {
-  max-height: 0;
-  opacity: 0;
-}
-
-.expand-enter-to,
-.expand-leave-from {
-  max-height: 2000px;
-  opacity: 1;
 }
 </style>

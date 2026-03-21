@@ -1,31 +1,35 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from 'vue'
+import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useTaskStore } from '@/stores/tasks'
 
 const route = useRoute()
 const router = useRouter()
 const taskStore = useTaskStore()
+const { t } = useI18n()
 
 interface NavItem {
   path: string
   icon: string
-  label: string
+  labelKey: string
 }
 
-const topNav: NavItem[] = [
-  { path: '/', icon: 'bi-house-fill', label: '主畫面' },
-  { path: '/video', icon: 'bi-film', label: '影片工具' },
-  { path: '/audio', icon: 'bi-music-note-beamed', label: '音訊工具' },
-  { path: '/image', icon: 'bi-image-fill', label: '圖片工具' },
-  { path: '/document', icon: 'bi-file-earmark-text-fill', label: '文件工具' },
+const topNavDef: NavItem[] = [
+  { path: '/', icon: 'bi-house-fill', labelKey: 'nav.home' },
+  { path: '/image', icon: 'bi-image-fill', labelKey: 'nav.image' },
+  { path: '/audio', icon: 'bi-music-note-beamed', labelKey: 'nav.audio' },
+  { path: '/video', icon: 'bi-film', labelKey: 'nav.video' },
+  { path: '/document', icon: 'bi-file-earmark-text-fill', labelKey: 'nav.document' },
 ]
 
-const bottomNav: NavItem[] = [
-  { path: '/history', icon: 'bi-clock-history', label: '歷史紀錄' },
-  { path: '/tasks', icon: 'bi-list-task', label: '執行任務' },
-  { path: '/settings', icon: 'bi-gear-fill', label: '設定' },
+const bottomNavDef: NavItem[] = [
+  { path: '/tasks', icon: 'bi-list-task', labelKey: 'nav.tasks' },
+  { path: '/settings', icon: 'bi-gear-fill', labelKey: 'nav.settings' },
 ]
+
+const topNav = computed(() => topNavDef.map(item => ({ ...item, label: t(item.labelKey) })))
+const bottomNav = computed(() => bottomNavDef.map(item => ({ ...item, label: t(item.labelKey) })))
 
 // 指示條位置
 const buttonRefs = ref<Record<string, HTMLElement | null>>({})
@@ -59,6 +63,14 @@ function isActive(path: string) {
 
 function navigate(path: string) {
   router.push(path)
+}
+
+function restartApp() {
+  if (window.electron?.restart) {
+    window.electron.restart()
+  } else {
+    window.location.reload()
+  }
 }
 </script>
 
@@ -100,6 +112,13 @@ function navigate(path: string) {
           v-if="item.path === '/tasks' && taskStore.activeCount > 0"
           class="nav-badge"
         >{{ taskStore.activeCount }}</span>
+      </button>
+      <button
+        class="nav-btn restart-btn"
+        :data-tooltip="$t('nav.restart')"
+        @click="restartApp"
+      >
+        <i class="bi bi-arrow-clockwise"></i>
       </button>
     </div>
   </nav>
@@ -212,8 +231,8 @@ function navigate(path: string) {
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  background: var(--color-accent, #f87171);
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--text-primary);
   font-size: 0.6rem;
   font-weight: 600;
   line-height: 16px;

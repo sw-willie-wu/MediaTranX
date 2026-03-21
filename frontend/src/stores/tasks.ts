@@ -6,6 +6,9 @@ import { ref, computed } from 'vue'
 import type { Task } from '@/types/task'
 
 import { getApiBase } from '@/composables/useApi'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('TaskStore')
 
 export const useTaskStore = defineStore('tasks', () => {
   // 狀態
@@ -80,6 +83,7 @@ export const useTaskStore = defineStore('tasks', () => {
 
   // 註冊任務並啟動輪詢
   function addTask(task: Task) {
+    log.info('addTask', { taskId: task.taskId, taskType: task.taskType, label: task.label })
     tasks.value.set(task.taskId, task)
     if (task.status === 'pending' || task.status === 'processing') {
       startPolling()
@@ -96,8 +100,13 @@ export const useTaskStore = defineStore('tasks', () => {
       if (response.ok) {
         const task = tasks.value.get(taskId)
         if (task) {
-          task.status = 'cancelled'
-          task.updatedAt = new Date()
+          // pending 立即取消；processing 由 polling 同步真實狀態
+          if (task.status === 'pending') {
+            task.status = 'cancelled'
+            task.updatedAt = new Date()
+          } else {
+            task.message = '取消中…'
+          }
         }
         return true
       }
@@ -134,6 +143,13 @@ export const useTaskStore = defineStore('tasks', () => {
       tasks.value.clear()
       for (const taskData of data) {
         const existing = previousTasks.get(taskData.task_id)
+        // Log status transitions
+        if (existing && existing.status !== taskData.status) {
+          log.info('task status changed', {
+            taskId: taskData.task_id, taskType: taskData.task_type,
+            from: existing.status, to: taskData.status,
+          })
+        }
         const task: Task = {
           taskId: taskData.task_id,
           taskType: taskData.task_type,

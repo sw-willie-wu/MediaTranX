@@ -1,0 +1,43 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// MediaTranX — Layout Shared Styles
+// ToolLayout / TabbedLayout 共用的佈局樣式
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── 拖曳調整寬度 handle ─────────────────────────────────────────────────────
+
+.resize-handle {
+  width: 1rem;
+  flex-shrink: 0;
+  cursor: col-resize;
+  position: relative;
+  z-index: 5;
+
+  // 更寬的點擊區域
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -2px;
+    right: -2px;
+  }
+
+  // hover 時顯示拖曳指示條
+  &:hover::after,
+  &:active::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 3px;
+    height: 32px;
+    background: var(--text-muted);
+    border-radius: 2px;
+    opacity: 0.4;
+  }
+
+  &:active::after {
+    opacity: 0.7;
+  }
+}

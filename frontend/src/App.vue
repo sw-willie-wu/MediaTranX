@@ -47,6 +47,7 @@ async function fetchAndCacheStatus(): Promise<boolean> {
       aiEnvReady: data.ai_env_ready,
       llamaReady: data.llama_ready ?? false,
       torchIndex: data.torch_index ?? 'cpu',
+      torchInstalled: data.torch_installed ?? null,
       driverVersion: data.device?.driver_version ?? null,
     }))
     return notReady

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/stores/settings'
+
+const { t } = useI18n()
 
 const settingsStore = useSettingsStore()
 
@@ -22,54 +25,54 @@ function formatRam(bytes: number | null): string {
 </script>
 
 <template>
-  <h6 class="section-title">系統資訊</h6>
+  <h6 class="section-title">{{ $t('settings.system.info') }}</h6>
 
   <div v-if="settingsStore.isLoading" class="gpu-detecting">
     <div class="spinner"></div>
-    <span>偵測硬體中...</span>
+    <span>{{ $t('settings.system.detecting') }}</span>
   </div>
 
   <template v-else-if="settingsStore.deviceInfo">
     <div class="sys-card">
       <i class="bi bi-window"></i>
-      <span class="sys-name">作業系統</span>
+      <span class="sys-name">{{ $t('settings.system.os') }}</span>
       <span class="sys-detail">{{ settingsStore.deviceInfo.os_name }}</span>
     </div>
 
     <div class="sys-card">
       <i class="bi bi-cpu"></i>
-      <span class="sys-name">處理器</span>
+      <span class="sys-name">{{ $t('settings.system.cpu') }}</span>
       <span class="sys-detail">
         {{ settingsStore.deviceInfo.cpu_name
         }}<template v-if="settingsStore.deviceInfo.cpu_count"
-        > ({{ settingsStore.deviceInfo.cpu_count }} 執行緒)</template>
+        > ({{ settingsStore.deviceInfo.cpu_count }} {{ $t('settings.system.threads') }})</template>
       </span>
     </div>
 
     <div class="sys-card">
       <i class="bi bi-memory"></i>
-      <span class="sys-name">記憶體</span>
+      <span class="sys-name">{{ $t('settings.system.memory') }}</span>
       <span class="sys-detail">{{ formatRam(settingsStore.deviceInfo.ram_total) }}</span>
     </div>
 
     <div class="sys-card">
       <i class="bi bi-gpu-card"></i>
-      <span class="sys-name">顯示卡</span>
+      <span class="sys-name">{{ $t('settings.system.gpu') }}</span>
       <span v-if="settingsStore.deviceInfo.has_nvidia_gpu" class="sys-detail">
         {{ settingsStore.deviceInfo.device_name
         }}<template v-if="settingsStore.deviceInfo.memory_total"
         > · {{ formatVram(settingsStore.deviceInfo.memory_total) }}</template
         ><template v-if="settingsStore.deviceInfo.driver_version"
-        > · 驅動 {{ settingsStore.deviceInfo.driver_version }}</template>
+        > · {{ $t('settings.system.driver') }} {{ settingsStore.deviceInfo.driver_version }}</template>
       </span>
-      <span v-else class="sys-detail sys-muted">未偵測到 GPU</span>
+      <span v-else class="sys-detail sys-muted">{{ $t('settings.system.no_gpu') }}</span>
     </div>
   </template>
 
   <div v-else class="sys-error-state">
     <i class="bi bi-exclamation-circle"></i>
-    <p>無法讀取硬體狀態</p>
-    <button class="btn-primary" @click="settingsStore.loadDeviceInfo()">重新偵測</button>
+    <p>{{ $t('settings.system.error') }}</p>
+    <button class="btn-primary" @click="settingsStore.loadDeviceInfo()">{{ $t('settings.system.redetect') }}</button>
   </div>
 
   <button
@@ -78,7 +81,7 @@ function formatRam(bytes: number | null): string {
     @click="settingsStore.loadDeviceInfo()"
     :disabled="settingsStore.isLoading"
   >
-    <i class="bi bi-arrow-clockwise" :class="{ spin: settingsStore.isLoading }"></i> 重新整理
+    <i class="bi bi-arrow-clockwise" :class="{ spin: settingsStore.isLoading }"></i> {{ $t('settings.system.refresh') }}
   </button>
 </template>
 
@@ -121,7 +124,7 @@ function formatRam(bytes: number | null): string {
   font-size: 0.875rem;
   color: var(--text-muted);
   flex-shrink: 0;
-  width: 72px;
+  white-space: nowrap;
 }
 
 .sys-detail {

@@ -11,6 +11,17 @@ from app.engine.paths import get_models_dir
 router = APIRouter()
 
 
+# ─── 分類定義（前端 tab 動態產生）────────────────────────────────────────────
+
+MODEL_CATEGORIES = [
+    {"key": "upscale",      "label": "超解析",  "order": 0},
+    {"key": "face_restore", "label": "人臉修復", "order": 1},
+    {"key": "stt",          "label": "語音辨識", "order": 2},
+    {"key": "translate",    "label": "翻譯",    "order": 3},
+    {"key": "vlm",          "label": "OCR",     "order": 4},
+    {"key": "segment",      "label": "分割",    "order": 5},
+]
+
 # ─── 顯示用常數 ──────────────────────────────────────────────────────────────
 
 _WHISPER_DISPLAY = [
@@ -171,20 +182,20 @@ async def get_models_status():
     }
 
     VARIANT_DESC = {
-        "x2plus": "2x 放大",
-        "x4plus": "4x 放大",
-        "x4plus-anime": "4x 放大（動漫）",
-        "lightweight-x4": "輕量 4x",
-        "classical-x4": "經典 4x",
-        "realworld-x4": "真實世界 4x",
+        "x2plus": "2x",
+        "x4plus": "4x",
+        "x4plus-anime": "4x - anime",
+        "lightweight-x4": "4x - lightweight",
+        "classical-x4": "4x - classical",
+        "realworld-x4": "4x - realworld",
         "default": "標準",
-        "up2x-conservative": "2x 保守降噪",
-        "up2x-denoise3x": "2x 強力降噪",
-        "up2x-no-denoise": "2x 無降噪",
-        "up3x-conservative": "3x 保守降噪",
-        "up3x-no-denoise": "3x 無降噪",
-        "up4x-conservative": "4x 保守降噪",
-        "up4x-no-denoise": "4x 無降噪",
+        "up2x-conservative": "2x - conservative",
+        # "up2x-denoise3x": "2x - 強力降噪",
+        # "up2x-no-denoise": "2x 無降噪",
+        "up3x-conservative": "3x - conservative",
+        # "up3x-no-denoise": "3x 無降噪",
+        "up4x-conservative": "4x - conservative",
+        # "up4x-no-denoise": "4x 無降噪",
         "cunet": "CUnet 變體",
         "v1.4": "v1.4",
     }
@@ -251,7 +262,7 @@ async def get_models_status():
     # ── VLM 模型（OCR） ──
     all_models.extend(_enumerate_vlm_models())
 
-    return {"models": all_models}
+    return {"categories": MODEL_CATEGORIES, "models": all_models}
 
 
 class DownloadRequest(BaseModel):

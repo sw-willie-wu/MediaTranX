@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { ref, computed, onActivated, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onActivated, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import AppUploadZone from '@/components/common/AppUploadZone.vue'
 import ComparisonSlider from '@/components/ComparisonSlider.vue'
 import UnsupportedFileOverlay from '@/components/UnsupportedFileOverlay.vue'
 import { useFilesStore } from '@/stores/files'
+import { useResizableLayout } from '@/composables/useResizableLayout'
 import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
+import { createLogger } from '@/utils/logger'
+
+const { t } = useI18n()
+const log = createLogger('ToolLayout')
+const { sidebarWidth, settingsWidth, startResize } = useResizableLayout()
 
 interface SubFunction {
   id: string
@@ -25,25 +32,33 @@ const props = withDefaults(defineProps<{
   uploadAccept?: string
   hasResult?: boolean
   resultPreviewUrl?: string | null
+  resultMeta?: Record<string, unknown>
   canGoBack?: boolean
   executeDisabled?: boolean
   executeLoading?: boolean
   executeLabel?: string
   hideExecute?: boolean
   hidePreviewTabs?: boolean
+  showFilmstrip?: boolean
+  collectionSize?: number
+  originalPreviewUrl?: string | null
+  functionsLocked?: boolean
 }>(), {
   uploadIcon: 'bi-cloud-arrow-up-fill',
-  uploadLabel: '拖曳檔案到這裡',
-  uploadHint: '或點擊選擇檔案',
   uploadAccept: '*',
-  executeLabel: '開始執行',
   resultPreviewUrl: null,
+  showFilmstrip: false,
 })
+
+const effectiveUploadLabel = computed(() => props.uploadLabel ?? t('common.drop_files'))
+const effectiveUploadHint = computed(() => props.uploadHint ?? t('common.drop_hint'))
+const effectiveExecuteLabel = computed(() => props.executeLabel ?? t('common.execute'))
 
 const emit = defineEmits<{
   (e: 'select-function', id: string): void
   (e: 'execute'): void
   (e: 'file', file: File, sourceDir?: string): void
+  (e: 'files', files: File[]): void
   (e: 'remove-file'): void
   (e: 'download'): void
   (e: 'go-back'): void
@@ -72,7 +87,25 @@ function toggleCompare() {
 // 內部檔案管理
 const currentFile = ref<File | null>(null)
 const previewUrl = ref<string | null>(null)
-const hasFile = computed(() => !!currentFile.value)
+// In filmstrip mode: use collectionSize from parent OR currentFile as immediate fallback
+// (addEntry is async, so collectionSize lags behind the synchronous setFile call)
+const hasFile = computed(() =>
+  props.showFilmstrip
+    ? (props.collectionSize ?? 0) > 0 || !!currentFile.value
+    : !!currentFile.value
+)
+
+// When collection is cleared externally (all entries removed), reset internal state
+watch(
+  () => props.collectionSize,
+  (size) => {
+    if (props.showFilmstrip && (size ?? 0) === 0) {
+      if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+      currentFile.value = null
+      previewUrl.value = null
+    }
+  },
+)
 
 // 不支援類型 overlay
 const showUnsupported = ref(false)
@@ -83,6 +116,7 @@ let unsupportedTimer: ReturnType<typeof setTimeout> | null = null
 const isDragOver = ref(false)
 
 function setFile(file: File, sourceDir?: string) {
+  log.info('setFile', { fileName: file.name, size: file.size, sourceDir })
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   currentFile.value = file
   previewUrl.value = URL.createObjectURL(file)
@@ -91,6 +125,7 @@ function setFile(file: File, sourceDir?: string) {
 }
 
 function removeFile() {
+  log.info('removeFile')
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   currentFile.value = null
   previewUrl.value = null
@@ -103,6 +138,7 @@ function handleUploadFile(file: File, sourceDir?: string) {
   if (props.acceptType) {
     const detected = detectMediaType(file)
     if (detected && detected !== props.acceptType) {
+      log.warn('unsupported file type', { fileName: file.name, detected, expected: props.acceptType })
       showUnsupportedOverlay(detected)
       return
     }
@@ -110,11 +146,30 @@ function handleUploadFile(file: File, sourceDir?: string) {
   setFile(file, sourceDir)
 }
 
+function handleUploadFiles(files: File[]) {
+  emit('files', files)
+}
+
 function handleDrop(e: DragEvent) {
   e.preventDefault()
   isDragOver.value = false
   const files = e.dataTransfer?.files
   if (!files || files.length === 0) return
+
+  // Multi-file drop in filmstrip mode: validate type then forward all files to parent.
+  // Set currentFile temporarily so the upload zone hides immediately while async addEntry runs.
+  if (props.showFilmstrip && files.length > 1) {
+    const validFiles = props.acceptType
+      ? Array.from(files).filter(f => {
+          const detected = detectMediaType(f)
+          return detected === props.acceptType
+        })
+      : Array.from(files)
+    if (validFiles.length === 0) { showUnsupportedOverlay(null); return }
+    currentFile.value = validFiles[0]
+    emit('files', validFiles)
+    return
+  }
 
   const file = files[0]
   const sourceDir = window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
@@ -175,34 +230,37 @@ onBeforeUnmount(() => {
 <template>
   <div class="tool-layout">
     <!-- 左側：子功能列表 -->
-    <aside class="function-sidebar">
+    <aside class="function-sidebar" :style="{ width: sidebarWidth + 'px', minWidth: sidebarWidth + 'px' }">
       <div class="function-list">
         <button
           v-for="fn in subFunctions"
           :key="fn.id"
           class="function-item"
-          :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon }"
+          :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon, 'is-locked': functionsLocked && currentFunction !== fn.id }"
+          :disabled="functionsLocked && currentFunction !== fn.id"
           @click="emit('select-function', fn.id)"
         >
           <i :class="['bi', fn.icon]"></i>
           <span>{{ fn.name }}</span>
-          <span v-if="fn.comingSoon" class="coming-badge">即將</span>
+          <span v-if="fn.comingSoon" class="coming-badge">{{ $t('common.coming_soon') }}</span>
         </button>
       </div>
     </aside>
 
+    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = 180"></div>
+
     <!-- 中間：預覽區域 -->
-    <main class="preview-area">
+    <main class="preview-area" :class="{ 'is-drag-over': isDragOver && hasFile }">
       <!-- 右上角直排按鈕群（有檔案才顯示） -->
       <div v-if="hasFile" class="preview-toolbar">
-        <button class="toolbar-btn remove-btn" data-tooltip="移除檔案" @click="removeFile">
+        <button v-if="!showFilmstrip" class="toolbar-btn remove-btn" :data-tooltip="$t('common.remove_file')" @click="removeFile">
           <i class="bi bi-x-lg"></i>
         </button>
         <button
           class="toolbar-btn compare-btn"
           :class="{ 'is-active': isComparing, disabled: !canShowResult }"
           :disabled="!canShowResult"
-          data-tooltip="比對原圖與成果"
+          :data-tooltip="$t('common.compare')"
           @click="canShowResult && toggleCompare()"
         >
           <i class="bi bi-layout-split"></i>
@@ -212,7 +270,7 @@ onBeforeUnmount(() => {
           class="toolbar-btn download-btn"
           :class="{ disabled: !canShowResult }"
           :disabled="!canShowResult"
-          data-tooltip="儲存結果"
+          :data-tooltip="$t('common.save')"
           @click="canShowResult && emit('download')"
         >
           <i class="bi bi-download"></i>
@@ -220,7 +278,7 @@ onBeforeUnmount(() => {
         <button
           v-if="canGoBack"
           class="toolbar-btn back-btn"
-          data-tooltip="回到上一步"
+          :data-tooltip="$t('common.go_back')"
           @click="emit('go-back')"
         >
           <i class="bi bi-arrow-counterclockwise"></i>
@@ -233,26 +291,28 @@ onBeforeUnmount(() => {
           class="preview-tab"
           :class="{ 'is-active': previewMode === 'original' }"
           @click="previewMode = 'original'"
-        >原圖</button>
+        >{{ $t('common.original') }}</button>
         <button
           class="preview-tab"
           :class="{ 'is-active': previewMode === 'result', disabled: !canShowResult }"
           :disabled="!canShowResult"
           @click="previewMode = 'result'"
-        >成果</button>
+        >{{ $t('common.result') }}</button>
         <button
           class="preview-tab"
           :class="{ 'is-active': previewMode === 'compare', disabled: !canShowResult }"
           :disabled="!canShowResult"
           @click="previewMode = 'compare'"
-        >並排比對</button>
+        >{{ $t('common.side_by_side') }}</button>
       </div>
 
       <!-- 預覽內容 -->
       <div
         class="preview-content"
+        :class="{ 'has-file': hasFile }"
         @dragover="handleDragOver"
         @dragleave="handleDragLeave"
+        @drop.capture="isDragOver = false"
         @drop="handleDrop"
       >
         <!-- 不支援類型 overlay -->
@@ -263,27 +323,24 @@ onBeforeUnmount(() => {
           @go-to-tool="goToTool"
         />
 
-        <!-- 拖曳 hover 效果 -->
-        <div v-if="isDragOver" class="drag-hover-overlay">
-          <i class="bi bi-cloud-arrow-up-fill"></i>
-          <p>放開以載入檔案</p>
-        </div>
-
         <!-- 無檔案時顯示上傳區 -->
         <AppUploadZone
           v-if="!hasFile"
           :icon="uploadIcon"
-          :label="uploadLabel"
-          :hint="uploadHint"
+          :label="effectiveUploadLabel"
+          :hint="effectiveUploadHint"
           :accept="uploadAccept"
+          :multiple="showFilmstrip"
           @file="handleUploadFile"
+          @files="handleUploadFiles"
         />
 
         <!-- Slider 比對模式 -->
         <ComparisonSlider
           v-else-if="isComparing && resultPreviewUrl"
-          :original-url="previewUrl!"
+          :original-url="props.originalPreviewUrl ?? previewUrl!"
           :result-url="resultPreviewUrl"
+          :result-meta="props.resultMeta"
         />
 
         <!-- 有檔案時顯示預覽 slot -->
@@ -296,22 +353,34 @@ onBeforeUnmount(() => {
         >
           <div class="preview-placeholder">
             <i class="bi bi-image"></i>
-            <p>請選擇或拖曳檔案</p>
+            <p>{{ $t('common.select_or_drop') }}</p>
           </div>
         </slot>
+
+        <!-- 資訊列：overlay 模式（showFilmstrip 為 true 時） -->
+        <div v-if="showFilmstrip && hasFile" class="preview-info-bar preview-info-bar--overlay">
+          <slot name="info-bar" />
+        </div>
       </div>
 
-      <!-- 資訊列（與右側 execute-section 同層對齊） -->
-      <div v-if="hasFile" class="preview-info-bar">
+      <!-- Filmstrip slot — 固定在 preview-area 底部，不參與 preview-content 的捲動 -->
+      <div v-if="showFilmstrip && hasFile" class="filmstrip-slot">
+        <slot name="filmstrip" />
+      </div>
+
+      <!-- 資訊列（標準模式，showFilmstrip 為 false 時，與右側 execute-section 同層對齊） -->
+      <div v-if="!showFilmstrip && hasFile" class="preview-info-bar">
         <slot name="info-bar" />
       </div>
     </main>
 
+    <div class="resize-handle" @mousedown="startResize('settings', $event)" @dblclick="settingsWidth = 320"></div>
+
     <!-- 右側：設定面板 -->
-    <aside class="settings-panel">
+    <aside class="settings-panel" :style="{ width: settingsWidth + 'px', minWidth: settingsWidth + 'px' }">
       <div class="settings-content">
         <slot name="settings">
-          <p class="text-muted">請選擇功能</p>
+          <p class="text-muted">{{ $t('common.select_function') }}</p>
         </slot>
       </div>
 
@@ -324,26 +393,28 @@ onBeforeUnmount(() => {
         >
           <span v-if="executeLoading" class="spinner-border spinner-border-sm me-2"></span>
           <i v-else class="bi bi-play-fill me-2"></i>
-          {{ executeLoading ? '處理中...' : executeLabel }}
+          {{ executeLoading ? $t('common.processing') : effectiveExecuteLabel }}
         </button>
       </div>
     </aside>
   </div>
 </template>
 
+<style lang="scss">
+@use '@/styles/layout-shared';
+</style>
+
 <style lang="scss" scoped>
 .tool-layout {
   display: flex;
   height: calc(100vh - 40px);
-  gap: 1rem;
+  gap: 0;
   padding: 1rem;
 }
 
 // 左側子功能列表
 .function-sidebar {
   position: relative;
-  width: 180px;
-  min-width: 180px;
   display: flex;
   flex-direction: column;
   padding: 1rem;
@@ -397,6 +468,7 @@ onBeforeUnmount(() => {
   }
 
   &.coming-soon { opacity: 0.5; }
+  &.is-locked { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 }
 
 .coming-badge {
@@ -536,6 +608,10 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: 1rem;
   overflow: auto;
+
+  &.has-file {
+    padding: 2.5rem;
+  }
 }
 
 .preview-placeholder {
@@ -546,29 +622,21 @@ onBeforeUnmount(() => {
   p { font-size: 1rem; }
 }
 
-// 拖曳 hover
-.drag-hover-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  background: rgba(96, 165, 250, 0.1);
-  border: 2px dashed var(--color-accent);
-  border-radius: 8px;
-  pointer-events: none;
+// 拖曳 hover（有檔案時：整個 preview-area 變色，不顯示 icon/文字）
+.preview-area.is-drag-over {
+  border-color: var(--drop-zone-border-hover);
+  background: var(--input-bg);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
 
-  i { font-size: 2.5rem; color: var(--color-accent); }
-  p { color: var(--color-accent); font-size: 0.95rem; margin: 0; }
+// Filmstrip slot container — direct flex child of preview-area, fixed at bottom
+.filmstrip-slot {
+  flex-shrink: 0;
+  border-top: 1px solid var(--panel-border);
 }
 
 // 右側設定面板
 .settings-panel {
-  width: 320px;
-  min-width: 320px;
   display: flex;
   flex-direction: column;
   background: var(--panel-bg);
@@ -590,6 +658,7 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--panel-border);
 }
 
+// Standard info bar (showFilmstrip = false)
 .preview-info-bar {
   min-height: 4.85rem;
   padding: 1rem;
@@ -601,6 +670,24 @@ onBeforeUnmount(() => {
   :deep(.media-info-bar) {
     border-top: none;
     padding: 0;
+  }
+
+  // Overlay mode (showFilmstrip = true) — absolute, bottom-center of preview-content
+  &--overlay {
+    position: absolute;
+    bottom: 0.25rem;
+    left: 50%;
+    transform: translateX(-50%);
+    min-height: unset;
+    padding: 0.35rem 0.9rem;
+    border-top: none;
+    z-index: 5;
+    max-width: min(480px, 90%);
+
+    :deep(.media-info-bar) {
+      border-top: none;
+      padding: 0;
+    }
   }
 }
 

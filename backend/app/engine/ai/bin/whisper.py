@@ -30,6 +30,79 @@ class TranscribeResult:
     duration: float                  # 音訊總長（秒）
 
 
+# ═══════════════════════════════════════════════════════════
+# 詞級時間戳 → 智慧分句
+# ═══════════════════════════════════════════════════════════
+# 停頓間隔閾值（秒）：連續兩個 word 間隔超過此值視為可拆點
+_PAUSE_THRESHOLD_S = 0.3
+# 單行字數上限：超過此字數且有停頓點時，優先拆行
+_MAX_CHARS_PER_LINE = 42
+
+
+def _split_by_words(words: list) -> list[TranscribeSegment]:
+    """
+    用 word-level 時間戳做智慧分句。
+
+    策略：
+    1. 修正時間戳 — start/end 取自首尾 word（去掉 VAD padding）
+    2. 長句拆行 — 在最大停頓處切開，確保每行不會太長
+    3. 保持句意完整 — 不逐詞拆，翻譯仍拿到完整片語
+    """
+    if not words:
+        return []
+
+    # 找所有候選切點：word 間的停頓間隔
+    pause_points: list[tuple[int, float]] = []  # (index, gap_seconds)
+    for i in range(1, len(words)):
+        gap = words[i].start - words[i - 1].end
+        if gap >= _PAUSE_THRESHOLD_S:
+            pause_points.append((i, gap))
+
+    # 如果整句夠短或沒有停頓點，直接修正時間戳輸出一句
+    total_text = "".join(w.word for w in words).strip()
+    if not pause_points or len(total_text) <= _MAX_CHARS_PER_LINE:
+        return [TranscribeSegment(
+            start=words[0].start,
+            end=words[-1].end,
+            text=total_text,
+        )]
+
+    # 遞迴式拆行：每次在最大停頓處切一刀
+    result: list[TranscribeSegment] = []
+    _recursive_split(words, pause_points, result)
+    return result
+
+
+def _recursive_split(
+    words: list,
+    pause_points: list[tuple[int, float]],
+    result: list[TranscribeSegment],
+) -> None:
+    """在最大停頓處切開，子片段超長則繼續遞迴拆。"""
+    text = "".join(w.word for w in words).strip()
+
+    # 篩選出屬於當前 words 範圍的 pause_points
+    if not pause_points or len(text) <= _MAX_CHARS_PER_LINE:
+        result.append(TranscribeSegment(
+            start=words[0].start,
+            end=words[-1].end,
+            text=text,
+        ))
+        return
+
+    # 找最大停頓
+    best = max(pause_points, key=lambda p: p[1])
+    split_idx = best[0]
+
+    left_words = words[:split_idx]
+    right_words = words[split_idx:]
+    left_pauses = [(i, g) for i, g in pause_points if i < split_idx]
+    right_pauses = [(i - split_idx, g) for i, g in pause_points if i > split_idx]
+
+    _recursive_split(left_words, left_pauses, result)
+    _recursive_split(right_words, right_pauses, result)
+
+
 class WhisperWrapper(BINRuntime):
     """
     Whisper 語音辨識封裝（繼承 BINRuntime）
@@ -130,11 +203,16 @@ class WhisperWrapper(BINRuntime):
                 duration = info.duration
                 segments: list[TranscribeSegment] = []
                 for segment in segments_gen:
-                    segments.append(TranscribeSegment(
-                        start=segment.start,
-                        end=segment.end,
-                        text=segment.text.strip(),
-                    ))
+                    if word_timestamps and segment.words:
+                        # 詞級時間戳：用 word 時間修正句子邊界 + 長句智慧拆行
+                        sub_segs = _split_by_words(segment.words)
+                        segments.extend(sub_segs)
+                    else:
+                        segments.append(TranscribeSegment(
+                            start=segment.start,
+                            end=segment.end,
+                            text=segment.text.strip(),
+                        ))
                     if on_progress and duration > 0:
                         progress = 0.05 + (segment.end / duration) * 0.95
                         on_progress(min(progress, 1.0), f"辨識中... {progress:.0%}")

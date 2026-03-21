@@ -36,5 +36,32 @@ def build_router(app: FastAPI) -> FastAPI:
     # 包含 API 路由
     app.include_router(api_router, prefix="/api")
 
+    # 任務歷史紀錄：監聽任務終態並寫入 SQLite
+    @app.on_event("startup")
+    async def _register_task_history_hook():
+        from app.workers.task_manager import get_task_manager
+        from app.services.tasks import get_task_history_service
+
+        history = get_task_history_service()
+        tm = get_task_manager()
+
+        def _on_terminal(task):
+            try:
+                result = task.result if isinstance(task.result, dict) else None
+                history.save(
+                    task_id=task.task_id,
+                    task_type=task.task_type,
+                    status=task.status.value,
+                    created_at=task.created_at,
+                    completed_at=task.updated_at,
+                    error=task.error,
+                    result=result,
+                )
+            except Exception as e:
+                LOGGER.warning(f"Failed to save task history: {e}")
+
+        tm.on_terminal(_on_terminal)
+        LOGGER.info("Task history hook registered")
+
     LOGGER.info("API routes configured")
     return app

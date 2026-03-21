@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 
 const props = defineProps<{
@@ -11,6 +12,7 @@ const emit = defineEmits<{
   submit: [taskId: string]
 }>()
 
+const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
 const pages = ref('')
@@ -33,7 +35,7 @@ const displayOutputPath = computed(() => {
 async function selectOutputFile() {
   if ((window as any).electron?.saveFileDialog) {
     const result = await (window as any).electron.saveFileDialog({
-      title: '選擇輸出位置',
+      title: t('document.split.select_output'),
       defaultPath: defaultOutputName.value,
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     })
@@ -63,7 +65,7 @@ async function execute() {
       body.output_filename = path
     }
   }
-  const taskId = await submitTask('/document/split', body, 'PDF 分割', 'document.split', props.currentFileName)
+  const taskId = await submitTask('/document/split', body, t('document.split.task_label'), 'document.split', props.currentFileName)
   if (taskId) emit('submit', taskId)
 }
 
@@ -72,24 +74,24 @@ defineExpose({ execute, isDisabled, isLoading })
 
 <template>
   <div class="function-settings">
-    <h6 class="settings-title"><i class="bi bi-layout-split me-2"></i>分割文件設定</h6>
-    <p class="form-hint">依頁碼範圍將 PDF 拆分為獨立檔案。</p>
+    <h6 class="settings-title"><i class="bi bi-layout-split me-2"></i>{{ $t('document.split.title') }}</h6>
+    <p class="form-hint">{{ $t('document.split.description') }}</p>
 
     <!-- 頁碼範圍 -->
     <div class="form-group">
-      <label>頁碼範圍</label>
+      <label>{{ $t('document.split.page_range') }}</label>
       <input
         v-model="pages"
         class="form-input"
         type="text"
-        placeholder="例：1-3,5,7-9（空白表示全部）"
+        :placeholder="$t('document.split.range_example')"
       />
-      <small class="form-hint">以逗號分隔多個範圍，例如 <code>1-3,5,8-10</code></small>
+      <small class="form-hint">{{ $t('document.split.range_hint', { example: '1-3,5,8-10' }) }}</small>
     </div>
 
     <!-- 輸出檔案 -->
     <div class="form-group">
-      <label>輸出檔案</label>
+      <label>{{ $t('document.split.output_file') }}</label>
       <div class="file-select" @click="selectOutputFile">
         <span class="file-select-path">{{ displayOutputPath }}</span>
         <i class="bi bi-folder2-open"></i>
