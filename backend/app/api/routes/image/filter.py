@@ -2,7 +2,6 @@
 圖片調整 API 路由
 """
 import asyncio
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -26,7 +25,6 @@ class ImageFilterRequest(BaseModel):
     invert:     float = Field(default=0.0, description="負片強度 (0.0 ~ 1.0)")
     blur:       float = Field(default=0.0, description="模糊半徑 (px)")
     vignette:   float = Field(default=0.0, description="暈影強度 (0.0 ~ 1.0)")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
 
 
 class ImageFilterResponse(BaseModel):
@@ -74,7 +72,6 @@ async def filter_image(request: ImageFilterRequest):
             invert=request.invert,
             blur=request.blur,
             vignette=request.vignette,
-            output_dir=request.output_dir,
         )
         return ImageFilterResponse(task_id=task_id)
     except ValueError as e:
@@ -85,16 +82,16 @@ async def filter_image(request: ImageFilterRequest):
 
 @router.post("/filter/preview", response_model=ImageFilterPreviewResponse)
 async def preview_filter(request: ImageFilterPreviewRequest):
-    """同步生成預覽圖（降解析度，回傳 base64 JPEG）"""
+    """同步生成預覽圖（降解析度，回傳 base64 data URI）"""
     try:
         service = get_image_filter_service()
         params = request.model_dump(exclude={"file_id"})
-        base64_data = await asyncio.to_thread(
+        data_uri = await asyncio.to_thread(
             service.generate_preview,
             file_id=request.file_id,
             params=params,
         )
-        return ImageFilterPreviewResponse(preview=f"data:image/jpeg;base64,{base64_data}")
+        return ImageFilterPreviewResponse(preview=data_uri)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

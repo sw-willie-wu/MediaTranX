@@ -3,6 +3,7 @@ import { ref, computed, toRef, watch, nextTick, onMounted, onUnmounted } from 'v
 import { useImageZoom } from '@/composables/useImageZoom'
 import { useCanvasMask, type MaskToolMode } from '@/composables/useCanvasMask'
 import { useCropRect } from '@/composables/useCropRect'
+import { useWebGLFilter } from '@/composables/useWebGLFilter'
 import type { ImageInfo } from '@/composables/useImageWorkspace'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
 
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 // ── Refs ────────────────────────────────────────────────────────────────
 const imgRef = ref<HTMLImageElement | null>(null)
 const containerRef = ref<HTMLElement | null>(null)
+const glCanvasRef = ref<HTMLCanvasElement | null>(null)
 
 // ── Zoom/Pan ─────────────────────────────────────────────────────────────
 const { zoomLevel, panX, panY, isDragging, zoomPercent, reset, onWheel, onImageLoad, onMouseDown } =
@@ -80,37 +82,42 @@ watch(cropRect, (rect) => {
   emit('crop-rect-change', rect ?? null)
 })
 
-// ── CSS + SVG Filter preview ─────────────────────────────────────────────────
+// ── WebGL Filter preview ─────────────────────────────────────────────────
+const { isReady: glReady, isSupported: glSupported, loadImage: glLoadImage, updateFilters: glUpdateFilters, dispose: glDispose } =
+  useWebGLFilter(glCanvasRef)
 
-// SVG unsharp-mask kernel (feConvolveMatrix 3×3)
-// strength = (sharpness - 1) * 0.3  →  center = 1 + 8s, sides = -s
-const svgSharpKernel = computed(() => {
-  const sharpness = props.filterPreview?.sharpness ?? 1.0
-  const s = Math.max(0, (sharpness - 1.0) * 0.3)
-  const center = +(1 + 8 * s).toFixed(4)
-  const side   = +(-s).toFixed(4)
-  return `${side} ${side} ${side} ${side} ${center} ${side} ${side} ${side} ${side}`
+const webglActive = computed(() => !!props.filterPreview && glSupported.value)
+
+// When WebGL canvas mounts (v-if), load image and render
+watch(glCanvasRef, async (canvas) => {
+  if (canvas && props.previewUrl && props.filterPreview) {
+    await glLoadImage(props.previewUrl)
+    if (props.filterPreview) glUpdateFilters(props.filterPreview)
+  }
 })
 
-// SVG warmth matrix (feColorMatrix): shift R and B channels
-// warmth range: -1 (cold) ~ 1 (warm)
-const svgWarmMatrix = computed(() => {
-  const w = props.filterPreview?.warmth ?? 0
-  const rOff = +(w * 0.118).toFixed(4)   // warm: +R, cool: -R
-  const bOff = +(-w * 0.078).toFixed(4)  // warm: -B, cool: +B
-  return `1 0 0 0 ${rOff}  0 1 0 0 0  0 0 1 0 ${bOff}  0 0 0 1 0`
+// Load image into WebGL texture when previewUrl changes while filter is active
+watch(() => props.previewUrl, async (url) => {
+  if (url && props.filterPreview && glCanvasRef.value) {
+    await glLoadImage(url)
+    if (props.filterPreview) glUpdateFilters(props.filterPreview)
+  }
 })
 
+// When filterPreview changes, update WebGL uniforms and re-render
+watch(() => props.filterPreview, async (fp) => {
+  if (fp && glCanvasRef.value) {
+    if (!glReady.value && props.previewUrl) {
+      await glLoadImage(props.previewUrl)
+    }
+    glUpdateFilters(fp)
+  }
+}, { deep: true })
 
-const needsSvgFilter = computed(() => {
-  const f = props.filterPreview
-  if (!f) return false
-  return (f.sharpness ?? 1.0) !== 1.0 || (f.warmth ?? 0) !== 0
-})
-
+// CSS fallback for when WebGL is not supported
 const cssFilter = computed(() => {
   const f = props.filterPreview
-  if (!f) return ''
+  if (!f || glSupported.value) return ''
   const parts: string[] = []
   if (f.brightness !== 1)  parts.push(`brightness(${f.brightness})`)
   if (f.contrast !== 1)    parts.push(`contrast(${f.contrast})`)
@@ -120,17 +127,12 @@ const cssFilter = computed(() => {
   if (f.sepia > 0)         parts.push(`sepia(${f.sepia})`)
   if (f.invert > 0)        parts.push(`invert(${f.invert})`)
   if (f.blur > 0)          parts.push(`blur(${f.blur}px)`)
-  // sharpness < 1: soften via CSS blur
-  const sharpness = f.sharpness ?? 1.0
-  if (sharpness < 1.0) parts.push(`blur(${((1.0 - sharpness) * 2).toFixed(2)}px)`)
-  // SVG filter handles sharpness > 1 and warmth
-  if (needsSvgFilter.value) parts.push('url(#preview-adj-filter)')
   return parts.join(' ')
 })
 
 const vignetteStyle = computed(() => {
   const f = props.filterPreview
-  if (!f || f.vignette <= 0) return null
+  if (!f || f.vignette <= 0 || glSupported.value) return null
   const v = f.vignette
   const spread = Math.round(100 - v * 65)
   const opacity = (v * 0.85).toFixed(2)
@@ -215,24 +217,6 @@ function handleCropMouseUp(e: MouseEvent) {
 
 <template>
   <div class="preview-display">
-    <!-- Hidden SVG: sharpness (feConvolveMatrix) + warmth (feColorMatrix) -->
-    <svg v-if="filterPreview" width="0" height="0" style="position:absolute;overflow:hidden">
-      <defs>
-        <filter id="preview-adj-filter" color-interpolation-filters="sRGB">
-          <feConvolveMatrix
-            order="3"
-            :kernelMatrix="svgSharpKernel"
-            divisor="1"
-            result="sharp"
-          />
-          <feColorMatrix
-            type="matrix"
-            :values="svgWarmMatrix"
-            in="sharp"
-          />
-        </filter>
-      </defs>
-    </svg>
     <div
       ref="containerRef"
       class="preview-image"
@@ -249,8 +233,13 @@ function handleCropMouseUp(e: MouseEvent) {
           ref="imgRef"
           :src="previewUrl ?? undefined"
           alt="原圖"
-          :style="{ filter: cssFilter || undefined }"
+          :style="{ filter: cssFilter || undefined, opacity: webglActive ? 0 : 1 }"
           @load="handleImageLoad"
+        />
+        <canvas
+          v-if="webglActive"
+          ref="glCanvasRef"
+          class="webgl-canvas"
         />
         <div v-if="vignetteStyle" class="vignette-overlay" :style="vignetteStyle" />
       </div>
@@ -336,10 +325,23 @@ function handleCropMouseUp(e: MouseEvent) {
   &.space-pan   { cursor: grab; }
 }
 
+.webgl-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+  z-index: 1;
+}
+
 .vignette-overlay {
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 2;
 }
+
 </style>

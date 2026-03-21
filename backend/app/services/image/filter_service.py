@@ -3,7 +3,9 @@
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
@@ -56,7 +58,6 @@ class ImageFilterService:
         invert:     float = 0.0,
         blur:       float = 0.0,
         vignette:   float = 0.0,
-        output_dir: Optional[str] = None,
     ) -> str:
         """提交圖片調整任務"""
         file_info = self._file_service.get_file(file_id)
@@ -76,7 +77,6 @@ class ImageFilterService:
             "invert":     invert,
             "blur":       blur,
             "vignette":   vignette,
-            "output_dir": output_dir,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_FILTER, params)
@@ -212,8 +212,37 @@ class ImageFilterService:
 
     # ── 預覽（同步，降解析度）──────────────────────────────────────────────────
 
+    # LRU cache for base thumbnails — avoids re-reading & resizing on every slider drag
+    # Stores (RGB bytes, alpha bytes | None) so alpha compositing can be done per-preview.
+    @staticmethod
+    @lru_cache(maxsize=8)
+    def _load_preview_thumb(file_path: str, max_size: int) -> tuple[bytes, bytes | None]:
+        """載入並縮圖，回傳 (PNG rgb bytes, PNG alpha bytes | None)"""
+        import io
+        from PIL import Image
+        raw = Image.open(file_path)
+        raw.thumbnail((max_size, max_size), Image.LANCZOS)
+
+        has_alpha = raw.mode in ("RGBA", "LA", "PA") or (
+            raw.mode == "P" and "transparency" in raw.info
+        )
+        rgba = raw.convert("RGBA") if has_alpha else None
+        rgb = raw.convert("RGB")
+
+        buf_rgb = io.BytesIO()
+        rgb.save(buf_rgb, format="PNG")
+
+        buf_alpha: bytes | None = None
+        if rgba is not None:
+            alpha = rgba.split()[3]
+            buf_a = io.BytesIO()
+            alpha.save(buf_a, format="PNG")
+            buf_alpha = buf_a.getvalue()
+
+        return buf_rgb.getvalue(), buf_alpha
+
     def generate_preview(self, file_id: str, params: dict, max_size: int = 900) -> str:
-        """同步生成預覽圖，縮圖後套用所有效果，回傳 base64 JPEG 字串"""
+        """同步生成預覽圖，縮圖後套用所有效果，回傳 base64 JPEG/PNG 字串"""
         import base64
         import io
         from PIL import Image
@@ -222,16 +251,26 @@ class ImageFilterService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        img = Image.open(file_info.file_path).convert("RGB")
-        img.thumbnail((max_size, max_size), Image.LANCZOS)
+        # 使用快取的縮圖，避免重複 disk I/O + resize
+        rgb_bytes, alpha_bytes = self._load_preview_thumb(str(file_info.file_path), max_size)
+        img = Image.open(io.BytesIO(rgb_bytes)).convert("RGB")
 
         # 套用與 _execute_filter 相同的效果順序（不需要 progress callback）
         def noop(_p, _m): pass
         img = self._apply_all(img, params, noop)
 
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=85)
-        return base64.b64encode(buf.getvalue()).decode()
+        if alpha_bytes is not None:
+            # 保留透明通道：套用效果後合成回 RGBA，輸出 PNG
+            alpha = Image.open(io.BytesIO(alpha_bytes)).convert("L")
+            out = img.convert("RGBA")
+            out.putalpha(alpha)
+            out.save(buf, format="PNG")
+            mime = "image/png"
+        else:
+            img.save(buf, format="JPEG", quality=75)
+            mime = "image/jpeg"
+        return f"data:{mime};base64," + base64.b64encode(buf.getvalue()).decode()
 
     def _apply_all(self, img: Image.Image, params: dict, progress_callback) -> Image.Image:
         """套用所有調整（供 generate_preview 與 _execute_filter 共用）"""
@@ -341,18 +380,13 @@ class ImageFilterService:
 
         progress_callback(0.75, "儲存檔案...")
 
-        custom_output_dir = params.get("output_dir")
         output_file_id    = str(uuid4())
         original_stem     = Path(file_info.original_filename).stem
         ext               = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
         final_filename    = f"{original_stem}_adjusted_{output_file_id[:8]}.{ext}"
 
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        elif file_info.source_dir:
-            output_dir_path = Path(file_info.source_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
+        # 調整結果一律存到系統暫存目錄，使用者按下載時才決定存放位置
+        output_dir_path = self._file_service.output_dir
 
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
@@ -370,6 +404,7 @@ class ImageFilterService:
         )
 
         progress_callback(1.0, "調整完成")
+        logger.info("Image filter completed: %s → %s", file_id, output_file_id)
 
         return {
             "output_file_id":  output_file_id,
