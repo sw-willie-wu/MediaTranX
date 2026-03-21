@@ -317,16 +317,16 @@ MODELS_REGISTRY = {
                     "scale": 2,
                     "denoise_level": 0,
                 },
-                "up2x-denoise3x": {
-                    "url": "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip",
-                    "filename": "real-cugan-up2x-denoise3x.pth",
-                    "unzip": True,
-                    "archive_path": "updated_weights/up2x-latest-denoise3x.pth",
-                    "size_mb": 16,
-                    "vram_mb": 1200,
-                    "scale": 2,
-                    "denoise_level": 3,
-                },
+                # "up2x-denoise3x": {
+                #     "url": "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip",
+                #     "filename": "real-cugan-up2x-denoise3x.pth",
+                #     "unzip": True,
+                #     "archive_path": "updated_weights/up2x-latest-denoise3x.pth",
+                #     "size_mb": 16,
+                #     "vram_mb": 1200,
+                #     "scale": 2,
+                #     "denoise_level": 3,
+                # },
                 # --- 精簡：conservative 已涵蓋輕降噪，no-denoise 場景極少 ---
                 # "up2x-no-denoise": {
                 #     "url": "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip",
