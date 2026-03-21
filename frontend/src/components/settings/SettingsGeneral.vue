@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
 import { useTheme, type ThemeMode } from '@/composables/useTheme'
+import { useResizableLayout } from '@/composables/useResizableLayout'
 import { apiFetch } from '@/composables/useApi'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 
 const { themeMode, setTheme } = useTheme()
+const { resetLayout } = useResizableLayout()
 
 const settings = ref({
   theme: 'system' as ThemeMode,
@@ -116,6 +118,14 @@ function restartApp() {
 
   <div class="setting-item">
     <AppToggle v-model="settings.showSetupWizard">啟動時提示安裝AI模組</AppToggle>
+  </div>
+
+  <h6 class="section-title mt">佈局</h6>
+
+  <div class="setting-item">
+    <button class="btn-secondary" @click="resetLayout()">
+      <i class="bi bi-layout-three-columns"></i> 重設面板寬度
+    </button>
   </div>
 
   <h6 class="section-title mt">檔案路徑</h6>

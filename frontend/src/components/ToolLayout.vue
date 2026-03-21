@@ -5,10 +5,12 @@ import AppUploadZone from '@/components/common/AppUploadZone.vue'
 import ComparisonSlider from '@/components/ComparisonSlider.vue'
 import UnsupportedFileOverlay from '@/components/UnsupportedFileOverlay.vue'
 import { useFilesStore } from '@/stores/files'
+import { useResizableLayout } from '@/composables/useResizableLayout'
 import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('ToolLayout')
+const { sidebarWidth, settingsWidth, startResize } = useResizableLayout()
 
 interface SubFunction {
   id: string
@@ -225,7 +227,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="tool-layout">
     <!-- 左側：子功能列表 -->
-    <aside class="function-sidebar">
+    <aside class="function-sidebar" :style="{ width: sidebarWidth + 'px', minWidth: sidebarWidth + 'px' }">
       <div class="function-list">
         <button
           v-for="fn in subFunctions"
@@ -241,6 +243,8 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </aside>
+
+    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = 180"></div>
 
     <!-- 中間：預覽區域 -->
     <main class="preview-area" :class="{ 'is-drag-over': isDragOver && hasFile }">
@@ -367,8 +371,10 @@ onBeforeUnmount(() => {
       </div>
     </main>
 
+    <div class="resize-handle" @mousedown="startResize('settings', $event)" @dblclick="settingsWidth = 320"></div>
+
     <!-- 右側：設定面板 -->
-    <aside class="settings-panel">
+    <aside class="settings-panel" :style="{ width: settingsWidth + 'px', minWidth: settingsWidth + 'px' }">
       <div class="settings-content">
         <slot name="settings">
           <p class="text-muted">請選擇功能</p>
@@ -391,19 +397,21 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
+<style lang="scss">
+@use '@/styles/layout-shared';
+</style>
+
 <style lang="scss" scoped>
 .tool-layout {
   display: flex;
   height: calc(100vh - 40px);
-  gap: 1rem;
+  gap: 0;
   padding: 1rem;
 }
 
 // 左側子功能列表
 .function-sidebar {
   position: relative;
-  width: 180px;
-  min-width: 180px;
   display: flex;
   flex-direction: column;
   padding: 1rem;
@@ -626,8 +634,6 @@ onBeforeUnmount(() => {
 
 // 右側設定面板
 .settings-panel {
-  width: 320px;
-  min-width: 320px;
   display: flex;
   flex-direction: column;
   background: var(--panel-bg);

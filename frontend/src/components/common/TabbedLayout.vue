@@ -9,6 +9,9 @@ export interface TabItem {
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useResizableLayout } from '@/composables/useResizableLayout'
+
+const { sidebarWidth, startResize } = useResizableLayout()
 
 const props = withDefaults(defineProps<{
   tabs: TabItem[]
@@ -30,7 +33,7 @@ const activeTab = computed({
 
 <template>
   <div class="tabbed-layout">
-    <aside class="tabbed-sidebar">
+    <aside class="tabbed-sidebar" :style="{ width: sidebarWidth + 'px', minWidth: sidebarWidth + 'px' }">
       <div class="sidebar-list">
         <button
           v-for="t in tabs"
@@ -46,6 +49,8 @@ const activeTab = computed({
       </div>
     </aside>
 
+    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = 180"></div>
+
     <main class="tabbed-content">
       <div class="content-inner" :style="{ maxWidth: contentMaxWidth }">
         <slot />
@@ -54,17 +59,19 @@ const activeTab = computed({
   </div>
 </template>
 
+<style lang="scss">
+@use '@/styles/layout-shared';
+</style>
+
 <style lang="scss" scoped>
 .tabbed-layout {
   display: flex;
   height: calc(100vh - 40px);
-  gap: 1rem;
+  gap: 0;
   padding: 1rem;
 }
 
 .tabbed-sidebar {
-  width: 180px;
-  min-width: 180px;
   display: flex;
   flex-direction: column;
   padding: 1rem;
