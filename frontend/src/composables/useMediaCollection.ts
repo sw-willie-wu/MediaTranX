@@ -152,6 +152,14 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     selectedIds.value = new Set(activeId.value ? [activeId.value] : [])
   }
 
+  function selectAll(): void {
+    const ids = new Set<string>()
+    for (const [id, entry] of entries.value) {
+      if (entry.status !== 'processing') ids.add(id)
+    }
+    selectedIds.value = ids
+  }
+
   function updateEntry(id: string, patch: Partial<MediaEntry>): void {
     const entry = entries.value.get(id)
     if (!entry) return
@@ -205,24 +213,10 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
               taskId, entryId, outputFileId,
               historyDepth: entry.historyStack.length + 1,
               taskType: task.taskType,
-              meta: historyEntry.meta,
             })
 
-            // Non-destructive filter: replace previous filter entry instead of stacking
-            const FILTER_TYPE = 'image.filter'
-            let newStack: HistoryEntry[]
-            if (task.taskType === FILTER_TYPE) {
-              const lastIdx = entry.historyStack.findLastIndex(e => e.taskType === FILTER_TYPE)
-              if (lastIdx >= 0) {
-                // Replace the previous filter result
-                newStack = [...entry.historyStack]
-                newStack[lastIdx] = historyEntry
-              } else {
-                newStack = [...entry.historyStack, historyEntry]
-              }
-            } else {
-              newStack = [...entry.historyStack, historyEntry]
-            }
+            // Always append — user uses "go back" to undo
+            const newStack = [...entry.historyStack, historyEntry]
 
             updateEntry(entryId, {
               historyStack: newStack,
@@ -268,6 +262,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     removeAllEntries,
     selectEntry,
     clearSelection,
+    selectAll,
     updateEntry,
     registerTask,
   }

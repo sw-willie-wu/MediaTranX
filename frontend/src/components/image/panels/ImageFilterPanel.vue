@@ -89,10 +89,7 @@ async function execute() {
   if (!props.fileId) return
   const taskId = await submitTask(
     '/image/filter',
-    {
-      file_id: props.fileId,
-      ...getParams(),
-    },
+    { file_id: props.fileId, ...getParams() },
     '圖片濾鏡',
     'image.filter',
     props.currentFileName,
@@ -100,7 +97,7 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading, getParams, getState, setState, getPreview: () => preview.value })
+defineExpose({ execute, isDisabled, isLoading, getParams, getState, setState, reset, getPreview: () => preview.value })
 </script>
 
 <template>

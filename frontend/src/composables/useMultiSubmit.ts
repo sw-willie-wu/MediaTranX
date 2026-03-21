@@ -51,26 +51,11 @@ export function useMultiSubmit(collection: ReturnType<typeof useMediaCollection>
     log.info('submitToAll', { apiPath, taskType, targetCount: targets.length })
     const sharedParams = getParams()
 
-    const FILTER_TYPE = 'image.filter'
-
     const results = await Promise.all(
       targets.map(async (entry) => {
-        // For filter tasks, use the base (non-filter) file in history,
-        // so repeated adjustments are non-destructive.
-        let targetFileId = entry.fileId
-        if (taskType === FILTER_TYPE) {
-          const stack = entry.historyStack
-          for (let i = stack.length - 1; i >= 0; i--) {
-            if (stack[i].taskType !== FILTER_TYPE) {
-              targetFileId = stack[i].fileId
-              break
-            }
-          }
-        } else {
-          // Structural tasks operate on the latest result
-          const latest = entry.historyStack.at(-1)
-          if (latest) targetFileId = latest.fileId
-        }
+        // Always operate on the latest result (or original if no history)
+        const latest = entry.historyStack.at(-1)
+        const targetFileId = latest ? latest.fileId : entry.fileId
 
         const { submitTask } = useSubmitTask()
         const taskId = await submitTask(
@@ -81,7 +66,6 @@ export function useMultiSubmit(collection: ReturnType<typeof useMediaCollection>
           entry.file.name,
         )
         if (taskId) {
-          // Register the task against this specific entry id, then mark it
           collection.registerTask(taskId, entry.id)
           collection.updateEntry(entry.id, { currentTaskId: taskId, status: 'processing' })
           handlePanelSubmit(taskId)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import ImagePreview from '@/components/image/ImagePreview.vue'
@@ -19,7 +19,7 @@ import { useMultiSubmit } from '@/composables/useMultiSubmit'
 
 const {
   hasFile, fileId, isUploading, currentFileName, imageInfo, isLoadingInfo,
-  aiEnvReady, canGoBack, activeFileId, baseFileId, activePreviewUrl, hasResult, activeResultMeta,
+  aiEnvReady, canGoBack, activeFileId, activePreviewUrl, hasResult, activeResultMeta,
   goBack, checkAiEnvironment, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
   handleDownload, handleTextDownload, textResultFileId, textResultFilename, textResultContent,
   collection, activeId, selectedIds,
@@ -70,6 +70,11 @@ const entrySettingsCache = new Map<string, EntryPanelSettings>()
 interface ZoomState { zoomLevel: number; panX: number; panY: number }
 const zoomCache = new Map<string, ZoomState>()
 
+// ── Preview handlers ─────────────────────────────────────────────────────────
+function onPreviewChange(p: FilterPreview) {
+  filterPreviewParams.value = { ...p }
+}
+
 function savePanelSettings(entryId: string) {
   const s = entrySettingsCache.get(entryId) ?? {}
   if (adjustPanelRef.value) s.adjust = adjustPanelRef.value.getState()
@@ -79,15 +84,33 @@ function savePanelSettings(entryId: string) {
 
 function restorePanelSettings(entryId: string) {
   const s = entrySettingsCache.get(entryId)
-  if (!s) return
   nextTick(() => {
-    if (s.adjust && adjustPanelRef.value) adjustPanelRef.value.setState(s.adjust)
-    if (s.filter && filterPanelRef.value) filterPanelRef.value.setState(s.filter)
+    if (s?.adjust && adjustPanelRef.value) adjustPanelRef.value.setState(s.adjust)
+    else if (adjustPanelRef.value) adjustPanelRef.value.reset?.()
+    if (s?.filter && filterPanelRef.value) filterPanelRef.value.setState(s.filter)
+    else if (filterPanelRef.value) filterPanelRef.value.reset?.()
   })
 }
 
+const isFilterMode   = computed(() => currentFunction.value === 'adjust' || currentFunction.value === 'filter')
 const isAiRemoveMode = computed(() => currentFunction.value === 'ai-remove' && hasFile.value)
 const isCropMode     = computed(() => currentFunction.value === 'crop'      && hasFile.value)
+
+const isAnimated = computed(() => {
+  const fmt = imageInfo.value?.format?.toUpperCase()
+  return fmt === 'GIF' || fmt === 'APNG'
+})
+const showAnimFilterHint = computed(() => isFilterMode.value && isAnimated.value && !!filterPreviewParams.value)
+const showAnimRemoveHint = computed(() => currentFunction.value === 'ai-remove' && isAnimated.value)
+
+// ── Preview: WebGL handles real-time rendering, no backend round-trip ────────
+const effectivePreviewUrl = computed(() => activePreviewUrl.value)
+
+/** Pass filter params to ImagePreview → WebGL renders instantly on GPU */
+const effectiveFilterPreview = computed<FilterPreview | null>(() => {
+  if (!isFilterMode.value) return null
+  return filterPreviewParams.value
+})
 
 // 裁切遮罩：由 panel emit 事件驅動，避免跨組件 ref 依賴追蹤失效
 const cropOverlayVisible = ref(false)
@@ -110,6 +133,7 @@ watch(currentFunction, (val, oldVal) => {
   if (val !== 'adjust' && val !== 'filter') {
     filterPreviewParams.value = null
   }
+
   if (val === 'upscale' || val === 'ai-remove') checkAiEnvironment(val)
   if (val === 'ai-remove') {
     nextTick(() => previewRef.value?.syncToImage())
@@ -130,6 +154,8 @@ watch(() => collection.activeId.value, (newId, oldId) => {
     if (z) zoomCache.set(oldId, z)
   }
   if (newId) {
+    // Clear stale filter preview from previous entry
+    filterPreviewParams.value = null
     restorePanelSettings(newId)
     // Restore zoom state (or reset if first visit)
     const savedZoom = zoomCache.get(newId)
@@ -137,30 +163,31 @@ watch(() => collection.activeId.value, (newId, oldId) => {
       if (savedZoom) previewRef.value?.setZoomState(savedZoom)
       else previewRef.value?.resetZoom()
     })
-    // Re-apply live preview after entry switch.
-    // watch(activePreviewUrl) clears filterPreviewParams when the URL changes,
-    // but the panel's `preview` computed may not have changed (same settings),
-    // so its watcher won't re-emit. Manually re-apply when entry has no result yet.
-    nextTick(() => nextTick(() => {
-      const entry = collection.entries.value.get(newId)
-      const hasResult = (entry?.historyStack.length ?? 0) > 0
-      if (!hasResult) {
-        if (currentFunction.value === 'adjust') {
-          filterPreviewParams.value = adjustPanelRef.value?.getPreview() ?? null
-        } else if (currentFunction.value === 'filter') {
-          filterPreviewParams.value = filterPanelRef.value?.getPreview() ?? null
-        }
-      }
-    }))
   }
 })
 
-// 後端結果回來後清除 preview（新圖片已含效果）
+// 後端最終結果回來後，清除預覽狀態並重置 slider
 watch(activePreviewUrl, (newUrl, oldUrl) => {
-  if (newUrl !== oldUrl && (currentFunction.value === 'adjust' || currentFunction.value === 'filter')) {
+  if (newUrl !== oldUrl) {
     filterPreviewParams.value = null
+    // 新圖已套用調整/濾鏡，slider 歸回預設值
+    if (adjustPanelRef.value) adjustPanelRef.value.reset?.()
+    if (filterPanelRef.value) filterPanelRef.value.reset?.()
   }
 })
+
+// ── Keyboard shortcuts ─────────────────────────────────────────────────
+function handleKeyDown(e: KeyboardEvent) {
+  // Ctrl+A / Cmd+A → 全選 filmstrip
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+    if (collection.hasEntries.value) {
+      e.preventDefault()
+      collection.selectAll()
+    }
+  }
+}
+onMounted(() => window.addEventListener('keydown', handleKeyDown))
+onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 // 顯示遮罩時同步 canvas 位置
 watch(showCropOverlay, (active) => {
@@ -187,6 +214,7 @@ const isAnyProcessing = computed(() =>
 const executeDisabled = computed(() => {
   if (isAnyProcessing.value) return true
   if (currentFunction.value === 'ocr') return ocrPanelRef.value?.isDisabled ?? !hasFile.value
+  if (currentFunction.value === 'ai-remove' && isAnimated.value) return true
   return !hasFile.value || !fileId.value || isUploading.value
 })
 
@@ -248,6 +276,8 @@ function handleMultiExecute() {
 
 function onPanelSubmit(taskId: string) {
   handlePanelSubmit(taskId)
+  const id = collection.activeId.value
+  if (id) savePanelSettings(id)
 }
 
 // 任務完成後清除 AI 移除筆刷
@@ -341,16 +371,18 @@ function onFilmstripRemove(id: string) {
     <template #preview="{ previewUrl }">
       <ImagePreview
         ref="previewRef"
-        :preview-url="activePreviewUrl ?? previewUrl"
+        :preview-url="effectivePreviewUrl ?? previewUrl"
         :image-info="imageInfo"
         :is-ai-remove-mode="isAiRemoveMode"
         :brush-size="brushSize"
         :tool-mode="maskToolMode"
         :show-crop-overlay="showCropOverlay"
         :crop-aspect-ratio="cropAspectRatio"
-        :filter-preview="filterPreviewParams"
+        :filter-preview="effectiveFilterPreview"
         @crop-rect-change="canvasCropRect = $event"
       />
+      <span v-if="showAnimFilterHint" class="anim-hint"><i class="bi bi-info-circle"></i> 靜態預覽，執行後套用全部幀</span>
+      <span v-else-if="showAnimRemoveHint" class="anim-hint"><i class="bi bi-info-circle"></i> 物件移除不支援動態圖片</span>
     </template>
 
     <template #info-bar>
@@ -406,6 +438,7 @@ function onFilmstripRemove(id: string) {
           ref="aiRemovePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :image-info="imageInfo"
           v-model:brush-size="brushSize"
           v-model:tool-mode="maskToolMode"
           :get-mask="() => previewRef?.exportMask() ?? null"
@@ -417,19 +450,19 @@ function onFilmstripRemove(id: string) {
         <ImageAdjustPanel
           v-else-if="currentFunction === 'adjust'"
           ref="adjustPanelRef"
-          :file-id="baseFileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
           @submit="onPanelSubmit"
-          @preview-change="filterPreviewParams = $event"
+          @preview-change="onPreviewChange"
         />
 
         <ImageFilterPanel
           v-else-if="currentFunction === 'filter'"
           ref="filterPanelRef"
-          :file-id="baseFileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
           @submit="onPanelSubmit"
-          @preview-change="filterPreviewParams = $event"
+          @preview-change="onPreviewChange"
         />
 
         <ImageCropPanel
@@ -466,4 +499,17 @@ function onFilmstripRemove(id: string) {
 
 <style lang="scss" scoped>
 .settings-form { color: var(--text-primary); }
+
+.anim-hint {
+  position: absolute;
+  top: 0.5rem;
+  left: 1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  pointer-events: none;
+  z-index: 5;
+}
 </style>

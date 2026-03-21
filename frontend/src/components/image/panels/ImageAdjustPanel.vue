@@ -103,7 +103,7 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading, getState, setState, getParams, getPreview: () => preview.value })
+defineExpose({ execute, isDisabled, isLoading, getState, setState, reset, getParams, getPreview: () => preview.value })
 </script>
 
 <template>
