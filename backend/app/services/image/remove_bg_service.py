@@ -66,6 +66,10 @@ class ImageRemoveBgService:
         file_info = self._file_service.get_file(file_id)
 
         progress_callback(0.1, "載入去背模型...")
+        # 將 rembg 模型路徑導向 models/rembg/，統一管理
+        import os
+        from app.engine.paths import get_models_dir
+        os.environ["U2NET_HOME"] = str(get_models_dir("rembg"))
         session = new_session(model_name)
 
         from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext

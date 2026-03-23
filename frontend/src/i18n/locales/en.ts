@@ -570,7 +570,7 @@ export default {
     },
 
     about: {
-      version: 'Version 1.0.0 (Production Build)',
+      version: 'Version {version}',
       description: 'Local AI-powered multimedia processing tool. Supports video subtitle extraction, translation, audio processing, image processing, and more. All AI models run locally — no data uploaded to the cloud, protecting your privacy.',
       support: 'Support & Links',
       github: 'GitHub',

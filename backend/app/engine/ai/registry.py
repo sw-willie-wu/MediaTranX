@@ -22,6 +22,7 @@ SLOT_LLM = "llm"      # LLM 模型共用（一次只載入一個）
 SLOT_PTH = "pth"      # PTH 模型共用（一次只載入一個）
 SLOT_VLM = "vlm"      # VLM 模型（一次只載入一個）
 SLOT_DEMUCS = "demucs"  # 音源分離（一次只載入一個）
+SLOT_SEGMENT = "segment"  # 物件分割（MobileSAM）
 
 # ═══════════════════════════════════════════════════════════
 # 格式優先註冊表 (Format-First Registry)

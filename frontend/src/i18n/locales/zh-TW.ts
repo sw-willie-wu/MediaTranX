@@ -570,7 +570,7 @@ export default {
     },
 
     about: {
-      version: '版本 1.0.0 (Production Build)',
+      version: '版本 {version}',
       description: '本地 AI 驅動的多媒體處理工具，支援影片字幕提取、翻譯、音訊處理、圖片處理等功能。所有 AI 模型均在本機運行，無需上傳資料至雲端，保護您的隱私。',
       support: '支援與連結',
       github: 'GitHub',

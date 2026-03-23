@@ -12,7 +12,6 @@ from uuid import uuid4
 
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
-from app.engine.paths import get_models_dir
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,6 @@ class ImageRemoveObjectService:
             return
         self._file_service: FileService = get_file_service()
         self._task_manager: TaskManager = get_task_manager()
-        self._sam_model = None
         self._lama_model = None
         self._task_manager.register_handler(TASK_TYPE_IMAGE_REMOVE_OBJECT, self._handle_remove_object_task)
         self._initialized = True
@@ -55,23 +53,9 @@ class ImageRemoveObjectService:
         })
         return task_id
 
-    def _load_sam(self):
-        if self._sam_model is not None:
-            return self._sam_model
-        from mobile_sam import sam_model_registry
-        import torch
-
-        model_path = get_models_dir("mobilesam") / "mobile_sam.pt"
-        if not model_path.exists():
-            raise RuntimeError("MobileSAM 模型未下載，請至設定 → 模型管理下載")
-
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        sam = sam_model_registry["vit_t"](checkpoint=str(model_path))
-        sam.to(device)
-        sam.eval()
-        self._sam_model = sam
-        logger.info(f"MobileSAM loaded on {device}")
-        return sam
+    def _get_mobilesam(self):
+        from app.engine.ai.image.mobilesam import get_mobilesam
+        return get_mobilesam()
 
     def _load_lama(self):
         if self._lama_model is not None:
@@ -177,10 +161,6 @@ class ImageRemoveObjectService:
 
     def _refine_with_sam(self, image_rgb, rough_mask):
         import numpy as np
-        from mobile_sam import SamPredictor
-
-        predictor = SamPredictor(self._load_sam())
-        predictor.set_image(image_rgb)
 
         ys, xs = np.where(rough_mask > 127)
         if len(ys) == 0:
@@ -192,9 +172,8 @@ class ImageRemoveObjectService:
         x2 = min(image_rgb.shape[1] - 1, int(xs.max()) + pad)
         y2 = min(image_rgb.shape[0] - 1, int(ys.max()) + pad)
 
-        box = np.array([x1, y1, x2, y2], dtype=np.float32)
-        masks, _, _ = predictor.predict(box=box, multimask_output=False)
-        return (masks[0] * 255).astype(np.uint8)
+        box = np.array([x1, y1, x2, y2])
+        return self._get_mobilesam().predict_box(image_rgb, box)
 
     def _handle_remove_object_task(self, params: dict, progress_callback: Callable) -> dict:
         file_id = params["file_id"]
