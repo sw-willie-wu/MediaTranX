@@ -6,7 +6,7 @@ import logging
 from typing import Optional
 
 from app.engine.ai.registry import SLOT_LLM
-from app.engine.ai.base.translate import (
+from app.engine.ai.llama.translate import (
     BaseTranslator,
     LANG_NAMES_EN,
     LANG_NAMES_ZH,

@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Optional, Callable
 
-from app.engine.ai.base import PTHRuntime
+from app.engine.ai.runtime.pth import PTHRuntime
 from app.engine.ai.registry import FORMAT_PTH, MODELS_REGISTRY, SLOT_PTH
 
 logger = logging.getLogger(__name__)

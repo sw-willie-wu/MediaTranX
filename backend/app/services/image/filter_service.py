@@ -347,7 +347,7 @@ class ImageFilterService:
             raise ValueError(f"File not found: {file_id}")
 
         from PIL import Image
-        from app.engine.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
+        from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
 
         progress_callback(0.05, "載入圖片...")
 

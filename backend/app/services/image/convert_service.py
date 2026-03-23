@@ -46,7 +46,7 @@ class ImageConvertService:
     async def get_image_info(self, file_id: str) -> dict:
         """取得圖片資訊"""
         from PIL import Image
-        from app.engine.gif_utils import is_animated
+        from app.utils.gif_utils import is_animated
 
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -120,7 +120,7 @@ class ImageConvertService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        from app.engine.gif_utils import animation_format, process_gif_frames, save_animated
+        from app.utils.gif_utils import animation_format, process_gif_frames, save_animated
 
         progress_callback(0.1, "載入圖片...")
 

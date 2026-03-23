@@ -1,143 +1,37 @@
 """
-FastAPI 應用程式與服務進入點
-整合環境注入、App 定義與 Uvicorn 啟動邏輯。
+FastAPI 應用程式進入點
 """
 import os
 import sys
-import logging
-from pathlib import Path
 
 # --- 0. 偵測編譯模式 ---
 IS_FROZEN = getattr(sys, 'frozen', False) or "__compiled__" in globals() or hasattr(sys, "nuitka_binary")
 
-# --- 1. 修正編譯後的導入路徑 ---
+# --- 1. 修正編譯後的導入路徑（必須在任何 app.* import 之前）---
 if IS_FROZEN:
-    # 打包後，讓程式能找到同目錄下的模組
     _internal_path = os.path.dirname(sys.executable)
     if _internal_path not in sys.path:
         sys.path.insert(0, _internal_path)
 
+# --- 2. Bootstrap（DLL 注入、相容層、日誌）---
+from app.init import bootstrap
+bootstrap(IS_FROZEN)
+
+# --- 3. App ---
 from fastapi import FastAPI
-
-# --- 2. 環境與環境路徑注入 (BUILD_STRATEGY.md) ---
-_appdata = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
-if _appdata:
-    # 注入外部 .venv site-packages（即使目錄尚不存在也先加入，安裝後即可 import）
-    _venv_site = os.path.join(_appdata, 'MediaTranX', '.venv', 'Lib', 'site-packages')
-    if _venv_site not in sys.path:
-        sys.path.append(_venv_site)
-
-    # 處理 Python 套件 DLL（需目錄存在才能 add_dll_directory）
-    # python.exe 啟動時會自動把自己的目錄加入 DLL 搜尋，core.exe 不會，需手動補齊
-    if hasattr(os, 'add_dll_directory'):
-        _venv_base = os.path.join(_appdata, 'MediaTranX', '.venv')
-        _dll_dirs = [
-            os.path.join(_venv_base, 'Scripts'),           # python312.dll 等
-            os.path.join(_venv_site, 'torch', 'lib'),      # torch CUDA DLL
-            os.path.join(_venv_site, 'ctranslate2'),        # ctranslate2 DLL（faster-whisper 底層）
-            os.path.join(_venv_site, 'tokenizers'),         # tokenizers .pyd 同層 DLL
-            # llama_cpp DLL 目錄已移除（改用 llama-server subprocess）
-        ]
-        for _d in _dll_dirs:
-            if os.path.isdir(_d):
-                try: os.add_dll_directory(_d)
-                except Exception: pass
-
-        # 動態掃描 site-packages 下所有 .libs 目錄（delvewheel 打包慣例）
-        # av.libs, numpy.libs, scipy.libs, llvmlite.libs ... 等均需加入
-        if os.path.isdir(_venv_site):
-            try:
-                for _entry in os.scandir(_venv_site):
-                    if _entry.is_dir() and _entry.name.endswith('.libs'):
-                        try: os.add_dll_directory(_entry.path)
-                        except Exception: pass
-            except Exception: pass
-
-        # 從 pyvenv.cfg 讀取 base Python 安裝目錄（uv 管理，含 vcruntime140.dll）
-        # 外部 .pyd 連結 vcruntime140.dll 時，這個目錄必須在搜尋路徑中
-        _pyvenv_cfg = os.path.join(_venv_base, 'pyvenv.cfg')
-        if os.path.isfile(_pyvenv_cfg):
-            try:
-                with open(_pyvenv_cfg, 'r', encoding='utf-8') as _f:
-                    for _line in _f:
-                        if _line.lower().startswith('home'):
-                            _py_home = _line.split('=', 1)[1].strip()
-                            if os.path.isdir(_py_home):
-                                try: os.add_dll_directory(_py_home)
-                                except Exception: pass
-                            break
-            except Exception: pass
-
-# --- 相容層：torchvision >= 0.16 移除了 functional_tensor 模組 ---
-# 必須在 sys.path 注入後執行，否則 frozen 模式下找不到 torchvision
-import types as _types
-try:
-    import torchvision.transforms.functional_tensor  # noqa: F401
-except ImportError:
-    try:
-        import torchvision.transforms.functional as _tvf
-        _compat = _types.ModuleType("torchvision.transforms.functional_tensor")
-        for _attr in dir(_tvf):
-            setattr(_compat, _attr, getattr(_tvf, _attr))
-        sys.modules["torchvision.transforms.functional_tensor"] = _compat
-    except ImportError:
-        pass  # torchvision 尚未安裝，跳過相容層
-
-# CUDA DLL 路徑注入 (Windows)
-if sys.platform == "win32" and _appdata:
-    _cuda_dir = os.path.join(_appdata, 'MediaTranX', 'cuda')
-    if os.path.isdir(_cuda_dir):
-        os.environ["PATH"] = _cuda_dir + os.pathsep + os.environ.get("PATH", "")
-        if hasattr(os, 'add_dll_directory'):
-            try: os.add_dll_directory(_cuda_dir)
-            except Exception: pass
-
-# --- 2. 日誌配置 ---
-_log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-_handlers: list[logging.Handler] = [logging.StreamHandler()]  # stdout → Electron pipe → app.log
-
-if IS_FROZEN:
-    # Electron 傳入 core_error.log 路徑，Python 直寫 WARNING+
-    _error_log = os.environ.get('MEDIATRANX_ERROR_LOG')
-    if not _error_log:
-        _error_log = str(Path(_appdata) / 'MediaTranX' / 'logs' / 'core_error.log')
-    Path(_error_log).parent.mkdir(parents=True, exist_ok=True)
-    _error_handler = logging.FileHandler(_error_log, encoding='utf-8')
-    _error_handler.setLevel(logging.WARNING)
-    _error_handler.setFormatter(_log_formatter)
-    _handlers.append(_error_handler)
-
-for _h in _handlers:
-    _h.setFormatter(_log_formatter)
-
-logging.basicConfig(level=logging.INFO, handlers=_handlers)
-
-if IS_FROZEN:
-    logging.info(f"Backend started in frozen mode. Error log: {_error_log}")
-
-# --- 3. 啟動診斷 (Diagnostic) ---
-if IS_FROZEN:
-    try:
-        from app.engine.ai.model_manager import get_model_manager
-        llama_ok = get_model_manager().is_llama_ready()
-        logging.info(f"Startup Diagnostic: llama-server binary {'found' if llama_ok else 'NOT found'}")
-    except Exception as e:
-        logging.error(f"Startup Diagnostic: llama-server check failed: {e}")
-
 from app.api import build_router
 
 app: FastAPI = FastAPI(title="MediaTranX API")
 app = build_router(app)
 
-# --- 4. 服務啟動邏輯 ---
+# --- 4. 服務啟動 ---
 if __name__ == "__main__":
     import uvicorn
     import argparse
 
     parser = argparse.ArgumentParser(description="MediaTranX Backend")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to listen on")
-    parser.add_argument("--port", type=int, default=8001, help="Port to listen on")
+    parser.add_argument("--host", type=str, default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8001)
     args = parser.parse_args()
 
-    # 執行後端服務
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

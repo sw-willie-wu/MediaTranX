@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from .runtime import BaseRuntime
+from .base import BaseRuntime
 
 logger = logging.getLogger(__name__)
 

@@ -112,8 +112,6 @@ class ImageOcrService:
         custom_output_dir = params.get("output_dir")
         if custom_output_dir:
             output_dir_path = Path(custom_output_dir)
-        elif file_info.source_dir:
-            output_dir_path = Path(file_info.source_dir)
         else:
             output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)

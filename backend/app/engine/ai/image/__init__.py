@@ -1,7 +1,7 @@
 """
-pth - PTH 模型集合（超解析 + 人臉修復）
+image - PTH 模型集合（超解析 + 人臉修復）
 """
-from app.engine.ai.base import PTHRuntime
+from app.engine.ai.runtime.pth import PTHRuntime
 
 # Upscale wrappers
 from .realesrgan import RealESRGANWrapper, get_realesrgan

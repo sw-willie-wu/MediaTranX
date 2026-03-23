@@ -2,7 +2,7 @@
 llama 子套件 — 基於 llama-server 的翻譯與 VLM OCR 模組。
 """
 
-from app.engine.ai.base.translate import (
+from .translate import (
     BaseTranslator,
     TranslateResult,
     SUPPORTED_LANGUAGES,

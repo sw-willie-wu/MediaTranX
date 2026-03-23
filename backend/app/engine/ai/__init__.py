@@ -7,7 +7,7 @@ from .registry import (
     SLOT_LLM,
     SLOT_PTH,
 )
-from .bin import (
+from .audio import (
     WhisperWrapper,
     get_whisper,
     TranscribeSegment,

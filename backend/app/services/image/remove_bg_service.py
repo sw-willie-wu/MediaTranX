@@ -68,7 +68,7 @@ class ImageRemoveBgService:
         progress_callback(0.1, "載入去背模型...")
         session = new_session(model_name)
 
-        from app.engine.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
+        from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
 
         with Image.open(file_info.file_path) as raw:
             anim_fmt = animation_format(raw)

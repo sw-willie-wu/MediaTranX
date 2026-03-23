@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Callable, Any
 
-from .runtime import BaseRuntime
+from .base import BaseRuntime
 
 logger = logging.getLogger(__name__)
 
