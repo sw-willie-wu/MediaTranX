@@ -39,7 +39,12 @@ ai = [
     "timm>=1.0.0",
     "mobile-sam @ git+https://github.com/ChaoningZhang/MobileSAM.git",
     "simple-lama-inpainting",
-    
+    # --- Audio ---
+    "soundfile>=0.12.0",
+    "demucs>=4.0.0",
+    # --- Alignment ---
+    "transformers>=4.40.0",
+
     # --- Download & Utils ---
     "huggingface-hub>=0.20.0",
     "tqdm>=4.66.0",

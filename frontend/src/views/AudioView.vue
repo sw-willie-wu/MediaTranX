@@ -2,19 +2,22 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
+import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import AudioPreview from '@/components/audio/AudioPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import AudioTranscodePanel  from '@/components/audio/panels/AudioTranscodePanel.vue'
 import AudioCutPanel        from '@/components/audio/panels/AudioCutPanel.vue'
 import AudioVolumePanel     from '@/components/audio/panels/AudioVolumePanel.vue'
 import AudioTranscribePanel from '@/components/audio/panels/AudioTranscribePanel.vue'
+import AudioSeparatePanel  from '@/components/audio/panels/AudioSeparatePanel.vue'
 import { useAudioWorkspace } from '@/composables/useAudioWorkspace'
 
 const { t } = useI18n()
 
 const {
   hasFile, fileId, isUploading, currentFileName, hasResult, audioInfo,
-  handleFile, handleRemoveFile, handlePanelSubmit, handleDownload,
+  collection,
+  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload,
 } = useAudioWorkspace()
 
 // Panel refs
@@ -22,12 +25,14 @@ const transcodePanelRef  = ref<InstanceType<typeof AudioTranscodePanel>  | null>
 const cutPanelRef        = ref<InstanceType<typeof AudioCutPanel>        | null>(null)
 const volumePanelRef     = ref<InstanceType<typeof AudioVolumePanel>     | null>(null)
 const transcribePanelRef = ref<InstanceType<typeof AudioTranscribePanel> | null>(null)
+const separatePanelRef   = ref<InstanceType<typeof AudioSeparatePanel>  | null>(null)
 
 const subFunctions = computed(() => [
   { id: 'transcode',  name: t('audio.functions.transcode'),  icon: 'bi-arrow-repeat' },
   { id: 'cut',        name: t('audio.functions.cut'),        icon: 'bi-scissors' },
   { id: 'volume',     name: t('audio.functions.volume'),     icon: 'bi-volume-up-fill' },
   { id: 'transcribe', name: t('audio.functions.transcribe'), icon: 'bi-mic-fill' },
+  { id: 'separate',  name: t('audio.functions.separate'),  icon: 'bi-music-note-list' },
 ])
 
 const currentFunction = ref('transcode')
@@ -37,6 +42,7 @@ const executeDisabled = computed(() => {
   if (currentFunction.value === 'cut')        return cutPanelRef.value?.isDisabled        ?? !hasFile.value
   if (currentFunction.value === 'volume')     return volumePanelRef.value?.isDisabled     ?? !hasFile.value
   if (currentFunction.value === 'transcribe') return transcribePanelRef.value?.isDisabled ?? !hasFile.value
+  if (currentFunction.value === 'separate')  return separatePanelRef.value?.isDisabled  ?? !hasFile.value
   return !hasFile.value
 })
 
@@ -45,6 +51,7 @@ const executeLoading = computed(() => {
   if (currentFunction.value === 'cut')        return cutPanelRef.value?.isLoading        ?? false
   if (currentFunction.value === 'volume')     return volumePanelRef.value?.isLoading     ?? false
   if (currentFunction.value === 'transcribe') return transcribePanelRef.value?.isLoading ?? false
+  if (currentFunction.value === 'separate')  return separatePanelRef.value?.isLoading  ?? false
   return false
 })
 
@@ -54,6 +61,7 @@ function handleExecute() {
     case 'cut':        cutPanelRef.value?.execute();        break
     case 'volume':     volumePanelRef.value?.execute();     break
     case 'transcribe': transcribePanelRef.value?.execute(); break
+    case 'separate':  separatePanelRef.value?.execute();  break
   }
 }
 
@@ -96,9 +104,29 @@ function onDownload() {
     cut:        ['', '_cut'],
     volume:     ['', '_adjusted'],
     transcribe: ['', '_transcript'],
+    separate:  ['zip', '_separated'],
   }
   const [fmt, suffix] = fmtMap[currentFunction.value] ?? ['', '_output']
   handleDownload(fmt || undefined, suffix)
+}
+
+// ── Filmstrip ────────────────────────────────────────────────────────────────
+
+const filmstripItems = computed(() =>
+  collection.entriesList.value.map(e => ({
+    id: e.id,
+    thumbnailUrl: e.thumbnailUrl,
+    status: e.status,
+    progress: e.progress,
+  }))
+)
+
+function onFilmstripSelect(id: string, ctrlKey: boolean) {
+  collection.selectEntry(id, ctrlKey)
+}
+
+function onFilmstripRemove(id: string) {
+  collection.removeEntry(id)
 }
 </script>
 
@@ -111,6 +139,9 @@ function onDownload() {
     :upload-hint="$t('audio.upload_hint')"
     upload-accept="audio/*"
     hide-preview-tabs
+    show-filmstrip
+    :collection-size="filmstripItems.length"
+    :active-file-name="currentFileName"
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"
@@ -119,13 +150,14 @@ function onDownload() {
     @select-function="currentFunction = $event"
     @execute="handleExecute"
     @file="handleFile"
+    @files="handleFiles"
     @remove-file="handleRemoveFile"
     @download="onDownload"
   >
     <template #preview="{ file, previewUrl }">
       <AudioPreview
-        :preview-url="previewUrl"
-        :file="file"
+        :preview-url="collection.activeEntry.value?.previewUrl ?? previewUrl"
+        :file="collection.activeEntry.value?.file ?? file"
       />
     </template>
 
@@ -135,6 +167,16 @@ function onDownload() {
         :items="audioInfoItems"
         :loading="isUploading && !audioInfo"
         :loading-text="$t('audio.loading')"
+      />
+    </template>
+
+    <template #filmstrip>
+      <AppFilmstrip
+        :items="filmstripItems"
+        :active-id="collection.activeId.value"
+        :selected-ids="collection.selectedIds.value"
+        @select="onFilmstripSelect"
+        @remove="onFilmstripRemove"
       />
     </template>
 
@@ -168,6 +210,14 @@ function onDownload() {
         <AudioTranscribePanel
           v-else-if="currentFunction === 'transcribe'"
           ref="transcribePanelRef"
+          :file-id="fileId"
+          :current-file-name="currentFileName"
+          @submit="handlePanelSubmit"
+        />
+
+        <AudioSeparatePanel
+          v-else-if="currentFunction === 'separate'"
+          ref="separatePanelRef"
           :file-id="fileId"
           :current-file-name="currentFileName"
           @submit="handlePanelSubmit"

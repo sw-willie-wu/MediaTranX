@@ -53,6 +53,14 @@ def handle_model_download(params: dict, progress_callback: Callable) -> dict:
         size = size_parts[1]
         _download_vlm(model_family, size, quant, progress_callback)
 
+    elif item_id.startswith("demucs-"):
+        variant = item_id[len("demucs-"):]
+        _download_demucs(variant, progress_callback)
+
+    elif item_id.startswith("alignment-"):
+        lang_code = item_id[len("alignment-"):]
+        _download_alignment(lang_code, progress_callback)
+
     else:
         _download_pth_model(item_id, progress_callback)
 
@@ -127,9 +135,9 @@ def _stream_download(
 # ─── 各格式下載器 ─────────────────────────────────────────────────────────────
 
 def _download_whisper(size: str, progress_callback: Callable, snapshot_download) -> None:
-    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_BIN
+    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
 
-    whisper_config = MODELS_REGISTRY.get(FORMAT_BIN, {}).get("whisper", {})
+    whisper_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("whisper", {})
     variants = whisper_config.get("variants", {})
     variant_spec = variants.get(size)
 
@@ -215,6 +223,78 @@ def _download_translate(model_type: str, size: str, quant: str, progress_callbac
         base_progress=0.1,
         end_progress=0.95,
     )
+    progress_callback(0.95, "模型下載完成")
+
+
+def _download_demucs(variant: str, progress_callback: Callable) -> None:
+    """下載 Demucs 模型（透過 demucs.api.Separator 自動下載到 torch hub cache）"""
+    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
+
+    family = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("demucs")
+    if not family:
+        raise ValueError("demucs 未在 registry 中註冊")
+
+    variant_spec = family["variants"].get(variant)
+    if not variant_spec:
+        raise ValueError(f"未知的 demucs 變體: {variant}")
+
+    model_name = variant_spec.get("model_name", variant)
+    progress_callback(0.1, f"正在下載 {model_name}...")
+
+    try:
+        import functools
+        import torch
+        from demucs.api import Separator
+        from app.engine.paths import get_models_dir
+        from app.engine.ai.registry import SLOT_DEMUCS
+
+        # 將 torch hub cache 指向 models/demucs/，讓 checkpoint 統一存放
+        hub_dir = str(get_models_dir() / SLOT_DEMUCS)
+        Path(hub_dir).mkdir(parents=True, exist_ok=True)
+        original_hub_dir = torch.hub.get_dir()
+        torch.hub.set_dir(hub_dir)
+
+        # PyTorch 2.6+ 預設 weights_only=True，demucs checkpoint 需要 weights_only=False
+        _original_load = torch.load
+        torch.load = functools.partial(_original_load, weights_only=False)
+        try:
+            progress_callback(0.3, f"下載 {model_name} 模型...")
+            separator = Separator(model=model_name, device="cpu")
+            del separator
+        finally:
+            torch.load = _original_load
+            torch.hub.set_dir(original_hub_dir)
+
+    except Exception as e:
+        raise RuntimeError(f"Demucs 模型下載失敗: {e}")
+
+    progress_callback(0.95, "模型下載完成")
+
+
+def _download_alignment(lang_code: str, progress_callback: Callable) -> None:
+    """下載 Wav2Vec2 alignment 模型（透過 transformers 從 HuggingFace 下載）"""
+    from app.engine.ai.audio.wav2vec2 import LANG_MODELS
+    from app.engine.paths import get_models_dir
+
+    if lang_code not in LANG_MODELS:
+        raise ValueError(f"不支援的語言: {lang_code}")
+
+    repo_id = LANG_MODELS[lang_code]
+    cache_dir = str(get_models_dir("alignment"))
+    progress_callback(0.1, f"下載 {repo_id}...")
+
+    try:
+        from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
+
+        progress_callback(0.2, f"下載 Processor...")
+        Wav2Vec2Processor.from_pretrained(repo_id, cache_dir=cache_dir)
+
+        progress_callback(0.5, f"下載模型權重...")
+        Wav2Vec2ForCTC.from_pretrained(repo_id, cache_dir=cache_dir)
+
+    except Exception as e:
+        raise RuntimeError(f"Alignment 模型下載失敗: {e}")
+
     progress_callback(0.95, "模型下載完成")
 
 
