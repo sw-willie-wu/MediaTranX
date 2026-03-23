@@ -113,50 +113,55 @@ class AlignmentEngine:
                 on_progress(0.0, "載入對齊模型...")
             self._ensure_model(language)
 
-            # 讀取音訊
+            # 讀取完整音訊
             if on_progress:
                 on_progress(0.1, "讀取音訊...")
-            waveform = self._load_audio(audio_path)
+            full_waveform = self._load_audio(audio_path)
 
-            # 對整段音訊做推論，取得 frame-level logits
-            if on_progress:
-                on_progress(0.2, "計算音素機率...")
-            with torch.no_grad():
-                inputs = self._processor(
-                    waveform,
-                    sampling_rate=_WAV2VEC2_SR,
-                    return_tensors="pt",
-                    padding=True,
-                )
-                input_values = inputs.input_values.to(self._device)
-                logits = self._model(input_values).logits[0]  # (frames, vocab)
-                log_probs = torch.log_softmax(logits, dim=-1).cpu()
-
-            # 計算 frame 到秒的轉換率
-            total_samples = len(waveform)
-            total_frames = log_probs.shape[0]
-            frame_duration = total_samples / (_WAV2VEC2_SR * total_frames)
-
-            # 對每個 segment 做 alignment
+            # 逐 segment 分段推論（避免一次送入整段長音訊導致 OOM/卡頓）
             from app.engine.ai.audio.whisper import TranscribeSegment
 
             aligned_segments: list[TranscribeSegment] = []
+            total = len(segments)
+            pad_sec = 0.5  # 前後各多取 0.5 秒做 context
+
             for i, seg in enumerate(segments):
                 if on_progress:
-                    progress = 0.3 + 0.6 * (i / len(segments))
-                    on_progress(progress, f"對齊片段 {i+1}/{len(segments)}...")
+                    progress = 0.15 + 0.8 * (i / total)
+                    on_progress(progress, f"對齊片段 {i+1}/{total}...")
 
-                # 計算 segment 對應的 frame 範圍
-                start_frame = int(seg.start / frame_duration)
-                end_frame = int(seg.end / frame_duration)
-                start_frame = max(0, min(start_frame, total_frames - 1))
-                end_frame = max(start_frame + 1, min(end_frame, total_frames))
+                # 擷取 segment 對應的音訊片段（含前後 padding）
+                start_sample = max(0, int((seg.start - pad_sec) * _WAV2VEC2_SR))
+                end_sample = min(len(full_waveform), int((seg.end + pad_sec) * _WAV2VEC2_SR))
+                seg_waveform = full_waveform[start_sample:end_sample]
 
-                seg_log_probs = log_probs[start_frame:end_frame]
+                if len(seg_waveform) < 160:  # 太短跳過
+                    aligned_segments.append(seg)
+                    continue
+
+                # 對這段音訊做推論
+                with torch.no_grad():
+                    inputs = self._processor(
+                        seg_waveform,
+                        sampling_rate=_WAV2VEC2_SR,
+                        return_tensors="pt",
+                        padding=True,
+                    )
+                    input_values = inputs.input_values.to(self._device)
+                    logits = self._model(input_values).logits[0]
+                    seg_log_probs = torch.log_softmax(logits, dim=-1).cpu()
+
+                # frame duration 基於這段音訊
+                seg_samples = len(seg_waveform)
+                seg_frames = seg_log_probs.shape[0]
+                frame_duration = seg_samples / (_WAV2VEC2_SR * seg_frames)
+
+                # 計算 padding 偏移（alignment 結果時間需加回去）
+                actual_start = start_sample / _WAV2VEC2_SR
 
                 # 嘗試 forced alignment
                 words = self._align_segment(
-                    seg_log_probs, seg.text, seg.start, frame_duration
+                    seg_log_probs, seg.text, actual_start, frame_duration
                 )
 
                 if words:
@@ -168,7 +173,6 @@ class AlignmentEngine:
                     new_seg.words = words  # type: ignore
                     aligned_segments.append(new_seg)
                 else:
-                    # Alignment 失敗，保留原始 segment
                     aligned_segments.append(seg)
 
             if on_progress:

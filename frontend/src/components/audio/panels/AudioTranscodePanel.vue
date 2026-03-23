@@ -21,13 +21,24 @@ const bitrate = ref('192k')
 const sampleRate = ref('')
 
 const formats = [
-  { value: 'mp3',  label: 'MP3' },
-  { value: 'aac',  label: 'AAC' },
-  { value: 'flac', label: t('audio.transcode.flac_lossless') },
-  { value: 'wav',  label: 'WAV' },
-  { value: 'ogg',  label: 'OGG' },
-  { value: 'm4a',  label: 'M4A' },
+  { group: t('audio.transcode.lossy'), options: [
+    { value: 'mp3',  label: 'MP3' },
+    { value: 'aac',  label: 'AAC' },
+    { value: 'ogg',  label: 'OGG (Vorbis)' },
+    { value: 'm4a',  label: 'M4A (AAC)' },
+    { value: 'opus', label: 'Opus' },
+  ]},
+  { group: t('audio.transcode.lossless'), options: [
+    { value: 'flac', label: 'FLAC' },
+    { value: 'alac', label: 'ALAC' },
+    { value: 'wav',  label: 'WAV' },
+    { value: 'aiff', label: 'AIFF' },
+  ]},
 ]
+
+// 無損格式不需要 bitrate
+const LOSSLESS_FORMATS = new Set(['flac', 'alac', 'wav', 'aiff'])
+const showBitrate = computed(() => !LOSSLESS_FORMATS.has(outputFormat.value))
 
 const bitrates = [
   { value: '128k', label: '128 kbps' },
@@ -52,7 +63,7 @@ async function execute() {
     {
       file_id: props.fileId,
       output_format: outputFormat.value,
-      audio_bitrate: bitrate.value,
+      ...(showBitrate.value ? { audio_bitrate: bitrate.value } : {}),
       sample_rate: sampleRate.value ? parseInt(sampleRate.value) : null,
     },
     t('audio.transcode.task_label'),
@@ -75,7 +86,7 @@ defineExpose({ execute, isDisabled, isLoading })
       <AppSelect v-model="outputFormat" :options="formats" />
     </div>
 
-    <div class="form-group">
+    <div v-if="showBitrate" class="form-group">
       <label>{{ $t('audio.transcode.bitrate') }}</label>
       <AppSelect v-model="bitrate" :options="bitrates" />
     </div>

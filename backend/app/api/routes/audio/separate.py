@@ -10,6 +10,8 @@ class AudioSeparateRequest(BaseModel):
     file_id: str = Field(..., description="輸入檔案 ID")
     model_name: str = Field(default="htdemucs_6s", description="Demucs 模型名稱")
     stems: Optional[List[str]] = Field(default=None, description="要分離的音軌 (None=全部)")
+    output_format: str = Field(default="wav", description="輸出格式 (wav, flac, mp3)")
+    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
 
 
 class AudioSeparateResponse(BaseModel):
@@ -34,6 +36,8 @@ async def separate_audio(request: AudioSeparateRequest):
             file_id=request.file_id,
             model_name=request.model_name,
             stems=request.stems,
+            output_format=request.output_format,
+            output_dir=request.output_dir,
         )
         return AudioSeparateResponse(task_id=task_id)
     except ValueError as e:

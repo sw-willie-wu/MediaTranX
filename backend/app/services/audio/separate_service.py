@@ -3,9 +3,8 @@
 使用 Demucs 將音訊分離為 6 軌（vocals, drums, bass, guitar, piano, other）
 """
 import logging
-import zipfile
 from pathlib import Path
-from typing import Callable, Optional, List
+from typing import Callable, Optional
 from uuid import uuid4
 
 from app.engine.ai.audio.demucs import DemucsWrapper, get_demucs
@@ -43,7 +42,9 @@ class AudioSeparateService:
         self,
         file_id: str,
         model_name: str = "htdemucs_6s",
-        stems: Optional[List[str]] = None,
+        stems: Optional[list[str]] = None,
+        output_format: str = "wav",
+        output_dir: Optional[str] = None,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -52,6 +53,8 @@ class AudioSeparateService:
             "file_id": file_id,
             "model_name": model_name,
             "stems": stems,
+            "output_format": output_format,
+            "output_dir": output_dir,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_SEPARATE, params)
         logger.info(f"Audio separate task submitted: {task_id}")
@@ -68,58 +71,73 @@ class AudioSeparateService:
         model_name = params.get("model_name", "htdemucs_6s")
         stems = params.get("stems")
 
-        output_file_id = str(uuid4())
         original_stem = Path(file_info.original_filename).stem
-        zip_filename = f"{original_stem}_separated_{output_file_id[:8]}.zip"
+        output_format = params.get("output_format", "wav")
 
-        output_dir_path = self._file_service.output_dir
+        # 決定輸出目錄
+        custom_output_dir = params.get("output_dir")
+        if custom_output_dir:
+            output_dir_path = Path(custom_output_dir)
+        else:
+            output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
 
-        # 暫存目錄
-        temp_dir = output_dir_path / f"_demucs_temp_{output_file_id[:8]}"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        progress_callback(0.0, "載入模型...")
 
-        try:
-            progress_callback(0.0, "載入模型...")
-
-            # 執行分離
-            separated, sample_rate = self._demucs.separate(
-                audio_path=str(file_info.file_path),
-                variant=model_name,
-                stems=stems,
-                on_progress=lambda p, m: progress_callback(p * 0.9, m),
-            )
-
-            progress_callback(0.9, "寫入檔案...")
-
-            # 儲存各 stem 為 WAV
-            stem_files = []
-            for stem_name, tensor in separated.items():
-                wav_path = temp_dir / f"{stem_name}.wav"
-                # tensor shape: (channels, samples) → transpose to (samples, channels)
-                audio_data = tensor.numpy().T
-                sf.write(str(wav_path), audio_data, sample_rate)
-                stem_files.append(wav_path)
-
-            # 打包 ZIP
-            zip_path = output_dir_path / zip_filename
-            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                for wav_path in stem_files:
-                    zf.write(wav_path, wav_path.name)
-
-        finally:
-            # 清理暫存
-            import shutil
-            if temp_dir.exists():
-                shutil.rmtree(temp_dir, ignore_errors=True)
-
-        output_info = self._file_service.register_output(
-            file_id=output_file_id, file_path=zip_path, original_filename=file_info.original_filename
+        # 執行分離
+        separated, sample_rate = self._demucs.separate(
+            audio_path=str(file_info.file_path),
+            variant=model_name,
+            stems=stems,
+            on_progress=lambda p, m: progress_callback(p * 0.9, m),
         )
+
+        progress_callback(0.9, "寫入檔案...")
+
+        # 儲存各 stem 為獨立檔案
+        output_files = []
+        first_file_id = None
+
+        for stem_name, tensor in separated.items():
+            filename = f"{original_stem}.{stem_name}.{output_format}"
+            file_path = output_dir_path / filename
+            audio_data = tensor.numpy().T
+
+            if output_format == "mp3":
+                # WAV → MP3 via ffmpeg
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                    tmp_path = tmp.name
+                try:
+                    sf.write(tmp_path, audio_data, sample_rate)
+                    from app.engine.ffmpeg import FFmpeg
+                    ffmpeg = FFmpeg()
+                    ffmpeg.convert(tmp_path, str(file_path), {"format": "mp3", "bitrate": "192k"})
+                finally:
+                    Path(tmp_path).unlink(missing_ok=True)
+            elif output_format == "flac":
+                sf.write(str(file_path), audio_data, sample_rate, format="FLAC")
+            else:
+                sf.write(str(file_path), audio_data, sample_rate)
+
+            stem_file_id = str(uuid4())
+            self._file_service.register_output(
+                file_id=stem_file_id, file_path=file_path, original_filename=file_info.original_filename
+            )
+            output_files.append({
+                "file_id": stem_file_id,
+                "filename": filename,
+                "stem": stem_name,
+                "path": str(file_path),
+            })
+            if first_file_id is None:
+                first_file_id = stem_file_id
+
         progress_callback(1.0, "分離完成")
         return {
-            "output_file_id": output_file_id,
-            "output_filename": output_info.filename,
+            "output_file_id": first_file_id,
+            "output_filename": f"{original_stem}.vocals.{output_format}",
+            "output_files": output_files,
         }
 
 
