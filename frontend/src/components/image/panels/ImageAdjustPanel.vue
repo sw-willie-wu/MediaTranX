@@ -115,27 +115,27 @@ defineExpose({ execute, isDisabled, isLoading, getState, setState, reset, getPar
 
     <div class="form-group">
       <label>{{ $t('image.adjust.brightness') }} <span class="param-value">{{ brightness }}%</span></label>
-      <AppRange v-model="brightness" :min="10" :max="300" :step="5" />
+      <AppRange v-model="brightness" :min="0" :max="300" :step="1" />
     </div>
 
     <div class="form-group">
       <label>{{ $t('image.adjust.contrast') }} <span class="param-value">{{ contrast }}%</span></label>
-      <AppRange v-model="contrast" :min="10" :max="300" :step="5" />
+      <AppRange v-model="contrast" :min="0" :max="300" :step="1" />
     </div>
 
     <div class="form-group">
       <label>{{ $t('image.adjust.saturation') }} <span class="param-value">{{ saturation }}%</span></label>
-      <AppRange v-model="saturation" :min="0" :max="300" :step="5" />
-    </div>
-
-    <div class="form-group">
-      <label>{{ $t('image.adjust.hue') }} <span class="param-value">{{ hue > 0 ? '+' : '' }}{{ hue }}°</span></label>
-      <AppRange v-model="hue" :min="-180" :max="180" :step="5" />
+      <AppRange v-model="saturation" :min="0" :max="300" :step="1" />
     </div>
 
     <div class="form-group">
       <label>{{ $t('image.adjust.sharpness') }} <span class="param-value">{{ sharpness }}%</span></label>
-      <AppRange v-model="sharpness" :min="0" :max="300" :step="5" />
+      <AppRange v-model="sharpness" :min="0" :max="300" :step="1" />
+    </div>
+
+    <div class="form-group">
+      <label>{{ $t('image.adjust.hue') }} <span class="param-value">{{ hue > 0 ? '+' : '' }}{{ hue }}°</span></label>
+      <AppRange v-model="hue" :min="-180" :max="180" :step="1" />
     </div>
 
     <div class="form-group">
@@ -145,7 +145,7 @@ defineExpose({ execute, isDisabled, isLoading, getState, setState, reset, getPar
           {{ warmth > 0 ? `${$t('image.adjust.warm')} +${warmth}` : warmth < 0 ? `${$t('image.adjust.cool')} ${warmth}` : '0' }}
         </span>
       </label>
-      <AppRange v-model="warmth" :min="-100" :max="100" :step="5" />
+      <AppRange v-model="warmth" :min="-100" :max="100" :step="1" />
     </div>
 
     <div class="form-group">

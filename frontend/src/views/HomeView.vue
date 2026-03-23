@@ -12,9 +12,9 @@ const isDragging = ref(false)
 
 // 工具類別
 const toolsDef = [
-  { id: 'video', nameKey: 'home.video', icon: 'bi-film', color: '#ef4444', path: '/video' },
-  { id: 'audio', nameKey: 'home.audio', icon: 'bi-music-note-beamed', color: '#f59e0b', path: '/audio' },
   { id: 'image', nameKey: 'home.image', icon: 'bi-image-fill', color: '#10b981', path: '/image' },
+  { id: 'audio', nameKey: 'home.audio', icon: 'bi-music-note-beamed', color: '#f59e0b', path: '/audio' },
+  { id: 'video', nameKey: 'home.video', icon: 'bi-film', color: '#ef4444', path: '/video' },
   { id: 'document', nameKey: 'home.document', icon: 'bi-file-earmark-text-fill', color: '#6366f1', path: '/document' },
 ]
 

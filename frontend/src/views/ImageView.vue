@@ -160,12 +160,13 @@ watch(() => collection.activeId.value, (newId, oldId) => {
     // Clear stale filter preview from previous entry
     filterPreviewParams.value = null
     restorePanelSettings(newId)
-    // Restore zoom state (or reset if first visit)
+    // 立即重設 zoom 避免切圖時閃一下
+    previewRef.value?.resetZoom()
+    // 如果有快取的 zoom state，等圖片載入後還原
     const savedZoom = zoomCache.get(newId)
-    nextTick(() => {
-      if (savedZoom) previewRef.value?.setZoomState(savedZoom)
-      else previewRef.value?.resetZoom()
-    })
+    if (savedZoom) {
+      nextTick(() => previewRef.value?.setZoomState(savedZoom))
+    }
   }
 })
 
@@ -195,7 +196,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 // 顯示遮罩時同步 canvas 位置
 watch(showCropOverlay, (active) => {
   if (active) nextTick(() => previewRef.value?.syncCropCanvas())
-  else previewRef.value?.clearCropRect()
+  // 不清除 cropRect — 保留使用者的調整，切回來時恢復
 })
 
 // 同步 canvas 裁切矩形 → panel（由 ImagePreview emit 事件驅動）

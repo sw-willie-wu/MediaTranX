@@ -192,16 +192,12 @@ defineExpose({ execute, isDisabled, isLoading, upscaleScale, getParams })
 
         <!-- GFPGAN: upscale -->
         <template v-if="selectedFaceFamily === 'gfpgan'">
-          <label class="sub-label">{{ $t('image.upscale.face_scale') }}</label>
-          <div class="btn-choice-group">
-            <button
-              v-for="v in [1, 2, 4]"
-              :key="v"
-              class="btn-choice"
-              :class="{ 'is-active': faceRestoreUpscale === v }"
-              @click="faceRestoreUpscale = v"
-            >{{ v }}x</button>
-          </div>
+          <label class="sub-label">
+            {{ $t('image.upscale.face_scale') }}
+            <span class="param-value">{{ faceRestoreUpscale }}x</span>
+          </label>
+          <AppRange v-model="faceRestoreUpscale" :min="1" :max="4" :step="1" />
+          <div class="range-ticks"><span>1x</span><span>4x</span></div>
         </template>
       </div>
     </div>
