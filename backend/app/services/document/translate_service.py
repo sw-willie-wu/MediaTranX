@@ -10,7 +10,16 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.engine.ai.llama import get_translator
+from app.utils.prompts import (
+    WHISPER_TO_BCP47,
+    TranslateResult,
+    build_translate_prompt,
+    build_srt_translate_prompt,
+    build_translate_messages,
+    segments_to_srt,
+    parse_srt_response,
+    split_text,
+)
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 
@@ -250,13 +259,18 @@ class TranslateService:
         from app.engine.ai.model_manager import get_model_manager
         manager = get_model_manager()
 
-        translator = get_translator(model_type)
+        variant = f"{model_size}:{quantization}" if quantization else model_size
 
         def translate_progress(percent: float, msg: str):
             overall = 0.05 + percent * 0.90
             progress_callback(overall, msg)
 
         with manager.gpu_session():
+            from app.engine.ai.runtime.llama_server import LlamaServerRuntime
+            from app.engine.ai.registry import SLOT_LLM
+
+            runtime = LlamaServerRuntime(SLOT_LLM)
+
             if is_subtitle:
                 # 字幕檔：解析 → 逐段翻譯 → 保留時間軸
                 if ext == ".vtt":
@@ -266,32 +280,88 @@ class TranslateService:
 
                 logger.info(f"Parsed {len(segments)} subtitle segments from {ext} file")
 
-                translated_segments = translator.translate_segments(
-                    segments=segments,
-                    source_lang=source_language,
-                    target_lang=target_language,
-                    model_size=model_size,
-                    quantization=quantization,
-                    on_progress=translate_progress,
-                    style=translate_style,
-                    glossary=glossary,
-                )
+                src = WHISPER_TO_BCP47.get(source_language, source_language)
+                batch_size = 5
+
+                def _load_progress(p, msg):
+                    translate_progress(p * 0.05, msg)
+
+                translate_progress(0.0, "載入翻譯模型...")
+
+                with runtime.acquire(model_type, variant, _load_progress):
+                    translate_progress(0.05, "開始翻譯字幕...")
+
+                    total = len(segments)
+                    translated_segments = []
+                    num_batches = (total + batch_size - 1) // batch_size
+
+                    for batch_idx in range(num_batches):
+                        start_idx = batch_idx * batch_size
+                        end_idx = min(start_idx + batch_size, total)
+                        batch_segments = segments[start_idx:end_idx]
+
+                        srt_text_chunk = segments_to_srt(batch_segments, start_index=start_idx + 1)
+                        prompt = build_srt_translate_prompt(
+                            srt_text_chunk, src, target_language,
+                            style=translate_style,
+                            glossary=glossary,
+                            model_id=model_type,
+                        )
+                        messages = build_translate_messages(prompt, model_type)
+                        translated_srt = runtime.chat(
+                            messages=messages,
+                            max_tokens=len(srt_text_chunk) * 3,
+                            temperature=0.1,
+                        )
+
+                        batch_translated = parse_srt_response(translated_srt, batch_segments)
+                        translated_segments.extend(batch_translated)
+
+                        if num_batches > 0:
+                            progress = min((batch_idx + 1) / num_batches, 1.0)
+                            translate_progress(
+                                0.05 + progress * 0.95,
+                                f"翻譯中... {end_idx}/{total} 段"
+                            )
+
+                    translate_progress(1.0, "字幕翻譯完成")
+
                 translated_text = None  # 由寫入函式處理
             else:
                 # 純文字檔：整段翻譯
-                result = translator.translate(
-                    text=text,
-                    source_lang=source_language,
-                    target_lang=target_language,
-                    model_size=model_size,
-                    quantization=quantization,
-                    on_progress=translate_progress,
-                    style=translate_style,
-                    glossary=glossary,
-                )
-                translated_text = result.text
+                def _load_progress(p, msg):
+                    translate_progress(p * 0.05, msg)
+
+                translate_progress(0.0, "載入翻譯模型...")
+
+                with runtime.acquire(model_type, variant, _load_progress):
+                    translate_progress(0.05, "開始翻譯...")
+
+                    chunks = split_text(text, max_chars=1500)
+                    total_chunks = len(chunks)
+                    translated_chunks = []
+
+                    for i, chunk in enumerate(chunks):
+                        prompt = build_translate_prompt(chunk, source_language, target_language, glossary=glossary, model_id=model_type)
+                        messages = build_translate_messages(prompt, model_type)
+                        result_text = runtime.chat(
+                            messages=messages,
+                            max_tokens=max(len(chunk) * 4, 100),
+                            temperature=0.1,
+                        )
+                        translated_chunks.append(result_text)
+
+                        if total_chunks > 0:
+                            progress = min((i + 1) / total_chunks, 1.0)
+                            translate_progress(
+                                0.05 + progress * 0.95,
+                                f"翻譯中... {progress:.0%} ({i + 1}/{total_chunks} 段)"
+                            )
+
+                    translate_progress(1.0, "翻譯完成")
+
+                translated_text = "\n\n".join(translated_chunks)
                 translated_segments = None
-            # 翻譯模型已在 finally 中自動卸載
 
         # === 階段 3: 寫入輸出檔 (95~100%) ===
         progress_callback(0.95, "正在寫入輸出檔...")

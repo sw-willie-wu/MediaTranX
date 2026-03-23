@@ -10,7 +10,13 @@ from uuid import uuid4
 
 from app.engine.ffmpeg import FFmpeg, FFmpegError, get_ffmpeg
 from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
-from app.engine.ai.llama import get_translator
+from app.utils.prompts import (
+    WHISPER_TO_BCP47,
+    build_srt_translate_prompt,
+    build_translate_messages,
+    segments_to_srt,
+    parse_srt_response,
+)
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 
@@ -291,7 +297,6 @@ class SubtitleService:
                 if has_translation:
                     progress_callback(whisper_end, "準備翻譯字幕...")
 
-                    translator = get_translator(translate_model_type)
                     seg_dicts = [
                         {"start": s.start, "end": s.end, "text": s.text}
                         for s in result.segments
@@ -301,18 +306,60 @@ class SubtitleService:
                         overall = 0.70 + percent * 0.25
                         progress_callback(overall, msg)
 
-                    translated = translator.translate_segments(
-                        seg_dicts,
-                        source_lang=result.language,
-                        target_lang=target_language,
-                        model_size=translate_model_size,
-                        quantization=translate_quantization,
-                        on_progress=translate_progress,
-                        keep_names=keep_names,
-                        style=translate_style,
-                        glossary=glossary,
-                    )
-                    # 翻譯模型已在 translate_segments() 的 finally 中自動卸載
+                    variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
+
+                    from app.engine.ai.runtime.llama_server import LlamaServerRuntime
+                    from app.engine.ai.registry import SLOT_LLM
+
+                    src = WHISPER_TO_BCP47.get(result.language, result.language)
+                    runtime = LlamaServerRuntime(SLOT_LLM)
+                    batch_size = 5
+
+                    def _load_progress(p, msg):
+                        translate_progress(p * 0.05, msg)
+
+                    translate_progress(0.0, "載入翻譯模型...")
+
+                    with runtime.acquire(translate_model_type, variant, _load_progress):
+                        translate_progress(0.05, "開始翻譯字幕...")
+
+                        total = len(seg_dicts)
+                        translated_all = []
+                        num_batches = (total + batch_size - 1) // batch_size
+
+                        for batch_idx in range(num_batches):
+                            start_idx = batch_idx * batch_size
+                            end_idx = min(start_idx + batch_size, total)
+                            batch_segments = seg_dicts[start_idx:end_idx]
+
+                            srt_text = segments_to_srt(batch_segments, start_index=start_idx + 1)
+                            prompt = build_srt_translate_prompt(
+                                srt_text, src, target_language,
+                                keep_names=keep_names,
+                                style=translate_style,
+                                glossary=glossary,
+                                model_id=translate_model_type,
+                            )
+                            messages = build_translate_messages(prompt, translate_model_type)
+                            translated_srt = runtime.chat(
+                                messages=messages,
+                                max_tokens=len(srt_text) * 3,
+                                temperature=0.1,
+                            )
+
+                            batch_translated = parse_srt_response(translated_srt, batch_segments)
+                            translated_all.extend(batch_translated)
+
+                            if num_batches > 0:
+                                progress = min((batch_idx + 1) / num_batches, 1.0)
+                                translate_progress(
+                                    0.05 + progress * 0.95,
+                                    f"翻譯中... {end_idx}/{total} 段"
+                                )
+
+                        translate_progress(1.0, "字幕翻譯完成")
+
+                    translated = translated_all
 
                     result.segments = [
                         TranscribeSegment(s["start"], s["end"], s["text"])

@@ -109,9 +109,7 @@ async def get_whisper_status(model_size: str = "medium"):
 async def get_translategemma_status(model_size: str = "4b"):
     """查詢 TranslateGemma 模型狀態"""
     try:
-        lang_svc = get_language_service()
-        tg = lang_svc.get_translator("translategemma")
-        status = tg.get_model_status(model_size)
+        status = get_language_service().get_model_status("translategemma", model_size)
         return ModelStatusResponse(**status)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -121,9 +119,7 @@ async def get_translategemma_status(model_size: str = "4b"):
 async def get_translate_model_status(model_type: str = "translategemma", model_size: str = "4b", quantization: str | None = None):
     """查詢翻譯模型狀態（通用，支援 translategemma 和 qwen3）"""
     try:
-        lang_svc = get_language_service()
-        translator = lang_svc.get_translator(model_type)
-        status = translator.get_model_status(model_size, quantization)
+        status = get_language_service().get_model_status(model_type, model_size, quantization)
         return status
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -155,11 +151,12 @@ async def test_translate(request: TranslateTestRequest):
     測試翻譯（開發用）— 使用 llama-server messages API
     """
     try:
-        lang_svc = get_language_service()
-        lang_names_en = lang_svc.get_lang_names_en()
-        tg = lang_svc.get_translator("translategemma")
-        source_name = lang_names_en.get(request.source_language, request.source_language)
-        target_name = lang_names_en.get(request.target_language, request.target_language)
+        from app.utils.prompts import LANG_NAMES_EN
+        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
+        from app.engine.ai.registry import SLOT_LLM
+
+        source_name = LANG_NAMES_EN.get(request.source_language, request.source_language)
+        target_name = LANG_NAMES_EN.get(request.target_language, request.target_language)
         variant = request.model_size
 
         user_msg = (
@@ -169,8 +166,9 @@ async def test_translate(request: TranslateTestRequest):
         )
         messages = [{"role": "user", "content": user_msg}]
 
-        with tg._runtime.acquire(tg.MODEL_ID, variant):
-            result = tg._runtime.chat(
+        runtime = LlamaServerRuntime(SLOT_LLM)
+        with runtime.acquire("translategemma", variant):
+            result = runtime.chat(
                 messages=messages,
                 max_tokens=len(request.text) * 3,
                 temperature=0.1,

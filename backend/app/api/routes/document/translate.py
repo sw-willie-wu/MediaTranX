@@ -43,9 +43,7 @@ class TranslateGemmaStatusResponse(BaseModel):
 async def get_translategemma_status(model_type: str = "translategemma", model_size: str = "4b"):
     """查詢翻譯模型狀態"""
     try:
-        lang_svc = get_language_service()
-        translator = lang_svc.get_translator(model_type)
-        status = translator.get_model_status(model_size)
+        status = get_language_service().get_model_status(model_type, model_size)
         return TranslateGemmaStatusResponse(**status)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

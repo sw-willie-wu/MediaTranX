@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.engine.ai.llama.vlm import get_vlm_ocr, DEFAULT_VLM_MODEL
+from app.utils.prompts import DEFAULT_VLM_MODEL, build_ocr_messages
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 
@@ -32,7 +32,6 @@ class DocumentOcrService:
     def __init__(self):
         if self._initialized:
             return
-        self._ocr = get_vlm_ocr()
         self._file_service: FileService = get_file_service()
         self._task_manager: TaskManager = get_task_manager()
         self._task_manager.register_handler(TASK_TYPE, self._handle_task)
@@ -41,7 +40,8 @@ class DocumentOcrService:
 
     def get_status(self, model_id: str = DEFAULT_VLM_MODEL, size: str = "4b",
                    quantization: Optional[str] = None) -> dict:
-        return self._ocr.get_status(model_id=model_id, size=size, quantization=quantization)
+        from app.services.setup.language_service import get_language_service
+        return get_language_service().get_vlm_status(model_id=model_id, size=size, quantization=quantization)
 
     async def submit(
         self,
@@ -64,13 +64,26 @@ class DocumentOcrService:
         }
         return await self._task_manager.submit(TASK_TYPE, params)
 
+    def _recognize(self, image_path: str, model_id: str, variant: str, fmt: str,
+                   on_progress: Optional[Callable[[float, str], None]] = None) -> str:
+        """使用 LlamaServerRuntime 辨識單張圖片"""
+        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
+        from app.engine.ai.registry import SLOT_VLM
+
+        runtime = LlamaServerRuntime(SLOT_VLM)
+        messages = build_ocr_messages(image_path, format=fmt)
+
+        with runtime.acquire(model_id, variant, on_progress):
+            return runtime.chat(messages=messages, max_tokens=4096, temperature=0.0)
+
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        if not self._ocr.is_available():
+        from app.engine.ai.model_manager import get_model_manager
+        if not get_model_manager().is_llama_ready():
             raise RuntimeError("llama-server 未安裝，請先至設定頁面安裝 AI 核心環境")
 
         model_id = params.get("model_id", DEFAULT_VLM_MODEL)
@@ -80,16 +93,18 @@ class DocumentOcrService:
         ext = "md" if fmt == "md" else "txt"
         src_ext = Path(file_info.original_filename).suffix.lower()
 
+        variant = f"{size}:{quantization}" if quantization else size
+
         progress_callback(0.05, "準備辨識...")
 
         if src_ext == ".pdf":
             final_text = self._ocr_pdf(
-                file_info.file_path, model_id, size, quantization, fmt, progress_callback,
+                file_info.file_path, model_id, variant, fmt, progress_callback,
             )
         elif src_ext in _IMAGE_EXTS:
-            final_text = self._ocr.recognize(
+            final_text = self._recognize(
                 image_path=str(file_info.file_path),
-                model_id=model_id, size=size, quantization=quantization, format=fmt,
+                model_id=model_id, variant=variant, fmt=fmt,
                 on_progress=lambda p, m: progress_callback(0.1 + p * 0.85, m),
             )
         else:
@@ -123,7 +138,7 @@ class DocumentOcrService:
             "char_count": len(final_text),
         }
 
-    def _ocr_pdf(self, src_path: Path, model_id, size, quantization, fmt, progress_callback) -> str:
+    def _ocr_pdf(self, src_path: Path, model_id, variant, fmt, progress_callback) -> str:
         import io as _io
         import pypdfium2
         doc = pypdfium2.PdfDocument(str(src_path))
@@ -142,10 +157,10 @@ class DocumentOcrService:
                 tmp.write(img_bytes)
                 tmp_path = tmp.name
             try:
-                text = self._ocr.recognize(
+                text = self._recognize(
                     image_path=tmp_path,
-                    model_id=model_id, size=size, quantization=quantization,
-                    format=fmt, on_progress=lambda p, m: None,
+                    model_id=model_id, variant=variant, fmt=fmt,
+                    on_progress=lambda p, m: None,
                 )
                 page_results.append(text.strip())
             finally:

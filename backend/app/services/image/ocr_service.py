@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.engine.ai.llama.vlm import get_vlm_ocr, DEFAULT_VLM_MODEL
+from app.utils.prompts import DEFAULT_VLM_MODEL, build_ocr_messages, OCR_PARAMS
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 
@@ -29,7 +29,6 @@ class ImageOcrService:
     def __init__(self):
         if self._initialized:
             return
-        self._ocr = get_vlm_ocr()
         self._file_service: FileService = get_file_service()
         self._task_manager: TaskManager = get_task_manager()
         self._task_manager.register_handler(TASK_TYPE_IMAGE_OCR, self._handle_task)
@@ -44,7 +43,8 @@ class ImageOcrService:
         quantization: Optional[str] = None,
     ) -> dict:
         """查詢 VLM OCR 狀態"""
-        return self._ocr.get_status(model_id=model_id, size=size, quantization=quantization)
+        from app.services.setup.language_service import get_language_service
+        return get_language_service().get_vlm_status(model_id=model_id, size=size, quantization=quantization)
 
     async def submit_ocr(
         self,
@@ -88,18 +88,20 @@ class ImageOcrService:
 
         progress_callback(0.05, "準備辨識...")
 
-        if not self._ocr.is_available():
+        from app.engine.ai.model_manager import get_model_manager
+        if not get_model_manager().is_llama_ready():
             raise RuntimeError("llama-server 未安裝，請先至設定頁面安裝 AI 核心環境")
 
         # 執行 VLM OCR
-        final_text = self._ocr.recognize(
-            image_path=str(file_info.file_path),
-            model_id=model_id,
-            size=size,
-            quantization=quantization,
-            format=fmt,
-            on_progress=lambda p, m: progress_callback(0.1 + p * 0.85, m),
-        )
+        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
+        from app.engine.ai.registry import SLOT_VLM
+
+        variant = f"{size}:{quantization}" if quantization else size
+        runtime = LlamaServerRuntime(SLOT_VLM)
+        messages = build_ocr_messages(str(file_info.file_path), format=fmt)
+
+        with runtime.acquire(model_id, variant, lambda p, m: progress_callback(0.1 + p * 0.85, m)):
+            final_text = runtime.chat(messages=messages, max_tokens=4096, temperature=0.0)
 
         if not final_text.strip():
             final_text = "(未偵測到文字)"
