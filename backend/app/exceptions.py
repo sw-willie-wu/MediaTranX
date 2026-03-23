@@ -39,3 +39,21 @@ class FileNotFoundError_(MediaTranXError):
 class ConfigError(MediaTranXError):
     """設定錯誤（路徑無效、設定值不合法）"""
     pass
+
+
+class RemoteApiError(MediaTranXError):
+    """
+    雲端 API 錯誤（帶 error code 供前端 i18n 翻譯）
+
+    Attributes:
+        code: 錯誤代碼（對應前端 i18n key: errors.remote.{code}）
+        detail: 原始錯誤詳情（debug 用）
+    """
+
+    def __init__(self, code: str, detail: str = ""):
+        self.code = code
+        self.detail = detail
+        super().__init__(f"[{code}] {detail}")
+
+    def to_dict(self) -> dict:
+        return {"error_code": self.code, "detail": self.detail}
