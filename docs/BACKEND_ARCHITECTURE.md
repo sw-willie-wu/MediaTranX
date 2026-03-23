@@ -7,12 +7,32 @@
 ## 1. 分層規則
 
 ```
-API 路由層 (api/routes/)     ← 只做參數驗證、呼叫 Service、回傳 Response
-  api/schemas/               ← Pydantic response models（API 專用）
-Service 業務層 (services/)    ← 協調 FileService + TaskManager，執行業務邏輯
-Engine 底層封裝 (engine/)     ← AI 推理、硬體偵測、路徑解析、FFmpeg
-Workers (workers/)            ← TaskManager、ProgressTracker
-Models (models/)              ← 跨層共用 domain types（enum、dataclass）
+app/
+├── init/                      ← 啟動初始化（DLL 注入、日誌、相容層）
+├── api/
+│   ├── routes/                ← 路由層：參數驗證 → 呼叫 Service → 回傳 Response
+│   └── schemas/               ← Pydantic response models（API 專用）
+├── db/                        ← 資料庫層（SQLModel）
+│   ├── database.py            ← Engine 建立、migration
+│   ├── models/                ← ORM models（api_connection、task_history）
+│   └── dao/                   ← Data Access Objects
+├── services/                  ← 業務層：協調 FileService + TaskManager
+├── engine/                    ← 底層封裝
+│   ├── paths.py               ← 路徑管理
+│   ├── device.py              ← GPU/CPU 偵測
+│   ├── ffmpeg.py              ← FFmpeg 操作
+│   └── ai/                    ← AI 模型
+│       ├── runtime/           ← Runtime 基礎類別（base、package、pth、llama_server）
+│       ├── image/             ← 影像模型（realesrgan、codeformer、mobilesam 等）
+│       ├── audio/             ← 語音模型（whisper、demucs、wav2vec2）
+│       ├── llama/             ← LLM（gemma、qwen3、vlm、translate prompt）
+│       ├── remote/            ← 遠端 API Provider（ollama、openai、gemini）
+│       ├── registry.py        ← 模型註冊表
+│       └── model_manager.py   ← VRAM / Slot 管理
+├── workers/                   ← TaskManager、ProgressTracker
+├── models/                    ← 跨層共用 domain types（enum、dataclass）
+├── utils/                     ← 工具函數（gif_utils）
+└── exceptions.py              ← 自訂例外階層
 ```
 
 ### 禁止事項
@@ -34,6 +54,51 @@ app/models/
 ```
 
 API 層的 Pydantic models（`TaskResponse`、`FileInfo`）在 `api/schemas/common.py`，routes 透過 `from_task_data()` / `from_file_data()` 轉換。
+
+### 資料庫層（app/db/）
+
+使用 SQLModel（Pydantic + SQLAlchemy），SQLite 儲存：
+
+- `db/database.py` — Engine 建立、WAL 模式、自動 migration（ALTER TABLE 補欄位）
+- `db/models/` — ORM models：`ApiConnection`（遠端 API 連線）、`TaskHistory`（任務歷史）
+- `db/dao/` — DAO pattern 封裝 CRUD，Service 不直接寫 SQL
+
+```python
+# DAO 使用範例
+from app.db.dao.api_connection_dao import ApiConnectionDAO
+dao = ApiConnectionDAO()
+conn = dao.create(provider="ollama", name="Local", endpoint="http://localhost:11434")
+```
+
+### 自訂例外（app/exceptions.py）
+
+```
+MediaTranXError
+├── ModelNotFoundError     ← 模型未找到
+├── ModelLoadError         ← 模型載入失敗
+├── InferenceError         ← AI 推論錯誤
+├── TaskError              ← 任務執行錯誤
+├── FileNotFoundError_     ← 檔案未找到
+├── ConfigError            ← 設定錯誤
+└── RemoteApiError         ← 雲端 API 錯誤（帶 error code 供前端 i18n）
+```
+
+`RemoteApiError` 包含 `code` 欄位（如 `gpu_oom`、`quota_exceeded`），TaskManager 會存入 `error_code`，前端用 `t('tasks.errors.{code}')` 翻譯。
+
+### 遠端 API Provider（engine/ai/remote/）
+
+```
+remote/
+├── base.py      ← RemoteProvider 抽象基底（connect、list_models、chat）
+├── ollama.py    ← OllamaProvider（/api/chat、/api/tags、/api/show）
+├── openai.py    ← OpenAIProvider（Chat Completions + Responses API）
+└── gemini.py    ← GeminiProvider（generateContent）
+```
+
+- 每個 Provider 實作 `connect()`、`list_models()`、`chat()`
+- `chat()` 支援 vision messages（各 provider 格式不同，內部轉換）
+- 模型 capabilities 從 API 偵測（Ollama: `/api/show`、OpenAI: 已知表、Gemini: `supportedGenerationMethods`）
+- 錯誤統一拋 `RemoteApiError(code, detail)`
 
 ---
 
@@ -443,8 +508,19 @@ def get_image_compress_service() -> ImageCompressService:
 7. [ ] **路徑**：所有路徑透過 `engine/paths.py` 取得
 8. [ ] **文件**：更新 `docs/ARCHITECTURE.md` 的相關段落（API 總覽、View 結構等）
 
-### 新增 AI 模型
+### 新增本地 AI 模型
 
 1. [ ] 在 `engine/ai/registry.py` 新增模型定義
-2. [ ] 在 `engine/ai/{format}/` 新增 Runtime 實作
+2. [ ] 在 `engine/ai/{category}/` 新增 Wrapper（繼承對應 Runtime）
+   - `image/` — PTHRuntime（torch state_dict 載入）
+   - `audio/` — PackageRuntime（第三方套件自帶載入）
+   - `llama/` — LlamaServerRuntime（llama-server subprocess）
 3. [ ] 在 Service 的 `_execute` 方法中透過 ModelManager 呼叫
+
+### 新增遠端 API Provider
+
+1. [ ] 在 `engine/ai/remote/` 新增 `{provider}.py`，繼承 `RemoteProvider`
+2. [ ] 實作 `connect()`、`list_models()`、`chat()`
+3. [ ] 在 `remote/__init__.py` 匯出
+4. [ ] 在 `services/setup/remote_service.py` 的 `_get_provider()` 加入分支
+5. [ ] 前端 `ModelDownloadManager.vue` 的 `providerOptions` 加入選項
