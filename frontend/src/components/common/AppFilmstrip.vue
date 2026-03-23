@@ -23,7 +23,20 @@ const emit = defineEmits<{
   select: [id: string, ctrlKey: boolean]
   remove: [id: string]
   clearSelection: []
+  selectAll: []
 }>()
+
+// Ctrl+A → 全選
+function handleKeyDown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+    if (props.items.length > 0) {
+      e.preventDefault()
+      emit('selectAll')
+    }
+  }
+}
+onMounted(() => window.addEventListener('keydown', handleKeyDown))
+onBeforeUnmount(() => window.removeEventListener('keydown', handleKeyDown))
 
 // --- Refs ---
 const scrollEl = ref<HTMLElement | null>(null)

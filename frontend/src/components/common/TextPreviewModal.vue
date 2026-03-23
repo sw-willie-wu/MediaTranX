@@ -4,36 +4,47 @@ import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
 
 const { t } = useI18n()
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   text: string
-  format: 'md' | 'txt'
-  filename: string | null
-}>()
+  format?: 'md' | 'txt'
+  filename?: string | null
+  title?: string
+}>(), {
+  format: 'txt',
+  filename: null,
+  title: '',
+})
 
 const emit = defineEmits<{
   close: []
 }>()
+
+const displayTitle = computed(() => props.title || t('common.text_preview'))
 
 async function copyText() {
   await navigator.clipboard.writeText(props.text)
 }
 </script>
 
+<script lang="ts">
+import { computed } from 'vue'
+</script>
+
 <template>
   <Teleport to="body">
     <Transition name="modal-fade">
-      <div class="ocr-modal-overlay" @click.self="emit('close')">
-        <div class="ocr-modal">
-          <div class="ocr-modal-header">
-            <div class="ocr-modal-title">
+      <div class="modal-overlay" @click.self="emit('close')">
+        <div class="modal-panel">
+          <div class="modal-header">
+            <div class="modal-title">
               <i class="bi bi-file-text me-2"></i>
-              <span>{{ $t('image.ocr.result_title') }}</span>
-              <span v-if="filename" class="ocr-modal-filename">{{ filename }}</span>
+              <span>{{ displayTitle }}</span>
+              <span v-if="filename" class="modal-filename">{{ filename }}</span>
             </div>
-            <div class="ocr-modal-actions">
-              <button class="action-btn" :title="$t('common.copy_all')" @click="copyText">
+            <div class="modal-actions">
+              <button class="action-btn" :title="t('common.copy_all')" @click="copyText">
                 <i class="bi bi-clipboard"></i>
-                <span>{{ $t('common.copy') }}</span>
+                <span>{{ t('common.copy') }}</span>
               </button>
               <button class="close-btn" @click="emit('close')">
                 <i class="bi bi-x-lg"></i>
@@ -41,7 +52,7 @@ async function copyText() {
             </div>
           </div>
 
-          <div class="ocr-modal-body">
+          <div class="modal-body">
             <MarkdownRenderer :text="text" :format="format" />
           </div>
         </div>
@@ -51,7 +62,7 @@ async function copyText() {
 </template>
 
 <style scoped>
-.ocr-modal-overlay {
+.modal-overlay {
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -64,23 +75,21 @@ async function copyText() {
   padding: 2rem;
 }
 
-.ocr-modal {
+.modal-panel {
   display: flex;
   flex-direction: column;
   width: min(860px, 100%);
   max-height: calc(100vh - 4rem);
-  background: rgba(31, 28, 44, 0.85);
+  background: var(--panel-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--panel-border);
-  border-radius: 14px;
+  border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
 }
 
-[data-theme="light"] .ocr-modal {
-  background: #f4f4f8;
-}
-
-.ocr-modal-header {
+.modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -90,7 +99,7 @@ async function copyText() {
   gap: 1rem;
 }
 
-.ocr-modal-title {
+.modal-title {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -100,7 +109,7 @@ async function copyText() {
   min-width: 0;
 }
 
-.ocr-modal-filename {
+.modal-filename {
   font-size: 0.78rem;
   font-weight: 400;
   color: var(--text-muted);
@@ -109,7 +118,7 @@ async function copyText() {
   white-space: nowrap;
 }
 
-.ocr-modal-actions {
+.modal-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -127,7 +136,7 @@ async function copyText() {
   color: var(--text-secondary);
   font-size: 0.8rem;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.15s ease;
   &:hover { background: var(--panel-bg-hover); color: var(--text-primary); }
 }
 
@@ -143,11 +152,11 @@ async function copyText() {
   color: var(--text-muted);
   font-size: 0.8rem;
   cursor: pointer;
-  transition: all 0.15s;
-  &:hover { background: rgba(220,53,69,0.15); border-color: rgba(220,53,69,0.4); color: #f87171; }
+  transition: all 0.15s ease;
+  &:hover { background: var(--color-danger-bg); border-color: var(--color-danger); color: var(--color-danger); }
 }
 
-.ocr-modal-body {
+.modal-body {
   flex: 1;
   overflow-y: auto;
   padding: 1.5rem 1.75rem;
@@ -157,18 +166,18 @@ async function copyText() {
 
   &::-webkit-scrollbar { width: 6px; }
   &::-webkit-scrollbar-track { background: transparent; }
-  &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+  &::-webkit-scrollbar-thumb { background: var(--panel-bg-hover); border-radius: 3px; }
 }
 
 .modal-fade-enter-active,
 .modal-fade-leave-active {
   transition: opacity 0.2s ease;
-  .ocr-modal { transition: transform 0.2s ease; }
+  .modal-panel { transition: transform 0.2s ease; }
 }
 
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
-  .ocr-modal { transform: scale(0.97) translateY(8px); }
+  .modal-panel { transform: scale(0.97) translateY(8px); }
 }
 </style>

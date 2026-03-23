@@ -53,28 +53,28 @@ function iconFor(type: string, icon?: string) {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  min-width: 260px;
-  max-width: 380px;
-  background: rgba(30, 30, 40, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
+  gap: 10px;
+  padding: 14px 18px;
+  min-width: 300px;
+  max-width: 420px;
+  background: rgba(20, 20, 30, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
   color: var(--text-primary);
-  font-size: 0.85rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  font-size: 0.9rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
 .toast-icon {
-  font-size: 1rem;
+  font-size: 1.15rem;
   flex-shrink: 0;
 }
 
-.toast-info .toast-icon { color: #60a5fa; }
-.toast-success .toast-icon { color: #34d399; }
-.toast-error .toast-icon { color: #f87171; }
+.toast-info .toast-icon { color: var(--color-info); }
+.toast-success .toast-icon { color: var(--color-success); }
+.toast-error .toast-icon { color: var(--color-danger); }
 
 .toast-message {
   flex: 1;
@@ -121,11 +121,11 @@ function iconFor(type: string, icon?: string) {
 
 // Transition
 .toast-enter-active {
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .toast-leave-active {
-  transition: all 0.25s ease;
+  transition: all 0.2s ease;
 }
 
 .toast-enter-from {

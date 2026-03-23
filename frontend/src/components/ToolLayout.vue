@@ -40,6 +40,7 @@ const props = withDefaults(defineProps<{
   executeLoading?: boolean
   executeLabel?: string
   hideExecute?: boolean
+  showCompare?: boolean
   hidePreviewTabs?: boolean
   showFilmstrip?: boolean
   collectionSize?: number
@@ -271,6 +272,7 @@ onBeforeUnmount(() => {
           <i class="bi bi-x-lg"></i>
         </button>
         <button
+          v-if="showCompare"
           class="toolbar-btn compare-btn"
           :class="{ 'is-active': isComparing, disabled: !canShowResult }"
           :disabled="!canShowResult"
@@ -402,7 +404,7 @@ onBeforeUnmount(() => {
       <div v-if="!hideExecute && !isCurrentComingSoon" class="execute-section">
         <button
           class="execute-btn"
-          :disabled="executeDisabled"
+          :disabled="executeDisabled || executeLoading"
           @click="emit('execute')"
         >
           <span v-if="executeLoading" class="spinner-border spinner-border-sm me-2"></span>
