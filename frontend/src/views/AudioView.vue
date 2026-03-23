@@ -1,21 +1,26 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import AudioPreview from '@/components/audio/AudioPreview.vue'
+import AudioMultiTrackPreview from '@/components/audio/AudioMultiTrackPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import AudioTranscodePanel  from '@/components/audio/panels/AudioTranscodePanel.vue'
 import AudioCutPanel        from '@/components/audio/panels/AudioCutPanel.vue'
 import AudioVolumePanel     from '@/components/audio/panels/AudioVolumePanel.vue'
 import AudioTranscribePanel from '@/components/audio/panels/AudioTranscribePanel.vue'
 import AudioSeparatePanel  from '@/components/audio/panels/AudioSeparatePanel.vue'
+import AudioLyricsPanel    from '@/components/audio/panels/AudioLyricsPanel.vue'
+import TextPreviewModal from '@/components/common/TextPreviewModal.vue'
 import { useAudioWorkspace } from '@/composables/useAudioWorkspace'
+import { useTaskStore } from '@/stores/tasks'
 
 const { t } = useI18n()
 
 const {
-  hasFile, fileId, isUploading, currentFileName, hasResult, audioInfo,
+  hasFile, fileId, activePreviewUrl, isUploading, sourceDir, currentFileName, hasResult, audioInfo,
+  textResultContent, textResultFileId,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload,
 } = useAudioWorkspace()
@@ -26,6 +31,7 @@ const cutPanelRef        = ref<InstanceType<typeof AudioCutPanel>        | null>
 const volumePanelRef     = ref<InstanceType<typeof AudioVolumePanel>     | null>(null)
 const transcribePanelRef = ref<InstanceType<typeof AudioTranscribePanel> | null>(null)
 const separatePanelRef   = ref<InstanceType<typeof AudioSeparatePanel>  | null>(null)
+const lyricsPanelRef     = ref<InstanceType<typeof AudioLyricsPanel>    | null>(null)
 
 const subFunctions = computed(() => [
   { id: 'transcode',  name: t('audio.functions.transcode'),  icon: 'bi-arrow-repeat' },
@@ -33,6 +39,7 @@ const subFunctions = computed(() => [
   { id: 'volume',     name: t('audio.functions.volume'),     icon: 'bi-volume-up-fill' },
   { id: 'transcribe', name: t('audio.functions.transcribe'), icon: 'bi-mic-fill' },
   { id: 'separate',  name: t('audio.functions.separate'),  icon: 'bi-music-note-list' },
+  { id: 'lyrics',    name: t('audio.functions.lyrics'),    icon: 'bi-music-note-beamed' },
 ])
 
 const currentFunction = ref('transcode')
@@ -43,15 +50,20 @@ const executeDisabled = computed(() => {
   if (currentFunction.value === 'volume')     return volumePanelRef.value?.isDisabled     ?? !hasFile.value
   if (currentFunction.value === 'transcribe') return transcribePanelRef.value?.isDisabled ?? !hasFile.value
   if (currentFunction.value === 'separate')  return separatePanelRef.value?.isDisabled  ?? !hasFile.value
+  if (currentFunction.value === 'lyrics')    return lyricsPanelRef.value?.isDisabled    ?? !hasFile.value
   return !hasFile.value
 })
 
+const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
+
 const executeLoading = computed(() => {
+  if (isEntryProcessing.value) return true
   if (currentFunction.value === 'transcode')  return transcodePanelRef.value?.isLoading  ?? false
   if (currentFunction.value === 'cut')        return cutPanelRef.value?.isLoading        ?? false
   if (currentFunction.value === 'volume')     return volumePanelRef.value?.isLoading     ?? false
   if (currentFunction.value === 'transcribe') return transcribePanelRef.value?.isLoading ?? false
   if (currentFunction.value === 'separate')  return separatePanelRef.value?.isLoading  ?? false
+  if (currentFunction.value === 'lyrics')    return lyricsPanelRef.value?.isLoading    ?? false
   return false
 })
 
@@ -62,6 +74,7 @@ function handleExecute() {
     case 'volume':     volumePanelRef.value?.execute();     break
     case 'transcribe': transcribePanelRef.value?.execute(); break
     case 'separate':  separatePanelRef.value?.execute();  break
+    case 'lyrics':    lyricsPanelRef.value?.execute();    break
   }
 }
 
@@ -104,7 +117,8 @@ function onDownload() {
     cut:        ['', '_cut'],
     volume:     ['', '_adjusted'],
     transcribe: ['', '_transcript'],
-    separate:  ['zip', '_separated'],
+    separate:  ['wav', '.vocals'],
+    lyrics:    ['lrc', '_lyrics'],
   }
   const [fmt, suffix] = fmtMap[currentFunction.value] ?? ['', '_output']
   handleDownload(fmt || undefined, suffix)
@@ -128,6 +142,55 @@ function onFilmstripSelect(id: string, ctrlKey: boolean) {
 function onFilmstripRemove(id: string) {
   collection.removeEntry(id)
 }
+
+// ── Text result modal (lyrics/transcribe) ──────────────────────────
+const showTextModal = ref(false)
+
+// ── Multi-track preview (after source separation) ──────────────────
+const STEM_COLORS: Record<string, string> = {
+  vocals: 'rgba(168, 85, 247, 0.5)',
+  drums:  'rgba(59, 130, 246, 0.5)',
+  bass:   'rgba(34, 197, 94, 0.5)',
+  guitar: 'rgba(249, 115, 22, 0.5)',
+  piano:  'rgba(236, 72, 153, 0.5)',
+  other:  'rgba(107, 114, 128, 0.5)',
+}
+
+const taskStore = useTaskStore()
+
+// 保存分離結果（因為 currentTaskId 在 complete 後會被清掉）
+const separateStemsData = ref<Array<{ name: string; fileId: string; color: string; path?: string }> | null>(null)
+
+// 監聽 task 完成，如果是 separate 就存結果
+watch(
+  () => {
+    const entry = collection.activeEntry.value
+    if (!entry?.currentTaskId) return null
+    return taskStore.tasks.get(entry.currentTaskId)
+  },
+  (task) => {
+    if (!task || task.status !== 'completed' || !task.result) return
+    if (task.taskType !== 'audio.separate') return
+    const r = task.result as { output_files?: Array<{ file_id: string; stem: string; path?: string }> }
+    if (!r.output_files?.length || !r.output_files[0].stem) return
+    separateStemsData.value = r.output_files.map(f => ({
+      name: f.stem,
+      fileId: f.file_id,
+      color: STEM_COLORS[f.stem] || 'rgba(107, 114, 128, 0.5)',
+      path: f.path,
+    }))
+  },
+  { deep: true },
+)
+
+// 切換檔案時清除
+watch(() => collection.activeId.value, () => {
+  separateStemsData.value = null
+})
+
+const separateStems = computed(() => separateStemsData.value)
+
+// Ctrl+A / clearSelection 由 AppFilmstrip 內部處理
 </script>
 
 <template>
@@ -154,9 +217,25 @@ function onFilmstripRemove(id: string) {
     @remove-file="handleRemoveFile"
     @download="onDownload"
   >
+    <template #toolbar-extra>
+      <button
+        v-if="(currentFunction === 'lyrics' || currentFunction === 'transcribe') && textResultContent"
+        class="toolbar-btn"
+        :data-tooltip="$t('common.view_result')"
+        @click="showTextModal = true"
+      >
+        <i class="bi bi-file-text"></i>
+      </button>
+    </template>
+
     <template #preview="{ file, previewUrl }">
+      <AudioMultiTrackPreview
+        v-if="currentFunction === 'separate' && separateStems"
+        :stems="separateStems"
+      />
       <AudioPreview
-        :preview-url="collection.activeEntry.value?.previewUrl ?? previewUrl"
+        v-else
+        :preview-url="activePreviewUrl ?? collection.activeEntry.value?.previewUrl ?? previewUrl"
         :file="collection.activeEntry.value?.file ?? file"
       />
     </template>
@@ -177,6 +256,8 @@ function onFilmstripRemove(id: string) {
         :selected-ids="collection.selectedIds.value"
         @select="onFilmstripSelect"
         @remove="onFilmstripRemove"
+        @clear-selection="collection.clearSelection()"
+        @select-all="collection.selectAll()"
       />
     </template>
 
@@ -212,6 +293,7 @@ function onFilmstripRemove(id: string) {
           ref="transcribePanelRef"
           :file-id="fileId"
           :current-file-name="currentFileName"
+          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
 
@@ -220,11 +302,29 @@ function onFilmstripRemove(id: string) {
           ref="separatePanelRef"
           :file-id="fileId"
           :current-file-name="currentFileName"
+          :source-dir="sourceDir"
+          @submit="handlePanelSubmit"
+        />
+
+        <AudioLyricsPanel
+          v-else-if="currentFunction === 'lyrics'"
+          ref="lyricsPanelRef"
+          :file-id="fileId"
+          :current-file-name="currentFileName"
+          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
       </div>
     </template>
   </ToolLayout>
+
+  <TextPreviewModal
+    v-if="showTextModal && textResultContent"
+    :text="textResultContent"
+    :title="$t('audio.lyrics.result_title')"
+    :filename="currentFileName.replace(/\.[^.]+$/, '.lrc')"
+    @close="showTextModal = false"
+  />
 </template>
 
 <style lang="scss" scoped>

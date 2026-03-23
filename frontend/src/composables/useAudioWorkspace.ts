@@ -9,6 +9,12 @@ import { createLogger } from '@/utils/logger'
 
 const log = createLogger('AudioWorkspace')
 
+// 支援的音訊格式
+const AUDIO_EXTS = new Set([
+  '.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a',
+  '.opus', '.amr', '.ape', '.ac3', '.dts', '.aiff', '.aif',
+])
+
 export interface AudioInfo {
   duration: number
   sample_rate: number
@@ -57,7 +63,9 @@ export function useAudioWorkspace() {
   const { downloadFile } = useFileDownload()
 
   // ── Collection (multi-audio state) ──
-  const collection = useMediaCollection()
+  const collection = useMediaCollection({
+    shouldAddToHistory: (result) => !result.text_content && !result.text_file_id,
+  })
 
   // ── Audio-specific state ──
   const audioInfo = ref<AudioInfo | null>(null)
@@ -69,12 +77,23 @@ export function useAudioWorkspace() {
   const sourceDir = computed<string | undefined>(() => collection.activeEntry.value?.sourceDir)
   const currentFileName = computed<string>(() => collection.activeEntry.value?.file.name ?? '')
   const currentTaskId = computed<string | null>(() => collection.activeEntry.value?.currentTaskId ?? null)
-  const hasResult = computed<boolean>(() => {
-    const entry = collection.activeEntry.value
-    if (!entry?.currentTaskId) return false
-    const task = taskStore.tasks.get(entry.currentTaskId)
-    return task?.status === 'completed' && !!task.result
-  })
+  const historyStack = computed(() => collection.activeEntry.value?.historyStack ?? [])
+
+  const hasResult = computed<boolean>(() => historyStack.value.length > 0)
+
+  /** Preview URL: latest result if available, otherwise original */
+  const activePreviewUrl = computed<string | null>(
+    () => historyStack.value.at(-1)?.previewUrl ?? collection.activeEntry.value?.previewUrl ?? null,
+  )
+
+  /** File ID for download: latest result, or original */
+  const activeFileId = computed<string | null>(
+    () => historyStack.value.at(-1)?.fileId ?? fileId.value,
+  )
+
+  /** Text result (for lyrics/transcribe preview) */
+  const textResultFileId = ref<string | null>(null)
+  const textResultContent = ref<string | null>(null)
 
   async function loadAudioInfo() {
     if (!fileId.value) return
@@ -93,6 +112,13 @@ export function useAudioWorkspace() {
   })
 
   async function handleFile(file: File, srcDir?: string) {
+    // 檢查副檔名
+    const ext = ('.' + file.name.split('.').pop()!).toLowerCase()
+    if (!AUDIO_EXTS.has(ext)) {
+      log.warn('handleFile skipped unsupported format', { fileName: file.name, ext })
+      toast.show(`不支援的格式：${ext}`, { type: 'error', icon: 'bi-x-circle' })
+      return
+    }
     log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
     audioInfo.value = null
 
@@ -130,35 +156,50 @@ export function useAudioWorkspace() {
     log.info('handlePanelSubmit', { taskId })
     const entry = collection.activeEntry.value
     if (entry) {
+      collection.registerTask(taskId, entry.id)
       collection.updateEntry(entry.id, { currentTaskId: taskId, status: 'processing' })
     }
   }
 
   function handleDownload(outputFormat?: string, suffix = '_output') {
-    const task = currentTaskId.value ? taskStore.tasks.get(currentTaskId.value) : null
-    if (!task?.result) return
-    const r = task.result as { output_file_id?: string }
-    if (!r.output_file_id) return
-    const baseName = currentFileName.value.replace(/\.[^.]+$/, '')
-    downloadFile(r.output_file_id, `${baseName}${suffix}.${outputFormat ?? 'mp3'}`, sourceDir.value)
+    // Text result download (lyrics/transcribe)
+    if (textResultFileId.value) {
+      const baseName = currentFileName.value.replace(/\.[^.]+$/, '')
+      downloadFile(textResultFileId.value, `${baseName}${suffix}.${outputFormat ?? 'txt'}`, sourceDir.value)
+      return
+    }
+    // Binary result download (from history stack)
+    const latest = historyStack.value.at(-1)
+    if (latest) {
+      downloadFile(latest.fileId, latest.outputFilename, sourceDir.value)
+      return
+    }
   }
 
   // Watch for task completion
   const _notifiedTaskIds = new Set<string>()
   watch(
     () => currentTaskId.value ? taskStore.tasks.get(currentTaskId.value) : null,
-    (task) => {
+    async (task) => {
       if (!task || task.status !== 'completed' || !task.result) return
       if (_notifiedTaskIds.has(task.taskId)) return
       _notifiedTaskIds.add(task.taskId)
 
-      const entry = collection.activeEntry.value
-      if (entry) {
-        collection.updateEntry(entry.id, { status: 'done' })
+      const r = task.result as { output_file_id?: string; text_content?: string; text_file_id?: string }
+
+      // Handle text results (lyrics, transcribe)
+      if (r.text_content || r.text_file_id) {
+        textResultFileId.value = r.text_file_id ?? r.output_file_id ?? null
+        textResultContent.value = r.text_content ?? null
+        // If we have a file ID but no content, fetch it
+        if (!textResultContent.value && textResultFileId.value) {
+          try {
+            const res = await apiFetch(`/files/${textResultFileId.value}/download`)
+            if (res.ok) textResultContent.value = await res.text()
+          } catch {}
+        }
       }
 
-      const r = task.result as { output_file_id?: string }
-      if (!r.output_file_id) return
       log.info('task completed', { taskId: task.taskId, taskType: task.taskType, outputFileId: r.output_file_id })
       toast.show(`${task.label ?? '處理'} 完成`, {
         type: 'success',
@@ -169,15 +210,25 @@ export function useAudioWorkspace() {
     { deep: true }
   )
 
+  // Reset text result when switching files
+  watch(() => collection.activeId.value, () => {
+    textResultFileId.value = null
+    textResultContent.value = null
+  })
+
   return {
     hasFile,
     fileId,
+    activeFileId,
+    activePreviewUrl,
     isUploading,
     sourceDir,
     currentFileName,
     currentTaskId,
     hasResult,
     audioInfo,
+    textResultContent,
+    textResultFileId,
     collection,
     handleFile,
     handleFiles,

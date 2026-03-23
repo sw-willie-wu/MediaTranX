@@ -18,6 +18,10 @@ const previewUnsupported = computed(() => {
 const audioRef       = ref<HTMLAudioElement | null>(null)
 const waveformCanvas = ref<HTMLCanvasElement | null>(null)
 
+// ── Per-file playback position cache ─────────────────────────────────────
+const _timeCache = new Map<string, number>()
+let _lastUrl = ''
+
 // ── Waveform state ────────────────────────────────────────────────────────
 let waveformData: Float32Array | null = null
 let playheadRatio = 0
@@ -32,10 +36,25 @@ let dragStartX = 0
 let dragStartOffset = 0
 let totalDuration = 0  // 秒
 
+// 波形快取：避免切換檔案時重複解碼
+const _waveformCache = new Map<string, { mono: Float32Array; duration: number }>()
+
 async function loadWaveform(url: string) {
   const canvas = waveformCanvas.value
   if (!canvas) return
   waveformData = null
+
+  // 命中快取 → 直接用
+  const cached = _waveformCache.get(url)
+  if (cached) {
+    waveformData = cached.mono
+    totalDuration = cached.duration
+    durationStr.value = formatTime(totalDuration)
+    playheadRatio = 0
+    drawWaveform()
+    return
+  }
+
   try {
     const response = await fetch(url)
     const arrayBuffer = await response.arrayBuffer()
@@ -52,6 +71,14 @@ async function loadWaveform(url: string) {
       for (let i = 0; i < len; i++) mono[i] += ch[i] / nCh
     }
     waveformData = mono
+    if (audioBuffer.duration > 0) {
+      totalDuration = audioBuffer.duration
+      durationStr.value = formatTime(totalDuration)
+    }
+
+    // 存入快取
+    _waveformCache.set(url, { mono, duration: totalDuration })
+
     playheadRatio = 0
     drawWaveform()
   } catch (e) {
@@ -107,8 +134,8 @@ function drawWaveform() {
     const y    = midY - barH / 2
 
     ctx.fillStyle = x < ph
-      ? 'rgba(160, 130, 230, 0.92)'
-      : 'rgba(110, 90, 160, 0.45)'
+      ? 'rgba(170, 140, 240, 0.95)'
+      : 'rgba(140, 120, 200, 0.7)'
     ctx.fillRect(x, y, 1, barH)
   }
 
@@ -153,9 +180,9 @@ function drawWaveform() {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'
     ctx.fillRect(Math.round(x), timelineY, 1, 6)
 
-    // 時間文字
+    // 時間文字（interval < 1s 時顯示毫秒）
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
-    const label = formatTime(t)
+    const label = formatTime(t, tickInterval < 1)
     ctx.fillText(label, x, timelineY + 7)
   }
 }
@@ -175,6 +202,13 @@ function onLoadedMetadata() {
   if (el) {
     durationStr.value = formatTime(el.duration)
     totalDuration = el.duration
+    // 還原快取的播放位置
+    const url = props.previewUrl
+    if (url && _timeCache.has(url)) {
+      el.currentTime = Math.min(_timeCache.get(url)!, el.duration)
+      playheadRatio = el.currentTime / el.duration
+      currentTimeStr.value = formatTime(el.currentTime)
+    }
     drawWaveform()
   }
 }
@@ -197,11 +231,14 @@ function togglePlay() {
   else { el.pause(); isPlaying.value = false }
 }
 
-function formatTime(s: number): string {
+function formatTime(s: number, showMs = false): string {
   if (!isFinite(s)) return '0:00'
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
+  const base = `${m}:${sec.toString().padStart(2, '0')}`
+  if (!showMs) return base
+  const ms = Math.round((s % 1) * 10)
+  return `${base}.${ms}`
 }
 
 // ── Seek on waveform click ────────────────────────────────────────────────
@@ -270,11 +307,19 @@ function onDragEnd() {
 }
 
 // ── Watch URL changes ─────────────────────────────────────────────────────
-watch(() => props.previewUrl, async (url) => {
+watch(() => props.previewUrl, async (url, oldUrl) => {
+  // 存前一個檔案的播放位置
+  if (oldUrl && audioRef.value && audioRef.value.currentTime > 0) {
+    _timeCache.set(oldUrl, audioRef.value.currentTime)
+  }
+
   waveformData = null
   playheadRatio = 0
   zoomLevel = 1
   viewOffset = 0
+  isPlaying.value = false
+  currentTimeStr.value = '0:00'
+  durationStr.value = '0:00'
   decodeFailed.value = false
   const canvas = waveformCanvas.value
   if (canvas) canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height)
