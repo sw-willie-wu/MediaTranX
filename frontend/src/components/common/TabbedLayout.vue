@@ -49,7 +49,7 @@ const activeTab = computed({
       </div>
     </aside>
 
-    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = 180"></div>
+    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = 220"></div>
 
     <main class="tabbed-content">
       <div class="content-inner" :style="{ maxWidth: contentMaxWidth }">
@@ -68,7 +68,7 @@ const activeTab = computed({
   display: flex;
   height: calc(100vh - 40px);
   gap: 0;
-  padding: 1rem;
+  padding: 0.5rem 1rem 1rem 0;
 }
 
 .tabbed-sidebar {

@@ -134,7 +134,7 @@ function restartApp() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px 0 8px 10px;
+  padding: 8px 0;
   background: transparent;
   z-index: 900;
 }

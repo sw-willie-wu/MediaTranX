@@ -7,12 +7,14 @@ import ComparisonSlider from '@/components/ComparisonSlider.vue'
 import UnsupportedFileOverlay from '@/components/UnsupportedFileOverlay.vue'
 import { useFilesStore } from '@/stores/files'
 import { useResizableLayout } from '@/composables/useResizableLayout'
+import { useTitlebar } from '@/composables/useTitlebar'
 import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
 import { createLogger } from '@/utils/logger'
 
 const { t } = useI18n()
 const log = createLogger('ToolLayout')
 const { sidebarWidth, settingsWidth, startResize } = useResizableLayout()
+const { setFileName, clearFileName } = useTitlebar()
 
 interface SubFunction {
   id: string
@@ -43,6 +45,7 @@ const props = withDefaults(defineProps<{
   collectionSize?: number
   originalPreviewUrl?: string | null
   functionsLocked?: boolean
+  activeFileName?: string
 }>(), {
   uploadIcon: 'bi-cloud-arrow-up-fill',
   uploadAccept: '*',
@@ -95,6 +98,13 @@ const hasFile = computed(() =>
     : !!currentFile.value
 )
 
+// Sync titlebar filename — filmstrip mode uses prop, single-file uses internal state
+watch(
+  () => props.activeFileName ?? currentFile.value?.name ?? '',
+  (name) => { name ? setFileName(name) : clearFileName() },
+  { immediate: true },
+)
+
 // When collection is cleared externally (all entries removed), reset internal state
 watch(
   () => props.collectionSize,
@@ -103,6 +113,7 @@ watch(
       if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
       currentFile.value = null
       previewUrl.value = null
+      clearFileName()
     }
   },
 )
@@ -121,6 +132,7 @@ function setFile(file: File, sourceDir?: string) {
   currentFile.value = file
   previewUrl.value = URL.createObjectURL(file)
   previewMode.value = 'original'
+  setFileName(file.name)
   emit('file', file, sourceDir)
 }
 
@@ -131,6 +143,7 @@ function removeFile() {
   previewUrl.value = null
   previewMode.value = 'original'
   isComparing.value = false
+  clearFileName()
   emit('remove-file')
 }
 
@@ -224,6 +237,7 @@ onActivated(() => {
 onBeforeUnmount(() => {
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   if (unsupportedTimer) clearTimeout(unsupportedTimer)
+  clearFileName()
 })
 </script>
 
@@ -247,7 +261,7 @@ onBeforeUnmount(() => {
       </div>
     </aside>
 
-    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = 180"></div>
+    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = 220"></div>
 
     <!-- 中間：預覽區域 -->
     <main class="preview-area" :class="{ 'is-drag-over': isDragOver && hasFile }">
@@ -409,7 +423,7 @@ onBeforeUnmount(() => {
   display: flex;
   height: calc(100vh - 40px);
   gap: 0;
-  padding: 1rem;
+  padding: 0.5rem 1rem 1rem 0;
 }
 
 // 左側子功能列表

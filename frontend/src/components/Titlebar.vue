@@ -6,26 +6,36 @@ import IconClose from './icons/IconClose.vue'
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useTitlebar } from '@/composables/useTitlebar'
 
 const route = useRoute()
 const isMaximized = ref(false)
 const { t } = useI18n()
+const { activeFileName } = useTitlebar()
 
-// 頁面標題對應
-const pageTitleKeys: Record<string, string> = {
-  '/': '',
+// 工具頁路徑
+const toolTitleKeys: Record<string, string> = {
   '/image': 'titlebar.image',
   '/video': 'titlebar.video',
   '/audio': 'titlebar.audio',
   '/document': 'titlebar.document',
+}
+
+// 非工具頁路徑
+const pageTitleKeys: Record<string, string> = {
   '/history': 'titlebar.history',
   '/tasks': 'titlebar.tasks',
   '/settings': 'titlebar.settings',
 }
 
 const pageTitle = computed(() => {
-  const key = pageTitleKeys[route.path]
-  return key ? ` - ${t(key)}` : ''
+  const toolKey = toolTitleKeys[route.path]
+  if (toolKey) {
+    const toolName = t(toolKey)
+    return activeFileName.value ? `${toolName} - ${activeFileName.value}` : toolName
+  }
+  const pageKey = pageTitleKeys[route.path]
+  return pageKey ? t(pageKey) : ''
 })
 
 function minimize() {
@@ -52,11 +62,10 @@ onMounted(async () => {
 
 <template>
   <div class="titlebar pywebview-drag-region">
-    <!-- 左側：App icon + 標題 -->
-    <div class="titlebar-left">
-      <img src="@/assets/icon.svg" alt="" class="app-icon" />
-      <span class="app-title">MediaTranX{{ pageTitle }}</span>
-    </div>
+    <div class="titlebar-left"></div>
+
+    <!-- 中間：頁面標題 -->
+    <span v-if="pageTitle" class="app-title">{{ pageTitle }}</span>
 
     <!-- 右側：視窗控制 -->
     <div class="titlebar-right">
@@ -96,9 +105,16 @@ onMounted(async () => {
 .titlebar-left {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  min-width: 138px; // 與右側 window-controls 寬度平衡（46px * 3）
   padding-left: 12px;
   -webkit-app-region: no-drag;
+}
+
+.app-icon {
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  opacity: 0.6;
 }
 
 .titlebar-right {
@@ -108,17 +124,13 @@ onMounted(async () => {
 }
 
 .app-title {
-  color: var(--text-primary);
-  font-size: 0.9rem;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
   font-weight: 500;
-  padding-left: 0.5rem;
-  -webkit-app-region: drag;
-}
-
-.app-icon {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
+  pointer-events: none;
 }
 
 .window-controls {

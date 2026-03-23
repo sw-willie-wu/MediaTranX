@@ -342,6 +342,7 @@ function onFilmstripRemove(id: string) {
     hide-preview-tabs
     show-filmstrip
     :collection-size="filmstripItems.length"
+    :active-file-name="currentFileName"
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"

@@ -8,7 +8,7 @@ import { ref, onBeforeUnmount } from 'vue'
 
 const STORAGE_KEY = 'tool-layout-widths'
 
-const DEFAULTS = { sidebar: 200, settings: 320 }
+const DEFAULTS = { sidebar: 220, settings: 320 }
 const LIMITS = {
   sidebar: { min: 120, max: 300 },
   settings: { min: 240, max: 500 },
