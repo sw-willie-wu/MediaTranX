@@ -14,6 +14,7 @@ const { t } = useI18n()
 const {
   hasFile, fileId, isUploading, currentFileName, mediaInfo, hasResult,
   handleFile, handleRemoveFile, handlePanelSubmit, handleDownload,
+  sourceDir,
 } = useVideoWorkspace()
 
 // 剪輯時間點（VideoPreview 和 VideoCutPanel 共用）
@@ -176,6 +177,7 @@ const mediaInfoItems = computed<InfoItem[]>(() => {
             ref="subtitlePanelRef"
             :fileId="fileId"
             :mediaInfo="mediaInfo"
+            :source-dir="sourceDir"
             @submit="handleSubtitleSubmit"
             @complete="handleSubtitleComplete"
           />

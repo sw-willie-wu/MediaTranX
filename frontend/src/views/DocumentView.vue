@@ -8,7 +8,7 @@ import DocumentTranslatePanel   from '@/components/document/panels/DocumentTrans
 import DocumentPdfConvertPanel  from '@/components/document/panels/DocumentPdfConvertPanel.vue'
 import DocumentOcrPanel         from '@/components/document/panels/DocumentOcrPanel.vue'
 import DocumentSplitPanel       from '@/components/document/panels/DocumentSplitPanel.vue'
-import OcrResultModal           from '@/components/image/OcrResultModal.vue'
+import TextPreviewModal          from '@/components/common/TextPreviewModal.vue'
 import { useDocumentWorkspace } from '@/composables/useDocumentWorkspace'
 
 const { t } = useI18n()
@@ -17,6 +17,7 @@ const {
   hasFile, fileId, isUploading, currentFileName, hasResult,
   textResultContent, textResultFilename,
   handleFile, handleRemoveFile, handlePanelSubmit, handleDownload, handleTextDownload,
+  sourceDir,
 } = useDocumentWorkspace()
 
 // Panel refs
@@ -161,6 +162,7 @@ function onRemoveFile() {
           :file-id="fileId"
           :current-file-name="currentFileName"
           :current-file-ext="currentFileExt"
+          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
 
@@ -170,6 +172,7 @@ function onRemoveFile() {
           :file-id="fileId"
           :current-file-name="currentFileName"
           :current-file-ext="currentFileExt"
+          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
 
@@ -178,15 +181,17 @@ function onRemoveFile() {
           ref="splitPanelRef"
           :file-id="fileId"
           :current-file-name="currentFileName"
+          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
       </div>
     </template>
   </ToolLayout>
 
-  <OcrResultModal
+  <TextPreviewModal
     v-if="showOcrModal && textResultContent"
     :text="textResultContent"
+    :title="$t('document.ocr.result_title')"
     :format="ocrPanelRef?.outputFormat ?? 'md'"
     :filename="textResultFilename"
     @close="showOcrModal = false"

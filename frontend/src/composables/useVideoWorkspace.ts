@@ -8,6 +8,11 @@ import { createLogger } from '@/utils/logger'
 
 const log = createLogger('VideoWorkspace')
 
+const VIDEO_EXTS = new Set([
+  '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm',
+  '.m4v', '.mpg', '.mpeg', '.ts', '.3gp', '.vob',
+])
+
 export interface VideoMediaInfo {
   duration: number
   width: number
@@ -45,6 +50,12 @@ export function useVideoWorkspace() {
   }
 
   async function handleFile(file: File, srcDir?: string) {
+    const ext = ('.' + file.name.split('.').pop()!).toLowerCase()
+    if (!VIDEO_EXTS.has(ext)) {
+      log.warn('handleFile skipped unsupported format', { fileName: file.name, ext })
+      toast.show(`不支援的格式：${ext}`, { type: 'error', icon: 'bi-x-circle' })
+      return
+    }
     log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
     hasFile.value = true
     sourceDir.value = srcDir

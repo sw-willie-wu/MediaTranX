@@ -12,6 +12,7 @@ import { useRemoteModelStore } from '@/stores/remoteModels'
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -85,8 +86,17 @@ async function selectOutputFile() {
   }
 }
 
-watch(() => props.fileId, () => { outputPath.value = '' })
-watch(outputFormat,       () => { outputPath.value = '' })
+function resetOutputPath() {
+  if (props.sourceDir) {
+    const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
+    outputPath.value = `${props.sourceDir}/${stem}_ocr.${outputFormat.value}`
+  } else {
+    outputPath.value = ''
+  }
+}
+watch(() => props.fileId, resetOutputPath)
+watch(outputFormat, resetOutputPath)
+watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 async function checkAvailable() {
   const parsed = parseModelValue(selectedModel.value)

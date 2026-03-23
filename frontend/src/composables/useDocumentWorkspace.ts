@@ -8,6 +8,11 @@ import { createLogger } from '@/utils/logger'
 
 const log = createLogger('DocumentWorkspace')
 
+const DOCUMENT_EXTS = new Set([
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.txt', '.csv', '.rtf', '.odt', '.ods', '.odp', '.epub',
+])
+
 export function useDocumentWorkspace() {
   const filesStore = useFilesStore()
   const taskStore = useTaskStore()
@@ -28,6 +33,12 @@ export function useDocumentWorkspace() {
   const textResultContent  = ref<string | null>(null)
 
   async function handleFile(file: File, srcDir?: string) {
+    const ext = ('.' + file.name.split('.').pop()!).toLowerCase()
+    if (!DOCUMENT_EXTS.has(ext)) {
+      log.warn('handleFile skipped unsupported format', { fileName: file.name, ext })
+      toast.show(`不支援的格式：${ext}`, { type: 'error', icon: 'bi-x-circle' })
+      return
+    }
     log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
     hasFile.value = true
     sourceDir.value = srcDir

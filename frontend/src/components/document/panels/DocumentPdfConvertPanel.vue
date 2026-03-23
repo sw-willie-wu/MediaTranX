@@ -8,6 +8,7 @@ const props = defineProps<{
   fileId: string | null
   currentFileName: string
   currentFileExt: string
+  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -62,8 +63,17 @@ async function selectOutputFile() {
   }
 }
 
-watch(() => props.fileId, () => { outputPath.value = '' })
-watch(outputFormat, () => { outputPath.value = '' })
+function resetOutputPath() {
+  if (props.sourceDir) {
+    const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
+    outputPath.value = `${props.sourceDir}/${stem}_converted.${extMap[outputFormat.value] ?? 'txt'}`
+  } else {
+    outputPath.value = ''
+  }
+}
+watch(() => props.fileId, resetOutputPath)
+watch(outputFormat, resetOutputPath)
+watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading  = computed(() => isProcessing.value)

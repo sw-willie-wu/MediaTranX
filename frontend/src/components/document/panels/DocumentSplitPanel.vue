@@ -6,6 +6,7 @@ import { useSubmitTask } from '@/composables/useSubmitTask'
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -43,8 +44,18 @@ async function selectOutputFile() {
   }
 }
 
-watch(() => props.fileId, () => { pages.value = ''; outputPath.value = '' })
-watch(pages, () => { outputPath.value = '' })
+function resetOutputPath() {
+  if (props.sourceDir) {
+    const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
+    const label = pages.value.trim().replace(/\s/g, '').replace(/,/g, '_') || 'split'
+    outputPath.value = `${props.sourceDir}/${stem}_p${label}.pdf`
+  } else {
+    outputPath.value = ''
+  }
+}
+watch(() => props.fileId, () => { pages.value = ''; resetOutputPath() })
+watch(pages, resetOutputPath)
+watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading  = computed(() => isProcessing.value)

@@ -24,6 +24,7 @@ const props = defineProps<{
     bitrate: number
     file_size: number
   } | null
+  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -125,8 +126,17 @@ async function selectOutputFile() {
   }
 }
 
-watch(() => props.fileId, () => { outputPath.value = '' })
-watch(outputFormat,       () => { outputPath.value = '' })
+function resetOutputPath() {
+  if (props.sourceDir) {
+    const stem = sourceBaseName.value
+    outputPath.value = `${props.sourceDir}/${stem}.${outputFormat.value}`
+  } else {
+    outputPath.value = ''
+  }
+}
+watch(() => props.fileId, resetOutputPath)
+watch(outputFormat, resetOutputPath)
+watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 // ── 子元件 refs ─────────────────────────────────────────────────
 const whisperAdvanced = ref<InstanceType<typeof WhisperAdvancedSettings> | null>(null)

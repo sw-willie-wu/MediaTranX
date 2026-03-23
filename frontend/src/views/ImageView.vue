@@ -13,7 +13,7 @@ import ImageAdjustPanel, { type AdjustState } from '@/components/image/panels/Im
 import ImageFilterPanel, { type FilterState } from '@/components/image/panels/ImageFilterPanel.vue'
 import ImageCropPanel     from '@/components/image/panels/ImageCropPanel.vue'
 import ImageOcrPanel      from '@/components/image/panels/ImageOcrPanel.vue'
-import OcrResultModal     from '@/components/image/OcrResultModal.vue'
+import TextPreviewModal   from '@/components/common/TextPreviewModal.vue'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
 import { useImageWorkspace } from '@/composables/useImageWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
@@ -24,6 +24,7 @@ const {
   goBack, checkAiEnvironment, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
   handleDownload, handleTextDownload, textResultFileId, textResultFilename, textResultContent,
   collection, activeId, selectedIds,
+  sourceDir,
 } = useImageWorkspace()
 
 const { submitToAll } = useMultiSubmit(collection)
@@ -181,17 +182,7 @@ watch(activePreviewUrl, (newUrl, oldUrl) => {
 })
 
 // ── Keyboard shortcuts ─────────────────────────────────────────────────
-function handleKeyDown(e: KeyboardEvent) {
-  // Ctrl+A / Cmd+A → 全選 filmstrip
-  if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-    if (collection.hasEntries.value) {
-      e.preventDefault()
-      collection.selectAll()
-    }
-  }
-}
-onMounted(() => window.addEventListener('keydown', handleKeyDown))
-onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
+// Ctrl+A / clearSelection 由 AppFilmstrip 內部處理
 
 // 顯示遮罩時同步 canvas 位置
 watch(showCropOverlay, (active) => {
@@ -347,6 +338,7 @@ function onFilmstripRemove(id: string) {
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"
+    show-compare
     :result-preview-url="activePreviewUrl"
     :result-meta="activeResultMeta"
     :original-preview-url="collection.activeEntry.value?.previewUrl ?? null"
@@ -407,6 +399,7 @@ function onFilmstripRemove(id: string) {
         @select="onFilmstripSelect"
         @remove="onFilmstripRemove"
         @clear-selection="collection.clearSelection()"
+        @select-all="collection.selectAll()"
       />
     </template>
 
@@ -487,15 +480,17 @@ function onFilmstripRemove(id: string) {
           ref="ocrPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :source-dir="sourceDir"
           @submit="onPanelSubmit"
         />
       </div>
     </template>
   </ToolLayout>
 
-  <OcrResultModal
+  <TextPreviewModal
     v-if="showOcrModal && textResultContent"
     :text="textResultContent"
+    :title="$t('image.ocr.result_title')"
     :format="ocrPanelRef?.outputFormat ?? 'md'"
     :filename="textResultFilename"
     @close="showOcrModal = false"

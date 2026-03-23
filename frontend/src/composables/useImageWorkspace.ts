@@ -11,6 +11,11 @@ import type { HistoryEntry } from '@/composables/useMediaCollection'
 
 const log = createLogger('ImageWorkspace')
 
+const IMAGE_EXTS = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif',
+  '.svg', '.ico', '.avif', '.heic', '.heif',
+])
+
 export interface ImageInfo {
   width: number
   height: number
@@ -248,6 +253,12 @@ export function useImageWorkspace() {
    * Replaces the old handleFile(file, srcDir) signature exactly.
    */
   async function handleFile(file: File, srcDir?: string) {
+    const ext = ('.' + file.name.split('.').pop()!).toLowerCase()
+    if (!IMAGE_EXTS.has(ext)) {
+      log.warn('handleFile skipped unsupported format', { fileName: file.name, ext })
+      toast.show(`不支援的格式：${ext}`, { type: 'error', icon: 'bi-x-circle' })
+      return
+    }
     log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
     // Clear text results from the previous entry
     textResultFileId.value = null
