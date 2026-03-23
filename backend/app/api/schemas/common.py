@@ -24,6 +24,7 @@ class TaskResponse(BaseModel):
     message: Optional[str] = None
     result: Optional[Any] = None
     error: Optional[str] = None
+    error_code: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -42,6 +43,7 @@ class TaskResponse(BaseModel):
             message=t.message,
             result=t.result,
             error=t.error,
+            error_code=getattr(t, 'error_code', None),
             created_at=t.created_at,
             updated_at=t.updated_at,
         )

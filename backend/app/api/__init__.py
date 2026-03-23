@@ -36,6 +36,12 @@ def build_router(app: FastAPI) -> FastAPI:
     # 包含 API 路由
     app.include_router(api_router, prefix="/api")
 
+    # 初始化資料庫（SQLModel 建表）
+    @app.on_event("startup")
+    async def _init_database():
+        from app.db import init_db
+        init_db()
+
     # 任務歷史紀錄：監聽任務終態並寫入 SQLite
     @app.on_event("startup")
     async def _register_task_history_hook():
@@ -55,6 +61,7 @@ def build_router(app: FastAPI) -> FastAPI:
                     created_at=task.created_at,
                     completed_at=task.updated_at,
                     error=task.error,
+                    error_code=getattr(task, 'error_code', None),
                     result=result,
                 )
             except Exception as e:

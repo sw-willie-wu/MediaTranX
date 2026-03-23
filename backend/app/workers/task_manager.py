@@ -189,7 +189,14 @@ class TaskManager:
             # 任務失敗
             import traceback
             task.status = TaskStatus.FAILED
-            task.error = str(e)
+            # RemoteApiError 帶 error_code 供前端 i18n
+            from app.exceptions import RemoteApiError
+            if isinstance(e, RemoteApiError):
+                task.error = f"[{e.code}] {e.detail}"
+                task.error_code = e.code
+            else:
+                task.error = str(e)
+                task.error_code = None
             task.updated_at = datetime.now(timezone.utc)
             await self._progress_tracker.emit(task_id, task.progress, f"Error: {e}")
 

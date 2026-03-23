@@ -99,7 +99,7 @@ defineExpose({ execute, isDisabled, isLoading })
     <!-- 輸出格式 -->
     <div class="form-group">
       <label>{{ $t('document.pdf_convert.output_format') }}</label>
-      <AppSelect v-model="outputFormat" :options="outputFormatOptions" size="sm" />
+      <AppSelect v-model="outputFormat" :options="outputFormatOptions" />
     </div>
 
     <!-- 輸出檔案 -->

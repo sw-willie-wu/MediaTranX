@@ -6,6 +6,8 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { apiFetch } from '@/composables/useApi'
 import { useModelStore } from '@/stores/models'
+import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
+import { useRemoteModelStore } from '@/stores/remoteModels'
 
 const props = defineProps<{
   fileId: string | null
@@ -21,13 +23,14 @@ const router = useRouter()
 const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
+const remoteStore = useRemoteModelStore()
 
 // ── 模型 ──────────────────────────────────────────────────────────────────
 
 const selectedModel = ref('qwen3vl:4b')
 const available = ref<boolean | null>(null)
 
-const modelOptions = computed(() => {
+const localModelOptions = computed(() => {
   const seen = new Map<string, { value: string; label: string; downloaded: boolean }>()
   for (const m of modelStore.byCategory('vlm')) {
     const [size] = m.variant.split(':')
@@ -44,6 +47,9 @@ const modelOptions = computed(() => {
     badge: opt.downloaded ? 'ok' as const : 'err' as const,
   }))
 })
+
+// 合併本地 + 雲端 vision 模型
+const { mergedOptions: modelOptions } = useModelOptions('vision', localModelOptions)
 
 // ── 輸出選項 ──────────────────────────────────────────────────────────────
 
@@ -93,6 +99,11 @@ watch(outputFormat,       () => { outputPath.value = '' })
 // ── 狀態載入 ──────────────────────────────────────────────────────────────
 
 async function checkAvailable() {
+  const parsed = parseModelValue(selectedModel.value)
+  if (parsed.isRemote) {
+    available.value = true
+    return
+  }
   try {
     const [family, size] = selectedModel.value.split(':')
     const res = await apiFetch(`/document/ocr/status?model_id=${family}&size=${size}`)
@@ -102,7 +113,7 @@ async function checkAvailable() {
   } catch {}
 }
 
-onMounted(() => { modelStore.ensureLoaded(); checkAvailable() })
+onMounted(() => { modelStore.ensureLoaded(); remoteStore.fetchAll(); checkAvailable() })
 watch(selectedModel, checkAvailable)
 
 // ── 執行 ──────────────────────────────────────────────────────────────────
@@ -114,13 +125,22 @@ const isLoading = computed(() => isProcessing.value)
 
 async function execute() {
   if (!props.fileId) return
-  const [family, size] = selectedModel.value.split(':')
+  const parsed = parseModelValue(selectedModel.value)
 
   const body: Record<string, any> = {
     file_id: props.fileId,
-    model_id: family,
-    size,
     format: outputFormat.value,
+  }
+
+  if (parsed.isRemote) {
+    body.remote = true
+    body.provider = parsed.provider
+    body.conn_id = parsed.connId
+    body.remote_model = parsed.modelId
+  } else {
+    const [family, size] = selectedModel.value.split(':')
+    body.model_id = family
+    body.size = size
   }
 
   if (outputPath.value) {
@@ -161,12 +181,12 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat })
 
     <div class="form-group">
       <label>{{ $t('document.ocr.model') }}</label>
-      <AppSelect v-model="selectedModel" :options="modelOptions" size="sm" />
+      <AppSelect v-model="selectedModel" :options="modelOptions" />
     </div>
 
     <div class="form-group">
       <label>{{ $t('document.ocr.output_format') }}</label>
-      <AppSelect v-model="outputFormat" :options="outputFormats" size="sm" />
+      <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 
     <div class="form-group">

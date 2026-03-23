@@ -12,6 +12,7 @@ interface HistoryItem {
   file_name: string | null
   status: string
   error: string | null
+  error_code: string | null
   result: Record<string, unknown> | null
   created_at: string
   completed_at: string
@@ -106,6 +107,16 @@ function taskLabel(item: HistoryItem): string {
   return item.label || getTaskTypeLabel(item.task_type)
 }
 
+function friendlyError(item: HistoryItem): string {
+  if (item.error_code) {
+    const key = `tasks.errors.${item.error_code}`
+    const translated = t(key)
+    if (translated !== key) return translated
+  }
+  // fallback: 截短原始錯誤
+  return item.error ? (item.error.length > 100 ? item.error.slice(0, 100) + '...' : item.error) : ''
+}
+
 function fileName(item: HistoryItem): string | null {
   if (item.file_name) return item.file_name
   const fn = item.result?.output_filename as string | undefined
@@ -165,7 +176,7 @@ onActivated(() => fetchHistory())
       <div v-if="item.status === 'failed' && item.error" class="task-error">
         <div class="error-info">
           <i class="bi bi-exclamation-circle-fill"></i>
-          <span>{{ item.error }}</span>
+          <span>{{ friendlyError(item) }}</span>
         </div>
       </div>
       <div class="task-footer">

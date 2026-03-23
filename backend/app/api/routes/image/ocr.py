@@ -20,6 +20,11 @@ class ImageOcrRequest(BaseModel):
     format: str = Field(default="md", description="輸出格式：txt 或 md")
     output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
     output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
+    # 雲端模型
+    remote: bool = Field(default=False, description="是否使用雲端模型")
+    provider: Optional[str] = Field(default=None, description="雲端 provider (ollama/openai/gemini)")
+    conn_id: Optional[int] = Field(default=None, description="連線 ID")
+    remote_model: Optional[str] = Field(default=None, description="雲端模型 ID")
 
 
 class ImageOcrResponse(BaseModel):
@@ -31,17 +36,28 @@ class ImageOcrResponse(BaseModel):
 async def ocr_image(request: ImageOcrRequest):
     """提交圖片 OCR 任務"""
     try:
-        model_id = request.model_id or get_language_service().get_default_vlm_model()
         service = get_image_ocr_service()
-        task_id = await service.submit_ocr(
-            file_id=request.file_id,
-            model_id=model_id,
-            size=request.size,
-            quantization=request.quantization,
-            format=request.format,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
-        )
+        if request.remote and request.provider and request.remote_model:
+            task_id = await service.submit_ocr_remote(
+                file_id=request.file_id,
+                provider=request.provider,
+                conn_id=request.conn_id,
+                remote_model=request.remote_model,
+                format=request.format,
+                output_dir=request.output_dir,
+                output_filename=request.output_filename,
+            )
+        else:
+            model_id = request.model_id or get_language_service().get_default_vlm_model()
+            task_id = await service.submit_ocr(
+                file_id=request.file_id,
+                model_id=model_id,
+                size=request.size,
+                quantization=request.quantization,
+                format=request.format,
+                output_dir=request.output_dir,
+                output_filename=request.output_filename,
+            )
         return ImageOcrResponse(task_id=task_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

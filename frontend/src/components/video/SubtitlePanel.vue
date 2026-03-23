@@ -8,6 +8,7 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
 import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
 import { apiFetch, getApiBase } from '@/composables/useApi'
+import { parseModelValue } from '@/composables/useModelOptions'
 
 const { t } = useI18n()
 
@@ -147,11 +148,19 @@ async function submitGenerate() {
     if (language.value) body.language = language.value
 
     if (translationOptions.value?.enableTranslation && translationOptions.value.targetLanguage) {
-      const [tmType, tmSize, tmQuant] = translationOptions.value.selectedTranslateModel.split(':')
+      const parsed = parseModelValue(translationOptions.value.selectedTranslateModel)
       body.target_language = translationOptions.value.targetLanguage
-      body.translate_model_type = tmType
-      body.translate_model_size = tmSize
-      body.translate_quantization = tmQuant
+      if (parsed.isRemote) {
+        body.translate_remote = true
+        body.translate_provider = parsed.provider
+        body.translate_conn_id = parsed.connId
+        body.translate_remote_model = parsed.modelId
+      } else {
+        const [tmType, tmSize, tmQuant] = translationOptions.value.selectedTranslateModel.split(':')
+        body.translate_model_type = tmType
+        body.translate_model_size = tmSize
+        body.translate_quantization = tmQuant
+      }
       body.keep_names = translationOptions.value.keepNames
       body.translate_style = translationOptions.value.translateStyle
       const glossary = translationOptions.value.parseGlossary()
@@ -233,19 +242,19 @@ onMounted(() => { loadAllWhisperStatus(); loadLanguages() })
 
     <div class="form-group">
       <label>{{ $t('video.subtitle.language') }}</label>
-      <AppSelect v-model="language" :options="languages" size="sm" />
+      <AppSelect v-model="language" :options="languages" />
     </div>
 
     <div class="form-group">
       <label>{{ $t('video.subtitle.model_settings') }}</label>
-      <AppSelect v-model="modelSize" :options="modelSizesWithBadge" size="sm" />
+      <AppSelect v-model="modelSize" :options="modelSizesWithBadge" />
     </div>
 
     <WhisperAdvancedSettings ref="whisperAdvanced" />
 
     <div class="form-group">
       <label>{{ $t('video.subtitle.output_format') }}</label>
-      <AppSelect v-model="outputFormat" :options="outputFormats" size="sm" />
+      <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 
     <TranslationOptionsPanel ref="translationOptions" />

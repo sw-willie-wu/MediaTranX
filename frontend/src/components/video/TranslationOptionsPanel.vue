@@ -6,6 +6,8 @@ import { useSettingsStore } from '@/stores/settings'
 import { useModelStore } from '@/stores/models'
 import { useToast } from '@/composables/useToast'
 import { apiFetch } from '@/composables/useApi'
+import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
+import { useRemoteModelStore } from '@/stores/remoteModels'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 
@@ -14,6 +16,7 @@ const { t } = useI18n()
 const taskStore = useTaskStore()
 const settings = useSettingsStore()
 const modelStore = useModelStore()
+const remoteStore = useRemoteModelStore()
 const toast = useToast()
 
 const enableTranslation = ref(false)
@@ -21,7 +24,7 @@ const selectedTranslateModel = ref('translategemma:4b:Q4_K_M')
 const translateEnvAvailable = ref<boolean | null>(null)
 const isInstalling = ref(false)
 
-const translateModelOptions = computed(() =>
+const localTranslateModelOptions = computed(() =>
   modelStore.byCategory('translate')
     .slice()
     .sort((a, b) => a.size_mb - b.size_mb)
@@ -33,6 +36,9 @@ const translateModelOptions = computed(() =>
       return { value: key, label: m.label, sizeMb: m.size_mb, badge: m.downloaded ? 'ok' as const : 'err' as const }
     })
 )
+
+// 合併本地 + 雲端 text 模型
+const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
 
 const targetLanguage = ref('zh-TW')
 const keepNames = ref(true)
@@ -100,7 +106,7 @@ async function autoRecommend() {
   const totalBytes = settings.deviceInfo?.memory_total
   if (!totalBytes) return
   const usableMb = totalBytes / (1024 * 1024) - 1500
-  const sorted = [...translateModelOptions.value].sort((a, b) => (b.sizeMb ?? 0) - (a.sizeMb ?? 0))
+  const sorted = [...localTranslateModelOptions.value].sort((a, b) => (b.sizeMb ?? 0) - (a.sizeMb ?? 0))
   const best = sorted.find(m => (m.sizeMb ?? 0) <= usableMb)
   if (best) selectedTranslateModel.value = best.value
 }
@@ -191,9 +197,12 @@ watch(selectedTranslateModel, savePreferences)
 
 onMounted(async () => {
   await Promise.all([loadTranslateModels(), loadTranslateStyles()])
+  remoteStore.fetchAll()
   settings.loadDeviceInfo()
   const saved = loadPreferences()
-  if (saved && translateModelOptions.value.some(m => m.value === saved)) {
+  if (saved && localTranslateModelOptions.value.some(m => m.value === saved)) {
+    selectedTranslateModel.value = saved
+  } else if (saved && saved.startsWith('remote:')) {
     selectedTranslateModel.value = saved
   } else {
     await autoRecommend()
@@ -229,17 +238,17 @@ defineExpose({
       <template v-else>
         <div class="form-group">
           <label class="sub-label">{{ $t('video.translate.target_language') }}</label>
-          <AppSelect v-model="targetLanguage" :options="targetLanguageOptions" size="sm" />
+          <AppSelect v-model="targetLanguage" :options="targetLanguageOptions" />
         </div>
 
         <div class="form-group">
           <label class="sub-label">{{ $t('video.translate.model') }}</label>
-          <AppSelect v-model="selectedTranslateModel" :options="translateModelOptions" size="sm" />
+          <AppSelect v-model="selectedTranslateModel" :options="translateModelOptions" />
         </div>
 
         <div class="form-group">
           <label class="sub-label">{{ $t('video.translate.style') }}</label>
-          <AppSelect v-model="translateStyle" :options="translateStyles" size="sm" />
+          <AppSelect v-model="translateStyle" :options="translateStyles" />
         </div>
 
         <div class="option-row">
