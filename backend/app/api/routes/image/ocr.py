@@ -6,15 +6,15 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.engine.ai.llama.vlm import DEFAULT_VLM_MODEL
 from app.services.image.ocr_service import get_image_ocr_service
+from app.services.setup.language_service import get_language_service
 
 router = APIRouter()
 
 
 class ImageOcrRequest(BaseModel):
     file_id: str = Field(..., description="輸入檔案 ID")
-    model_id: str = Field(default=DEFAULT_VLM_MODEL, description="VLM 模型 ID")
+    model_id: Optional[str] = Field(default=None, description="VLM 模型 ID（None=使用預設）")
     size: str = Field(default="4b", description="模型大小")
     quantization: Optional[str] = Field(default=None, description="量化格式")
     format: str = Field(default="md", description="輸出格式：txt 或 md")
@@ -31,10 +31,11 @@ class ImageOcrResponse(BaseModel):
 async def ocr_image(request: ImageOcrRequest):
     """提交圖片 OCR 任務"""
     try:
+        model_id = request.model_id or get_language_service().get_default_vlm_model()
         service = get_image_ocr_service()
         task_id = await service.submit_ocr(
             file_id=request.file_id,
-            model_id=request.model_id,
+            model_id=model_id,
             size=request.size,
             quantization=request.quantization,
             format=request.format,
@@ -50,13 +51,14 @@ async def ocr_image(request: ImageOcrRequest):
 
 @router.get("/ocr/status")
 async def get_ocr_status(
-    model_id: str = DEFAULT_VLM_MODEL,
+    model_id: Optional[str] = None,
     size: str = "4b",
     quantization: Optional[str] = None,
 ):
     """查詢 VLM OCR 環境狀態"""
     try:
+        effective_model_id = model_id or get_language_service().get_default_vlm_model()
         service = get_image_ocr_service()
-        return service.get_status(model_id=model_id, size=size, quantization=quantization)
+        return service.get_status(model_id=effective_model_id, size=size, quantization=quantization)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

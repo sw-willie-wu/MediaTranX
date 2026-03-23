@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.services.document.translate_service import get_translate_service
-from app.engine.ai.llama import SUPPORTED_LANGUAGES, get_translator
+from app.services.setup.language_service import get_language_service
 
 router = APIRouter()
 
@@ -43,7 +43,8 @@ class TranslateGemmaStatusResponse(BaseModel):
 async def get_translategemma_status(model_type: str = "translategemma", model_size: str = "4b"):
     """查詢翻譯模型狀態"""
     try:
-        translator = get_translator(model_type)
+        lang_svc = get_language_service()
+        translator = lang_svc.get_translator(model_type)
         status = translator.get_model_status(model_size)
         return TranslateGemmaStatusResponse(**status)
     except Exception as e:
@@ -53,7 +54,7 @@ async def get_translategemma_status(model_type: str = "translategemma", model_si
 @router.get("/translategemma/languages")
 async def get_translategemma_languages():
     """取得 TranslateGemma 支援的翻譯語言列表"""
-    return SUPPORTED_LANGUAGES
+    return get_language_service().get_supported_languages()
 
 
 @router.post("/translate", response_model=DocumentTranslateResponse)

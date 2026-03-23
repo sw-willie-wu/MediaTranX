@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.services.video.subtitle_service import get_subtitle_service
-from app.engine.ai.llama import SUPPORTED_LANGUAGES, get_translategemma, get_translator
+from app.services.setup.language_service import get_language_service
 
 router = APIRouter()
 
@@ -109,7 +109,8 @@ async def get_whisper_status(model_size: str = "medium"):
 async def get_translategemma_status(model_size: str = "4b"):
     """查詢 TranslateGemma 模型狀態"""
     try:
-        tg = get_translategemma()
+        lang_svc = get_language_service()
+        tg = lang_svc.get_translator("translategemma")
         status = tg.get_model_status(model_size)
         return ModelStatusResponse(**status)
     except Exception as e:
@@ -120,7 +121,8 @@ async def get_translategemma_status(model_size: str = "4b"):
 async def get_translate_model_status(model_type: str = "translategemma", model_size: str = "4b", quantization: str | None = None):
     """查詢翻譯模型狀態（通用，支援 translategemma 和 qwen3）"""
     try:
-        translator = get_translator(model_type)
+        lang_svc = get_language_service()
+        translator = lang_svc.get_translator(model_type)
         status = translator.get_model_status(model_size, quantization)
         return status
     except Exception as e:
@@ -130,7 +132,7 @@ async def get_translate_model_status(model_type: str = "translategemma", model_s
 @router.get("/translategemma/languages")
 async def get_translategemma_languages():
     """取得翻譯模型支援的翻譯語言列表"""
-    return SUPPORTED_LANGUAGES
+    return get_language_service().get_supported_languages()
 
 
 class TranslateTestResponse(BaseModel):
@@ -153,10 +155,11 @@ async def test_translate(request: TranslateTestRequest):
     測試翻譯（開發用）— 使用 llama-server messages API
     """
     try:
-        from app.engine.ai.base.translate import LANG_NAMES_EN
-        tg = get_translategemma()
-        source_name = LANG_NAMES_EN.get(request.source_language, request.source_language)
-        target_name = LANG_NAMES_EN.get(request.target_language, request.target_language)
+        lang_svc = get_language_service()
+        lang_names_en = lang_svc.get_lang_names_en()
+        tg = lang_svc.get_translator("translategemma")
+        source_name = lang_names_en.get(request.source_language, request.source_language)
+        target_name = lang_names_en.get(request.target_language, request.target_language)
         variant = request.model_size
 
         user_msg = (

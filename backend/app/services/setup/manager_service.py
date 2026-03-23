@@ -8,7 +8,6 @@ import asyncio
 from typing import Optional
 
 from app.engine.paths import get_base_data_dir
-from app.engine.device import get_device_info, select_torch_index
 
 from .ai_env_service import initialize_ai_env
 from .model_download_service import handle_model_download
@@ -49,11 +48,11 @@ class SetupService:
 
     async def get_system_status(self) -> dict:
         """取得詳細系統與環境狀態"""
+        from app.engine.device import get_device_info, select_torch_index
         from app.engine.ai.model_manager import get_model_manager
 
         device = get_device_info()
         manager = get_model_manager()
-
         torch_idx = select_torch_index()
         return {
             "device": device,
