@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.engine.ai.bin.whisper import WhisperWrapper, get_whisper, TranscribeResult
+from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 
@@ -92,7 +92,7 @@ class AudioTranscribeService:
         original_stem = Path(file_info.original_filename).stem
         final_filename = f"{original_stem}_transcript_{output_file_id[:8]}.{output_format}"
 
-        output_dir_path = Path(file_info.source_dir) if file_info.source_dir else self._file_service.output_dir
+        output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 
@@ -104,8 +104,20 @@ class AudioTranscribeService:
             model_size=params.get("model_size", "medium"),
             word_timestamps=False,
             condition_on_previous_text=True,
-            progress_callback=lambda p, m: progress_callback(p * 0.9, m),
+            on_progress=lambda p, m: progress_callback(p * 0.85, m),
         )
+
+        # Forced Alignment（可選）
+        if params.get("align", False) and result.language:
+            from app.engine.ai.audio.wav2vec2 import get_alignment_engine
+            aligner = get_alignment_engine()
+            if aligner.is_language_supported(result.language):
+                progress_callback(0.85, "精準對齊中...")
+                result.segments = aligner.align(
+                    audio_path=str(file_info.file_path),
+                    segments=result.segments,
+                    language=result.language,
+                )
 
         progress_callback(0.9, "寫入檔案...")
 

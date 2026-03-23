@@ -377,6 +377,8 @@ export default {
       independent_hint: 'Disable context association to prevent sentence merging',
       word_timestamps: 'Word-level timestamps',
       word_timestamps_hint: 'More precise segmentation boundaries',
+      align: 'Forced Alignment',
+      align_hint: 'Use Wav2Vec2 to refine word timestamps for more accurate subtitles',
       min_silence: 'Min. silence duration',
       milliseconds: 'ms',
       min_silence_hint: 'Pauses exceeding this duration will create a new segment (default 200ms)',
@@ -391,12 +393,14 @@ export default {
     upload_label: 'Drop audio here',
     upload_hint: 'Supports MP3, WAV, FLAC, AAC and more',
     loading: 'Loading audio info...',
+    preview_unsupported: 'This format does not support preview, but can be processed normally',
 
     functions: {
       transcode: 'Transcode',
       cut: 'Cut',
       volume: 'Volume',
       transcribe: 'Transcribe',
+      separate: 'Separate',
     },
 
     transcode: {
@@ -444,6 +448,20 @@ export default {
       srt_hint: 'Output SRT subtitle format with timestamps',
       txt_hint: 'Output plain text transcript',
       task_label: 'Transcription',
+    },
+
+    separate: {
+      title: 'Source Separation Settings',
+      description: 'Use HDemucs to separate audio into vocals, drums, bass, and other stems.',
+      model: 'Model',
+      stems: 'Output Stems',
+      stem_vocals: 'Vocals',
+      stem_drums: 'Drums',
+      stem_bass: 'Bass',
+      stem_guitar: 'Guitar',
+      stem_piano: 'Piano',
+      stem_other: 'Other',
+      task_label: 'Source Separation',
     },
   },
 
@@ -607,12 +625,9 @@ export default {
       refresh: 'Refresh',
       remove_model: 'Remove Model',
       install: 'Install',
-      category_upscale: 'Upscale',
-      category_face_restore: 'Face Restore',
-      category_stt: 'Speech Recognition',
-      category_translate: 'Translation',
-      category_vlm: 'OCR',
-      category_segment: 'Segmentation',
+      category_image: 'Image Processing',
+      category_audio: 'Audio Processing',
+      category_llm: 'Large Language Models',
     },
   },
 

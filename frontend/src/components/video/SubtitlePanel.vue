@@ -160,6 +160,7 @@ async function submitGenerate() {
 
     if (whisperAdvanced.value) {
       body.word_timestamps = whisperAdvanced.value.wordTimestamps
+      body.align = whisperAdvanced.value.align
       body.condition_on_previous_text = whisperAdvanced.value.conditionOnPreviousText
       body.min_silence_duration_ms = whisperAdvanced.value.minSilenceDurationMs
       body.vad_threshold = whisperAdvanced.value.vadThreshold

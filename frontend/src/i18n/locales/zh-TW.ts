@@ -377,6 +377,8 @@ export default {
       independent_hint: '關閉上下文關聯，避免句子合併',
       word_timestamps: '詞級時間戳',
       word_timestamps_hint: '更精確的分句邊界',
+      align: '精準對齊',
+      align_hint: '使用 Wav2Vec2 校正字詞時間戳，提升字幕精度',
       min_silence: '最小靜音時長',
       milliseconds: 'ms',
       min_silence_hint: '停頓超過此時長會分句（預設 200ms）',
@@ -391,12 +393,14 @@ export default {
     upload_label: '拖曳音訊到這裡',
     upload_hint: '支援 MP3、WAV、FLAC、AAC 等格式',
     loading: '讀取音訊資訊...',
+    preview_unsupported: '此格式不支援預覽，但可正常處理',
 
     functions: {
       transcode: '轉檔',
       cut: '剪輯',
       volume: '音量調整',
       transcribe: '逐字稿',
+      separate: '音源分離',
     },
 
     transcode: {
@@ -444,6 +448,20 @@ export default {
       srt_hint: '輸出含時間碼的 SRT 字幕格式',
       txt_hint: '輸出純文字逐字稿',
       task_label: '逐字稿轉譯',
+    },
+
+    separate: {
+      title: '音源分離設定',
+      description: '使用 HDemucs 將音訊分離為人聲、鼓、貝斯及其他音軌。',
+      model: '模型',
+      stems: '輸出音軌',
+      stem_vocals: '人聲',
+      stem_drums: '鼓',
+      stem_bass: '貝斯',
+      stem_guitar: '吉他',
+      stem_piano: '鋼琴',
+      stem_other: '其他',
+      task_label: '音源分離',
     },
   },
 
@@ -607,12 +625,9 @@ export default {
       refresh: '重新整理',
       remove_model: '移除模型',
       install: '安裝',
-      category_upscale: '超解析',
-      category_face_restore: '人臉修復',
-      category_stt: '語音辨識',
-      category_translate: '翻譯',
-      category_vlm: 'OCR',
-      category_segment: '分割',
+      category_image: '影像處理',
+      category_audio: '語音處理',
+      category_llm: '大語言模型',
     },
   },
 

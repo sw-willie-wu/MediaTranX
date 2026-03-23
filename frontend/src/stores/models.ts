@@ -6,6 +6,7 @@ export interface ModelItem {
   id: string
   label: string
   category: string
+  subcategory?: string
   downloaded: boolean
   size_mb: number
   family: string
@@ -55,7 +56,7 @@ export const useModelStore = defineStore('models', () => {
   }
 
   function byCategory(category: string): ModelItem[] {
-    return models.value.filter(m => m.category === category)
+    return models.value.filter(m => m.category === category || m.subcategory === category)
   }
 
   return { models, categories, loading, loaded, fetchModels, ensureLoaded, setDownloaded, byCategory }

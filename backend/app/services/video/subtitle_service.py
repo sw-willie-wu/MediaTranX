@@ -9,7 +9,7 @@ from typing import Any, Callable, Optional
 from uuid import uuid4
 
 from app.engine.ffmpeg import FFmpeg, FFmpegError, get_ffmpeg
-from app.engine.ai.bin.whisper import WhisperWrapper, get_whisper, TranscribeResult
+from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
 from app.engine.ai.llama import get_translator
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
@@ -270,8 +270,20 @@ class SubtitleService:
                 )
                 # Whisper 已在 transcribe() 的 finally 中自動卸載
 
+                # === Forced Alignment（可選）===
+                if params.get("align", False) and result.language:
+                    from app.engine.ai.audio.wav2vec2 import get_alignment_engine
+                    aligner = get_alignment_engine()
+                    if aligner.is_language_supported(result.language):
+                        progress_callback(whisper_end - 0.05, "精準對齊中...")
+                        result.segments = aligner.align(
+                            audio_path=temp_audio_path,
+                            segments=result.segments,
+                            language=result.language,
+                        )
+
                 # === 階段 3 (選用): 翻譯字幕 (70~95%) ===
-                from app.engine.ai.bin.whisper import TranscribeSegment
+                from app.engine.ai.audio.whisper import TranscribeSegment
 
                 # 保存原始 segments（用於翻譯時輸出雙語字幕）
                 original_segments = list(result.segments)
@@ -318,12 +330,10 @@ class SubtitleService:
             else:
                 base_name = Path(file_info.original_filename).stem
 
-            # 決定輸出目錄（優先自訂 > 來源目錄 > 預設 output）
+            # 決定輸出目錄（優先自訂 > 預設 output）
             custom_output_dir = params.get("output_dir")
             if custom_output_dir:
                 output_dir_path = Path(custom_output_dir)
-            elif file_info.source_dir:
-                output_dir_path = Path(file_info.source_dir)
             else:
                 output_dir_path = self._file_service.output_dir
             output_dir_path.mkdir(parents=True, exist_ok=True)
@@ -338,7 +348,7 @@ class SubtitleService:
                 source_path = output_dir_path / source_filename
 
                 # 建立原始語言的 result（使用翻譯前的 segments）
-                from app.engine.ai.bin.whisper import TranscribeResult
+                from app.engine.ai.audio.whisper import TranscribeResult
                 original_result = TranscribeResult(
                     language=result.language,
                     language_probability=result.language_probability,
