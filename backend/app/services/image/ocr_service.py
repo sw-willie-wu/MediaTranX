@@ -92,16 +92,20 @@ class ImageOcrService:
         if not get_model_manager().is_llama_ready():
             raise RuntimeError("llama-server 未安裝，請先至設定頁面安裝 AI 核心環境")
 
-        # 執行 VLM OCR
-        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-        from app.engine.ai.registry import SLOT_VLM
+        # === GPU 排隊管線 ===
+        manager = get_model_manager()
 
-        variant = f"{size}:{quantization}" if quantization else size
-        runtime = LlamaServerRuntime(SLOT_VLM)
-        messages = build_ocr_messages(str(file_info.file_path), format=fmt)
+        with manager.gpu_session():
+            # 執行 VLM OCR
+            from app.engine.ai.runtime.llama_server import LlamaServerRuntime
+            from app.engine.ai.registry import SLOT_VLM
 
-        with runtime.acquire(model_id, variant, lambda p, m: progress_callback(0.1 + p * 0.85, m)):
-            final_text = runtime.chat(messages=messages, max_tokens=4096, temperature=0.0)
+            variant = f"{size}:{quantization}" if quantization else size
+            runtime = LlamaServerRuntime(SLOT_VLM)
+            messages = build_ocr_messages(str(file_info.file_path), format=fmt)
+
+            with runtime.acquire(model_id, variant, lambda p, m: progress_callback(0.1 + p * 0.85, m)):
+                final_text = runtime.chat(messages=messages, max_tokens=4096, temperature=0.0)
 
         if not final_text.strip():
             final_text = "(未偵測到文字)"

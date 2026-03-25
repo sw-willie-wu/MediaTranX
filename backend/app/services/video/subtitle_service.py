@@ -90,7 +90,7 @@ class SubtitleService:
         # 註冊任務處理器
         self._task_manager.register_handler(
             TASK_TYPE_SUBTITLE_GENERATE,
-            self._handle_subtitle_task
+            self._handle_subtitle_task,
         )
 
         self._initialized = True

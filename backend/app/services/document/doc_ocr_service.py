@@ -97,18 +97,22 @@ class DocumentOcrService:
 
         progress_callback(0.05, "準備辨識...")
 
-        if src_ext == ".pdf":
-            final_text = self._ocr_pdf(
-                file_info.file_path, model_id, variant, fmt, progress_callback,
-            )
-        elif src_ext in _IMAGE_EXTS:
-            final_text = self._recognize(
-                image_path=str(file_info.file_path),
-                model_id=model_id, variant=variant, fmt=fmt,
-                on_progress=lambda p, m: progress_callback(0.1 + p * 0.85, m),
-            )
-        else:
-            raise ValueError("不支援的檔案格式，請上傳 PDF 或圖片")
+        # === GPU 排隊管線 ===
+        manager = get_model_manager()
+
+        with manager.gpu_session():
+            if src_ext == ".pdf":
+                final_text = self._ocr_pdf(
+                    file_info.file_path, model_id, variant, fmt, progress_callback,
+                )
+            elif src_ext in _IMAGE_EXTS:
+                final_text = self._recognize(
+                    image_path=str(file_info.file_path),
+                    model_id=model_id, variant=variant, fmt=fmt,
+                    on_progress=lambda p, m: progress_callback(0.1 + p * 0.85, m),
+                )
+            else:
+                raise ValueError("不支援的檔案格式，請上傳 PDF 或圖片")
 
         if not final_text.strip():
             final_text = "(未偵測到文字)"

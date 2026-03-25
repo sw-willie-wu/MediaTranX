@@ -147,7 +147,7 @@ class TranslateService:
         # 註冊任務處理器
         self._task_manager.register_handler(
             TASK_TYPE_DOCUMENT_TRANSLATE,
-            self._handle_translate_task
+            self._handle_translate_task,
         )
 
         self._initialized = True

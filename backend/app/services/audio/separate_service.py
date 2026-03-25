@@ -84,13 +84,18 @@ class AudioSeparateService:
 
         progress_callback(0.0, "載入模型...")
 
-        # 執行分離
-        separated, sample_rate = self._demucs.separate(
-            audio_path=str(file_info.file_path),
-            variant=model_name,
-            stems=stems,
-            on_progress=lambda p, m: progress_callback(p * 0.9, m),
-        )
+        # === GPU 排隊管線 ===
+        from app.engine.ai.model_manager import get_model_manager
+        manager = get_model_manager()
+
+        with manager.gpu_session():
+            # 執行分離
+            separated, sample_rate = self._demucs.separate(
+                audio_path=str(file_info.file_path),
+                variant=model_name,
+                stems=stems,
+                on_progress=lambda p, m: progress_callback(p * 0.9, m),
+            )
 
         progress_callback(0.9, "寫入檔案...")
 

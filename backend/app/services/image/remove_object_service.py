@@ -202,15 +202,20 @@ class ImageRemoveObjectService:
         progress_callback(0.1, "解析遮罩...")
         rough_mask = self._decode_mask(mask_data, w, h)
 
-        # 略微膨脹筆刷遮罩（填補筆觸縫隙），直接送 LaMa（跳過 SAM，避免遮罩過大）
-        progress_callback(0.35, "處理遮罩...")
-        import cv2 as _cv2
-        kernel = _cv2.getStructuringElement(_cv2.MORPH_ELLIPSE, (15, 15))
-        precise_mask = _cv2.dilate(rough_mask, kernel, iterations=2)
+        # === GPU 排隊管線 ===
+        from app.engine.ai.model_manager import get_model_manager
+        manager = get_model_manager()
 
-        progress_callback(0.6, "填補背景中...")
-        mask_pil = Image.fromarray(precise_mask).convert("L")
-        result_img = self._run_inpaint(img_rgb, mask_pil)
+        with manager.gpu_session():
+            # 略微膨脹筆刷遮罩（填補筆觸縫隙），直接送 LaMa（跳過 SAM，避免遮罩過大）
+            progress_callback(0.35, "處理遮罩...")
+            import cv2 as _cv2
+            kernel = _cv2.getStructuringElement(_cv2.MORPH_ELLIPSE, (15, 15))
+            precise_mask = _cv2.dilate(rough_mask, kernel, iterations=2)
+
+            progress_callback(0.6, "填補背景中...")
+            mask_pil = Image.fromarray(precise_mask).convert("L")
+            result_img = self._run_inpaint(img_rgb, mask_pil)
 
         # 還原 alpha 通道
         if alpha_channel is not None:
