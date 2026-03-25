@@ -208,7 +208,45 @@ async function execute() {
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading  = computed(() => isProcessing.value)
 
-defineExpose({ execute, isDisabled, isLoading })
+function getParams() {
+  const body: Record<string, unknown> = {
+    whisper_size: modelSize.value,
+    align: alignEnabled.value,
+    output_format: outputFormat.value,
+    translate: translateEnabled.value,
+  }
+
+  if (translateEnabled.value && targetLanguage.value) {
+    body.target_lang = targetLanguage.value
+    const parsed = parseModelValue(selectedTranslateModel.value)
+    if (parsed.isRemote) {
+      body.translate_remote = true
+      body.translate_provider = parsed.provider
+      body.translate_conn_id = parsed.connId
+      body.translate_remote_model = parsed.modelId
+    } else {
+      const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
+      body.translate_model_type = tmType
+      body.translate_model_size = tmSize
+      body.translate_quantization = tmQuant
+    }
+  }
+
+  if (outputPath.value) {
+    const path = outputPath.value.replace(/\\/g, '/')
+    const lastSlash = path.lastIndexOf('/')
+    if (lastSlash > 0) {
+      body.output_dir = path.substring(0, lastSlash)
+      body.output_filename = path.substring(lastSlash + 1)
+    } else {
+      body.output_filename = path
+    }
+  }
+
+  return body
+}
+
+defineExpose({ execute, isDisabled, isLoading, getParams })
 
 onMounted(() => {
   loadAllModelStatus()

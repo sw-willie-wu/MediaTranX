@@ -118,7 +118,19 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading })
+function getParams() {
+  const body: Record<string, unknown> = {
+    model_name: modelName.value,
+    stems: selectedStems.value,
+    output_format: outputFormat.value,
+  }
+  if (outputPath.value) {
+    body.output_dir = outputPath.value.replace(/\\/g, '/')
+  }
+  return body
+}
+
+defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
 
 <template>

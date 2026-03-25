@@ -69,6 +69,7 @@ const translateEnabled = ref(false)
 const targetLanguage = ref('zh-TW')
 const selectedTranslateModel = ref('translategemma:4b:Q4_K_M')
 const summarizeEnabled = ref(false)
+const selectedSummarizeModel = ref('qwen3:4b:Q4_K_M')
 const outputPath = ref('')
 
 const rawLanguages = ref<{ value: string; label: string }[]>([])
@@ -106,6 +107,7 @@ const localTranslateModelOptions = computed(() =>
 )
 
 const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
+const { mergedOptions: summarizeModelOptions } = useModelOptions('text', localTranslateModelOptions)
 
 // ── Translation language options ────────────────────────────────
 const translateLanguages = ref([
@@ -204,6 +206,21 @@ async function execute() {
     }
   }
 
+  if (summarizeEnabled.value) {
+    const parsed = parseModelValue(selectedSummarizeModel.value)
+    if (parsed.isRemote) {
+      body.summarize_remote = true
+      body.summarize_provider = parsed.provider
+      body.summarize_conn_id = parsed.connId
+      body.summarize_remote_model = parsed.modelId
+    } else {
+      const [smType, smSize, smQuant] = selectedSummarizeModel.value.split(':')
+      body.summarize_model_type = smType
+      body.summarize_model_size = smSize
+      body.summarize_quantization = smQuant
+    }
+  }
+
   if (outputPath.value) {
     const path = outputPath.value.replace(/\\/g, '/')
     const lastSlash = path.lastIndexOf('/')
@@ -228,7 +245,63 @@ async function execute() {
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading  = computed(() => isProcessing.value)
 
-defineExpose({ execute, isDisabled, isLoading })
+function getParams() {
+  const body: Record<string, unknown> = {
+    language: language.value || null,
+    model_size: modelSize.value,
+    output_format: outputFormat.value,
+    vocal_separation: vocalSeparation.value,
+    align: alignEnabled.value,
+    translate: translateEnabled.value,
+    summarize: summarizeEnabled.value,
+  }
+
+  if (translateEnabled.value && targetLanguage.value) {
+    body.target_lang = targetLanguage.value
+    const parsed = parseModelValue(selectedTranslateModel.value)
+    if (parsed.isRemote) {
+      body.translate_remote = true
+      body.translate_provider = parsed.provider
+      body.translate_conn_id = parsed.connId
+      body.translate_remote_model = parsed.modelId
+    } else {
+      const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
+      body.translate_model_type = tmType
+      body.translate_model_size = tmSize
+      body.translate_quantization = tmQuant
+    }
+  }
+
+  if (summarizeEnabled.value) {
+    const parsed = parseModelValue(selectedSummarizeModel.value)
+    if (parsed.isRemote) {
+      body.summarize_remote = true
+      body.summarize_provider = parsed.provider
+      body.summarize_conn_id = parsed.connId
+      body.summarize_remote_model = parsed.modelId
+    } else {
+      const [smType, smSize, smQuant] = selectedSummarizeModel.value.split(':')
+      body.summarize_model_type = smType
+      body.summarize_model_size = smSize
+      body.summarize_quantization = smQuant
+    }
+  }
+
+  if (outputPath.value) {
+    const path = outputPath.value.replace(/\\/g, '/')
+    const lastSlash = path.lastIndexOf('/')
+    if (lastSlash > 0) {
+      body.output_dir = path.substring(0, lastSlash)
+      body.output_filename = path.substring(lastSlash + 1)
+    } else {
+      body.output_filename = path
+    }
+  }
+
+  return body
+}
+
+defineExpose({ execute, isDisabled, isLoading, getParams })
 
 onMounted(() => {
   loadAllModelStatus()
@@ -307,6 +380,11 @@ onMounted(() => {
         <div class="form-group">
           <AppToggle v-model="summarizeEnabled">{{ $t('audio.transcribe.generate_outline') }}</AppToggle>
           <small class="form-hint">{{ $t('audio.transcribe.generate_outline_hint') }}</small>
+        </div>
+
+        <div v-if="summarizeEnabled" class="form-group">
+          <label>{{ $t('audio.transcribe.outline_model') }}</label>
+          <AppSelect v-model="selectedSummarizeModel" :options="summarizeModelOptions" />
         </div>
       </div>
     </div>

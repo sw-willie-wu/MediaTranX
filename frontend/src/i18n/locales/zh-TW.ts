@@ -426,6 +426,7 @@ export default {
       start_time: '開始時間',
       end_time: '結束時間',
       duration: '音訊長度：',
+      selection_duration: '選取長度：',
       task_label: '音訊剪輯',
     },
 
@@ -464,6 +465,7 @@ export default {
       summarize_hint: '使用 LLM 生成逐字稿摘要大綱',
       generate_outline: '生成大綱',
       generate_outline_hint: '使用 LLM 生成大綱，額外輸出一份 .draft.txt 檔案',
+      outline_model: '大綱模型',
       output_file: '輸出路徑',
       select_output: '選擇輸出路徑',
       task_label: '逐字稿轉譯',

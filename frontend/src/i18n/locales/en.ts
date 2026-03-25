@@ -426,6 +426,7 @@ export default {
       start_time: 'Start Time',
       end_time: 'End Time',
       duration: 'Duration:',
+      selection_duration: 'Selection Duration:',
       task_label: 'Audio Cut',
     },
 
@@ -464,6 +465,7 @@ export default {
       summarize_hint: 'Use LLM to generate a summary of the transcript',
       generate_outline: 'Generate Outline',
       generate_outline_hint: 'Use LLM to generate an outline, outputs an additional .draft.txt file',
+      outline_model: 'Outline Model',
       output_file: 'Output Path',
       select_output: 'Select output path',
       task_label: 'Transcription',

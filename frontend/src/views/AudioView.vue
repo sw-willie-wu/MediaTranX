@@ -14,16 +14,21 @@ import AudioSeparatePanel  from '@/components/audio/panels/AudioSeparatePanel.vu
 import AudioLyricsPanel    from '@/components/audio/panels/AudioLyricsPanel.vue'
 import TextPreviewModal from '@/components/common/TextPreviewModal.vue'
 import { useAudioWorkspace } from '@/composables/useAudioWorkspace'
+import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTaskStore } from '@/stores/tasks'
 
 const { t } = useI18n()
 
 const {
-  hasFile, fileId, activePreviewUrl, isUploading, sourceDir, currentFileName, hasResult, audioInfo,
+  hasFile, fileId, activeFileId, activePreviewUrl, isUploading, sourceDir, currentFileName, hasResult, audioInfo,
   textResultContent, textResultFileId,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload,
 } = useAudioWorkspace()
+
+const selectedIds = computed(() => collection.selectedIds.value)
+const isMultiSelect = computed(() => selectedIds.value.size > 1)
+const { isSubmitting, submitToAll } = useMultiSubmit(collection)
 
 // Panel refs
 const transcodePanelRef  = ref<InstanceType<typeof AudioTranscodePanel>  | null>(null)
@@ -43,6 +48,14 @@ const subFunctions = computed(() => [
 ])
 
 const currentFunction = ref('transcode')
+const volumeGainPreview = ref(1)
+const trimRange = ref<{ start: number; end: number } | null>(null)
+
+// Clear overlays when switching panels
+watch(currentFunction, () => {
+  trimRange.value = null
+  volumeGainPreview.value = 1
+})
 
 const executeDisabled = computed(() => {
   if (currentFunction.value === 'transcode')  return transcodePanelRef.value?.isDisabled  ?? !hasFile.value
@@ -68,6 +81,14 @@ const executeLoading = computed(() => {
 })
 
 function handleExecute() {
+  if (isMultiSelect.value) {
+    handleMultiExecute()
+  } else {
+    handleSingleExecute()
+  }
+}
+
+function handleSingleExecute() {
   switch (currentFunction.value) {
     case 'transcode':  transcodePanelRef.value?.execute();  break
     case 'cut':        cutPanelRef.value?.execute();        break
@@ -75,6 +96,25 @@ function handleExecute() {
     case 'transcribe': transcribePanelRef.value?.execute(); break
     case 'separate':  separatePanelRef.value?.execute();  break
     case 'lyrics':    lyricsPanelRef.value?.execute();    break
+  }
+}
+
+function handleMultiExecute() {
+  const noop = () => {}
+  switch (currentFunction.value) {
+    case 'transcode':
+      submitToAll('/audio/transcode', () => transcodePanelRef.value!.getParams(), t('audio.transcode.task_label'), 'audio.transcode', noop); break
+    case 'volume':
+      submitToAll('/audio/volume',    () => volumePanelRef.value!.getParams(),    t('audio.volume.task_label'),    'audio.volume',    noop); break
+    case 'transcribe':
+      submitToAll('/audio/transcribe',() => transcribePanelRef.value!.getParams(),t('audio.transcribe.task_label'),'audio.transcribe', noop); break
+    case 'separate':
+      submitToAll('/audio/separate',  () => separatePanelRef.value!.getParams(),  t('audio.separate.task_label'),  'audio.separate',  noop); break
+    case 'lyrics':
+      submitToAll('/audio/lyrics',    () => lyricsPanelRef.value!.getParams(),    t('audio.lyrics.task_label'),    'audio.lyrics',    noop); break
+    case 'cut':
+      // 剪輯每個檔案起止不同，不支援批次
+      cutPanelRef.value?.execute(); break
   }
 }
 
@@ -148,12 +188,12 @@ const showTextModal = ref(false)
 
 // ── Multi-track preview (after source separation) ──────────────────
 const STEM_COLORS: Record<string, string> = {
-  vocals: 'rgba(168, 85, 247, 0.5)',
-  drums:  'rgba(59, 130, 246, 0.5)',
-  bass:   'rgba(34, 197, 94, 0.5)',
-  guitar: 'rgba(249, 115, 22, 0.5)',
-  piano:  'rgba(236, 72, 153, 0.5)',
-  other:  'rgba(107, 114, 128, 0.5)',
+  vocals: 'rgba(192, 132, 252, 0.7)',
+  drums:  'rgba(96, 165, 250, 0.7)',
+  bass:   'rgba(74, 222, 128, 0.7)',
+  guitar: 'rgba(251, 146, 60, 0.7)',
+  piano:  'rgba(244, 114, 182, 0.7)',
+  other:  'rgba(250, 204, 21, 0.7)',
 }
 
 const taskStore = useTaskStore()
@@ -237,6 +277,9 @@ const separateStems = computed(() => separateStemsData.value)
         v-else
         :preview-url="activePreviewUrl ?? collection.activeEntry.value?.previewUrl ?? previewUrl"
         :file="collection.activeEntry.value?.file ?? file"
+        :gain-preview="currentFunction === 'volume' ? volumeGainPreview : 1"
+        :trim-range="currentFunction === 'cut' ? trimRange : null"
+        @update:trim-range="r => { trimRange = r; cutPanelRef?.onTrimRangeUpdate(r) }"
       />
     </template>
 
@@ -266,7 +309,7 @@ const separateStems = computed(() => separateStemsData.value)
         <AudioTranscodePanel
           v-if="currentFunction === 'transcode'"
           ref="transcodePanelRef"
-          :file-id="fileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
           @submit="handlePanelSubmit"
         />
@@ -274,24 +317,27 @@ const separateStems = computed(() => separateStemsData.value)
         <AudioCutPanel
           v-else-if="currentFunction === 'cut'"
           ref="cutPanelRef"
-          :file-id="fileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
           :duration="audioInfo?.duration"
+          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
+          @update:trim-range="r => trimRange = r"
         />
 
         <AudioVolumePanel
           v-else-if="currentFunction === 'volume'"
           ref="volumePanelRef"
-          :file-id="fileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
           @submit="handlePanelSubmit"
+          @update:gain-preview="g => volumeGainPreview = g"
         />
 
         <AudioTranscribePanel
           v-else-if="currentFunction === 'transcribe'"
           ref="transcribePanelRef"
-          :file-id="fileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
           :source-dir="sourceDir"
           @submit="handlePanelSubmit"
@@ -300,7 +346,7 @@ const separateStems = computed(() => separateStemsData.value)
         <AudioSeparatePanel
           v-else-if="currentFunction === 'separate'"
           ref="separatePanelRef"
-          :file-id="fileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
           :source-dir="sourceDir"
           @submit="handlePanelSubmit"
@@ -309,7 +355,7 @@ const separateStems = computed(() => separateStemsData.value)
         <AudioLyricsPanel
           v-else-if="currentFunction === 'lyrics'"
           ref="lyricsPanelRef"
-          :file-id="fileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
           :source-dir="sourceDir"
           @submit="handlePanelSubmit"

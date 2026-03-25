@@ -96,17 +96,18 @@ export function useAudioWorkspace() {
   const textResultContent = ref<string | null>(null)
 
   async function loadAudioInfo() {
-    if (!fileId.value) return
+    const fid = activeFileId.value
+    if (!fid) return
     try {
-      const res = await apiFetch(`/audio/info/${fileId.value}`)
+      const res = await apiFetch(`/audio/info/${fid}`)
       if (res.ok) audioInfo.value = await res.json()
     } catch (e) {
       console.error('Failed to load audio info:', e)
     }
   }
 
-  // Reload audio info when active entry changes
-  watch(() => collection.activeId.value, async () => {
+  // Reload audio info when active entry or result file changes
+  watch([() => collection.activeId.value, activeFileId], async () => {
     audioInfo.value = null
     if (fileId.value) await loadAudioInfo()
   })
@@ -138,7 +139,8 @@ export function useAudioWorkspace() {
 
   async function handleFiles(files: File[]) {
     for (const file of files) {
-      await handleFile(file)
+      const srcDir = window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
+      await handleFile(file, srcDir)
     }
   }
 

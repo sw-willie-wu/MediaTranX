@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppRange from '@/components/common/AppRange.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
@@ -11,6 +11,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   submit: [taskId: string]
+  'update:gainPreview': [gain: number]
 }>()
 
 const { t } = useI18n()
@@ -21,6 +22,11 @@ const volumeDb = ref(0)
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading  = computed(() => isProcessing.value)
+
+// dB → linear gain: 10^(dB/20)
+watch(volumeDb, (db) => {
+  emit('update:gainPreview', Math.pow(10, db / 20))
+})
 
 const volumeLabel = computed(() => {
   if (volumeDb.value === 0) return t('audio.volume.original')
@@ -43,7 +49,14 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading })
+function getParams() {
+  return {
+    volume_db: mode.value === 'normalize' ? 0 : volumeDb.value,
+    normalize: mode.value === 'normalize',
+  }
+}
+
+defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
 
 <template>

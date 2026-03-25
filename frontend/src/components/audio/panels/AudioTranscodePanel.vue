@@ -40,12 +40,28 @@ const formats = [
 const LOSSLESS_FORMATS = new Set(['flac', 'alac', 'wav', 'aiff'])
 const showBitrate = computed(() => !LOSSLESS_FORMATS.has(outputFormat.value))
 
-const bitrates = [
-  { value: '128k', label: '128 kbps' },
-  { value: '192k', label: '192 kbps' },
-  { value: '256k', label: '256 kbps' },
-  { value: '320k', label: '320 kbps' },
-]
+// 各格式最高 bitrate
+const FORMAT_MAX_BITRATE: Record<string, string> = {
+  mp3: '320k', aac: '512k', m4a: '512k', ogg: '500k', opus: '512k', wma: '384k',
+}
+
+const bitrates = computed(() => {
+  const max = FORMAT_MAX_BITRATE[outputFormat.value] || '320k'
+  const maxNum = parseInt(max)
+  const options = [
+    { value: '', label: t('audio.transcode.keep_original') },
+    { value: '128k', label: '128 kbps' },
+    { value: '192k', label: '192 kbps' },
+    { value: '256k', label: '256 kbps' },
+    { value: '320k', label: '320 kbps' },
+  ].filter(o => o.value === '' || parseInt(o.value) <= maxNum)
+
+  if (maxNum > 320) {
+    options.push({ value: max, label: `${maxNum} kbps` })
+  }
+
+  return options
+})
 
 const sampleRates = computed(() => [
   { value: '',      label: t('audio.transcode.keep_original') },
@@ -63,7 +79,7 @@ async function execute() {
     {
       file_id: props.fileId,
       output_format: outputFormat.value,
-      ...(showBitrate.value ? { audio_bitrate: bitrate.value } : {}),
+      ...(showBitrate.value && bitrate.value ? { audio_bitrate: bitrate.value } : {}),
       sample_rate: sampleRate.value ? parseInt(sampleRate.value) : null,
     },
     t('audio.transcode.task_label'),
@@ -73,7 +89,15 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading })
+function getParams() {
+  return {
+    output_format: outputFormat.value,
+    ...(showBitrate.value && bitrate.value ? { audio_bitrate: bitrate.value } : {}),
+    sample_rate: sampleRate.value ? parseInt(sampleRate.value) : null,
+  }
+}
+
+defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
 
 <template>
