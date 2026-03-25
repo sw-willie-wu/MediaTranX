@@ -1,7 +1,12 @@
+import logging
 from typing import Optional
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+
 from app.services.audio.transcribe_service import get_audio_transcribe_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -22,6 +27,13 @@ class AudioTranscribeRequest(BaseModel):
     translate_conn_id: Optional[int] = Field(default=None, description="雲端連線 ID")
     translate_remote_model: Optional[str] = Field(default=None, description="雲端模型 ID")
     summarize: bool = Field(default=False, description="大綱整理")
+    summarize_model_type: str = Field(default="qwen3", description="大綱模型類型")
+    summarize_model_size: str = Field(default="4b", description="大綱模型大小")
+    summarize_quantization: Optional[str] = Field(default=None, description="大綱模型量化精度")
+    summarize_remote: bool = Field(default=False, description="使用雲端大綱模型")
+    summarize_provider: Optional[str] = Field(default=None, description="雲端服務提供者")
+    summarize_conn_id: Optional[int] = Field(default=None, description="雲端連線 ID")
+    summarize_remote_model: Optional[str] = Field(default=None, description="雲端模型 ID")
     output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
     output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
 
@@ -65,6 +77,13 @@ async def transcribe_audio(request: AudioTranscribeRequest):
             translate_conn_id=request.translate_conn_id,
             translate_remote_model=request.translate_remote_model,
             summarize=request.summarize,
+            summarize_model_type=request.summarize_model_type,
+            summarize_model_size=request.summarize_model_size,
+            summarize_quantization=request.summarize_quantization,
+            summarize_remote=request.summarize_remote,
+            summarize_provider=request.summarize_provider,
+            summarize_conn_id=request.summarize_conn_id,
+            summarize_remote_model=request.summarize_remote_model,
             output_dir=request.output_dir,
             output_filename=request.output_filename,
         )

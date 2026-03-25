@@ -139,6 +139,13 @@ class AlignmentEngine:
                     aligned_segments.append(seg)
                     continue
 
+                # 限制單次推論長度（超過 15 秒的 segment 跳過對齊，避免卡住）
+                max_samples = int(15 * _WAV2VEC2_SR)
+                if len(seg_waveform) > max_samples:
+                    logger.info(f"Segment {i+1} too long ({len(seg_waveform) / _WAV2VEC2_SR:.1f}s), skipping alignment")
+                    aligned_segments.append(seg)
+                    continue
+
                 # 對這段音訊做推論
                 with torch.no_grad():
                     inputs = self._processor(

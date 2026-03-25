@@ -191,10 +191,19 @@ class LlamaServerRuntime(BaseRuntime):
         try:
             with urllib.request.urlopen(req, timeout=300) as resp:
                 result = json.loads(resp.read())
-                return result["choices"][0]["message"]["content"].strip()
+                content = result["choices"][0]["message"]["content"].strip()
+                # Strip Qwen3 thinking tags if present
+                content = self._strip_thinking(content)
+                return content
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"llama-server API error {e.code}: {body}")
+
+    @staticmethod
+    def _strip_thinking(text: str) -> str:
+        """Remove <think>...</think> blocks from Qwen3 thinking mode output."""
+        import re
+        return re.sub(r'<think>[\s\S]*?</think>\s*', '', text).strip()
 
     # ─────────────────────────────────────────────
     # 內部路徑解析

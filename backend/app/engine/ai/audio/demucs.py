@@ -162,6 +162,14 @@ class DemucsWrapper(PackageRuntime):
             if on_progress:
                 on_progress(0.3, "分離音源中...")
 
+            # 設定 callback 讓推論過程中能回報進度（用於 cancel check）
+            if on_progress:
+                def _progress_callback(state: dict):
+                    # Demucs callback 在每個 segment 推論後呼叫
+                    # 呼叫 on_progress 觸發 TaskManager 的 cancel check
+                    on_progress(0.5, "分離音源中...")
+                separator._callback = _progress_callback
+
             # Separator.separate_audio_file 處理：讀取、resample、分段、推論
             origin, separated = separator.separate_audio_file(audio_path)
 

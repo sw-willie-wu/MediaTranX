@@ -14,6 +14,9 @@ from app.utils.prompts import (
     build_srt_translate_prompt,
     build_translate_messages,
     build_summarize_prompt,
+    build_chunk_summarize_prompt,
+    build_merge_summaries_prompt,
+    split_text_for_context,
     segments_to_srt,
     parse_srt_response,
     SUMMARIZE_PARAMS,
@@ -88,6 +91,13 @@ class AudioTranscribeService:
         translate_conn_id: Optional[int] = None,
         translate_remote_model: Optional[str] = None,
         summarize: bool = False,
+        summarize_model_type: str = "qwen3",
+        summarize_model_size: str = "4b",
+        summarize_quantization: Optional[str] = None,
+        summarize_remote: bool = False,
+        summarize_provider: Optional[str] = None,
+        summarize_conn_id: Optional[int] = None,
+        summarize_remote_model: Optional[str] = None,
         output_dir: Optional[str] = None,
         output_filename: Optional[str] = None,
     ) -> str:
@@ -111,6 +121,13 @@ class AudioTranscribeService:
             "translate_conn_id": translate_conn_id,
             "translate_remote_model": translate_remote_model,
             "summarize": summarize,
+            "summarize_model_type": summarize_model_type,
+            "summarize_model_size": summarize_model_size,
+            "summarize_quantization": summarize_quantization,
+            "summarize_remote": summarize_remote,
+            "summarize_provider": summarize_provider,
+            "summarize_conn_id": summarize_conn_id,
+            "summarize_remote_model": summarize_remote_model,
             "output_dir": output_dir,
             "output_filename": output_filename,
         }
@@ -151,70 +168,101 @@ class AudioTranscribeService:
         audio_path = str(file_info.file_path)
         temp_vocals_path = None
 
-        # === 階段 0a: 人聲分離 (0.0 ~ 0.2) ===
-        if do_vocal_sep:
-            progress_callback(0.0, "人聲分離中...")
-            from app.engine.ai.audio.demucs import get_demucs
-            demucs = get_demucs()
-            origin, separated = demucs.separate(audio_path)
+        # ── 動態進度分配 ──
+        # 根據啟用的功能分配權重，寫檔固定佔 5%
+        weights = {"whisper": 5}  # whisper 是必做的，權重最高
+        if do_vocal_sep:  weights["demucs"] = 3
+        if do_align:      weights["align"] = 3
+        if do_translate:  weights["translate"] = 2
+        if do_summarize:  weights["summarize"] = 2
+        total_weight = sum(weights.values())
 
-            import tempfile
-            import soundfile as sf
-            vocals = separated.get("vocals")
-            if vocals is not None:
-                temp_vocals = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-                temp_vocals_path = temp_vocals.name
-                temp_vocals.close()
-                sf.write(temp_vocals_path, vocals.T.numpy(), demucs.samplerate)
-                audio_path = temp_vocals_path
-            progress_callback(0.2, "人聲分離完成")
+        # 計算每個階段的起止比例（最後 5% 留給寫檔）
+        stages: dict[str, tuple[float, float]] = {}
+        cursor = 0.0
+        for stage in ["demucs", "whisper", "align", "translate", "summarize"]:
+            if stage in weights:
+                w = weights[stage] / total_weight * 0.95
+                stages[stage] = (cursor, cursor + w)
+                cursor += w
+        stages["write"] = (0.95, 1.0)
 
-        try:
-            # === 階段 0b: Whisper 轉譯 ===
-            whisper_start = 0.2 if do_vocal_sep else 0.0
-            whisper_range = 0.7 - whisper_start
-            progress_callback(whisper_start, "載入模型...")
+        def stage_progress(stage: str, p: float, msg: str):
+            """在指定階段內回報進度 (p: 0.0~1.0)"""
+            s, e = stages.get(stage, (0.0, 1.0))
+            progress_callback(s + p * (e - s), msg)
 
-            result = self._whisper.transcribe(
-                audio_path=audio_path,
-                language=params.get("language"),
-                model_size=params.get("model_size", "medium"),
-                word_timestamps=do_align,
-                condition_on_previous_text=True,
-                on_progress=lambda p, m: progress_callback(whisper_start + p * whisper_range, m),
-            )
+        # === GPU 排隊管線 ===
+        from app.engine.ai.model_manager import get_model_manager
+        manager = get_model_manager()
 
-            detected_lang = result.language
-            progress_callback(0.7, "語音辨識完成")
-        finally:
-            # 清理暫存人聲檔
-            if temp_vocals_path:
-                try:
-                    Path(temp_vocals_path).unlink(missing_ok=True)
-                except Exception:
-                    pass
-
-        # === 階段 1: Wav2Vec2 精準對齊 (0.7 ~ 0.8) ===
-        if do_align and detected_lang:
-            from app.engine.ai.audio.wav2vec2 import get_alignment_engine
-            aligner = get_alignment_engine()
-            if aligner.is_language_supported(detected_lang):
-                progress_callback(0.7, "精準對齊中...")
-                result.segments = aligner.align(
-                    audio_path=str(file_info.file_path),
-                    segments=result.segments,
-                    language=detected_lang,
+        with manager.gpu_session():
+            # === 人聲分離 ===
+            if do_vocal_sep:
+                stage_progress("demucs", 0.0, "人聲分離中...")
+                from app.engine.ai.audio.demucs import get_demucs
+                demucs = get_demucs()
+                separated, sr = demucs.separate(
+                    audio_path=audio_path,
+                    variant="htdemucs_6s",
+                    stems=["vocals"],
+                    on_progress=lambda p, m: stage_progress("demucs", p, m),
                 )
 
-        progress_callback(0.8, "對齊完成")
+                import tempfile
+                import soundfile as sf
+                vocals = separated.get("vocals")
+                if vocals is not None:
+                    temp_vocals = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                    temp_vocals_path = temp_vocals.name
+                    temp_vocals.close()
+                    sf.write(temp_vocals_path, vocals.T.numpy(), sr)
+                    audio_path = temp_vocals_path
+                stage_progress("demucs", 1.0, "人聲分離完成")
 
-        # === 階段 2: 翻譯 (0.8 ~ 0.9) ===
+            try:
+                # === Whisper 轉譯 ===
+                stage_progress("whisper", 0.0, "載入模型...")
+
+                result = self._whisper.transcribe(
+                    audio_path=audio_path,
+                    language=params.get("language"),
+                    model_size=params.get("model_size", "medium"),
+                    word_timestamps=do_align,
+                    condition_on_previous_text=True,
+                    on_progress=lambda p, m: stage_progress("whisper", p, m),
+                )
+
+                detected_lang = result.language
+                stage_progress("whisper", 1.0, "語音辨識完成")
+            finally:
+                if temp_vocals_path:
+                    try:
+                        Path(temp_vocals_path).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+            # === Wav2Vec2 精準對齊 ===
+            if do_align and detected_lang:
+                from app.engine.ai.audio.wav2vec2 import get_alignment_engine
+                aligner = get_alignment_engine()
+                if aligner.is_language_supported(detected_lang):
+                    stage_progress("align", 0.0, "精準對齊中...")
+                    result.segments = aligner.align(
+                        audio_path=str(file_info.file_path),
+                        segments=result.segments,
+                        language=detected_lang,
+                        on_progress=lambda p, m: stage_progress("align", p, m),
+                    )
+                    stage_progress("align", 1.0, "對齊完成")
+
+        # === 翻譯 ===
         from app.engine.ai.audio.whisper import TranscribeSegment
 
         original_segments = list(result.segments)
 
         if do_translate and target_lang:
-            progress_callback(0.8, "準備翻譯...")
+            stage_progress("translate", 0.0, "準備翻譯...")
 
             translate_remote = params.get("translate_remote", False)
 
@@ -259,8 +307,7 @@ class AudioTranscribeService:
                 ]
 
                 def translate_progress(percent: float, msg: str):
-                    overall = 0.8 + percent * 0.10
-                    progress_callback(overall, msg)
+                    stage_progress("translate", percent, msg)
 
                 variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
                 src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
@@ -292,7 +339,7 @@ class AudioTranscribeService:
                         messages = build_translate_messages(prompt, translate_model_type)
                         translated_srt = runtime.chat(
                             messages=messages,
-                            max_tokens=len(srt_text) * 3,
+                            max_tokens=min(len(srt_text) * 3, 4096),
                             temperature=0.1,
                         )
 
@@ -313,12 +360,10 @@ class AudioTranscribeService:
                     for s in translated_all
                 ]
 
-        progress_callback(0.9, "翻譯完成")
-
-        # === 階段 3: 大綱整理 (0.9 ~ 0.95) ===
+        # === 大綱整理 ===
         summary_text = None
         if do_summarize:
-            progress_callback(0.9, "正在生成摘要大綱...")
+            stage_progress("summarize", 0.0, "正在生成摘要大綱...")
 
             # 摘要用的文本：有翻譯用翻譯後的，沒翻譯用原文
             if do_translate and translated_segments:
@@ -326,46 +371,75 @@ class AudioTranscribeService:
             else:
                 full_text = "\n".join(s.text.strip() for s in original_segments)
 
-            # 摘要語言：有翻譯用目標語言，沒翻譯用偵測語言
-            summary_prompt = build_summarize_prompt(full_text)
+            summarize_remote = params.get("summarize_remote", False)
 
-            translate_remote = params.get("translate_remote", False)
-            if translate_remote:
+            if summarize_remote:
+                # 雲端模型 context window 夠大，直接送整段
+                summary_prompt = build_summarize_prompt(full_text)
                 from app.services.setup.remote_service import get_remote_service
                 remote_svc = get_remote_service()
-                provider = params.get("translate_provider", "")
-                conn_id = params.get("translate_conn_id")
-                remote_model = params.get("translate_remote_model", "")
+                conn_id = params.get("summarize_conn_id")
 
                 from app.db.dao.api_connection_dao import ApiConnectionDAO
                 dao = ApiConnectionDAO()
                 conn_info = dao.get_by_id(conn_id) if conn_id else None
                 if conn_info:
                     p = remote_svc._get_provider(conn_info.provider, conn_info.endpoint, conn_info.api_key)
+                    remote_model = params.get("summarize_remote_model", "")
                     summary_text = p.chat(
                         model=remote_model or "",
                         messages=[{"role": "user", "content": summary_prompt}],
                         max_tokens=2048,
                     )
             else:
+                # 本地模型用 map-reduce：分段摘要 → 合併
                 from app.engine.ai.runtime.llama_server import LlamaServerRuntime
                 from app.engine.ai.registry import SLOT_LLM
-                summary_model_id = params.get("translate_model_type", "qwen3")
-                summary_model_size = params.get("translate_model_size", "4b")
-                summary_quantization = params.get("translate_quantization")
+                summary_model_id = params.get("summarize_model_type", "qwen3")
+                summary_model_size = params.get("summarize_model_size", "4b")
+                summary_quantization = params.get("summarize_quantization")
                 summary_variant = f"{summary_model_size}:{summary_quantization}" if summary_quantization else summary_model_size
                 runtime = LlamaServerRuntime(SLOT_LLM)
+
+                chunks = split_text_for_context(full_text, max_tokens=2000)
+
                 with runtime.acquire(summary_model_id, summary_variant):
-                    summary_text = runtime.chat(
-                        messages=[{"role": "user", "content": summary_prompt}],
-                        max_tokens=2048,
-                        temperature=0.3,
-                    )
+                    if len(chunks) == 1:
+                        # 短文本：直接摘要
+                        summary_text = runtime.chat(
+                            messages=[{"role": "user", "content": build_summarize_prompt(full_text)}],
+                            max_tokens=2048,
+                            temperature=0.3,
+                        )
+                    else:
+                        # Map: 各段獨立摘要
+                        chunk_summaries = []
+                        for ci, chunk in enumerate(chunks):
+                            stage_progress(
+                                "summarize",
+                                0.1 + 0.7 * (ci / len(chunks)),
+                                f"摘要分段 {ci + 1}/{len(chunks)}...",
+                            )
+                            chunk_summary = runtime.chat(
+                                messages=[{"role": "user", "content": build_chunk_summarize_prompt(chunk)}],
+                                max_tokens=1024,
+                                temperature=0.3,
+                            )
+                            chunk_summaries.append(chunk_summary.strip())
 
-        progress_callback(0.95, "摘要完成")
+                        # Reduce: 合併所有分段摘要
+                        stage_progress("summarize", 0.85, "合併摘要...")
+                        merged = "\n\n".join(chunk_summaries)
+                        summary_text = runtime.chat(
+                            messages=[{"role": "user", "content": build_merge_summaries_prompt(merged)}],
+                            max_tokens=2048,
+                            temperature=0.3,
+                        )
 
-        # === 階段 4: 寫入輸出檔案 (0.95 ~ 1.0) ===
-        progress_callback(0.95, "正在寫入檔案...")
+            stage_progress("summarize", 1.0, "摘要完成")
+
+        # === 寫入輸出檔案 ===
+        stage_progress("write", 0.0, "正在寫入檔案...")
 
         output_files = []
 

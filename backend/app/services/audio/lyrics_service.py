@@ -131,12 +131,31 @@ class AudioLyricsService:
         else:
             base_name = original_stem
 
+        # ── 動態進度分配 ──
+        weights = {"demucs": 3, "whisper": 5}  # demucs 和 whisper 必做
+        if align:         weights["align"] = 3
+        if do_translate:  weights["translate"] = 2
+        total_weight = sum(weights.values())
+
+        stages: dict[str, tuple[float, float]] = {}
+        cursor = 0.0
+        for stage in ["demucs", "whisper", "align", "translate"]:
+            if stage in weights:
+                w = weights[stage] / total_weight * 0.95
+                stages[stage] = (cursor, cursor + w)
+                cursor += w
+        stages["write"] = (0.95, 1.0)
+
+        def stage_progress(stage: str, p: float, msg: str):
+            s, e = stages.get(stage, (0.0, 1.0))
+            progress_callback(s + p * (e - s), msg)
+
         # 暫存人聲檔案路徑
         temp_vocals_path = self._file_service.upload_dir / f"_vocals_temp_{uuid4().hex[:8]}.wav"
 
         try:
-            # === 階段 0: Demucs 人聲分離 (0.0 ~ 0.3) ===
-            progress_callback(0.0, "正在分離人聲...")
+            # === Demucs 人聲分離 ===
+            stage_progress("demucs", 0.0, "正在分離人聲...")
 
             from app.engine.ai.audio.demucs import get_demucs
             demucs = get_demucs()
@@ -144,7 +163,7 @@ class AudioLyricsService:
                 audio_path=str(file_info.file_path),
                 variant="htdemucs_6s",
                 stems=["vocals"],
-                on_progress=lambda p, m: progress_callback(p * 0.3, m),
+                on_progress=lambda p, m: stage_progress("demucs", p, m),
             )
 
             # 儲存人聲為暫存 WAV
@@ -154,55 +173,48 @@ class AudioLyricsService:
             audio_data = vocals_tensor.numpy().T
             sf.write(str(temp_vocals_path), audio_data, sample_rate)
 
-            progress_callback(0.3, "人聲分離完成，準備語音辨識...")
+            stage_progress("demucs", 1.0, "人聲分離完成")
 
             # === GPU 排隊管線 ===
             from app.engine.ai.model_manager import get_model_manager
             manager = get_model_manager()
 
             with manager.gpu_session():
-                # === 階段 1: Whisper 語音辨識 (0.3 ~ 0.7) ===
+                # === Whisper 語音辨識 ===
                 from app.engine.ai.audio.whisper import get_whisper
                 whisper = get_whisper()
-
-                def whisper_progress(percent: float, msg: str):
-                    overall = 0.3 + percent * 0.4
-                    progress_callback(overall, msg)
 
                 result = whisper.transcribe(
                     audio_path=str(temp_vocals_path),
                     model_size=whisper_size,
-                    on_progress=whisper_progress,
-                    word_timestamps=align,  # 需要對齊時啟用詞級時間戳
+                    on_progress=lambda p, m: stage_progress("whisper", p, m),
+                    word_timestamps=align,
                 )
 
                 detected_lang = result.language
-                progress_callback(0.7, "語音辨識完成")
+                stage_progress("whisper", 1.0, "語音辨識完成")
 
-                # === 階段 2: Wav2Vec2 精準對齊 (0.7 ~ 0.85) ===
+                # === Wav2Vec2 精準對齊 ===
                 if align and detected_lang:
                     from app.engine.ai.audio.wav2vec2 import get_alignment_engine
                     aligner = get_alignment_engine()
                     if aligner.is_language_supported(detected_lang):
-                        def align_progress(p: float, msg: str):
-                            progress_callback(0.7 + p * 0.15, msg)
-                        align_progress(0.0, "精準對齊中...")
+                        stage_progress("align", 0.0, "精準對齊中...")
                         result.segments = aligner.align(
                             audio_path=str(temp_vocals_path),
                             segments=result.segments,
                             language=detected_lang,
-                            on_progress=align_progress,
+                            on_progress=lambda p, m: stage_progress("align", p, m),
                         )
+                        stage_progress("align", 1.0, "對齊完成")
 
-                progress_callback(0.85, "對齊完成")
-
-                # === 階段 3: 翻譯 (0.85 ~ 0.95) ===
+                # === 翻譯 ===
                 from app.engine.ai.audio.whisper import TranscribeSegment
 
                 original_segments = list(result.segments)
 
                 if do_translate and target_lang:
-                    progress_callback(0.85, "準備翻譯歌詞...")
+                    stage_progress("translate", 0.0, "準備翻譯歌詞...")
 
                     translate_remote = params.get("translate_remote", False)
 
@@ -248,8 +260,7 @@ class AudioLyricsService:
                         ]
 
                         def translate_progress(percent: float, msg: str):
-                            overall = 0.85 + percent * 0.10
-                            progress_callback(overall, msg)
+                            stage_progress("translate", percent, msg)
 
                         variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
                         src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
@@ -281,7 +292,7 @@ class AudioLyricsService:
                                 messages = build_translate_messages(prompt, translate_model_type)
                                 translated_srt = runtime.chat(
                                     messages=messages,
-                                    max_tokens=len(srt_text) * 3,
+                                    max_tokens=min(len(srt_text) * 3, 4096),
                                     temperature=0.1,
                                 )
 
@@ -303,7 +314,7 @@ class AudioLyricsService:
                         ]
 
             # === 階段 4: 寫入輸出檔案 (0.95 ~ 1.0) ===
-            progress_callback(0.95, "正在寫入歌詞檔...")
+            stage_progress("write", 0.0, "正在寫入歌詞檔...")
 
             output_files = []
 

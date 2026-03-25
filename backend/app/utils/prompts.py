@@ -355,6 +355,62 @@ def build_summarize_prompt(text: str) -> str:
     )
 
 
+def build_chunk_summarize_prompt(text: str) -> str:
+    """Build a prompt for summarizing a single chunk of a long transcript."""
+    return (
+        "Summarize the following transcript segment into key bullet points. "
+        "Keep it concise. Write in the same language as the text:\n\n"
+        f"{text}"
+    )
+
+
+def build_merge_summaries_prompt(summaries: str) -> str:
+    """Build a prompt for merging multiple chunk summaries into a final outline."""
+    return (
+        "The following are summaries of consecutive parts of a transcript. "
+        "Merge them into a single coherent bullet-point outline. "
+        "Remove duplicates and organize by topic. "
+        "Write in the same language as the summaries:\n\n"
+        f"{summaries}"
+    )
+
+
+# ── Token estimation ─────────────────────────────────────────────────────
+# Rough estimate: 1 token ≈ 3.5 characters for mixed CJK/English text
+_CHARS_PER_TOKEN = 3.5
+
+
+def split_text_for_context(text: str, max_tokens: int = 3000) -> list[str]:
+    """
+    Split text into chunks that fit within a token budget.
+    Splits on paragraph boundaries (double newline), falls back to sentences.
+    """
+    max_chars = int(max_tokens * _CHARS_PER_TOKEN)
+
+    if len(text) <= max_chars:
+        return [text]
+
+    chunks: list[str] = []
+    paragraphs = text.split("\n")
+
+    current_chunk: list[str] = []
+    current_len = 0
+
+    for para in paragraphs:
+        para_len = len(para) + 1  # +1 for newline
+        if current_len + para_len > max_chars and current_chunk:
+            chunks.append("\n".join(current_chunk))
+            current_chunk = []
+            current_len = 0
+        current_chunk.append(para)
+        current_len += para_len
+
+    if current_chunk:
+        chunks.append("\n".join(current_chunk))
+
+    return chunks
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  VLM OCR 常數與 Prompt 建構
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
