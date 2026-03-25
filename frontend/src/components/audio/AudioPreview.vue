@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   previewUrl: string | null
   file: File | null
+  gainPreview?: number
+  trimRange?: { start: number; end: number } | null
+}>(), {
+  gainPreview: 1,
+  trimRange: null,
+})
+
+const emit = defineEmits<{
+  'update:trimRange': [range: { start: number; end: number }]
 }>()
 
 // 瀏覽器不支援預覽的格式
@@ -130,13 +139,72 @@ function drawWaveform() {
       if (v > max) max = v
     }
     const amp  = (max - min) / 2
-    const barH = Math.max(1, amp * waveH * 0.88)
+    const barH = Math.max(1, amp * props.gainPreview * waveH * 0.88)
     const y    = midY - barH / 2
 
-    ctx.fillStyle = x < ph
-      ? 'rgba(170, 140, 240, 0.95)'
-      : 'rgba(140, 120, 200, 0.7)'
+    // Trim range: dim bars outside selection
+    let inTrim = true
+    if (props.trimRange) {
+      const trimStartX = ((props.trimRange.start - startRatio) / viewWidth) * W
+      const trimEndX = ((props.trimRange.end - startRatio) / viewWidth) * W
+      inTrim = x >= trimStartX && x <= trimEndX
+    }
+
+    if (!inTrim) {
+      ctx.fillStyle = 'rgba(140, 120, 200, 0.2)'
+    } else {
+      ctx.fillStyle = x < ph
+        ? 'rgba(170, 140, 240, 0.95)'
+        : 'rgba(140, 120, 200, 0.7)'
+    }
     ctx.fillRect(x, y, 1, barH)
+  }
+
+  // ── Trim handles ──
+  if (props.trimRange) {
+    const trimStartX = ((props.trimRange.start - startRatio) / viewWidth) * W
+    const trimEndX = ((props.trimRange.end - startRatio) / viewWidth) * W
+
+    // Dimmed areas outside trim
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'
+    if (trimStartX > 0) ctx.fillRect(0, 0, trimStartX, waveH)
+    if (trimEndX < W) ctx.fillRect(trimEndX, 0, W - trimEndX, waveH)
+
+    // Handle lines
+    const handleColor = 'rgba(250, 200, 100, 0.95)'
+    ctx.fillStyle = handleColor
+    ctx.fillRect(Math.round(trimStartX) - 3, 0, 6, waveH)
+    ctx.fillRect(Math.round(trimEndX) - 3, 0, 6, waveH)
+
+    // Handle tabs (top)
+    ctx.beginPath()
+    ctx.moveTo(trimStartX - 8, 0)
+    ctx.lineTo(trimStartX + 8, 0)
+    ctx.lineTo(trimStartX + 4, 14)
+    ctx.lineTo(trimStartX - 4, 14)
+    ctx.fill()
+
+    ctx.beginPath()
+    ctx.moveTo(trimEndX - 8, 0)
+    ctx.lineTo(trimEndX + 8, 0)
+    ctx.lineTo(trimEndX + 4, 14)
+    ctx.lineTo(trimEndX - 4, 14)
+    ctx.fill()
+
+    // Handle tabs (bottom)
+    ctx.beginPath()
+    ctx.moveTo(trimStartX - 8, waveH)
+    ctx.lineTo(trimStartX + 8, waveH)
+    ctx.lineTo(trimStartX + 4, waveH - 14)
+    ctx.lineTo(trimStartX - 4, waveH - 14)
+    ctx.fill()
+
+    ctx.beginPath()
+    ctx.moveTo(trimEndX - 8, waveH)
+    ctx.lineTo(trimEndX + 8, waveH)
+    ctx.lineTo(trimEndX + 4, waveH - 14)
+    ctx.lineTo(trimEndX - 4, waveH - 14)
+    ctx.fill()
   }
 
   // playhead line
@@ -279,8 +347,72 @@ function onWheelZoom(e: WheelEvent) {
   drawWaveform()
 }
 
+// ── Trim handle drag ────────────────────────────────────────────────────
+let trimDragging: 'start' | 'end' | null = null
+
+const TRIM_HIT_SIZE = 20  // px
+
+function getTrimHandleAt(e: MouseEvent): 'start' | 'end' | null {
+  if (!props.trimRange) return null
+  const canvas = waveformCanvas.value
+  if (!canvas) return null
+  const rect = canvas.getBoundingClientRect()
+  const clickX = e.clientX - rect.left
+  const viewWidth = 1 / zoomLevel
+  const W = rect.width
+
+  const startX = ((props.trimRange.start - viewOffset) / viewWidth) * W
+  const endX = ((props.trimRange.end - viewOffset) / viewWidth) * W
+
+  if (Math.abs(clickX - startX) < TRIM_HIT_SIZE) return 'start'
+  if (Math.abs(clickX - endX) < TRIM_HIT_SIZE) return 'end'
+  return null
+}
+
+function onCanvasMouseMove(e: MouseEvent) {
+  if (trimDragging || isDragging) return  // already dragging
+  const canvas = waveformCanvas.value
+  if (!canvas) return
+  const handle = getTrimHandleAt(e)
+  canvas.style.cursor = handle ? 'ew-resize' : (zoomLevel > 1 ? 'grab' : 'pointer')
+}
+
+function onTrimDragMove(e: MouseEvent) {
+  if (!trimDragging || !props.trimRange) return
+  const canvas = waveformCanvas.value
+  if (!canvas) return
+  const rect = canvas.getBoundingClientRect()
+  const viewWidth = 1 / zoomLevel
+  const ratio = Math.max(0, Math.min(1, viewOffset + ((e.clientX - rect.left) / rect.width) * viewWidth))
+
+  const newRange = { ...props.trimRange }
+  if (trimDragging === 'start') {
+    newRange.start = Math.min(ratio, newRange.end - 0.001)
+  } else {
+    newRange.end = Math.max(ratio, newRange.start + 0.001)
+  }
+  emit('update:trimRange', newRange)
+  hasDragged = true
+  drawWaveform()
+}
+
+function onTrimDragEnd() {
+  trimDragging = null
+}
+
 // ── Pan (drag) ───────────────────────────────────────────────────────────
 function onDragStart(e: MouseEvent) {
+  // Check trim handle first
+  const handle = getTrimHandleAt(e)
+  if (handle) {
+    trimDragging = handle
+    hasDragged = false
+    const canvas = waveformCanvas.value
+    if (canvas) canvas.style.cursor = 'ew-resize'
+    e.preventDefault()
+    return
+  }
+
   if (zoomLevel <= 1) return
   isDragging = true
   hasDragged = false
@@ -290,9 +422,10 @@ function onDragStart(e: MouseEvent) {
 }
 
 function onDragMove(e: MouseEvent) {
+  if (trimDragging) { onTrimDragMove(e); return }
   if (!isDragging) return
   const dx = Math.abs(e.clientX - dragStartX)
-  if (dx > 3) hasDragged = true  // 移動超過 3px 才算拖曳
+  if (dx > 3) hasDragged = true
   const canvas = waveformCanvas.value
   if (!canvas) return
   const rect = canvas.getBoundingClientRect()
@@ -303,10 +436,14 @@ function onDragMove(e: MouseEvent) {
 }
 
 function onDragEnd() {
+  if (trimDragging) { onTrimDragEnd(); return }
   isDragging = false
 }
 
 // ── Watch URL changes ─────────────────────────────────────────────────────
+watch(() => props.gainPreview, () => { drawWaveform() })
+watch(() => props.trimRange, () => { drawWaveform() }, { deep: true })
+
 watch(() => props.previewUrl, async (url, oldUrl) => {
   // 存前一個檔案的播放位置
   if (oldUrl && audioRef.value && audioRef.value.currentTime > 0) {
@@ -342,7 +479,7 @@ onUnmounted(() => {
       <div v-if="previewUrl" class="waveform-wrap"
         @wheel.prevent="onWheelZoom"
         @mousedown="onDragStart"
-        @mousemove="onDragMove"
+        @mousemove="(e) => { onDragMove(e); onCanvasMouseMove(e) }"
         @mouseup="onDragEnd"
         @mouseleave="onDragEnd"
       >

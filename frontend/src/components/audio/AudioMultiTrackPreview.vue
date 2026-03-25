@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, watch, onMounted, onUnmounted, type Component, markRaw } from 'vue'
 import { getApiBase } from '@/composables/useApi'
+import IconVocals from '@/components/icons/IconVocals.vue'
+import IconDrums from '@/components/icons/IconDrums.vue'
+import IconBass from '@/components/icons/IconBass.vue'
+import IconGuitar from '@/components/icons/IconGuitar.vue'
+import IconPiano from '@/components/icons/IconPiano.vue'
 
 interface StemDef {
   name: string
@@ -14,17 +19,21 @@ const props = defineProps<{
 }>()
 
 // ── Icon mapping ────────────────────────────────────────────────────────────
-const stemIcons: Record<string, string> = {
-  vocals: 'bi-mic-fill',
-  drums: 'bi-disc-fill',
-  bass: 'bi-music-note',
-  guitar: 'bi-music-note-beamed',
-  piano: 'bi-keyboard',
-  other: 'bi-soundwave',
+const stemIconComponents: Record<string, Component> = {
+  vocals: markRaw(IconVocals),
+  drums: markRaw(IconDrums),
+  bass: markRaw(IconBass),
+  guitar: markRaw(IconGuitar),
+  piano: markRaw(IconPiano),
 }
 
 function getStemIcon(name: string): string {
-  return stemIcons[name.toLowerCase()] ?? 'bi-soundwave'
+  // fallback for stems without custom SVG icon
+  return name.toLowerCase() === 'other' ? 'bi-soundwave' : ''
+}
+
+function getStemIconComponent(name: string): Component | null {
+  return stemIconComponents[name.toLowerCase()] ?? null
 }
 
 // ── Stem runtime state ──────────────────────────────────────────────────────
@@ -138,8 +147,8 @@ async function loadStems() {
     })
   }
 
-  // 逐個載入，避免同時解碼 6 個大檔案卡住 UI
-  for (const st of stemStates) {
+  // 並行載入所有 stem（本地讀取 ~130ms/stem，不會卡 UI）
+  await Promise.all(stemStates.map(async (st) => {
     try {
       let arrayBuffer: ArrayBuffer
 
@@ -179,16 +188,25 @@ async function loadStems() {
     } finally {
       st.loading = false
     }
-    // 每載入一個就重繪，讓使用者看到進度
-    // baseScale 要等全部載完才固定，否則第一個 stem 算的 scale 太大
-    baseScale = null
-    _pixelCacheKey = ''
-    drawWaveform()
-  }
-  // 全部載完後固定 baseScale（下一次 drawWaveform 會算出最終值並鎖定）
+  }))
+
+  // 全部載完後計算 baseScale 並繪製
   baseScale = null
   _pixelCacheKey = ''
   drawWaveform()
+}
+
+// ── Hex to RGBA helper ──────────────────────────────────────────────────────
+function hexToRgba(hex: string, alpha: number): string {
+  // Handle rgb(...) format from getComputedStyle
+  const rgbMatch = hex.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/)
+  if (rgbMatch) return `rgba(${rgbMatch[1]}, ${rgbMatch[2]}, ${rgbMatch[3]}, ${alpha})`
+  // Handle #hex format
+  const h = hex.replace('#', '')
+  const r = parseInt(h.substring(0, 2), 16)
+  const g = parseInt(h.substring(2, 4), 16)
+  const b = parseInt(h.substring(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
 // ── Format time ─────────────────────────────────────────────────────────────
@@ -227,11 +245,15 @@ function drawWaveform() {
 
   ctx.clearRect(0, 0, W, H)
 
+  // Read theme colors from CSS variables
+  const cs = getComputedStyle(canvas)
+  const textPrimary = cs.getPropertyValue('--text-primary').trim() || '#ffffff'
+
   const waveH = H - 24
   const midY = waveH / 2
 
   // Centre baseline
-  ctx.fillStyle = 'rgba(255,255,255,0.05)'
+  ctx.fillStyle = hexToRgba(textPrimary, 0.05)
   ctx.fillRect(0, midY, W, 1)
 
   // ── Rebuild raw pixel cache when zoom/pan/size changes ──
@@ -301,8 +323,8 @@ function drawWaveform() {
     }
   }
 
-  // ── Draw mixed waveform (white) ──
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.15)'
+  // ── Draw mixed waveform ──
+  ctx.fillStyle = hexToRgba(textPrimary, 0.15)
   for (let x = 0; x < W; x++) {
     const top = midY - mixMax[x] * scale * halfH
     const bot = midY - mixMin[x] * scale * halfH
@@ -311,7 +333,7 @@ function drawWaveform() {
 
   // Playhead line
   if (ph >= 0 && ph <= W) {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+    ctx.fillStyle = hexToRgba(textPrimary, 0.9)
     ctx.fillRect(ph, 0, 1, waveH)
   }
 
@@ -341,10 +363,10 @@ function drawWaveform() {
   for (let t = firstTick; t <= endTime; t += tickInterval) {
     const x = ((t - startTime) / visibleDuration) * W
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'
+    ctx.fillStyle = hexToRgba(textPrimary, 0.3)
     ctx.fillRect(Math.round(x), timelineY, 1, 6)
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
+    ctx.fillStyle = hexToRgba(textPrimary, 0.5)
     const label = formatTime(t, tickInterval < 1)
     ctx.fillText(label, x, timelineY + 7)
   }
@@ -403,6 +425,7 @@ function createSourceNodes(offset: number) {
 
 function stopSourceNodes() {
   for (const src of sourceNodes) {
+    src.onended = null  // 防止 stop() 觸發 onended 干擾狀態
     try { src.stop() } catch { /* already stopped */ }
     try { src.disconnect() } catch { /* ok */ }
   }
@@ -658,7 +681,14 @@ onUnmounted(() => {
         class="fader-column"
         :class="{ 'is-muted': st.muted || masterMuted, 'is-loading': st.loading, 'is-error': st.error }"
       >
-        <i class="bi fader-icon" :class="getStemIcon(st.name)" :style="{ color: st.color }"></i>
+        <component
+          v-if="getStemIconComponent(st.name)"
+          :is="getStemIconComponent(st.name)"
+          :size="28"
+          :color="st.color"
+          class="fader-icon"
+        />
+        <i v-else class="bi fader-icon" :class="getStemIcon(st.name)" :style="{ color: st.color }"></i>
         <span class="fader-label">{{ st.name }}</span>
 
         <template v-if="st.loading">
@@ -712,7 +742,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
   background: var(--panel-bg);
 }
@@ -773,6 +803,11 @@ onUnmounted(() => {
 .fader-icon {
   font-size: 1.2rem;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
 }
 
 .fader-label {
@@ -821,7 +856,7 @@ onUnmounted(() => {
   position: relative;
   width: 4px;
   height: 100%;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--panel-bg);
   border-radius: 2px;
   overflow: visible;
 }
@@ -866,12 +901,12 @@ onUnmounted(() => {
   padding: 0;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--input-bg);
     color: var(--text-primary);
   }
 
   &:active {
-    background: rgba(255, 255, 255, 0.12);
+    background: var(--input-bg-focus);
   }
 }
 
@@ -889,7 +924,7 @@ onUnmounted(() => {
   width: 36px;
   height: 36px;
   border: none;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--input-bg);
   color: var(--text-primary);
   border-radius: 50%;
   display: flex;
@@ -901,8 +936,8 @@ onUnmounted(() => {
 
   i { font-size: 1.1rem; }
 
-  &:hover { background: rgba(255, 255, 255, 0.14); }
-  &:active { background: rgba(255, 255, 255, 0.18); }
+  &:hover { background: var(--panel-bg-hover); }
+  &:active { background: var(--panel-bg-active); }
 }
 
 .time-display {
