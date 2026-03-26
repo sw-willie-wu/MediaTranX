@@ -50,14 +50,14 @@ const ocrPanelRef      = ref<InstanceType<typeof ImageOcrPanel>      | null>(nul
 const showOcrModal     = ref(false)
 
 const subFunctions = computed(() => [
-  { id: 'convert',   name: t('image.functions.convert'),   icon: 'bi-arrow-repeat' },
-  { id: 'remove-bg', name: t('image.functions.remove_bg'), icon: 'bi-eraser-fill' },
-  { id: 'ai-remove', name: t('image.functions.ai_remove'), icon: 'bi-magic' },
-  { id: 'upscale',   name: t('image.functions.upscale'),   icon: 'bi-arrows-angle-expand' },
-  { id: 'adjust',    name: t('image.functions.adjust'),    icon: 'bi-sliders' },
-  { id: 'filter',    name: t('image.functions.filter'),    icon: 'bi-palette-fill' },
-  { id: 'crop',      name: t('image.functions.crop'),      icon: 'bi-crop' },
-  { id: 'ocr',       name: t('image.functions.ocr'),       icon: 'bi-type' },
+  { id: 'convert',   name: t('image.functions.convert'),   icon: 'bi-arrow-repeat',         group: t('image.group.edit') },
+  { id: 'adjust',    name: t('image.functions.adjust'),    icon: 'bi-sliders',              group: t('image.group.edit') },
+  { id: 'filter',    name: t('image.functions.filter'),    icon: 'bi-palette-fill',         group: t('image.group.edit') },
+  { id: 'crop',      name: t('image.functions.crop'),      icon: 'bi-crop',                 group: t('image.group.edit') },
+  { id: 'remove-bg', name: t('image.functions.remove_bg'), icon: 'bi-eraser-fill',          group: t('image.group.ai') },
+  { id: 'ai-remove', name: t('image.functions.ai_remove'), icon: 'bi-magic',                group: t('image.group.ai') },
+  { id: 'upscale',   name: t('image.functions.upscale'),   icon: 'bi-arrows-angle-expand',  group: t('image.group.ai') },
+  { id: 'ocr',       name: t('image.functions.ocr'),       icon: 'bi-type',                 group: t('image.group.ai') },
 ])
 
 const currentFunction     = ref('convert')
@@ -353,6 +353,7 @@ function onFilmstripRemove(id: string) {
     @remove-file="handleRemoveFile"
     @download="currentFunction === 'ocr' ? handleTextDownload() : handleDownload()"
     @go-back="goBack"
+    @clear-selection="collection.clearSelection()"
   >
     <template #toolbar-extra>
       <button
@@ -398,6 +399,7 @@ function onFilmstripRemove(id: string) {
         :selectedIds="selectedIds"
         @select="onFilmstripSelect"
         @remove="onFilmstripRemove"
+        @remove-selected="ids => collection.removeEntries(ids)"
         @clear-selection="collection.clearSelection()"
         @select-all="collection.selectAll()"
       />

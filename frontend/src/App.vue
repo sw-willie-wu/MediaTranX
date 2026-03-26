@@ -4,6 +4,7 @@ import { useRouter, RouterView } from 'vue-router'
 import Titlebar from './components/Titlebar.vue'
 import MainSidebar from './components/MainSidebar.vue'
 import AppToast from './components/AppToast.vue'
+import AppConfirmDialog from './components/common/AppConfirmDialog.vue'
 import AppSetupWizard from './components/common/AppSetupWizard.vue'
 import { useTheme } from './composables/useTheme'
 import { apiFetch } from './composables/useApi'
@@ -104,6 +105,7 @@ onMounted(async () => {
       </RouterView>
     </div>
     <AppToast />
+    <AppConfirmDialog />
     <AppSetupWizard v-if="showWizard" @close="showWizard = false" />
   </div>
 </template>

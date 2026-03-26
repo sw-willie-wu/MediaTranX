@@ -112,6 +112,12 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     }
   }
 
+  function removeEntries(ids: string[]): void {
+    for (const id of ids) {
+      removeEntry(id)
+    }
+  }
+
   function removeAllEntries(): void {
     for (const entry of entries.value.values()) {
       URL.revokeObjectURL(entry.previewUrl)
@@ -259,6 +265,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     // Methods
     addEntry,
     removeEntry,
+    removeEntries,
     removeAllEntries,
     selectEntry,
     clearSelection,

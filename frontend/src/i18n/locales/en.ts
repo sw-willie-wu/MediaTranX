@@ -42,10 +42,14 @@ export default {
   common: {
     execute: 'Execute',
     processing: 'Processing...',
+    completed: 'Completed!',
     save: 'Save Result',
     close: 'Close',
     cancel: 'Cancel',
+    confirm: 'Confirm',
     retry: 'Retry',
+    remove_confirm: 'Are you sure you want to remove this file?',
+    remove_selected_confirm: 'Are you sure you want to remove {count} files?',
     remove_file: 'Remove File',
     compare: 'Compare Original and Result',
     original: 'Original',
@@ -89,6 +93,7 @@ export default {
     installing: 'Installing...',
     install_failed: 'Installation failed',
     mark_area_first: 'Please mark the area to remove on the image first',
+    open_folder: 'Open Folder',
   },
 
   // ── Setup wizard ──────────────────────────────────────────────────────
@@ -151,6 +156,11 @@ export default {
       filter: 'Filters',
       crop: 'Crop',
       ocr: 'OCR',
+    },
+
+    group: {
+      edit: 'Edit',
+      ai: 'AI Tools',
     },
 
     multi_labels: {
@@ -406,6 +416,11 @@ export default {
       transcribe: 'Transcribe',
       separate: 'Separate',
       lyrics: 'Lyrics',
+    },
+
+    group: {
+      edit: 'Edit',
+      ai: 'AI Tools',
     },
 
     transcode: {

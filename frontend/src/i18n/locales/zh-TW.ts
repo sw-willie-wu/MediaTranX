@@ -42,10 +42,14 @@ export default {
   common: {
     execute: '開始執行',
     processing: '處理中...',
+    completed: '完成！',
     save: '儲存結果',
     close: '關閉',
     cancel: '取消',
+    confirm: '確認',
     retry: '重試',
+    remove_confirm: '確定要移除此檔案嗎？',
+    remove_selected_confirm: '確定要移除 {count} 個檔案嗎？',
     remove_file: '移除檔案',
     compare: '比對原圖與成果',
     original: '原圖',
@@ -89,6 +93,7 @@ export default {
     installing: '安裝中...',
     install_failed: '安裝失敗',
     mark_area_first: '請先在圖片上標記要移除的區域',
+    open_folder: '開啟資料夾',
   },
 
   // ── 設定精靈 ───────────────────────────────────────────────────────────
@@ -151,6 +156,11 @@ export default {
       filter: '濾鏡',
       crop: '裁切',
       ocr: '文字辨識',
+    },
+
+    group: {
+      edit: '編輯',
+      ai: 'AI 工具',
     },
 
     multi_labels: {
@@ -406,6 +416,11 @@ export default {
       transcribe: '逐字稿',
       separate: '音源分離',
       lyrics: '歌詞提取',
+    },
+
+    group: {
+      edit: '編輯',
+      ai: 'AI 工具',
     },
 
     transcode: {

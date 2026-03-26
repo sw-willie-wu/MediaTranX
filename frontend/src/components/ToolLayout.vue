@@ -21,6 +21,7 @@ interface SubFunction {
   name: string
   icon: string
   comingSoon?: boolean
+  group?: string
 }
 
 const props = withDefaults(defineProps<{
@@ -54,9 +55,36 @@ const props = withDefaults(defineProps<{
   showFilmstrip: false,
 })
 
+// Group functions by group label (undefined group = ungrouped)
+const groupedFunctions = computed(() => {
+  const groups: Array<{ label: string | null; items: SubFunction[] }> = []
+  let currentGroup: string | null | undefined = '__INIT__'
+  for (const fn of props.subFunctions) {
+    if (fn.group !== currentGroup) {
+      groups.push({ label: fn.group ?? null, items: [] })
+      currentGroup = fn.group
+    }
+    groups[groups.length - 1].items.push(fn)
+  }
+  return groups
+})
+const hasGroups = computed(() => groupedFunctions.value.some(g => g.label !== null))
+
 const effectiveUploadLabel = computed(() => props.uploadLabel ?? t('common.drop_files'))
 const effectiveUploadHint = computed(() => props.uploadHint ?? t('common.drop_hint'))
 const effectiveExecuteLabel = computed(() => props.executeLabel ?? t('common.execute'))
+
+// Execute success flash
+const executeSuccess = ref(false)
+let successTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(() => props.executeLoading, (loading, wasLoading) => {
+  if (wasLoading && !loading && props.hasResult) {
+    executeSuccess.value = true
+    if (successTimer) clearTimeout(successTimer)
+    successTimer = setTimeout(() => { executeSuccess.value = false }, 1500)
+  }
+})
 
 const emit = defineEmits<{
   (e: 'select-function', id: string): void
@@ -66,6 +94,7 @@ const emit = defineEmits<{
   (e: 'remove-file'): void
   (e: 'download'): void
   (e: 'go-back'): void
+  (e: 'clear-selection'): void
 }>()
 
 const currentSubFunction = computed(() =>
@@ -245,20 +274,23 @@ onBeforeUnmount(() => {
 <template>
   <div class="tool-layout">
     <!-- 左側：子功能列表 -->
-    <aside class="function-sidebar" :style="{ width: sidebarWidth + 'px', minWidth: sidebarWidth + 'px' }">
+    <aside class="function-sidebar" :style="{ width: sidebarWidth + 'px', minWidth: sidebarWidth + 'px' }" @click.self="emit('clear-selection')">
       <div class="function-list">
-        <button
-          v-for="fn in subFunctions"
-          :key="fn.id"
-          class="function-item"
-          :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon, 'is-locked': functionsLocked && currentFunction !== fn.id }"
-          :disabled="functionsLocked && currentFunction !== fn.id"
-          @click="emit('select-function', fn.id)"
-        >
-          <i :class="['bi', fn.icon]"></i>
-          <span>{{ fn.name }}</span>
-          <span v-if="fn.comingSoon" class="coming-badge">{{ $t('common.coming_soon') }}</span>
-        </button>
+        <template v-for="(group, gi) in groupedFunctions" :key="gi">
+          <div v-if="group.label && hasGroups" class="function-group-label">{{ group.label }}</div>
+          <button
+            v-for="fn in group.items"
+            :key="fn.id"
+            class="function-item"
+            :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon, 'is-locked': functionsLocked && currentFunction !== fn.id }"
+            :disabled="functionsLocked && currentFunction !== fn.id"
+            @click="emit('select-function', fn.id)"
+          >
+            <i :class="['bi', fn.icon]"></i>
+            <span>{{ fn.name }}</span>
+            <span v-if="fn.comingSoon" class="coming-badge">{{ $t('common.coming_soon') }}</span>
+          </button>
+        </template>
       </div>
     </aside>
 
@@ -330,6 +362,7 @@ onBeforeUnmount(() => {
         @dragleave="handleDragLeave"
         @drop.capture="isDragOver = false"
         @drop="handleDrop"
+        @click.self="emit('clear-selection')"
       >
         <!-- 不支援類型 overlay -->
         <UnsupportedFileOverlay
@@ -340,38 +373,43 @@ onBeforeUnmount(() => {
         />
 
         <!-- 無檔案時顯示上傳區 -->
-        <AppUploadZone
-          v-if="!hasFile"
-          :icon="uploadIcon"
-          :label="effectiveUploadLabel"
-          :hint="effectiveUploadHint"
-          :accept="uploadAccept"
-          :multiple="showFilmstrip"
-          @file="handleUploadFile"
-          @files="handleUploadFiles"
-        />
+        <Transition name="fade" mode="out-in">
+          <AppUploadZone
+            v-if="!hasFile"
+            key="upload"
+            :icon="uploadIcon"
+            :label="effectiveUploadLabel"
+            :hint="effectiveUploadHint"
+            :accept="uploadAccept"
+            :multiple="showFilmstrip"
+            @file="handleUploadFile"
+            @files="handleUploadFiles"
+          />
 
-        <!-- Slider 比對模式 -->
-        <ComparisonSlider
-          v-else-if="isComparing && resultPreviewUrl"
-          :original-url="props.originalPreviewUrl ?? previewUrl!"
-          :result-url="resultPreviewUrl"
-          :result-meta="props.resultMeta"
-        />
+          <!-- Slider 比對模式 -->
+          <ComparisonSlider
+            v-else-if="isComparing && resultPreviewUrl"
+            key="compare"
+            :original-url="props.originalPreviewUrl ?? previewUrl!"
+            :result-url="resultPreviewUrl"
+            :result-meta="props.resultMeta"
+          />
 
-        <!-- 有檔案時顯示預覽 slot -->
-        <slot
-          v-else
-          name="preview"
-          :file="currentFile!"
-          :previewUrl="previewUrl!"
-          :mode="previewMode"
-        >
-          <div class="preview-placeholder">
-            <i class="bi bi-image"></i>
-            <p>{{ $t('common.select_or_drop') }}</p>
+          <!-- 有檔案時顯示預覽 slot -->
+          <div v-else :key="'preview-' + previewMode" class="preview-slot-wrapper">
+            <slot
+              name="preview"
+              :file="currentFile!"
+              :previewUrl="previewUrl!"
+              :mode="previewMode"
+            >
+              <div class="preview-placeholder">
+                <i class="bi bi-image"></i>
+                <p>{{ $t('common.select_or_drop') }}</p>
+              </div>
+            </slot>
           </div>
-        </slot>
+        </Transition>
 
         <!-- 資訊列：overlay 模式（showFilmstrip 為 true 時） -->
         <div v-if="showFilmstrip && hasFile" class="preview-info-bar preview-info-bar--overlay">
@@ -404,12 +442,14 @@ onBeforeUnmount(() => {
       <div v-if="!hideExecute && !isCurrentComingSoon" class="execute-section">
         <button
           class="execute-btn"
+          :class="{ 'is-success': executeSuccess }"
           :disabled="executeDisabled || executeLoading"
           @click="emit('execute')"
         >
           <span v-if="executeLoading" class="spinner-border spinner-border-sm me-2"></span>
+          <i v-else-if="executeSuccess" class="bi bi-check-lg me-2"></i>
           <i v-else class="bi bi-play-fill me-2"></i>
-          {{ executeLoading ? $t('common.processing') : effectiveExecuteLabel }}
+          {{ executeLoading ? $t('common.processing') : executeSuccess ? $t('common.completed') : effectiveExecuteLabel }}
         </button>
       </div>
     </aside>
@@ -446,6 +486,21 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+.function-group-label {
+  padding: 0.5rem 0.75rem 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+
+  &:not(:first-child) {
+    margin-top: 0.35rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--panel-border);
+  }
 }
 
 .function-item {
@@ -727,7 +782,34 @@ onBeforeUnmount(() => {
   }
 
   &:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  &.is-success {
+    background: var(--color-success);
+    &:hover:not(:disabled) {
+      background: var(--color-success-hover);
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    }
+  }
 }
 
 .text-muted { color: var(--text-muted); }
+
+// ── Fade transition ───────────────────────────────────────────
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.preview-slot-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
 </style>

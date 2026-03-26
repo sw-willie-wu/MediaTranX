@@ -39,12 +39,12 @@ const separatePanelRef   = ref<InstanceType<typeof AudioSeparatePanel>  | null>(
 const lyricsPanelRef     = ref<InstanceType<typeof AudioLyricsPanel>    | null>(null)
 
 const subFunctions = computed(() => [
-  { id: 'transcode',  name: t('audio.functions.transcode'),  icon: 'bi-arrow-repeat' },
-  { id: 'cut',        name: t('audio.functions.cut'),        icon: 'bi-scissors' },
-  { id: 'volume',     name: t('audio.functions.volume'),     icon: 'bi-volume-up-fill' },
-  { id: 'transcribe', name: t('audio.functions.transcribe'), icon: 'bi-mic-fill' },
-  { id: 'separate',  name: t('audio.functions.separate'),  icon: 'bi-music-note-list' },
-  { id: 'lyrics',    name: t('audio.functions.lyrics'),    icon: 'bi-music-note-beamed' },
+  { id: 'transcode',  name: t('audio.functions.transcode'),  icon: 'bi-arrow-repeat',     group: t('audio.group.edit') },
+  { id: 'cut',        name: t('audio.functions.cut'),        icon: 'bi-scissors',         group: t('audio.group.edit') },
+  { id: 'volume',     name: t('audio.functions.volume'),     icon: 'bi-volume-up-fill',   group: t('audio.group.edit') },
+  { id: 'transcribe', name: t('audio.functions.transcribe'), icon: 'bi-mic-fill',         group: t('audio.group.ai') },
+  { id: 'separate',   name: t('audio.functions.separate'),   icon: 'bi-music-note-list',  group: t('audio.group.ai') },
+  { id: 'lyrics',     name: t('audio.functions.lyrics'),     icon: 'bi-music-note-beamed',group: t('audio.group.ai') },
 ])
 
 const currentFunction = ref('transcode')
@@ -256,6 +256,7 @@ const separateStems = computed(() => separateStemsData.value)
     @files="handleFiles"
     @remove-file="handleRemoveFile"
     @download="onDownload"
+    @clear-selection="collection.clearSelection()"
   >
     <template #toolbar-extra>
       <button
@@ -299,6 +300,7 @@ const separateStems = computed(() => separateStemsData.value)
         :selected-ids="collection.selectedIds.value"
         @select="onFilmstripSelect"
         @remove="onFilmstripRemove"
+        @remove-selected="ids => collection.removeEntries(ids)"
         @clear-selection="collection.clearSelection()"
         @select-all="collection.selectAll()"
       />
