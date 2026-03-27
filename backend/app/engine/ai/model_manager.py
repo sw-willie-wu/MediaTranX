@@ -51,7 +51,18 @@ class ModelManager:
     def gpu_session(self):
         """顯存鎖：確保影像處理與語言推理不會同時搶奪顯存"""
         with self._gpu_lock:
-            yield
+            try:
+                yield
+            finally:
+                # 強制釋放 GPU 記憶體，避免下一個任務 OOM
+                import gc
+                gc.collect()
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except Exception:
+                    pass
 
     def register_unloader(self, slot: str, callback: Callable[[], None]):
         """註冊模型卸載函數"""

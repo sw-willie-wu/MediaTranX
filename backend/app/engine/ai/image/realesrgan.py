@@ -69,30 +69,31 @@ class RealESRGANWrapper(PTHRuntime):
         vram_needed = variant_spec["vram_mb"]
         self._manager.acquire(SLOT_PTH, required_vram_mb=vram_needed)
         
-        try:
-            with self.acquire(
-                model_id="realesrgan",
-                variant=model_id,
-                on_progress=on_progress
-            ) as model:
-                import numpy as np
-                from PIL import Image
-                import torch
-                img_array = np.array(image.convert("RGB"))
-                img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0).float() / 255.0
-                img_tensor = img_tensor.to(self._device)
+        with self.acquire(
+            model_id="realesrgan",
+            variant=model_id,
+            on_progress=on_progress
+        ) as model:
+            import numpy as np
+            from PIL import Image
+            import torch
+            img_array = np.array(image.convert("RGB"))
+            img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+            img_tensor = img_tensor.to(self._device)
 
-                def infer_cb(p: float, m: str) -> None:
-                    if on_progress:
-                        on_progress(1.0 + p, m)
+            def infer_cb(p: float, m: str) -> None:
+                if on_progress:
+                    on_progress(1.0 + p, m)
 
-                output_tensor = self.run_inference(model, img_tensor, scale=scale, on_progress=infer_cb)
-                output_array = (output_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
-                return Image.fromarray(output_array)
-        
-        finally:
-            # 卸載模型釋放 VRAM
-            self._unload_model()
+            output_tensor = self.run_inference(model, img_tensor, scale=scale, on_progress=infer_cb)
+            output_array = (output_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+            result = Image.fromarray(output_array)
+
+            # 釋放 GPU tensor，避免批次跑時 OOM
+            del img_tensor, output_tensor
+            torch.cuda.empty_cache()
+
+            return result
 
 
 # ═══════════════════════════════════════════════════════════

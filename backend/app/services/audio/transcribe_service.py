@@ -555,6 +555,7 @@ class AudioTranscribeService:
         return {
             "output_file_id": output_file_id,
             "output_filename": output_filename_result,
+            "output_dir": str(output_dir_path),
             "output_files": output_files,
             "text_file_id": output_file_id,
             "text_content": text_content,
