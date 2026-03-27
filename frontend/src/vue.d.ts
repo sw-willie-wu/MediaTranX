@@ -20,5 +20,7 @@ interface Window {
     selectFolder: () => Promise<string | null>
     saveFileDialog: (options: SaveFileDialogOptions) => Promise<string | null>
     getFileSourceDir: (name: string, size: number, lastModified: number) => string | null
+    downloadToPath: (url: string, destPath: string) => Promise<void>
+    showItemInFolder: (filePath: string) => void
   }
 }

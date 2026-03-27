@@ -114,12 +114,18 @@ function handleDrop(e: DragEvent) {
   gap: 2rem;
 }
 
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .section-title {
   color: var(--text-primary);
   font-size: 1.1rem;
   font-weight: 500;
   margin-bottom: 1rem;
   text-align: center;
+  animation: fadeInUp 0.35s ease both;
 }
 
 // 快速工具區
@@ -128,7 +134,7 @@ function handleDrop(e: DragEvent) {
   background: var(--panel-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-radius: 16px;
+  border-radius: 12px;
   border: 1px solid var(--panel-border);
 }
 
@@ -148,7 +154,12 @@ function handleDrop(e: DragEvent) {
   border: 1px solid var(--panel-border);
   border-radius: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  animation: fadeInUp 0.35s ease both;
+  &:nth-child(1) { animation-delay: 0.06s; }
+  &:nth-child(2) { animation-delay: 0.12s; }
+  &:nth-child(3) { animation-delay: 0.18s; }
+  &:nth-child(4) { animation-delay: 0.24s; }
 
   &:hover {
     background: var(--panel-bg-hover);
@@ -177,13 +188,13 @@ function handleDrop(e: DragEvent) {
   align-items: center;
   justify-content: center;
   background: var(--panel-bg);
-  border-radius: 14px;
-  transition: all 0.2s ease;
+  border-radius: 12px;
+  transition: all 0.15s ease;
 
   i {
     font-size: 1.75rem;
     color: var(--tool-color);
-    transition: color 0.2s ease;
+    transition: color 0.15s ease;
   }
 }
 
@@ -205,11 +216,12 @@ function handleDrop(e: DragEvent) {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 2px dashed var(--drop-zone-border);
-  border-radius: 16px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
+  animation: fadeInUp 0.35s ease 0.3s both;
 
   &:hover {
     border-color: var(--drop-zone-border-hover);
@@ -218,7 +230,7 @@ function handleDrop(e: DragEvent) {
 
   &.dragging {
     border-color: var(--color-accent);
-    background: rgba(96, 165, 250, 0.1);
+    background: var(--drag-over-bg);
 
     .drop-icon {
       color: var(--color-accent);
@@ -235,7 +247,7 @@ function handleDrop(e: DragEvent) {
   font-size: 3.5rem;
   color: var(--text-muted);
   margin-bottom: 1rem;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .drop-text {

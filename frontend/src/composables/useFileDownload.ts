@@ -39,7 +39,13 @@ export function useFileDownload() {
         destPath,
       )
       log.info('downloadFile done', { fileId, destPath })
-      toast.show(t('toast.saved'), { type: 'success', icon: 'bi-check-circle' })
+      toast.show(t('toast.saved'), {
+        type: 'success',
+        icon: 'bi-check-circle',
+        action: window.electron?.showItemInFolder
+          ? { label: t('toast.open_folder'), callback: () => window.electron!.showItemInFolder(destPath) }
+          : undefined,
+      })
     } catch (e) {
       log.error('downloadFile failed', { fileId, destPath, error: e })
       toast.show(t('toast.save_failed'), { type: 'error', icon: 'bi-x-circle' })
@@ -62,7 +68,14 @@ export function useFileDownload() {
         }),
       )
       log.info('downloadBatch done', { count: entries.length })
-      toast.show(t('toast.batch_saved', { count: entries.length }), { type: 'success', icon: 'bi-check-circle' })
+      const normalizedDir = destDir.replace(/\\/g, '/')
+      toast.show(t('toast.batch_saved', { count: entries.length }), {
+        type: 'success',
+        icon: 'bi-check-circle',
+        action: window.electron?.showItemInFolder && entries.length > 0
+          ? { label: t('toast.open_folder'), callback: () => window.electron!.showItemInFolder(`${normalizedDir}/${entries[0].filename}`) }
+          : undefined,
+      })
     } catch (e) {
       log.error('downloadBatch failed', { error: e })
       toast.show(t('toast.batch_save_failed'), { type: 'error', icon: 'bi-x-circle' })

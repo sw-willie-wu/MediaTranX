@@ -5,6 +5,7 @@ import { useToast } from '@/composables/useToast'
 import { useFileDownload } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { apiFetch } from '@/composables/useApi'
+import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('AudioWorkspace')
@@ -61,6 +62,7 @@ export function useAudioWorkspace() {
   const taskStore = useTaskStore()
   const toast = useToast()
   const { downloadFile } = useFileDownload()
+  const { t } = useI18n()
 
   // ── Collection (multi-audio state) ──
   const collection = useMediaCollection({
@@ -203,10 +205,18 @@ export function useAudioWorkspace() {
       }
 
       log.info('task completed', { taskId: task.taskId, taskType: task.taskType, outputFileId: r.output_file_id })
+
+      // If output was saved to a directory, show "Open Folder"; otherwise show "Download"
+      const outputDir = (r as any).output_dir as string | undefined
+      const outputFilename = (r as any).output_filename as string | undefined
+      const hasOutputPath = outputDir && outputFilename && window.electron?.showItemInFolder
+
       toast.show(`${task.label ?? '處理'} 完成`, {
         type: 'success',
         icon: 'bi-check-circle',
-        action: { label: '下載', callback: () => handleDownload() },
+        action: hasOutputPath
+          ? { label: t('toast.open_folder'), callback: () => window.electron!.showItemInFolder(`${outputDir}/${outputFilename}`) }
+          : { label: '下載', callback: () => handleDownload() },
       })
     },
     { deep: true }

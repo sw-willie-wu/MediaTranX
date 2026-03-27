@@ -131,6 +131,10 @@ onMounted(async () => {
   font-size: 0.8rem;
   font-weight: 500;
   pointer-events: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .window-controls {

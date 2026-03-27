@@ -411,10 +411,11 @@ onBeforeUnmount(() => {
           </div>
         </Transition>
 
-        <!-- 資訊列：overlay 模式（showFilmstrip 為 true 時） -->
-        <div v-if="showFilmstrip && hasFile" class="preview-info-bar preview-info-bar--overlay">
-          <slot name="info-bar" />
-        </div>
+      </div>
+
+      <!-- 資訊列：filmstrip 模式（preview-area flex child，在 filmstrip 上方） -->
+      <div v-if="showFilmstrip && hasFile" class="preview-info-bar preview-info-bar--overlay">
+        <slot name="info-bar" />
       </div>
 
       <!-- Filmstrip slot — 固定在 preview-area 底部，不參與 preview-content 的捲動 -->
@@ -660,7 +661,7 @@ onBeforeUnmount(() => {
   padding: 0.4rem 0.75rem;
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-muted);
   font-size: 0.85rem;
   cursor: pointer;
@@ -745,19 +746,16 @@ onBeforeUnmount(() => {
 
   // Overlay mode (showFilmstrip = true) — absolute, bottom-center of preview-content
   &--overlay {
-    position: absolute;
-    bottom: 0.25rem;
-    left: 50%;
-    transform: translateX(-50%);
     min-height: unset;
     padding: 0.35rem 0.9rem;
     border-top: none;
-    z-index: 5;
-    max-width: min(480px, 90%);
+    flex-shrink: 0;
+    justify-content: center;
 
     :deep(.media-info-bar) {
       border-top: none;
       padding: 0;
+      justify-content: center;
     }
   }
 }
