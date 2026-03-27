@@ -168,7 +168,38 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading, outputFormat })
+function getParams() {
+  const parsed = parseModelValue(selectedModel.value)
+  const body: Record<string, any> = {
+    format: outputFormat.value,
+  }
+
+  if (parsed.isRemote) {
+    body.remote = true
+    body.provider = parsed.provider
+    body.conn_id = parsed.connId
+    body.remote_model = parsed.modelId
+  } else {
+    const [family, size] = selectedModel.value.split(':')
+    body.model_id = family
+    body.size = size
+  }
+
+  if (outputPath.value) {
+    const path = outputPath.value.replace(/\\/g, '/')
+    const last = path.lastIndexOf('/')
+    if (last > 0) {
+      body.output_dir      = path.substring(0, last)
+      body.output_filename = path.substring(last + 1)
+    } else {
+      body.output_filename = path
+    }
+  }
+
+  return body
+}
+
+defineExpose({ execute, isDisabled, isLoading, outputFormat, getParams })
 </script>
 
 <template>

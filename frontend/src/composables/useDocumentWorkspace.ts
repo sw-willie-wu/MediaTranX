@@ -1,9 +1,11 @@
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { useFileDownload } from '@/composables/useFileDownload'
+import { useMediaCollection } from '@/composables/useMediaCollection'
 import { apiFetch } from '@/composables/useApi'
+import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('DocumentWorkspace')
@@ -13,21 +15,67 @@ const DOCUMENT_EXTS = new Set([
   '.txt', '.csv', '.rtf', '.odt', '.ods', '.odp', '.epub',
 ])
 
+/**
+ * Generate a simple document thumbnail (document icon on dark background)
+ */
+async function generateDocumentThumbnail(_file: File, _previewUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const size = 128
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')!
+
+    // Dark background
+    ctx.fillStyle = '#1e293b'
+    ctx.fillRect(0, 0, size, size)
+
+    // Document icon
+    ctx.fillStyle = '#64748b'
+    ctx.font = '48px serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('\u{1F4C4}', size / 2, size / 2)
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(URL.createObjectURL(blob))
+      } else {
+        resolve('')
+      }
+    }, 'image/png')
+  })
+}
+
 export function useDocumentWorkspace() {
   const filesStore = useFilesStore()
   const taskStore = useTaskStore()
   const toast = useToast()
   const { downloadFile } = useFileDownload()
+  const { t } = useI18n()
 
-  const hasFile = ref(false)
-  const fileId = ref<string | null>(null)
-  const isUploading = ref(false)
-  const sourceDir = ref<string | undefined>(undefined)
-  const currentFileName = ref('')
-  const currentTaskId = ref<string | null>(null)
-  const hasResult = ref(false)
+  // ── Collection (multi-document state) ──
+  const collection = useMediaCollection({
+    shouldAddToHistory: (result) => !result.text_content && !result.text_file_id,
+  })
 
-  // OCR 文字結果（供 modal 顯示）
+  // ── Derived from active entry ──
+  const hasFile = computed(() => collection.hasEntries.value)
+  const fileId = computed<string | null>(() => collection.activeEntry.value?.fileId ?? null)
+  const isUploading = computed<boolean>(() => collection.activeEntry.value?.status === 'uploading')
+  const sourceDir = computed<string | undefined>(() => collection.activeEntry.value?.sourceDir)
+  const currentFileName = computed<string>(() => collection.activeEntry.value?.file.name ?? '')
+  const currentTaskId = computed<string | null>(() => collection.activeEntry.value?.currentTaskId ?? null)
+  const historyStack = computed(() => collection.activeEntry.value?.historyStack ?? [])
+
+  const hasResult = computed<boolean>(() => historyStack.value.length > 0)
+
+  /** File ID for panels: latest result, or original */
+  const activeFileId = computed<string | null>(
+    () => historyStack.value.at(-1)?.fileId ?? fileId.value,
+  )
+
+  // OCR text result (for modal display)
   const textResultFileId   = ref<string | null>(null)
   const textResultFilename = ref<string | null>(null)
   const textResultContent  = ref<string | null>(null)
@@ -40,51 +88,58 @@ export function useDocumentWorkspace() {
       return
     }
     log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
-    hasFile.value = true
-    sourceDir.value = srcDir
-    currentFileName.value = file.name
-    hasResult.value = false
-    fileId.value = null
-    isUploading.value = true
     textResultContent.value = null
     textResultFileId.value = null
     textResultFilename.value = null
+
+    const entryId = await collection.addEntry(file, srcDir, generateDocumentThumbnail)
+
     try {
-      fileId.value = await filesStore.uploadFile(file, srcDir)
-      log.info('handleFile uploaded', { fileName: file.name, fileId: fileId.value })
-    } catch (e) {
-      log.error('handleFile upload failed', { fileName: file.name, error: e })
-    } finally {
-      isUploading.value = false
+      const uploadedFileId = await filesStore.uploadFile(file, srcDir)
+      log.info('handleFile uploaded', { fileName: file.name, fileId: uploadedFileId })
+      collection.updateEntry(entryId, { fileId: uploadedFileId, status: 'idle' })
+    } catch (e: any) {
+      log.error('handleFile upload failed', { fileName: file.name, error: e.message })
+      collection.updateEntry(entryId, { status: 'idle' })
+      toast.show(e.message || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
+    }
+  }
+
+  async function handleFiles(files: File[]) {
+    for (const file of files) {
+      const srcDir = window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
+      await handleFile(file, srcDir)
     }
   }
 
   function handleRemoveFile() {
-    hasFile.value = false
-    fileId.value = null
-    sourceDir.value = undefined
-    currentFileName.value = ''
-    currentTaskId.value = null
-    hasResult.value = false
-    isUploading.value = false
-    textResultContent.value = null
-    textResultFileId.value = null
-    textResultFilename.value = null
+    const id = collection.activeId.value
+    if (id) {
+      collection.removeEntry(id)
+    }
+    if (!collection.hasEntries.value) {
+      textResultContent.value = null
+      textResultFileId.value = null
+      textResultFilename.value = null
+    }
   }
 
   function handlePanelSubmit(taskId: string) {
     log.info('handlePanelSubmit', { taskId })
-    currentTaskId.value = taskId
+    const entry = collection.activeEntry.value
+    if (entry) {
+      collection.registerTask(taskId, entry.id)
+      collection.updateEntry(entry.id, { currentTaskId: taskId, status: 'processing' })
+    }
   }
 
   function handleDownload(fallbackSuffix = '_output', fallbackExt = 'pdf') {
-    const task = currentTaskId.value ? taskStore.tasks.get(currentTaskId.value) : null
-    if (!task?.result) return
-    const r = task.result as { output_file_id?: string; output_filename?: string }
-    if (!r.output_file_id) return
-    const name = r.output_filename
-      ?? `${currentFileName.value.replace(/\.[^.]+$/, '')}${fallbackSuffix}.${fallbackExt}`
-    downloadFile(r.output_file_id, name, sourceDir.value)
+    // Binary result download (from history stack)
+    const latest = historyStack.value.at(-1)
+    if (latest) {
+      downloadFile(latest.fileId, latest.outputFilename, sourceDir.value)
+      return
+    }
   }
 
   function handleTextDownload() {
@@ -92,6 +147,7 @@ export function useDocumentWorkspace() {
     downloadFile(textResultFileId.value, textResultFilename.value, sourceDir.value)
   }
 
+  // Watch for task completion
   const _notifiedTaskIds = new Set<string>()
   watch(
     () => currentTaskId.value ? taskStore.tasks.get(currentTaskId.value) : null,
@@ -102,9 +158,8 @@ export function useDocumentWorkspace() {
       const r = task.result as { output_file_id?: string; output_filename?: string }
       if (!r.output_file_id) return
       log.info('task completed', { taskId: task.taskId, taskType: task.taskType, outputFileId: r.output_file_id })
-      hasResult.value = true
 
-      // OCR 任務：額外載入文字內容供 modal 顯示
+      // OCR task: load text content for modal display
       if (task.taskType === 'document.ocr') {
         textResultFileId.value   = r.output_file_id
         textResultFilename.value = r.output_filename ?? null
@@ -118,18 +173,31 @@ export function useDocumentWorkspace() {
         textResultFilename.value = null
       }
 
+      const outputDir = (r as any).output_dir as string | undefined
+      const outputFilename = r.output_filename as string | undefined
+      const hasOutputPath = outputDir && outputFilename && window.electron?.showItemInFolder
       toast.show(`${task.label ?? '處理'} 完成`, {
         type: 'success',
         icon: 'bi-check-circle',
-        action: { label: '下載', callback: () => handleDownload() },
+        action: hasOutputPath
+          ? { label: t('toast.open_folder'), callback: () => window.electron!.showItemInFolder(`${outputDir}/${outputFilename}`) }
+          : { label: '下載', callback: () => handleDownload() },
       })
     },
     { deep: true },
   )
 
+  // Reset text result when switching files
+  watch(() => collection.activeId.value, () => {
+    textResultFileId.value = null
+    textResultFilename.value = null
+    textResultContent.value = null
+  })
+
   return {
     hasFile,
     fileId,
+    activeFileId,
     isUploading,
     sourceDir,
     currentFileName,
@@ -138,7 +206,9 @@ export function useDocumentWorkspace() {
     textResultFileId,
     textResultFilename,
     textResultContent,
+    collection,
     handleFile,
+    handleFiles,
     handleRemoveFile,
     handlePanelSubmit,
     handleDownload,

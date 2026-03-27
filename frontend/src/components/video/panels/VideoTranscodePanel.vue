@@ -122,7 +122,28 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading, outputFormat, isAudioFormat })
+function getParams() {
+  if (isAudioFormat.value) {
+    return {
+      audio_format: outputFormat.value,
+      audio_bitrate: showBitrateOption.value ? audioBitrate.value : undefined,
+    }
+  }
+  let finalResolution = resolution.value
+  if (resolution.value === 'custom') {
+    finalResolution = `${customResWidth.value}x${customResHeight.value}`
+  }
+  return {
+    output_format: outputFormat.value,
+    video_codec: videoCodec.value,
+    audio_codec: 'aac',
+    crf: crf.value,
+    resolution: finalResolution || undefined,
+    scale_algorithm: finalResolution ? scaleAlgorithm.value : undefined,
+  }
+}
+
+defineExpose({ execute, isDisabled, isLoading, outputFormat, isAudioFormat, getParams })
 </script>
 
 <template>

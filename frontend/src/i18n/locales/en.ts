@@ -309,6 +309,11 @@ export default {
       subtitle: 'Subtitle',
     },
 
+    group: {
+      edit: 'Edit',
+      ai: 'AI Tools',
+    },
+
     transcode: {
       title: 'Transcode Settings',
       description: 'Convert video format with adjustable resolution, quality, and audio settings.',
@@ -535,6 +540,11 @@ export default {
       pdf_convert: 'PDF Convert',
       ocr: 'OCR',
       split: 'Split',
+    },
+
+    group: {
+      edit: 'Edit',
+      ai: 'AI Tools',
     },
 
     ocr: {

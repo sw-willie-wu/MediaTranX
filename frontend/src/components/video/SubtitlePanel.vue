@@ -91,6 +91,9 @@ async function loadLanguages() {
   } catch {}
 }
 
+const showAdvanced = ref(localStorage.getItem('subtitle_advanced') === 'true')
+watch(showAdvanced, (v) => localStorage.setItem('subtitle_advanced', String(v)))
+
 const outputFormats = computed(() => [
   { value: 'srt', label: t('video.subtitle.srt') },
   { value: 'vtt', label: t('video.subtitle.vtt') },
@@ -260,20 +263,29 @@ onMounted(() => { loadAllWhisperStatus(); loadLanguages() })
       <AppSelect v-model="modelSize" :options="modelSizesWithBadge" />
     </div>
 
-    <WhisperAdvancedSettings ref="whisperAdvanced" />
-
     <div class="form-group">
       <label>{{ $t('video.subtitle.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
-
-    <TranslationOptionsPanel ref="translationOptions" />
 
     <div class="form-group">
       <label>{{ $t('video.subtitle.file_type') }}</label>
       <div class="file-select" @click="selectOutputFile">
         <span class="file-select-path">{{ displayOutputPath }}</span>
         <i class="bi bi-folder2-open"></i>
+      </div>
+    </div>
+
+    <!-- Advanced options (collapsible) -->
+    <div class="settings-collapsible" :class="{ 'is-open': showAdvanced }">
+      <button class="settings-collapsible-header" @click="showAdvanced = !showAdvanced">
+        <i class="bi" :class="showAdvanced ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+        <span>{{ $t('common.advanced_options') }}</span>
+      </button>
+
+      <div v-show="showAdvanced" class="settings-collapsible-body">
+        <WhisperAdvancedSettings ref="whisperAdvanced" />
+        <TranslationOptionsPanel ref="translationOptions" />
       </div>
     </div>
   </div>

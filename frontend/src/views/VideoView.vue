@@ -2,22 +2,28 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
+import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import VideoPreview from '@/components/video/VideoPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import VideoTranscodePanel from '@/components/video/panels/VideoTranscodePanel.vue'
 import VideoCutPanel from '@/components/video/panels/VideoCutPanel.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
+import { useMultiSubmit } from '@/composables/useMultiSubmit'
 
 const { t } = useI18n()
 
 const {
-  hasFile, fileId, isUploading, currentFileName, mediaInfo, hasResult,
-  handleFile, handleRemoveFile, handlePanelSubmit, handleDownload,
-  sourceDir,
+  hasFile, fileId, activeFileId, activePreviewUrl, isUploading, sourceDir, currentFileName, mediaInfo, hasResult,
+  collection,
+  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload,
 } = useVideoWorkspace()
 
-// 剪輯時間點（VideoPreview 和 VideoCutPanel 共用）
+const selectedIds = computed(() => collection.selectedIds.value)
+const isMultiSelect = computed(() => selectedIds.value.size > 1)
+const { isSubmitting, submitToAll } = useMultiSubmit(collection)
+
+// Cut time points (shared between VideoPreview and VideoCutPanel)
 const cutStartTime = ref('00:00:00')
 const cutEndTime = ref('00:00:00')
 const cutStreamCopy = ref(true)
@@ -37,12 +43,14 @@ const cutPanelRef = ref<InstanceType<typeof VideoCutPanel> | null>(null)
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
 
 const subFunctions = computed(() => [
-  { id: 'transcode', name: t('video.functions.transcode'), icon: 'bi-arrow-repeat' },
-  { id: 'cut',       name: t('video.functions.cut'),       icon: 'bi-scissors' },
-  { id: 'subtitle',  name: t('video.functions.subtitle'),  icon: 'bi-badge-cc-fill' },
+  { id: 'transcode', name: t('video.functions.transcode'), icon: 'bi-arrow-repeat',   group: t('video.group.edit') },
+  { id: 'cut',       name: t('video.functions.cut'),       icon: 'bi-scissors',       group: t('video.group.edit') },
+  { id: 'subtitle',  name: t('video.functions.subtitle'),  icon: 'bi-badge-cc-fill',  group: t('video.group.ai') },
 ])
 
 const currentFunction = ref('transcode')
+
+const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
 
 const executeDisabled = computed(() => {
   if (currentFunction.value === 'subtitle')  return subtitlePanelRef.value?.isDisabled ?? true
@@ -52,6 +60,7 @@ const executeDisabled = computed(() => {
 })
 
 const executeLoading = computed(() => {
+  if (isEntryProcessing.value) return true
   if (currentFunction.value === 'subtitle')  return subtitlePanelRef.value?.isLoading ?? false
   if (currentFunction.value === 'transcode') return transcodePanelRef.value?.isLoading ?? false
   if (currentFunction.value === 'cut')       return cutPanelRef.value?.isLoading ?? false
@@ -59,10 +68,32 @@ const executeLoading = computed(() => {
 })
 
 function handleExecute() {
+  if (isMultiSelect.value) {
+    handleMultiExecute()
+  } else {
+    handleSingleExecute()
+  }
+}
+
+function handleSingleExecute() {
   switch (currentFunction.value) {
     case 'transcode': transcodePanelRef.value?.execute(); break
     case 'cut':       cutPanelRef.value?.execute(); break
     case 'subtitle':  subtitlePanelRef.value?.submitGenerate(); break
+  }
+}
+
+function handleMultiExecute() {
+  const noop = () => {}
+  switch (currentFunction.value) {
+    case 'transcode':
+      submitToAll('/video/transcode', () => transcodePanelRef.value!.getParams(), t('video.transcode.task_label'), 'video.transcode', noop); break
+    case 'cut':
+      // Cut uses per-file start/end times, not supported for batch
+      cutPanelRef.value?.execute(); break
+    case 'subtitle':
+      // Subtitle has complex per-file state, not supported for batch
+      subtitlePanelRef.value?.submitGenerate(); break
   }
 }
 
@@ -90,10 +121,9 @@ function formatSize(b: number) {
   if (b < 1024 ** 3) return `${(b / 1024 ** 2).toFixed(1)} MB`
   return `${(b / 1024 ** 3).toFixed(2)} GB`
 }
-function formatBitrate(bps: number) {
-  if (bps < 1000) return `${bps} bps`
-  if (bps < 1_000_000) return `${(bps / 1000).toFixed(0)} Kbps`
-  return `${(bps / 1_000_000).toFixed(1)} Mbps`
+function formatBitrate(kbps: number) {
+  if (kbps < 1000) return `${kbps} Kbps`
+  return `${(kbps / 1000).toFixed(1)} Mbps`
 }
 
 const mediaInfoItems = computed<InfoItem[]>(() => {
@@ -109,6 +139,25 @@ const mediaInfoItems = computed<InfoItem[]>(() => {
     { icon: 'bi-hdd',           label: formatSize(m.file_size) },
   ]
 })
+
+// ── Filmstrip ────────────────────────────────────────────────────────────────
+
+const filmstripItems = computed(() =>
+  collection.entriesList.value.map(e => ({
+    id: e.id,
+    thumbnailUrl: e.thumbnailUrl,
+    status: e.status,
+    progress: e.progress,
+  }))
+)
+
+function onFilmstripSelect(id: string, ctrlKey: boolean) {
+  collection.selectEntry(id, ctrlKey)
+}
+
+function onFilmstripRemove(id: string) {
+  collection.removeEntry(id)
+}
 </script>
 
 <template>
@@ -120,6 +169,9 @@ const mediaInfoItems = computed<InfoItem[]>(() => {
     :upload-hint="$t('video.upload_hint')"
     upload-accept="video/*"
     hide-preview-tabs
+    show-filmstrip
+    :collection-size="filmstripItems.length"
+    :active-file-name="currentFileName"
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"
@@ -128,12 +180,14 @@ const mediaInfoItems = computed<InfoItem[]>(() => {
     @select-function="currentFunction = $event"
     @execute="handleExecute"
     @file="handleFile"
+    @files="handleFiles"
     @remove-file="handleRemoveFile"
     @download="onDownload"
+    @clear-selection="collection.clearSelection()"
   >
     <template #preview="{ previewUrl }">
       <VideoPreview
-        :preview-url="previewUrl"
+        :preview-url="activePreviewUrl ?? collection.activeEntry.value?.previewUrl ?? previewUrl"
         :media-info="mediaInfo"
         :current-function="currentFunction"
         v-model:start-time="cutStartTime"
@@ -150,12 +204,25 @@ const mediaInfoItems = computed<InfoItem[]>(() => {
       />
     </template>
 
+    <template #filmstrip>
+      <AppFilmstrip
+        :items="filmstripItems"
+        :active-id="collection.activeId.value"
+        :selected-ids="collection.selectedIds.value"
+        @select="onFilmstripSelect"
+        @remove="onFilmstripRemove"
+        @remove-selected="ids => collection.removeEntries(ids)"
+        @clear-selection="collection.clearSelection()"
+        @select-all="collection.selectAll()"
+      />
+    </template>
+
     <template #settings>
       <div class="settings-form">
         <VideoTranscodePanel
           v-if="currentFunction === 'transcode'"
           ref="transcodePanelRef"
-          :file-id="fileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
           @submit="handlePanelSubmit"
         />
@@ -163,7 +230,7 @@ const mediaInfoItems = computed<InfoItem[]>(() => {
         <VideoCutPanel
           v-else-if="currentFunction === 'cut'"
           ref="cutPanelRef"
-          :file-id="fileId"
+          :file-id="activeFileId"
           :current-file-name="''"
           v-model:start-time="cutStartTime"
           v-model:end-time="cutEndTime"
@@ -175,7 +242,7 @@ const mediaInfoItems = computed<InfoItem[]>(() => {
           <h6 class="settings-title"><i class="bi bi-badge-cc-fill me-2"></i>{{ $t('video.subtitle.title') }}</h6>
           <SubtitlePanel
             ref="subtitlePanelRef"
-            :fileId="fileId"
+            :fileId="activeFileId"
             :mediaInfo="mediaInfo"
             :source-dir="sourceDir"
             @submit="handleSubtitleSubmit"

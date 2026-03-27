@@ -231,7 +231,33 @@ async function execute() {
 
 onMounted(() => { loadTranslateModels(); loadLanguages(); loadTranslateStyles(); remoteStore.fetchAll() })
 
-defineExpose({ execute, isDisabled, isLoading })
+function getParams() {
+  const parsed = parseModelValue(selectedTranslateModel.value)
+  const body: Record<string, any> = {
+    source_language: sourceLanguage.value,
+    target_language: targetLanguage.value,
+    translate_style: translateStyle.value,
+  }
+
+  if (parsed.isRemote) {
+    body.remote = true
+    body.provider = parsed.provider
+    body.conn_id = parsed.connId
+    body.remote_model = parsed.modelId
+  } else {
+    const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
+    body.model_type = tmType
+    body.model_size = tmSize
+    body.quantization = tmQuant
+  }
+
+  const glossary = parseGlossary()
+  if (glossary) body.glossary = glossary
+
+  return body
+}
+
+defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
 
 <template>

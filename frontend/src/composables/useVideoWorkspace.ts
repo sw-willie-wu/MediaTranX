@@ -1,9 +1,11 @@
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { useFileDownload } from '@/composables/useFileDownload'
+import { useMediaCollection } from '@/composables/useMediaCollection'
 import { apiFetch } from '@/composables/useApi'
+import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('VideoWorkspace')
@@ -24,30 +26,133 @@ export interface VideoMediaInfo {
   file_size: number
 }
 
+function generateFallbackThumbnail(): string {
+  const size = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#1e293b'
+  ctx.fillRect(0, 0, size, size)
+  ctx.fillStyle = '#64748b'
+  ctx.font = '48px serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('\u{1F3AC}', size / 2, size / 2)
+  return canvas.toDataURL('image/png')
+}
+
+/**
+ * Generate video thumbnail by capturing the first frame
+ */
+async function generateVideoThumbnail(_file: File, previewUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.src = previewUrl
+    video.crossOrigin = 'anonymous'
+    video.muted = true
+    video.preload = 'auto'
+
+    let attempts = 0
+    const seekTimes = [1, 3, 5, 0]  // 嘗試多個時間點
+
+    const timeoutId = setTimeout(() => {
+      resolve(generateFallbackThumbnail())
+    }, 8000)
+
+    function tryCapture() {
+      const vw = video.videoWidth || 128
+      const vh = video.videoHeight || 128
+      const maxDim = 256
+      const scale = Math.min(maxDim / vw, maxDim / vh)
+      const cw = Math.round(vw * scale)
+      const ch = Math.round(vh * scale)
+
+      const canvas = document.createElement('canvas')
+      canvas.width = cw
+      canvas.height = ch
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(video, 0, 0, cw, ch)
+
+      // 偵測是否為黑畫面（取樣中心 pixel 的亮度）
+      const sample = ctx.getImageData(Math.floor(cw / 2), Math.floor(ch / 2), 1, 1).data
+      const brightness = sample[0] + sample[1] + sample[2]
+
+      if (brightness < 30 && attempts < seekTimes.length - 1) {
+        // 太暗，嘗試下一個時間點
+        attempts++
+        video.currentTime = seekTimes[attempts]
+        return  // 等下一次 seeked 事件
+      }
+
+      // 亮度足夠或已嘗試所有時間點
+      canvas.toBlob((blob) => {
+        resolve(blob ? URL.createObjectURL(blob) : generateFallbackThumbnail())
+      }, 'image/jpeg', 0.7)
+    }
+
+    video.addEventListener('seeked', tryCapture)
+
+    video.addEventListener('error', () => {
+      clearTimeout(timeoutId)
+      resolve(generateFallbackThumbnail())
+    }, { once: true })
+
+    // 開始第一次 seek
+    video.currentTime = seekTimes[0]
+  })
+}
+
 export function useVideoWorkspace() {
   const filesStore = useFilesStore()
   const taskStore = useTaskStore()
   const toast = useToast()
   const { downloadFile } = useFileDownload()
+  const { t } = useI18n()
 
-  const hasFile = ref(false)
-  const fileId = ref<string | null>(null)
-  const isUploading = ref(false)
-  const sourceDir = ref<string | undefined>(undefined)
-  const currentFileName = ref('')
+  // ── Collection (multi-video state) ──
+  const collection = useMediaCollection()
+
+  // ── Video-specific state ──
   const mediaInfo = ref<VideoMediaInfo | null>(null)
-  const currentTaskId = ref<string | null>(null)
-  const hasResult = ref(false)
+
+  // ── Derived from active entry ──
+  const hasFile = computed(() => collection.hasEntries.value)
+  const fileId = computed<string | null>(() => collection.activeEntry.value?.fileId ?? null)
+  const isUploading = computed<boolean>(() => collection.activeEntry.value?.status === 'uploading')
+  const sourceDir = computed<string | undefined>(() => collection.activeEntry.value?.sourceDir)
+  const currentFileName = computed<string>(() => collection.activeEntry.value?.file.name ?? '')
+  const currentTaskId = computed<string | null>(() => collection.activeEntry.value?.currentTaskId ?? null)
+  const historyStack = computed(() => collection.activeEntry.value?.historyStack ?? [])
+
+  const hasResult = computed<boolean>(() => historyStack.value.length > 0)
+
+  /** Preview URL: latest result if available, otherwise original */
+  const activePreviewUrl = computed<string | null>(
+    () => historyStack.value.at(-1)?.previewUrl ?? collection.activeEntry.value?.previewUrl ?? null,
+  )
+
+  /** File ID for panels: latest result, or original */
+  const activeFileId = computed<string | null>(
+    () => historyStack.value.at(-1)?.fileId ?? fileId.value,
+  )
 
   async function loadMediaInfo() {
-    if (!fileId.value) return
+    const fid = activeFileId.value
+    if (!fid) return
     try {
-      const response = await apiFetch(`/video/info/${fileId.value}`)
+      const response = await apiFetch(`/video/info/${fid}`)
       if (response.ok) mediaInfo.value = await response.json()
     } catch (e) {
       console.error('Failed to load media info:', e)
     }
   }
+
+  // Reload media info when active entry or result file changes
+  watch([() => collection.activeId.value, activeFileId], async () => {
+    mediaInfo.value = null
+    if (fileId.value) await loadMediaInfo()
+  })
 
   async function handleFile(file: File, srcDir?: string) {
     const ext = ('.' + file.name.split('.').pop()!).toLowerCase()
@@ -57,53 +162,58 @@ export function useVideoWorkspace() {
       return
     }
     log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
-    hasFile.value = true
-    sourceDir.value = srcDir
-    hasResult.value = false
-    fileId.value = null
     mediaInfo.value = null
-    currentFileName.value = file.name
-    isUploading.value = true
+
+    const entryId = await collection.addEntry(file, srcDir, generateVideoThumbnail)
+
     try {
-      const id = await filesStore.uploadFile(file, srcDir)
-      log.info('handleFile uploaded', { fileName: file.name, fileId: id })
-      fileId.value = id
+      const uploadedFileId = await filesStore.uploadFile(file, srcDir)
+      log.info('handleFile uploaded', { fileName: file.name, fileId: uploadedFileId })
+      collection.updateEntry(entryId, { fileId: uploadedFileId, status: 'idle' })
       await loadMediaInfo()
-    } catch (e) {
-      log.error('handleFile upload failed', { fileName: file.name, error: e })
-    } finally {
-      isUploading.value = false
+    } catch (e: any) {
+      log.error('handleFile upload failed', { fileName: file.name, error: e.message })
+      collection.updateEntry(entryId, { status: 'idle' })
+      toast.show(e.message || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
+    }
+  }
+
+  async function handleFiles(files: File[]) {
+    for (const file of files) {
+      const srcDir = window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
+      await handleFile(file, srcDir)
     }
   }
 
   function handleRemoveFile() {
-    hasFile.value = false
-    fileId.value = null
-    sourceDir.value = undefined
-    currentFileName.value = ''
-    mediaInfo.value = null
-    currentTaskId.value = null
-    hasResult.value = false
-    isUploading.value = false
+    const id = collection.activeId.value
+    if (id) {
+      collection.removeEntry(id)
+    }
+    if (!collection.hasEntries.value) {
+      mediaInfo.value = null
+    }
   }
 
   function handlePanelSubmit(taskId: string) {
     log.info('handlePanelSubmit', { taskId })
-    currentTaskId.value = taskId
-    hasResult.value = true
+    const entry = collection.activeEntry.value
+    if (entry) {
+      collection.registerTask(taskId, entry.id)
+      collection.updateEntry(entry.id, { currentTaskId: taskId, status: 'processing' })
+    }
   }
 
-  function handleDownload(outputFormat?: string, suffix?: string) {
-    const task = currentTaskId.value ? taskStore.tasks.get(currentTaskId.value) : null
-    if (!task?.result) return
-    const r = task.result as { output_file_id?: string }
-    if (!r.output_file_id) return
-    const baseName = currentFileName.value.replace(/\.[^.]+$/, '')
-    const fmt = outputFormat ?? 'mp4'
-    const sfx = suffix ?? '_output'
-    downloadFile(r.output_file_id, `${baseName}${sfx}.${fmt}`, sourceDir.value)
+  function handleDownload(outputFormat?: string, suffix = '_output') {
+    // Binary result download (from history stack)
+    const latest = historyStack.value.at(-1)
+    if (latest) {
+      downloadFile(latest.fileId, latest.outputFilename, sourceDir.value)
+      return
+    }
   }
 
+  // Watch for task completion
   const _notifiedTaskIds = new Set<string>()
   watch(
     () => currentTaskId.value ? taskStore.tasks.get(currentTaskId.value) : null,
@@ -111,13 +221,21 @@ export function useVideoWorkspace() {
       if (!task || task.status !== 'completed' || !task.result) return
       if (_notifiedTaskIds.has(task.taskId)) return
       _notifiedTaskIds.add(task.taskId)
+
       const r = task.result as { output_file_id?: string }
       if (!r.output_file_id) return
       log.info('task completed', { taskId: task.taskId, taskType: task.taskType, outputFileId: r.output_file_id })
+
+      const outputDir = (r as any).output_dir as string | undefined
+      const outputFilename = (r as any).output_filename as string | undefined
+      const hasOutputPath = outputDir && outputFilename && window.electron?.showItemInFolder
+
       toast.show(`${task.label ?? '處理'} 完成`, {
         type: 'success',
         icon: 'bi-check-circle',
-        action: { label: '下載', callback: () => handleDownload() },
+        action: hasOutputPath
+          ? { label: t('toast.open_folder'), callback: () => window.electron!.showItemInFolder(`${outputDir}/${outputFilename}`) }
+          : { label: '下載', callback: () => handleDownload() },
       })
     },
     { deep: true }
@@ -126,13 +244,17 @@ export function useVideoWorkspace() {
   return {
     hasFile,
     fileId,
+    activeFileId,
+    activePreviewUrl,
     isUploading,
     sourceDir,
     currentFileName,
     mediaInfo,
     currentTaskId,
     hasResult,
+    collection,
     handleFile,
+    handleFiles,
     handleRemoveFile,
     handlePanelSubmit,
     handleDownload,

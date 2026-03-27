@@ -309,6 +309,11 @@ export default {
       subtitle: '字幕',
     },
 
+    group: {
+      edit: '編輯',
+      ai: 'AI 工具',
+    },
+
     transcode: {
       title: '轉檔設定',
       description: '轉換影片格式，可調整解析度、畫質與音訊設定。',
@@ -535,6 +540,11 @@ export default {
       pdf_convert: 'PDF 轉換',
       ocr: '文字辨識',
       split: '分割文件',
+    },
+
+    group: {
+      edit: '編輯',
+      ai: 'AI 工具',
     },
 
     ocr: {

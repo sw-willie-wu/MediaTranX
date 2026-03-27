@@ -98,7 +98,24 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading })
+function getParams() {
+  const body: Record<string, any> = {
+    output_format: outputFormat.value,
+  }
+  if (outputPath.value) {
+    const path = outputPath.value.replace(/\\/g, '/')
+    const last = path.lastIndexOf('/')
+    if (last > 0) {
+      body.output_dir      = path.substring(0, last)
+      body.output_filename = path.substring(last + 1)
+    } else {
+      body.output_filename = path
+    }
+  }
+  return body
+}
+
+defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
 
 <template>
