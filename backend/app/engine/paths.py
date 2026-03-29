@@ -73,6 +73,18 @@ def get_ffmpeg_dir() -> Path:
         return _get_app_root() / "bin" / "ffmpeg"
 
 
+def get_fluidsynth_dir() -> Path:
+    """
+    FluidSynth binary + SoundFont directory
+    Packaged: %APPDATA%/MediaTranX/bin/fluidsynth/
+    Dev:      bin/fluidsynth/
+    """
+    if _is_frozen():
+        return get_base_data_dir() / "bin" / "fluidsynth"
+    else:
+        return _get_app_root() / "bin" / "fluidsynth"
+
+
 def get_llama_bin_dir() -> Path:
     """
     llama-server 二進位目錄
