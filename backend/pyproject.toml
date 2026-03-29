@@ -58,6 +58,12 @@ ai = [
 
 [tool.uv]
 managed = true
+# basic-pitch 拉入 tensorflow，但我們只用 ONNX 後端（已有 onnxruntime）
+# tensorflow-io-gcs-filesystem 沒有 Windows wheel，必須排除整個 TF
+override-dependencies = [
+    "tensorflow ; python_version < '3.0'",
+    "tensorflow-io-gcs-filesystem ; python_version < '3.0'",
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu124"
