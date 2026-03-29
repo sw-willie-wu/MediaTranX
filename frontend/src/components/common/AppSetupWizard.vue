@@ -160,31 +160,24 @@ onMounted(() => {
           <div class="pkg-list">
             <p class="pkg-list-label">{{ $t('wizard.will_install') }}</p>
             <div class="pkg-item">
-              <i class="bi bi-lightning-charge"></i>
+              <i class="bi bi-cpu"></i>
               <div class="pkg-info">
-                <span class="pkg-name">{{ $t('wizard.pytorch') }} <span class="pkg-tag">{{ torchLabel }}</span></span>
-                <span class="pkg-desc">{{ $t('wizard.pytorch_desc') }}</span>
+                <span class="pkg-name">Whisper / Demucs / HuggingFace</span>
+                <span class="pkg-desc">{{ $t('settings.ai.tools_desc') }}</span>
               </div>
             </div>
             <div class="pkg-item">
-              <i class="bi bi-mic"></i>
+              <i class="bi bi-lightning-charge"></i>
               <div class="pkg-info">
-                <span class="pkg-name">{{ $t('wizard.faster_whisper') }}</span>
-                <span class="pkg-desc">{{ $t('wizard.faster_whisper_desc') }}</span>
+                <span class="pkg-name">{{ $t('wizard.pytorch') }} <span class="pkg-tag">{{ torchLabel }}</span></span>
+                <span class="pkg-desc">{{ $t('settings.ai.pytorch_desc') }}</span>
               </div>
             </div>
             <div class="pkg-item">
               <i class="bi bi-translate"></i>
               <div class="pkg-info">
                 <span class="pkg-name">{{ $t('wizard.llama_cpp') }} <span class="pkg-tag">{{ torchLabel }}</span></span>
-                <span class="pkg-desc">{{ $t('wizard.llama_cpp_desc') }}</span>
-              </div>
-            </div>
-            <div class="pkg-item">
-              <i class="bi bi-cloud-download"></i>
-              <div class="pkg-info">
-                <span class="pkg-name">{{ $t('wizard.huggingface_hub') }}</span>
-                <span class="pkg-desc">{{ $t('wizard.huggingface_hub_desc') }}</span>
+                <span class="pkg-desc">{{ $t('settings.ai.llama_desc') }}</span>
               </div>
             </div>
             <div class="pkg-size-row">

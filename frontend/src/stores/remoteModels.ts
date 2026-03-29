@@ -22,6 +22,7 @@ export interface RemoteModelInfo {
 export interface RemoteModelOption {
   provider: string      // ollama, openai, ...
   connId: number
+  connName: string      // 使用者自訂的連線名稱
   endpoint: string
   modelId: string       // e.g. "llama3.2:3b"
   name: string
@@ -104,6 +105,7 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
           all.push({
             provider: conn.provider,
             connId: conn.id,
+            connName: conn.name || conn.provider,
             endpoint: conn.endpoint,
             modelId: m.id,
             name: m.name,

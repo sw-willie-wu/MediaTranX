@@ -186,7 +186,7 @@ export default {
       width: 'Width',
       height: 'Height',
       aspect_ratio_hint: 'Leave empty for proportional scaling',
-      task_label: 'Image Convert',
+      task_label: 'Image · Convert',
     },
 
     remove_bg: {
@@ -199,7 +199,7 @@ export default {
       animal: 'Animal',
       anime: 'Anime / Illustration',
       auto_hint: 'Auto detect works for most scenarios',
-      task_label: 'Remove Background',
+      task_label: 'Image · Remove Background',
     },
 
     remove_object: {
@@ -218,7 +218,7 @@ export default {
       polygon_hint: 'Click to add points, close near start or double-click',
       polygon_controls: 'Right-click to undo point · {esc} to cancel all',
       clear: 'Clear Marks',
-      task_label: 'AI Object Removal',
+      task_label: 'Image · Remove Object',
     },
 
     upscale: {
@@ -235,7 +235,7 @@ export default {
       strong_restore: 'Strong',
       preserve_original: 'Preserve',
       face_scale: 'Face Scale',
-      task_label: 'Upscale',
+      task_label: 'Image · Upscale',
     },
 
     adjust: {
@@ -250,7 +250,7 @@ export default {
       warm: 'Warm',
       cool: 'Cool',
       reset: 'Reset Adjustments',
-      task_label: 'Image Adjust',
+      task_label: 'Image · Adjust',
     },
 
     filter: {
@@ -262,7 +262,7 @@ export default {
       blur: 'Blur',
       vignette: 'Vignette',
       reset: 'Reset Filters',
-      task_label: 'Image Filter',
+      task_label: 'Image · Filter',
     },
 
     crop: {
@@ -277,7 +277,7 @@ export default {
       start_position: 'Start Position (Top-Left)',
       crop_size: 'Crop Size',
       original_image: 'Original:',
-      task_label: 'Image Crop',
+      task_label: 'Image · Crop',
     },
 
     ocr: {
@@ -291,7 +291,7 @@ export default {
       text: 'Plain Text (.txt)',
       output_file: 'Output File',
       select_output: 'Select Output Location',
-      task_label: 'OCR Recognition',
+      task_label: 'Image · OCR',
       result_title: 'OCR Result',
     },
   },
@@ -339,7 +339,7 @@ export default {
       extract_audio: 'Extract Audio',
       width: 'Width',
       height: 'Height',
-      task_label: 'Transcode',
+      task_label: 'Video · Transcode',
     },
 
     cut: {
@@ -350,7 +350,7 @@ export default {
       fast_mode: 'Fast Mode (No Re-encode)',
       fast_mode_hint: 'Disable for precise cut points, but slower',
       time_error: 'End time must be after start time',
-      task_label: 'Cut',
+      task_label: 'Video · Cut',
     },
 
     subtitle: {
@@ -362,8 +362,8 @@ export default {
       vtt: 'VTT (WebVTT)',
       select_output: 'Select Output Location',
       file_type: 'Subtitle File',
-      task_label: 'Subtitle Extraction',
-      task_label_with_translate: 'Subtitle Extraction + Translation',
+      task_label: 'Video · Subtitles',
+      task_label_with_translate: 'Video · Subtitles + Translate',
       start: 'Start',
     },
 
@@ -437,7 +437,7 @@ export default {
       bitrate: 'Bitrate',
       sample_rate: 'Sample Rate',
       keep_original: 'Keep Original',
-      task_label: 'Audio Transcode',
+      task_label: 'Audio · Transcode',
     },
 
     cut: {
@@ -447,7 +447,7 @@ export default {
       end_time: 'End Time',
       duration: 'Duration:',
       selection_duration: 'Selection Duration:',
-      task_label: 'Audio Cut',
+      task_label: 'Audio · Cut',
     },
 
     volume: {
@@ -461,6 +461,7 @@ export default {
       normalize_hint: 'Auto-normalize using EBU R128 loudness standard for consistent volume.',
       normalize_label: 'Volume Normalization',
       adjust_label: 'Volume Adjustment',
+      task_label: 'Audio · Volume',
     },
 
     transcribe: {
@@ -488,7 +489,7 @@ export default {
       outline_model: 'Outline Model',
       output_file: 'Output Path',
       select_output: 'Select output path',
-      task_label: 'Transcription',
+      task_label: 'Audio · Transcribe',
     },
 
     lyrics: {
@@ -505,7 +506,7 @@ export default {
       txt: 'Plain Text',
       output_file: 'Output Path',
       select_output: 'Select output path',
-      task_label: 'Lyrics Extraction',
+      task_label: 'Audio · Lyrics',
       result_title: 'Lyrics',
     },
 
@@ -520,7 +521,7 @@ export default {
       stem_guitar: 'Guitar',
       stem_piano: 'Piano',
       stem_other: 'Other',
-      task_label: 'Source Separation',
+      task_label: 'Audio · Separate',
       model_not_downloaded: 'Separation model not downloaded. Please download it in Settings → AI Module Management.',
       output_format: 'Output Format',
       output_file: 'Output Path',
@@ -559,7 +560,7 @@ export default {
       text: 'Plain Text (.txt)',
       output_file: 'Output File',
       select_output: 'Select Output Location',
-      task_label: 'OCR Recognition',
+      task_label: 'Document · OCR',
     },
 
     pdf_convert: {
@@ -571,7 +572,7 @@ export default {
       output_file: 'Output File',
       select_output: 'Select Output Location',
       zip_type: 'ZIP Archive',
-      task_label: 'PDF Convert',
+      task_label: 'Document · PDF Convert',
     },
 
     split: {
@@ -582,7 +583,7 @@ export default {
       range_hint: 'Separate multiple ranges with commas, e.g. {example}',
       output_file: 'Output File',
       select_output: 'Select Output Location',
-      task_label: 'PDF Split',
+      task_label: 'Document · Split',
     },
 
     translate: {
@@ -598,7 +599,7 @@ export default {
       glossary: 'Glossary',
       optional: '(Optional)',
       glossary_format: 'One entry per line, format: original→translation or original=translation',
-      task_label: 'Document Translation',
+      task_label: 'Document · Translate',
       installing_toast: 'Installing translation feature, please wait...',
       install_complete: 'Translation feature installed',
       install_error: 'Installation failed, check task list',
@@ -667,6 +668,9 @@ export default {
 
     ai: {
       core_modules: 'Core Modules',
+      tools_desc: 'Tool Execution Modules',
+      pytorch_desc: 'Deep Learning Inference Module',
+      llama_desc: 'Language Inference Module',
       installed: 'Installed',
       not_installed: 'Not Installed',
       version_mismatch: 'Version Mismatch',
@@ -740,28 +744,30 @@ export default {
     },
 
     types: {
-      'image.upscale': 'Image Upscale',
-      'image.convert': 'Image Convert',
-      'image.filter': 'Image Filter',
-      'image.crop': 'Image Crop',
-      'image.remove_bg': 'Background Removal',
-      'image.remove_object': 'Object Removal',
-      'image.ocr': 'Image OCR',
-      'image.ocr.remote': 'Image OCR (Cloud)',
-      'video.transcode': 'Video Transcode',
-      'video.cut': 'Video Cut',
-      'video.extract_audio': 'Audio Extraction',
-      'video.subtitle_generate': 'Subtitle Generation',
-      'audio.transcode': 'Audio Transcode',
-      'audio.cut': 'Audio Cut',
-      'audio.volume': 'Volume Adjustment',
-      'audio.transcribe': 'Transcription',
-      'audio.separate': 'Audio Separation',
-      'audio.lyrics': 'Lyrics Extraction',
-      'document.ocr': 'Document OCR',
-      'document.translate': 'Document Translation',
-      'document.pdf_convert': 'PDF Convert',
-      'document.split': 'Document Split',
+      'image.upscale': 'Image · Upscale',
+      'image.convert': 'Image · Convert',
+      'image.filter': 'Image · Filter',
+      'image.crop': 'Image · Crop',
+      'image.remove_bg': 'Image · Remove Background',
+      'image.remove_object': 'Image · Remove Object',
+      'image.ocr': 'Image · OCR',
+      'image.ocr.remote': 'Image · OCR',
+      'image.adjust': 'Image · Adjust',
+      'video.transcode': 'Video · Transcode',
+      'video.cut': 'Video · Cut',
+      'video.extract_audio': 'Video · Extract Audio',
+      'video.subtitle_generate': 'Video · Subtitles',
+      'audio.transcode': 'Audio · Transcode',
+      'audio.cut': 'Audio · Cut',
+      'audio.volume': 'Audio · Volume',
+      'audio.transcribe': 'Audio · Transcribe',
+      'audio.separate': 'Audio · Separate',
+      'audio.lyrics': 'Audio · Lyrics',
+      'document.ocr': 'Document · OCR',
+      'document.ocr.remote': 'Document · OCR',
+      'document.translate': 'Document · Translate',
+      'document.pdf_convert': 'Document · PDF Convert',
+      'document.split': 'Document · Split',
       'setup.model_download': 'Model Download',
       'ai.setup': 'AI Environment Setup',
     },

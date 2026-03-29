@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onActivated } from 'vue'
 import { useI18n } from 'vue-i18n'
+import i18n from '@/i18n'
 import { apiFetch } from '@/composables/useApi'
 
 const { t } = useI18n()
@@ -26,9 +27,12 @@ interface HistoryResponse {
 }
 
 function getTaskTypeLabel(taskType: string): string {
-  const key = `tasks.types.${taskType}`
-  const translated = t(key)
-  return translated !== key ? translated : taskType
+  // task_type 含 '.'（如 'audio.transcribe'），vue-i18n 會當巢狀路徑解析
+  // 改用 tm（message resolver）直接查 flat key
+  const messages = (i18n.global as any).messages.value ?? (i18n.global as any).messages
+  const locale = (i18n.global as any).locale.value ?? (i18n.global as any).locale
+  const types = messages?.[locale]?.tasks?.types
+  return types?.[taskType] || taskType
 }
 
 function getStatusLabel(status: string): string {

@@ -41,10 +41,8 @@ const localTranslateModelOptions = computed(() =>
       const dashIdx = m.variant.indexOf('-')
       const size  = m.variant.slice(0, dashIdx)
       const quant = m.variant.slice(dashIdx + 1)
-      const sizeGb = (m.size_mb / 1024).toFixed(1)
-      const desc = m.description ? `${sizeGb} GB · ${m.description}` : `${sizeGb} GB`
       const key = `${m.family}:${size}:${quant}`
-      return { value: key, label: m.label, desc, badge: m.downloaded ? 'ok' as const : 'err' as const }
+      return { value: key, label: m.label, sizeMb: m.size_mb, badge: m.downloaded ? 'ok' as const : 'err' as const }
     })
 )
 

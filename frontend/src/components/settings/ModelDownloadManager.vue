@@ -450,7 +450,7 @@ onMounted(() => {
 
   &.is-active {
     background: var(--color-primary);
-    color: var(--text-primary);
+    color: #fff;
     font-weight: 500;
   }
 }

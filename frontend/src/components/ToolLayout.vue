@@ -372,44 +372,38 @@ onBeforeUnmount(() => {
           @go-to-tool="goToTool"
         />
 
-        <!-- 無檔案時顯示上傳區 -->
-        <Transition name="fade" mode="out-in">
-          <AppUploadZone
-            v-if="!hasFile"
-            key="upload"
-            :icon="uploadIcon"
-            :label="effectiveUploadLabel"
-            :hint="effectiveUploadHint"
-            :accept="uploadAccept"
-            :multiple="showFilmstrip"
-            @file="handleUploadFile"
-            @files="handleUploadFiles"
-          />
+        <AppUploadZone
+          v-if="!hasFile"
+          :icon="uploadIcon"
+          :label="effectiveUploadLabel"
+          :hint="effectiveUploadHint"
+          :accept="uploadAccept"
+          :multiple="showFilmstrip"
+          @file="handleUploadFile"
+          @files="handleUploadFiles"
+        />
 
-          <!-- Slider 比對模式 -->
+        <!-- 有檔案：比對模式 / 預覽 -->
+        <div v-else class="preview-slot-wrapper">
           <ComparisonSlider
-            v-else-if="isComparing && resultPreviewUrl"
-            key="compare"
+            v-if="isComparing && resultPreviewUrl"
             :original-url="props.originalPreviewUrl ?? previewUrl!"
             :result-url="resultPreviewUrl"
             :result-meta="props.resultMeta"
           />
-
-          <!-- 有檔案時顯示預覽 slot -->
-          <div v-else :key="'preview-' + previewMode" class="preview-slot-wrapper">
-            <slot
-              name="preview"
-              :file="currentFile!"
-              :previewUrl="previewUrl!"
-              :mode="previewMode"
-            >
-              <div class="preview-placeholder">
-                <i class="bi bi-image"></i>
-                <p>{{ $t('common.select_or_drop') }}</p>
-              </div>
-            </slot>
-          </div>
-        </Transition>
+          <slot
+            v-else
+            name="preview"
+            :file="currentFile!"
+            :previewUrl="previewUrl!"
+            :mode="previewMode"
+          >
+            <div class="preview-placeholder">
+              <i class="bi bi-image"></i>
+              <p>{{ $t('common.select_or_drop') }}</p>
+            </div>
+          </slot>
+        </div>
 
       </div>
 
@@ -429,7 +423,7 @@ onBeforeUnmount(() => {
       </div>
     </main>
 
-    <div class="resize-handle" @mousedown="startResize('settings', $event)" @dblclick="settingsWidth = 320"></div>
+    <div class="resize-handle" @mousedown="startResize('settings', $event)" @dblclick="settingsWidth = 272"></div>
 
     <!-- 右側：設定面板 -->
     <aside class="settings-panel" :style="{ width: settingsWidth + 'px', minWidth: settingsWidth + 'px' }">

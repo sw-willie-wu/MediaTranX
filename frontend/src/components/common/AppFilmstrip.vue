@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, onActivated, onDeactivated, nextTick } from 'vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useI18n } from 'vue-i18n'
 
@@ -31,6 +31,10 @@ const emit = defineEmits<{
 
 // Ctrl+A → 全選, Delete → 移除
 function handleKeyDown(e: KeyboardEvent) {
+  // 輸入框內的按鍵不攔截（input、textarea、select、contenteditable）
+  const tag = (e.target as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable) return
+
   if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
     if (props.items.length > 0) {
       e.preventDefault()
@@ -64,14 +68,20 @@ async function handleDeleteKey() {
     if (ok) emit('remove', props.activeId)
   }
 }
-onMounted(() => {
+function _addGlobalListeners() {
   window.addEventListener('keydown', handleKeyDown)
   document.addEventListener('mousedown', onGlobalMouseDown)
-})
-onBeforeUnmount(() => {
+}
+function _removeGlobalListeners() {
   window.removeEventListener('keydown', handleKeyDown)
   document.removeEventListener('mousedown', onGlobalMouseDown)
-})
+}
+
+// KeepAlive: activated/deactivated 控制全域事件，避免其他頁面誤觸
+onMounted(_addGlobalListeners)
+onBeforeUnmount(_removeGlobalListeners)
+onActivated(_addGlobalListeners)
+onDeactivated(_removeGlobalListeners)
 
 // --- Refs ---
 const scrollEl = ref<HTMLElement | null>(null)

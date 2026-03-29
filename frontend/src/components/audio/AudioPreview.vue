@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 
 const props = withDefaults(defineProps<{
   previewUrl: string | null
@@ -458,10 +458,14 @@ watch(() => props.previewUrl, async (url, oldUrl) => {
   currentTimeStr.value = '0:00'
   durationStr.value = '0:00'
   decodeFailed.value = false
+
+  // 等 DOM 更新（首個檔案時 canvas 由 v-if 條件渲染，需等 nextTick）
+  await nextTick()
+
   const canvas = waveformCanvas.value
   if (canvas) canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height)
   if (url) await loadWaveform(url)
-})
+}, { immediate: true })
 
 onUnmounted(() => {
   waveformData = null

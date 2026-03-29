@@ -13,12 +13,6 @@ import { useI18n } from 'vue-i18n'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import type { SelectOption, SelectGroup, SelectItem } from '@/components/common/AppSelect.vue'
 
-const _PROVIDER_LABELS: Record<string, string> = {
-  ollama: 'Ollama',
-  openai: 'OpenAI',
-  gemini: 'Gemini',
-}
-
 export function useModelOptions(
   capability: string,
   localOptions: Ref<SelectOption[]>,
@@ -46,22 +40,20 @@ export function useModelOptions(
       } as SelectGroup)
     }
 
-    // 按 provider 分組雲端模型
-    const byProvider = new Map<string, SelectOption[]>()
+    // 按連線分組雲端模型（用使用者自訂的連線名稱）
+    const byConn = new Map<number, { name: string; options: SelectOption[] }>()
     for (const m of remoteModels) {
-      const key = m.provider
-      if (!byProvider.has(key)) byProvider.set(key, [])
-      byProvider.get(key)!.push({
+      if (!byConn.has(m.connId)) {
+        byConn.set(m.connId, { name: m.connName, options: [] })
+      }
+      byConn.get(m.connId)!.options.push({
         value: `remote:${m.provider}:${m.connId}:${m.modelId}`,
         label: m.name,
       })
     }
 
-    for (const [provider, opts] of byProvider) {
-      groups.push({
-        group: _PROVIDER_LABELS[provider] || provider,
-        options: opts,
-      } as SelectGroup)
+    for (const [, { name, options }] of byConn) {
+      groups.push({ group: name, options } as SelectGroup)
     }
 
     return groups

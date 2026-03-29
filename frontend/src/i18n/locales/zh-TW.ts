@@ -186,7 +186,7 @@ export default {
       width: '寬度',
       height: '高度',
       aspect_ratio_hint: '留空則等比縮放',
-      task_label: '圖片轉檔',
+      task_label: '圖片 · 轉檔',
     },
 
     remove_bg: {
@@ -199,7 +199,7 @@ export default {
       animal: '動物',
       anime: '動漫 / 插畫',
       auto_hint: '自動偵測適合大多數場景',
-      task_label: '去背',
+      task_label: '圖片 · 去背',
     },
 
     remove_object: {
@@ -218,7 +218,7 @@ export default {
       polygon_hint: '點擊新增節點，靠近起點或雙擊封閉區域',
       polygon_controls: '右鍵撤回上一點 · {esc} 全部取消',
       clear: '清除標記',
-      task_label: 'AI 物件移除',
+      task_label: '圖片 · 物件移除',
     },
 
     upscale: {
@@ -235,7 +235,7 @@ export default {
       strong_restore: '強修復',
       preserve_original: '保留原貌',
       face_scale: '修復放大倍率',
-      task_label: '超解析',
+      task_label: '圖片 · 超解析',
     },
 
     adjust: {
@@ -250,7 +250,7 @@ export default {
       warm: '暖',
       cool: '冷',
       reset: '重設調整',
-      task_label: '圖片調整',
+      task_label: '圖片 · 調整',
     },
 
     filter: {
@@ -262,7 +262,7 @@ export default {
       blur: '模糊',
       vignette: '暈影',
       reset: '重設濾鏡',
-      task_label: '圖片濾鏡',
+      task_label: '圖片 · 濾鏡',
     },
 
     crop: {
@@ -277,7 +277,7 @@ export default {
       start_position: '起始位置（左上角）',
       crop_size: '裁切尺寸',
       original_image: '原圖：',
-      task_label: '圖片裁切',
+      task_label: '圖片 · 裁切',
     },
 
     ocr: {
@@ -291,7 +291,7 @@ export default {
       text: '純文字 (.txt)',
       output_file: '輸出檔案',
       select_output: '選擇輸出位置',
-      task_label: 'OCR 文字辨識',
+      task_label: '圖片 · 文字辨識',
       result_title: 'OCR 辨識結果',
     },
   },
@@ -339,7 +339,7 @@ export default {
       extract_audio: '提取音訊',
       width: '寬度',
       height: '高度',
-      task_label: '轉檔',
+      task_label: '影片 · 轉檔',
     },
 
     cut: {
@@ -350,7 +350,7 @@ export default {
       fast_mode: '快速模式（不重新編碼）',
       fast_mode_hint: '關閉可獲得精確剪輯點，但速度較慢',
       time_error: '結束時間必須大於開始時間',
-      task_label: '剪輯',
+      task_label: '影片 · 剪輯',
     },
 
     subtitle: {
@@ -362,8 +362,8 @@ export default {
       vtt: 'VTT (WebVTT)',
       select_output: '選擇輸出位置',
       file_type: '字幕檔案',
-      task_label: '字幕提取',
-      task_label_with_translate: '字幕提取 + 翻譯',
+      task_label: '影片 · 字幕提取',
+      task_label_with_translate: '影片 · 字幕提取 + 翻譯',
       start: '開始',
     },
 
@@ -437,7 +437,7 @@ export default {
       bitrate: '位元率',
       sample_rate: '取樣率',
       keep_original: '保持原始',
-      task_label: '音訊轉檔',
+      task_label: '音訊 · 轉檔',
     },
 
     cut: {
@@ -447,7 +447,7 @@ export default {
       end_time: '結束時間',
       duration: '音訊長度：',
       selection_duration: '選取長度：',
-      task_label: '音訊剪輯',
+      task_label: '音訊 · 剪輯',
     },
 
     volume: {
@@ -461,6 +461,7 @@ export default {
       normalize_hint: '使用 EBU R128 響度標準自動正規化，讓音量達到一致水準。',
       normalize_label: '音量正規化',
       adjust_label: '音量調整',
+      task_label: '音訊 · 音量調整',
     },
 
     transcribe: {
@@ -488,7 +489,7 @@ export default {
       outline_model: '大綱模型',
       output_file: '輸出路徑',
       select_output: '選擇輸出路徑',
-      task_label: '逐字稿轉譯',
+      task_label: '音訊 · 逐字稿',
     },
 
     lyrics: {
@@ -505,7 +506,7 @@ export default {
       txt: '純文字',
       output_file: '輸出路徑',
       select_output: '選擇輸出路徑',
-      task_label: '歌詞提取',
+      task_label: '音訊 · 歌詞提取',
       result_title: '歌詞',
     },
 
@@ -520,7 +521,7 @@ export default {
       stem_guitar: '吉他',
       stem_piano: '鋼琴',
       stem_other: '其他',
-      task_label: '音源分離',
+      task_label: '音訊 · 音源分離',
       model_not_downloaded: '分離模型尚未下載，請至設定 → AI 模組管理下載。',
       output_format: '輸出格式',
       output_file: '輸出路徑',
@@ -559,7 +560,7 @@ export default {
       text: '純文字 (.txt)',
       output_file: '輸出檔案',
       select_output: '選擇輸出位置',
-      task_label: 'OCR 文字辨識',
+      task_label: '文件 · 文字辨識',
     },
 
     pdf_convert: {
@@ -571,7 +572,7 @@ export default {
       output_file: '輸出檔案',
       select_output: '選擇輸出位置',
       zip_type: 'ZIP 壓縮檔',
-      task_label: 'PDF 轉換',
+      task_label: '文件 · PDF 轉換',
     },
 
     split: {
@@ -582,7 +583,7 @@ export default {
       range_hint: '以逗號分隔多個範圍，例如 {example}',
       output_file: '輸出檔案',
       select_output: '選擇輸出位置',
-      task_label: 'PDF 分割',
+      task_label: '文件 · 分割',
     },
 
     translate: {
@@ -598,7 +599,7 @@ export default {
       glossary: '專有名詞字典',
       optional: '（選填）',
       glossary_format: '每行一條，格式：原文→譯文 或 原文=譯文',
-      task_label: '文件翻譯',
+      task_label: '文件 · 翻譯',
       installing_toast: '開始安裝翻譯功能，請稍候...',
       install_complete: '翻譯功能安裝完成',
       install_error: '安裝失敗，請查看任務列表',
@@ -667,6 +668,9 @@ export default {
 
     ai: {
       core_modules: '核心模組',
+      tools_desc: '工具執行模組',
+      pytorch_desc: '深度學習推理模組',
+      llama_desc: '語言推理模組',
       installed: '已安裝',
       not_installed: '未安裝',
       version_mismatch: '版本不符',
@@ -740,28 +744,30 @@ export default {
     },
 
     types: {
-      'image.upscale': '圖片超解析',
-      'image.convert': '圖片轉檔',
-      'image.filter': '圖片濾鏡',
-      'image.crop': '圖片裁切',
-      'image.remove_bg': '圖片去背',
-      'image.remove_object': '物件移除',
-      'image.ocr': '圖片文字辨識',
-      'image.ocr.remote': '圖片文字辨識（雲端）',
-      'video.transcode': '影片轉檔',
-      'video.cut': '影片剪輯',
-      'video.extract_audio': '音軌提取',
-      'video.subtitle_generate': '字幕產生',
-      'audio.transcode': '音訊轉檔',
-      'audio.cut': '音訊剪輯',
-      'audio.volume': '音量調整',
-      'audio.transcribe': '語音轉文字',
-      'audio.separate': '音源分離',
-      'audio.lyrics': '歌詞提取',
-      'document.ocr': '文件辨識',
-      'document.translate': '文件翻譯',
-      'document.pdf_convert': 'PDF 轉換',
-      'document.split': '文件分割',
+      'image.upscale': '圖片 · 超解析',
+      'image.convert': '圖片 · 轉檔',
+      'image.filter': '圖片 · 濾鏡',
+      'image.crop': '圖片 · 裁切',
+      'image.remove_bg': '圖片 · 去背',
+      'image.remove_object': '圖片 · 物件移除',
+      'image.ocr': '圖片 · 文字辨識',
+      'image.ocr.remote': '圖片 · 文字辨識',
+      'image.adjust': '圖片 · 調整',
+      'video.transcode': '影片 · 轉檔',
+      'video.cut': '影片 · 剪輯',
+      'video.extract_audio': '影片 · 音軌提取',
+      'video.subtitle_generate': '影片 · 字幕提取',
+      'audio.transcode': '音訊 · 轉檔',
+      'audio.cut': '音訊 · 剪輯',
+      'audio.volume': '音訊 · 音量調整',
+      'audio.transcribe': '音訊 · 逐字稿',
+      'audio.separate': '音訊 · 音源分離',
+      'audio.lyrics': '音訊 · 歌詞提取',
+      'document.ocr': '文件 · 文字辨識',
+      'document.ocr.remote': '文件 · 文字辨識',
+      'document.translate': '文件 · 翻譯',
+      'document.pdf_convert': '文件 · PDF 轉換',
+      'document.split': '文件 · 分割',
       'setup.model_download': '模型下載',
       'ai.setup': 'AI 環境初始化',
     },
