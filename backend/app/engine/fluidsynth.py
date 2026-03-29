@@ -11,7 +11,7 @@ from app.engine.paths import get_fluidsynth_dir
 
 logger = logging.getLogger(__name__)
 
-SF2_FILENAME = "FluidR3_GM.sf2"
+SF2_FILENAME = "FluidR3Mono_GM.sf3"
 DLL_FILENAME = "libfluidsynth-3.dll"
 
 

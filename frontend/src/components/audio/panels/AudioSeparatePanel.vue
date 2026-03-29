@@ -183,18 +183,17 @@ defineExpose({ execute, isDisabled, isLoading, getParams, onTaskComplete })
     </div>
 
     <div class="form-group">
-      <label>{{ $t('audio.separate.generate_midi') }}</label>
-      <AppToggle v-model="generateMidi">
-        {{ $t('audio.separate.generate_midi_desc') }}
-      </AppToggle>
-    </div>
-
-    <div class="form-group">
       <label>{{ $t('audio.separate.output_file') }}</label>
       <div class="file-select" @click="selectOutputFile">
         <span class="file-select-path">{{ displayOutputPath }}</span>
         <i class="bi bi-folder2-open"></i>
       </div>
+    </div>
+
+    <div class="form-group">
+      <AppToggle v-model="generateMidi">
+        {{ $t('audio.separate.generate_midi_desc') }}
+      </AppToggle>
     </div>
   </div>
 

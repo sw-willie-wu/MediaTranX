@@ -37,14 +37,15 @@ class BasicPitchWrapper(PackageRuntime):
         device: str,
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
-        """載入 basic-pitch predict 函式"""
+        """載入 basic-pitch predict 函式和內建 ONNX 模型路徑"""
         from basic_pitch.inference import predict
+        from basic_pitch import ICASSP_2022_MODEL_PATH
 
         if on_progress:
             on_progress(0.3, "正在載入 Basic Pitch 模型...")
 
-        logger.info("Basic Pitch predict function loaded")
-        return predict
+        logger.info(f"Basic Pitch loaded: model={ICASSP_2022_MODEL_PATH}")
+        return {"predict": predict, "model_path": ICASSP_2022_MODEL_PATH}
 
     def _resolve_model_path(self, model_id: str, variant: Optional[str] = None):
         """
@@ -107,12 +108,14 @@ class BasicPitchWrapper(PackageRuntime):
             model_id="basic_pitch",
             variant="default",
             on_progress=on_progress,
-        ) as predict_fn:
+        ) as bp:
             if on_progress:
                 on_progress(0.3, "分析音訊中...")
 
-            # predict() 回傳 (model_output, midi_data, note_events)
-            model_output, midi_data, note_events = predict_fn(audio_path)
+            # predict(audio_path, model_or_model_path) 回傳 (model_output, midi_data, note_events)
+            model_output, midi_data, note_events = bp["predict"](
+                audio_path, bp["model_path"]
+            )
 
             if on_progress:
                 on_progress(0.8, "轉換 MIDI 事件...")
@@ -121,15 +124,15 @@ class BasicPitchWrapper(PackageRuntime):
         stem_name = Path(audio_path).stem
 
         # 轉換 note_events 為標準格式
-        # note_events 是 Note namedtuple 列表：
-        #   start_time_s, end_time_s, pitch_midi, amplitude, bends
+        # note_events 是 tuple 列表：(start_time_s, end_time_s, pitch_midi, amplitude, bends)
         notes = []
         for event in note_events:
-            velocity = int(min(127, max(1, event.amplitude * 127)))
-            duration = event.end_time_s - event.start_time_s
+            start_s, end_s, pitch, amplitude = event[0], event[1], event[2], event[3]
+            velocity = int(min(127, max(1, amplitude * 127)))
+            duration = end_s - start_s
             notes.append({
-                "pitch": int(event.pitch_midi),
-                "start": float(event.start_time_s),
+                "pitch": int(pitch),
+                "start": float(start_s),
                 "duration": float(duration),
                 "velocity": velocity,
             })

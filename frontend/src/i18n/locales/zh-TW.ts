@@ -528,7 +528,7 @@ export default {
       output_file: '輸出路徑',
       select_output: '選擇輸出路徑',
       generate_midi: '產出 MIDI',
-      generate_midi_desc: '將分離的音軌轉換為多軌 MIDI 檔案',
+      generate_midi_desc: '匯出多軌 MIDI 檔',
       midi_jump_prompt: '音源分離完成，已產出 MIDI 檔案。是否跳轉至 MIDI 編輯器？',
       midi_jump: '跳轉',
       midi_stay: '留在此頁',

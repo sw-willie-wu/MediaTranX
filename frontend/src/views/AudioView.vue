@@ -50,10 +50,10 @@ const subFunctions = computed(() => [
   { id: 'transcode',  name: t('audio.functions.transcode'),  icon: 'bi-arrow-repeat',     group: t('audio.group.edit') },
   { id: 'cut',        name: t('audio.functions.cut'),        icon: 'bi-scissors',         group: t('audio.group.edit') },
   { id: 'volume',     name: t('audio.functions.volume'),     icon: 'bi-volume-up-fill',   group: t('audio.group.edit') },
+  { id: 'midi-edit',  name: t('audio.functions.midiEdit'),   icon: 'bi-filetype-raw',     group: t('audio.group.edit') },
   { id: 'transcribe', name: t('audio.functions.transcribe'), icon: 'bi-mic-fill',         group: t('audio.group.ai') },
   { id: 'separate',   name: t('audio.functions.separate'),   icon: 'bi-music-note-list',  group: t('audio.group.ai') },
   { id: 'lyrics',     name: t('audio.functions.lyrics'),     icon: 'bi-music-note-beamed',group: t('audio.group.ai') },
-  { id: 'midi-edit',  name: t('audio.functions.midiEdit'),   icon: 'bi-music-note-beamed',group: t('audio.group.edit') },
 ])
 
 const currentFunction = ref('transcode')
@@ -282,8 +282,8 @@ const separateStems = computed(() => separateStemsData.value)
     </template>
 
     <template #preview="{ file, previewUrl }">
-      <template v-if="currentFunction === 'midi-edit' && midiEditPanelRef?.editor">
-        <div class="midi-editor-preview">
+      <template v-if="currentFunction === 'midi-edit'">
+        <div v-if="midiEditPanelRef?.editor && midiEditPanelRef.editor.tracks.value.length > 0" class="midi-editor-preview">
           <MidiToolbar
             :is-playing="midiEditPanelRef.editor.isPlaying?.value ?? false"
             :current-beat="0"
@@ -329,6 +329,10 @@ const separateStems = computed(() => separateStemsData.value)
             :grid-size="midiEditPanelRef.editor.gridSize.value"
             @update-velocity="(ids,v) => midiEditPanelRef!.editor.updateVelocity(ids,v)"
           />
+        </div>
+        <div v-else class="midi-unsupported-preview">
+          <i class="bi bi-music-note-beamed"></i>
+          <p>{{ $t('audio.midi.unsupported') }}</p>
         </div>
       </template>
       <AudioMultiTrackPreview
@@ -454,5 +458,21 @@ const separateStems = computed(() => separateStemsData.value)
 .midi-editor-body {
   flex: 1;
   min-height: 0;
+}
+.midi-unsupported-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  gap: 12px;
+  i {
+    font-size: 48px;
+    opacity: 0.4;
+  }
+  p {
+    font-size: 14px;
+  }
 }
 </style>

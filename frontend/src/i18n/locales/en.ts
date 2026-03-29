@@ -528,7 +528,7 @@ export default {
       output_file: 'Output Path',
       select_output: 'Select output path',
       generate_midi: 'Generate MIDI',
-      generate_midi_desc: 'Convert separated stems to a multi-track MIDI file',
+      generate_midi_desc: 'Export multi-track MIDI file',
       midi_jump_prompt: 'Source separation complete. MIDI file generated. Jump to MIDI editor?',
       midi_jump: 'Jump',
       midi_stay: 'Stay',

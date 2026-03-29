@@ -482,9 +482,9 @@ def _download_fluidsynth(progress_callback: Callable) -> None:
                 logger.info(f"Extracted libfluidsynth-3.dll to {dest}")
                 break
 
-    # Step 2: Download SoundFont
+    # Step 2: Download SoundFont (MuseScore FluidR3Mono GM, SF3 format ~23MB)
     progress_callback(0.4, "Downloading SoundFont (FluidR3 GM)...")
-    sf2_url = "https://keymusician01.s3.amazonaws.com/FluidR3_GM.sf2"
-    _download_from_url(sf2_url, dest / "FluidR3_GM.sf2", progress_callback, 0.4, 0.95)
+    sf2_url = "https://github.com/musescore/MuseScore/raw/master/share/sound/FluidR3Mono_GM.sf3"
+    _download_from_url(sf2_url, dest / "FluidR3Mono_GM.sf3", progress_callback, 0.4, 0.95)
 
     progress_callback(0.95, "FluidSynth + SoundFont ready")

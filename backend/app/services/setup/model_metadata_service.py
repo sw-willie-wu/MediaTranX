@@ -25,6 +25,7 @@ _CATEGORY_MAP = {
     "stt": "audio",
     "separate": "audio",
     "alignment": "audio",
+    "midi": "audio",
     "translate": "llm",
     "vlm": "llm",
 }
@@ -158,6 +159,7 @@ class ModelMetadataService:
         all_models.extend(self._enumerate_translate_models())
         all_models.extend(self._enumerate_vlm_models())
         all_models.extend(self._enumerate_alignment_models())
+        all_models.extend(self._enumerate_midi_models())
 
         # 保留原始分類作為 subcategory（前端模型篩選用），映射到大類作為 category（tab 分類用）
         for m in all_models:
@@ -374,6 +376,31 @@ class ModelMetadataService:
                 "size_mb": 1200,
                 "vram_mb": 1000,
             })
+        return items
+
+
+    def _enumerate_midi_models(self) -> list[dict]:
+        """列舉 MIDI 相關模型（FluidSynth SoundFont）"""
+        items = []
+
+        # FluidSynth + SoundFont（basic-pitch 模型內建於套件，不需管理）
+        from app.engine.paths import get_fluidsynth_dir
+        fs_dir = get_fluidsynth_dir()
+        sf2_ok = (fs_dir / "FluidR3Mono_GM.sf3").exists()
+        dll_ok = (fs_dir / "libfluidsynth-3.dll").exists()
+
+        items.append({
+            "id": "fluidsynth",
+            "family": "fluidsynth",
+            "variant": "default",
+            "category": "midi",
+            "label": "FluidR3 GM SoundFont",
+            "description": "MIDI 音色合成引擎 + GM 音色庫（匯出 WAV/MP3 用）",
+            "downloaded": sf2_ok and dll_ok,
+            "size_mb": 142,
+            "vram_mb": 0,
+        })
+
         return items
 
 
