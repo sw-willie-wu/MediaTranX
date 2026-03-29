@@ -11,13 +11,6 @@ from uuid import uuid4
 from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
 from app.utils.prompts import (
     WHISPER_TO_BCP47,
-    build_srt_translate_prompt,
-    build_translate_messages,
-    build_summarize_prompt,
-    build_chunk_summarize_prompt,
-    build_merge_summaries_prompt,
-    split_text_for_context,
-    segments_to_srt,
     parse_srt_response,
     SUMMARIZE_PARAMS,
 )
@@ -267,35 +260,29 @@ class AudioTranscribeService:
             translate_remote = params.get("translate_remote", False)
 
             if translate_remote:
-                # 雲端翻譯
-                from app.services.setup.remote_service import get_remote_service
-                remote_svc = get_remote_service()
+                # 雲端翻譯（批次）
+                from app.utils.translate import get_cloud_provider, translate_srt_cloud
+
                 provider = params.get("translate_provider", "")
                 conn_id = params.get("translate_conn_id")
                 remote_model = params.get("translate_remote_model", "")
+                prov = get_cloud_provider(provider, conn_id, remote_model)
 
-                seg_texts = [s.text.strip() for s in result.segments]
-                combined = "\n".join(seg_texts)
-
-                translated_text = remote_svc.translate_text(
-                    text=combined,
-                    target_lang=target_lang,
-                    source_lang=detected_lang,
-                    provider=provider,
-                    conn_id=conn_id,
-                    model_id=remote_model,
+                seg_dicts = [{"start": s.start, "end": s.end, "text": s.text} for s in result.segments]
+                translated_all = translate_srt_cloud(
+                    seg_dicts, detected_lang, target_lang, prov, remote_model,
+                    on_progress=lambda p, m: stage_progress("translate", p, m),
                 )
-                translated_lines = translated_text.strip().split("\n")
 
-                translated_segs = []
-                for i, seg in enumerate(result.segments):
-                    text = translated_lines[i] if i < len(translated_lines) else seg.text
-                    translated_segs.append(TranscribeSegment(seg.start, seg.end, text))
-                result.segments = translated_segs
+                result.segments = [
+                    TranscribeSegment(s["start"], s["end"], s["text"])
+                    for s in translated_all
+                ]
             else:
                 # 本地翻譯
                 from app.engine.ai.runtime.llama_server import LlamaServerRuntime
                 from app.engine.ai.registry import SLOT_LLM
+                from app.utils.translate import translate_srt_local
 
                 translate_model_type = params.get("translate_model_type", "translategemma")
                 translate_model_size = params.get("translate_model_size", "4b")
@@ -306,54 +293,19 @@ class AudioTranscribeService:
                     for s in result.segments
                 ]
 
-                def translate_progress(percent: float, msg: str):
-                    stage_progress("translate", percent, msg)
-
                 variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
                 src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
                 runtime = LlamaServerRuntime(SLOT_LLM)
-                batch_size = 5
 
-                def _load_progress(p, msg):
-                    translate_progress(p * 0.05, msg)
+                stage_progress("translate", 0.0, "載入翻譯模型...")
 
-                translate_progress(0.0, "載入翻譯模型...")
-
-                with runtime.acquire(translate_model_type, variant, _load_progress):
-                    translate_progress(0.05, "開始翻譯字幕...")
-
-                    total = len(seg_dicts)
-                    translated_all = []
-                    num_batches = (total + batch_size - 1) // batch_size
-
-                    for batch_idx in range(num_batches):
-                        start_idx = batch_idx * batch_size
-                        end_idx = min(start_idx + batch_size, total)
-                        batch_segments = seg_dicts[start_idx:end_idx]
-
-                        srt_text = segments_to_srt(batch_segments, start_index=start_idx + 1)
-                        prompt = build_srt_translate_prompt(
-                            srt_text, src, target_lang,
-                            model_id=translate_model_type,
-                        )
-                        messages = build_translate_messages(prompt, translate_model_type)
-                        translated_srt = runtime.chat(
-                            messages=messages,
-                            max_tokens=min(len(srt_text) * 3, 4096),
-                            temperature=0.1,
-                        )
-
-                        batch_translated = parse_srt_response(translated_srt, batch_segments)
-                        translated_all.extend(batch_translated)
-
-                        if num_batches > 0:
-                            progress = min((batch_idx + 1) / num_batches, 1.0)
-                            translate_progress(
-                                0.05 + progress * 0.95,
-                                f"翻譯中... {end_idx}/{total} 段"
-                            )
-
-                    translate_progress(1.0, "字幕翻譯完成")
+                with runtime.acquire(translate_model_type, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
+                    stage_progress("translate", 0.05, "開始翻譯字幕...")
+                    translated_all = translate_srt_local(
+                        seg_dicts, src, target_lang, runtime,
+                        on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
+                        model_id=translate_model_type,
+                    )
 
                 result.segments = [
                     TranscribeSegment(s["start"], s["end"], s["text"])
@@ -366,33 +318,35 @@ class AudioTranscribeService:
             stage_progress("summarize", 0.0, "正在生成摘要大綱...")
 
             # 摘要用的文本：有翻譯用翻譯後的，沒翻譯用原文
-            if do_translate and translated_segments:
-                full_text = "\n".join(s.text.strip() for s in translated_segments)
+            if do_translate:
+                full_text = "\n".join(s.text.strip() for s in result.segments)
             else:
                 full_text = "\n".join(s.text.strip() for s in original_segments)
 
             summarize_remote = params.get("summarize_remote", False)
 
             if summarize_remote:
-                # 雲端模型 context window 夠大，直接送整段
-                summary_prompt = build_summarize_prompt(full_text)
-                from app.services.setup.remote_service import get_remote_service
-                remote_svc = get_remote_service()
+                # 雲端 map-reduce
+                from app.utils.translate import get_cloud_provider
+                provider = params.get("summarize_provider", "")
                 conn_id = params.get("summarize_conn_id")
+                remote_model = params.get("summarize_remote_model", "")
+                prov = get_cloud_provider(provider, conn_id, remote_model)
 
-                from app.db.dao.api_connection_dao import ApiConnectionDAO
-                dao = ApiConnectionDAO()
-                conn_info = dao.get_by_id(conn_id) if conn_id else None
-                if conn_info:
-                    p = remote_svc._get_provider(conn_info.provider, conn_info.endpoint, conn_info.api_key)
-                    remote_model = params.get("summarize_remote_model", "")
-                    summary_text = p.chat(
-                        model=remote_model or "",
-                        messages=[{"role": "user", "content": summary_prompt}],
-                        max_tokens=2048,
+                def _cloud_chat(prompt: str, max_tokens: int = 2048) -> str:
+                    return prov.chat(
+                        model=remote_model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=max_tokens, temperature=0.3,
                     )
+
+                from app.utils.summarize import map_reduce_summarize
+                summary_text = map_reduce_summarize(
+                    full_text, _cloud_chat,
+                    on_progress=lambda p, m: stage_progress("summarize", p, m),
+                )
             else:
-                # 本地模型用 map-reduce：分段摘要 → 合併
+                # 本地 map-reduce
                 from app.engine.ai.runtime.llama_server import LlamaServerRuntime
                 from app.engine.ai.registry import SLOT_LLM
                 summary_model_id = params.get("summarize_model_type", "qwen3")
@@ -401,40 +355,18 @@ class AudioTranscribeService:
                 summary_variant = f"{summary_model_size}:{summary_quantization}" if summary_quantization else summary_model_size
                 runtime = LlamaServerRuntime(SLOT_LLM)
 
-                chunks = split_text_for_context(full_text, max_tokens=2000)
-
                 with runtime.acquire(summary_model_id, summary_variant):
-                    if len(chunks) == 1:
-                        # 短文本：直接摘要
-                        summary_text = runtime.chat(
-                            messages=[{"role": "user", "content": build_summarize_prompt(full_text)}],
-                            max_tokens=2048,
-                            temperature=0.3,
+                    def _local_chat(prompt: str, max_tokens: int = 2048) -> str:
+                        return runtime.chat(
+                            messages=[{"role": "user", "content": prompt}],
+                            max_tokens=max_tokens, temperature=0.3,
                         )
-                    else:
-                        # Map: 各段獨立摘要
-                        chunk_summaries = []
-                        for ci, chunk in enumerate(chunks):
-                            stage_progress(
-                                "summarize",
-                                0.1 + 0.7 * (ci / len(chunks)),
-                                f"摘要分段 {ci + 1}/{len(chunks)}...",
-                            )
-                            chunk_summary = runtime.chat(
-                                messages=[{"role": "user", "content": build_chunk_summarize_prompt(chunk)}],
-                                max_tokens=1024,
-                                temperature=0.3,
-                            )
-                            chunk_summaries.append(chunk_summary.strip())
 
-                        # Reduce: 合併所有分段摘要
-                        stage_progress("summarize", 0.85, "合併摘要...")
-                        merged = "\n\n".join(chunk_summaries)
-                        summary_text = runtime.chat(
-                            messages=[{"role": "user", "content": build_merge_summaries_prompt(merged)}],
-                            max_tokens=2048,
-                            temperature=0.3,
-                        )
+                    from app.utils.summarize import map_reduce_summarize
+                    summary_text = map_reduce_summarize(
+                        full_text, _local_chat,
+                        on_progress=lambda p, m: stage_progress("summarize", p, m),
+                    )
 
             stage_progress("summarize", 1.0, "摘要完成")
 
@@ -449,7 +381,8 @@ class AudioTranscribeService:
             source_filename = f"{base_name}.{detected_lang}.{output_format}"
             source_path = output_dir_path / source_filename
             source_result = TranscribeResult(
-                segments=original_segments, language=detected_lang
+                segments=original_segments, language=detected_lang,
+                language_probability=result.language_probability, duration=result.duration,
             )
             if output_format == "srt":
                 _write_srt(source_result, source_path)
@@ -473,7 +406,8 @@ class AudioTranscribeService:
             target_filename = f"{base_name}.{target_lang}.{output_format}"
             target_path = output_dir_path / target_filename
             target_result = TranscribeResult(
-                segments=result.segments, language=target_lang
+                segments=result.segments, language=target_lang,
+                language_probability=result.language_probability, duration=result.duration,
             )
             if output_format == "srt":
                 _write_srt(target_result, target_path)

@@ -102,6 +102,31 @@ class RemoteService:
             return GeminiProvider(endpoint, api_key)
         raise ValueError(f"Unknown provider: {provider}")
 
+    def translate_text(
+        self,
+        text: str,
+        target_lang: str,
+        source_lang: str = "",
+        provider: str = "",
+        conn_id: Optional[int] = None,
+        model_id: str = "",
+    ) -> str:
+        """透過雲端 API 翻譯文字"""
+        from app.utils.prompts import build_translate_prompt
+
+        prov = self.get_provider_for_connection(conn_id, provider)
+        if prov is None:
+            raise RuntimeError(f"找不到可用的 {provider} 連線")
+
+        logger.info(f"translate_text: provider={provider}, conn_id={conn_id}, model_id={model_id}")
+
+        prompt = build_translate_prompt(text, source_lang, target_lang)
+        messages = [
+            {"role": "system", "content": "You are a professional translator."},
+            {"role": "user", "content": prompt},
+        ]
+        return prov.chat(model=model_id, messages=messages)
+
     def get_provider_for_connection(self, conn_id: Optional[int], provider: str):
         """從 conn_id 取得 provider 實例，如果 conn_id 為 None 則回傳 None"""
         if conn_id is not None:

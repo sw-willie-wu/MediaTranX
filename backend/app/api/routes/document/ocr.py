@@ -18,23 +18,39 @@ class DocumentOcrRequest(BaseModel):
     format: str = Field(default="md", description="輸出格式：txt 或 md")
     output_dir: Optional[str] = Field(default=None)
     output_filename: Optional[str] = Field(default=None)
+    # 雲端模型
+    remote: bool = Field(default=False, description="是否使用雲端模型")
+    provider: Optional[str] = Field(default=None, description="雲端 provider")
+    conn_id: Optional[int] = Field(default=None, description="連線 ID")
+    remote_model: Optional[str] = Field(default=None, description="雲端模型 ID")
 
 
 @router.post("/ocr")
 async def ocr_document(request: DocumentOcrRequest):
     """提交文件 OCR 任務"""
     try:
-        model_id = request.model_id or get_language_service().get_default_vlm_model()
         service = get_doc_ocr_service()
-        task_id = await service.submit(
-            file_id=request.file_id,
-            model_id=model_id,
-            size=request.size,
-            quantization=request.quantization,
-            format=request.format,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
-        )
+        if request.remote and request.provider and request.remote_model:
+            task_id = await service.submit_remote(
+                file_id=request.file_id,
+                provider=request.provider,
+                conn_id=request.conn_id,
+                remote_model=request.remote_model,
+                format=request.format,
+                output_dir=request.output_dir,
+                output_filename=request.output_filename,
+            )
+        else:
+            model_id = request.model_id or get_language_service().get_default_vlm_model()
+            task_id = await service.submit(
+                file_id=request.file_id,
+                model_id=model_id,
+                size=request.size,
+                quantization=request.quantization,
+                format=request.format,
+                output_dir=request.output_dir,
+                output_filename=request.output_filename,
+            )
         return {"task_id": task_id, "message": "OCR 任務已提交"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

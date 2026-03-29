@@ -219,32 +219,24 @@ class AudioLyricsService:
                     translate_remote = params.get("translate_remote", False)
 
                     if translate_remote:
-                        # 雲端翻譯
-                        from app.services.setup.remote_service import get_remote_service
-                        remote_svc = get_remote_service()
+                        # 雲端翻譯（批次）
+                        from app.utils.translate import get_cloud_provider, translate_srt_cloud
+
                         provider = params.get("translate_provider", "")
                         conn_id = params.get("translate_conn_id")
                         remote_model = params.get("translate_remote_model", "")
+                        prov = get_cloud_provider(provider, conn_id, remote_model)
 
-                        seg_texts = [s.text.strip() for s in result.segments]
-                        combined = "\n".join(seg_texts)
-
-                        translated_text = remote_svc.translate_text(
-                            text=combined,
-                            target_lang=target_lang,
-                            source_lang=detected_lang,
-                            provider=provider,
-                            conn_id=conn_id,
-                            model_id=remote_model,
+                        seg_dicts = [{"start": s.start, "end": s.end, "text": s.text} for s in result.segments]
+                        translated_all = translate_srt_cloud(
+                            seg_dicts, detected_lang, target_lang, prov, remote_model,
+                            on_progress=lambda p, m: stage_progress("translate", p, m),
                         )
-                        translated_lines = translated_text.strip().split("\n")
 
-                        # 對齊翻譯行和原始 segments
-                        translated_segs = []
-                        for i, seg in enumerate(result.segments):
-                            text = translated_lines[i] if i < len(translated_lines) else seg.text
-                            translated_segs.append(TranscribeSegment(seg.start, seg.end, text))
-                        result.segments = translated_segs
+                        result.segments = [
+                            TranscribeSegment(s["start"], s["end"], s["text"])
+                            for s in translated_all
+                        ]
                     else:
                         # 本地翻譯
                         from app.engine.ai.runtime.llama_server import LlamaServerRuntime
@@ -254,59 +246,28 @@ class AudioLyricsService:
                         translate_model_size = params.get("translate_model_size", "4b")
                         translate_quantization = params.get("translate_quantization")
 
+                        from app.utils.translate import translate_srt_local
+
                         seg_dicts = [
                             {"start": s.start, "end": s.end, "text": s.text}
                             for s in result.segments
                         ]
 
-                        def translate_progress(percent: float, msg: str):
-                            stage_progress("translate", percent, msg)
-
                         variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
                         src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
                         runtime = LlamaServerRuntime(SLOT_LLM)
-                        batch_size = 5
 
-                        def _load_progress(p, msg):
-                            translate_progress(p * 0.05, msg)
+                        stage_progress("translate", 0.0, "載入翻譯模型...")
 
-                        translate_progress(0.0, "載入翻譯模型...")
+                        with runtime.acquire(translate_model_type, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
+                            stage_progress("translate", 0.05, "開始翻譯歌詞...")
+                            translated_all = translate_srt_local(
+                                seg_dicts, src, target_lang, runtime,
+                                on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
+                                model_id=translate_model_type,
+                            )
 
-                        with runtime.acquire(translate_model_type, variant, _load_progress):
-                            translate_progress(0.05, "開始翻譯歌詞...")
-
-                            total = len(seg_dicts)
-                            translated_all = []
-                            num_batches = (total + batch_size - 1) // batch_size
-
-                            for batch_idx in range(num_batches):
-                                start_idx = batch_idx * batch_size
-                                end_idx = min(start_idx + batch_size, total)
-                                batch_segments = seg_dicts[start_idx:end_idx]
-
-                                srt_text = segments_to_srt(batch_segments, start_index=start_idx + 1)
-                                prompt = build_srt_translate_prompt(
-                                    srt_text, src, target_lang,
-                                    model_id=translate_model_type,
-                                )
-                                messages = build_translate_messages(prompt, translate_model_type)
-                                translated_srt = runtime.chat(
-                                    messages=messages,
-                                    max_tokens=min(len(srt_text) * 3, 4096),
-                                    temperature=0.1,
-                                )
-
-                                batch_translated = parse_srt_response(translated_srt, batch_segments)
-                                translated_all.extend(batch_translated)
-
-                                if num_batches > 0:
-                                    progress = min((batch_idx + 1) / num_batches, 1.0)
-                                    translate_progress(
-                                        0.05 + progress * 0.95,
-                                        f"翻譯中... {end_idx}/{total} 段"
-                                    )
-
-                            translate_progress(1.0, "歌詞翻譯完成")
+                        stage_progress("translate", 1.0, "歌詞翻譯完成")
 
                         result.segments = [
                             TranscribeSegment(s["start"], s["end"], s["text"])

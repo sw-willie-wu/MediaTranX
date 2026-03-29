@@ -16,6 +16,7 @@ from app.workers.task_manager import TaskManager, get_task_manager
 logger = logging.getLogger(__name__)
 
 TASK_TYPE = "document.ocr"
+TASK_TYPE_REMOTE = "document.ocr.remote"
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"}
 
@@ -35,6 +36,7 @@ class DocumentOcrService:
         self._file_service: FileService = get_file_service()
         self._task_manager: TaskManager = get_task_manager()
         self._task_manager.register_handler(TASK_TYPE, self._handle_task)
+        self._task_manager.register_handler(TASK_TYPE_REMOTE, self._handle_remote_task)
         self._initialized = True
         logger.info("DocumentOcrService initialized")
 
@@ -63,6 +65,144 @@ class DocumentOcrService:
             "output_filename": output_filename,
         }
         return await self._task_manager.submit(TASK_TYPE, params)
+
+    async def submit_remote(
+        self,
+        file_id: str,
+        provider: str,
+        conn_id: Optional[int] = None,
+        remote_model: str = "",
+        format: str = "md",
+        output_dir: Optional[str] = None,
+        output_filename: Optional[str] = None,
+    ) -> str:
+        """提交雲端 OCR 任務"""
+        file_info = self._file_service.get_file(file_id)
+        if file_info is None:
+            raise ValueError(f"File not found: {file_id}")
+        params = {
+            "file_id": file_id, "provider": provider,
+            "conn_id": conn_id, "remote_model": remote_model,
+            "format": format, "output_dir": output_dir,
+            "output_filename": output_filename,
+        }
+        task_id = await self._task_manager.submit(TASK_TYPE_REMOTE, params)
+        logger.info(f"Remote OCR task submitted: {task_id} (provider={provider}, model={remote_model})")
+        return task_id
+
+    def _handle_remote_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+        """處理雲端 OCR 任務"""
+        import base64
+
+        file_id = params["file_id"]
+        file_info = self._file_service.get_file(file_id)
+        if file_info is None:
+            raise ValueError(f"File not found: {file_id}")
+
+        provider = params["provider"]
+        conn_id = params.get("conn_id")
+        remote_model = params["remote_model"]
+        fmt = params.get("format", "md")
+        ext = "md" if fmt == "md" else "txt"
+        src_ext = Path(file_info.original_filename).suffix.lower()
+
+        progress_callback(0.05, f"連接 {provider}...")
+
+        from app.services.setup.remote_service import get_remote_service
+        remote_svc = get_remote_service()
+        prov = remote_svc.get_provider_for_connection(conn_id, provider)
+        if prov is None:
+            raise RuntimeError(f"Provider not available: {provider}")
+
+        if src_ext == ".pdf":
+            # PDF：逐頁渲染為圖片再 OCR
+            final_text = self._ocr_pdf_remote(
+                file_info.file_path, prov, remote_model, fmt, progress_callback,
+            )
+        elif src_ext in _IMAGE_EXTS:
+            progress_callback(0.1, "準備圖片...")
+            final_text = self._recognize_remote(
+                str(file_info.file_path), prov, remote_model, fmt,
+            )
+            progress_callback(0.95, "辨識完成")
+        else:
+            raise ValueError("不支援的檔案格式，請上傳 PDF 或圖片")
+
+        if not final_text.strip():
+            final_text = "(未偵測到文字)"
+
+        output_file_id = str(uuid4())
+        stem = Path(file_info.original_filename).stem
+        custom_filename = params.get("output_filename")
+        final_filename = custom_filename if custom_filename else f"{stem}_ocr_{output_file_id[:8]}.{ext}"
+
+        custom_output_dir = params.get("output_dir")
+        output_dir_path = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
+        output_dir_path.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir_path / final_filename
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(final_text)
+
+        output_info = self._file_service.register_output(
+            file_id=output_file_id, file_path=output_path, original_filename=final_filename,
+        )
+
+        progress_callback(1.0, "OCR 完成")
+        return {
+            "output_file_id": output_file_id,
+            "output_filename": output_info.filename,
+            "text_content": final_text,
+            "text_file_id": output_file_id,
+            "char_count": len(final_text),
+        }
+
+    def _recognize_remote(self, image_path: str, prov, model: str, fmt: str) -> str:
+        """使用雲端 VLM 辨識單張圖片"""
+        import base64
+        from app.utils.prompts import OCR_SYSTEM_MD, OCR_SYSTEM_TXT, OCR_USER_MD, OCR_USER_TXT
+
+        with open(image_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode()
+
+        mime = "image/png" if image_path.lower().endswith(".png") else "image/jpeg"
+        sys_prompt = OCR_SYSTEM_MD if fmt == "md" else OCR_SYSTEM_TXT
+        user_prompt = OCR_USER_MD if fmt == "md" else OCR_USER_TXT
+        messages = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{img_b64}"}},
+                {"type": "text", "text": user_prompt},
+            ]},
+        ]
+        return prov.chat(model=model, messages=messages, max_tokens=4096, temperature=0.0)
+
+    def _ocr_pdf_remote(self, pdf_path: str, prov, model: str, fmt: str,
+                        progress_callback: Callable) -> str:
+        """雲端 OCR：PDF 逐頁渲染 → 雲端 VLM"""
+        import pypdfium2 as pdfium
+
+        pdf = pdfium.PdfDocument(pdf_path)
+        total_pages = len(pdf)
+        all_texts = []
+
+        with tempfile.TemporaryDirectory(prefix="mediatranx_ocr_") as tmpdir:
+            for page_idx in range(total_pages):
+                progress_callback(
+                    0.05 + (page_idx / total_pages) * 0.90,
+                    f"辨識第 {page_idx + 1}/{total_pages} 頁..."
+                )
+                page = pdf[page_idx]
+                bitmap = page.render(scale=2)
+                pil_image = bitmap.to_pil()
+                img_path = os.path.join(tmpdir, f"page_{page_idx}.png")
+                pil_image.save(img_path)
+
+                text = self._recognize_remote(img_path, prov, model, fmt)
+                all_texts.append(text.strip())
+
+        pdf.close()
+        return "\n\n---\n\n".join(all_texts)
 
     def _recognize(self, image_path: str, model_id: str, variant: str, fmt: str,
                    on_progress: Optional[Callable[[float, str], None]] = None) -> str:

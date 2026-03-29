@@ -121,6 +121,11 @@ class SubtitleService:
         keep_names: bool = True,
         translate_style: str = "colloquial",
         glossary: Optional[dict[str, str]] = None,
+        # 雲端翻譯
+        translate_remote: bool = False,
+        translate_provider: Optional[str] = None,
+        translate_conn_id: Optional[int] = None,
+        translate_remote_model: Optional[str] = None,
     ) -> str:
         """
         提交字幕生成任務
@@ -168,6 +173,10 @@ class SubtitleService:
             "keep_names": keep_names,
             "translate_style": translate_style,
             "glossary": glossary,
+            "translate_remote": translate_remote,
+            "translate_provider": translate_provider,
+            "translate_conn_id": translate_conn_id,
+            "translate_remote_model": translate_remote_model,
         }
 
         # 提交任務
@@ -306,56 +315,43 @@ class SubtitleService:
                         overall = 0.70 + percent * 0.25
                         progress_callback(overall, msg)
 
-                    variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
-
-                    from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-                    from app.engine.ai.registry import SLOT_LLM
-
                     src = WHISPER_TO_BCP47.get(result.language, result.language)
-                    runtime = LlamaServerRuntime(SLOT_LLM)
-                    batch_size = 5
+                    translate_remote = params.get("translate_remote", False)
 
-                    def _load_progress(p, msg):
-                        translate_progress(p * 0.05, msg)
+                    if translate_remote:
+                        # 雲端翻譯（批次）
+                        from app.utils.translate import get_cloud_provider, translate_srt_cloud
 
-                    translate_progress(0.0, "載入翻譯模型...")
+                        provider = params.get("translate_provider", "")
+                        conn_id = params.get("translate_conn_id")
+                        remote_model = params.get("translate_remote_model", "")
+                        prov = get_cloud_provider(provider, conn_id, remote_model)
 
-                    with runtime.acquire(translate_model_type, variant, _load_progress):
-                        translate_progress(0.05, "開始翻譯字幕...")
+                        translated_all = translate_srt_cloud(
+                            seg_dicts, src, target_language, prov, remote_model,
+                            on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
+                            keep_names=keep_names, style=translate_style, glossary=glossary,
+                        )
+                        translate_progress(1.0, "翻譯完成")
+                    else:
+                        # 本地翻譯
+                        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
+                        from app.engine.ai.registry import SLOT_LLM
+                        from app.utils.translate import translate_srt_local
 
-                        total = len(seg_dicts)
-                        translated_all = []
-                        num_batches = (total + batch_size - 1) // batch_size
+                        variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
+                        runtime = LlamaServerRuntime(SLOT_LLM)
 
-                        for batch_idx in range(num_batches):
-                            start_idx = batch_idx * batch_size
-                            end_idx = min(start_idx + batch_size, total)
-                            batch_segments = seg_dicts[start_idx:end_idx]
+                        translate_progress(0.0, "載入翻譯模型...")
 
-                            srt_text = segments_to_srt(batch_segments, start_index=start_idx + 1)
-                            prompt = build_srt_translate_prompt(
-                                srt_text, src, target_language,
-                                keep_names=keep_names,
-                                style=translate_style,
-                                glossary=glossary,
+                        with runtime.acquire(translate_model_type, variant, lambda p, m: translate_progress(p * 0.05, m)):
+                            translate_progress(0.05, "開始翻譯字幕...")
+                            translated_all = translate_srt_local(
+                                seg_dicts, src, target_language, runtime,
+                                on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
+                                keep_names=keep_names, style=translate_style, glossary=glossary,
                                 model_id=translate_model_type,
                             )
-                            messages = build_translate_messages(prompt, translate_model_type)
-                            translated_srt = runtime.chat(
-                                messages=messages,
-                                max_tokens=len(srt_text) * 3,
-                                temperature=0.1,
-                            )
-
-                            batch_translated = parse_srt_response(translated_srt, batch_segments)
-                            translated_all.extend(batch_translated)
-
-                            if num_batches > 0:
-                                progress = min((batch_idx + 1) / num_batches, 1.0)
-                                translate_progress(
-                                    0.05 + progress * 0.95,
-                                    f"翻譯中... {end_idx}/{total} 段"
-                                )
 
                         translate_progress(1.0, "字幕翻譯完成")
 

@@ -79,6 +79,11 @@ class SubtitleGenerateRequest(BaseModel):
         default=None,
         description="專有名詞對照表 {原文: 譯文}"
     )
+    # 雲端翻譯
+    translate_remote: bool = Field(default=False, description="是否使用雲端模型翻譯")
+    translate_provider: Optional[str] = Field(default=None, description="雲端 provider")
+    translate_conn_id: Optional[int] = Field(default=None, description="連線 ID")
+    translate_remote_model: Optional[str] = Field(default=None, description="雲端模型 ID")
 
 
 class SubtitleGenerateResponse(BaseModel):
@@ -221,6 +226,10 @@ async def generate_subtitle(request: SubtitleGenerateRequest):
             keep_names=request.keep_names,
             translate_style=request.translate_style,
             glossary=request.glossary,
+            translate_remote=request.translate_remote,
+            translate_provider=request.translate_provider,
+            translate_conn_id=request.translate_conn_id,
+            translate_remote_model=request.translate_remote_model,
         )
         return SubtitleGenerateResponse(task_id=task_id)
     except ValueError as e:
