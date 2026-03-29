@@ -61,6 +61,12 @@ def handle_model_download(params: dict, progress_callback: Callable) -> dict:
         lang_code = item_id[len("alignment-"):]
         _download_alignment(lang_code, progress_callback)
 
+    elif item_id == "basic-pitch":
+        _download_basic_pitch(progress_callback)
+
+    elif item_id == "fluidsynth":
+        _download_fluidsynth(progress_callback)
+
     else:
         _download_pth_model(item_id, progress_callback)
 
@@ -413,3 +419,72 @@ def _download_pth_model(model_id: str, progress_callback: Callable) -> None:
         raise ValueError(f"模型 {family}-{variant} 缺少 url 或 repo_id 配置")
 
     progress_callback(0.95, "模型下載完成")
+
+
+def _download_basic_pitch(progress_callback: Callable) -> None:
+    """Trigger basic-pitch model download by running a dummy inference."""
+    progress_callback(0.1, "Downloading Basic Pitch model...")
+
+    import numpy as np
+    import tempfile
+
+    # Create a tiny silent audio file to trigger model auto-download
+    try:
+        import soundfile as sf
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            tmp_path = f.name
+            sf.write(tmp_path, np.zeros(44100, dtype=np.float32), 44100)
+
+        progress_callback(0.3, "Loading Basic Pitch model...")
+        from basic_pitch.inference import predict
+
+        try:
+            predict(tmp_path)
+        except Exception:
+            pass  # May fail on silent audio, but model is now cached
+
+        import os
+
+        os.unlink(tmp_path)
+    except Exception as e:
+        logger.warning(f"Basic Pitch download trigger failed: {e}")
+        raise
+
+    progress_callback(0.95, "Basic Pitch model ready")
+
+
+def _download_fluidsynth(progress_callback: Callable) -> None:
+    """Download FluidSynth DLL + FluidR3 GM SoundFont."""
+    from app.engine.paths import get_fluidsynth_dir
+
+    dest = get_fluidsynth_dir()
+    dest.mkdir(parents=True, exist_ok=True)
+
+    # Step 1: Download FluidSynth Windows release (zip with DLL)
+    progress_callback(0.1, "Downloading FluidSynth...")
+    dll_url = "https://github.com/FluidSynth/fluidsynth/releases/download/v2.3.6/fluidsynth-2.3.6-win10-x64.zip"
+
+    import io
+    import zipfile
+    import requests
+
+    response = requests.get(dll_url, stream=True, timeout=120, allow_redirects=True)
+    response.raise_for_status()
+    buf = io.BytesIO(response.content)
+
+    progress_callback(0.3, "Extracting FluidSynth DLL...")
+    with zipfile.ZipFile(buf) as zf:
+        for name in zf.namelist():
+            if name.endswith("libfluidsynth-3.dll"):
+                dll_data = zf.read(name)
+                (dest / "libfluidsynth-3.dll").write_bytes(dll_data)
+                logger.info(f"Extracted libfluidsynth-3.dll to {dest}")
+                break
+
+    # Step 2: Download SoundFont
+    progress_callback(0.4, "Downloading SoundFont (FluidR3 GM)...")
+    sf2_url = "https://keymusician01.s3.amazonaws.com/FluidR3_GM.sf2"
+    _download_from_url(sf2_url, dest / "FluidR3_GM.sf2", progress_callback, 0.4, 0.95)
+
+    progress_callback(0.95, "FluidSynth + SoundFont ready")

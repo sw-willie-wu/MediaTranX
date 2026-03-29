@@ -14,6 +14,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   submit: [taskId: string]
+  'jump-to-midi': [fileId: string]
 }>()
 
 const { t } = useI18n()
@@ -64,6 +65,11 @@ function resetOutputPath() {
 watch(() => props.fileId, resetOutputPath)
 watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
+// MIDI output
+const generateMidi = ref(false)
+const showJumpModal = ref(false)
+const midiFileId = ref<string | null>(null)
+
 // Stem toggles
 const stemVocals = ref(true)
 const stemDrums = ref(true)
@@ -104,6 +110,7 @@ async function execute() {
     model_name: modelName.value,
     stems: selectedStems.value,
     output_format: outputFormat.value,
+    generate_midi: generateMidi.value,
   }
   if (outputPath.value) {
     body.output_dir = outputPath.value.replace(/\\/g, '/')
@@ -123,6 +130,7 @@ function getParams() {
     model_name: modelName.value,
     stems: selectedStems.value,
     output_format: outputFormat.value,
+    generate_midi: generateMidi.value,
   }
   if (outputPath.value) {
     body.output_dir = outputPath.value.replace(/\\/g, '/')
@@ -130,7 +138,21 @@ function getParams() {
   return body
 }
 
-defineExpose({ execute, isDisabled, isLoading, getParams })
+function handleJumpToMidi() {
+  showJumpModal.value = false
+  if (midiFileId.value) {
+    emit('jump-to-midi', midiFileId.value)
+  }
+}
+
+function onTaskComplete(result: Record<string, unknown>) {
+  if (result.midi_file_id) {
+    midiFileId.value = result.midi_file_id as string
+    showJumpModal.value = true
+  }
+}
+
+defineExpose({ execute, isDisabled, isLoading, getParams, onTaskComplete })
 </script>
 
 <template>
@@ -161,6 +183,13 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
     </div>
 
     <div class="form-group">
+      <label>{{ $t('audio.separate.generate_midi') }}</label>
+      <AppToggle v-model="generateMidi">
+        {{ $t('audio.separate.generate_midi_desc') }}
+      </AppToggle>
+    </div>
+
+    <div class="form-group">
       <label>{{ $t('audio.separate.output_file') }}</label>
       <div class="file-select" @click="selectOutputFile">
         <span class="file-select-path">{{ displayOutputPath }}</span>
@@ -168,14 +197,66 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
       </div>
     </div>
   </div>
+
+  <Teleport to="body">
+    <div v-if="showJumpModal" class="modal-overlay" @click.self="showJumpModal = false">
+      <div class="modal-dialog">
+        <div class="modal-body">
+          <i class="bi bi-music-note-beamed modal-icon"></i>
+          <p>{{ $t('audio.separate.midi_jump_prompt') }}</p>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-secondary" @click="showJumpModal = false">
+            {{ $t('audio.separate.midi_stay') }}
+          </button>
+          <button class="btn-primary" @click="handleJumpToMidi">
+            {{ $t('audio.separate.midi_jump') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 @use '@/styles/tool-panels-shared';
 
 .stem-toggles {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.modal-dialog {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+}
+.modal-body {
+  text-align: center;
+  margin-bottom: 20px;
+}
+.modal-icon {
+  font-size: 32px;
+  color: var(--color-primary);
+  margin-bottom: 12px;
+  display: block;
+}
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
 }
 </style>

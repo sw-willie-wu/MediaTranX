@@ -16,6 +16,8 @@ const mimeTypeMap: Record<string, ToolType> = {
   'audio/flac': 'audio',
   'audio/aac': 'audio',
   'audio/x-m4a': 'audio',
+  'audio/midi': 'audio',
+  'audio/x-midi': 'audio',
   // 圖片
   'image/jpeg': 'image',
   'image/png': 'image',
@@ -33,7 +35,7 @@ const extMap: Record<string, ToolType> = {
   // 影片
   mp4: 'video', mkv: 'video', avi: 'video', mov: 'video', webm: 'video', wmv: 'video', flv: 'video',
   // 音訊
-  mp3: 'audio', wav: 'audio', flac: 'audio', aac: 'audio', ogg: 'audio', m4a: 'audio', wma: 'audio',
+  mp3: 'audio', wav: 'audio', flac: 'audio', aac: 'audio', ogg: 'audio', m4a: 'audio', wma: 'audio', mid: 'audio', midi: 'audio',
   // 圖片
   jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', webp: 'image', bmp: 'image', tiff: 'image', ico: 'image',
   // 文件

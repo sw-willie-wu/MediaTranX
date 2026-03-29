@@ -14,6 +14,7 @@ const log = createLogger('AudioWorkspace')
 const AUDIO_EXTS = new Set([
   '.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a',
   '.opus', '.amr', '.ape', '.ac3', '.dts', '.aiff', '.aif',
+  '.mid', '.midi',
 ])
 
 export interface AudioInfo {

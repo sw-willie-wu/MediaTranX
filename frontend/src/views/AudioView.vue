@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
@@ -12,6 +12,12 @@ import AudioVolumePanel     from '@/components/audio/panels/AudioVolumePanel.vue
 import AudioTranscribePanel from '@/components/audio/panels/AudioTranscribePanel.vue'
 import AudioSeparatePanel  from '@/components/audio/panels/AudioSeparatePanel.vue'
 import AudioLyricsPanel    from '@/components/audio/panels/AudioLyricsPanel.vue'
+const AudioMidiEditPanel = defineAsyncComponent(
+  () => import('@/components/audio/panels/AudioMidiEditPanel.vue')
+)
+const MidiToolbar = defineAsyncComponent(() => import('@/components/audio/midi/MidiToolbar.vue'))
+const MidiPianoRoll = defineAsyncComponent(() => import('@/components/audio/midi/MidiPianoRoll.vue'))
+const MidiVelocityEditor = defineAsyncComponent(() => import('@/components/audio/midi/MidiVelocityEditor.vue'))
 import TextPreviewModal from '@/components/common/TextPreviewModal.vue'
 import { useAudioWorkspace } from '@/composables/useAudioWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
@@ -37,6 +43,8 @@ const volumePanelRef     = ref<InstanceType<typeof AudioVolumePanel>     | null>
 const transcribePanelRef = ref<InstanceType<typeof AudioTranscribePanel> | null>(null)
 const separatePanelRef   = ref<InstanceType<typeof AudioSeparatePanel>  | null>(null)
 const lyricsPanelRef     = ref<InstanceType<typeof AudioLyricsPanel>    | null>(null)
+const midiEditPanelRef   = ref<InstanceType<typeof AudioMidiEditPanel>  | null>(null)
+const pianoRollRef       = ref<InstanceType<typeof MidiPianoRoll>       | null>(null)
 
 const subFunctions = computed(() => [
   { id: 'transcode',  name: t('audio.functions.transcode'),  icon: 'bi-arrow-repeat',     group: t('audio.group.edit') },
@@ -45,6 +53,7 @@ const subFunctions = computed(() => [
   { id: 'transcribe', name: t('audio.functions.transcribe'), icon: 'bi-mic-fill',         group: t('audio.group.ai') },
   { id: 'separate',   name: t('audio.functions.separate'),   icon: 'bi-music-note-list',  group: t('audio.group.ai') },
   { id: 'lyrics',     name: t('audio.functions.lyrics'),     icon: 'bi-music-note-beamed',group: t('audio.group.ai') },
+  { id: 'midi-edit',  name: t('audio.functions.midiEdit'),   icon: 'bi-music-note-beamed',group: t('audio.group.ai') },
 ])
 
 const currentFunction = ref('transcode')
@@ -64,6 +73,7 @@ const executeDisabled = computed(() => {
   if (currentFunction.value === 'transcribe') return transcribePanelRef.value?.isDisabled ?? !hasFile.value
   if (currentFunction.value === 'separate')  return separatePanelRef.value?.isDisabled  ?? !hasFile.value
   if (currentFunction.value === 'lyrics')    return lyricsPanelRef.value?.isDisabled    ?? !hasFile.value
+  if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.isDisabled  ?? !hasFile.value
   return !hasFile.value
 })
 
@@ -77,6 +87,7 @@ const executeLoading = computed(() => {
   if (currentFunction.value === 'transcribe') return transcribePanelRef.value?.isLoading ?? false
   if (currentFunction.value === 'separate')  return separatePanelRef.value?.isLoading  ?? false
   if (currentFunction.value === 'lyrics')    return lyricsPanelRef.value?.isLoading    ?? false
+  if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.isLoading  ?? false
   return false
 })
 
@@ -96,6 +107,7 @@ function handleSingleExecute() {
     case 'transcribe': transcribePanelRef.value?.execute(); break
     case 'separate':  separatePanelRef.value?.execute();  break
     case 'lyrics':    lyricsPanelRef.value?.execute();    break
+    case 'midi-edit': midiEditPanelRef.value?.execute(); break
   }
 }
 
@@ -270,8 +282,57 @@ const separateStems = computed(() => separateStemsData.value)
     </template>
 
     <template #preview="{ file, previewUrl }">
+      <template v-if="currentFunction === 'midi-edit' && midiEditPanelRef?.editor">
+        <div class="midi-editor-preview">
+          <MidiToolbar
+            :is-playing="midiEditPanelRef.editor.isPlaying?.value ?? false"
+            :current-beat="0"
+            :total-beats="midiEditPanelRef.editor.getTotalBeats()"
+            :loop-enabled="false"
+            :tool-mode="midiEditPanelRef.editor.toolMode.value"
+            :tempo="midiEditPanelRef.editor.tempo.value"
+            @play="() => {}"
+            @pause="() => {}"
+            @stop="() => {}"
+            @toggle-loop="() => {}"
+            @set-tool="(m) => midiEditPanelRef!.editor.toolMode.value = m"
+          />
+          <div class="midi-editor-body">
+            <MidiPianoRoll
+              ref="pianoRollRef"
+              :tracks="midiEditPanelRef.editor.tracks.value"
+              :active-track-index="midiEditPanelRef.editor.activeTrackIndex.value"
+              :selected-note-ids="midiEditPanelRef.editor.selectedNoteIds.value"
+              :tool-mode="midiEditPanelRef.editor.toolMode.value"
+              :grid-size="midiEditPanelRef.editor.gridSize.value"
+              :snap-enabled="midiEditPanelRef.editor.snapEnabled.value"
+              :current-beat="0"
+              :is-playing="false"
+              :tempo="midiEditPanelRef.editor.tempo.value"
+              :time-signature="midiEditPanelRef.editor.timeSignature.value"
+              @add-note="(p,s,d,v) => midiEditPanelRef!.editor.addNote(p,s,d,v)"
+              @delete-notes="(ids) => midiEditPanelRef!.editor.deleteNotes(ids)"
+              @move-notes="(ids,db,dp) => midiEditPanelRef!.editor.moveNotes(ids,db,dp)"
+              @resize-notes="(ids,d) => midiEditPanelRef!.editor.resizeNotes(ids,d)"
+              @select-notes="(ids,add) => ids.forEach(id => midiEditPanelRef!.editor.selectNote(id,add))"
+              @clear-selection="() => midiEditPanelRef!.editor.clearSelection()"
+              @play-note="(p) => {}"
+            />
+          </div>
+          <MidiVelocityEditor
+            v-if="midiEditPanelRef.editor.activeTrack.value"
+            :notes="midiEditPanelRef.editor.activeTrack.value.notes"
+            :selected-note-ids="midiEditPanelRef.editor.selectedNoteIds.value"
+            :track-color="midiEditPanelRef.editor.activeTrack.value.color"
+            :scroll-x="pianoRollRef?.scrollX ?? 0"
+            :zoom-x="pianoRollRef?.zoomX ?? 80"
+            :grid-size="midiEditPanelRef.editor.gridSize.value"
+            @update-velocity="(ids,v) => midiEditPanelRef!.editor.updateVelocity(ids,v)"
+          />
+        </div>
+      </template>
       <AudioMultiTrackPreview
-        v-if="currentFunction === 'separate' && separateStems"
+        v-else-if="currentFunction === 'separate' && separateStems"
         :stems="separateStems"
       />
       <AudioPreview
@@ -362,6 +423,14 @@ const separateStems = computed(() => separateStemsData.value)
           :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
+
+        <AudioMidiEditPanel
+          v-if="currentFunction === 'midi-edit'"
+          ref="midiEditPanelRef"
+          :file-id="activeFileId"
+          :current-file-name="currentFileName"
+          @submit="handlePanelSubmit"
+        />
       </div>
     </template>
   </ToolLayout>
@@ -377,4 +446,13 @@ const separateStems = computed(() => separateStemsData.value)
 
 <style lang="scss" scoped>
 .settings-form { color: var(--text-primary); }
+.midi-editor-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.midi-editor-body {
+  flex: 1;
+  min-height: 0;
+}
 </style>
