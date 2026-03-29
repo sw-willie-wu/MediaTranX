@@ -29,7 +29,12 @@ def bootstrap(is_frozen: bool) -> None:
     from app.init.logging_config import configure_logging
     configure_logging(is_frozen)
 
-    # 4. 啟動診斷（僅 frozen 模式）
+    # 4. Nuitka 相容性修補（僅 frozen 模式）
+    if is_frozen:
+        from app.init.nuitka_compat import apply_nuitka_patches
+        apply_nuitka_patches()
+
+    # 5. 啟動診斷（僅 frozen 模式）
     if is_frozen:
         _run_diagnostics()
 

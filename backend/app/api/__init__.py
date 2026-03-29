@@ -60,8 +60,9 @@ def build_router(app: FastAPI) -> FastAPI:
                     status=task.status.value,
                     created_at=task.created_at,
                     completed_at=task.updated_at,
+                    label=task.label,
                     error=task.error,
-                    error_code=getattr(task, 'error_code', None),
+                    error_code=task.error_code,
                     result=result,
                 )
             except Exception as e:

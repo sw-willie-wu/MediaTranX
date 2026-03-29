@@ -114,6 +114,7 @@ class TaskManager:
             task_type=task_type,
             status=TaskStatus.PENDING,
             progress=0.0,
+            label=params.get("label"),
         )
         self._tasks[task_id] = task
 
@@ -214,6 +215,17 @@ class TaskManager:
                 task.progress = latest.progress
                 if latest.message:
                     task.message = latest.message
+                # 外部管理的任務（register_task）透過 stage 判斷終態
+                if latest.stage == "completed":
+                    task.status = TaskStatus.COMPLETED
+                    task.result = latest.result
+                    task.updated_at = datetime.now(timezone.utc)
+                    self._notify_terminal(task)
+                elif latest.stage == "error":
+                    task.status = TaskStatus.FAILED
+                    task.error = latest.message
+                    task.updated_at = datetime.now(timezone.utc)
+                    self._notify_terminal(task)
         return task
 
     def get_all_tasks(self) -> List[TaskData]:

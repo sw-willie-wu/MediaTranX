@@ -227,8 +227,8 @@ def _download_translate(model_type: str, size: str, quant: str, progress_callbac
 
 
 def _download_demucs(variant: str, progress_callback: Callable) -> None:
-    """下載 Demucs 模型（透過 demucs.api.Separator 自動下載到 torch hub cache）"""
-    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
+    """下載 Demucs 模型 checkpoint（直接從 Facebook 下載，避免 demucs 套件路徑問題）"""
+    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_DEMUCS
 
     family = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("demucs")
     if not family:
@@ -241,33 +241,27 @@ def _download_demucs(variant: str, progress_callback: Callable) -> None:
     model_name = variant_spec.get("model_name", variant)
     progress_callback(0.1, f"正在下載 {model_name}...")
 
-    try:
-        import functools
-        import torch
-        from demucs.api import Separator
-        from app.engine.paths import get_models_dir
-        from app.engine.ai.registry import SLOT_DEMUCS
+    # 模型 hash → checkpoint 檔名對照（從 demucs/remote/*.yaml + files.txt）
+    DEMUCS_MODELS = {
+        "htdemucs": ("hybrid_transformer", "955717e8-8726e21a.th"),
+        "htdemucs_6s": ("hybrid_transformer", "5c90dfd2-34c22ccb.th"),
+    }
 
-        # 將 torch hub cache 指向 models/demucs/，讓 checkpoint 統一存放
-        hub_dir = str(get_models_dir() / SLOT_DEMUCS)
-        Path(hub_dir).mkdir(parents=True, exist_ok=True)
-        original_hub_dir = torch.hub.get_dir()
-        torch.hub.set_dir(hub_dir)
+    if model_name not in DEMUCS_MODELS:
+        raise ValueError(f"不支援的 demucs 模型: {model_name}")
 
-        # PyTorch 2.6+ 預設 weights_only=True，demucs checkpoint 需要 weights_only=False
-        _original_load = torch.load
-        torch.load = functools.partial(_original_load, weights_only=False)
-        try:
-            progress_callback(0.3, f"下載 {model_name} 模型...")
-            separator = Separator(model=model_name, device="cpu")
-            del separator
-        finally:
-            torch.load = _original_load
-            torch.hub.set_dir(original_hub_dir)
+    folder, filename = DEMUCS_MODELS[model_name]
+    url = f"https://dl.fbaipublicfiles.com/demucs/{folder}/{filename}"
 
-    except Exception as e:
-        raise RuntimeError(f"Demucs 模型下載失敗: {e}")
+    checkpoints_dir = get_models_dir() / SLOT_DEMUCS / "checkpoints"
+    target_path = checkpoints_dir / filename
 
+    if target_path.exists():
+        progress_callback(0.95, "模型已存在")
+        return
+
+    progress_callback(0.15, f"下載 {model_name} checkpoint...")
+    _download_from_url(url, target_path, progress_callback, 0.15, 0.95)
     progress_callback(0.95, "模型下載完成")
 
 
@@ -284,13 +278,27 @@ def _download_alignment(lang_code: str, progress_callback: Callable) -> None:
     progress_callback(0.1, f"下載 {repo_id}...")
 
     try:
-        from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
+        from huggingface_hub import list_repo_files, hf_hub_download
 
-        progress_callback(0.2, f"下載 Processor...")
-        Wav2Vec2Processor.from_pretrained(repo_id, cache_dir=cache_dir)
+        # 列出 repo 中的檔案
+        all_files = list_repo_files(repo_id)
+        download_files = [
+            f for f in all_files
+            if not f.endswith((".md", ".txt", ".gitattributes"))
+        ]
 
-        progress_callback(0.5, f"下載模型權重...")
-        Wav2Vec2ForCTC.from_pretrained(repo_id, cache_dir=cache_dir)
+        if not download_files:
+            raise RuntimeError(f"Repo {repo_id} 中沒有可下載的檔案")
+
+        total = len(download_files)
+        for i, filename in enumerate(download_files):
+            prog = 0.1 + (i / total) * 0.85  # 0.1 ~ 0.95
+            progress_callback(prog, f"下載 {filename}（{i + 1}/{total}）...")
+            hf_hub_download(
+                repo_id=repo_id,
+                filename=filename,
+                cache_dir=cache_dir,
+            )
 
     except Exception as e:
         raise RuntimeError(f"Alignment 模型下載失敗: {e}")

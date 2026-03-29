@@ -54,7 +54,16 @@ class ModelManager:
             try:
                 yield
             finally:
-                # 強制釋放 GPU 記憶體，避免下一個任務 OOM
+                # 卸載所有已載入的模型（含 llama-server subprocess）
+                for slot in list(self._loaded_slots):
+                    unloader = self._unloaders.get(slot)
+                    if unloader:
+                        try:
+                            unloader()
+                        except Exception as e:
+                            logger.warning(f"gpu_session cleanup: failed to unload {slot}: {e}")
+                self._loaded_slots.clear()
+                # 強制釋放 GPU 記憶體
                 import gc
                 gc.collect()
                 try:

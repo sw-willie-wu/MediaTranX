@@ -18,6 +18,7 @@ from typing import Optional, Callable, Any
 logger = logging.getLogger(__name__)
 
 
+
 @dataclass
 class AlignedWord:
     """對齊後的單字"""
