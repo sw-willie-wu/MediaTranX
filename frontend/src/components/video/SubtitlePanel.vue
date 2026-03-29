@@ -8,6 +8,7 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
 import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
 import { apiFetch, getApiBase } from '@/composables/useApi'
+import { parseModelValue } from '@/composables/useModelOptions'
 
 const { t } = useI18n()
 
@@ -23,6 +24,7 @@ const props = defineProps<{
     bitrate: number
     file_size: number
   } | null
+  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -89,6 +91,9 @@ async function loadLanguages() {
   } catch {}
 }
 
+const showAdvanced = ref(localStorage.getItem('subtitle_advanced') === 'true')
+watch(showAdvanced, (v) => localStorage.setItem('subtitle_advanced', String(v)))
+
 const outputFormats = computed(() => [
   { value: 'srt', label: t('video.subtitle.srt') },
   { value: 'vtt', label: t('video.subtitle.vtt') },
@@ -124,8 +129,17 @@ async function selectOutputFile() {
   }
 }
 
-watch(() => props.fileId, () => { outputPath.value = '' })
-watch(outputFormat,       () => { outputPath.value = '' })
+function resetOutputPath() {
+  if (props.sourceDir) {
+    const stem = sourceBaseName.value
+    outputPath.value = `${props.sourceDir}/${stem}.${outputFormat.value}`
+  } else {
+    outputPath.value = ''
+  }
+}
+watch(() => props.fileId, resetOutputPath)
+watch(outputFormat, resetOutputPath)
+watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 // ── 子元件 refs ─────────────────────────────────────────────────
 const whisperAdvanced = ref<InstanceType<typeof WhisperAdvancedSettings> | null>(null)
@@ -147,11 +161,19 @@ async function submitGenerate() {
     if (language.value) body.language = language.value
 
     if (translationOptions.value?.enableTranslation && translationOptions.value.targetLanguage) {
-      const [tmType, tmSize, tmQuant] = translationOptions.value.selectedTranslateModel.split(':')
+      const parsed = parseModelValue(translationOptions.value.selectedTranslateModel)
       body.target_language = translationOptions.value.targetLanguage
-      body.translate_model_type = tmType
-      body.translate_model_size = tmSize
-      body.translate_quantization = tmQuant
+      if (parsed.isRemote) {
+        body.translate_remote = true
+        body.translate_provider = parsed.provider
+        body.translate_conn_id = parsed.connId
+        body.translate_remote_model = parsed.modelId
+      } else {
+        const [tmType, tmSize, tmQuant] = translationOptions.value.selectedTranslateModel.split(':')
+        body.translate_model_type = tmType
+        body.translate_model_size = tmSize
+        body.translate_quantization = tmQuant
+      }
       body.keep_names = translationOptions.value.keepNames
       body.translate_style = translationOptions.value.translateStyle
       const glossary = translationOptions.value.parseGlossary()
@@ -160,6 +182,7 @@ async function submitGenerate() {
 
     if (whisperAdvanced.value) {
       body.word_timestamps = whisperAdvanced.value.wordTimestamps
+      body.align = whisperAdvanced.value.align
       body.condition_on_previous_text = whisperAdvanced.value.conditionOnPreviousText
       body.min_silence_duration_ms = whisperAdvanced.value.minSilenceDurationMs
       body.vad_threshold = whisperAdvanced.value.vadThreshold
@@ -232,28 +255,37 @@ onMounted(() => { loadAllWhisperStatus(); loadLanguages() })
 
     <div class="form-group">
       <label>{{ $t('video.subtitle.language') }}</label>
-      <AppSelect v-model="language" :options="languages" size="sm" />
+      <AppSelect v-model="language" :options="languages" />
     </div>
 
     <div class="form-group">
       <label>{{ $t('video.subtitle.model_settings') }}</label>
-      <AppSelect v-model="modelSize" :options="modelSizesWithBadge" size="sm" />
+      <AppSelect v-model="modelSize" :options="modelSizesWithBadge" />
     </div>
-
-    <WhisperAdvancedSettings ref="whisperAdvanced" />
 
     <div class="form-group">
       <label>{{ $t('video.subtitle.output_format') }}</label>
-      <AppSelect v-model="outputFormat" :options="outputFormats" size="sm" />
+      <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
-
-    <TranslationOptionsPanel ref="translationOptions" />
 
     <div class="form-group">
       <label>{{ $t('video.subtitle.file_type') }}</label>
       <div class="file-select" @click="selectOutputFile">
         <span class="file-select-path">{{ displayOutputPath }}</span>
         <i class="bi bi-folder2-open"></i>
+      </div>
+    </div>
+
+    <!-- Advanced options (collapsible) -->
+    <div class="settings-collapsible" :class="{ 'is-open': showAdvanced }">
+      <button class="settings-collapsible-header" @click="showAdvanced = !showAdvanced">
+        <i class="bi" :class="showAdvanced ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+        <span>{{ $t('common.advanced_options') }}</span>
+      </button>
+
+      <div v-show="showAdvanced" class="settings-collapsible-body">
+        <WhisperAdvancedSettings ref="whisperAdvanced" />
+        <TranslationOptionsPanel ref="translationOptions" />
       </div>
     </div>
   </div>

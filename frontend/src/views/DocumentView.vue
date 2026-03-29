@@ -2,22 +2,30 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
+import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import DocumentPreview from '@/components/document/DocumentPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import DocumentTranslatePanel   from '@/components/document/panels/DocumentTranslatePanel.vue'
 import DocumentPdfConvertPanel  from '@/components/document/panels/DocumentPdfConvertPanel.vue'
 import DocumentOcrPanel         from '@/components/document/panels/DocumentOcrPanel.vue'
 import DocumentSplitPanel       from '@/components/document/panels/DocumentSplitPanel.vue'
-import OcrResultModal           from '@/components/image/OcrResultModal.vue'
+import TextPreviewModal          from '@/components/common/TextPreviewModal.vue'
 import { useDocumentWorkspace } from '@/composables/useDocumentWorkspace'
+import { useMultiSubmit } from '@/composables/useMultiSubmit'
 
 const { t } = useI18n()
 
 const {
-  hasFile, fileId, isUploading, currentFileName, hasResult,
+  hasFile, fileId, activeFileId, isUploading, currentFileName, hasResult,
   textResultContent, textResultFilename,
-  handleFile, handleRemoveFile, handlePanelSubmit, handleDownload, handleTextDownload,
+  collection,
+  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, handleTextDownload,
+  sourceDir,
 } = useDocumentWorkspace()
+
+const selectedIds = computed(() => collection.selectedIds.value)
+const isMultiSelect = computed(() => selectedIds.value.size > 1)
+const { isSubmitting, submitToAll } = useMultiSubmit(collection)
 
 // Panel refs
 const translatePanelRef  = ref<InstanceType<typeof DocumentTranslatePanel>  | null>(null)
@@ -27,18 +35,20 @@ const splitPanelRef      = ref<InstanceType<typeof DocumentSplitPanel>      | nu
 const showOcrModal       = ref(false)
 
 const subFunctions = computed(() => [
-  { id: 'translate',   name: t('document.functions.translate'),    icon: 'bi-translate' },
-  { id: 'pdf-convert', name: t('document.functions.pdf_convert'),  icon: 'bi-file-earmark-pdf-fill' },
-  { id: 'ocr',         name: t('document.functions.ocr'),          icon: 'bi-type' },
-  { id: 'split',       name: t('document.functions.split'),        icon: 'bi-layout-split' },
+  { id: 'split',       name: t('document.functions.split'),        icon: 'bi-layout-split',            group: t('document.group.edit') },
+  { id: 'pdf-convert', name: t('document.functions.pdf_convert'),  icon: 'bi-file-earmark-pdf-fill',   group: t('document.group.edit') },
+  { id: 'ocr',         name: t('document.functions.ocr'),          icon: 'bi-type',                    group: t('document.group.ai') },
+  { id: 'translate',   name: t('document.functions.translate'),    icon: 'bi-translate',               group: t('document.group.ai') },
 ])
 
-const currentFunction = ref('translate')
+const currentFunction = ref('split')
 
 const currentFileExt = computed(() => {
   const parts = currentFileName.value.split('.')
   return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : ''
 })
+
+const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
 
 const executeDisabled = computed(() => {
   if (currentFunction.value === 'translate')   return translatePanelRef.value?.isDisabled   ?? !hasFile.value
@@ -49,6 +59,7 @@ const executeDisabled = computed(() => {
 })
 
 const executeLoading = computed(() => {
+  if (isEntryProcessing.value) return true
   if (currentFunction.value === 'translate')   return translatePanelRef.value?.isLoading   ?? false
   if (currentFunction.value === 'pdf-convert') return pdfConvertPanelRef.value?.isLoading  ?? false
   if (currentFunction.value === 'ocr')         return ocrPanelRef.value?.isLoading         ?? false
@@ -57,11 +68,33 @@ const executeLoading = computed(() => {
 })
 
 function handleExecute() {
+  if (isMultiSelect.value) {
+    handleMultiExecute()
+  } else {
+    handleSingleExecute()
+  }
+}
+
+function handleSingleExecute() {
   switch (currentFunction.value) {
     case 'translate':   translatePanelRef.value?.execute();   break
     case 'pdf-convert': pdfConvertPanelRef.value?.execute();  break
     case 'ocr':         ocrPanelRef.value?.execute();         break
     case 'split':       splitPanelRef.value?.execute();       break
+  }
+}
+
+function handleMultiExecute() {
+  const noop = () => {}
+  switch (currentFunction.value) {
+    case 'ocr':
+      submitToAll('/document/ocr',         () => ocrPanelRef.value!.getParams(),        t('document.ocr.task_label'),         'document.ocr',         noop); break
+    case 'translate':
+      submitToAll('/document/translate',   () => translatePanelRef.value!.getParams(),  t('document.translate.task_label'),   'document.translate',   noop); break
+    case 'split':
+      submitToAll('/document/split',       () => splitPanelRef.value!.getParams(),      t('document.split.task_label'),       'document.split',       noop); break
+    case 'pdf-convert':
+      submitToAll('/document/pdf-convert', () => pdfConvertPanelRef.value!.getParams(), t('document.pdf_convert.task_label'), 'document.pdf_convert', noop); break
   }
 }
 
@@ -79,25 +112,33 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-const currentFile = ref<File | null>(null)
-
 const documentInfoItems = computed<InfoItem[]>(() => {
-  if (!currentFile.value) return []
-  const ext = currentFile.value.name.split('.').pop()?.toUpperCase() ?? '—'
+  const entry = collection.activeEntry.value
+  if (!entry) return []
+  const ext = entry.file.name.split('.').pop()?.toUpperCase() ?? '—'
   return [
     { icon: 'bi-file-earmark-text', label: ext },
-    { icon: 'bi-hdd',               label: formatSize(currentFile.value.size) },
+    { icon: 'bi-hdd',               label: formatSize(entry.file.size) },
   ]
 })
 
-function onFile(file: File, sourceDir?: string) {
-  currentFile.value = file
-  handleFile(file, sourceDir)
+// ── Filmstrip ────────────────────────────────────────────────────────────────
+
+const filmstripItems = computed(() =>
+  collection.entriesList.value.map(e => ({
+    id: e.id,
+    thumbnailUrl: e.thumbnailUrl,
+    status: e.status,
+    progress: e.progress,
+  }))
+)
+
+function onFilmstripSelect(id: string, ctrlKey: boolean) {
+  collection.selectEntry(id, ctrlKey)
 }
 
-function onRemoveFile() {
-  currentFile.value = null
-  handleRemoveFile()
+function onFilmstripRemove(id: string) {
+  collection.removeEntry(id)
 }
 </script>
 
@@ -110,6 +151,9 @@ function onRemoveFile() {
     :upload-hint="$t('document.upload_hint')"
     upload-accept=".pdf,.doc,.docx,.txt,.srt,.vtt,.md,.csv,.json"
     hide-preview-tabs
+    show-filmstrip
+    :collection-size="filmstripItems.length"
+    :active-file-name="currentFileName"
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"
@@ -117,9 +161,11 @@ function onRemoveFile() {
     :execute-loading="executeLoading"
     @select-function="currentFunction = $event"
     @execute="handleExecute"
-    @file="onFile"
-    @remove-file="onRemoveFile"
+    @file="handleFile"
+    @files="handleFiles"
+    @remove-file="handleRemoveFile"
     @download="onDownload"
+    @clear-selection="collection.clearSelection()"
   >
     <template #toolbar-extra>
       <button
@@ -133,15 +179,31 @@ function onRemoveFile() {
     </template>
 
     <template #preview="{ file }">
-      <DocumentPreview :file="file" :is-uploading="isUploading" />
+      <DocumentPreview
+        :file="collection.activeEntry.value?.file ?? file"
+        :is-uploading="isUploading"
+      />
     </template>
 
     <template #info-bar>
       <AppMediaInfoBar
-        v-if="currentFile || isUploading"
+        v-if="collection.activeEntry.value || isUploading"
         :items="documentInfoItems"
         :loading="isUploading"
         :loading-text="$t('document.loading')"
+      />
+    </template>
+
+    <template #filmstrip>
+      <AppFilmstrip
+        :items="filmstripItems"
+        :active-id="collection.activeId.value"
+        :selected-ids="collection.selectedIds.value"
+        @select="onFilmstripSelect"
+        @remove="onFilmstripRemove"
+        @remove-selected="ids => collection.removeEntries(ids)"
+        @clear-selection="collection.clearSelection()"
+        @select-all="collection.selectAll()"
       />
     </template>
 
@@ -150,7 +212,7 @@ function onRemoveFile() {
         <DocumentTranslatePanel
           v-if="currentFunction === 'translate'"
           ref="translatePanelRef"
-          :file-id="fileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
           @submit="handlePanelSubmit"
         />
@@ -158,35 +220,39 @@ function onRemoveFile() {
         <DocumentPdfConvertPanel
           v-else-if="currentFunction === 'pdf-convert'"
           ref="pdfConvertPanelRef"
-          :file-id="fileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
           :current-file-ext="currentFileExt"
+          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
 
         <DocumentOcrPanel
           v-else-if="currentFunction === 'ocr'"
           ref="ocrPanelRef"
-          :file-id="fileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
           :current-file-ext="currentFileExt"
+          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
 
         <DocumentSplitPanel
           v-else-if="currentFunction === 'split'"
           ref="splitPanelRef"
-          :file-id="fileId"
+          :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
       </div>
     </template>
   </ToolLayout>
 
-  <OcrResultModal
+  <TextPreviewModal
     v-if="showOcrModal && textResultContent"
     :text="textResultContent"
+    :title="$t('document.ocr.result_title')"
     :format="ocrPanelRef?.outputFormat ?? 'md'"
     :filename="textResultFilename"
     @close="showOcrModal = false"

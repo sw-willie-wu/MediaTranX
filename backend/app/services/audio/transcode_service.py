@@ -136,24 +136,39 @@ class AudioTranscodeService:
             original_stem = Path(file_info.original_filename).stem
             final_filename = f"{original_stem}_converted_{output_file_id[:8]}.{params['output_format']}"
 
-        # 決定輸出目錄（優先自訂 > 來源目錄 > 預設 output）
+        # 決定輸出目錄（優先自訂 > 預設 output）
         if custom_output_dir:
             output_dir_path = Path(custom_output_dir)
-        elif file_info.source_dir:
-            output_dir_path = Path(file_info.source_dir)
         else:
             output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 
         # 建立 FFmpeg 命令
+        codec = params["audio_codec"]
+        lossless = codec in ("flac", "alac", "pcm_s16le", "pcm_s24le", "pcm_s32le")
+
+        # Bitrate → quality 映射（libvorbis 用 -q:a 更穩定，避免 mono/bitrate 不相容）
+        _VORBIS_QUALITY = {"128k": 4, "192k": 5, "256k": 7, "320k": 9}
+
         cmd = [
             self._ffmpeg.ffmpeg_path,
             "-i", file_info.file_path,
             "-vn",  # 移除影片串流
-            "-acodec", params["audio_codec"],
-            "-b:a", params["audio_bitrate"],
+            "-acodec", codec,
         ]
+
+        if lossless:
+            # 無損格式不設 bitrate，FLAC 需要 integer sample format
+            if codec == "flac":
+                cmd.extend(["-sample_fmt", "s32"])
+        elif codec == "libvorbis":
+            # libvorbis 用 quality 模式避免 mono/bitrate 不相容
+            br = params.get("audio_bitrate", "192k")
+            q = _VORBIS_QUALITY.get(br, 5)
+            cmd.extend(["-q:a", str(q)])
+        elif params.get("audio_bitrate"):
+            cmd.extend(["-b:a", params["audio_bitrate"]])
 
         if params.get("sample_rate"):
             cmd.extend(["-ar", str(params["sample_rate"])])

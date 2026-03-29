@@ -129,10 +129,9 @@ const coreModules = computed(() => {
     ? installed.toUpperCase()
     : (aiTorchIndex.value === 'cpu' ? 'CPU' : aiTorchIndex.value.toUpperCase())
   return [
-    { key: 'torch',   icon: 'bi-lightning-charge', name: 'PyTorch',         tag,   desc: t('wizard.pytorch_desc'),         ready: aiEnvReady.value, warn: torchMismatch.value },
-    { key: 'whisper', icon: 'bi-mic',              name: 'faster-whisper',  tag: '', desc: t('wizard.faster_whisper_desc'), ready: aiEnvReady.value },
-    { key: 'llama',   icon: 'bi-translate',        name: 'llama-server',    tag,   desc: t('wizard.llama_cpp_desc'),        ready: llamaReady.value },
-    { key: 'hf',      icon: 'bi-cloud-download',   name: 'huggingface-hub', tag: '', desc: t('wizard.huggingface_hub_desc'), ready: aiEnvReady.value },
+    { key: 'ai',      icon: 'bi-cpu',              name: 'Whisper / Demucs / HuggingFace', tag: '', desc: t('settings.ai.tools_desc'), ready: aiEnvReady.value },
+    { key: 'torch',   icon: 'bi-lightning-charge',  name: 'PyTorch',         tag,   desc: t('settings.ai.pytorch_desc'),    ready: aiEnvReady.value, warn: torchMismatch.value },
+    { key: 'llama',   icon: 'bi-translate',         name: 'llama-server',    tag,   desc: t('settings.ai.llama_desc'),      ready: llamaReady.value },
   ]
 })
 

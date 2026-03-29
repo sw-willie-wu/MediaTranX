@@ -88,86 +88,91 @@ class ImageUpscaleService:
 
         file_info = self._file_service.get_file(file_id)
 
-        # ── 超解析 ──────────────────────────────────────────
-        upscale_family, upscale_variant = _parse_model_id(model_id, _UPSCALE_FAMILIES)
-        progress_callback(0.05, f"正在載入模型: {model_id}...")
+        # === GPU 排隊管線 ===
+        from app.engine.ai.model_manager import get_model_manager
+        manager = get_model_manager()
 
-        from app.engine.ai.pth import get_upscaler
-        upscaler = get_upscaler(upscale_family)
+        with manager.gpu_session():
+            # ── 超解析 ──────────────────────────────────────────
+            upscale_family, upscale_variant = _parse_model_id(model_id, _UPSCALE_FAMILIES)
+            progress_callback(0.05, f"正在載入模型: {model_id}...")
 
-        # 查詢模型的原生 scale
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
-        native_scale = MODELS_REGISTRY.get(FORMAT_PTH, {}).get(upscale_family, {}).get(
-            "variants", {}
-        ).get(upscale_variant, {}).get("scale", 4)
+            from app.engine.ai.image import get_upscaler
+            upscaler = get_upscaler(upscale_family)
 
-        from app.engine.gif_utils import animation_format, extract_frames, save_animated, animation_ext
+            # 查詢模型的原生 scale
+            from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
+            native_scale = MODELS_REGISTRY.get(FORMAT_PTH, {}).get(upscale_family, {}).get(
+                "variants", {}
+            ).get(upscale_variant, {}).get("scale", 4)
 
-        upscale_end = 0.7 if face_fix else 0.85
+            from app.utils.gif_utils import animation_format, extract_frames, save_animated, animation_ext
 
-        def _upscale_single(img: Image.Image, progress_start: float, progress_end: float) -> Image.Image:
-            """Upscale one frame, preserving alpha if present."""
-            img_rgba = img.convert("RGBA")
-            alpha_channel = img_rgba.split()[3]
-            has_alpha = alpha_channel.getextrema()[0] < 255
-            img_to_process = img_rgba.convert("RGB") if has_alpha else img.convert("RGB")
+            upscale_end = 0.7 if face_fix else 0.85
 
-            span = progress_end - progress_start
-            result = upscaler.enhance(
-                img_to_process,
-                model_id=upscale_variant,
-                scale=native_scale,
-                on_progress=lambda p, m: progress_callback(
-                    progress_start + (0.05 + p * 0.35 if p <= 1.0 else 0.40 + (p - 1.0) * 0.30) * span,
-                    m,
-                ),
-            )
-            if scale < native_scale:
-                orig_w, orig_h = img.size
-                result = result.resize((orig_w * scale, orig_h * scale), Image.LANCZOS)
-            if has_alpha:
-                alpha_upscaled = alpha_channel.resize(result.size, Image.LANCZOS)
-                result_rgba = result.convert("RGBA")
-                result_rgba.putalpha(alpha_upscaled)
-                result = result_rgba
-            return result
+            def _upscale_single(img: Image.Image, progress_start: float, progress_end: float) -> Image.Image:
+                """Upscale one frame, preserving alpha if present."""
+                img_rgba = img.convert("RGBA")
+                alpha_channel = img_rgba.split()[3]
+                has_alpha = alpha_channel.getextrema()[0] < 255
+                img_to_process = img_rgba.convert("RGB") if has_alpha else img.convert("RGB")
 
-        with Image.open(file_info.file_path) as raw:
-            anim_fmt = animation_format(raw)
-            if anim_fmt:
-                frames = extract_frames(raw)
-                total = len(frames)
-                result_frames = []
-                for i, (frame, duration) in enumerate(frames):
-                    progress_callback(0.05 + i / total * 0.60, f"超解析中 ({i + 1}/{total})...")
-                    result_frame = _upscale_single(frame, 0.0, 1.0 / total)
-                    result_frames.append((result_frame, duration))
-            else:
-                img = raw.copy()
-                result_img = _upscale_single(img, 0.0, 1.0)
+                span = progress_end - progress_start
+                result = upscaler.enhance(
+                    img_to_process,
+                    model_id=upscale_variant,
+                    scale=native_scale,
+                    on_progress=lambda p, m: progress_callback(
+                        progress_start + (0.05 + p * 0.35 if p <= 1.0 else 0.40 + (p - 1.0) * 0.30) * span,
+                        m,
+                    ),
+                )
+                if scale < native_scale:
+                    orig_w, orig_h = img.size
+                    result = result.resize((orig_w * scale, orig_h * scale), Image.LANCZOS)
+                if has_alpha:
+                    alpha_upscaled = alpha_channel.resize(result.size, Image.LANCZOS)
+                    result_rgba = result.convert("RGBA")
+                    result_rgba.putalpha(alpha_upscaled)
+                    result = result_rgba
+                return result
 
-        progress_callback(upscale_end, "超解析完成")
+            with Image.open(file_info.file_path) as raw:
+                anim_fmt = animation_format(raw)
+                if anim_fmt:
+                    frames = extract_frames(raw)
+                    total = len(frames)
+                    result_frames = []
+                    for i, (frame, duration) in enumerate(frames):
+                        progress_callback(0.05 + i / total * 0.60, f"超解析中 ({i + 1}/{total})...")
+                        result_frame = _upscale_single(frame, 0.0, 1.0 / total)
+                        result_frames.append((result_frame, duration))
+                else:
+                    img = raw.copy()
+                    result_img = _upscale_single(img, 0.0, 1.0)
 
-        # ── 人臉修復（可選，僅靜態圖）──────────────────────────────────
-        if not anim_fmt and face_fix and face_restore_model_id:
-            try:
-                face_family, face_variant = _parse_model_id(face_restore_model_id, _FACE_FAMILIES)
-                fidelity = params.get("face_restore_fidelity", 0.7)
-                face_upscale = params.get("face_restore_upscale", 2)
-                progress_callback(0.75, f"正在載入人臉修復模型: {face_restore_model_id}...")
+            progress_callback(upscale_end, "超解析完成")
 
-                from app.engine.ai.pth import get_face_restorer
-                restorer = get_face_restorer(face_family)
+            # ── 人臉修復（可選，僅靜態圖）──────────────────────────────────
+            if not anim_fmt and face_fix and face_restore_model_id:
+                try:
+                    face_family, face_variant = _parse_model_id(face_restore_model_id, _FACE_FAMILIES)
+                    fidelity = params.get("face_restore_fidelity", 0.7)
+                    face_upscale = params.get("face_restore_upscale", 2)
+                    progress_callback(0.75, f"正在載入人臉修復模型: {face_restore_model_id}...")
 
-                restore_kwargs: dict = {"model_id": face_variant, "on_progress": lambda p, m: progress_callback(0.75 + p * 0.15, m)}
-                if face_family == "codeformer":
-                    restore_kwargs["fidelity"] = fidelity
-                elif face_family == "gfpgan":
-                    restore_kwargs["upscale"] = face_upscale
+                    from app.engine.ai.image import get_face_restorer
+                    restorer = get_face_restorer(face_family)
 
-                result_img = restorer.restore(result_img, **restore_kwargs)
-            except Exception as e:
-                logger.warning(f"Face restore failed, returning upscaled image only: {e}")
+                    restore_kwargs: dict = {"model_id": face_variant, "on_progress": lambda p, m: progress_callback(0.75 + p * 0.15, m)}
+                    if face_family == "codeformer":
+                        restore_kwargs["fidelity"] = fidelity
+                    elif face_family == "gfpgan":
+                        restore_kwargs["upscale"] = face_upscale
+
+                    result_img = restorer.restore(result_img, **restore_kwargs)
+                except Exception as e:
+                    logger.warning(f"Face restore failed, returning upscaled image only: {e}")
 
         output_file_id = str(uuid4())
         output_path = self._generate_output_path(file_info, scale, params.get("output_dir"))

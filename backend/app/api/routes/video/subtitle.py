@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.services.video.subtitle_service import get_subtitle_service
-from app.engine.ai.llama import SUPPORTED_LANGUAGES, get_translategemma, get_translator
+from app.services.setup.language_service import get_language_service
 
 router = APIRouter()
 
@@ -79,6 +79,11 @@ class SubtitleGenerateRequest(BaseModel):
         default=None,
         description="專有名詞對照表 {原文: 譯文}"
     )
+    # 雲端翻譯
+    translate_remote: bool = Field(default=False, description="是否使用雲端模型翻譯")
+    translate_provider: Optional[str] = Field(default=None, description="雲端 provider")
+    translate_conn_id: Optional[int] = Field(default=None, description="連線 ID")
+    translate_remote_model: Optional[str] = Field(default=None, description="雲端模型 ID")
 
 
 class SubtitleGenerateResponse(BaseModel):
@@ -109,8 +114,7 @@ async def get_whisper_status(model_size: str = "medium"):
 async def get_translategemma_status(model_size: str = "4b"):
     """查詢 TranslateGemma 模型狀態"""
     try:
-        tg = get_translategemma()
-        status = tg.get_model_status(model_size)
+        status = get_language_service().get_model_status("translategemma", model_size)
         return ModelStatusResponse(**status)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -120,8 +124,7 @@ async def get_translategemma_status(model_size: str = "4b"):
 async def get_translate_model_status(model_type: str = "translategemma", model_size: str = "4b", quantization: str | None = None):
     """查詢翻譯模型狀態（通用，支援 translategemma 和 qwen3）"""
     try:
-        translator = get_translator(model_type)
-        status = translator.get_model_status(model_size, quantization)
+        status = get_language_service().get_model_status(model_type, model_size, quantization)
         return status
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -130,7 +133,7 @@ async def get_translate_model_status(model_type: str = "translategemma", model_s
 @router.get("/translategemma/languages")
 async def get_translategemma_languages():
     """取得翻譯模型支援的翻譯語言列表"""
-    return SUPPORTED_LANGUAGES
+    return get_language_service().get_supported_languages()
 
 
 class TranslateTestResponse(BaseModel):
@@ -153,8 +156,10 @@ async def test_translate(request: TranslateTestRequest):
     測試翻譯（開發用）— 使用 llama-server messages API
     """
     try:
-        from app.engine.ai.base.translate import LANG_NAMES_EN
-        tg = get_translategemma()
+        from app.utils.prompts import LANG_NAMES_EN
+        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
+        from app.engine.ai.registry import SLOT_LLM
+
         source_name = LANG_NAMES_EN.get(request.source_language, request.source_language)
         target_name = LANG_NAMES_EN.get(request.target_language, request.target_language)
         variant = request.model_size
@@ -166,8 +171,9 @@ async def test_translate(request: TranslateTestRequest):
         )
         messages = [{"role": "user", "content": user_msg}]
 
-        with tg._runtime.acquire(tg.MODEL_ID, variant):
-            result = tg._runtime.chat(
+        runtime = LlamaServerRuntime(SLOT_LLM)
+        with runtime.acquire("translategemma", variant):
+            result = runtime.chat(
                 messages=messages,
                 max_tokens=len(request.text) * 3,
                 temperature=0.1,
@@ -220,6 +226,10 @@ async def generate_subtitle(request: SubtitleGenerateRequest):
             keep_names=request.keep_names,
             translate_style=request.translate_style,
             glossary=request.glossary,
+            translate_remote=request.translate_remote,
+            translate_provider=request.translate_provider,
+            translate_conn_id=request.translate_conn_id,
+            translate_remote_model=request.translate_remote_model,
         )
         return SubtitleGenerateResponse(task_id=task_id)
     except ValueError as e:

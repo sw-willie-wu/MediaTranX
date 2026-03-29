@@ -6,6 +6,7 @@ import { useSubmitTask } from '@/composables/useSubmitTask'
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -43,8 +44,18 @@ async function selectOutputFile() {
   }
 }
 
-watch(() => props.fileId, () => { pages.value = ''; outputPath.value = '' })
-watch(pages, () => { outputPath.value = '' })
+function resetOutputPath() {
+  if (props.sourceDir) {
+    const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
+    const label = pages.value.trim().replace(/\s/g, '').replace(/,/g, '_') || 'split'
+    outputPath.value = `${props.sourceDir}/${stem}_p${label}.pdf`
+  } else {
+    outputPath.value = ''
+  }
+}
+watch(() => props.fileId, () => { pages.value = ''; resetOutputPath() })
+watch(pages, resetOutputPath)
+watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading  = computed(() => isProcessing.value)
@@ -69,7 +80,24 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading })
+function getParams() {
+  const body: Record<string, any> = {
+    pages: pages.value.trim(),
+  }
+  if (outputPath.value) {
+    const path = outputPath.value.replace(/\\/g, '/')
+    const last = path.lastIndexOf('/')
+    if (last > 0) {
+      body.output_dir      = path.substring(0, last)
+      body.output_filename = path.substring(last + 1)
+    } else {
+      body.output_filename = path
+    }
+  }
+  return body
+}
+
+defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
 
 <template>

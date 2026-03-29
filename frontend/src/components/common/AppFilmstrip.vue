@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, onActivated, onDeactivated, nextTick } from 'vue'
+import { useConfirm } from '@/composables/useConfirm'
+import { useI18n } from 'vue-i18n'
 
 export interface FilmstripItem {
   id: string
@@ -22,8 +24,64 @@ const props = withDefaults(
 const emit = defineEmits<{
   select: [id: string, ctrlKey: boolean]
   remove: [id: string]
+  removeSelected: [ids: string[]]
   clearSelection: []
+  selectAll: []
 }>()
+
+// Ctrl+A → 全選, Delete → 移除
+function handleKeyDown(e: KeyboardEvent) {
+  // 輸入框內的按鍵不攔截（input、textarea、select、contenteditable）
+  const tag = (e.target as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable) return
+
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+    if (props.items.length > 0) {
+      e.preventDefault()
+      emit('selectAll')
+    }
+  } else if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (props.items.length === 0) return
+    e.preventDefault()
+    handleDeleteKey()
+  }
+}
+
+const { confirm: showConfirm } = useConfirm()
+const { t } = useI18n()
+
+async function handleDeleteKey() {
+  const selectedCount = props.selectedIds.size
+  if (selectedCount > 1) {
+    const ok = await showConfirm({
+      message: t('common.remove_selected_confirm', { count: selectedCount }),
+      type: 'danger',
+      confirmLabel: t('common.remove_file'),
+    })
+    if (ok) emit('removeSelected', [...props.selectedIds])
+  } else if (props.activeId) {
+    const ok = await showConfirm({
+      message: t('common.remove_confirm'),
+      type: 'danger',
+      confirmLabel: t('common.remove_file'),
+    })
+    if (ok) emit('remove', props.activeId)
+  }
+}
+function _addGlobalListeners() {
+  window.addEventListener('keydown', handleKeyDown)
+  document.addEventListener('mousedown', onGlobalMouseDown)
+}
+function _removeGlobalListeners() {
+  window.removeEventListener('keydown', handleKeyDown)
+  document.removeEventListener('mousedown', onGlobalMouseDown)
+}
+
+// KeepAlive: activated/deactivated 控制全域事件，避免其他頁面誤觸
+onMounted(_addGlobalListeners)
+onBeforeUnmount(_removeGlobalListeners)
+onActivated(_addGlobalListeners)
+onDeactivated(_removeGlobalListeners)
 
 // --- Refs ---
 const scrollEl = ref<HTMLElement | null>(null)
@@ -78,8 +136,11 @@ function isActive(id: string) {
 
 function isSelected(id: string) {
   if (isDragSelecting.value) {
-    // 框碰過的：以目前是否在框內為準；從沒碰過的：維持 snapshot
-    if (dragVisitedIds.value.has(id)) return dragHitIds.value.has(id)
+    // 目前在框內或自動滾動累積的 → 選中
+    if (dragHitIds.value.has(id)) return true
+    // 曾被框碰過但現在不在框內 → 取消（即使原本是選中的）
+    if (dragVisitedIds.value.has(id)) return false
+    // 從沒被碰過 → 維持原始狀態
     return selectionSnapshot.has(id)
   }
   return props.selectedIds.has(id)
@@ -94,8 +155,9 @@ const isDragSelecting = ref(false)
 const justDragSelected = ref(false)
 const dragStartVP = ref({ x: 0, y: 0 })   // viewport coords
 const dragCurrentVP = ref({ x: 0, y: 0 })
-const dragHitIds = ref<Set<string>>(new Set())
-const dragVisitedIds = ref<Set<string>>(new Set())
+const dragHitIds = ref<Set<string>>(new Set())       // 目前應選中的（框內 + 自動滾動累積的）
+const autoScrollHitIds = ref<Set<string>>(new Set())  // 因自動滾動被帶離框但仍應選中的
+const dragVisitedIds = ref<Set<string>>(new Set())    // 曾被框碰過的（用於取消原始選取）
 let selectionSnapshot: Set<string> = new Set()
 
 const dragSelectStyle = computed(() => {
@@ -131,10 +193,23 @@ function computeHits(): string[] {
 
 function onTrackMouseDown(e: MouseEvent) {
   if (!e.shiftKey || e.button !== 0) return
+  startDragSelect(e)
+}
+
+function onGlobalMouseDown(e: MouseEvent) {
+  if (!e.shiftKey || e.button !== 0) return
+  // 如果在 filmstrip 內部點的，讓 onTrackMouseDown 處理
+  const el = scrollEl.value
+  if (el && el.contains(e.target as Node)) return
+  startDragSelect(e)
+}
+
+function startDragSelect(e: MouseEvent) {
   e.preventDefault()
   selectionSnapshot = new Set(props.selectedIds)
   isDragSelecting.value = true
   dragHitIds.value = new Set()
+  autoScrollHitIds.value = new Set()
   dragVisitedIds.value = new Set()
   dragStartVP.value   = { x: e.clientX, y: e.clientY }
   dragCurrentVP.value = { x: e.clientX, y: e.clientY }
@@ -142,31 +217,74 @@ function onTrackMouseDown(e: MouseEvent) {
   document.addEventListener('mouseup',   onDragEnd)
 }
 
+let autoScrollInterval: ReturnType<typeof setInterval> | null = null
+
 function onDragMove(e: MouseEvent) {
   if (!isDragSelecting.value) return
   dragCurrentVP.value = { x: e.clientX, y: e.clientY }
-  const hits = new Set(computeHits())
-  // 累積所有曾被框碰過的 id
-  hits.forEach(id => dragVisitedIds.value.add(id))
-  dragHitIds.value = hits
+  const currentHits = new Set(computeHits())
+  // 記錄曾被碰過的
+  currentHits.forEach(id => dragVisitedIds.value.add(id))
+  // 框內的 + 自動滾動累積的
+  dragHitIds.value = new Set([...currentHits, ...autoScrollHitIds.value])
+
+  // Auto-scroll filmstrip when drag cursor is near edges
+  const el = scrollEl.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const edgeZone = 40
+  const scrollSpeed = 8
+
+  if (autoScrollInterval) {
+    clearInterval(autoScrollInterval)
+    autoScrollInterval = null
+    // 停止自動滾動：累積的轉為「曾碰過的」，之後手動拖離就能取消
+    autoScrollHitIds.value.forEach(id => dragVisitedIds.value.add(id))
+    autoScrollHitIds.value = new Set()
+  }
+
+  const dragGoingLeft = e.clientX < dragStartVP.value.x
+  const dragGoingRight = e.clientX >= dragStartVP.value.x
+
+  if (e.clientX < rect.left + edgeZone && el.scrollLeft > 0) {
+    // 反方向滾（拖往右但碰左邊緣）→ 清空累積，純滾動
+    if (dragGoingRight) autoScrollHitIds.value = new Set()
+    autoScrollInterval = setInterval(() => {
+      computeHits().forEach(id => { if (dragGoingLeft) autoScrollHitIds.value.add(id) })
+      el.scrollLeft -= scrollSpeed
+      const current = new Set(computeHits())
+      dragHitIds.value = new Set([...current, ...autoScrollHitIds.value])
+    }, 16)
+  } else if (e.clientX > rect.right - edgeZone && el.scrollLeft + el.clientWidth < el.scrollWidth) {
+    if (dragGoingLeft) autoScrollHitIds.value = new Set()
+    autoScrollInterval = setInterval(() => {
+      computeHits().forEach(id => { if (dragGoingRight) autoScrollHitIds.value.add(id) })
+      el.scrollLeft += scrollSpeed
+      const current = new Set(computeHits())
+      dragHitIds.value = new Set([...current, ...autoScrollHitIds.value])
+    }, 16)
+  }
 }
 
 function onDragEnd() {
   if (!isDragSelecting.value) return
+  if (autoScrollInterval) { clearInterval(autoScrollInterval); autoScrollInterval = null }
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup',   onDragEnd)
 
-  const finalHits = new Set(computeHits())
-  // snapshot 中「從沒被框碰過」的保留；「碰過但不在最終框內」的排除
+  // 加上最後一刻的碰撞
+  computeHits().forEach(id => { dragHitIds.value.add(id); dragVisitedIds.value.add(id) })
+  // 合併：目前框選到的 + 原本選的（排除碰過又離開的）
   const merged = [
-    ...[...selectionSnapshot].filter(id => !dragVisitedIds.value.has(id) || finalHits.has(id)),
-    ...[...finalHits].filter(id => !selectionSnapshot.has(id)),
+    ...dragHitIds.value,
+    ...[...selectionSnapshot].filter(id => !dragVisitedIds.value.has(id)),
   ]
+  autoScrollHitIds.value = new Set()
+  dragVisitedIds.value = new Set()
   merged.forEach((id, i) => emit('select', id, i > 0))
 
   isDragSelecting.value = false
   dragHitIds.value = new Set()
-  dragVisitedIds.value = new Set()
   if (merged.length > 0) {
     justDragSelected.value = true
     setTimeout(() => { justDragSelected.value = false }, 0)
@@ -180,6 +298,7 @@ function onTrackClick() {
 onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup',   onDragEnd)
+  if (autoScrollInterval) clearInterval(autoScrollInterval)
 })
 </script>
 
@@ -187,16 +306,7 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div v-if="isDragSelecting && dragSelectStyle" class="filmstrip-drag-overlay" :style="dragSelectStyle" />
   </Teleport>
-  <div class="app-filmstrip">
-    <!-- Left arrow -->
-    <button
-      class="filmstrip-arrow"
-      :class="{ 'is-hidden': !canScrollLeft }"
-      aria-label="Scroll left"
-      @click="scrollLeft"
-    >
-      <i class="bi bi-chevron-left" />
-    </button>
+  <div class="app-filmstrip" :class="{ 'can-scroll-left': canScrollLeft, 'can-scroll-right': canScrollRight }">
 
     <!-- Scroll track -->
     <div
@@ -252,25 +362,45 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Right arrow -->
-    <button
-      class="filmstrip-arrow"
-      :class="{ 'is-hidden': !canScrollRight }"
-      aria-label="Scroll right"
-      @click="scrollRight"
-    >
-      <i class="bi bi-chevron-right" />
-    </button>
   </div>
 </template>
 
 <style lang="scss" scoped>
 .app-filmstrip {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 0 4px;
   min-height: 4.85rem;
+
+  // Fade edges to hint scrollable content
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 48px;
+    pointer-events: none;
+    z-index: 2;
+    transition: opacity 0.15s ease;
+  }
+
+  &::before {
+    left: 0;
+    background: linear-gradient(to right, var(--bg-gradient-end), transparent);
+    opacity: 0;
+  }
+
+  &::after {
+    right: 0;
+    background: linear-gradient(to left, var(--bg-gradient-end), transparent);
+    opacity: 0;
+  }
+
+  &.can-scroll-left::before { opacity: 1; }
+  &.can-scroll-right::after { opacity: 1; }
 }
 
 // ── Scroll track ────────────────────────────────────────────
@@ -310,7 +440,7 @@ onBeforeUnmount(() => {
   overflow: visible; // allow remove btn to overflow
   cursor: pointer;
   border: 2px solid transparent;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 
   &.is-active {
     border-color: var(--text-primary);
@@ -320,6 +450,7 @@ onBeforeUnmount(() => {
   &.is-selected:not(.is-active) {
     border-color: var(--color-accent);
     box-shadow: 0 0 8px var(--filmstrip-glow-selected);
+    transform: scale(1.05);
   }
 
   // Show remove button only on hover
@@ -408,35 +539,6 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
-// ── Scroll arrows ─────────────────────────────────────────────
-.filmstrip-arrow {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 44px;
-  border: 1px solid var(--panel-border);
-  border-radius: 4px;
-  padding: 0;
-  cursor: pointer;
-  color: var(--text-primary);
-  font-size: 0.9rem;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
-
-  &:hover {
-    background: rgba(0, 0, 0, 0.55);
-    border-color: var(--panel-border-hover);
-  }
-
-  &.is-hidden {
-    opacity: 0;
-    pointer-events: none;
-  }
-}
 </style>
 
 <style lang="scss">

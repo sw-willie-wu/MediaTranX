@@ -65,31 +65,40 @@ class ImageRemoveBgService:
 
         file_info = self._file_service.get_file(file_id)
 
-        progress_callback(0.1, "載入去背模型...")
-        session = new_session(model_name)
+        # === GPU 排隊管線 ===
+        from app.engine.ai.model_manager import get_model_manager
+        manager = get_model_manager()
 
-        from app.engine.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
+        with manager.gpu_session():
+            progress_callback(0.1, "載入去背模型...")
+            # 將 rembg 模型路徑導向 models/rembg/，統一管理
+            import os
+            from app.engine.paths import get_models_dir
+            os.environ["U2NET_HOME"] = str(get_models_dir("rembg"))
+            session = new_session(model_name)
 
-        with Image.open(file_info.file_path) as raw:
-            anim_fmt = animation_format(raw)
+            from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
+
+            with Image.open(file_info.file_path) as raw:
+                anim_fmt = animation_format(raw)
+                if anim_fmt:
+                    def _remove_frame(frame, idx, total):
+                        progress_callback(0.4 + idx / total * 0.5, f"去除背景中 ({idx + 1}/{total})...")
+                        return remove(frame, session=session)
+                    result_frames = process_gif_frames(raw, _remove_frame)
+                else:
+                    img = raw.copy()
+
+            output_file_id = str(uuid4())
+            output_path = self._generate_output_path(file_info, params.get("output_dir"))
+
+            progress_callback(0.9, "儲存結果...")
             if anim_fmt:
-                def _remove_frame(frame, idx, total):
-                    progress_callback(0.4 + idx / total * 0.5, f"去除背景中 ({idx + 1}/{total})...")
-                    return remove(frame, session=session)
-                result_frames = process_gif_frames(raw, _remove_frame)
+                output_path = output_path.with_suffix(animation_ext(anim_fmt))
+                save_animated(result_frames, output_path, anim_fmt)
             else:
-                img = raw.copy()
-
-        output_file_id = str(uuid4())
-        output_path = self._generate_output_path(file_info, params.get("output_dir"))
-
-        progress_callback(0.9, "儲存結果...")
-        if anim_fmt:
-            output_path = output_path.with_suffix(animation_ext(anim_fmt))
-            save_animated(result_frames, output_path, anim_fmt)
-        else:
-            result_img = remove(img, session=session)
-            result_img.save(output_path, "PNG")
+                result_img = remove(img, session=session)
+                result_img.save(output_path, "PNG")
 
         output_info = self._file_service.register_output(
             file_id=output_file_id,

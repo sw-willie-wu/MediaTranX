@@ -15,7 +15,7 @@ from typing import Optional, Dict, Callable, Set
 from app.engine.paths import get_models_dir, get_base_data_dir, get_llama_bin_dir
 from .registry import (
     MODELS_REGISTRY,
-    FORMAT_BIN,
+    FORMAT_PKG,
     FORMAT_GGUF,
     FORMAT_PTH,
     FORMAT_VLM,
@@ -51,7 +51,27 @@ class ModelManager:
     def gpu_session(self):
         """顯存鎖：確保影像處理與語言推理不會同時搶奪顯存"""
         with self._gpu_lock:
-            yield
+            try:
+                yield
+            finally:
+                # 卸載所有已載入的模型（含 llama-server subprocess）
+                for slot in list(self._loaded_slots):
+                    unloader = self._unloaders.get(slot)
+                    if unloader:
+                        try:
+                            unloader()
+                        except Exception as e:
+                            logger.warning(f"gpu_session cleanup: failed to unload {slot}: {e}")
+                self._loaded_slots.clear()
+                # 強制釋放 GPU 記憶體
+                import gc
+                gc.collect()
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except Exception:
+                    pass
 
     def register_unloader(self, slot: str, callback: Callable[[], None]):
         """註冊模型卸載函數"""
@@ -97,9 +117,9 @@ class ModelManager:
         查詢模型所屬格式
         
         Returns:
-            FORMAT_BIN / FORMAT_GGUF / FORMAT_PTH / None
+            FORMAT_PKG / FORMAT_GGUF / FORMAT_PTH / FORMAT_VLM / None
         """
-        for fmt in [FORMAT_BIN, FORMAT_GGUF, FORMAT_PTH, FORMAT_VLM]:
+        for fmt in [FORMAT_PKG, FORMAT_GGUF, FORMAT_PTH, FORMAT_VLM]:
             if model_id in MODELS_REGISTRY.get(fmt, {}):
                 return fmt
         return None
@@ -117,7 +137,7 @@ class ModelManager:
         
         family = MODELS_REGISTRY[fmt][model_id]
         
-        if fmt == FORMAT_BIN:
+        if fmt == FORMAT_PKG:
             # Whisper: variants -> variant
             return family["variants"].get(variant) if variant else None
         
@@ -189,7 +209,7 @@ class ModelManager:
         if not config:
             return 0
         
-        # BIN/PTH 格式直接有 vram_mb
+        # PKG/PTH 格式直接有 vram_mb
         if "vram_mb" in config:
             return config["vram_mb"]
         
@@ -219,8 +239,8 @@ class ModelManager:
         slot = family.get("slot", "")
         base_dir = get_models_dir() / slot
         
-        # BIN 格式（目錄型）
-        if fmt == FORMAT_BIN:
+        # PKG 格式（目錄型，如 Whisper）
+        if fmt == FORMAT_PKG:
             target = base_dir / variant if variant else base_dir
             # 檢查關鍵檔案判斷完整性
             marker = target / "model.bin"
@@ -286,11 +306,11 @@ class ModelManager:
         if on_progress:
             on_progress(0.1, f"開始下載 {model_id}...")
         
-        # BIN 格式（目錄型快照）
-        if fmt == FORMAT_BIN:
+        # PKG 格式（目錄型快照，如 Whisper）
+        if fmt == FORMAT_PKG:
             config = self.get_model_config(model_id, variant)
             if not config or "repo_id" not in config:
-                raise ValueError(f"Invalid BIN config for {model_id}/{variant}")
+                raise ValueError(f"Invalid PKG config for {model_id}/{variant}")
             
             local_dir = base_dir / variant
             path = await self._async_snapshot_download(

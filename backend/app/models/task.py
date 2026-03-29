@@ -33,5 +33,7 @@ class TaskData:
     message: Optional[str] = None
     result: Optional[Any] = None
     error: Optional[str] = None
+    error_code: Optional[str] = None
+    label: Optional[str] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

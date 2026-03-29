@@ -8,6 +8,7 @@ const props = defineProps<{
   fileId: string | null
   currentFileName: string
   currentFileExt: string
+  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -62,8 +63,17 @@ async function selectOutputFile() {
   }
 }
 
-watch(() => props.fileId, () => { outputPath.value = '' })
-watch(outputFormat, () => { outputPath.value = '' })
+function resetOutputPath() {
+  if (props.sourceDir) {
+    const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
+    outputPath.value = `${props.sourceDir}/${stem}_converted.${extMap[outputFormat.value] ?? 'txt'}`
+  } else {
+    outputPath.value = ''
+  }
+}
+watch(() => props.fileId, resetOutputPath)
+watch(outputFormat, resetOutputPath)
+watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading  = computed(() => isProcessing.value)
@@ -88,7 +98,24 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading })
+function getParams() {
+  const body: Record<string, any> = {
+    output_format: outputFormat.value,
+  }
+  if (outputPath.value) {
+    const path = outputPath.value.replace(/\\/g, '/')
+    const last = path.lastIndexOf('/')
+    if (last > 0) {
+      body.output_dir      = path.substring(0, last)
+      body.output_filename = path.substring(last + 1)
+    } else {
+      body.output_filename = path
+    }
+  }
+  return body
+}
+
+defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
 
 <template>
@@ -99,7 +126,7 @@ defineExpose({ execute, isDisabled, isLoading })
     <!-- 輸出格式 -->
     <div class="form-group">
       <label>{{ $t('document.pdf_convert.output_format') }}</label>
-      <AppSelect v-model="outputFormat" :options="outputFormatOptions" size="sm" />
+      <AppSelect v-model="outputFormat" :options="outputFormatOptions" />
     </div>
 
     <!-- 輸出檔案 -->

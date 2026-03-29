@@ -69,7 +69,7 @@ class AudioVolumeService:
         suffix = "normalized" if params["normalize"] else f"vol{params['volume_db']:+.0f}dB"
         final_filename = f"{original_stem}_{suffix}_{output_file_id[:8]}{ext}"
 
-        output_dir_path = Path(file_info.source_dir) if file_info.source_dir else self._file_service.output_dir
+        output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 

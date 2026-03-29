@@ -97,8 +97,6 @@ class DocumentSplitService:
         custom_output_dir = params.get("output_dir")
         if custom_output_dir:
             out_dir = Path(custom_output_dir)
-        elif file_info.source_dir:
-            out_dir = Path(file_info.source_dir)
         else:
             out_dir = self._file_service.output_dir
         out_dir.mkdir(parents=True, exist_ok=True)

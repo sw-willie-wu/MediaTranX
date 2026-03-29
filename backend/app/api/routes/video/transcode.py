@@ -7,7 +7,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.services.video.transcode_service import get_transcode_service
-from app.engine.ffmpeg import FFmpeg
 
 router = APIRouter()
 
@@ -88,25 +87,9 @@ class FFmpegStatusResponse(BaseModel):
 @router.get("/ffmpeg/status", response_model=FFmpegStatusResponse)
 async def get_ffmpeg_status():
     """檢查 FFmpeg 安裝狀態"""
-    is_installed = FFmpeg.is_installed()
-    bin_dir = str(FFmpeg.get_bin_dir())
-
-    if is_installed:
-        try:
-            ffmpeg = FFmpeg()
-            return FFmpegStatusResponse(
-                installed=True,
-                ffmpeg_path=ffmpeg.ffmpeg_path,
-                ffprobe_path=ffmpeg.ffprobe_path,
-                bin_dir=bin_dir
-            )
-        except Exception:
-            pass
-
-    return FFmpegStatusResponse(
-        installed=False,
-        bin_dir=bin_dir
-    )
+    service = get_transcode_service()
+    status = service.get_ffmpeg_status()
+    return FFmpegStatusResponse(**status)
 
 
 @router.get("/info/{file_id}", response_model=MediaInfoResponse)

@@ -13,7 +13,7 @@ import ImageAdjustPanel, { type AdjustState } from '@/components/image/panels/Im
 import ImageFilterPanel, { type FilterState } from '@/components/image/panels/ImageFilterPanel.vue'
 import ImageCropPanel     from '@/components/image/panels/ImageCropPanel.vue'
 import ImageOcrPanel      from '@/components/image/panels/ImageOcrPanel.vue'
-import OcrResultModal     from '@/components/image/OcrResultModal.vue'
+import TextPreviewModal   from '@/components/common/TextPreviewModal.vue'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
 import { useImageWorkspace } from '@/composables/useImageWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
@@ -24,6 +24,7 @@ const {
   goBack, checkAiEnvironment, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
   handleDownload, handleTextDownload, textResultFileId, textResultFilename, textResultContent,
   collection, activeId, selectedIds,
+  sourceDir,
 } = useImageWorkspace()
 
 const { submitToAll } = useMultiSubmit(collection)
@@ -49,14 +50,14 @@ const ocrPanelRef      = ref<InstanceType<typeof ImageOcrPanel>      | null>(nul
 const showOcrModal     = ref(false)
 
 const subFunctions = computed(() => [
-  { id: 'convert',   name: t('image.functions.convert'),   icon: 'bi-arrow-repeat' },
-  { id: 'remove-bg', name: t('image.functions.remove_bg'), icon: 'bi-eraser-fill' },
-  { id: 'ai-remove', name: t('image.functions.ai_remove'), icon: 'bi-magic' },
-  { id: 'upscale',   name: t('image.functions.upscale'),   icon: 'bi-arrows-angle-expand' },
-  { id: 'adjust',    name: t('image.functions.adjust'),    icon: 'bi-sliders' },
-  { id: 'filter',    name: t('image.functions.filter'),    icon: 'bi-palette-fill' },
-  { id: 'crop',      name: t('image.functions.crop'),      icon: 'bi-crop' },
-  { id: 'ocr',       name: t('image.functions.ocr'),       icon: 'bi-type' },
+  { id: 'convert',   name: t('image.functions.convert'),   icon: 'bi-arrow-repeat',         group: t('image.group.edit') },
+  { id: 'adjust',    name: t('image.functions.adjust'),    icon: 'bi-sliders',              group: t('image.group.edit') },
+  { id: 'filter',    name: t('image.functions.filter'),    icon: 'bi-palette-fill',         group: t('image.group.edit') },
+  { id: 'crop',      name: t('image.functions.crop'),      icon: 'bi-crop',                 group: t('image.group.edit') },
+  { id: 'remove-bg', name: t('image.functions.remove_bg'), icon: 'bi-eraser-fill',          group: t('image.group.ai') },
+  { id: 'ai-remove', name: t('image.functions.ai_remove'), icon: 'bi-magic',                group: t('image.group.ai') },
+  { id: 'upscale',   name: t('image.functions.upscale'),   icon: 'bi-arrows-angle-expand',  group: t('image.group.ai') },
+  { id: 'ocr',       name: t('image.functions.ocr'),       icon: 'bi-type',                 group: t('image.group.ai') },
 ])
 
 const currentFunction     = ref('convert')
@@ -160,12 +161,13 @@ watch(() => collection.activeId.value, (newId, oldId) => {
     // Clear stale filter preview from previous entry
     filterPreviewParams.value = null
     restorePanelSettings(newId)
-    // Restore zoom state (or reset if first visit)
+    // 立即重設 zoom 避免切圖時閃一下
+    previewRef.value?.resetZoom()
+    // 如果有快取的 zoom state，等圖片載入後還原
     const savedZoom = zoomCache.get(newId)
-    nextTick(() => {
-      if (savedZoom) previewRef.value?.setZoomState(savedZoom)
-      else previewRef.value?.resetZoom()
-    })
+    if (savedZoom) {
+      nextTick(() => previewRef.value?.setZoomState(savedZoom))
+    }
   }
 })
 
@@ -180,22 +182,12 @@ watch(activePreviewUrl, (newUrl, oldUrl) => {
 })
 
 // ── Keyboard shortcuts ─────────────────────────────────────────────────
-function handleKeyDown(e: KeyboardEvent) {
-  // Ctrl+A / Cmd+A → 全選 filmstrip
-  if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-    if (collection.hasEntries.value) {
-      e.preventDefault()
-      collection.selectAll()
-    }
-  }
-}
-onMounted(() => window.addEventListener('keydown', handleKeyDown))
-onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
+// Ctrl+A / clearSelection 由 AppFilmstrip 內部處理
 
 // 顯示遮罩時同步 canvas 位置
 watch(showCropOverlay, (active) => {
   if (active) nextTick(() => previewRef.value?.syncCropCanvas())
-  else previewRef.value?.clearCropRect()
+  // 不清除 cropRect — 保留使用者的調整，切回來時恢復
 })
 
 // 同步 canvas 裁切矩形 → panel（由 ImagePreview emit 事件驅動）
@@ -342,9 +334,11 @@ function onFilmstripRemove(id: string) {
     hide-preview-tabs
     show-filmstrip
     :collection-size="filmstripItems.length"
+    :active-file-name="currentFileName"
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"
+    show-compare
     :result-preview-url="activePreviewUrl"
     :result-meta="activeResultMeta"
     :original-preview-url="collection.activeEntry.value?.previewUrl ?? null"
@@ -359,6 +353,7 @@ function onFilmstripRemove(id: string) {
     @remove-file="handleRemoveFile"
     @download="currentFunction === 'ocr' ? handleTextDownload() : handleDownload()"
     @go-back="goBack"
+    @clear-selection="collection.clearSelection()"
   >
     <template #toolbar-extra>
       <button
@@ -404,7 +399,9 @@ function onFilmstripRemove(id: string) {
         :selectedIds="selectedIds"
         @select="onFilmstripSelect"
         @remove="onFilmstripRemove"
+        @remove-selected="ids => collection.removeEntries(ids)"
         @clear-selection="collection.clearSelection()"
+        @select-all="collection.selectAll()"
       />
     </template>
 
@@ -485,15 +482,17 @@ function onFilmstripRemove(id: string) {
           ref="ocrPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :source-dir="sourceDir"
           @submit="onPanelSubmit"
         />
       </div>
     </template>
   </ToolLayout>
 
-  <OcrResultModal
+  <TextPreviewModal
     v-if="showOcrModal && textResultContent"
     :text="textResultContent"
+    :title="$t('image.ocr.result_title')"
     :format="ocrPanelRef?.outputFormat ?? 'md'"
     :filename="textResultFilename"
     @close="showOcrModal = false"

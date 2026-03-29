@@ -1,6 +1,7 @@
 """
 音訊轉檔 API 路由
 """
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -8,14 +9,29 @@ from pydantic import BaseModel, Field
 
 from app.services.audio.transcode_service import get_audio_transcode_service
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+
+_FORMAT_CODEC_MAP: dict[str, str] = {
+    "mp3":  "libmp3lame",
+    "aac":  "aac",
+    "m4a":  "aac",
+    "ogg":  "libvorbis",
+    "opus": "libopus",
+    "wma":  "wmav2",
+    "flac": "flac",
+    "wav":  "pcm_s16le",
+    "alac": "alac",
+    "aiff": "pcm_s16be",
+}
 
 
 class AudioTranscodeRequest(BaseModel):
     """音訊轉檔請求"""
     file_id: str = Field(..., description="輸入檔案 ID")
-    output_format: str = Field(default="mp3", description="輸出格式 (mp3, aac, flac, wav, ogg)")
-    audio_codec: str = Field(default="libmp3lame", description="音訊編碼器")
+    output_format: str = Field(default="mp3", description="輸出格式")
     audio_bitrate: str = Field(default="192k", description="位元率")
     sample_rate: Optional[int] = Field(default=None, description="取樣率")
     channels: Optional[int] = Field(default=None, ge=1, le=2, description="聲道數")
@@ -57,10 +73,14 @@ async def transcode_audio(request: AudioTranscodeRequest):
     """提交音訊轉檔任務"""
     try:
         service = get_audio_transcode_service()
+        codec = _FORMAT_CODEC_MAP.get(request.output_format)
+        if not codec:
+            raise ValueError(f"Unsupported format: {request.output_format}")
+
         task_id = await service.submit_transcode(
             file_id=request.file_id,
             output_format=request.output_format,
-            audio_codec=request.audio_codec,
+            audio_codec=codec,
             audio_bitrate=request.audio_bitrate,
             sample_rate=request.sample_rate,
             channels=request.channels,

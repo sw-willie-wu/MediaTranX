@@ -101,9 +101,24 @@ function handleDrop(e: DragEvent) {
   background: var(--input-bg);
 }
 
+.upload-zone.is-dragover {
+  transform: scale(1.01);
+  box-shadow: 0 0 24px rgba(124, 111, 173, 0.15);
+}
+
+.upload-zone.is-dragover i {
+  animation: upload-pulse 1s ease-in-out infinite;
+}
+
+@keyframes upload-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.12); opacity: 0.8; }
+}
+
 .upload-zone i {
   font-size: 3rem;
   margin-bottom: 1rem;
+  transition: transform 0.2s ease;
 }
 
 .upload-zone p {

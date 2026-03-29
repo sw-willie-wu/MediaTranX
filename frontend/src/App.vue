@@ -4,14 +4,20 @@ import { useRouter, RouterView } from 'vue-router'
 import Titlebar from './components/Titlebar.vue'
 import MainSidebar from './components/MainSidebar.vue'
 import AppToast from './components/AppToast.vue'
+import AppConfirmDialog from './components/common/AppConfirmDialog.vue'
 import AppSetupWizard from './components/common/AppSetupWizard.vue'
 import { useTheme } from './composables/useTheme'
 import { apiFetch } from './composables/useApi'
+import { useRemoteModelStore } from './stores/remoteModels'
 
 const router = useRouter()
 
 // 初始化主題
 useTheme()
+
+// 啟動時背景 fetch 雲端模型
+const remoteModelStore = useRemoteModelStore()
+remoteModelStore.fetchAll()
 
 const showWizard = ref(false)
 const AI_CACHE_KEY = 'ai-module-cache'
@@ -99,6 +105,7 @@ onMounted(async () => {
       </RouterView>
     </div>
     <AppToast />
+    <AppConfirmDialog />
     <AppSetupWizard v-if="showWizard" @close="showWizard = false" />
   </div>
 </template>

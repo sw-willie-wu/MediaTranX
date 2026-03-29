@@ -112,6 +112,12 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     }
   }
 
+  function removeEntries(ids: string[]): void {
+    for (const id of ids) {
+      removeEntry(id)
+    }
+  }
+
   function removeAllEntries(): void {
     for (const entry of entries.value.values()) {
       URL.revokeObjectURL(entry.previewUrl)
@@ -231,10 +237,10 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
           if (entry.progress !== task.progress) {
             updateEntry(entryId, { progress: task.progress })
           }
-        } else if (task.status === 'failed') {
+        } else if (task.status === 'failed' || task.status === 'cancelled') {
           const entry = entries.value.get(entryId)
           if (!entry) continue
-          log.warn('task failed', { taskId, entryId, error: task.error })
+          log.warn(`task ${task.status}`, { taskId, entryId, error: task.error })
           updateEntry(entryId, {
             status: 'idle',
             currentTaskId: null,
@@ -259,6 +265,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     // Methods
     addEntry,
     removeEntry,
+    removeEntries,
     removeAllEntries,
     selectEntry,
     clearSelection,

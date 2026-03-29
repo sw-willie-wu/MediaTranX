@@ -109,17 +109,17 @@ defineExpose({ execute, isDisabled, isLoading, getParams, getState, setState, re
 
     <div class="form-group">
       <label>{{ $t('image.filter.grayscale') }} <span class="param-value">{{ grayscale }}%</span></label>
-      <AppRange v-model="grayscale" :min="0" :max="100" :step="5" />
+      <AppRange v-model="grayscale" :min="0" :max="100" :step="1" />
     </div>
 
     <div class="form-group">
       <label>{{ $t('image.filter.sepia') }} <span class="param-value">{{ sepia }}%</span></label>
-      <AppRange v-model="sepia" :min="0" :max="100" :step="5" />
+      <AppRange v-model="sepia" :min="0" :max="100" :step="1" />
     </div>
 
     <div class="form-group">
       <label>{{ $t('image.filter.invert') }} <span class="param-value">{{ invert }}%</span></label>
-      <AppRange v-model="invert" :min="0" :max="100" :step="5" />
+      <AppRange v-model="invert" :min="0" :max="100" :step="1" />
     </div>
 
     <div class="form-group">
@@ -129,7 +129,7 @@ defineExpose({ execute, isDisabled, isLoading, getParams, getState, setState, re
 
     <div class="form-group">
       <label>{{ $t('image.filter.vignette') }} <span class="param-value">{{ vignette }}%</span></label>
-      <AppRange v-model="vignette" :min="0" :max="100" :step="5" />
+      <AppRange v-model="vignette" :min="0" :max="100" :step="1" />
     </div>
 
     <div class="form-group">

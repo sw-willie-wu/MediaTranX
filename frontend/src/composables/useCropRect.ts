@@ -10,9 +10,8 @@ const HANDLE_CURSORS: Record<Handle, string> = {
   BL: 'nesw-resize', L: 'ew-resize',   move: 'move',
 }
 
-// Extra pixels (in natural-resolution space) added to each side of the canvas
-// so handles at image edges can extend beyond the image boundary.
-const CANVAS_PAD = 20
+// Canvas padding 設為 0 — canvas 完全對齊圖片，邊緣把手會被裁切但功能不影響
+const CANVAS_PAD = 0
 
 export function useCropRect(
   imgRef: Ref<HTMLImageElement | null>,
@@ -21,6 +20,8 @@ export function useCropRect(
 ) {
   const canvasRef = ref<HTMLCanvasElement | null>(null)
   const cropRect = ref<CropRect | null>(null)
+  let _lastImgSrc = ''
+  const _rectCache = new Map<string, CropRect>()  // per-image 裁切框快取
 
   let dragHandle: Handle | null = null
   let dragStartX = 0
@@ -184,9 +185,9 @@ export function useCropRect(
     const P = CANVAS_PAD
     const rx = r.x + P, ry = r.y + P
 
-    // 暗化外部（只暗影像區域）
+    // 暗化外部（只暗影像區域，padding 保持透明）
     const { W, H } = imgDims()
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
     ctx.fillRect(P, P, W, H)
     ctx.clearRect(rx, ry, r.w, r.h)
 
@@ -244,17 +245,28 @@ export function useCropRect(
     const { W, H } = imgDims()
     if (!W || W === 99999) return
     const ratio = getRatio()
-    if (!ratio) {
-      cropRect.value = { x: 0, y: 0, w: W, h: H }
-    } else {
-      const hFromW = W / ratio
-      if (hFromW <= H) {
-        cropRect.value = { x: 0, y: Math.round((H - hFromW) / 2), w: W, h: Math.round(hFromW) }
+
+    // 預設裁切框：1/4 面積（50% 寬高），左上 10% offset
+    let cw = Math.round(W * 0.5)
+    let ch = Math.round(H * 0.5)
+    let cx = Math.round(W * 0.1)
+    let cy = Math.round(H * 0.1)
+
+    if (ratio) {
+      // 有固定比例時，以寬為基準計算高
+      const hFromW = cw / ratio
+      if (hFromW <= H * 0.8) {
+        ch = Math.round(hFromW)
       } else {
-        const wFromH = H * ratio
-        cropRect.value = { x: Math.round((W - wFromH) / 2), y: 0, w: Math.round(wFromH), h: H }
+        ch = Math.round(H * 0.5)
+        cw = Math.round(ch * ratio)
       }
+      // 置中
+      cx = Math.round((W - cw) / 2)
+      cy = Math.round((H - ch) / 2)
     }
+
+    cropRect.value = { x: cx, y: cy, w: cw, h: ch }
   }
 
   // 只更新 canvas 的 CSS 位置/尺寸，不重置裁切矩形（用於縮放/拖曳時）
@@ -268,27 +280,53 @@ export function useCropRect(
     const imgRect = img.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
 
-    // displayScale: CSS px per natural px
-    const displayScale = img.naturalWidth ? imgRect.width / img.naturalWidth : 1
-    const padCSS = CANVAS_PAD * displayScale
+    // object-fit: contain 後的實際圖片顯示尺寸（不是元素 box 尺寸）
+    const nw = img.naturalWidth, nh = img.naturalHeight
+    const boxW = imgRect.width, boxH = imgRect.height
+    const scale = Math.min(boxW / nw, boxH / nh)
+    const displayW = nw * scale
+    const displayH = nh * scale
+    // 圖片在元素 box 內置中
+    const offsetX = (boxW - displayW) / 2
+    const offsetY = (boxH - displayH) / 2
 
-    canvas.style.left   = `${imgRect.left - containerRect.left - padCSS}px`
-    canvas.style.top    = `${imgRect.top  - containerRect.top  - padCSS}px`
-    canvas.style.width  = `${imgRect.width  + 2 * padCSS}px`
-    canvas.style.height = `${imgRect.height + 2 * padCSS}px`
+    canvas.style.left   = `${imgRect.left - containerRect.left + offsetX}px`
+    canvas.style.top    = `${imgRect.top  - containerRect.top  + offsetY}px`
+    canvas.style.width  = `${displayW}px`
+    canvas.style.height = `${displayH}px`
   }
 
-  function syncToImage() {
+  function syncToImage(forceReset = false) {
     const img = imgRef.value
     const container = containerRef.value
     const canvas = canvasRef.value
     if (!img || !container || !canvas || !img.naturalWidth) return
 
+    // 偵測圖片切換 → 存舊的、還原或重設
+    const currentSrc = img.src
+    if (currentSrc !== _lastImgSrc) {
+      // 存前一張的裁切框
+      if (_lastImgSrc && cropRect.value) {
+        _rectCache.set(_lastImgSrc, { ...cropRect.value })
+      }
+      _lastImgSrc = currentSrc
+
+      // 嘗試還原快取
+      const cached = _rectCache.get(currentSrc)
+      if (cached) {
+        cropRect.value = { ...cached }
+      } else {
+        cropRect.value = null  // 讓下面 initDefaultRect
+      }
+    }
+
     repositionCanvas()
     canvas.width  = img.naturalWidth  + 2 * CANVAS_PAD
     canvas.height = img.naturalHeight + 2 * CANVAS_PAD
 
-    initDefaultRect()
+    if (!cropRect.value || forceReset) {
+      initDefaultRect()
+    }
     redraw()
   }
 

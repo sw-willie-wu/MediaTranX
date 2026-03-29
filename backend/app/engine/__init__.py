@@ -20,8 +20,6 @@ from .ai import (
     get_whisper,
     TranscribeSegment,
     TranscribeResult,
-    TranslateGemmaWrapper,
-    get_translategemma,
 )
 
 __all__ = [
@@ -45,6 +43,4 @@ __all__ = [
     "get_whisper",
     "TranscribeSegment",
     "TranscribeResult",
-    "TranslateGemmaWrapper",
-    "get_translategemma",
 ]

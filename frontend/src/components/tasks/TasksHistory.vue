@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onActivated } from 'vue'
 import { useI18n } from 'vue-i18n'
+import i18n from '@/i18n'
 import { apiFetch } from '@/composables/useApi'
 
 const { t } = useI18n()
@@ -12,6 +13,7 @@ interface HistoryItem {
   file_name: string | null
   status: string
   error: string | null
+  error_code: string | null
   result: Record<string, unknown> | null
   created_at: string
   completed_at: string
@@ -25,9 +27,12 @@ interface HistoryResponse {
 }
 
 function getTaskTypeLabel(taskType: string): string {
-  const key = `tasks.types.${taskType}`
-  const translated = t(key)
-  return translated !== key ? translated : taskType
+  // task_type 含 '.'（如 'audio.transcribe'），vue-i18n 會當巢狀路徑解析
+  // 改用 tm（message resolver）直接查 flat key
+  const messages = (i18n.global as any).messages.value ?? (i18n.global as any).messages
+  const locale = (i18n.global as any).locale.value ?? (i18n.global as any).locale
+  const types = messages?.[locale]?.tasks?.types
+  return types?.[taskType] || taskType
 }
 
 function getStatusLabel(status: string): string {
@@ -106,6 +111,16 @@ function taskLabel(item: HistoryItem): string {
   return item.label || getTaskTypeLabel(item.task_type)
 }
 
+function friendlyError(item: HistoryItem): string {
+  if (item.error_code) {
+    const key = `tasks.errors.${item.error_code}`
+    const translated = t(key)
+    if (translated !== key) return translated
+  }
+  // fallback: 截短原始錯誤
+  return item.error ? (item.error.length > 100 ? item.error.slice(0, 100) + '...' : item.error) : ''
+}
+
 function fileName(item: HistoryItem): string | null {
   if (item.file_name) return item.file_name
   const fn = item.result?.output_filename as string | undefined
@@ -165,7 +180,7 @@ onActivated(() => fetchHistory())
       <div v-if="item.status === 'failed' && item.error" class="task-error">
         <div class="error-info">
           <i class="bi bi-exclamation-circle-fill"></i>
-          <span>{{ item.error }}</span>
+          <span>{{ friendlyError(item) }}</span>
         </div>
       </div>
       <div class="task-footer">

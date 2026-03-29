@@ -8,11 +8,12 @@ const { t } = useI18n()
 
 const showAdvanced = ref(false)
 const wordTimestamps = ref(false)
+const align = ref(false)
 const conditionOnPreviousText = ref(true)
 const minSilenceDurationMs = ref(200)
 const vadThreshold = ref(0.3)
 
-defineExpose({ wordTimestamps, conditionOnPreviousText, minSilenceDurationMs, vadThreshold })
+defineExpose({ wordTimestamps, align, conditionOnPreviousText, minSilenceDurationMs, vadThreshold })
 </script>
 
 <template>
@@ -33,6 +34,11 @@ defineExpose({ wordTimestamps, conditionOnPreviousText, minSilenceDurationMs, va
       <div class="option-row">
         <AppToggle v-model="wordTimestamps">{{ $t('video.whisper_advanced.word_timestamps') }}</AppToggle>
         <span class="form-hint">{{ $t('video.whisper_advanced.word_timestamps_hint') }}</span>
+      </div>
+
+      <div class="option-row">
+        <AppToggle v-model="align">{{ $t('video.whisper_advanced.align') }}</AppToggle>
+        <span class="form-hint">{{ $t('video.whisper_advanced.align_hint') }}</span>
       </div>
 
       <div class="form-group">

@@ -8,7 +8,7 @@ AI 模型註冊表 (Three-Layer Architecture V2)
 # ═══════════════════════════════════════════════════════════
 # 格式常數 (Format Constants)
 # ═══════════════════════════════════════════════════════════
-FORMAT_BIN = "BIN"     # CTranslate2 目錄型快照 (Whisper)
+FORMAT_PKG = "PKG"     # 套件自管模型 (Whisper, Demucs)
 FORMAT_GGUF = "GGUF"   # llama-cpp-python 單檔 (LLM)
 FORMAT_PTH = "PTH"     # PyTorch 權重檔 (CV)
 FORMAT_ONNX = "ONNX"   # ONNX Runtime (預留 DirectML 擴展)
@@ -21,6 +21,8 @@ SLOT_WHISPER = "whisper"
 SLOT_LLM = "llm"      # LLM 模型共用（一次只載入一個）
 SLOT_PTH = "pth"      # PTH 模型共用（一次只載入一個）
 SLOT_VLM = "vlm"      # VLM 模型（一次只載入一個）
+SLOT_DEMUCS = "demucs"  # 音源分離（一次只載入一個）
+SLOT_SEGMENT = "segment"  # 物件分割（MobileSAM）
 
 # ═══════════════════════════════════════════════════════════
 # 格式優先註冊表 (Format-First Registry)
@@ -28,9 +30,9 @@ SLOT_VLM = "vlm"      # VLM 模型（一次只載入一個）
 
 MODELS_REGISTRY = {
     # ───────────────────────────────────────────────────────
-    # BIN 格式：CTranslate2 目錄型模型
+    # PKG 格式：套件自管模型（Whisper、Demucs）
     # ───────────────────────────────────────────────────────
-    FORMAT_BIN: {
+    FORMAT_PKG: {
         "whisper": {
             "slot": SLOT_WHISPER,
             "description": "Faster-Whisper 語音辨識",
@@ -67,8 +69,22 @@ MODELS_REGISTRY = {
                 },
             },
         },
+        # ▸ Demucs（音源分離）
+        "demucs": {
+            "slot": SLOT_DEMUCS,
+            "description": "Hybrid Demucs 音源分離（6 軌）",
+            "variants": {
+                "htdemucs_6s": {
+                    "model_name": "htdemucs_6s",
+                    "size_mb": 320,
+                    "vram_mb": 2000,
+                    "sources": ["drums", "bass", "other", "vocals", "guitar", "piano"],
+                    "sample_rate": 44100,
+                },
+            },
+        },
     },
-    
+
     # ───────────────────────────────────────────────────────
     # GGUF 格式：llama-cpp-python 大語言模型
     # ───────────────────────────────────────────────────────
@@ -79,7 +95,7 @@ MODELS_REGISTRY = {
             "specs": {
                 "4b": {
                     "layers": 26,
-                    "n_ctx": 2048,
+                    "n_ctx": 8192,
                     "vram_overhead_mb": 400,
                     "variants": {
                         "Q4_K_M": {
@@ -91,7 +107,7 @@ MODELS_REGISTRY = {
                 },
                 "12b": {
                     "layers": 40,
-                    "n_ctx": 1024,
+                    "n_ctx": 8192,
                     "vram_overhead_mb": 800,
                     "variants": {
                         "Q4_K_M": {
@@ -124,7 +140,7 @@ MODELS_REGISTRY = {
                 },
                 "27b": {
                     "layers": 64,
-                    "n_ctx": 512,
+                    "n_ctx": 2048,
                     "vram_overhead_mb": 1200,
                     "variants": {
                         "Q4_K_M": {
@@ -148,7 +164,7 @@ MODELS_REGISTRY = {
             "specs": {
                 "1.7b": {
                     "layers": 28,
-                    "n_ctx": 2048,
+                    "n_ctx": 8192,
                     "vram_overhead_mb": 300,
                     "variants": {
                         "Q8_0": {
@@ -160,7 +176,7 @@ MODELS_REGISTRY = {
                 },
                 "4b": {
                     "layers": 36,
-                    "n_ctx": 2048,
+                    "n_ctx": 8192,
                     "vram_overhead_mb": 400,
                     "variants": {
                         "Q4_K_M": {
@@ -172,7 +188,7 @@ MODELS_REGISTRY = {
                 },
                 "8b": {
                     "layers": 36,
-                    "n_ctx": 1024,
+                    "n_ctx": 8192,
                     "vram_overhead_mb": 800,
                     "variants": {
                         "Q4_K_M": {
@@ -184,7 +200,7 @@ MODELS_REGISTRY = {
                 },
                 "14b": {
                     "layers": 40,
-                    "n_ctx": 512,
+                    "n_ctx": 2048,
                     "vram_overhead_mb": 1000,
                     "variants": {
                         "Q4_K_M": {
@@ -454,7 +470,7 @@ MODELS_REGISTRY = {
             "specs": {
                 "2b": {
                     "layers": 28,
-                    "n_ctx": 4096,
+                    "n_ctx": 8192,
                     "vram_overhead_mb": 500,
                     "variants": {
                         "Q4_K_M": {
@@ -478,7 +494,7 @@ MODELS_REGISTRY = {
                 },
                 "4b": {
                     "layers": 36,
-                    "n_ctx": 4096,
+                    "n_ctx": 8192,
                     "vram_overhead_mb": 600,
                     "variants": {
                         "Q4_K_M": {
@@ -502,7 +518,7 @@ MODELS_REGISTRY = {
                 },
                 "8b": {
                     "layers": 36,
-                    "n_ctx": 4096,
+                    "n_ctx": 8192,
                     "vram_overhead_mb": 800,
                     "variants": {
                         "Q4_K_M": {
@@ -530,7 +546,7 @@ MODELS_REGISTRY = {
             "specs": {
                 "1b": {
                     "layers": 24,
-                    "n_ctx": 4096,
+                    "n_ctx": 8192,
                     "vram_overhead_mb": 400,
                     "variants": {
                         "Q8_0": {
@@ -545,7 +561,7 @@ MODELS_REGISTRY = {
                 },
                 "4b": {
                     "layers": 36,
-                    "n_ctx": 4096,
+                    "n_ctx": 8192,
                     "vram_overhead_mb": 600,
                     "variants": {
                         "Q4_K_M": {
@@ -581,7 +597,7 @@ MODELS_REGISTRY = {
             "specs": {
                 "4b": {
                     "layers": 34,
-                    "n_ctx": 4096,
+                    "n_ctx": 8192,
                     "vram_overhead_mb": 600,
                     "variants": {
                         "Q4_K_M": {
@@ -596,7 +612,7 @@ MODELS_REGISTRY = {
                 },
                 "12b": {
                     "layers": 46,
-                    "n_ctx": 4096,
+                    "n_ctx": 8192,
                     "vram_overhead_mb": 800,
                     "variants": {
                         "Q4_K_M": {

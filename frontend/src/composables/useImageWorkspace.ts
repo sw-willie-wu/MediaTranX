@@ -6,10 +6,16 @@ import { useToast } from '@/composables/useToast'
 import { useFileDownload } from '@/composables/useFileDownload'
 import { apiFetch } from '@/composables/useApi'
 import { useMediaCollection } from '@/composables/useMediaCollection'
+import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
 import type { HistoryEntry } from '@/composables/useMediaCollection'
 
 const log = createLogger('ImageWorkspace')
+
+const IMAGE_EXTS = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif',
+  '.svg', '.ico', '.avif', '.heic', '.heif',
+])
 
 export interface ImageInfo {
   width: number
@@ -72,6 +78,7 @@ export function useImageWorkspace() {
   const taskStore = useTaskStore()
   const toast = useToast()
   const { downloadFile } = useFileDownload()
+  const { t } = useI18n()
 
   // ── Collection (multi-image state) ──────────────────────────────────────────
   const TEXT_RE = /\.(txt|md|json|csv|srt|vtt)$/i
@@ -248,6 +255,12 @@ export function useImageWorkspace() {
    * Replaces the old handleFile(file, srcDir) signature exactly.
    */
   async function handleFile(file: File, srcDir?: string) {
+    const ext = ('.' + file.name.split('.').pop()!).toLowerCase()
+    if (!IMAGE_EXTS.has(ext)) {
+      log.warn('handleFile skipped unsupported format', { fileName: file.name, ext })
+      toast.show(`不支援的格式：${ext}`, { type: 'error', icon: 'bi-x-circle' })
+      return
+    }
     log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
     // Clear text results from the previous entry
     textResultFileId.value = null
@@ -403,10 +416,15 @@ export function useImageWorkspace() {
             // Image output: historyStack already updated by useMediaCollection's watcher.
             // Reload imageInfo and show toast here.
             loadImageInfo()
+            const outputDir = r.output_dir as string | undefined
+            const outputFilename = r.output_filename as string | undefined
+            const hasOutputPath = outputDir && outputFilename && window.electron?.showItemInFolder
             toast.show(`${task.label ?? '處理'} 完成`, {
               type: 'success',
               icon: 'bi-check-circle',
-              action: { label: '下載', callback: () => handleDownload() },
+              action: hasOutputPath
+                ? { label: t('toast.open_folder'), callback: () => window.electron!.showItemInFolder(`${outputDir}/${outputFilename}`) }
+                : { label: '下載', callback: () => handleDownload() },
             })
           }
         }

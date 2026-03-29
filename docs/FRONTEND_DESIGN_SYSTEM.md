@@ -404,13 +404,65 @@
 
 | 元件 | 用途 |
 |---|---|
-| `AppSelect` | 所有下拉選單，支援 badge、desc |
+| `AppSelect` | 所有下拉選單，支援 badge、desc、optgroup 分組 |
 | `AppToggle` | 所有開關，支援 disabled |
 | `AppRange` | 所有滑桿 |
 | `AppMediaInfoBar` | 媒體資訊列 |
 | `AppUploadZone` | 拖曳上傳區域 |
 | `AppButtonGroup` | 分段選擇按鈕（如放大倍率 2x/3x/4x） |
 | `AppToast` | 所有 Toast 通知（透過 `useToast` composable） |
+
+---
+
+## 16.1 AppSelect 分組（Optgroup）
+
+AppSelect 支援 `SelectGroup` 型別，可將選項分組顯示：
+
+```ts
+import type { SelectOption, SelectGroup, SelectItem } from '@/components/common/AppSelect.vue'
+
+// 分組選項
+const options: SelectItem[] = [
+  { group: '本地端', options: [
+    { value: 'qwen3vl:4b', label: 'Qwen3-VL 4B' },
+  ]},
+  { group: 'Ollama', options: [
+    { value: 'remote:ollama:1:llava:7b', label: 'LLaVA 7B' },
+  ]},
+]
+```
+
+行為：
+- **單一 group** → 自動平鋪，不顯示 group header
+- **多個 group** → 顯示 group header + 分隔線
+- **混合 flat + group** → 正常顯示全部
+
+### useModelOptions composable
+
+合併本地模型 + 雲端啟用模型為 AppSelect 分組選項：
+
+```ts
+import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
+
+// capability: 'vision' | 'text' | 'tools'
+const { mergedOptions: modelOptions } = useModelOptions('vision', localModelOptions)
+
+// 解析選中的值
+const parsed = parseModelValue(selectedModel.value)
+if (parsed.isRemote) {
+  // parsed.provider, parsed.connId, parsed.modelId
+} else {
+  // parsed.modelId = 本地模型 ID
+}
+```
+
+---
+
+## 16.2 AppSelect 規則
+
+- **禁止** 使用 `size="sm"`（全部統一預設尺寸）
+- Tool panels 和 Settings 都使用相同的 AppSelect，不區分尺寸
+- 需要雲端模型選項時，使用 `useModelOptions` composable
 
 ---
 
@@ -620,7 +672,7 @@ toast.show('超解析 4x 完成', {
 
   <div class="setting-item">
     <label class="section-subtitle">欄位名稱</label>
-    <AppSelect v-model="value" :options="options" size="sm" />
+    <AppSelect v-model="value" :options="options" />
   </div>
 
   <div class="setting-item">
@@ -731,3 +783,72 @@ watch(value, v => emit('update:value', v))
 - ❌ 禁止使用 `alert()`、`confirm()`（使用 Toast 或 Modal）
 - ❌ 禁止對未完成功能顯示正常可用的 UI（必須加 `comingSoon` 標記）
 - ❌ 禁止使用超過 `0.4s` 的過渡動畫
+- ❌ 禁止在 AppSelect 使用 `size="sm"`（全部統一預設尺寸）
+
+---
+
+## 25. Titlebar
+
+Titlebar 顯示當前工具名稱，置中對齊。有檔案時顯示 `工具名稱 - 檔名`。
+
+使用 `useTitlebar` composable 動態更新：
+
+```ts
+import { useTitlebar } from '@/composables/useTitlebar'
+
+const { setTitle } = useTitlebar()
+setTitle('圖片工具')
+// 或帶檔名
+setTitle('圖片工具', 'photo.jpg')  // → "圖片工具 - photo.jpg"
+```
+
+規則：
+- 不顯示 app icon 或 "MediaTranX -" 前綴
+- 標題置中（CSS `text-align: center`）
+- 視窗控制按鈕在右側（最小化、最大化、關閉）
+
+---
+
+## 26. 目錄結構
+
+```
+frontend/src/
+├── main.ts                     # 應用入口
+├── App.vue                     # 根元件（Titlebar + RouterView + MainSidebar + AppToast）
+├── router/index.ts             # 路由定義
+├── stores/
+│   ├── tasks.ts                # 任務狀態（Map<taskId, Task> + Polling）
+│   ├── files.ts                # 檔案上傳 / 本地註冊
+│   └── settings.ts             # 使用者偏好（主題、語言）
+├── composables/                # 可組合邏輯（見 §27）
+├── components/
+│   ├── ToolLayout.vue          # 工具頁面框架（三欄 + 預覽 + slider）
+│   ├── MainSidebar.vue         # 左側導航
+│   ├── Titlebar.vue            # 自訂標題列
+│   ├── common/                 # 可復用 UI 元件
+│   ├── settings/               # Settings 頁面元件
+│   ├── image/                  # 圖片工具元件
+│   ├── audio/                  # 音訊工具元件
+│   ├── video/                  # 影片工具元件
+│   └── document/               # 文件工具元件
+├── views/                      # 頁面 View
+├── i18n/locales/               # 多語系（zh-TW、en）
+├── assets/base.css             # Design Tokens（CSS 變數）
+└── styles/                     # 共用 SCSS（tool-panels-shared、settings-shared）
+```
+
+---
+
+## 27. Composables 總覽
+
+| Composable | 用途 |
+|---|---|
+| `useSubmitTask` | 任務提交（POST → store → toast） |
+| `useToast` | Toast 通知 |
+| `useTitlebar` | 動態 Titlebar 標題 |
+| `useModelOptions` | 合併本地 + 雲端模型為 AppSelect 分組選項 |
+| `useResizableLayout` | 可拖曳調整的面板寬度 |
+| `useImageZoom` | 圖片縮放/平移 |
+| `useCropRect` | 裁切框互動（拖曳、把手、長寬比約束） |
+| `useAudioWorkspace` | 音訊工具的多檔案管理 |
+| `useMediaCollection` | 通用多檔案集合管理 |

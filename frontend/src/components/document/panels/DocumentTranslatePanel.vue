@@ -7,6 +7,8 @@ import { useToast } from '@/composables/useToast'
 import { apiFetch } from '@/composables/useApi'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelStore } from '@/stores/models'
+import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
+import { useRemoteModelStore } from '@/stores/remoteModels'
 
 const props = defineProps<{
   fileId: string | null
@@ -22,6 +24,7 @@ const taskStore = useTaskStore()
 const toast = useToast()
 const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
+const remoteStore = useRemoteModelStore()
 
 // ── 翻譯模型（從 modelStore 取得）────────────────────────────────────────
 
@@ -30,7 +33,7 @@ const translateEnvAvailable  = ref<boolean | null>(null)
 const isInstalling = ref(false)
 const error = ref<string | null>(null)
 
-const translateModelOptions = computed(() =>
+const localTranslateModelOptions = computed(() =>
   modelStore.byCategory('translate')
     .slice()
     .sort((a, b) => a.size_mb - b.size_mb)
@@ -38,12 +41,13 @@ const translateModelOptions = computed(() =>
       const dashIdx = m.variant.indexOf('-')
       const size  = m.variant.slice(0, dashIdx)
       const quant = m.variant.slice(dashIdx + 1)
-      const sizeGb = (m.size_mb / 1024).toFixed(1)
-      const desc = m.description ? `${sizeGb} GB · ${m.description}` : `${sizeGb} GB`
       const key = `${m.family}:${size}:${quant}`
-      return { value: key, label: m.label, desc, badge: m.downloaded ? 'ok' as const : 'err' as const }
+      return { value: key, label: m.label, sizeMb: m.size_mb, badge: m.downloaded ? 'ok' as const : 'err' as const }
     })
 )
+
+// 合併本地 + 雲端 text 模型
+const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
 
 async function loadTranslateModels() {
   try {
@@ -56,7 +60,9 @@ async function loadTranslateModels() {
 
     // 從 localStorage 還原上次選擇
     const saved = loadPreferences()
-    if (saved && translateModelOptions.value.some(m => m.value === saved)) {
+    if (saved && localTranslateModelOptions.value.some(m => m.value === saved)) {
+      selectedTranslateModel.value = saved
+    } else if (saved && saved.startsWith('remote:')) {
       selectedTranslateModel.value = saved
     }
   } catch {}
@@ -194,16 +200,26 @@ const isLoading  = computed(() => isProcessing.value)
 
 async function execute() {
   if (!props.fileId) return
-  const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
+  const parsed = parseModelValue(selectedTranslateModel.value)
   const body: Record<string, any> = {
     file_id: props.fileId,
     source_language: sourceLanguage.value,
     target_language: targetLanguage.value,
-    model_type: tmType,
-    model_size: tmSize,
-    quantization: tmQuant,
     translate_style: translateStyle.value,
   }
+
+  if (parsed.isRemote) {
+    body.remote = true
+    body.provider = parsed.provider
+    body.conn_id = parsed.connId
+    body.remote_model = parsed.modelId
+  } else {
+    const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
+    body.model_type = tmType
+    body.model_size = tmSize
+    body.quantization = tmQuant
+  }
+
   const glossary = parseGlossary()
   if (glossary) body.glossary = glossary
 
@@ -211,9 +227,35 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-onMounted(() => { loadTranslateModels(); loadLanguages(); loadTranslateStyles() })
+onMounted(() => { loadTranslateModels(); loadLanguages(); loadTranslateStyles(); remoteStore.fetchAll() })
 
-defineExpose({ execute, isDisabled, isLoading })
+function getParams() {
+  const parsed = parseModelValue(selectedTranslateModel.value)
+  const body: Record<string, any> = {
+    source_language: sourceLanguage.value,
+    target_language: targetLanguage.value,
+    translate_style: translateStyle.value,
+  }
+
+  if (parsed.isRemote) {
+    body.remote = true
+    body.provider = parsed.provider
+    body.conn_id = parsed.connId
+    body.remote_model = parsed.modelId
+  } else {
+    const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
+    body.model_type = tmType
+    body.model_size = tmSize
+    body.quantization = tmQuant
+  }
+
+  const glossary = parseGlossary()
+  if (glossary) body.glossary = glossary
+
+  return body
+}
+
+defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
 
 <template>
@@ -242,25 +284,25 @@ defineExpose({ execute, isDisabled, isLoading })
       <!-- 翻譯模型 -->
       <div class="form-group">
         <label>{{ $t('document.translate.model') }}</label>
-        <AppSelect v-model="selectedTranslateModel" :options="translateModelOptions" size="sm" />
+        <AppSelect v-model="selectedTranslateModel" :options="translateModelOptions" />
       </div>
 
       <!-- 來源語言 -->
       <div class="form-group">
         <label>{{ $t('document.translate.source_language') }}</label>
-        <AppSelect v-model="sourceLanguage" :options="languageOptions" size="sm" />
+        <AppSelect v-model="sourceLanguage" :options="languageOptions" />
       </div>
 
       <!-- 目標語言 -->
       <div class="form-group">
         <label>{{ $t('document.translate.target_language') }}</label>
-        <AppSelect v-model="targetLanguage" :options="languageOptions" size="sm" />
+        <AppSelect v-model="targetLanguage" :options="languageOptions" />
       </div>
 
       <!-- 翻譯風格 -->
       <div class="form-group">
         <label>{{ $t('document.translate.style') }}</label>
-        <AppSelect v-model="translateStyle" :options="translateStyles" size="sm" />
+        <AppSelect v-model="translateStyle" :options="translateStyles" />
       </div>
 
       <!-- 專有名詞字典 -->

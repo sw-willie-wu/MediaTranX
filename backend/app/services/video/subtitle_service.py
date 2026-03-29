@@ -9,8 +9,14 @@ from typing import Any, Callable, Optional
 from uuid import uuid4
 
 from app.engine.ffmpeg import FFmpeg, FFmpegError, get_ffmpeg
-from app.engine.ai.bin.whisper import WhisperWrapper, get_whisper, TranscribeResult
-from app.engine.ai.llama import get_translator
+from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
+from app.utils.prompts import (
+    WHISPER_TO_BCP47,
+    build_srt_translate_prompt,
+    build_translate_messages,
+    segments_to_srt,
+    parse_srt_response,
+)
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 
@@ -84,7 +90,7 @@ class SubtitleService:
         # 註冊任務處理器
         self._task_manager.register_handler(
             TASK_TYPE_SUBTITLE_GENERATE,
-            self._handle_subtitle_task
+            self._handle_subtitle_task,
         )
 
         self._initialized = True
@@ -115,6 +121,11 @@ class SubtitleService:
         keep_names: bool = True,
         translate_style: str = "colloquial",
         glossary: Optional[dict[str, str]] = None,
+        # 雲端翻譯
+        translate_remote: bool = False,
+        translate_provider: Optional[str] = None,
+        translate_conn_id: Optional[int] = None,
+        translate_remote_model: Optional[str] = None,
     ) -> str:
         """
         提交字幕生成任務
@@ -162,6 +173,10 @@ class SubtitleService:
             "keep_names": keep_names,
             "translate_style": translate_style,
             "glossary": glossary,
+            "translate_remote": translate_remote,
+            "translate_provider": translate_provider,
+            "translate_conn_id": translate_conn_id,
+            "translate_remote_model": translate_remote_model,
         }
 
         # 提交任務
@@ -270,8 +285,20 @@ class SubtitleService:
                 )
                 # Whisper 已在 transcribe() 的 finally 中自動卸載
 
+                # === Forced Alignment（可選）===
+                if params.get("align", False) and result.language:
+                    from app.engine.ai.audio.wav2vec2 import get_alignment_engine
+                    aligner = get_alignment_engine()
+                    if aligner.is_language_supported(result.language):
+                        progress_callback(whisper_end - 0.05, "精準對齊中...")
+                        result.segments = aligner.align(
+                            audio_path=temp_audio_path,
+                            segments=result.segments,
+                            language=result.language,
+                        )
+
                 # === 階段 3 (選用): 翻譯字幕 (70~95%) ===
-                from app.engine.ai.bin.whisper import TranscribeSegment
+                from app.engine.ai.audio.whisper import TranscribeSegment
 
                 # 保存原始 segments（用於翻譯時輸出雙語字幕）
                 original_segments = list(result.segments)
@@ -279,7 +306,6 @@ class SubtitleService:
                 if has_translation:
                     progress_callback(whisper_end, "準備翻譯字幕...")
 
-                    translator = get_translator(translate_model_type)
                     seg_dicts = [
                         {"start": s.start, "end": s.end, "text": s.text}
                         for s in result.segments
@@ -289,18 +315,47 @@ class SubtitleService:
                         overall = 0.70 + percent * 0.25
                         progress_callback(overall, msg)
 
-                    translated = translator.translate_segments(
-                        seg_dicts,
-                        source_lang=result.language,
-                        target_lang=target_language,
-                        model_size=translate_model_size,
-                        quantization=translate_quantization,
-                        on_progress=translate_progress,
-                        keep_names=keep_names,
-                        style=translate_style,
-                        glossary=glossary,
-                    )
-                    # 翻譯模型已在 translate_segments() 的 finally 中自動卸載
+                    src = WHISPER_TO_BCP47.get(result.language, result.language)
+                    translate_remote = params.get("translate_remote", False)
+
+                    if translate_remote:
+                        # 雲端翻譯（批次）
+                        from app.utils.translate import get_cloud_provider, translate_srt_cloud
+
+                        provider = params.get("translate_provider", "")
+                        conn_id = params.get("translate_conn_id")
+                        remote_model = params.get("translate_remote_model", "")
+                        prov = get_cloud_provider(provider, conn_id, remote_model)
+
+                        translated_all = translate_srt_cloud(
+                            seg_dicts, src, target_language, prov, remote_model,
+                            on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
+                            keep_names=keep_names, style=translate_style, glossary=glossary,
+                        )
+                        translate_progress(1.0, "翻譯完成")
+                    else:
+                        # 本地翻譯
+                        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
+                        from app.engine.ai.registry import SLOT_LLM
+                        from app.utils.translate import translate_srt_local
+
+                        variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
+                        runtime = LlamaServerRuntime(SLOT_LLM)
+
+                        translate_progress(0.0, "載入翻譯模型...")
+
+                        with runtime.acquire(translate_model_type, variant, lambda p, m: translate_progress(p * 0.05, m)):
+                            translate_progress(0.05, "開始翻譯字幕...")
+                            translated_all = translate_srt_local(
+                                seg_dicts, src, target_language, runtime,
+                                on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
+                                keep_names=keep_names, style=translate_style, glossary=glossary,
+                                model_id=translate_model_type,
+                            )
+
+                        translate_progress(1.0, "字幕翻譯完成")
+
+                    translated = translated_all
 
                     result.segments = [
                         TranscribeSegment(s["start"], s["end"], s["text"])
@@ -318,12 +373,10 @@ class SubtitleService:
             else:
                 base_name = Path(file_info.original_filename).stem
 
-            # 決定輸出目錄（優先自訂 > 來源目錄 > 預設 output）
+            # 決定輸出目錄（優先自訂 > 預設 output）
             custom_output_dir = params.get("output_dir")
             if custom_output_dir:
                 output_dir_path = Path(custom_output_dir)
-            elif file_info.source_dir:
-                output_dir_path = Path(file_info.source_dir)
             else:
                 output_dir_path = self._file_service.output_dir
             output_dir_path.mkdir(parents=True, exist_ok=True)
@@ -338,7 +391,7 @@ class SubtitleService:
                 source_path = output_dir_path / source_filename
 
                 # 建立原始語言的 result（使用翻譯前的 segments）
-                from app.engine.ai.bin.whisper import TranscribeResult
+                from app.engine.ai.audio.whisper import TranscribeResult
                 original_result = TranscribeResult(
                     language=result.language,
                     language_probability=result.language_probability,

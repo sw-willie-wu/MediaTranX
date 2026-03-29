@@ -69,6 +69,25 @@ class TranscodeService:
         self._initialized = True
         logger.info("TranscodeService initialized")
 
+    def get_ffmpeg_status(self) -> dict:
+        """查詢 FFmpeg 安裝狀態"""
+        is_installed = FFmpeg.is_installed()
+        bin_dir = str(FFmpeg.get_bin_dir())
+
+        if is_installed:
+            try:
+                ffmpeg = FFmpeg()
+                return {
+                    "installed": True,
+                    "ffmpeg_path": ffmpeg.ffmpeg_path,
+                    "ffprobe_path": ffmpeg.ffprobe_path,
+                    "bin_dir": bin_dir,
+                }
+            except Exception:
+                pass
+
+        return {"installed": False, "ffmpeg_path": None, "ffprobe_path": None, "bin_dir": bin_dir}
+
     async def get_media_info(self, file_id: str) -> dict:
         """
         取得媒體資訊
@@ -298,11 +317,9 @@ class TranscodeService:
             original_stem = Path(file_info.original_filename).stem
             final_filename = f"{original_stem}_transcoded_{output_file_id[:8]}.{params['output_format']}"
 
-        # 決定輸出目錄（優先自訂 > 來源目錄 > 預設 output）
+        # 決定輸出目錄（優先自訂 > 預設 output）
         if custom_output_dir:
             output_dir_path = Path(custom_output_dir)
-        elif file_info.source_dir:
-            output_dir_path = Path(file_info.source_dir)
         else:
             output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
@@ -391,8 +408,6 @@ class TranscodeService:
 
         if custom_output_dir:
             output_dir_path = Path(custom_output_dir)
-        elif file_info.source_dir:
-            output_dir_path = Path(file_info.source_dir)
         else:
             output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
@@ -478,8 +493,6 @@ class TranscodeService:
 
         if custom_output_dir:
             output_dir_path = Path(custom_output_dir)
-        elif file_info.source_dir:
-            output_dir_path = Path(file_info.source_dir)
         else:
             output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)

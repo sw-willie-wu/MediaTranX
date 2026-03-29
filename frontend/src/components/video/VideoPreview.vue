@@ -180,7 +180,6 @@ onUnmounted(() => {
   max-width: 100%;
   max-height: 100%;
   overflow: visible;
-  margin-bottom: 1.5rem;
 }
 
 .video-player {

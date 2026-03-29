@@ -4,6 +4,8 @@ import AppIcon from '@/assets/icon.svg'
 
 const { t } = useI18n()
 
+const appVersion = (window as any).electron?.appVersion ?? 'dev'
+
 function restartApp() {
   ;(window as any).electron?.restart()
 }
@@ -16,7 +18,7 @@ function restartApp() {
     </div>
     <div class="about-title-group">
       <h4 class="about-name">MediaTranX</h4>
-      <p class="about-version">{{ $t('settings.about.version') }}</p>
+      <p class="about-version">{{ $t('settings.about.version', { version: appVersion }) }}</p>
     </div>
   </div>
 

@@ -7,18 +7,21 @@ import ComparisonSlider from '@/components/ComparisonSlider.vue'
 import UnsupportedFileOverlay from '@/components/UnsupportedFileOverlay.vue'
 import { useFilesStore } from '@/stores/files'
 import { useResizableLayout } from '@/composables/useResizableLayout'
+import { useTitlebar } from '@/composables/useTitlebar'
 import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
 import { createLogger } from '@/utils/logger'
 
 const { t } = useI18n()
 const log = createLogger('ToolLayout')
 const { sidebarWidth, settingsWidth, startResize } = useResizableLayout()
+const { setFileName, clearFileName } = useTitlebar()
 
 interface SubFunction {
   id: string
   name: string
   icon: string
   comingSoon?: boolean
+  group?: string
 }
 
 const props = withDefaults(defineProps<{
@@ -38,11 +41,13 @@ const props = withDefaults(defineProps<{
   executeLoading?: boolean
   executeLabel?: string
   hideExecute?: boolean
+  showCompare?: boolean
   hidePreviewTabs?: boolean
   showFilmstrip?: boolean
   collectionSize?: number
   originalPreviewUrl?: string | null
   functionsLocked?: boolean
+  activeFileName?: string
 }>(), {
   uploadIcon: 'bi-cloud-arrow-up-fill',
   uploadAccept: '*',
@@ -50,9 +55,36 @@ const props = withDefaults(defineProps<{
   showFilmstrip: false,
 })
 
+// Group functions by group label (undefined group = ungrouped)
+const groupedFunctions = computed(() => {
+  const groups: Array<{ label: string | null; items: SubFunction[] }> = []
+  let currentGroup: string | null | undefined = '__INIT__'
+  for (const fn of props.subFunctions) {
+    if (fn.group !== currentGroup) {
+      groups.push({ label: fn.group ?? null, items: [] })
+      currentGroup = fn.group
+    }
+    groups[groups.length - 1].items.push(fn)
+  }
+  return groups
+})
+const hasGroups = computed(() => groupedFunctions.value.some(g => g.label !== null))
+
 const effectiveUploadLabel = computed(() => props.uploadLabel ?? t('common.drop_files'))
 const effectiveUploadHint = computed(() => props.uploadHint ?? t('common.drop_hint'))
 const effectiveExecuteLabel = computed(() => props.executeLabel ?? t('common.execute'))
+
+// Execute success flash
+const executeSuccess = ref(false)
+let successTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(() => props.executeLoading, (loading, wasLoading) => {
+  if (wasLoading && !loading && props.hasResult) {
+    executeSuccess.value = true
+    if (successTimer) clearTimeout(successTimer)
+    successTimer = setTimeout(() => { executeSuccess.value = false }, 1500)
+  }
+})
 
 const emit = defineEmits<{
   (e: 'select-function', id: string): void
@@ -62,6 +94,7 @@ const emit = defineEmits<{
   (e: 'remove-file'): void
   (e: 'download'): void
   (e: 'go-back'): void
+  (e: 'clear-selection'): void
 }>()
 
 const currentSubFunction = computed(() =>
@@ -95,6 +128,13 @@ const hasFile = computed(() =>
     : !!currentFile.value
 )
 
+// Sync titlebar filename — filmstrip mode uses prop, single-file uses internal state
+watch(
+  () => props.activeFileName ?? currentFile.value?.name ?? '',
+  (name) => { name ? setFileName(name) : clearFileName() },
+  { immediate: true },
+)
+
 // When collection is cleared externally (all entries removed), reset internal state
 watch(
   () => props.collectionSize,
@@ -103,6 +143,7 @@ watch(
       if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
       currentFile.value = null
       previewUrl.value = null
+      clearFileName()
     }
   },
 )
@@ -121,6 +162,7 @@ function setFile(file: File, sourceDir?: string) {
   currentFile.value = file
   previewUrl.value = URL.createObjectURL(file)
   previewMode.value = 'original'
+  setFileName(file.name)
   emit('file', file, sourceDir)
 }
 
@@ -131,6 +173,7 @@ function removeFile() {
   previewUrl.value = null
   previewMode.value = 'original'
   isComparing.value = false
+  clearFileName()
   emit('remove-file')
 }
 
@@ -224,30 +267,34 @@ onActivated(() => {
 onBeforeUnmount(() => {
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   if (unsupportedTimer) clearTimeout(unsupportedTimer)
+  clearFileName()
 })
 </script>
 
 <template>
   <div class="tool-layout">
     <!-- 左側：子功能列表 -->
-    <aside class="function-sidebar" :style="{ width: sidebarWidth + 'px', minWidth: sidebarWidth + 'px' }">
+    <aside class="function-sidebar" :style="{ width: sidebarWidth + 'px', minWidth: sidebarWidth + 'px' }" @click.self="emit('clear-selection')">
       <div class="function-list">
-        <button
-          v-for="fn in subFunctions"
-          :key="fn.id"
-          class="function-item"
-          :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon, 'is-locked': functionsLocked && currentFunction !== fn.id }"
-          :disabled="functionsLocked && currentFunction !== fn.id"
-          @click="emit('select-function', fn.id)"
-        >
-          <i :class="['bi', fn.icon]"></i>
-          <span>{{ fn.name }}</span>
-          <span v-if="fn.comingSoon" class="coming-badge">{{ $t('common.coming_soon') }}</span>
-        </button>
+        <template v-for="(group, gi) in groupedFunctions" :key="gi">
+          <div v-if="group.label && hasGroups" class="function-group-label">{{ group.label }}</div>
+          <button
+            v-for="fn in group.items"
+            :key="fn.id"
+            class="function-item"
+            :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon, 'is-locked': functionsLocked && currentFunction !== fn.id }"
+            :disabled="functionsLocked && currentFunction !== fn.id"
+            @click="emit('select-function', fn.id)"
+          >
+            <i :class="['bi', fn.icon]"></i>
+            <span>{{ fn.name }}</span>
+            <span v-if="fn.comingSoon" class="coming-badge">{{ $t('common.coming_soon') }}</span>
+          </button>
+        </template>
       </div>
     </aside>
 
-    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = 180"></div>
+    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = 220"></div>
 
     <!-- 中間：預覽區域 -->
     <main class="preview-area" :class="{ 'is-drag-over': isDragOver && hasFile }">
@@ -257,6 +304,7 @@ onBeforeUnmount(() => {
           <i class="bi bi-x-lg"></i>
         </button>
         <button
+          v-if="showCompare"
           class="toolbar-btn compare-btn"
           :class="{ 'is-active': isComparing, disabled: !canShowResult }"
           :disabled="!canShowResult"
@@ -314,6 +362,7 @@ onBeforeUnmount(() => {
         @dragleave="handleDragLeave"
         @drop.capture="isDragOver = false"
         @drop="handleDrop"
+        @click.self="emit('clear-selection')"
       >
         <!-- 不支援類型 overlay -->
         <UnsupportedFileOverlay
@@ -323,7 +372,6 @@ onBeforeUnmount(() => {
           @go-to-tool="goToTool"
         />
 
-        <!-- 無檔案時顯示上傳區 -->
         <AppUploadZone
           v-if="!hasFile"
           :icon="uploadIcon"
@@ -335,32 +383,33 @@ onBeforeUnmount(() => {
           @files="handleUploadFiles"
         />
 
-        <!-- Slider 比對模式 -->
-        <ComparisonSlider
-          v-else-if="isComparing && resultPreviewUrl"
-          :original-url="props.originalPreviewUrl ?? previewUrl!"
-          :result-url="resultPreviewUrl"
-          :result-meta="props.resultMeta"
-        />
-
-        <!-- 有檔案時顯示預覽 slot -->
-        <slot
-          v-else
-          name="preview"
-          :file="currentFile!"
-          :previewUrl="previewUrl!"
-          :mode="previewMode"
-        >
-          <div class="preview-placeholder">
-            <i class="bi bi-image"></i>
-            <p>{{ $t('common.select_or_drop') }}</p>
-          </div>
-        </slot>
-
-        <!-- 資訊列：overlay 模式（showFilmstrip 為 true 時） -->
-        <div v-if="showFilmstrip && hasFile" class="preview-info-bar preview-info-bar--overlay">
-          <slot name="info-bar" />
+        <!-- 有檔案：比對模式 / 預覽 -->
+        <div v-else class="preview-slot-wrapper">
+          <ComparisonSlider
+            v-if="isComparing && resultPreviewUrl"
+            :original-url="props.originalPreviewUrl ?? previewUrl!"
+            :result-url="resultPreviewUrl"
+            :result-meta="props.resultMeta"
+          />
+          <slot
+            v-else
+            name="preview"
+            :file="currentFile!"
+            :previewUrl="previewUrl!"
+            :mode="previewMode"
+          >
+            <div class="preview-placeholder">
+              <i class="bi bi-image"></i>
+              <p>{{ $t('common.select_or_drop') }}</p>
+            </div>
+          </slot>
         </div>
+
+      </div>
+
+      <!-- 資訊列：filmstrip 模式（preview-area flex child，在 filmstrip 上方） -->
+      <div v-if="showFilmstrip && hasFile" class="preview-info-bar preview-info-bar--overlay">
+        <slot name="info-bar" />
       </div>
 
       <!-- Filmstrip slot — 固定在 preview-area 底部，不參與 preview-content 的捲動 -->
@@ -374,7 +423,7 @@ onBeforeUnmount(() => {
       </div>
     </main>
 
-    <div class="resize-handle" @mousedown="startResize('settings', $event)" @dblclick="settingsWidth = 320"></div>
+    <div class="resize-handle" @mousedown="startResize('settings', $event)" @dblclick="settingsWidth = 272"></div>
 
     <!-- 右側：設定面板 -->
     <aside class="settings-panel" :style="{ width: settingsWidth + 'px', minWidth: settingsWidth + 'px' }">
@@ -388,12 +437,14 @@ onBeforeUnmount(() => {
       <div v-if="!hideExecute && !isCurrentComingSoon" class="execute-section">
         <button
           class="execute-btn"
-          :disabled="executeDisabled"
+          :class="{ 'is-success': executeSuccess }"
+          :disabled="executeDisabled || executeLoading"
           @click="emit('execute')"
         >
           <span v-if="executeLoading" class="spinner-border spinner-border-sm me-2"></span>
+          <i v-else-if="executeSuccess" class="bi bi-check-lg me-2"></i>
           <i v-else class="bi bi-play-fill me-2"></i>
-          {{ executeLoading ? $t('common.processing') : effectiveExecuteLabel }}
+          {{ executeLoading ? $t('common.processing') : executeSuccess ? $t('common.completed') : effectiveExecuteLabel }}
         </button>
       </div>
     </aside>
@@ -409,7 +460,7 @@ onBeforeUnmount(() => {
   display: flex;
   height: calc(100vh - 40px);
   gap: 0;
-  padding: 1rem;
+  padding: 0.5rem 1rem 1rem 0;
 }
 
 // 左側子功能列表
@@ -430,6 +481,21 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+.function-group-label {
+  padding: 0.5rem 0.75rem 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+
+  &:not(:first-child) {
+    margin-top: 0.35rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--panel-border);
+  }
 }
 
 .function-item {
@@ -589,7 +655,7 @@ onBeforeUnmount(() => {
   padding: 0.4rem 0.75rem;
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-muted);
   font-size: 0.85rem;
   cursor: pointer;
@@ -674,19 +740,16 @@ onBeforeUnmount(() => {
 
   // Overlay mode (showFilmstrip = true) — absolute, bottom-center of preview-content
   &--overlay {
-    position: absolute;
-    bottom: 0.25rem;
-    left: 50%;
-    transform: translateX(-50%);
     min-height: unset;
     padding: 0.35rem 0.9rem;
     border-top: none;
-    z-index: 5;
-    max-width: min(480px, 90%);
+    flex-shrink: 0;
+    justify-content: center;
 
     :deep(.media-info-bar) {
       border-top: none;
       padding: 0;
+      justify-content: center;
     }
   }
 }
@@ -711,7 +774,34 @@ onBeforeUnmount(() => {
   }
 
   &:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  &.is-success {
+    background: var(--color-success);
+    &:hover:not(:disabled) {
+      background: var(--color-success-hover);
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    }
+  }
 }
 
 .text-muted { color: var(--text-muted); }
+
+// ── Fade transition ───────────────────────────────────────────
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.preview-slot-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
 </style>

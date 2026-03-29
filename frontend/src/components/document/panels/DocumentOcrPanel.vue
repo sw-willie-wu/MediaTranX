@@ -6,11 +6,14 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { apiFetch } from '@/composables/useApi'
 import { useModelStore } from '@/stores/models'
+import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
+import { useRemoteModelStore } from '@/stores/remoteModels'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
   currentFileExt: string
+  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -21,13 +24,14 @@ const router = useRouter()
 const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
+const remoteStore = useRemoteModelStore()
 
 // ── 模型 ──────────────────────────────────────────────────────────────────
 
 const selectedModel = ref('qwen3vl:4b')
 const available = ref<boolean | null>(null)
 
-const modelOptions = computed(() => {
+const localModelOptions = computed(() => {
   const seen = new Map<string, { value: string; label: string; downloaded: boolean }>()
   for (const m of modelStore.byCategory('vlm')) {
     const [size] = m.variant.split(':')
@@ -44,6 +48,9 @@ const modelOptions = computed(() => {
     badge: opt.downloaded ? 'ok' as const : 'err' as const,
   }))
 })
+
+// 合併本地 + 雲端 vision 模型
+const { mergedOptions: modelOptions } = useModelOptions('vision', localModelOptions)
 
 // ── 輸出選項 ──────────────────────────────────────────────────────────────
 
@@ -87,12 +94,26 @@ async function selectOutputFile() {
   }
 }
 
-watch(() => props.fileId, () => { outputPath.value = '' })
-watch(outputFormat,       () => { outputPath.value = '' })
+function resetOutputPath() {
+  if (props.sourceDir) {
+    const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
+    outputPath.value = `${props.sourceDir}/${stem}_ocr.${outputFormat.value}`
+  } else {
+    outputPath.value = ''
+  }
+}
+watch(() => props.fileId, resetOutputPath)
+watch(outputFormat, resetOutputPath)
+watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 // ── 狀態載入 ──────────────────────────────────────────────────────────────
 
 async function checkAvailable() {
+  const parsed = parseModelValue(selectedModel.value)
+  if (parsed.isRemote) {
+    available.value = true
+    return
+  }
   try {
     const [family, size] = selectedModel.value.split(':')
     const res = await apiFetch(`/document/ocr/status?model_id=${family}&size=${size}`)
@@ -102,7 +123,7 @@ async function checkAvailable() {
   } catch {}
 }
 
-onMounted(() => { modelStore.ensureLoaded(); checkAvailable() })
+onMounted(() => { modelStore.ensureLoaded(); remoteStore.fetchAll(); checkAvailable() })
 watch(selectedModel, checkAvailable)
 
 // ── 執行 ──────────────────────────────────────────────────────────────────
@@ -114,13 +135,22 @@ const isLoading = computed(() => isProcessing.value)
 
 async function execute() {
   if (!props.fileId) return
-  const [family, size] = selectedModel.value.split(':')
+  const parsed = parseModelValue(selectedModel.value)
 
   const body: Record<string, any> = {
     file_id: props.fileId,
-    model_id: family,
-    size,
     format: outputFormat.value,
+  }
+
+  if (parsed.isRemote) {
+    body.remote = true
+    body.provider = parsed.provider
+    body.conn_id = parsed.connId
+    body.remote_model = parsed.modelId
+  } else {
+    const [family, size] = selectedModel.value.split(':')
+    body.model_id = family
+    body.size = size
   }
 
   if (outputPath.value) {
@@ -138,7 +168,38 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-defineExpose({ execute, isDisabled, isLoading, outputFormat })
+function getParams() {
+  const parsed = parseModelValue(selectedModel.value)
+  const body: Record<string, any> = {
+    format: outputFormat.value,
+  }
+
+  if (parsed.isRemote) {
+    body.remote = true
+    body.provider = parsed.provider
+    body.conn_id = parsed.connId
+    body.remote_model = parsed.modelId
+  } else {
+    const [family, size] = selectedModel.value.split(':')
+    body.model_id = family
+    body.size = size
+  }
+
+  if (outputPath.value) {
+    const path = outputPath.value.replace(/\\/g, '/')
+    const last = path.lastIndexOf('/')
+    if (last > 0) {
+      body.output_dir      = path.substring(0, last)
+      body.output_filename = path.substring(last + 1)
+    } else {
+      body.output_filename = path
+    }
+  }
+
+  return body
+}
+
+defineExpose({ execute, isDisabled, isLoading, outputFormat, getParams })
 </script>
 
 <template>
@@ -161,12 +222,12 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat })
 
     <div class="form-group">
       <label>{{ $t('document.ocr.model') }}</label>
-      <AppSelect v-model="selectedModel" :options="modelOptions" size="sm" />
+      <AppSelect v-model="selectedModel" :options="modelOptions" />
     </div>
 
     <div class="form-group">
       <label>{{ $t('document.ocr.output_format') }}</label>
-      <AppSelect v-model="outputFormat" :options="outputFormats" size="sm" />
+      <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 
     <div class="form-group">

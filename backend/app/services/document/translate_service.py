@@ -10,7 +10,16 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.engine.ai.llama import get_translator
+from app.utils.prompts import (
+    WHISPER_TO_BCP47,
+    TranslateResult,
+    build_translate_prompt,
+    build_srt_translate_prompt,
+    build_translate_messages,
+    segments_to_srt,
+    parse_srt_response,
+    split_text,
+)
 from app.services.files.file_service import FileService, get_file_service
 from app.workers.task_manager import TaskManager, get_task_manager
 
@@ -138,7 +147,7 @@ class TranslateService:
         # 註冊任務處理器
         self._task_manager.register_handler(
             TASK_TYPE_DOCUMENT_TRANSLATE,
-            self._handle_translate_task
+            self._handle_translate_task,
         )
 
         self._initialized = True
@@ -246,52 +255,80 @@ class TranslateService:
         progress_callback(0.05, f"檔案讀取完成 ({len(text)} 字元)，準備翻譯...")
 
         # === 階段 2: 翻譯 (5~95%) ===
-        # GPU 排隊：同時只有一個任務使用 GPU，模型用完即卸載
-        from app.engine.ai.model_manager import get_model_manager
-        manager = get_model_manager()
-
-        translator = get_translator(model_type)
-
         def translate_progress(percent: float, msg: str):
             overall = 0.05 + percent * 0.90
             progress_callback(overall, msg)
 
-        with manager.gpu_session():
+        is_remote = params.get("remote", False)
+
+        if is_remote:
+            # === 雲端翻譯 ===
+            from app.utils.translate import get_cloud_provider, translate_srt_cloud, translate_text_cloud
+
+            provider = params.get("provider", "")
+            conn_id = params.get("conn_id")
+            remote_model = params.get("remote_model", "")
+            prov = get_cloud_provider(provider, conn_id, remote_model)
+
             if is_subtitle:
-                # 字幕檔：解析 → 逐段翻譯 → 保留時間軸
                 if ext == ".vtt":
                     segments = _parse_vtt(text)
                 else:
                     segments = _parse_srt(text)
 
                 logger.info(f"Parsed {len(segments)} subtitle segments from {ext} file")
+                src = WHISPER_TO_BCP47.get(source_language, source_language)
 
-                translated_segments = translator.translate_segments(
-                    segments=segments,
-                    source_lang=source_language,
-                    target_lang=target_language,
-                    model_size=model_size,
-                    quantization=quantization,
+                translated_segments = translate_srt_cloud(
+                    segments, src, target_language, prov, remote_model,
                     on_progress=translate_progress,
-                    style=translate_style,
-                    glossary=glossary,
+                    style=translate_style, glossary=glossary,
                 )
-                translated_text = None  # 由寫入函式處理
+                translated_text = None
             else:
-                # 純文字檔：整段翻譯
-                result = translator.translate(
-                    text=text,
-                    source_lang=source_language,
-                    target_lang=target_language,
-                    model_size=model_size,
-                    quantization=quantization,
-                    on_progress=translate_progress,
-                    style=translate_style,
-                    glossary=glossary,
+                translated_text = translate_text_cloud(
+                    text, source_language, target_language, prov, remote_model,
+                    on_progress=translate_progress, glossary=glossary,
                 )
-                translated_text = result.text
                 translated_segments = None
-            # 翻譯模型已在 finally 中自動卸載
+        else:
+            # === 本地翻譯 ===
+            from app.engine.ai.model_manager import get_model_manager
+            from app.engine.ai.runtime.llama_server import LlamaServerRuntime
+            from app.engine.ai.registry import SLOT_LLM
+            from app.utils.translate import translate_srt_local, translate_text_local
+
+            variant = f"{model_size}:{quantization}" if quantization else model_size
+
+            with get_model_manager().gpu_session():
+                runtime = LlamaServerRuntime(SLOT_LLM)
+                translate_progress(0.0, "載入翻譯模型...")
+
+                with runtime.acquire(model_type, variant, lambda p, m: translate_progress(p * 0.05, m)):
+                    if is_subtitle:
+                        if ext == ".vtt":
+                            segments = _parse_vtt(text)
+                        else:
+                            segments = _parse_srt(text)
+
+                        logger.info(f"Parsed {len(segments)} subtitle segments from {ext} file")
+                        src = WHISPER_TO_BCP47.get(source_language, source_language)
+
+                        translate_progress(0.05, "開始翻譯字幕...")
+                        translated_segments = translate_srt_local(
+                            segments, src, target_language, runtime,
+                            on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
+                            style=translate_style, glossary=glossary, model_id=model_type,
+                        )
+                        translated_text = None
+                    else:
+                        translate_progress(0.05, "開始翻譯...")
+                        translated_text = translate_text_local(
+                            text, source_language, target_language, runtime,
+                            on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
+                            glossary=glossary, model_id=model_type,
+                        )
+                        translated_segments = None
 
         # === 階段 3: 寫入輸出檔 (95~100%) ===
         progress_callback(0.95, "正在寫入輸出檔...")
@@ -311,8 +348,6 @@ class TranslateService:
         custom_output_dir = params.get("output_dir")
         if custom_output_dir:
             output_dir_path = Path(custom_output_dir)
-        elif file_info.source_dir:
-            output_dir_path = Path(file_info.source_dir)
         else:
             output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)

@@ -68,7 +68,7 @@ class AudioCutService:
         original_stem = Path(file_info.original_filename).stem
         final_filename = f"{original_stem}_cut_{output_file_id[:8]}{ext}"
 
-        output_dir_path = Path(file_info.source_dir) if file_info.source_dir else self._file_service.output_dir
+        output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 

@@ -1,13 +1,12 @@
 """
 任務歷史紀錄服務
-透過共用 Database 模組持久化已完成的任務，供跨 session 查詢
+透過 TaskHistoryDAO 持久化已完成的任務，供跨 session 查詢
 """
-import json
 import logging
 from datetime import datetime
 from typing import Optional
 
-from app.engine.database import get_database
+from app.db.dao.task_history_dao import TaskHistoryDAO
 
 logger = logging.getLogger(__name__)
 
@@ -26,30 +25,9 @@ class TaskHistoryService:
     def __init__(self):
         if self._initialized:
             return
-        self._db = get_database()
-        self._init_schema()
+        self._dao = TaskHistoryDAO()
         self._initialized = True
         logger.info("TaskHistoryService initialized")
-
-    def _init_schema(self) -> None:
-        self._db.init_table("""
-            CREATE TABLE IF NOT EXISTS task_history (
-                task_id      TEXT PRIMARY KEY,
-                task_type    TEXT NOT NULL,
-                label        TEXT,
-                file_name    TEXT,
-                status       TEXT NOT NULL,
-                error        TEXT,
-                result       TEXT,
-                created_at   TEXT NOT NULL,
-                completed_at TEXT NOT NULL
-            )
-        """)
-        self._db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_task_history_created
-            ON task_history (created_at DESC)
-        """)
-        self._db.commit()
 
     def save(
         self,
@@ -61,28 +39,22 @@ class TaskHistoryService:
         label: Optional[str] = None,
         file_name: Optional[str] = None,
         error: Optional[str] = None,
+        error_code: Optional[str] = None,
         result: Optional[dict] = None,
     ) -> None:
         """儲存已完成的任務到歷史"""
-        self._db.execute(
-            """
-            INSERT OR REPLACE INTO task_history
-                (task_id, task_type, label, file_name, status, error, result, created_at, completed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                task_id,
-                task_type,
-                label,
-                file_name,
-                status,
-                error,
-                json.dumps(result) if result else None,
-                created_at.isoformat(),
-                completed_at.isoformat(),
-            ),
+        self._dao.save(
+            task_id=task_id,
+            task_type=task_type,
+            status=status,
+            created_at=created_at,
+            completed_at=completed_at,
+            label=label,
+            file_name=file_name,
+            error=error,
+            error_code=error_code,
+            result=result,
         )
-        self._db.commit()
 
     def query(
         self,
@@ -90,62 +62,16 @@ class TaskHistoryService:
         page_size: int = 30,
         status: Optional[str] = None,
     ) -> dict:
-        """
-        分頁查詢歷史紀錄
-
-        Returns:
-            {"items": [...], "total": int, "page": int, "page_size": int}
-        """
-        where = ""
-        params: list = []
-        if status:
-            where = "WHERE status = ?"
-            params.append(status)
-
-        total = self._db.fetchone(
-            f"SELECT COUNT(*) FROM task_history {where}", params
-        )[0]
-
-        offset = (page - 1) * page_size
-        rows = self._db.fetchall(
-            f"""
-            SELECT * FROM task_history {where}
-            ORDER BY completed_at DESC
-            LIMIT ? OFFSET ?
-            """,
-            [*params, page_size, offset],
-        )
-
-        items = []
-        for row in rows:
-            item = dict(row)
-            if item.get("result"):
-                try:
-                    item["result"] = json.loads(item["result"])
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            items.append(item)
-
-        return {
-            "items": items,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-        }
+        """分頁查詢歷史紀錄"""
+        return self._dao.query(page=page, page_size=page_size, status=status)
 
     def delete(self, task_id: str) -> bool:
         """刪除單筆歷史紀錄"""
-        cursor = self._db.execute(
-            "DELETE FROM task_history WHERE task_id = ?", (task_id,)
-        )
-        self._db.commit()
-        return cursor.rowcount > 0
+        return self._dao.delete(task_id)
 
     def clear(self) -> int:
         """清空所有歷史紀錄"""
-        cursor = self._db.execute("DELETE FROM task_history")
-        self._db.commit()
-        return cursor.rowcount
+        return self._dao.clear()
 
 
 _task_history_service: Optional[TaskHistoryService] = None

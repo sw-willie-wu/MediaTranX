@@ -42,16 +42,21 @@ export default {
   common: {
     execute: 'Execute',
     processing: 'Processing...',
+    completed: 'Completed!',
     save: 'Save Result',
     close: 'Close',
     cancel: 'Cancel',
+    confirm: 'Confirm',
     retry: 'Retry',
+    remove_confirm: 'Are you sure you want to remove this file?',
+    remove_selected_confirm: 'Are you sure you want to remove {count} files?',
     remove_file: 'Remove File',
     compare: 'Compare Original and Result',
     original: 'Original',
     result: 'Result',
     side_by_side: 'Side by Side',
     coming_soon: 'Soon',
+    optional: 'Optional',
     go_back: 'Go Back',
     select: 'Select',
     select_or_drop: 'Select or drop a file',
@@ -67,6 +72,9 @@ export default {
     unsupported_format: 'This tool does not support this file format',
     go_to_tool: 'Go to {tool}',
     view_ocr_result: 'View OCR Result',
+    view_result: 'View Result',
+    text_preview: 'Text Preview',
+    advanced_options: 'Advanced Options',
     static_preview_hint: 'Static preview, all frames applied after execution',
     remove_not_supported: 'Object removal does not support animated images',
   },
@@ -85,6 +93,7 @@ export default {
     installing: 'Installing...',
     install_failed: 'Installation failed',
     mark_area_first: 'Please mark the area to remove on the image first',
+    open_folder: 'Open Folder',
   },
 
   // ── Setup wizard ──────────────────────────────────────────────────────
@@ -149,6 +158,11 @@ export default {
       ocr: 'OCR',
     },
 
+    group: {
+      edit: 'Edit',
+      ai: 'AI Tools',
+    },
+
     multi_labels: {
       convert: 'Format Conversion',
       upscale: 'Upscale',
@@ -172,7 +186,7 @@ export default {
       width: 'Width',
       height: 'Height',
       aspect_ratio_hint: 'Leave empty for proportional scaling',
-      task_label: 'Image Convert',
+      task_label: 'Image · Convert',
     },
 
     remove_bg: {
@@ -185,7 +199,7 @@ export default {
       animal: 'Animal',
       anime: 'Anime / Illustration',
       auto_hint: 'Auto detect works for most scenarios',
-      task_label: 'Remove Background',
+      task_label: 'Image · Remove Background',
     },
 
     remove_object: {
@@ -204,7 +218,7 @@ export default {
       polygon_hint: 'Click to add points, close near start or double-click',
       polygon_controls: 'Right-click to undo point · {esc} to cancel all',
       clear: 'Clear Marks',
-      task_label: 'AI Object Removal',
+      task_label: 'Image · Remove Object',
     },
 
     upscale: {
@@ -221,7 +235,7 @@ export default {
       strong_restore: 'Strong',
       preserve_original: 'Preserve',
       face_scale: 'Face Scale',
-      task_label: 'Upscale',
+      task_label: 'Image · Upscale',
     },
 
     adjust: {
@@ -236,7 +250,7 @@ export default {
       warm: 'Warm',
       cool: 'Cool',
       reset: 'Reset Adjustments',
-      task_label: 'Image Adjust',
+      task_label: 'Image · Adjust',
     },
 
     filter: {
@@ -248,7 +262,7 @@ export default {
       blur: 'Blur',
       vignette: 'Vignette',
       reset: 'Reset Filters',
-      task_label: 'Image Filter',
+      task_label: 'Image · Filter',
     },
 
     crop: {
@@ -263,7 +277,7 @@ export default {
       start_position: 'Start Position (Top-Left)',
       crop_size: 'Crop Size',
       original_image: 'Original:',
-      task_label: 'Image Crop',
+      task_label: 'Image · Crop',
     },
 
     ocr: {
@@ -277,7 +291,7 @@ export default {
       text: 'Plain Text (.txt)',
       output_file: 'Output File',
       select_output: 'Select Output Location',
-      task_label: 'OCR Recognition',
+      task_label: 'Image · OCR',
       result_title: 'OCR Result',
     },
   },
@@ -293,6 +307,11 @@ export default {
       transcode: 'Transcode',
       cut: 'Cut',
       subtitle: 'Subtitle',
+    },
+
+    group: {
+      edit: 'Edit',
+      ai: 'AI Tools',
     },
 
     transcode: {
@@ -320,7 +339,7 @@ export default {
       extract_audio: 'Extract Audio',
       width: 'Width',
       height: 'Height',
-      task_label: 'Transcode',
+      task_label: 'Video · Transcode',
     },
 
     cut: {
@@ -331,7 +350,7 @@ export default {
       fast_mode: 'Fast Mode (No Re-encode)',
       fast_mode_hint: 'Disable for precise cut points, but slower',
       time_error: 'End time must be after start time',
-      task_label: 'Cut',
+      task_label: 'Video · Cut',
     },
 
     subtitle: {
@@ -343,8 +362,8 @@ export default {
       vtt: 'VTT (WebVTT)',
       select_output: 'Select Output Location',
       file_type: 'Subtitle File',
-      task_label: 'Subtitle Extraction',
-      task_label_with_translate: 'Subtitle Extraction + Translation',
+      task_label: 'Video · Subtitles',
+      task_label_with_translate: 'Video · Subtitles + Translate',
       start: 'Start',
     },
 
@@ -377,6 +396,8 @@ export default {
       independent_hint: 'Disable context association to prevent sentence merging',
       word_timestamps: 'Word-level timestamps',
       word_timestamps_hint: 'More precise segmentation boundaries',
+      align: 'Forced Alignment',
+      align_hint: 'Use Wav2Vec2 to refine word timestamps for more accurate subtitles',
       min_silence: 'Min. silence duration',
       milliseconds: 'ms',
       min_silence_hint: 'Pauses exceeding this duration will create a new segment (default 200ms)',
@@ -391,23 +412,32 @@ export default {
     upload_label: 'Drop audio here',
     upload_hint: 'Supports MP3, WAV, FLAC, AAC and more',
     loading: 'Loading audio info...',
+    preview_unsupported: 'This format does not support preview, but can be processed normally',
 
     functions: {
       transcode: 'Transcode',
       cut: 'Cut',
       volume: 'Volume',
       transcribe: 'Transcribe',
+      separate: 'Separate',
+      lyrics: 'Lyrics',
+    },
+
+    group: {
+      edit: 'Edit',
+      ai: 'AI Tools',
     },
 
     transcode: {
       title: 'Transcode Settings',
       description: 'Convert audio format with adjustable bitrate and sample rate.',
       format: 'Output Format',
-      flac_lossless: 'FLAC (Lossless)',
+      lossy: 'Lossy',
+      lossless: 'Lossless',
       bitrate: 'Bitrate',
       sample_rate: 'Sample Rate',
       keep_original: 'Keep Original',
-      task_label: 'Audio Transcode',
+      task_label: 'Audio · Transcode',
     },
 
     cut: {
@@ -416,7 +446,8 @@ export default {
       start_time: 'Start Time',
       end_time: 'End Time',
       duration: 'Duration:',
-      task_label: 'Audio Cut',
+      selection_duration: 'Selection Duration:',
+      task_label: 'Audio · Cut',
     },
 
     volume: {
@@ -430,6 +461,7 @@ export default {
       normalize_hint: 'Auto-normalize using EBU R128 loudness standard for consistent volume.',
       normalize_label: 'Volume Normalization',
       adjust_label: 'Volume Adjustment',
+      task_label: 'Audio · Volume',
     },
 
     transcribe: {
@@ -443,7 +475,57 @@ export default {
       srt_format: 'SRT (With Timestamps)',
       srt_hint: 'Output SRT subtitle format with timestamps',
       txt_hint: 'Output plain text transcript',
-      task_label: 'Transcription',
+      vocal_separation: 'Vocal Separation',
+      vocal_separation_hint: 'Use Demucs to isolate vocals before transcription for better accuracy',
+      align: 'Precise Alignment',
+      align_hint: 'Use Wav2Vec2 for word-level timestamp alignment',
+      translate: 'Translate',
+      target_language: 'Target Language',
+      translate_model: 'Translation Model',
+      summarize: 'Outline Summary',
+      summarize_hint: 'Use LLM to generate a summary of the transcript',
+      generate_outline: 'Generate Outline',
+      generate_outline_hint: 'Use LLM to generate an outline, outputs an additional .draft.txt file',
+      outline_model: 'Outline Model',
+      output_file: 'Output Path',
+      select_output: 'Select output path',
+      task_label: 'Audio · Transcribe',
+    },
+
+    lyrics: {
+      title: 'Lyrics Extraction Settings',
+      description: 'Extract lyrics from music using AI vocal separation and speech recognition.',
+      model: 'Recognition Model',
+      align: 'Precise Alignment',
+      align_hint: 'Use Wav2Vec2 for word-level timestamp alignment',
+      translate: 'Translate Lyrics',
+      target_language: 'Target Language',
+      translate_model: 'Translation Model',
+      output_format: 'Output Format',
+      lrc: 'LRC (with timestamps)',
+      txt: 'Plain Text',
+      output_file: 'Output Path',
+      select_output: 'Select output path',
+      task_label: 'Audio · Lyrics',
+      result_title: 'Lyrics',
+    },
+
+    separate: {
+      title: 'Source Separation Settings',
+      description: 'Use HDemucs to separate audio into vocals, drums, bass, and other stems.',
+      model: 'Model',
+      stems: 'Output Stems',
+      stem_vocals: 'Vocals',
+      stem_drums: 'Drums',
+      stem_bass: 'Bass',
+      stem_guitar: 'Guitar',
+      stem_piano: 'Piano',
+      stem_other: 'Other',
+      task_label: 'Audio · Separate',
+      model_not_downloaded: 'Separation model not downloaded. Please download it in Settings → AI Module Management.',
+      output_format: 'Output Format',
+      output_file: 'Output Path',
+      select_output: 'Select output path',
     },
   },
 
@@ -461,6 +543,11 @@ export default {
       split: 'Split',
     },
 
+    group: {
+      edit: 'Edit',
+      ai: 'AI Tools',
+    },
+
     ocr: {
       title: 'OCR Settings',
       description: 'Use AI to recognize text in PDF or images, output as editable format.',
@@ -473,7 +560,7 @@ export default {
       text: 'Plain Text (.txt)',
       output_file: 'Output File',
       select_output: 'Select Output Location',
-      task_label: 'OCR Recognition',
+      task_label: 'Document · OCR',
     },
 
     pdf_convert: {
@@ -485,7 +572,7 @@ export default {
       output_file: 'Output File',
       select_output: 'Select Output Location',
       zip_type: 'ZIP Archive',
-      task_label: 'PDF Convert',
+      task_label: 'Document · PDF Convert',
     },
 
     split: {
@@ -496,7 +583,7 @@ export default {
       range_hint: 'Separate multiple ranges with commas, e.g. {example}',
       output_file: 'Output File',
       select_output: 'Select Output Location',
-      task_label: 'PDF Split',
+      task_label: 'Document · Split',
     },
 
     translate: {
@@ -512,7 +599,7 @@ export default {
       glossary: 'Glossary',
       optional: '(Optional)',
       glossary_format: 'One entry per line, format: original→translation or original=translation',
-      task_label: 'Document Translation',
+      task_label: 'Document · Translate',
       installing_toast: 'Installing translation feature, please wait...',
       install_complete: 'Translation feature installed',
       install_error: 'Installation failed, check task list',
@@ -552,7 +639,7 @@ export default {
     },
 
     about: {
-      version: 'Version 1.0.0 (Production Build)',
+      version: 'Version {version}',
       description: 'Local AI-powered multimedia processing tool. Supports video subtitle extraction, translation, audio processing, image processing, and more. All AI models run locally — no data uploaded to the cloud, protecting your privacy.',
       support: 'Support & Links',
       github: 'GitHub',
@@ -581,6 +668,9 @@ export default {
 
     ai: {
       core_modules: 'Core Modules',
+      tools_desc: 'Tool Execution Modules',
+      pytorch_desc: 'Deep Learning Inference Module',
+      llama_desc: 'Language Inference Module',
       installed: 'Installed',
       not_installed: 'Not Installed',
       version_mismatch: 'Version Mismatch',
@@ -607,12 +697,29 @@ export default {
       refresh: 'Refresh',
       remove_model: 'Remove Model',
       install: 'Install',
-      category_upscale: 'Upscale',
-      category_face_restore: 'Face Restore',
-      category_stt: 'Speech Recognition',
-      category_translate: 'Translation',
-      category_vlm: 'OCR',
-      category_segment: 'Segmentation',
+      local: 'Local',
+      category_image: 'Image Processing',
+      category_audio: 'Audio Processing',
+      category_llm: 'Large Language Models',
+    },
+    remote: {
+      title: 'Cloud Models',
+      hint: 'Connect to external AI services for translation, OCR, and more',
+      no_connections: 'No connections configured',
+      add: 'Add Connection',
+      provider: 'Provider',
+      name: 'Name',
+      name_placeholder: 'e.g. Local Ollama',
+      endpoint: 'Endpoint',
+      test: 'Test',
+      save: 'Save',
+      connected: 'Connected',
+      models_available: 'models available',
+      connection_failed: 'Connection failed',
+      no_models: 'No models found',
+      edit: 'Edit',
+      refresh: 'Refresh Models',
+      delete: 'Delete',
     },
   },
 
@@ -637,27 +744,44 @@ export default {
     },
 
     types: {
-      'image.upscale': 'Image Upscale',
-      'image.convert': 'Image Convert',
-      'image.filter': 'Image Filter',
-      'image.crop': 'Image Crop',
-      'image.remove_bg': 'Background Removal',
-      'image.remove_object': 'Object Removal',
-      'image.ocr': 'Image OCR',
-      'video.transcode': 'Video Transcode',
-      'video.cut': 'Video Cut',
-      'video.extract_audio': 'Audio Extraction',
-      'video.subtitle_generate': 'Subtitle Generation',
-      'audio.transcode': 'Audio Transcode',
-      'audio.cut': 'Audio Cut',
-      'audio.volume': 'Volume Adjustment',
-      'audio.transcribe': 'Transcription',
-      'document.ocr': 'Document OCR',
-      'document.translate': 'Document Translation',
-      'document.pdf_convert': 'PDF Convert',
-      'document.split': 'Document Split',
+      'image.upscale': 'Image · Upscale',
+      'image.convert': 'Image · Convert',
+      'image.filter': 'Image · Filter',
+      'image.crop': 'Image · Crop',
+      'image.remove_bg': 'Image · Remove Background',
+      'image.remove_object': 'Image · Remove Object',
+      'image.ocr': 'Image · OCR',
+      'image.ocr.remote': 'Image · OCR',
+      'image.adjust': 'Image · Adjust',
+      'video.transcode': 'Video · Transcode',
+      'video.cut': 'Video · Cut',
+      'video.extract_audio': 'Video · Extract Audio',
+      'video.subtitle_generate': 'Video · Subtitles',
+      'audio.transcode': 'Audio · Transcode',
+      'audio.cut': 'Audio · Cut',
+      'audio.volume': 'Audio · Volume',
+      'audio.transcribe': 'Audio · Transcribe',
+      'audio.separate': 'Audio · Separate',
+      'audio.lyrics': 'Audio · Lyrics',
+      'document.ocr': 'Document · OCR',
+      'document.ocr.remote': 'Document · OCR',
+      'document.translate': 'Document · Translate',
+      'document.pdf_convert': 'Document · PDF Convert',
+      'document.split': 'Document · Split',
       'setup.model_download': 'Model Download',
       'ai.setup': 'AI Environment Setup',
+    },
+
+    errors: {
+      gpu_oom: 'Remote server GPU out of memory. Try unloading other models first.',
+      quota_exceeded: 'API quota exceeded. Please check your billing or plan.',
+      auth_failed: 'API key is invalid or expired.',
+      model_not_found: 'Model not found on remote server.',
+      model_not_supported: 'This model does not support the requested operation.',
+      connection_failed: 'Cannot connect to remote server. Please check the endpoint.',
+      invalid_request: 'Invalid request parameters.',
+      invalid_params: 'Unsupported parameter for this model.',
+      remote_error: 'Remote API error.',
     },
   },
 

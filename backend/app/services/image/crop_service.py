@@ -85,7 +85,7 @@ class ImageCropService:
     ) -> dict:
         """執行圖片裁切"""
         from PIL import Image
-        from app.engine.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
+        from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
 
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)

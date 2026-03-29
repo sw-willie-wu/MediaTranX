@@ -2,7 +2,6 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
-import AppToggle from '@/components/common/AppToggle.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 
 interface ImageInfo {
@@ -29,8 +28,8 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
-const showCropOverlay = ref(false)
-watch(showCropOverlay, (val) => emit('update:showCropOverlay', val))
+const showCropOverlay = ref(true)
+watch(showCropOverlay, (val) => emit('update:showCropOverlay', val), { immediate: true })
 
 const x = ref(0)
 const y = ref(0)
@@ -48,19 +47,13 @@ const aspectOptions = computed(() => [
   { value: '9:16', label: '9:16' },
 ])
 
-watch(() => props.imageInfo, (info) => {
-  if (info) {
-    cropWidth.value = info.width
-    cropHeight.value = info.height
-  }
-}, { immediate: true })
-
+// canvas 更新 → 同步到 panel 的輸入欄位
 watch(() => props.canvasCropRect, (rect) => {
   if (!rect) return
-  x.value = rect.x
-  y.value = rect.y
-  cropWidth.value  = rect.w
-  cropHeight.value = rect.h
+  x.value = Math.round(rect.x)
+  y.value = Math.round(rect.y)
+  cropWidth.value = Math.round(rect.w)
+  cropHeight.value = Math.round(rect.h)
 })
 
 watch([aspectRatio, cropWidth], ([ratio]) => {
@@ -102,11 +95,6 @@ defineExpose({ execute, isDisabled, isLoading, showCropOverlay, aspectRatio })
     <p class="form-hint">{{ $t('image.crop.description') }}</p>
 
     <div class="form-group">
-      <label>{{ $t('image.crop.mask') }}</label>
-      <AppToggle v-model="showCropOverlay">{{ showCropOverlay ? $t('image.crop.mask_show') : $t('image.crop.mask_hide') }}</AppToggle>
-    </div>
-
-    <div class="form-group">
       <label>{{ $t('image.crop.aspect_ratio') }}</label>
       <AppSelect v-model="aspectRatio" :options="aspectOptions" />
     </div>
@@ -143,10 +131,6 @@ defineExpose({ execute, isDisabled, isLoading, showCropOverlay, aspectRatio })
         </div>
       </div>
     </div>
-
-    <small v-if="imageInfo" class="form-hint">
-      {{ $t('image.crop.original_image') }} {{ imageInfo.width }} × {{ imageInfo.height }} px
-    </small>
   </div>
 </template>
 

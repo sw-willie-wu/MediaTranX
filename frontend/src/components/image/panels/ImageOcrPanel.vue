@@ -6,10 +6,13 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { apiFetch } from '@/composables/useApi'
 import { useModelStore } from '@/stores/models'
+import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
+import { useRemoteModelStore } from '@/stores/remoteModels'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -24,8 +27,10 @@ const modelStore = useModelStore()
 const selectedModel = ref('qwen3vl:4b')
 const available = ref<boolean | null>(null)
 
+const remoteStore = useRemoteModelStore()
+
 // 從 store 的 vlm 模型列表聚合（依 family:size 去重）
-const modelOptions = computed(() => {
+const localModelOptions = computed(() => {
   const seen = new Map<string, { value: string; label: string; downloaded: boolean }>()
   for (const m of modelStore.byCategory('vlm')) {
     const [size] = m.variant.split(':')
@@ -42,6 +47,9 @@ const modelOptions = computed(() => {
     badge: opt.downloaded ? 'ok' as const : 'err' as const,
   }))
 })
+
+// 合併本地 + 雲端 vision 模型
+const { mergedOptions: modelOptions } = useModelOptions('vision', localModelOptions)
 
 const outputFormat = ref<'md' | 'txt'>('md')
 const outputPath = ref('')
@@ -78,10 +86,25 @@ async function selectOutputFile() {
   }
 }
 
-watch(() => props.fileId, () => { outputPath.value = '' })
-watch(outputFormat,       () => { outputPath.value = '' })
+function resetOutputPath() {
+  if (props.sourceDir) {
+    const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
+    outputPath.value = `${props.sourceDir}/${stem}_ocr.${outputFormat.value}`
+  } else {
+    outputPath.value = ''
+  }
+}
+watch(() => props.fileId, resetOutputPath)
+watch(outputFormat, resetOutputPath)
+watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 async function checkAvailable() {
+  const parsed = parseModelValue(selectedModel.value)
+  if (parsed.isRemote) {
+    // 雲端模型不需要檢查本地 server
+    available.value = true
+    return
+  }
   try {
     const [family, size] = selectedModel.value.split(':')
     const res = await apiFetch(`/image/ocr/status?model_id=${family}&size=${size}`)
@@ -91,18 +114,31 @@ async function checkAvailable() {
   } catch {}
 }
 
-onMounted(() => { modelStore.ensureLoaded(); checkAvailable() })
+onMounted(() => {
+  modelStore.ensureLoaded()
+  remoteStore.fetchAll()
+  checkAvailable()
+})
 watch(selectedModel, checkAvailable)
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value || available.value === false)
 const isLoading  = computed(() => isProcessing.value)
 
 function getParams(): Record<string, unknown> {
-  const [family, size] = selectedModel.value.split(':')
+  const parsed = parseModelValue(selectedModel.value)
   const params: Record<string, unknown> = {
-    model_id: family,
-    size,
     format: outputFormat.value,
+  }
+
+  if (parsed.isRemote) {
+    params.remote = true
+    params.provider = parsed.provider
+    params.conn_id = parsed.connId
+    params.remote_model = parsed.modelId
+  } else {
+    const [family, size] = selectedModel.value.split(':')
+    params.model_id = family
+    params.size = size
   }
   if (outputPath.value) {
     const path = outputPath.value.replace(/\\/g, '/')
@@ -147,12 +183,12 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, getParams })
 
     <div class="form-group">
       <label>{{ $t('image.ocr.model') }}</label>
-      <AppSelect v-model="selectedModel" :options="modelOptions" size="sm" />
+      <AppSelect v-model="selectedModel" :options="modelOptions" />
     </div>
 
     <div class="form-group">
       <label>{{ $t('image.ocr.output_format') }}</label>
-      <AppSelect v-model="outputFormat" :options="outputFormats" size="sm" />
+      <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 
     <div class="form-group">
