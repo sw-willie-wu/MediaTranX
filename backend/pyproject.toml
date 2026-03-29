@@ -2,7 +2,7 @@
 name = "mediatranx-backend"
 version = "1.2.0"
 description = "MediaTranX Backend with FastAPI, Sidecar AI Support"
-requires-python = "~=3.12.0"
+requires-python = "~=3.11.0"
 dependencies = [
     # Core Framework (Always bundled in core.exe)
     "fastapi>=0.109.0",
@@ -58,10 +58,6 @@ ai = [
 
 [tool.uv]
 managed = true
-# basic-pitch 強制依賴 tensorflow (py>=3.11)，但我們用 ONNX 後端（已有 onnxruntime）
-override-dependencies = [
-    "tensorflow ; python_version < '3.0'",
-]
 
 [[tool.uv.index]]
 name = "pytorch-cu124"
