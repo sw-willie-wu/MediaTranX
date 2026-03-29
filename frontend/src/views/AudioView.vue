@@ -53,7 +53,7 @@ const subFunctions = computed(() => [
   { id: 'transcribe', name: t('audio.functions.transcribe'), icon: 'bi-mic-fill',         group: t('audio.group.ai') },
   { id: 'separate',   name: t('audio.functions.separate'),   icon: 'bi-music-note-list',  group: t('audio.group.ai') },
   { id: 'lyrics',     name: t('audio.functions.lyrics'),     icon: 'bi-music-note-beamed',group: t('audio.group.ai') },
-  { id: 'midi-edit',  name: t('audio.functions.midiEdit'),   icon: 'bi-music-note-beamed',group: t('audio.group.ai') },
+  { id: 'midi-edit',  name: t('audio.functions.midiEdit'),   icon: 'bi-music-note-beamed',group: t('audio.group.edit') },
 ])
 
 const currentFunction = ref('transcode')
