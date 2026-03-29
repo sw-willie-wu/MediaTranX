@@ -1,8 +1,15 @@
 # MediaTranX
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/sw-willie-wu/MediaTranX)](https://github.com/sw-willie-wu/MediaTranX/stargazers)
+[![GitHub release](https://img.shields.io/github/v/release/sw-willie-wu/MediaTranX)](https://github.com/sw-willie-wu/MediaTranX/releases)
+
 **AI-powered local multimedia processing toolkit** — transcription, translation, upscaling, OCR, and format conversion. All AI inference runs locally on your machine.
 
 [繁體中文](docs/README.zh-TW.md)
+
+<!-- Add screenshots here -->
+<!-- ![MediaTranX Screenshot](docs/images/screenshot.png) -->
 
 ---
 

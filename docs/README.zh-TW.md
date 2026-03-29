@@ -1,8 +1,15 @@
 # MediaTranX
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/sw-willie-wu/MediaTranX)](https://github.com/sw-willie-wu/MediaTranX/stargazers)
+[![GitHub release](https://img.shields.io/github/v/release/sw-willie-wu/MediaTranX)](https://github.com/sw-willie-wu/MediaTranX/releases)
+
 **基於 AI 的本地多媒體處理工具** — 語音辨識、翻譯、超解析、OCR 與格式轉換。所有 AI 推理在你的電腦上本地執行。
 
 [English](../README.md)
+
+<!-- 在這裡加截圖 -->
+<!-- ![MediaTranX 截圖](images/screenshot.png) -->
 
 ---
 
