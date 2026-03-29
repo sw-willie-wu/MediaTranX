@@ -45,6 +45,7 @@ class AudioSeparateService:
         stems: Optional[list[str]] = None,
         output_format: str = "wav",
         output_dir: Optional[str] = None,
+        generate_midi: bool = False,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -55,6 +56,7 @@ class AudioSeparateService:
             "stems": stems,
             "output_format": output_format,
             "output_dir": output_dir,
+            "generate_midi": generate_midi,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_SEPARATE, params)
         logger.info(f"Audio separate task submitted: {task_id}")
@@ -82,6 +84,9 @@ class AudioSeparateService:
             output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
 
+        midi_mode = params.get("generate_midi", False)
+        demucs_progress_scale = 0.5 if midi_mode else 0.9
+
         progress_callback(0.0, "載入模型...")
 
         # === GPU 排隊管線 ===
@@ -94,10 +99,11 @@ class AudioSeparateService:
                 audio_path=str(file_info.file_path),
                 variant=model_name,
                 stems=stems,
-                on_progress=lambda p, m: progress_callback(p * 0.9, m),
+                on_progress=lambda p, m: progress_callback(p * demucs_progress_scale, m),
             )
 
-        progress_callback(0.9, "寫入檔案...")
+        write_progress_base = 0.5 if midi_mode else 0.9
+        progress_callback(write_progress_base, "寫入檔案...")
 
         # 儲存各 stem 為獨立檔案
         output_files = []
@@ -138,12 +144,76 @@ class AudioSeparateService:
             if first_file_id is None:
                 first_file_id = stem_file_id
 
-        progress_callback(1.0, "分離完成")
-        return {
+        result = {
             "output_file_id": first_file_id,
             "output_filename": f"{original_stem}.vocals.{output_format}",
             "output_files": output_files,
         }
+
+        # --- MIDI conversion (optional) ---
+        if midi_mode:
+            progress_callback(0.6, "轉換音軌至 MIDI...")
+
+            from app.engine.ai.audio.basic_pitch import get_basic_pitch
+            from app.utils.midi import transcribe_drums, merge_tracks_to_midi
+
+            basic_pitch = get_basic_pitch()
+            midi_tracks = []
+
+            # GM instrument mapping per stem
+            STEM_INSTRUMENTS = {
+                "vocals": 52,   # Choir Aahs
+                "bass": 33,     # Electric Bass (finger)
+                "guitar": 25,   # Acoustic Guitar (steel)
+                "piano": 0,     # Acoustic Grand Piano
+                "other": 48,    # String Ensemble 1
+            }
+
+            stem_files = {sf["stem"]: sf["path"] for sf in output_files}
+            stem_names = list(stem_files.keys())
+
+            for idx, stem_name in enumerate(stem_names):
+                stem_path = stem_files[stem_name]
+                stem_progress = 0.6 + (idx / len(stem_names)) * 0.3
+
+                try:
+                    if stem_name == "drums":
+                        progress_callback(stem_progress, "鼓組轉譯中...")
+                        track = transcribe_drums(stem_path)
+                    else:
+                        progress_callback(stem_progress, f"轉換 {stem_name} 至 MIDI...")
+                        track = basic_pitch.audio_to_midi(stem_path)
+                        track["name"] = stem_name.capitalize()
+                        track["instrument"] = STEM_INSTRUMENTS.get(stem_name, 0)
+
+                    if track["notes"]:
+                        midi_tracks.append(track)
+                        logger.info(f"MIDI: {stem_name} -> {len(track['notes'])} notes")
+                    else:
+                        logger.warning(f"MIDI: {stem_name} produced no notes, skipping")
+                except Exception as e:
+                    logger.warning(f"MIDI conversion failed for {stem_name}: {e}")
+
+            if midi_tracks:
+                progress_callback(0.9, "合併 MIDI 音軌...")
+                midi_filename = f"{original_stem}.mid"
+                midi_path = output_dir_path / midi_filename
+                merge_tracks_to_midi(midi_tracks, midi_path, tempo=120.0)
+
+                midi_file_id = str(uuid4())
+                self._file_service.register_output(
+                    file_id=midi_file_id,
+                    file_path=midi_path,
+                    original_filename=file_info.original_filename,
+                )
+                result["midi_file_id"] = midi_file_id
+                result["midi_filename"] = midi_filename
+                logger.info(f"Multi-track MIDI saved: {midi_path} ({len(midi_tracks)} tracks)")
+            else:
+                logger.warning("No MIDI tracks produced")
+
+        progress_callback(1.0, "分離完成")
+        return result
 
 
 _service: Optional[AudioSeparateService] = None
