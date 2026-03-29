@@ -22,6 +22,7 @@ SLOT_LLM = "llm"      # LLM 模型共用（一次只載入一個）
 SLOT_PTH = "pth"      # PTH 模型共用（一次只載入一個）
 SLOT_VLM = "vlm"      # VLM 模型（一次只載入一個）
 SLOT_DEMUCS = "demucs"  # 音源分離（一次只載入一個）
+SLOT_BASIC_PITCH = "basic_pitch"  # 音訊轉 MIDI（basic-pitch）
 SLOT_SEGMENT = "segment"  # 物件分割（MobileSAM）
 
 # ═══════════════════════════════════════════════════════════
@@ -80,6 +81,18 @@ MODELS_REGISTRY = {
                     "vram_mb": 2000,
                     "sources": ["drums", "bass", "other", "vocals", "guitar", "piano"],
                     "sample_rate": 44100,
+                },
+            },
+        },
+        # ▸ Basic Pitch（音訊轉 MIDI）
+        "basic_pitch": {
+            "slot": SLOT_BASIC_PITCH,
+            "description": "Basic Pitch 音訊轉 MIDI",
+            "variants": {
+                "default": {
+                    "model_name": "basic_pitch",
+                    "size_mb": 10,
+                    "vram_mb": 0,
                 },
             },
         },
