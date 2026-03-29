@@ -1,81 +1,162 @@
 # MediaTranX
 
-基於 AI 的現代化多媒體處理應用，整合語音辨識、翻譯、圖片處理、OCR 與媒體轉檔功能。
+**AI-powered local multimedia processing toolkit** — transcription, translation, upscaling, OCR, and format conversion. All AI inference runs locally on your machine.
 
-## 功能
+[繁體中文](docs/README.zh-TW.md)
 
-| 模組 | 功能 |
-|------|------|
-| **影片** | 格式轉碼、剪切、AI 語音字幕生成、字幕翻譯 |
-| **圖片** | 格式轉換、裁切、濾鏡調整、AI 超解析、去背、物件移除、人臉修復、OCR |
-| **音訊** | 格式轉換、剪切、音量調整、AI 語音轉文字 |
-| **文件** | AI 翻譯、OCR、PDF 轉換、文件分割 |
+---
 
-支援中文（繁體）與英文介面。
+## Features
 
-## AI 模型支援
+### Image Tools
+- Format conversion (PNG, JPEG, WebP, BMP, TIFF, GIF, ICO)
+- AI super-resolution (Real-ESRGAN, SwinIR, BSRGAN, Real-CUGAN, Waifu2x)
+- AI background removal (rembg)
+- AI object removal (MobileSAM + LaMa inpainting)
+- Face restoration (CodeFormer, GFPGAN)
+- OCR via Vision Language Models
+- Adjust, filter, crop
 
-**語音辨識（STT）**
-- Faster-Whisper（tiny / base / small / medium / large-v3）
+### Audio Tools
+- Format transcoding (MP3, WAV, FLAC, OGG, AAC, M4A, WMA, OPUS)
+- Cut, volume adjustment
+- AI transcription (Faster-Whisper) with summarization
+- AI source separation (Demucs 6-stem)
+- AI lyrics extraction with forced alignment
+- Translation via local LLM or cloud API
 
-**翻譯（LLM）**
-- TranslateGemma（4B / 12B / 27B）
-- Qwen3（1.7B / 4B / 8B / 14B）
+### Video Tools
+- Format transcoding (MP4, MKV, AVI, MOV, WebM, etc.)
+- Cut with stream copy
+- AI subtitle generation (Whisper)
+- AI subtitle translation
 
-**圖片超解析**
-- Real-ESRGAN（x2plus / x4plus / x4plus-anime）
-- SwinIR（lightweight / classical / realworld）
-- BSRGAN
-- Real-CUGAN（2x / 3x / 4x，支援降噪選項）
-- Waifu2x（CUnet）
+### Document Tools
+- OCR via Vision Language Models
+- AI translation
+- PDF split, PDF conversion
 
-**人臉修復**
-- CodeFormer
-- GFPGAN v1.4
+### General
+- Multi-file batch processing with filmstrip UI
+- Dark / light theme with glassmorphism design
+- Real-time task progress tracking
+- Local + cloud AI model support (Ollama, OpenAI, Gemini)
+- i18n: English, Traditional Chinese
 
-**OCR（VLM）**
-- Qwen3-VL（2B / 4B / 8B）
-- InternVL2.5（1B / 4B）
-- Gemma 3（4B / 12B）
+---
 
-**物件分割**
-- MobileSAM
+## AI Models
 
-## 技術架構
+| Category | Models |
+|----------|--------|
+| **Speech-to-Text** | Faster-Whisper (tiny / base / small / medium / large-v3) |
+| **Translation LLM** | TranslateGemma (4B/12B/27B), Qwen3 (1.7B/4B/8B/14B) |
+| **Super-Resolution** | Real-ESRGAN, SwinIR, BSRGAN, Real-CUGAN, Waifu2x |
+| **Face Restoration** | CodeFormer, GFPGAN v1.4 |
+| **VLM (OCR)** | Qwen3-VL (2B/4B/8B), InternVL2.5 (1B/4B), Gemma 3 (4B/12B) |
+| **Source Separation** | Demucs HTDemucs 6-stem |
+| **Forced Alignment** | Wav2Vec2 (16 languages) |
+| **Object Segmentation** | MobileSAM |
+
+Models are downloaded on-demand through the built-in model manager.
+
+---
+
+## Tech Stack
 
 ```
-Vue 3 + TypeScript + Pinia (Frontend, port 8000)
-FastAPI + Python 3.12 (Backend, port 8001)
-  └── AI Sidecar (.venv in %APPDATA%)
+Frontend:  Vue 3 + TypeScript + Pinia + Vite
+Backend:   FastAPI + Python 3.12 + uv
+AI:        PyTorch / CTranslate2 / llama-server
+Media:     FFmpeg
 ```
 
-詳見 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+---
 
-## 開發環境
+## Architecture
 
-**需求**
-- Node.js 18+
-- Python 3.12（透過 uv 管理）
-- NVIDIA GPU（CUDA，建議 6GB+ VRAM）
+```mermaid
+graph TB
+    subgraph Frontend["Vue 3 Frontend (port 8000)"]
+        UI[ToolLayout + Composables]
+    end
 
-**啟動**
+    subgraph Backend["FastAPI Backend (port 8001)"]
+        direction LR
+        Routes[Routes] --> Services --> Engine
+    end
+
+    subgraph AI["AI Runtimes"]
+        Llama["llama-server<br/>(LLM, VLM)"]
+        PT["PyTorch<br/>(CV, STT, Demucs)"]
+    end
+
+    UI -->|"REST API"| Routes
+    Engine --> Llama
+    Engine --> PT
+    Engine --> FFmpeg["FFmpeg"]
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- **Node.js** 18+
+- **Python** 3.12 (managed via [uv](https://docs.astral.sh/uv/))
+- **NVIDIA GPU** + CUDA recommended (6GB+ VRAM), CPU mode also supported
+
+### Setup
 
 ```bash
+git clone https://github.com/sw-willie-wu/MediaTranX.git
+cd MediaTranX
+
 # Frontend
 cd frontend
 npm install
-npm run dev
 
 # Backend
-cd backend
-uv run uvicorn app.main:app --reload
+cd ../backend
+uv sync
 ```
 
-詳見 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+### Run
 
-## 文件
+```bash
+# Terminal 1: Frontend (port 8000)
+cd frontend
+npm run dev
 
-- [架構文件](docs/ARCHITECTURE.md)
-- [後端架構](docs/BACKEND_ARCHITECTURE.md)
-- [前端設計系統](docs/FRONTEND_DESIGN_SYSTEM.md)
-- [開發規範](docs/DEVELOPMENT.md)
+# Terminal 2: Backend (port 8001)
+cd backend
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8001
+```
+
+Open `http://localhost:8000` in your browser.
+
+### Install AI Environment
+
+On first launch, go to **Settings > AI Environment** and click **Install Core Modules**:
+1. Tool execution modules (Whisper, Demucs, HuggingFace, etc.)
+2. Deep learning inference module (PyTorch — auto-detects CUDA / CPU)
+3. Language inference module (llama-server)
+
+Then download models from **Settings > Models & Tools**.
+
+---
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) — System overview, API endpoints, data flow
+- [Backend Architecture](docs/BACKEND_ARCHITECTURE.md) — Backend development guidelines
+- [Frontend Design System](docs/FRONTEND_DESIGN_SYSTEM.md) — UI/UX specifications
+
+---
+
+## License
+
+MIT

@@ -809,7 +809,37 @@ setTitle('圖片工具', 'photo.jpg')  // → "圖片工具 - photo.jpg"
 
 ---
 
-## 26. Composables 總覽
+## 26. 目錄結構
+
+```
+frontend/src/
+├── main.ts                     # 應用入口
+├── App.vue                     # 根元件（Titlebar + RouterView + MainSidebar + AppToast）
+├── router/index.ts             # 路由定義
+├── stores/
+│   ├── tasks.ts                # 任務狀態（Map<taskId, Task> + Polling）
+│   ├── files.ts                # 檔案上傳 / 本地註冊
+│   └── settings.ts             # 使用者偏好（主題、語言）
+├── composables/                # 可組合邏輯（見 §27）
+├── components/
+│   ├── ToolLayout.vue          # 工具頁面框架（三欄 + 預覽 + slider）
+│   ├── MainSidebar.vue         # 左側導航
+│   ├── Titlebar.vue            # 自訂標題列
+│   ├── common/                 # 可復用 UI 元件
+│   ├── settings/               # Settings 頁面元件
+│   ├── image/                  # 圖片工具元件
+│   ├── audio/                  # 音訊工具元件
+│   ├── video/                  # 影片工具元件
+│   └── document/               # 文件工具元件
+├── views/                      # 頁面 View
+├── i18n/locales/               # 多語系（zh-TW、en）
+├── assets/base.css             # Design Tokens（CSS 變數）
+└── styles/                     # 共用 SCSS（tool-panels-shared、settings-shared）
+```
+
+---
+
+## 27. Composables 總覽
 
 | Composable | 用途 |
 |---|---|
