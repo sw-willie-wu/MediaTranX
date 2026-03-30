@@ -15,7 +15,6 @@ export interface MidiKeyboardActions {
   nudgeDown: () => void
   setToolSelect: () => void
   setToolDraw: () => void
-  setToolErase: () => void
 }
 
 export function useMidiKeyboard(
@@ -76,8 +75,6 @@ export function useMidiKeyboard(
       actions.setToolSelect()
     } else if (key === 'b' || key === '2') {
       actions.setToolDraw()
-    } else if (key === 'e' || key === '3') {
-      actions.setToolErase()
     } else {
       handled = false
     }

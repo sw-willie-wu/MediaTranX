@@ -4,7 +4,6 @@ const props = defineProps<{
   currentBeat: number
   totalBeats: number
   loopEnabled: boolean
-  toolMode: 'select' | 'draw' | 'erase'
   tempo: number
 }>()
 
@@ -13,7 +12,6 @@ const emit = defineEmits<{
   pause: []
   stop: []
   'toggle-loop': []
-  'set-tool': [mode: 'select' | 'draw' | 'erase']
 }>()
 
 function formatTime(beats: number): string {
@@ -25,100 +23,50 @@ function formatTime(beats: number): string {
 </script>
 
 <template>
-  <div class="midi-toolbar">
-    <!-- Transport controls -->
-    <div class="toolbar-group">
-      <button
-        class="toolbar-btn"
-        :title="isPlaying ? 'Pause' : 'Play'"
-        @click="isPlaying ? emit('pause') : emit('play')"
-      >
-        <i :class="isPlaying ? 'bi-pause-fill' : 'bi-play-fill'" />
-      </button>
-      <button class="toolbar-btn" title="Stop" @click="emit('stop')">
-        <i class="bi-stop-fill" />
-      </button>
-      <button
-        class="toolbar-btn"
-        :class="{ 'is-active': loopEnabled }"
-        title="Loop"
-        @click="emit('toggle-loop')"
-      >
-        <i class="bi-arrow-repeat" />
-      </button>
-    </div>
-
-    <span class="divider" />
-
-    <!-- Time display -->
-    <span class="time-display">
-      {{ formatTime(currentBeat) }} / {{ formatTime(totalBeats) }}
-    </span>
-
-    <span class="divider" />
-
-    <!-- Tool mode buttons -->
-    <div class="toolbar-group">
-      <button
-        class="toolbar-btn"
-        :class="{ 'is-active': toolMode === 'select' }"
-        title="Select"
-        @click="emit('set-tool', 'select')"
-      >
-        <i class="bi-cursor" />
-      </button>
-      <button
-        class="toolbar-btn"
-        :class="{ 'is-active': toolMode === 'draw' }"
-        title="Draw"
-        @click="emit('set-tool', 'draw')"
-      >
-        <i class="bi-pencil" />
-      </button>
-      <button
-        class="toolbar-btn"
-        :class="{ 'is-active': toolMode === 'erase' }"
-        title="Erase"
-        @click="emit('set-tool', 'erase')"
-      >
-        <i class="bi-eraser" />
-      </button>
-    </div>
+  <div class="midi-playback-controls">
+    <button class="midi-play-btn" @click="isPlaying ? emit('pause') : emit('play')">
+      <i class="bi" :class="isPlaying ? 'bi-pause-fill' : 'bi-play-fill'" />
+    </button>
+    <button class="midi-play-btn" @click="emit('stop')">
+      <i class="bi bi-stop-fill" />
+    </button>
+    <button
+      class="midi-play-btn"
+      :class="{ 'is-active': loopEnabled }"
+      @click="emit('toggle-loop')"
+    >
+      <i class="bi bi-arrow-repeat" />
+    </button>
+    <span class="midi-time-display">{{ formatTime(currentBeat) }} / {{ formatTime(totalBeats) }}</span>
   </div>
 </template>
 
 <style lang="scss">
-@use '@/styles/tool-panels-shared';
-
-.midi-toolbar {
+.midi-playback-controls {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 8px;
-  background: var(--panel-bg);
-  border-bottom: 1px solid var(--panel-border);
-}
-
-.toolbar-group {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.toolbar-btn {
-  display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 28px;
-  min-width: 28px;
-  padding: 0 6px;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  flex-shrink: 0;
+  border-top: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 0 0 8px 8px;
+}
+
+.midi-play-btn {
+  width: 32px;
+  height: 32px;
   border: none;
-  border-radius: 6px;
-  background: transparent;
+  background: var(--panel-bg);
   color: var(--text-primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
+  font-size: 0.9rem;
 
   &:hover {
     background: var(--panel-bg-hover);
@@ -126,21 +74,15 @@ function formatTime(beats: number): string {
 
   &.is-active {
     background: var(--color-primary);
-    color: #fff;
+    color: var(--text-on-primary, #fff);
   }
 }
 
-.divider {
-  width: 1px;
-  height: 20px;
-  margin: 0 4px;
-  background: var(--panel-border);
-}
-
-.time-display {
+.midi-time-display {
   font-family: monospace;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--text-secondary);
   user-select: none;
+  margin-left: 0.25rem;
 }
 </style>

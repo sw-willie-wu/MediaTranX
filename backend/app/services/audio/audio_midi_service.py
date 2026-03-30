@@ -58,6 +58,7 @@ class AudioMidiService:
         self,
         file_id: str,
         output_format: str = "wav",
+        output_path: Optional[str] = None,
         output_dir: Optional[str] = None,
     ) -> str:
         """Submit MIDI export task (WAV/MP3 via FluidSynth)."""
@@ -67,6 +68,7 @@ class AudioMidiService:
         params = {
             "file_id": file_id,
             "output_format": output_format,
+            "output_path": output_path,
             "output_dir": output_dir,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_MIDI_EXPORT, params)
@@ -79,16 +81,23 @@ class AudioMidiService:
 
         file_id = params["file_id"]
         output_format = params.get("output_format", "wav")
+        custom_output_path = params.get("output_path")
         custom_output_dir = params.get("output_dir")
 
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        output_dir_path = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
+        # Determine output location: output_path (full file) > output_dir > default
+        if custom_output_path:
+            final_target = Path(custom_output_path)
+            output_dir_path = final_target.parent
+            original_stem = final_target.stem
+        else:
+            output_dir_path = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
+            original_stem = Path(file_info.original_filename or "midi").stem
         output_dir_path.mkdir(parents=True, exist_ok=True)
 
-        original_stem = Path(file_info.original_filename or "midi").stem
         progress_callback(0.05, "準備匯出...")
 
         fluidsynth = get_fluidsynth()

@@ -32,6 +32,12 @@ const emit = defineEmits<{
   'clear-selection': []
   'play-note': [pitch: number]
   'update-velocity': [ids: string[], velocity: number]
+  'undo': []
+  'redo': []
+  'select-all': []
+  'copy': []
+  'paste': [beat: number]
+  'duplicate': []
 }>()
 
 // ── Constants ──
@@ -45,21 +51,47 @@ const TOTAL_ROWS = MAX_PITCH - MIN_PITCH + 1
 
 const RESIZE_HANDLE_PX = 6 // pixels from right edge to trigger resize
 
-// Colors (canvas can't read CSS vars — define here)
-const COLOR_DARK_ROW = '#1a1a2e'
-const COLOR_LIGHT_ROW = '#1e1e35'
-const COLOR_GRID_BEAT = 'rgba(255,255,255,0.06)'
-const COLOR_GRID_BAR = 'rgba(255,255,255,0.15)'
-const COLOR_GRID_SUB = 'rgba(255,255,255,0.03)'
-const COLOR_PIANO_WHITE = '#2a2a44'
-const COLOR_PIANO_BLACK = '#16162a'
-const COLOR_PIANO_LABEL = '#aaaacc'
-const COLOR_RULER_BG = '#12122a'
-const COLOR_RULER_TEXT = '#8888aa'
-const COLOR_CURSOR = '#ff4444'
-const COLOR_SELECTION_BOX = 'rgba(100,160,255,0.25)'
-const COLOR_SELECTION_BORDER = 'rgba(100,160,255,0.7)'
-const COLOR_SELECTED_BORDER = '#ffffff'
+// Colors — theme-aware, semi-transparent to let the app gradient show through
+const COLORS_DARK = {
+  darkRow: 'rgba(10, 10, 25, 0.45)',
+  lightRow: 'rgba(20, 20, 40, 0.0)',
+  gridBeat: 'rgba(255,255,255,0.08)',
+  gridBar: 'rgba(255,255,255,0.18)',
+  gridSub: 'rgba(255,255,255,0.04)',
+  pianoWhite: 'rgba(255,255,255,0.0)',
+  pianoBlack: 'rgba(0,0,0,0.25)',
+  pianoLabel: 'rgba(255,255,255,0.65)',
+  pianoColumnBg: 'rgba(0, 0, 0, 0.0)',
+  rulerBg: 'rgba(10, 10, 25, 0.55)',
+  rulerText: 'rgba(255,255,255,0.5)',
+  cursor: '#7c6fad',
+  selectionBox: 'rgba(124,111,173,0.2)',
+  selectionBorder: 'rgba(124,111,173,0.7)',
+  selectedBorder: '#a89cc8',
+}
+
+const COLORS_LIGHT = {
+  darkRow: 'rgba(0, 0, 0, 0.08)',
+  lightRow: 'rgba(0, 0, 0, 0.0)',
+  gridBeat: 'rgba(0,0,0,0.1)',
+  gridBar: 'rgba(0,0,0,0.2)',
+  gridSub: 'rgba(0,0,0,0.04)',
+  pianoWhite: 'rgba(255,255,255,0.0)',
+  pianoBlack: 'rgba(0,0,0,0.15)',
+  pianoLabel: 'rgba(0,0,0,0.7)',
+  pianoColumnBg: 'rgba(0, 0, 0, 0.0)',
+  rulerBg: 'rgba(255, 255, 255, 0.5)',
+  rulerText: 'rgba(0,0,0,0.5)',
+  cursor: '#6b5fa0',
+  selectionBox: 'rgba(107,95,160,0.15)',
+  selectionBorder: 'rgba(107,95,160,0.6)',
+  selectedBorder: '#6b5fa0',
+}
+
+function getColors() {
+  const theme = document.documentElement.getAttribute('data-theme')
+  return theme === 'light' ? COLORS_LIGHT : COLORS_DARK
+}
 
 // Which pitches are black keys (relative to octave)
 const BLACK_KEY_OFFSETS = new Set([1, 3, 6, 8, 10])
@@ -90,7 +122,7 @@ let animFrameId = 0
 // ── Drag state ──
 
 const dragState = ref<{
-  type: 'none' | 'move' | 'resize' | 'select-box' | 'scroll'
+  type: 'none' | 'move' | 'resize' | 'select-box' | 'scroll' | 'draw'
   startX: number
   startY: number
   startBeat: number
@@ -139,6 +171,24 @@ function snapBeat(beat: number): number {
   return Math.round(beat / gs) * gs
 }
 
+const NOTE_RADIUS = 5
+
+function fillRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  if (w < r * 2) r = w / 2
+  if (h < r * 2) r = h / 2
+  ctx.beginPath()
+  ctx.roundRect(x, y, w, h, r)
+  ctx.fill()
+}
+
+function strokeRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  if (w < r * 2) r = w / 2
+  if (h < r * 2) r = h / 2
+  ctx.beginPath()
+  ctx.roundRect(x, y, w, h, r)
+  ctx.stroke()
+}
+
 // ── Hit testing ──
 
 function hitTestNote(
@@ -174,19 +224,30 @@ function draw() {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  const W = canvas.width
-  const H = canvas.height
+  // Use logical (CSS) pixel dimensions, not the DPR-scaled canvas buffer size.
+  // The DPR transform is applied via setTransform in updateCanvasSize, so all
+  // draw calls operate in CSS-pixel coordinate space.
+  const dpr = window.devicePixelRatio || 1
+  const W = canvas.width / dpr
+  const H = canvas.height / dpr
   const rh = rowHeight.value
   const bpb = beatsPerBar.value
 
-  // 1. Clear
-  ctx.clearRect(0, 0, W, H)
+  if (W === 0 || H === 0) return // container not yet laid out
+
+  const c = getColors()
+
+  // 1. Clear — use raw canvas dimensions to guarantee full buffer clear
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.restore()
 
   // 2. Background rows
   for (let pitch = MAX_PITCH; pitch >= MIN_PITCH; pitch--) {
     const y = pitchToY(pitch)
     if (y + rh < BAR_RULER_HEIGHT || y > H) continue
-    ctx.fillStyle = isBlackKey(pitch) ? COLOR_DARK_ROW : COLOR_LIGHT_ROW
+    ctx.fillStyle = isBlackKey(pitch) ? c.darkRow : c.lightRow
     ctx.fillRect(PIANO_KEY_WIDTH, y, W - PIANO_KEY_WIDTH, rh)
   }
 
@@ -198,7 +259,7 @@ function draw() {
   if (props.gridSize < 1) {
     const gs = props.gridSize
     const firstSub = Math.max(0, Math.floor(xToBeat(PIANO_KEY_WIDTH) / gs) * gs)
-    ctx.strokeStyle = COLOR_GRID_SUB
+    ctx.strokeStyle = c.gridSub
     ctx.lineWidth = 1
     for (let b = firstSub; b <= lastBeat; b += gs) {
       // Skip full beats (drawn separately)
@@ -217,7 +278,7 @@ function draw() {
     const x = beatToX(b)
     if (x < PIANO_KEY_WIDTH) continue
     const isBar = b % bpb === 0
-    ctx.strokeStyle = isBar ? COLOR_GRID_BAR : COLOR_GRID_BEAT
+    ctx.strokeStyle = isBar ? c.gridBar : c.gridBeat
     ctx.lineWidth = isBar ? 1.5 : 1
     ctx.beginPath()
     ctx.moveTo(Math.round(x) + 0.5, BAR_RULER_HEIGHT)
@@ -241,7 +302,7 @@ function draw() {
   for (let ti = 0; ti < props.tracks.length; ti++) {
     if (ti === props.activeTrackIndex) continue
     const track = props.tracks[ti]
-    if (track.muted) continue
+    if (track.muted || !track.visible) continue
     ctx.globalAlpha = 0.3
     ctx.fillStyle = track.color
     for (const note of track.notes) {
@@ -251,14 +312,14 @@ function draw() {
       if (nx + nw < PIANO_KEY_WIDTH || nx > W || ny + rh < BAR_RULER_HEIGHT || ny > H) continue
       const clampX = Math.max(PIANO_KEY_WIDTH, nx)
       const drawW = Math.max(1, nw - (clampX - nx))
-      ctx.fillRect(clampX, ny + 1, drawW, rh - 2)
+      fillRoundRect(ctx, clampX, ny + 1, drawW, rh - 2, NOTE_RADIUS)
     }
     ctx.globalAlpha = 1
   }
 
-  // 7. Active track notes
+  // 7. Active track notes (skip if hidden)
   const aTrack = activeTrack.value
-  if (aTrack) {
+  if (aTrack && aTrack.visible) {
     const color = aTrack.color
     for (const note of aTrack.notes) {
       let nx = beatToX(note.start)
@@ -297,20 +358,20 @@ function draw() {
 
       // Fill
       ctx.fillStyle = color
-      ctx.fillRect(clampX, ny + 1, drawW, rh - 2)
+      fillRoundRect(ctx, clampX, ny + 1, drawW, rh - 2, NOTE_RADIUS)
 
       // Velocity shading: darker overlay for lower velocity
       const velAlpha = 1 - note.velocity / 127
       if (velAlpha > 0.01) {
         ctx.fillStyle = `rgba(0,0,0,${velAlpha * 0.5})`
-        ctx.fillRect(clampX, ny + 1, drawW, rh - 2)
+        fillRoundRect(ctx, clampX, ny + 1, drawW, rh - 2, NOTE_RADIUS)
       }
 
       // Selected border
       if (props.selectedNoteIds.has(note.id)) {
-        ctx.strokeStyle = COLOR_SELECTED_BORDER
+        ctx.strokeStyle = c.selectedBorder
         ctx.lineWidth = 2
-        ctx.strokeRect(clampX + 1, ny + 2, drawW - 2, rh - 4)
+        strokeRoundRect(ctx, clampX + 1, ny + 2, drawW - 2, rh - 4, NOTE_RADIUS)
       }
     }
   }
@@ -322,17 +383,34 @@ function draw() {
     const y1 = Math.min(ds.startY, ds.currentY)
     const w = Math.abs(ds.currentX - ds.startX)
     const h = Math.abs(ds.currentY - ds.startY)
-    ctx.fillStyle = COLOR_SELECTION_BOX
+    ctx.fillStyle = c.selectionBox
     ctx.fillRect(x1, y1, w, h)
-    ctx.strokeStyle = COLOR_SELECTION_BORDER
+    ctx.strokeStyle = c.selectionBorder
     ctx.lineWidth = 1
     ctx.setLineDash([4, 4])
     ctx.strokeRect(x1, y1, w, h)
     ctx.setLineDash([])
   }
 
+  // 8b. Draw preview (ghost note while dragging in draw mode)
+  if (dragState.value && dragState.value.type === 'draw') {
+    const ds = dragState.value
+    const endBeat = xToBeat(ds.currentX)
+    const snappedEnd = snapBeat(Math.max(0, endBeat))
+    const duration = Math.max(props.gridSize, snappedEnd - ds.startBeat)
+    const nx = beatToX(ds.startBeat)
+    const ny = pitchToY(ds.startPitch)
+    const nw = duration * zoomX.value
+    const track = activeTrack.value
+    const color = track?.color ?? '#4FC3F7'
+    ctx.globalAlpha = 0.5
+    ctx.fillStyle = color
+    fillRoundRect(ctx, Math.max(PIANO_KEY_WIDTH, nx), ny + 1, nw, rh - 2, NOTE_RADIUS)
+    ctx.globalAlpha = 1.0
+  }
+
   // 4. Piano keys column (drawn after notes so it overlays them on the left edge)
-  ctx.fillStyle = COLOR_RULER_BG
+  ctx.fillStyle = c.pianoColumnBg
   ctx.fillRect(0, 0, PIANO_KEY_WIDTH, H)
 
   for (let pitch = MAX_PITCH; pitch >= MIN_PITCH; pitch--) {
@@ -340,11 +418,11 @@ function draw() {
     if (y + rh < 0 || y > H) continue
 
     const black = isBlackKey(pitch)
-    ctx.fillStyle = black ? COLOR_PIANO_BLACK : COLOR_PIANO_WHITE
+    ctx.fillStyle = black ? c.pianoBlack : c.pianoWhite
     ctx.fillRect(0, y, PIANO_KEY_WIDTH, rh)
 
-    // Subtle bottom border
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)'
+    // Bottom border between keys
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)'
     ctx.lineWidth = 1
     ctx.beginPath()
     ctx.moveTo(0, Math.round(y + rh) + 0.5)
@@ -353,7 +431,7 @@ function draw() {
 
     // Label C notes
     if (pitch % 12 === 0) {
-      ctx.fillStyle = COLOR_PIANO_LABEL
+      ctx.fillStyle = c.pianoLabel
       ctx.font = '10px monospace'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
@@ -362,18 +440,18 @@ function draw() {
   }
 
   // 5. Bar ruler (top strip)
-  ctx.fillStyle = COLOR_RULER_BG
+  ctx.fillStyle = c.rulerBg
   ctx.fillRect(0, 0, W, BAR_RULER_HEIGHT)
 
   // Bar ruler bottom edge
-  ctx.strokeStyle = 'rgba(255,255,255,0.1)'
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)'
   ctx.lineWidth = 1
   ctx.beginPath()
   ctx.moveTo(0, BAR_RULER_HEIGHT + 0.5)
   ctx.lineTo(W, BAR_RULER_HEIGHT + 0.5)
   ctx.stroke()
 
-  ctx.fillStyle = COLOR_RULER_TEXT
+  ctx.fillStyle = c.rulerText
   ctx.font = '11px monospace'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
@@ -393,13 +471,13 @@ function draw() {
   }
 
   // Piano key / ruler corner overlap fill
-  ctx.fillStyle = COLOR_RULER_BG
+  ctx.fillStyle = c.rulerBg
   ctx.fillRect(0, 0, PIANO_KEY_WIDTH, BAR_RULER_HEIGHT)
 
   // 9. Playback cursor
   const cursorX = beatToX(props.currentBeat)
   if (cursorX >= PIANO_KEY_WIDTH && cursorX <= W) {
-    ctx.fillStyle = COLOR_CURSOR
+    ctx.fillStyle = c.cursor
     ctx.fillRect(cursorX - 1, BAR_RULER_HEIGHT, 2, H - BAR_RULER_HEIGHT)
 
     // Small triangle at top
@@ -429,6 +507,7 @@ function requestRedraw() {
 // ── Canvas sizing ──
 
 let resizeObserver: ResizeObserver | null = null
+let _themeObserver: MutationObserver | null = null
 
 function updateCanvasSize() {
   const canvas = canvasRef.value
@@ -440,11 +519,22 @@ function updateCanvasSize() {
   const w = Math.round(rect.width)
   const h = Math.round(rect.height)
 
-  canvas.width = w * dpr
-  canvas.height = h * dpr
+  // Skip if container hasn't been laid out yet
+  if (w === 0 || h === 0) return
+
+  // Only reset canvas buffer when dimensions actually changed (avoids
+  // unnecessary context resets which clear the DPR transform).
+  const bw = Math.round(w * dpr)
+  const bh = Math.round(h * dpr)
+  if (canvas.width !== bw || canvas.height !== bh) {
+    canvas.width = bw
+    canvas.height = bh
+  }
+
   canvas.style.width = `${w}px`
   canvas.style.height = `${h}px`
 
+  // Apply DPR transform — setting canvas.width/height resets all context state
   const ctx = canvas.getContext('2d')
   if (ctx) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -570,14 +660,17 @@ function onMouseDown(e: MouseEvent) {
       }
     }
   } else if (props.toolMode === 'draw') {
-    // Create a new note
     const snappedBeat = snapBeat(Math.max(0, beat))
     const clampedPitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, pitch))
-    emit('add-note', clampedPitch, snappedBeat, props.gridSize, 100)
-  } else if (props.toolMode === 'erase') {
-    const hit = hitTestNote(x, y)
-    if (hit) {
-      emit('delete-notes', [hit.noteId])
+    emit('play-note', clampedPitch)
+    dragState.value = {
+      type: 'draw',
+      startX: x,
+      startY: y,
+      startBeat: snappedBeat,
+      startPitch: clampedPitch,
+      currentX: x,
+      currentY: y,
     }
   }
 }
@@ -590,12 +683,6 @@ function onMouseMove(e: MouseEvent) {
   // Update cursor style
   if (props.toolMode === 'draw') {
     canvas.style.cursor = 'crosshair'
-  } else if (props.toolMode === 'erase') {
-    canvas.style.cursor = x < PIANO_KEY_WIDTH ? 'default' : 'not-allowed'
-    // If hovering over a note in erase mode, show pointer
-    if (x >= PIANO_KEY_WIDTH && hitTestNote(x, y)) {
-      canvas.style.cursor = 'pointer'
-    }
   } else if (props.toolMode === 'select') {
     if (dragState.value) {
       canvas.style.cursor =
@@ -682,6 +769,11 @@ function onMouseUp(_e: MouseEvent) {
         emit('select-notes', ids, false)
       }
     }
+  } else if (ds.type === 'draw') {
+    const endBeat = xToBeat(ds.currentX)
+    const snappedEnd = snapBeat(Math.max(0, endBeat))
+    const duration = Math.max(props.gridSize, snappedEnd - ds.startBeat)
+    emit('add-note', ds.startPitch, ds.startBeat, duration, 100)
   }
 
   dragState.value = null
@@ -714,13 +806,15 @@ function onWheel(e: WheelEvent) {
     scrollX.value += beatUnderMouse * (newZoom - oldZoom)
     scrollX.value = Math.max(0, scrollX.value)
   } else if (e.shiftKey) {
-    // Vertical scroll
-    scrollY.value += e.deltaY
-    scrollY.value = Math.max(0, Math.min(TOTAL_ROWS * rowHeight.value - 200, scrollY.value))
-  } else {
-    // Horizontal scroll
+    // Shift + wheel = horizontal scroll
     scrollX.value += e.deltaY
     scrollX.value = Math.max(0, scrollX.value)
+  } else {
+    // Wheel = vertical scroll (pitch)
+    const containerH = containerRef.value?.getBoundingClientRect().height ?? 400
+    const maxScrollY = Math.max(0, TOTAL_ROWS * rowHeight.value - containerH + BAR_RULER_HEIGHT)
+    scrollY.value += e.deltaY
+    scrollY.value = Math.max(0, Math.min(maxScrollY, scrollY.value))
   }
 
   requestRedraw()
@@ -729,16 +823,73 @@ function onWheel(e: WheelEvent) {
 // ── Keyboard handling ──
 
 function onKeyDown(e: KeyboardEvent) {
-  if (e.key === 'Delete' || e.key === 'Backspace') {
+  const ctrl = e.ctrlKey || e.metaKey
+  if (ctrl && e.key === 'z') {
+    e.preventDefault()
+    e.stopPropagation()
+    emit('undo')
+  } else if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) {
+    e.preventDefault()
+    e.stopPropagation()
+    emit('redo')
+  } else if (e.key === 'Delete' || e.key === 'Backspace') {
     if (props.selectedNoteIds.size > 0) {
       e.preventDefault()
+      e.stopPropagation()
       emit('delete-notes', Array.from(props.selectedNoteIds))
     }
+  } else if (ctrl && e.key === 'a') {
+    e.preventDefault()
+    e.stopPropagation()
+    emit('select-all')
+  } else if (ctrl && e.key === 'c') {
+    e.preventDefault()
+    e.stopPropagation()
+    emit('copy')
+  } else if (ctrl && e.key === 'v') {
+    e.preventDefault()
+    e.stopPropagation()
+    emit('paste', props.currentBeat)
+  } else if (ctrl && e.key === 'd') {
+    e.preventDefault()
+    e.stopPropagation()
+    emit('duplicate')
   } else if (e.key === 'Escape') {
     emit('clear-selection')
     dragState.value = null
     requestRedraw()
   }
+}
+
+// ── Auto-scroll to note range ──
+
+let hasAutoScrolled = false
+
+function autoScrollToNotes() {
+  // Gather all pitches across all tracks
+  let minPitch = MAX_PITCH
+  let maxPitch = MIN_PITCH
+  let hasNotes = false
+  for (const track of props.tracks) {
+    for (const note of track.notes) {
+      if (note.pitch < minPitch) minPitch = note.pitch
+      if (note.pitch > maxPitch) maxPitch = note.pitch
+      hasNotes = true
+    }
+  }
+  if (!hasNotes) return
+
+  const container = containerRef.value
+  if (!container) return
+  const containerHeight = container.getBoundingClientRect().height
+  if (containerHeight <= 0) return
+
+  // Center viewport on the mid-point of the note range, with some padding
+  const midPitch = Math.round((minPitch + maxPitch) / 2)
+  const midRow = MAX_PITCH - midPitch
+  scrollY.value = Math.max(0, midRow * rowHeight.value - containerHeight / 2 + BAR_RULER_HEIGHT)
+  hasAutoScrolled = true
+  requestRedraw()
 }
 
 // ── Watchers ──
@@ -753,6 +904,10 @@ watch(
     props.toolMode,
   ],
   () => {
+    // Auto-scroll to note content on first data load
+    if (!hasAutoScrolled && props.tracks.some((t) => t.notes.length > 0)) {
+      autoScrollToNotes()
+    }
     requestRedraw()
   },
   { deep: true },
@@ -788,16 +943,25 @@ onMounted(async () => {
   await nextTick()
   updateCanvasSize()
 
-  // Set initial scroll to center around C4 (pitch 60)
-  const c4Row = MAX_PITCH - 60
-  const container = containerRef.value
-  if (container) {
-    const containerHeight = container.getBoundingClientRect().height
-    scrollY.value = Math.max(0, c4Row * rowHeight.value - containerHeight / 2)
+  // If tracks already have notes, center on the actual note range;
+  // otherwise default to centering around C4 (pitch 60).
+  if (props.tracks.some((t) => t.notes.length > 0)) {
+    autoScrollToNotes()
+  } else {
+    const c4Row = MAX_PITCH - 60
+    const container = containerRef.value
+    if (container) {
+      const containerHeight = container.getBoundingClientRect().height
+      scrollY.value = Math.max(0, c4Row * rowHeight.value - containerHeight / 2)
+    }
   }
 
   // Start render loop
   animFrameId = requestAnimationFrame(renderLoop)
+
+  // Redraw on theme change
+  _themeObserver = new MutationObserver(() => requestRedraw())
+  _themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
   // Observe container resizing
   if (containerRef.value) {
@@ -821,6 +985,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(animFrameId)
+
+  _themeObserver?.disconnect()
 
   if (resizeObserver) {
     resizeObserver.disconnect()

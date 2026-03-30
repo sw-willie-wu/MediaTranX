@@ -22,6 +22,8 @@ export interface MidiTrack {
   volume: number       // 0-127
   pan: number          // 0-127 (64=center)
   muted: boolean
+  solo: boolean
+  visible: boolean     // show notes in piano roll
   isDrum: boolean
   notes: MidiNote[]
 }
@@ -33,7 +35,7 @@ export interface MidiData {
   tracks: MidiTrack[]
 }
 
-export type ToolMode = 'select' | 'draw' | 'erase'
+export type ToolMode = 'select' | 'draw'
 
 // ── Constants ──
 
@@ -74,9 +76,11 @@ export function useMidiEditor() {
   // ── Undo / Redo ──
   const undoStack: MidiData[] = []
   const redoStack: MidiData[] = []
+  const _undoLen = ref(0)
+  const _redoLen = ref(0)
 
-  const canUndo: ComputedRef<boolean> = computed(() => undoStack.length > 0)
-  const canRedo: ComputedRef<boolean> = computed(() => redoStack.length > 0)
+  const canUndo: ComputedRef<boolean> = computed(() => _undoLen.value > 0)
+  const canRedo: ComputedRef<boolean> = computed(() => _redoLen.value > 0)
 
   function snapshotState(): MidiData {
     return {
@@ -105,6 +109,11 @@ export function useMidiEditor() {
     selectedNoteIds.value = new Set()
   }
 
+  function syncStackLens() {
+    _undoLen.value = undoStack.length
+    _redoLen.value = redoStack.length
+  }
+
   function pushUndo() {
     undoStack.push(snapshotState())
     if (undoStack.length > MAX_UNDO) {
@@ -112,6 +121,7 @@ export function useMidiEditor() {
     }
     redoStack.length = 0
     isDirty.value = true
+    syncStackLens()
   }
 
   function undo() {
@@ -119,6 +129,7 @@ export function useMidiEditor() {
     redoStack.push(snapshotState())
     const snapshot = undoStack.pop()!
     restoreState(snapshot)
+    syncStackLens()
   }
 
   function redo() {
@@ -126,6 +137,7 @@ export function useMidiEditor() {
     undoStack.push(snapshotState())
     const snapshot = redoStack.pop()!
     restoreState(snapshot)
+    syncStackLens()
   }
 
   // ── API methods ──
@@ -151,6 +163,8 @@ export function useMidiEditor() {
         volume: apiTrack.volume ?? 100,
         pan: apiTrack.pan ?? 64,
         muted: apiTrack.muted ?? false,
+        solo: false,
+        visible: apiTrack.visible ?? true,
         isDrum: apiTrack.is_drum ?? apiTrack.isDrum ?? false,
         notes: (apiTrack.notes ?? []).map((apiNote: any) => ({
           id: crypto.randomUUID(),
@@ -167,6 +181,7 @@ export function useMidiEditor() {
       isDirty.value = false
       undoStack.length = 0
       redoStack.length = 0
+      syncStackLens()
     } finally {
       isLoading.value = false
     }
@@ -423,6 +438,8 @@ export function useMidiEditor() {
       volume: 100,
       pan: 64,
       muted: false,
+      solo: false,
+      visible: true,
       isDrum,
       notes: [],
     })

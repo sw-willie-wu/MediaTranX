@@ -1,8 +1,9 @@
 import { ref, onUnmounted } from 'vue'
 import type { MidiTrack, MidiNote } from './useMidiEditor'
+import { useSoundFontSynth } from './useSoundFontSynth'
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Oscillator fallback helpers
 // ---------------------------------------------------------------------------
 
 function getWaveform(instrument: number, isDrum: boolean): OscillatorType {
@@ -18,6 +19,18 @@ function getWaveform(instrument: number, isDrum: boolean): OscillatorType {
 
 function pitchToFreq(pitch: number): number {
   return 440 * Math.pow(2, (pitch - 69) / 12)
+}
+
+// ---------------------------------------------------------------------------
+// Channel assignment: drum → ch9, other tracks → ch 0-8, 10-15
+// ---------------------------------------------------------------------------
+
+function assignChannel(trackIndex: number, isDrum: boolean): number {
+  if (isDrum) return 9
+  // Skip channel 9 for melodic tracks
+  if (trackIndex < 9) return trackIndex
+  if (trackIndex < 15) return trackIndex + 1
+  return trackIndex % 15  // wrap around for 16+ tracks
 }
 
 // ---------------------------------------------------------------------------
@@ -40,6 +53,11 @@ export function useMidiPlayback() {
   let startTime = 0
   let startBeat = 0
   const scheduledNotes = new Set<string>()
+  const activeTimeouts: number[] = []  // ALL scheduled setTimeout ids (noteOn + noteOff)
+
+  // --- SoundFont synth -------------------------------------------------------
+  const sfSynth = useSoundFontSynth()
+  let sfInitialized = false
 
   // --- Internal helpers -------------------------------------------------------
 
@@ -50,12 +68,65 @@ export function useMidiPlayback() {
     return audioContext
   }
 
-  /** Unique key for a scheduled note so we don't trigger it twice. */
-  function noteKey(trackIndex: number, note: MidiNote): string {
-    return `${trackIndex}:${note.pitch}:${note.startBeat}`
+  async function ensureSoundFont(): Promise<void> {
+    if (sfInitialized) return
+    const ctx = ensureAudioContext()
+    sfInitialized = await sfSynth.init(ctx)
+    if (sfInitialized) {
+      // Sync all track programs
+      syncTrackPrograms()
+    }
   }
 
-  function scheduleNote(note: MidiNote, track: MidiTrack, when: number) {
+  /** Check if a track should be audible (considering mute + solo logic). */
+  function isTrackAudible(trackIndex: number): boolean {
+    const track = tracks[trackIndex]
+    if (!track || track.muted) return false
+    const hasSolo = tracks.some(t => t.solo)
+    return !hasSolo || track.solo
+  }
+
+  function syncTrackPrograms() {
+    if (!sfSynth.isLoaded) return
+    for (let i = 0; i < tracks.length; i++) {
+      const track = tracks[i]
+      const ch = assignChannel(i, track.isDrum)
+      sfSynth.programSelect(ch, track.instrument, track.isDrum)
+      sfSynth.setVolume(ch, isTrackAudible(i) ? (track.volume ?? 100) : 0)
+      if (track.pan !== undefined) {
+        sfSynth.setPan(ch, track.pan)
+      }
+    }
+  }
+
+  /** Unique key for a scheduled note so we don't trigger it twice. */
+  function noteKey(trackIndex: number, note: MidiNote): string {
+    return `${trackIndex}:${note.pitch}:${note.start}`
+  }
+
+  // --- SoundFont note scheduling ---
+
+  function scheduleSFNote(note: MidiNote, track: MidiTrack, trackIndex: number, when: number) {
+    if (!audioContext) return
+    const ch = assignChannel(trackIndex, track.isDrum)
+    const delay = Math.max(0, (when - audioContext.currentTime) * 1000)
+    const durationMs = (note.duration / (tempo / 60)) * 1000
+
+    const onId = window.setTimeout(() => {
+      if (!isPlaying.value) return  // guard: don't start note if already stopped
+      sfSynth.noteOn(ch, note.pitch, note.velocity)
+    }, delay)
+    activeTimeouts.push(onId)
+
+    const offId = window.setTimeout(() => {
+      sfSynth.noteOff(ch, note.pitch)
+    }, delay + durationMs)
+    activeTimeouts.push(offId)
+  }
+
+  // --- Oscillator fallback note scheduling ---
+
+  function scheduleOscNote(note: MidiNote, track: MidiTrack, when: number) {
     if (!audioContext) return
 
     const freq = pitchToFreq(note.pitch)
@@ -68,10 +139,7 @@ export function useMidiPlayback() {
     const volume = (note.velocity / 127) * 0.15
     gain.gain.value = volume
 
-    // Duration in seconds based on current tempo
     const durationSec = note.duration / (tempo / 60)
-
-    // Quick fade-out to avoid clicks
     const fadeStart = Math.max(when, when + durationSec - 0.02)
     gain.gain.setValueAtTime(volume, fadeStart)
     gain.gain.linearRampToValueAtTime(0, when + durationSec)
@@ -79,6 +147,14 @@ export function useMidiPlayback() {
     osc.connect(gain).connect(audioContext.destination)
     osc.start(when)
     osc.stop(when + durationSec)
+  }
+
+  function scheduleNote(note: MidiNote, track: MidiTrack, trackIndex: number, when: number) {
+    if (sfSynth.isLoaded) {
+      scheduleSFNote(note, track, trackIndex, when)
+    } else {
+      scheduleOscNote(note, track, when)
+    }
   }
 
   /** Convert a beat position to an audioContext timestamp. */
@@ -90,14 +166,22 @@ export function useMidiPlayback() {
   /** Find the beat position that is the furthest any note extends to. */
   function lastBeat(): number {
     let last = 0
-    for (const track of tracks) {
-      if (track.muted) continue
+    for (let i = 0; i < tracks.length; i++) {
+      const track = tracks[i]
+      if (!isTrackAudible(i)) continue
       for (const note of track.notes) {
-        const end = note.startBeat + note.duration
+        const end = note.start + note.duration
         if (end > last) last = end
       }
     }
     return last
+  }
+
+  function clearActiveTimeouts() {
+    for (const id of activeTimeouts) {
+      clearTimeout(id)
+    }
+    activeTimeouts.length = 0
   }
 
   // --- Animation frame loop ---------------------------------------------------
@@ -110,11 +194,12 @@ export function useMidiPlayback() {
 
     // Handle looping
     if (loopEnabled.value && loopEnd.value > loopStart.value && beat >= loopEnd.value) {
-      // Jump back to loop start
       startBeat = loopStart.value
       startTime = audioContext.currentTime
       beat = loopStart.value
       scheduledNotes.clear()
+      clearActiveTimeouts()
+      sfSynth.allNotesOff()
     }
 
     currentBeat.value = beat
@@ -126,14 +211,14 @@ export function useMidiPlayback() {
     // Schedule notes that fall within the look-ahead window
     for (let ti = 0; ti < tracks.length; ti++) {
       const track = tracks[ti]
-      if (track.muted) continue
+      if (!isTrackAudible(ti)) continue
       for (const note of track.notes) {
-        if (note.startBeat >= beat && note.startBeat < lookAheadBeat) {
+        if (note.start >= beat && note.start < lookAheadBeat) {
           const key = noteKey(ti, note)
           if (!scheduledNotes.has(key)) {
             scheduledNotes.add(key)
-            const when = beatToTime(note.startBeat)
-            scheduleNote(note, track, when)
+            const when = beatToTime(note.start)
+            scheduleNote(note, track, ti, when)
           }
         }
       }
@@ -156,14 +241,19 @@ export function useMidiPlayback() {
 
   function setTracks(t: MidiTrack[]) {
     tracks = t
+    syncTrackPrograms()
   }
 
-  function play() {
+  async function play() {
     const ctx = ensureAudioContext()
+
+    // Try to initialize SoundFont (non-blocking if already done)
+    await ensureSoundFont()
 
     startTime = ctx.currentTime
     startBeat = currentBeat.value
     scheduledNotes.clear()
+    clearActiveTimeouts()
 
     isPlaying.value = true
     animationFrameId = requestAnimationFrame(tick)
@@ -175,6 +265,8 @@ export function useMidiPlayback() {
       animationFrameId = 0
     }
     isPlaying.value = false
+    clearActiveTimeouts()
+    sfSynth.allNotesOff()
   }
 
   function stop() {
@@ -185,14 +277,17 @@ export function useMidiPlayback() {
     isPlaying.value = false
     currentBeat.value = 0
     scheduledNotes.clear()
+    clearActiveTimeouts()
+    sfSynth.allNotesOff()
   }
 
   function seekToBeat(beat: number) {
     currentBeat.value = beat
     scheduledNotes.clear()
+    clearActiveTimeouts()
+    sfSynth.allNotesOff()
 
     if (isPlaying.value) {
-      // Restart playback from the new position
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId)
         animationFrameId = 0
@@ -210,23 +305,31 @@ export function useMidiPlayback() {
     loopEnabled.value = end > start
   }
 
-  function playNote(pitch: number, velocity = 100, duration = 0.3) {
+  function playNote(pitch: number, velocity = 100, duration = 0.3, trackIndex = 0) {
     const ctx = ensureAudioContext()
 
+    if (sfSynth.isLoaded) {
+      const track = tracks[trackIndex]
+      const ch = track ? assignChannel(trackIndex, track.isDrum) : 0
+      sfSynth.noteOn(ch, pitch, velocity)
+      setTimeout(() => {
+        sfSynth.noteOff(ch, pitch)
+      }, duration * 1000)
+      return
+    }
+
+    // Oscillator fallback — use track instrument for waveform if available
+    const track = tracks[trackIndex]
     const freq = pitchToFreq(pitch)
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
 
-    // Use noise-like square for drums (GM drum range: pitches 27–87 on channel 10,
-    // simplified here to pitch < 35 or typical GM drum range)
-    const isDrumish = pitch < 35
-    osc.type = isDrumish ? 'square' : 'sine'
+    osc.type = track ? getWaveform(track.instrument, track.isDrum) : 'sine'
     osc.frequency.value = freq
 
     const volume = (velocity / 127) * 0.3
     gain.gain.value = volume
 
-    // Quick fade-out to avoid clicks
     const fadeStart = Math.max(ctx.currentTime, ctx.currentTime + duration - 0.02)
     gain.gain.setValueAtTime(volume, fadeStart)
     gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration)
@@ -243,6 +346,8 @@ export function useMidiPlayback() {
       cancelAnimationFrame(animationFrameId)
       animationFrameId = 0
     }
+    clearActiveTimeouts()
+    sfSynth.dispose()
     if (audioContext) {
       audioContext.close()
       audioContext = null

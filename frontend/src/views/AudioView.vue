@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, defineAsyncComponent } from 'vue'
+import { ref, computed, watch, watchEffect, defineAsyncComponent, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
@@ -15,21 +15,28 @@ import AudioLyricsPanel    from '@/components/audio/panels/AudioLyricsPanel.vue'
 const AudioMidiEditPanel = defineAsyncComponent(
   () => import('@/components/audio/panels/AudioMidiEditPanel.vue')
 )
-const MidiToolbar = defineAsyncComponent(() => import('@/components/audio/midi/MidiToolbar.vue'))
 const MidiPianoRoll = defineAsyncComponent(() => import('@/components/audio/midi/MidiPianoRoll.vue'))
 const MidiVelocityEditor = defineAsyncComponent(() => import('@/components/audio/midi/MidiVelocityEditor.vue'))
+import MidiToolbar from '@/components/audio/midi/MidiToolbar.vue'
+import AppSelect from '@/components/common/AppSelect.vue'
+import AppRange from '@/components/common/AppRange.vue'
 import TextPreviewModal from '@/components/common/TextPreviewModal.vue'
+import { GM_INSTRUMENT_OPTIONS } from '@/constants/midiInstruments'
 import { useAudioWorkspace } from '@/composables/useAudioWorkspace'
+import { useToast } from '@/composables/useToast'
+import { useMidiPlayback } from '@/composables/useMidiPlayback'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTaskStore } from '@/stores/tasks'
+import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 
 const { t } = useI18n()
+const toast = useToast()
 
 const {
   hasFile, fileId, activeFileId, activePreviewUrl, isUploading, sourceDir, currentFileName, hasResult, audioInfo,
   textResultContent, textResultFileId,
   collection,
-  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload,
+  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, addMidiEntry,
 } = useAudioWorkspace()
 
 const selectedIds = computed(() => collection.selectedIds.value)
@@ -46,6 +53,60 @@ const lyricsPanelRef     = ref<InstanceType<typeof AudioLyricsPanel>    | null>(
 const midiEditPanelRef   = ref<InstanceType<typeof AudioMidiEditPanel>  | null>(null)
 const pianoRollRef       = ref<InstanceType<typeof MidiPianoRoll>       | null>(null)
 
+// ── MIDI Playback ──
+const midiPlayback = useMidiPlayback()
+
+// Sync playback with editor state
+watch(() => midiEditPanelRef.value?.editor?.tracks.value, (t) => {
+  if (t) midiPlayback.setTracks(t)
+}, { deep: true })
+
+watch(() => midiEditPanelRef.value?.editor?.tempo.value, (bpm) => {
+  if (bpm) midiPlayback.setTempo(bpm)
+})
+
+// ── MIDI track bar state ──
+const expandedTrackIdx = ref<number | null>(null)
+
+function toggleTrackSettings(idx: number) {
+  expandedTrackIdx.value = expandedTrackIdx.value === idx ? null : idx
+}
+
+function toggleSolo(idx: number) {
+  if (!midiEditPanelRef.value?.editor) return
+  const tracks = midiEditPanelRef.value.editor.tracks.value
+  const wasSolo = tracks[idx].solo
+  // 關掉所有 solo，再 toggle 目標軌
+  for (const t of tracks) t.solo = false
+  if (!wasSolo) tracks[idx].solo = true
+}
+
+function removeTrack(idx: number) {
+  if (!midiEditPanelRef.value?.editor) return
+  const ed = midiEditPanelRef.value.editor
+  if (ed.tracks.value.length <= 1) return
+  // Close settings drawer if it's the one being removed
+  if (expandedTrackIdx.value === idx) expandedTrackIdx.value = null
+  else if (expandedTrackIdx.value !== null && expandedTrackIdx.value > idx) expandedTrackIdx.value--
+  ed.deleteTrack(idx)
+}
+
+function addTrack() {
+  if (!midiEditPanelRef.value?.editor) return
+  midiEditPanelRef.value.editor.addTrack()
+}
+
+function onTrackBarWheel(e: WheelEvent) {
+  const el = e.currentTarget as HTMLElement
+  el.scrollLeft += e.deltaY || e.deltaX
+}
+
+// ── MIDI file detection ──
+const isMidiFile = computed(() => {
+  const name = currentFileName.value?.toLowerCase() || ''
+  return name.endsWith('.mid') || name.endsWith('.midi')
+})
+
 const subFunctions = computed(() => [
   { id: 'transcode',  name: t('audio.functions.transcode'),  icon: 'bi-arrow-repeat',     group: t('audio.group.edit') },
   { id: 'cut',        name: t('audio.functions.cut'),        icon: 'bi-scissors',         group: t('audio.group.edit') },
@@ -60,10 +121,22 @@ const currentFunction = ref('transcode')
 const volumeGainPreview = ref(1)
 const trimRange = ref<{ start: number; end: number } | null>(null)
 
-// Clear overlays when switching panels
-watch(currentFunction, () => {
+// Toast warning when non-MIDI file is loaded in MIDI edit mode
+watch([() => currentFunction.value, () => currentFileName.value], ([fn, name]) => {
+  if (fn === 'midi-edit' && name && !isMidiFile.value) {
+    toast.show(t('audio.midi.unsupported'), { type: 'warning', icon: 'bi-exclamation-triangle' })
+  }
+})
+
+// Clear overlays when switching panels + stop MIDI playback
+watch(currentFunction, (_newFn, oldFn) => {
   trimRange.value = null
   volumeGainPreview.value = 1
+  expandedTrackIdx.value = null
+  // Stop MIDI playback when leaving midi-edit mode
+  if (oldFn === 'midi-edit') {
+    midiPlayback.stop()
+  }
 })
 
 const executeDisabled = computed(() => {
@@ -169,7 +242,7 @@ function onDownload() {
     cut:        ['', '_cut'],
     volume:     ['', '_adjusted'],
     transcribe: ['', '_transcript'],
-    separate:  ['wav', '.vocals'],
+    separate:  ['', '_separated'],
     lyrics:    ['lrc', '_lyrics'],
   }
   const [fmt, suffix] = fmtMap[currentFunction.value] ?? ['', '_output']
@@ -213,36 +286,122 @@ const taskStore = useTaskStore()
 // 保存分離結果（因為 currentTaskId 在 complete 後會被清掉）
 const separateStemsData = ref<Array<{ name: string; fileId: string; color: string; path?: string }> | null>(null)
 
-// 監聽 task 完成，如果是 separate 就存結果
-watch(
-  () => {
-    const entry = collection.activeEntry.value
-    if (!entry?.currentTaskId) return null
-    return taskStore.tasks.get(entry.currentTaskId)
-  },
-  (task) => {
-    if (!task || task.status !== 'completed' || !task.result) return
-    if (task.taskType !== 'audio.separate') return
-    const r = task.result as { output_files?: Array<{ file_id: string; stem: string; path?: string }> }
-    if (!r.output_files?.length || !r.output_files[0].stem) return
-    separateStemsData.value = r.output_files.map(f => ({
+// 已經問過 MIDI 跳轉的 entry IDs（不重複詢問）
+const _midiJumpAskedIds = new Set<string>()
+
+function parseStemsFromHistory(entry: { historyStack: Array<{ taskType: string; meta?: unknown }> }) {
+  // 從 history stack 找最後一筆 separation 結果
+  for (let i = entry.historyStack.length - 1; i >= 0; i--) {
+    const h = entry.historyStack[i]
+    if (h.taskType !== 'audio.separate') continue
+    const meta = h.meta as { output_files?: Array<{ file_id: string; stem: string; path?: string }> } | undefined
+    if (!meta?.output_files?.length || !meta.output_files[0].stem) continue
+    return meta.output_files.map(f => ({
       name: f.stem,
       fileId: f.file_id,
       color: STEM_COLORS[f.stem] || 'rgba(107, 114, 128, 0.5)',
       path: f.path,
     }))
+  }
+  return null
+}
+
+// 監聽 history stack 變化：separation 完成 → 存 stems 資料 + MIDI modal
+watch(
+  () => collection.activeEntry.value?.historyStack.length ?? 0,
+  (newLen, oldLen) => {
+    if (newLen <= oldLen) return
+    const entry = collection.activeEntry.value
+    if (!entry) return
+    const latest = entry.historyStack.at(-1)
+    if (!latest || latest.taskType !== 'audio.separate') return
+    const meta = latest.meta as { output_files?: Array<{ file_id: string; stem: string; path?: string }>; midi_file_id?: string } | undefined
+    if (!meta?.output_files?.length || !meta.output_files[0].stem) return
+    separateStemsData.value = meta.output_files.map(f => ({
+      name: f.stem,
+      fileId: f.file_id,
+      color: STEM_COLORS[f.stem] || 'rgba(107, 114, 128, 0.5)',
+      path: f.path,
+    }))
+    // 只問一次 MIDI 跳轉
+    if (meta.midi_file_id && !_midiJumpAskedIds.has(entry.id)) {
+      _midiJumpAskedIds.add(entry.id)
+      separatePanelRef.value?.onTaskComplete({ midi_file_id: meta.midi_file_id })
+    }
   },
-  { deep: true },
 )
 
-// 切換檔案時清除
+// 切換檔案時從 history 還原分離結果 + 停止 MIDI 播放
 watch(() => collection.activeId.value, () => {
-  separateStemsData.value = null
+  expandedTrackIdx.value = null
+  midiPlayback.stop()
+  const entry = collection.activeEntry.value
+  if (entry) {
+    separateStemsData.value = parseStemsFromHistory(entry)
+  } else {
+    separateStemsData.value = null
+  }
 })
 
 const separateStems = computed(() => separateStemsData.value)
 
+// ── MIDI 跳轉 ──
+async function handleJumpToMidi(midiFileId: string) {
+  // 從 separation task result 取 filename
+  const entry = collection.activeEntry.value
+  const task = entry?.currentTaskId ? taskStore.tasks.get(entry.currentTaskId) : null
+  const result = task?.result as { midi_filename?: string } | undefined
+  // 也從 history meta 找
+  const latestMeta = entry?.historyStack.at(-1)?.meta as { midi_filename?: string } | undefined
+  const filename = result?.midi_filename ?? latestMeta?.midi_filename ?? 'output.mid'
+
+  await addMidiEntry(midiFileId, filename)
+  currentFunction.value = 'midi-edit'
+}
+
 // Ctrl+A / clearSelection 由 AppFilmstrip 內部處理
+
+// ── Titlebar actions ──────────────────────────────────────────────────────
+const { registerActions, clearActions, setExtraActions, clearExtraActions } = useTitlebar()
+
+function registerTitlebar() {
+  registerActions({
+    canUndo: () => {
+      if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.editor.canUndo.value ?? false
+      return false
+    },
+    canRedo: () => {
+      if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.editor.canRedo.value ?? false
+      return false
+    },
+    canSaveAs: () => hasResult.value,
+    onUndo: () => { midiEditPanelRef.value?.editor.undo() },
+    onRedo: () => { midiEditPanelRef.value?.editor.redo() },
+    onSaveAs: () => onDownload(),
+  })
+}
+
+const _activeTick = ref(0)
+
+watchEffect(() => {
+  _activeTick.value
+  const actions: TitlebarExtraAction[] = []
+  if (currentFunction.value === 'lyrics' || currentFunction.value === 'transcribe') {
+    actions.push({
+      id: 'text-preview',
+      icon: 'bi-file-text',
+      tooltip: t('common.view_result'),
+      disabled: !textResultContent.value,
+      onClick: () => { if (textResultContent.value) showTextModal.value = true },
+    })
+  }
+  setExtraActions(actions)
+})
+
+onActivated(() => { registerTitlebar(); _activeTick.value++ })
+onDeactivated(() => { clearActions(); clearExtraActions(); midiPlayback.stop() })
+onMounted(() => { registerTitlebar() })
+onUnmounted(() => { clearActions(); clearExtraActions() })
 </script>
 
 <template>
@@ -267,74 +426,166 @@ const separateStems = computed(() => separateStemsData.value)
     @file="handleFile"
     @files="handleFiles"
     @remove-file="handleRemoveFile"
-    @download="onDownload"
     @clear-selection="collection.clearSelection()"
   >
-    <template #toolbar-extra>
-      <button
-        v-if="(currentFunction === 'lyrics' || currentFunction === 'transcribe') && textResultContent"
-        class="toolbar-btn"
-        :data-tooltip="$t('common.view_result')"
-        @click="showTextModal = true"
-      >
-        <i class="bi bi-file-text"></i>
-      </button>
-    </template>
 
     <template #preview="{ file, previewUrl }">
-      <template v-if="currentFunction === 'midi-edit'">
-        <div v-if="midiEditPanelRef?.editor && midiEditPanelRef.editor.tracks.value.length > 0" class="midi-editor-preview">
-          <MidiToolbar
-            :is-playing="midiEditPanelRef.editor.isPlaying?.value ?? false"
-            :current-beat="0"
-            :total-beats="midiEditPanelRef.editor.getTotalBeats()"
-            :loop-enabled="false"
-            :tool-mode="midiEditPanelRef.editor.toolMode.value"
-            :tempo="midiEditPanelRef.editor.tempo.value"
-            @play="() => {}"
-            @pause="() => {}"
-            @stop="() => {}"
-            @toggle-loop="() => {}"
-            @set-tool="(m) => midiEditPanelRef!.editor.toolMode.value = m"
-          />
-          <div class="midi-editor-body">
-            <MidiPianoRoll
-              ref="pianoRollRef"
-              :tracks="midiEditPanelRef.editor.tracks.value"
-              :active-track-index="midiEditPanelRef.editor.activeTrackIndex.value"
-              :selected-note-ids="midiEditPanelRef.editor.selectedNoteIds.value"
-              :tool-mode="midiEditPanelRef.editor.toolMode.value"
-              :grid-size="midiEditPanelRef.editor.gridSize.value"
-              :snap-enabled="midiEditPanelRef.editor.snapEnabled.value"
-              :current-beat="0"
-              :is-playing="false"
-              :tempo="midiEditPanelRef.editor.tempo.value"
-              :time-signature="midiEditPanelRef.editor.timeSignature.value"
-              @add-note="(p,s,d,v) => midiEditPanelRef!.editor.addNote(p,s,d,v)"
-              @delete-notes="(ids) => midiEditPanelRef!.editor.deleteNotes(ids)"
-              @move-notes="(ids,db,dp) => midiEditPanelRef!.editor.moveNotes(ids,db,dp)"
-              @resize-notes="(ids,d) => midiEditPanelRef!.editor.resizeNotes(ids,d)"
-              @select-notes="(ids,add) => ids.forEach(id => midiEditPanelRef!.editor.selectNote(id,add))"
-              @clear-selection="() => midiEditPanelRef!.editor.clearSelection()"
-              @play-note="(p) => {}"
-            />
+      <div v-if="currentFunction === 'midi-edit' && isMidiFile && midiEditPanelRef?.editor && midiEditPanelRef.editor.tracks.value.length > 0" class="midi-editor-preview">
+        <!-- Track bar -->
+        <div class="midi-track-bar" @wheel.prevent="onTrackBarWheel">
+          <div
+            v-for="(track, idx) in midiEditPanelRef.editor.tracks.value"
+            :key="idx"
+            class="midi-track-chip"
+            :class="{ 'is-active': idx === midiEditPanelRef.editor.activeTrackIndex.value }"
+            :style="idx === midiEditPanelRef.editor.activeTrackIndex.value ? { '--track-color': track.color } : undefined"
+            @click="midiEditPanelRef!.editor.activeTrackIndex.value = idx"
+          >
+            <span class="midi-track-dot" :style="{ background: track.color }" />
+            <span class="midi-track-label">{{ track.name }}</span>
+            <button
+              class="midi-track-toggle"
+              :class="{ 'is-hidden': !track.visible }"
+              :title="track.visible ? $t('audio.midi.hide_track') : $t('audio.midi.show_track')"
+              @click.stop="midiEditPanelRef!.editor.updateTrack(idx, { visible: !track.visible })"
+            >
+              <i :class="track.visible ? 'bi bi-eye-fill' : 'bi bi-eye-slash'" />
+            </button>
+            <button
+              class="midi-track-toggle"
+              :class="{ 'is-muted': track.muted }"
+              :title="$t('audio.midi.mute')"
+              @click.stop="midiEditPanelRef!.editor.updateTrack(idx, { muted: !track.muted })"
+            >
+              <i :class="track.muted ? 'bi bi-volume-mute-fill' : 'bi bi-volume-up-fill'" />
+            </button>
+            <button
+              class="midi-track-toggle"
+              :class="{ 'is-solo': track.solo }"
+              :title="$t('audio.midi.solo')"
+              @click.stop="toggleSolo(idx)"
+            >
+              <span class="midi-solo-label">S</span>
+            </button>
+            <button
+              class="midi-track-toggle"
+              :class="{ 'is-expanded': expandedTrackIdx === idx }"
+              :title="$t('audio.midi.track_settings')"
+              @click.stop="toggleTrackSettings(idx)"
+            >
+              <i class="bi bi-three-dots" />
+            </button>
+            <button
+              class="midi-track-toggle is-delete"
+              :title="$t('audio.midi.delete_track')"
+              :disabled="midiEditPanelRef!.editor.tracks.value.length <= 1"
+              @click.stop="removeTrack(idx)"
+            >
+              <i class="bi bi-x-lg" />
+            </button>
           </div>
-          <MidiVelocityEditor
-            v-if="midiEditPanelRef.editor.activeTrack.value"
-            :notes="midiEditPanelRef.editor.activeTrack.value.notes"
+          <!-- Add track button -->
+          <button class="midi-track-add" :title="$t('audio.midi.add_track')" @click="addTrack">
+            <i class="bi bi-plus" />
+          </button>
+        </div>
+
+        <div class="midi-editor-body">
+          <!-- Track settings overlay -->
+          <Transition name="track-settings">
+            <div v-if="expandedTrackIdx !== null && midiEditPanelRef!.editor.tracks.value[expandedTrackIdx]" class="midi-track-settings" :key="expandedTrackIdx">
+              <div class="midi-track-settings-row">
+                <input
+                  type="color"
+                  class="midi-track-color-picker"
+                  :value="midiEditPanelRef!.editor.tracks.value[expandedTrackIdx].color"
+                  @input="midiEditPanelRef!.editor.updateTrack(expandedTrackIdx!, { color: ($event.target as HTMLInputElement).value })"
+                />
+                <input
+                  class="midi-track-settings-name"
+                  :value="midiEditPanelRef!.editor.tracks.value[expandedTrackIdx].name"
+                  @input="midiEditPanelRef!.editor.updateTrack(expandedTrackIdx!, { name: ($event.target as HTMLInputElement).value })"
+                />
+                <AppSelect
+                  class="midi-track-settings-instrument"
+                  :model-value="midiEditPanelRef!.editor.tracks.value[expandedTrackIdx].instrument"
+                  :options="GM_INSTRUMENT_OPTIONS"
+                  size="sm"
+                  @update:model-value="midiEditPanelRef!.editor.updateTrack(expandedTrackIdx!, { instrument: $event })"
+                />
+              </div>
+              <div class="midi-track-settings-row">
+                <label class="midi-track-settings-label">{{ $t('audio.midi.volume') }}</label>
+                <AppRange
+                  class="midi-track-settings-slider"
+                  :model-value="midiEditPanelRef!.editor.tracks.value[expandedTrackIdx].volume"
+                  :min="0" :max="127"
+                  @update:model-value="midiEditPanelRef!.editor.updateTrack(expandedTrackIdx!, { volume: $event })"
+                />
+                <span class="midi-track-settings-value">{{ midiEditPanelRef!.editor.tracks.value[expandedTrackIdx].volume }}</span>
+                <label class="midi-track-settings-label">{{ $t('audio.midi.pan') }}</label>
+                <AppRange
+                  class="midi-track-settings-slider"
+                  :model-value="midiEditPanelRef!.editor.tracks.value[expandedTrackIdx].pan"
+                  :min="0" :max="127"
+                  @update:model-value="midiEditPanelRef!.editor.updateTrack(expandedTrackIdx!, { pan: $event })"
+                />
+                <span class="midi-track-settings-value">
+                  {{ midiEditPanelRef!.editor.tracks.value[expandedTrackIdx].pan }}
+                  <template v-if="midiEditPanelRef!.editor.tracks.value[expandedTrackIdx].pan === 64">(C)</template>
+                </span>
+              </div>
+            </div>
+          </Transition>
+          <MidiPianoRoll
+            ref="pianoRollRef"
+            :tracks="midiEditPanelRef.editor.tracks.value"
+            :active-track-index="midiEditPanelRef.editor.activeTrackIndex.value"
             :selected-note-ids="midiEditPanelRef.editor.selectedNoteIds.value"
-            :track-color="midiEditPanelRef.editor.activeTrack.value.color"
-            :scroll-x="pianoRollRef?.scrollX ?? 0"
-            :zoom-x="pianoRollRef?.zoomX ?? 80"
+            :tool-mode="midiEditPanelRef.editor.toolMode.value"
             :grid-size="midiEditPanelRef.editor.gridSize.value"
-            @update-velocity="(ids,v) => midiEditPanelRef!.editor.updateVelocity(ids,v)"
+            :snap-enabled="midiEditPanelRef.editor.snapEnabled.value"
+            :current-beat="midiPlayback.currentBeat.value"
+            :is-playing="midiPlayback.isPlaying.value"
+            :tempo="midiEditPanelRef.editor.tempo.value"
+            :time-signature="midiEditPanelRef.editor.timeSignature.value"
+            @add-note="(p,s,d,v) => midiEditPanelRef!.editor.addNote(p,s,d,v)"
+            @delete-notes="(ids) => midiEditPanelRef!.editor.deleteNotes(ids)"
+            @move-notes="(ids,db,dp) => midiEditPanelRef!.editor.moveNotes(ids,db,dp)"
+            @resize-notes="(ids,d) => midiEditPanelRef!.editor.resizeNotes(ids,d)"
+            @select-notes="(ids,add) => { if (add) { ids.forEach(id => midiEditPanelRef!.editor.selectNote(id, true)) } else { midiEditPanelRef!.editor.selectedNoteIds.value = new Set(ids) } }"
+            @clear-selection="() => midiEditPanelRef!.editor.clearSelection()"
+            @play-note="(p) => midiPlayback.playNote(p, 100, 0.3, midiEditPanelRef!.editor.activeTrackIndex.value)"
+            @undo="() => midiEditPanelRef!.editor.undo()"
+            @redo="() => midiEditPanelRef!.editor.redo()"
+            @select-all="() => midiEditPanelRef!.editor.selectAll()"
+            @copy="() => midiEditPanelRef!.editor.copySelection()"
+            @paste="(beat) => midiEditPanelRef!.editor.pasteAtBeat(beat)"
+            @duplicate="() => midiEditPanelRef!.editor.duplicateSelection()"
           />
         </div>
-        <div v-else class="midi-unsupported-preview">
-          <i class="bi bi-music-note-beamed"></i>
-          <p>{{ $t('audio.midi.unsupported') }}</p>
-        </div>
-      </template>
+        <MidiVelocityEditor
+          v-if="midiEditPanelRef.editor.activeTrack.value"
+          :notes="midiEditPanelRef.editor.activeTrack.value.visible ? midiEditPanelRef.editor.activeTrack.value.notes : []"
+          :selected-note-ids="midiEditPanelRef.editor.selectedNoteIds.value"
+          :track-color="midiEditPanelRef.editor.activeTrack.value.color"
+          :scroll-x="pianoRollRef?.scrollX ?? 0"
+          :zoom-x="pianoRollRef?.zoomX ?? 80"
+          :grid-size="midiEditPanelRef.editor.gridSize.value"
+          @update-velocity="(ids,v) => midiEditPanelRef!.editor.updateVelocity(ids,v)"
+        />
+        <MidiToolbar
+          :is-playing="midiPlayback.isPlaying.value"
+          :current-beat="midiPlayback.currentBeat.value"
+          :total-beats="midiEditPanelRef.editor.getTotalBeats()"
+          :loop-enabled="midiPlayback.loopEnabled.value"
+          :tempo="midiEditPanelRef.editor.tempo.value"
+          @play="midiPlayback.play"
+          @pause="midiPlayback.pause"
+          @stop="midiPlayback.stop"
+          @toggle-loop="() => { midiPlayback.loopEnabled.value = !midiPlayback.loopEnabled.value }"
+        />
+      </div>
       <AudioMultiTrackPreview
         v-else-if="currentFunction === 'separate' && separateStems"
         :stems="separateStems"
@@ -417,6 +668,7 @@ const separateStems = computed(() => separateStemsData.value)
           :current-file-name="currentFileName"
           :source-dir="sourceDir"
           @submit="handlePanelSubmit"
+          @jump-to-midi="handleJumpToMidi"
         />
 
         <AudioLyricsPanel
@@ -429,10 +681,11 @@ const separateStems = computed(() => separateStemsData.value)
         />
 
         <AudioMidiEditPanel
-          v-if="currentFunction === 'midi-edit'"
+          v-show="currentFunction === 'midi-edit'"
           ref="midiEditPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
       </div>
@@ -453,11 +706,226 @@ const separateStems = computed(() => separateStemsData.value)
 .midi-editor-preview {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  align-self: stretch;
 }
+.midi-track-bar {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  overflow-x: auto;
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
+  border-bottom: 1px solid var(--panel-border);
+  border-radius: 8px 8px 0 0;
+  background: rgba(0, 0, 0, 0.15);
+
+  &::-webkit-scrollbar { height: 4px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 2px; }
+  &::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.35); }
+}
+
+.midi-track-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+
+  &:hover { background: rgba(255, 255, 255, 0.08); }
+  &.is-active {
+    background: color-mix(in srgb, var(--track-color, #fff) 12%, transparent);
+    border-color: var(--track-color, var(--panel-border));
+    box-shadow: 0 0 6px color-mix(in srgb, var(--track-color, #fff) 25%, transparent);
+  }
+}
+
+.midi-track-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+
+  .is-active > & {
+    width: 10px;
+    height: 10px;
+    box-shadow: 0 0 4px currentColor;
+  }
+}
+
+.midi-track-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  .is-active > & { color: var(--text-primary); font-weight: 600; }
+}
+
+.midi-track-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s ease;
+
+  &:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.08); }
+  &.is-hidden { color: var(--text-muted); opacity: 0.5; }
+  &.is-muted { color: var(--color-danger); }
+  &.is-solo { color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 15%, transparent); }
+  &.is-expanded { color: var(--color-accent); }
+  &.is-delete {
+    &:hover { color: var(--color-danger); }
+    &:disabled { opacity: 0.25; pointer-events: none; }
+  }
+}
+
+.midi-solo-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.midi-track-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+
+  &:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: rgba(255, 255, 255, 0.04);
+  }
+}
+
+/* ── Expandable track settings (overlay) ── */
+.midi-track-settings {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--panel-border);
+  background: rgba(20, 18, 30, 0.95);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.midi-track-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.midi-track-color-picker {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--input-border);
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  -webkit-appearance: none;
+  appearance: none;
+
+  &::-webkit-color-swatch-wrapper { padding: 0; }
+  &::-webkit-color-swatch { border: none; border-radius: 50%; }
+  &::-moz-color-swatch { border: none; border-radius: 50%; }
+}
+
+.midi-track-settings-name {
+  flex: 0 0 160px;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  outline: none;
+  min-width: 0;
+  box-sizing: border-box;
+
+  &:focus { border-color: var(--color-accent); }
+}
+
+.midi-track-settings-instrument {
+  flex: 1;
+  min-width: 0;
+}
+
+.midi-track-settings-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.midi-track-settings-slider {
+  flex: 1;
+  min-width: 60px;
+}
+
+.midi-track-settings-value {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  min-width: 32px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── Track settings transition ── */
+.track-settings-enter-active,
+.track-settings-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.track-settings-enter-from,
+.track-settings-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
 .midi-editor-body {
   flex: 1;
   min-height: 0;
+  position: relative;
+  overflow: hidden;
 }
 .midi-unsupported-preview {
   display: flex;

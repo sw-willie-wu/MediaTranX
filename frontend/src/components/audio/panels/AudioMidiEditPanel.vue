@@ -10,6 +10,7 @@ import { useMidiEditor } from '@/composables/useMidiEditor'
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -27,11 +28,16 @@ const isMidiFile = computed(() => {
   return name.endsWith('.mid') || name.endsWith('.midi')
 })
 
-// ── Load MIDI when fileId changes ──
+// ── Load MIDI when fileId or fileName changes ──
 
-watch(() => props.fileId, async (id) => {
-  if (id && isMidiFile.value) {
+let _lastLoadedId: string | null = null
+
+watch([() => props.fileId, () => props.currentFileName], async ([id]) => {
+  if (id && isMidiFile.value && id !== _lastLoadedId) {
+    _lastLoadedId = id
     await editor.loadFromApi(id)
+  } else if (!id || !isMidiFile.value) {
+    _lastLoadedId = null
   }
 }, { immediate: true })
 
@@ -44,33 +50,38 @@ const exportFormatOptions = [
   { value: 'mp3', label: 'MP3' },
 ]
 
-// ── GM Instrument options ──
+const outputPath = ref('')
 
-const instrumentOptions = [
-  { value: 0, label: 'Acoustic Grand Piano' },
-  { value: 4, label: 'Electric Piano 1' },
-  { value: 6, label: 'Harpsichord' },
-  { value: 13, label: 'Xylophone' },
-  { value: 24, label: 'Acoustic Guitar (nylon)' },
-  { value: 25, label: 'Acoustic Guitar (steel)' },
-  { value: 26, label: 'Electric Guitar (jazz)' },
-  { value: 30, label: 'Distortion Guitar' },
-  { value: 33, label: 'Electric Bass (finger)' },
-  { value: 34, label: 'Electric Bass (pick)' },
-  { value: 40, label: 'Violin' },
-  { value: 42, label: 'Cello' },
-  { value: 48, label: 'String Ensemble 1' },
-  { value: 52, label: 'Choir Aahs' },
-  { value: 56, label: 'Trumpet' },
-  { value: 57, label: 'Trombone' },
-  { value: 61, label: 'French Horn' },
-  { value: 65, label: 'Alto Sax' },
-  { value: 73, label: 'Flute' },
-  { value: 74, label: 'Recorder' },
-  { value: 80, label: 'Synth Lead (square)' },
-  { value: 81, label: 'Synth Lead (sawtooth)' },
-  { value: 88, label: 'Synth Pad (new age)' },
-]
+const defaultOutputName = computed(() => {
+  const stem = props.currentFileName.replace(/\.[^.]+$/, '')
+  const ext = exportFormat.value
+  return props.sourceDir ? `${props.sourceDir}/${stem}.${ext}` : `${stem}.${ext}`
+})
+
+function resetOutputPath() {
+  outputPath.value = defaultOutputName.value
+}
+watch(() => props.fileId, resetOutputPath)
+watch(() => props.sourceDir, resetOutputPath, { immediate: true })
+watch(exportFormat, resetOutputPath)
+
+async function selectOutputFile() {
+  if (window.electron?.saveFileDialog) {
+    const ext = exportFormat.value
+    const result = await window.electron.saveFileDialog({
+      title: t('audio.midi.select_output'),
+      defaultPath: outputPath.value || defaultOutputName.value,
+      filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+    })
+    if (result) outputPath.value = result
+  }
+}
+
+const displayOutputPath = computed(() => {
+  if (!outputPath.value) return defaultOutputName.value
+  const p = outputPath.value
+  return p.length > 40 ? '...' + p.slice(-37) : p
+})
 
 // ── Time signature options ──
 
@@ -105,69 +116,18 @@ const quantizeResolutionOptions = [
   { value: 0.125, label: '1/32' },
 ]
 
+// ── Tempo (拖動中只更新顯示，放開才寫入) ──
+
+const tempoPreview = ref(120)
+watch(() => editor.tempo.value, (v) => { tempoPreview.value = v }, { immediate: true })
+
+function onTempoChange(val: number) {
+  editor.tempo.value = val
+}
+
 // ── Transpose ──
 
 const transposeSemitones = ref(0)
-
-// ── Track helpers ──
-
-function getInstrumentOptions(trackIndex: number) {
-  return instrumentOptions.map(opt => ({
-    ...opt,
-    value: opt.value,
-  }))
-}
-
-function onInstrumentChange(trackIndex: number, value: number) {
-  editor.updateTrack(trackIndex, { instrument: value })
-}
-
-function onTrackNameInput(trackIndex: number, event: Event) {
-  const target = event.target as HTMLInputElement
-  editor.updateTrack(trackIndex, { name: target.value })
-}
-
-function onVolumeChange(trackIndex: number, value: number) {
-  editor.updateTrack(trackIndex, { volume: value })
-}
-
-function onPanChange(trackIndex: number, value: number) {
-  editor.updateTrack(trackIndex, { pan: value })
-}
-
-function toggleMute(trackIndex: number) {
-  const track = editor.tracks.value[trackIndex]
-  if (track) {
-    editor.updateTrack(trackIndex, { muted: !track.muted })
-  }
-}
-
-function toggleSolo(trackIndex: number) {
-  // Solo: mute all other tracks, unmute this one
-  const tracks = editor.tracks.value
-  const isAlreadySolo = tracks.every((t, i) =>
-    i === trackIndex ? !t.muted : t.muted,
-  )
-  if (isAlreadySolo) {
-    // Un-solo: unmute all
-    for (let i = 0; i < tracks.length; i++) {
-      editor.updateTrack(i, { muted: false })
-    }
-  } else {
-    for (let i = 0; i < tracks.length; i++) {
-      editor.updateTrack(i, { muted: i !== trackIndex })
-    }
-  }
-}
-
-function onAddTrack() {
-  editor.addTrack()
-}
-
-function onDeleteTrack() {
-  if (editor.tracks.value.length <= 1) return
-  editor.deleteTrack(editor.activeTrackIndex.value)
-}
 
 // ── Time signature helpers ──
 
@@ -185,15 +145,19 @@ const tsDenominator = computed({
   },
 })
 
-// ── Tools ──
+// ── Tools（即時套用）──
 
-function applyQuantize() {
-  editor.quantize(quantizeResolution.value)
-}
+watch(quantizeResolution, (val) => {
+  editor.quantize(val)
+})
 
-function applyTranspose() {
-  if (transposeSemitones.value !== 0) {
-    editor.transpose(transposeSemitones.value)
+let _transposeBase = 0  // 記錄拖動開始前的值
+
+function onTransposeChange(val: number) {
+  const delta = val - _transposeBase
+  if (delta !== 0) {
+    editor.transpose(delta)
+    _transposeBase = val
   }
 }
 
@@ -207,9 +171,16 @@ async function execute() {
   if (exportFormat.value === 'mid') {
     return
   }
+  const body: Record<string, string> = {
+    file_id: props.fileId,
+    output_format: exportFormat.value,
+  }
+  if (outputPath.value) {
+    body.output_path = outputPath.value.replace(/\\/g, '/')
+  }
   const taskId = await submitTask(
     '/audio/midi/export',
-    { file_id: props.fileId, output_format: exportFormat.value },
+    body,
     t('audio.midi.task_label'),
     'audio.midi_export',
     props.currentFileName,
@@ -230,187 +201,97 @@ defineExpose({
 
 <template>
   <div class="function-settings">
-    <!-- Not a MIDI file -->
-    <template v-if="!isMidiFile">
-      <div class="info-box info-box--info">
-        <i class="bi bi-info-circle"></i>
-        {{ $t('audio.midi.unsupported') }}
+      <!-- Tool description -->
+      <h6 class="settings-title"><i class="bi bi-music-note-list me-2"></i>{{ $t('audio.midi.title') }}</h6>
+      <p class="form-hint">{{ $t('audio.midi.description') }}</p>
+
+      <!-- Edit Tools -->
+      <div class="form-group">
+        <label>{{ $t('audio.midi.edit_tools') }}</label>
+        <div class="midi-tool-selector">
+          <button
+            class="midi-tool-btn"
+            :class="{ 'is-active': editor.toolMode.value === 'select' }"
+            :data-tooltip="$t('audio.midi.tool_select')"
+            @click="editor.toolMode.value = 'select'"
+          >
+            <i class="bi bi-cursor"></i>
+          </button>
+          <button
+            class="midi-tool-btn"
+            :class="{ 'is-active': editor.toolMode.value === 'draw' }"
+            :data-tooltip="$t('audio.midi.tool_draw')"
+            @click="editor.toolMode.value = 'draw'"
+          >
+            <i class="bi bi-pencil"></i>
+          </button>
+        </div>
       </div>
-    </template>
 
-    <!-- MIDI editor settings -->
-    <template v-else>
-      <!-- Section 1: Track Management -->
-      <h6 class="settings-title"><i class="bi bi-music-note-list me-2"></i>{{ $t('audio.midi.tracks') }}</h6>
+      <!-- Settings -->
+        <!-- Global Settings -->
+        <h6 class="settings-title"><i class="bi bi-sliders me-2"></i>{{ $t('audio.midi.global_settings') }}</h6>
 
-      <div
-        v-for="(track, idx) in editor.tracks.value"
-        :key="idx"
-        class="midi-track-row"
-        :class="{ 'midi-track-row--active': idx === editor.activeTrackIndex.value }"
-        @click="editor.activeTrackIndex.value = idx"
-      >
-        <!-- Track header: color dot + name + instrument -->
-        <div class="midi-track-header">
-          <span class="midi-track-color" :style="{ backgroundColor: track.color }"></span>
-          <input
-            class="form-input midi-track-name"
-            :value="track.name"
-            @input="onTrackNameInput(idx, $event)"
-            @click.stop
-          />
-          <button
-            class="midi-track-btn"
-            :class="{ 'midi-track-btn--active': track.muted }"
-            :title="$t('audio.midi.mute')"
-            @click.stop="toggleMute(idx)"
-          >
-            <i class="bi bi-volume-mute-fill"></i>
-          </button>
-          <button
-            class="midi-track-btn"
-            :title="$t('audio.midi.solo')"
-            @click.stop="toggleSolo(idx)"
-          >
-            <i class="bi bi-headphones"></i>
-          </button>
-        </div>
-
-        <!-- Instrument select -->
-        <div class="form-group midi-track-param">
-          <label>{{ $t('audio.midi.instrument') }}</label>
-          <AppSelect
-            :model-value="track.instrument"
-            :options="getInstrumentOptions(idx)"
-            size="sm"
-            @update:model-value="onInstrumentChange(idx, $event)"
-          />
-        </div>
-
-        <!-- Volume -->
-        <div class="form-group midi-track-param">
+        <!-- Tempo -->
+        <div class="form-group">
           <label>
-            {{ $t('audio.midi.volume') }}
-            <span class="param-value">{{ track.volume }}</span>
+            {{ $t('audio.midi.tempo') }}
+            <span class="param-value">{{ tempoPreview }}</span>
           </label>
           <AppRange
-            :model-value="track.volume"
-            :min="0"
-            :max="127"
-            @update:model-value="onVolumeChange(idx, $event)"
+            v-model="tempoPreview"
+            :min="20"
+            :max="300"
+            @change="onTempoChange"
           />
         </div>
 
-        <!-- Pan -->
-        <div class="form-group midi-track-param">
-          <label>
-            {{ $t('audio.midi.pan') }}
-            <span class="param-value">{{ track.pan }}<template v-if="track.pan === 64"> (C)</template></span>
-          </label>
-          <AppRange
-            :model-value="track.pan"
-            :min="0"
-            :max="127"
-            @update:model-value="onPanChange(idx, $event)"
-          />
-          <div class="range-ticks">
-            <span>L</span>
-            <span>C</span>
-            <span>R</span>
+        <!-- Time Signature -->
+        <div class="form-group">
+          <label>{{ $t('audio.midi.time_signature') }}</label>
+          <div class="midi-time-sig">
+            <AppSelect v-model="tsNumerator" :options="tsNumeratorOptions" size="sm" />
+            <span class="midi-time-sig-sep">/</span>
+            <AppSelect v-model="tsDenominator" :options="tsDenominatorOptions" size="sm" />
           </div>
         </div>
-      </div>
 
-      <!-- Add / Delete Track buttons -->
-      <div class="midi-track-actions">
-        <button class="btn-secondary" @click="onAddTrack">
-          <i class="bi bi-plus"></i>
-          {{ $t('audio.midi.add_track') }}
-        </button>
-        <button
-          class="btn-secondary"
-          :disabled="editor.tracks.value.length <= 1"
-          @click="onDeleteTrack"
-        >
-          <i class="bi bi-trash"></i>
-          {{ $t('audio.midi.delete_track') }}
-        </button>
-      </div>
-
-      <!-- Section 2: Global Settings -->
-      <h6 class="settings-title"><i class="bi bi-gear me-2"></i>{{ $t('audio.midi.title') }}</h6>
-
-      <!-- Tempo -->
-      <div class="form-group">
-        <label>{{ $t('audio.midi.tempo') }}</label>
-        <input
-          v-model.number="editor.tempo.value"
-          type="number"
-          class="form-input"
-          min="20"
-          max="300"
-          step="1"
-        />
-        <span class="form-hint">BPM</span>
-      </div>
-
-      <!-- Time Signature -->
-      <div class="form-group">
-        <label>{{ $t('audio.midi.time_signature') }}</label>
-        <div class="midi-time-sig">
-          <AppSelect v-model="tsNumerator" :options="tsNumeratorOptions" size="sm" />
-          <span class="midi-time-sig-sep">/</span>
-          <AppSelect v-model="tsDenominator" :options="tsDenominatorOptions" size="sm" />
+        <!-- Grid -->
+        <div class="form-group">
+          <label>{{ $t('audio.midi.grid') }}</label>
+          <AppSelect v-model="editor.gridSize.value" :options="gridOptions" />
         </div>
-      </div>
 
-      <!-- Grid -->
-      <div class="form-group">
-        <label>{{ $t('audio.midi.grid') }}</label>
-        <AppSelect v-model="editor.gridSize.value" :options="gridOptions" />
-      </div>
-
-      <!-- Snap -->
-      <div class="form-group">
-        <label>{{ $t('audio.midi.snap') }}</label>
-        <AppToggle v-model="editor.snapEnabled.value">{{ $t('audio.midi.snap_enabled') }}</AppToggle>
-      </div>
-
-      <!-- Section 3: Tools -->
-      <h6 class="settings-title"><i class="bi bi-tools me-2"></i>{{ $t('audio.midi.tools') }}</h6>
-
-      <!-- Quantize -->
-      <div class="form-group">
-        <label>{{ $t('audio.midi.quantize') }}</label>
-        <div class="midi-tool-row">
-          <AppSelect v-model="quantizeResolution" :options="quantizeResolutionOptions" size="sm" />
-          <button class="btn-secondary" @click="applyQuantize">
-            {{ $t('audio.midi.apply') }}
-          </button>
+        <!-- Snap -->
+        <div class="form-group">
+          <label>{{ $t('audio.midi.snap') }}</label>
+          <AppToggle v-model="editor.snapEnabled.value">{{ $t('audio.midi.snap') }}</AppToggle>
         </div>
-        <span class="form-hint">{{ $t('audio.midi.quantize_hint') }}</span>
-      </div>
 
-      <!-- Transpose -->
-      <div class="form-group">
-        <label>{{ $t('audio.midi.transpose') }}</label>
-        <div class="midi-tool-row">
-          <input
-            v-model.number="transposeSemitones"
-            type="number"
-            class="form-input"
-            min="-48"
-            max="48"
-            step="1"
+        <!-- Tools -->
+        <h6 class="settings-title"><i class="bi bi-tools me-2"></i>{{ $t('audio.midi.tools') }}</h6>
+
+        <!-- Quantize -->
+        <div class="form-group">
+          <label>{{ $t('audio.midi.quantize') }}</label>
+          <AppSelect v-model="quantizeResolution" :options="quantizeResolutionOptions" />
+        </div>
+
+        <!-- Transpose -->
+        <div class="form-group">
+          <label>
+            {{ $t('audio.midi.transpose') }}
+            <span class="param-value">{{ transposeSemitones > 0 ? '+' : '' }}{{ transposeSemitones }}</span>
+          </label>
+          <AppRange
+            v-model="transposeSemitones"
+            :min="-24"
+            :max="24"
+            @change="onTransposeChange"
           />
-          <button class="btn-secondary" @click="applyTranspose">
-            {{ $t('audio.midi.apply') }}
-          </button>
         </div>
-        <span class="form-hint">{{ $t('audio.midi.transpose_hint') }}</span>
-      </div>
 
-      <!-- Section 4: Export -->
+      <!-- Export -->
       <h6 class="settings-title"><i class="bi bi-download me-2"></i>{{ $t('audio.midi.export') }}</h6>
 
       <div class="form-group">
@@ -418,101 +299,77 @@ defineExpose({
         <AppSelect v-model="exportFormat" :options="exportFormatOptions" />
       </div>
 
+      <div class="form-group">
+        <label>{{ $t('audio.midi.output_path') }}</label>
+        <div class="file-select" @click="selectOutputFile">
+          <span class="file-select-path">{{ displayOutputPath }}</span>
+          <i class="bi bi-folder2-open"></i>
+        </div>
+      </div>
+
       <div v-if="exportFormat !== 'mid'" class="info-box info-box--info">
         <i class="bi bi-info-circle"></i>
-        {{ $t('audio.midi.soundfont_info') }}
+        {{ $t('audio.midi.soundfont_missing') }}
       </div>
-    </template>
   </div>
 </template>
 
 <style lang="scss">
 @use '@/styles/tool-panels-shared';
 
-.midi-track-row {
+
+.midi-tool-selector {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.65rem 0.75rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-
-  &:hover {
-    border-color: var(--panel-border-hover);
-  }
-
-  &--active {
-    border-color: var(--color-primary);
-    background: rgba(124, 111, 173, 0.06);
-  }
+  gap: 4px;
 }
 
-.midi-track-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.midi-track-color {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.midi-track-name {
-  flex: 1;
-  padding: 0.25rem 0.5rem !important;
-  font-size: 0.82rem !important;
-  min-width: 0;
-}
-
-.midi-track-btn {
+.midi-tool-btn {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
+  width: 36px;
+  height: 36px;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
-  border-radius: 4px;
-  color: var(--text-muted);
-  font-size: 0.8rem;
+  border-radius: 8px;
+  color: var(--text-secondary);
   cursor: pointer;
-  flex-shrink: 0;
   transition: all 0.15s ease;
 
   &:hover {
-    background: var(--panel-bg-hover);
+    border-color: var(--panel-border-hover);
     color: var(--text-primary);
   }
 
-  &--active {
-    background: rgba(239, 68, 68, 0.15);
-    border-color: rgba(239, 68, 68, 0.3);
-    color: #ef4444;
+  &.is-active {
+    background: rgba(168, 156, 200, 0.15);
+    border-color: var(--color-accent);
+    color: var(--color-accent);
   }
-}
 
-.midi-track-param {
-  gap: 0.25rem !important;
+  i { font-size: 1rem; }
 
-  label {
-    font-size: 0.75rem !important;
+  &::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 3px 8px;
+    background: var(--panel-bg-active);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.72rem;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 10;
   }
-}
 
-.midi-track-actions {
-  display: flex;
-  gap: 0.5rem;
-
-  .btn-secondary {
-    flex: 1;
-  }
+  &:hover::after { opacity: 1; }
 }
 
 .midi-time-sig {
@@ -527,20 +384,4 @@ defineExpose({
   font-weight: 600;
 }
 
-.midi-tool-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-
-  .form-input,
-  .app-select-trigger {
-    flex: 1;
-  }
-
-  .btn-secondary {
-    width: auto;
-    flex-shrink: 0;
-    white-space: nowrap;
-  }
-}
 </style>

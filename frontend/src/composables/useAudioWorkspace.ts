@@ -62,7 +62,7 @@ export function useAudioWorkspace() {
   const filesStore = useFilesStore()
   const taskStore = useTaskStore()
   const toast = useToast()
-  const { downloadFile } = useFileDownload()
+  const { downloadFile, downloadBatch } = useFileDownload()
   const { t } = useI18n()
 
   // ── Collection (multi-audio state) ──
@@ -101,6 +101,9 @@ export function useAudioWorkspace() {
   async function loadAudioInfo() {
     const fid = activeFileId.value
     if (!fid) return
+    // MIDI files don't have audio info (not real audio)
+    const name = currentFileName.value?.toLowerCase() || ''
+    if (name.endsWith('.mid') || name.endsWith('.midi')) return
     try {
       const res = await apiFetch(`/audio/info/${fid}`)
       if (res.ok) audioInfo.value = await res.json()
@@ -175,10 +178,23 @@ export function useAudioWorkspace() {
     }
     // Binary result download (from history stack)
     const latest = historyStack.value.at(-1)
-    if (latest) {
-      downloadFile(latest.fileId, latest.outputFilename, sourceDir.value)
+    if (!latest) return
+
+    // Multi-file result (e.g. separation stems + optional MIDI)
+    const outputFiles = latest.meta?.output_files as { file_id: string; filename: string }[] | undefined
+    if (outputFiles && outputFiles.length > 1) {
+      const batch = outputFiles.map(f => ({ fileId: f.file_id, filename: f.filename }))
+      // Include MIDI file if present
+      const midiFileId = latest.meta?.midi_file_id as string | undefined
+      const midiFilename = latest.meta?.midi_filename as string | undefined
+      if (midiFileId && midiFilename) {
+        batch.push({ fileId: midiFileId, filename: midiFilename })
+      }
+      downloadBatch(batch)
       return
     }
+
+    downloadFile(latest.fileId, latest.outputFilename, sourceDir.value)
   }
 
   // Watch for task completion
@@ -223,6 +239,22 @@ export function useAudioWorkspace() {
     { deep: true }
   )
 
+  /** Add a MIDI file (already on backend) to the filmstrip without re-uploading */
+  async function addMidiEntry(midiFileId: string, midiFilename: string) {
+    try {
+      const res = await apiFetch(`/files/${midiFileId}/download`)
+      if (!res.ok) throw new Error('fetch failed')
+      const blob = await res.blob()
+      const file = new File([blob], midiFilename, { type: 'audio/midi' })
+      const entryId = await collection.addEntry(file, undefined, generateAudioThumbnail)
+      // Skip upload — file already registered on backend
+      collection.updateEntry(entryId, { fileId: midiFileId, status: 'idle' })
+      return entryId
+    } catch (e) {
+      log.error('addMidiEntry failed', { midiFileId, error: e })
+    }
+  }
+
   // Reset text result when switching files
   watch(() => collection.activeId.value, () => {
     textResultFileId.value = null
@@ -248,5 +280,6 @@ export function useAudioWorkspace() {
     handleRemoveFile,
     handlePanelSubmit,
     handleDownload,
+    addMidiEntry,
   }
 }

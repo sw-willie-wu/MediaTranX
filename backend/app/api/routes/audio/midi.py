@@ -14,7 +14,8 @@ router = APIRouter()
 class MidiExportRequest(BaseModel):
     file_id: str = Field(..., description="MIDI file ID")
     output_format: str = Field(default="wav", description="輸出格式 (wav, mp3, mid)")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
+    output_path: Optional[str] = Field(default=None, description="自訂輸出檔案路徑")
+    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄 (deprecated)")
 
 
 class MidiExportResponse(BaseModel):
@@ -55,6 +56,7 @@ async def export_midi(request: MidiExportRequest):
         task_id = await service.submit_export(
             file_id=request.file_id,
             output_format=request.output_format,
+            output_path=request.output_path,
             output_dir=request.output_dir,
         )
         return MidiExportResponse(task_id=task_id)

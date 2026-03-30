@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useConfirm } from '@/composables/useConfirm'
 import { apiFetch } from '@/composables/useApi'
 
 const props = defineProps<{
@@ -19,6 +20,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
+const { confirm } = useConfirm()
 
 const modelName = ref('htdemucs_6s')
 const modelDownloaded = ref<boolean | null>(null)
@@ -47,10 +49,8 @@ const displayOutputPath = computed(() => {
 })
 
 async function selectOutputFile() {
-  if (window.electron?.openDirectoryDialog) {
-    const result = await window.electron.openDirectoryDialog({
-      title: t('audio.separate.select_output'),
-    })
+  if (window.electron?.selectFolder) {
+    const result = await window.electron.selectFolder()
     if (result) outputPath.value = result
   }
 }
@@ -67,8 +67,6 @@ watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 // MIDI output
 const generateMidi = ref(false)
-const showJumpModal = ref(false)
-const midiFileId = ref<string | null>(null)
 
 // Stem toggles
 const stemVocals = ref(true)
@@ -138,17 +136,16 @@ function getParams() {
   return body
 }
 
-function handleJumpToMidi() {
-  showJumpModal.value = false
-  if (midiFileId.value) {
-    emit('jump-to-midi', midiFileId.value)
-  }
-}
-
-function onTaskComplete(result: Record<string, unknown>) {
-  if (result.midi_file_id) {
-    midiFileId.value = result.midi_file_id as string
-    showJumpModal.value = true
+async function onTaskComplete(result: Record<string, unknown>) {
+  if (!result.midi_file_id) return
+  const yes = await confirm({
+    message: t('audio.separate.midi_jump_prompt'),
+    confirmLabel: t('audio.separate.midi_jump'),
+    cancelLabel: t('audio.separate.midi_stay'),
+    type: 'info',
+  })
+  if (yes) {
+    emit('jump-to-midi', result.midi_file_id as string)
   }
 }
 
@@ -197,24 +194,6 @@ defineExpose({ execute, isDisabled, isLoading, getParams, onTaskComplete })
     </div>
   </div>
 
-  <Teleport to="body">
-    <div v-if="showJumpModal" class="modal-overlay" @click.self="showJumpModal = false">
-      <div class="modal-dialog">
-        <div class="modal-body">
-          <i class="bi bi-music-note-beamed modal-icon"></i>
-          <p>{{ $t('audio.separate.midi_jump_prompt') }}</p>
-        </div>
-        <div class="modal-actions">
-          <button class="btn-secondary" @click="showJumpModal = false">
-            {{ $t('audio.separate.midi_stay') }}
-          </button>
-          <button class="btn-primary" @click="handleJumpToMidi">
-            {{ $t('audio.separate.midi_jump') }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
 </template>
 
 <style lang="scss" scoped>
@@ -224,38 +203,5 @@ defineExpose({ execute, isDisabled, isLoading, getParams, onTaskComplete })
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-}
-
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-.modal-dialog {
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
-  padding: 24px;
-  max-width: 400px;
-  width: 90%;
-}
-.modal-body {
-  text-align: center;
-  margin-bottom: 20px;
-}
-.modal-icon {
-  font-size: 32px;
-  color: var(--color-primary);
-  margin-bottom: 12px;
-  display: block;
-}
-.modal-actions {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
 }
 </style>

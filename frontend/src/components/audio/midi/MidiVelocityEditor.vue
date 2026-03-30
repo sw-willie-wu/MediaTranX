@@ -53,17 +53,15 @@ function draw() {
 
   ctx.clearRect(0, 0, canvasW, canvasH)
 
-  // Background
-  ctx.fillStyle = '#141425'
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light'
+
+  // Subtle background
+  ctx.fillStyle = isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(10, 10, 25, 0.25)'
   ctx.fillRect(0, 0, canvasW, canvasH)
 
-  // Piano key column background
-  ctx.fillStyle = '#0e0e1c'
-  ctx.fillRect(0, 0, PIANO_KEY_WIDTH, canvasH)
-
   // "Vel" label
-  ctx.fillStyle = '#888'
-  ctx.font = '11px sans-serif'
+  ctx.fillStyle = isLight ? '#444' : '#bbb'
+  ctx.font = 'bold 12px sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText('Vel', PIANO_KEY_WIDTH / 2, canvasH / 2)
@@ -71,7 +69,7 @@ function draw() {
   // Horizontal guide lines at velocity 32, 64, 96
   const barArea = canvasH - 4
   ctx.setLineDash([4, 4])
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)'
+  ctx.strokeStyle = isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.08)'
   ctx.lineWidth = 1
   for (const v of [32, 64, 96]) {
     const y = canvasH - 2 - (v / MAX_VELOCITY) * barArea
@@ -82,19 +80,23 @@ function draw() {
   }
   ctx.setLineDash([])
 
-  // Draw velocity bars (viewport culled)
+  // Draw velocity bars (fixed-width stems, not tied to note duration)
   const { notes, selectedNoteIds, trackColor, scrollX, zoomX } = props
+  const stemW = Math.max(BAR_MIN_WIDTH, Math.min(10, props.gridSize * zoomX * 0.6))
   for (const note of notes) {
-    const x = PIANO_KEY_WIDTH + note.start * zoomX - scrollX
-    const w = Math.max(BAR_MIN_WIDTH, note.duration * zoomX - 1)
-    if (x + w < PIANO_KEY_WIDTH || x > canvasW) continue
+    const cx = PIANO_KEY_WIDTH + note.start * zoomX - scrollX + stemW / 2
+    const x = cx - stemW / 2
+    if (x + stemW < PIANO_KEY_WIDTH || x > canvasW) continue
 
-    const h = (note.velocity / MAX_VELOCITY) * barArea
+    const h = Math.max(2, (note.velocity / MAX_VELOCITY) * barArea)
     const y = canvasH - 2 - h
     const selected = selectedNoteIds.has(note.id)
 
     ctx.fillStyle = selected ? lightenColor(trackColor, 0.35) : trackColor
-    ctx.fillRect(x, y, w, h)
+    const r = Math.min(2, stemW / 2, h / 2)
+    ctx.beginPath()
+    ctx.roundRect(x, y, stemW, h, [r, r, 0, 0])
+    ctx.fill()
   }
 }
 
@@ -113,13 +115,13 @@ let dragNoteId: string | null = null
 let dragStartVelocity = 0
 
 function hitTest(mx: number): MidiNote | null {
-  const { notes, scrollX, zoomX } = props
-  // Iterate backwards so top-drawn bars take priority
+  const { notes, scrollX, zoomX, gridSize } = props
+  const stemW = Math.max(BAR_MIN_WIDTH, Math.min(10, gridSize * zoomX * 0.6))
+  const hitPad = Math.max(stemW, 6) // minimum clickable area
   for (let i = notes.length - 1; i >= 0; i--) {
     const note = notes[i]
-    const x = PIANO_KEY_WIDTH + note.start * zoomX - scrollX
-    const w = Math.max(BAR_MIN_WIDTH, note.duration * zoomX - 1)
-    if (mx >= x && mx <= x + w) return note
+    const cx = PIANO_KEY_WIDTH + note.start * zoomX - scrollX + stemW / 2
+    if (mx >= cx - hitPad / 2 && mx <= cx + hitPad / 2) return note
   }
   return null
 }
@@ -210,7 +212,8 @@ watch(
 <style lang="scss">
 .midi-velocity-editor {
   width: 100%;
-  height: 100%;
+  height: 80px;
+  flex-shrink: 0;
   overflow: hidden;
 
   canvas {
