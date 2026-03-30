@@ -461,9 +461,9 @@ def _download_fluidsynth(progress_callback: Callable) -> None:
     dest = get_fluidsynth_dir()
     dest.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Download FluidSynth Windows release (zip with DLL)
+    # Step 1: Download FluidSynth Windows release (zip with all DLLs)
     progress_callback(0.1, "Downloading FluidSynth...")
-    dll_url = "https://github.com/FluidSynth/fluidsynth/releases/download/v2.3.6/fluidsynth-2.3.6-win10-x64.zip"
+    dll_url = "https://github.com/FluidSynth/fluidsynth/releases/download/v2.5.2/fluidsynth-v2.5.2-win10-x64-glib.zip"
 
     import io
     import zipfile
@@ -473,18 +473,18 @@ def _download_fluidsynth(progress_callback: Callable) -> None:
     response.raise_for_status()
     buf = io.BytesIO(response.content)
 
-    progress_callback(0.3, "Extracting FluidSynth DLL...")
+    progress_callback(0.3, "Extracting FluidSynth DLLs...")
     with zipfile.ZipFile(buf) as zf:
         for name in zf.namelist():
-            if name.endswith("libfluidsynth-3.dll"):
+            if name.endswith(".dll") and "/bin/" in name:
                 dll_data = zf.read(name)
-                (dest / "libfluidsynth-3.dll").write_bytes(dll_data)
-                logger.info(f"Extracted libfluidsynth-3.dll to {dest}")
-                break
+                dll_filename = name.rsplit("/", 1)[-1]
+                (dest / dll_filename).write_bytes(dll_data)
+                logger.info(f"Extracted {dll_filename} to {dest}")
 
-    # Step 2: Download SoundFont (MuseScore FluidR3Mono GM, SF3 format ~23MB)
+    # Step 2: Download SoundFont (FluidR3 GM, SF2 stereo ~141MB)
     progress_callback(0.4, "Downloading SoundFont (FluidR3 GM)...")
-    sf2_url = "https://github.com/musescore/MuseScore/raw/master/share/sound/FluidR3Mono_GM.sf3"
-    _download_from_url(sf2_url, dest / "FluidR3Mono_GM.sf3", progress_callback, 0.4, 0.95)
+    sf2_url = "https://musical-artifacts.com/artifacts/738/FluidR3_GM.sf2"
+    _download_from_url(sf2_url, dest / "FluidR3_GM.sf2", progress_callback, 0.4, 0.95)
 
     progress_callback(0.95, "FluidSynth + SoundFont ready")

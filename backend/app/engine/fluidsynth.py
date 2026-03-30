@@ -11,7 +11,7 @@ from app.engine.paths import get_fluidsynth_dir
 
 logger = logging.getLogger(__name__)
 
-SF2_FILENAME = "FluidR3Mono_GM.sf3"
+SF2_FILENAME = "FluidR3_GM.sf2"
 DLL_FILENAME = "libfluidsynth-3.dll"
 
 
@@ -67,7 +67,14 @@ class FluidSynthWrapper:
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
 
-        # Use pyfluidsynth to render
+        # Ensure pyfluidsynth can find our bundled DLL
+        import os, sys
+        dll_dir = str(self._dir)
+        if sys.platform == "win32":
+            os.add_dll_directory(dll_dir)
+        if dll_dir not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = dll_dir + os.pathsep + os.environ.get("PATH", "")
+
         import fluidsynth
         import numpy as np
         import soundfile as sf

@@ -386,8 +386,8 @@ class ModelMetadataService:
         # FluidSynth + SoundFont（basic-pitch 模型內建於套件，不需管理）
         from app.engine.paths import get_fluidsynth_dir
         fs_dir = get_fluidsynth_dir()
-        sf2_ok = (fs_dir / "FluidR3Mono_GM.sf3").exists()
-        dll_ok = (fs_dir / "libfluidsynth-3.dll").exists()
+        sf2_ok = (fs_dir / "FluidR3_GM.sf2").exists()
+        dll_ok = (fs_dir / "libfluidsynth-3.dll").exists() and (fs_dir / "libglib-2.0-0.dll").exists()
 
         items.append({
             "id": "fluidsynth",

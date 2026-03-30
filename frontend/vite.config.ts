@@ -36,6 +36,9 @@ export default defineConfig(({ mode }) => {
         }
       },
     },
+    optimizeDeps: {
+      exclude: ['js-synthesizer'],
+    },
     css: {
       preprocessorOptions: {
         scss: {

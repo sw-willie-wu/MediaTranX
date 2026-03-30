@@ -6,6 +6,7 @@ from .transcribe import router as transcribe_router
 from .separate import router as separate_router
 from .lyrics import router as lyrics_router
 from .midi import router as midi_router
+from .soundfont import router as soundfont_router
 
 router = APIRouter(prefix="/audio", tags=["audio"])
 router.include_router(transcode_router)
@@ -15,3 +16,4 @@ router.include_router(transcribe_router)
 router.include_router(separate_router)
 router.include_router(lyrics_router)
 router.include_router(midi_router)
+router.include_router(soundfont_router)
