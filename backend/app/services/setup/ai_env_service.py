@@ -130,8 +130,10 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
                 await tracker.emit(task_id, 0.1, "安裝工具執行模組（Step 1/3）...", stage="processing")
 
             # Step 1a: uv sync（永遠執行，uv 自行判斷差異，已安裝時幾乎瞬間完成）
+            # --inexact: 不移除 lock file 外的套件（torch/demucs 由後續步驟另裝）
             rc = await run_uv([
                 str(uv_exe), "--project", cwd, "sync", "--extra", "ai", "--no-dev",
+                "--inexact",
                 "--no-install-package", "torch",
                 "--no-install-package", "torchvision",
                 "--no-install-package", "torchaudio",

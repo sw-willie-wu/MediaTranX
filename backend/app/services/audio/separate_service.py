@@ -159,6 +159,7 @@ class AudioSeparateService:
 
             basic_pitch = get_basic_pitch()
             midi_tracks = []
+            midi_errors = []
 
             # GM instrument mapping per stem
             STEM_INSTRUMENTS = {
@@ -193,6 +194,7 @@ class AudioSeparateService:
                         logger.warning(f"MIDI: {stem_name} produced no notes, skipping")
                 except Exception as e:
                     logger.warning(f"MIDI conversion failed for {stem_name}: {e}")
+                    midi_errors.append(f"{stem_name}: {e}")
 
             if midi_tracks:
                 progress_callback(0.9, "合併 MIDI 音軌...")
@@ -209,6 +211,9 @@ class AudioSeparateService:
                 result["midi_file_id"] = midi_file_id
                 result["midi_filename"] = midi_filename
                 logger.info(f"Multi-track MIDI saved: {midi_path} ({len(midi_tracks)} tracks)")
+            elif midi_errors:
+                result["midi_error"] = f"MIDI 轉換失敗: {'; '.join(midi_errors)}"
+                logger.error(f"All MIDI conversions failed: {midi_errors}")
             else:
                 logger.warning("No MIDI tracks produced")
 

@@ -256,12 +256,11 @@ class ModelMetadataService:
             variant_desc = _VARIANT_DESC.get(variant_name, variant_name)
             label = f"{family_meta['label']} - {variant_desc}" if len(demucs_variants) > 1 else family_meta['label']
 
-            demucs_dir = get_models_dir() / "demucs"
-            model_name = variant_spec.get("model_name", variant_name)
-            downloaded = any(
-                f.name.startswith(model_name)
-                for f in demucs_dir.glob("*")
-            ) if demucs_dir.exists() else False
+            checkpoints_dir = get_models_dir() / "demucs" / "checkpoints"
+            downloaded = (
+                checkpoints_dir.exists()
+                and any(f.suffix == ".th" for f in checkpoints_dir.iterdir())
+            )
 
             items.append({
                 "id": f"demucs-{variant_name}",
