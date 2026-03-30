@@ -7,6 +7,8 @@ Basic Pitch 封裝 — 音訊轉 MIDI（非鼓類音軌）
 from __future__ import annotations
 
 import logging
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -88,6 +90,9 @@ class BasicPitchWrapper(PackageRuntime):
     def audio_to_midi(
         self,
         audio_path: str,
+        onset_threshold: float = 0.3,
+        frame_threshold: float = 0.15,
+        minimum_note_length: float = 80.0,
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> dict:
         """
@@ -95,6 +100,9 @@ class BasicPitchWrapper(PackageRuntime):
 
         Args:
             audio_path: 輸入音訊路徑
+            onset_threshold: onset 偵測門檻 (預設 0.3, basic-pitch 預設 0.5)
+            frame_threshold: frame 偵測門檻 (預設 0.15, basic-pitch 預設 0.3)
+            minimum_note_length: 最短音符長度 ms (預設 80, basic-pitch 預設 127.7)
             on_progress: 進度回調
 
         Returns:
@@ -104,21 +112,45 @@ class BasicPitchWrapper(PackageRuntime):
         if on_progress:
             on_progress(0.0, "準備音訊轉 MIDI...")
 
-        with self.acquire(
-            model_id="basic_pitch",
-            variant="default",
-            on_progress=on_progress,
-        ) as bp:
-            if on_progress:
-                on_progress(0.3, "分析音訊中...")
+        # basic-pitch 內部使用 print/logging 輸出路徑，
+        # 非 ASCII 檔名在 Windows cp950 環境會 crash。
+        # 複製到 ASCII 安全的暫存路徑再處理。
+        src = Path(audio_path)
+        safe_path: str = str(src)
+        tmp_dir = None
+        try:
+            src.name.encode("ascii")
+        except UnicodeEncodeError:
+            tmp_dir = tempfile.mkdtemp(prefix="bp_")
+            safe_name = f"input{src.suffix}"
+            safe_file = Path(tmp_dir) / safe_name
+            shutil.copy2(src, safe_file)
+            safe_path = str(safe_file)
+            logger.debug("Copied non-ASCII path to temp: %s", safe_path)
 
-            # predict(audio_path, model_or_model_path) 回傳 (model_output, midi_data, note_events)
-            model_output, midi_data, note_events = bp["predict"](
-                audio_path, bp["model_path"]
-            )
+        try:
+            with self.acquire(
+                model_id="basic_pitch",
+                variant="default",
+                on_progress=on_progress,
+            ) as bp:
+                if on_progress:
+                    on_progress(0.3, "分析音訊中...")
 
-            if on_progress:
-                on_progress(0.8, "轉換 MIDI 事件...")
+                # predict(audio_path, model_or_model_path) 回傳 (model_output, midi_data, note_events)
+                model_output, midi_data, note_events = bp["predict"](
+                    safe_path,
+                    bp["model_path"],
+                    onset_threshold=onset_threshold,
+                    frame_threshold=frame_threshold,
+                    minimum_note_length=minimum_note_length,
+                )
+
+                if on_progress:
+                    on_progress(0.8, "轉換 MIDI 事件...")
+        finally:
+            if tmp_dir:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
         # 從音訊路徑取得 stem 名稱
         stem_name = Path(audio_path).stem
