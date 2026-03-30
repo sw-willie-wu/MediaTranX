@@ -23,6 +23,7 @@ export interface MediaEntry {
   status: 'idle' | 'uploading' | 'processing' | 'done'
   progress: number
   historyStack: HistoryEntry[]
+  redoStack: HistoryEntry[]
   currentTaskId: string | null
 }
 
@@ -76,6 +77,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
       status: 'uploading',
       progress: 0,
       historyStack: [],
+      redoStack: [],
       currentTaskId: null,
     }
 
@@ -134,8 +136,8 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     const entry = entries.value.get(id)
     if (!entry) return
 
-    // Processing entries cannot be selected for new operations
-    if (entry.status === 'processing') return
+    // Processing entries: allow viewing (single click) but not multi-select
+    if (entry.status === 'processing' && ctrlKey) return
 
     if (ctrlKey) {
       const next = new Set(selectedIds.value)
@@ -226,6 +228,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
 
             updateEntry(entryId, {
               historyStack: newStack,
+              redoStack: [],  // 新操作清空 redo
               status: 'done',
               currentTaskId: null,
             })

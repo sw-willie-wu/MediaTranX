@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watchEffect, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
@@ -12,6 +12,7 @@ import DocumentSplitPanel       from '@/components/document/panels/DocumentSplit
 import TextPreviewModal          from '@/components/common/TextPreviewModal.vue'
 import { useDocumentWorkspace } from '@/composables/useDocumentWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
+import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 
 const { t } = useI18n()
 
@@ -140,6 +141,42 @@ function onFilmstripSelect(id: string, ctrlKey: boolean) {
 function onFilmstripRemove(id: string) {
   collection.removeEntry(id)
 }
+
+// ── Titlebar actions ──────────────────────────────────────────────────────
+const { registerActions, clearActions, setExtraActions, clearExtraActions } = useTitlebar()
+
+function registerTitlebar() {
+  registerActions({
+    canUndo: () => false,
+    canRedo: () => false,
+    canSaveAs: () => hasResult.value,
+    onUndo: () => {},
+    onRedo: () => {},
+    onSaveAs: () => onDownload(),
+  })
+}
+
+const _activeTick = ref(0)
+
+watchEffect(() => {
+  _activeTick.value
+  const actions: TitlebarExtraAction[] = []
+  if (currentFunction.value === 'ocr') {
+    actions.push({
+      id: 'text-preview',
+      icon: 'bi-file-text',
+      tooltip: t('common.view_ocr_result'),
+      disabled: !textResultContent.value,
+      onClick: () => { if (textResultContent.value) showOcrModal.value = true },
+    })
+  }
+  setExtraActions(actions)
+})
+
+onActivated(() => { registerTitlebar(); _activeTick.value++ })
+onDeactivated(() => { clearActions(); clearExtraActions() })
+onMounted(() => { registerTitlebar() })
+onUnmounted(() => { clearActions(); clearExtraActions() })
 </script>
 
 <template>
@@ -164,19 +201,8 @@ function onFilmstripRemove(id: string) {
     @file="handleFile"
     @files="handleFiles"
     @remove-file="handleRemoveFile"
-    @download="onDownload"
     @clear-selection="collection.clearSelection()"
   >
-    <template #toolbar-extra>
-      <button
-        v-if="currentFunction === 'ocr' && textResultContent"
-        class="toolbar-btn ocr-result-btn"
-        :data-tooltip="$t('common.view_ocr_result')"
-        @click="showOcrModal = true"
-      >
-        <i class="bi bi-file-text"></i>
-      </button>
-    </template>
 
     <template #preview="{ file }">
       <DocumentPreview

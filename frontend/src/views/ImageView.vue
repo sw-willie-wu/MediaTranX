@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, watchEffect, nextTick, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
@@ -17,11 +17,12 @@ import TextPreviewModal   from '@/components/common/TextPreviewModal.vue'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
 import { useImageWorkspace } from '@/composables/useImageWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
+import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 
 const {
   hasFile, fileId, isUploading, currentFileName, imageInfo, isLoadingInfo,
-  aiEnvReady, canGoBack, activeFileId, activePreviewUrl, hasResult, activeResultMeta,
-  goBack, checkAiEnvironment, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
+  aiEnvReady, canGoBack, canGoForward, activeFileId, activePreviewUrl, hasResult, activeResultMeta,
+  goBack, goForward, checkAiEnvironment, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
   handleDownload, handleTextDownload, textResultFileId, textResultFilename, textResultContent,
   collection, activeId, selectedIds,
   sourceDir,
@@ -321,6 +322,55 @@ function onFilmstripRemove(id: string) {
   entrySettingsCache.delete(id)
   collection.removeEntry(id)
 }
+
+// ── Titlebar actions ──────────────────────────────────────────────────────
+const { registerActions, clearActions, setExtraActions, clearExtraActions } = useTitlebar()
+
+const isComparing = ref(false)
+
+function registerTitlebar() {
+  registerActions({
+    canUndo: () => canGoBack.value,
+    canRedo: () => canGoForward.value,
+    canSaveAs: () => hasResult.value,
+    onUndo: () => goBack(),
+    onRedo: () => goForward(),
+    onSaveAs: () => currentFunction.value === 'ocr' ? handleTextDownload() : handleDownload(),
+  })
+}
+
+// Extra actions 隨狀態動態更新
+const _activeTick = ref(0)
+
+watchEffect(() => {
+  _activeTick.value           // KeepAlive 切回時強制重跑
+  const actions: TitlebarExtraAction[] = []
+  // 圖片對比
+  const compareEnabled = hasResult.value && currentFunction.value !== 'ocr'
+  actions.push({
+    id: 'compare',
+    icon: 'bi-layout-split',
+    tooltip: t('common.compare'),
+    active: isComparing.value,
+    disabled: !compareEnabled,
+    onClick: () => { if (compareEnabled) isComparing.value = !isComparing.value },
+  })
+  // 文字預覽 (OCR)
+  const textPreviewEnabled = currentFunction.value === 'ocr' && !!textResultContent.value
+  actions.push({
+    id: 'text-preview',
+    icon: 'bi-file-text',
+    tooltip: t('common.view_ocr_result'),
+    disabled: !textPreviewEnabled,
+    onClick: () => { if (textPreviewEnabled) showOcrModal.value = true },
+  })
+  setExtraActions(actions)
+})
+
+onActivated(() => { registerTitlebar(); _activeTick.value++ })
+onDeactivated(() => { clearActions(); clearExtraActions() })
+onMounted(() => { registerTitlebar() })
+onUnmounted(() => { clearActions(); clearExtraActions() })
 </script>
 
 <template>
@@ -338,11 +388,10 @@ function onFilmstripRemove(id: string) {
     :sub-functions="subFunctions"
     :current-function="currentFunction"
     :has-result="hasResult"
-    show-compare
+    :is-comparing="isComparing"
     :result-preview-url="activePreviewUrl"
     :result-meta="activeResultMeta"
     :original-preview-url="collection.activeEntry.value?.previewUrl ?? null"
-    :can-go-back="canGoBack"
     :execute-disabled="executeDisabled"
     :execute-loading="executeLoading"
     :functions-locked="isAnyProcessing"
@@ -351,20 +400,8 @@ function onFilmstripRemove(id: string) {
     @file="handleFile"
     @files="handleFiles"
     @remove-file="handleRemoveFile"
-    @download="currentFunction === 'ocr' ? handleTextDownload() : handleDownload()"
-    @go-back="goBack"
     @clear-selection="collection.clearSelection()"
   >
-    <template #toolbar-extra>
-      <button
-        v-if="currentFunction === 'ocr' && textResultContent"
-        class="toolbar-btn ocr-result-btn"
-        :data-tooltip="$t('common.view_ocr_result')"
-        @click="showOcrModal = true"
-      >
-        <i class="bi bi-file-text"></i>
-      </button>
-    </template>
 
     <template #preview="{ previewUrl }">
       <ImagePreview

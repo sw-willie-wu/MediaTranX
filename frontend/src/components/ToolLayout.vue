@@ -36,12 +36,11 @@ const props = withDefaults(defineProps<{
   hasResult?: boolean
   resultPreviewUrl?: string | null
   resultMeta?: Record<string, unknown>
-  canGoBack?: boolean
+  isComparing?: boolean
   executeDisabled?: boolean
   executeLoading?: boolean
   executeLabel?: string
   hideExecute?: boolean
-  showCompare?: boolean
   hidePreviewTabs?: boolean
   showFilmstrip?: boolean
   collectionSize?: number
@@ -92,8 +91,6 @@ const emit = defineEmits<{
   (e: 'file', file: File, sourceDir?: string): void
   (e: 'files', files: File[]): void
   (e: 'remove-file'): void
-  (e: 'download'): void
-  (e: 'go-back'): void
   (e: 'clear-selection'): void
 }>()
 
@@ -109,13 +106,6 @@ const filesStore = useFilesStore()
 type PreviewMode = 'original' | 'result' | 'compare'
 const previewMode = ref<PreviewMode>('original')
 const canShowResult = computed(() => props.hasResult)
-
-// Slider 比對模式
-const isComparing = ref(false)
-
-function toggleCompare() {
-  isComparing.value = !isComparing.value
-}
 
 // 內部檔案管理
 const currentFile = ref<File | null>(null)
@@ -172,7 +162,6 @@ function removeFile() {
   currentFile.value = null
   previewUrl.value = null
   previewMode.value = 'original'
-  isComparing.value = false
   clearFileName()
   emit('remove-file')
 }
@@ -298,40 +287,6 @@ onBeforeUnmount(() => {
 
     <!-- 中間：預覽區域 -->
     <main class="preview-area" :class="{ 'is-drag-over': isDragOver && hasFile }">
-      <!-- 右上角直排按鈕群（有檔案才顯示） -->
-      <div v-if="hasFile" class="preview-toolbar">
-        <button v-if="!showFilmstrip" class="toolbar-btn remove-btn" :data-tooltip="$t('common.remove_file')" @click="removeFile">
-          <i class="bi bi-x-lg"></i>
-        </button>
-        <button
-          v-if="showCompare"
-          class="toolbar-btn compare-btn"
-          :class="{ 'is-active': isComparing, disabled: !canShowResult }"
-          :disabled="!canShowResult"
-          :data-tooltip="$t('common.compare')"
-          @click="canShowResult && toggleCompare()"
-        >
-          <i class="bi bi-layout-split"></i>
-        </button>
-        <slot name="toolbar-extra" />
-        <button
-          class="toolbar-btn download-btn"
-          :class="{ disabled: !canShowResult }"
-          :disabled="!canShowResult"
-          :data-tooltip="$t('common.save')"
-          @click="canShowResult && emit('download')"
-        >
-          <i class="bi bi-download"></i>
-        </button>
-        <button
-          v-if="canGoBack"
-          class="toolbar-btn back-btn"
-          :data-tooltip="$t('common.go_back')"
-          @click="emit('go-back')"
-        >
-          <i class="bi bi-arrow-counterclockwise"></i>
-        </button>
-      </div>
 
       <!-- 預覽模式切換 (for non-image views) -->
       <div v-if="hasFile && !props.hidePreviewTabs" class="preview-tabs">
@@ -563,87 +518,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-.preview-toolbar {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.toolbar-btn,
-:slotted(.toolbar-btn) {
-  position: relative;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  opacity: 0.75;
-
-  &:hover:not(:disabled) { opacity: 1; }
-
-  &.disabled, &:disabled { opacity: 0.25; cursor: not-allowed; }
-
-  // Tooltip — 左側浮出
-  &::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    right: calc(100% + 8px);
-    top: 50%;
-    transform: translateY(-50%);
-    padding: 4px 10px;
-    background: var(--panel-bg-active);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--panel-border);
-    border-radius: 6px;
-    color: var(--text-primary);
-    font-size: 0.78rem;
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s ease;
-  }
-
-  &:hover:not(:disabled)::after { opacity: 1; }
-
-  &.remove-btn:hover:not(:disabled) {
-    background: rgba(220, 53, 69, 0.75);
-    border-color: rgba(220, 53, 69, 0.5);
-    color: #fff;
-  }
-
-  &.compare-btn:hover:not(:disabled),
-  &.compare-btn.is-active {
-    background: rgba(96, 165, 250, 0.25);
-    border-color: rgba(96, 165, 250, 0.5);
-    color: #60a5fa;
-    opacity: 1;
-  }
-
-  &.download-btn:hover:not(:disabled) {
-    background: rgba(52, 211, 153, 0.25);
-    border-color: rgba(52, 211, 153, 0.5);
-    color: #34d399;
-  }
-
-  &.back-btn:hover:not(:disabled) {
-    background: rgba(251, 191, 36, 0.2);
-    border-color: rgba(251, 191, 36, 0.4);
-    color: #fbbf24;
-  }
-}
-
 .preview-tabs {
   display: flex;
   gap: 0.25rem;
@@ -716,6 +590,7 @@ onBeforeUnmount(() => {
   flex: 1;
   padding: 1rem;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   color: var(--text-primary);
 }
 

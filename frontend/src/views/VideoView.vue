@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
@@ -10,6 +10,7 @@ import VideoCutPanel from '@/components/video/panels/VideoCutPanel.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
+import { useTitlebar } from '@/composables/useTitlebar'
 
 const { t } = useI18n()
 
@@ -158,6 +159,25 @@ function onFilmstripSelect(id: string, ctrlKey: boolean) {
 function onFilmstripRemove(id: string) {
   collection.removeEntry(id)
 }
+
+// ── Titlebar actions ──────────────────────────────────────────────────────
+const { registerActions, clearActions } = useTitlebar()
+
+function registerTitlebar() {
+  registerActions({
+    canUndo: () => false,
+    canRedo: () => false,
+    canSaveAs: () => hasResult.value,
+    onUndo: () => {},
+    onRedo: () => {},
+    onSaveAs: () => onDownload(),
+  })
+}
+
+onActivated(() => { registerTitlebar() })
+onDeactivated(() => { clearActions() })
+onMounted(() => { registerTitlebar() })
+onUnmounted(() => { clearActions() })
 </script>
 
 <template>
@@ -182,7 +202,6 @@ function onFilmstripRemove(id: string) {
     @file="handleFile"
     @files="handleFiles"
     @remove-file="handleRemoveFile"
-    @download="onDownload"
     @clear-selection="collection.clearSelection()"
   >
     <template #preview="{ previewUrl }">

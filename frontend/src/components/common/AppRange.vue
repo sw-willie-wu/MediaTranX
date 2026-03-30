@@ -14,11 +14,17 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: number): void
+  (e: 'change', value: number): void
 }>()
 
 function onInput(e: Event) {
   const target = e.target as HTMLInputElement
   emit('update:modelValue', Number(target.value))
+}
+
+function onChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  emit('change', Number(target.value))
 }
 </script>
 
@@ -32,6 +38,7 @@ function onInput(e: Event) {
     :step="step"
     :disabled="disabled"
     @input="onInput"
+    @change="onChange"
   />
 </template>
 
