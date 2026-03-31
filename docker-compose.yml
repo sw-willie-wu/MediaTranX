@@ -4,13 +4,13 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "8001:8001"
+      - "${BACKEND_PORT:-9001}:8001"
     volumes:
-      - ./models:/app/models
-      - ./data:/app/data
-      - ./backend/bin:/app/bin
+      - ./backend/app:/app/app        # 程式碼熱載入
+      - mediatranx-data:/data          # 模型、設定持久化
     environment:
       - PYTHONUNBUFFERED=1
+      - MEDIATRANX_HOME=/data
     deploy:
       resources:
         reservations:
@@ -21,13 +21,16 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: ../Dockerfile.frontend
+      context: .
+      dockerfile: Dockerfile.frontend
     ports:
-      - "8000:8000"
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend/src:/app/src        # 程式碼熱載入
+    environment:
+      - VITE_BACKEND_URL=http://backend:8001
     depends_on:
       - backend
-    environment:
-      - VITE_HOST=0.0.0.0
-      - VITE_PORT=8000
-      - VITE_BACKEND_PORT=8001
+
+volumes:
+  mediatranx-data:
