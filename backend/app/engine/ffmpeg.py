@@ -5,6 +5,7 @@ FFmpeg 封裝模組
 import asyncio
 import re
 import shutil
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -99,7 +100,8 @@ class FFmpeg:
         優先使用專案內的 FFmpeg，若無則使用系統 PATH
         """
         # 1. 優先使用專案內的 FFmpeg
-        local_ffmpeg = self._PROJECT_BIN_DIR / "ffmpeg.exe"
+        exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+        local_ffmpeg = self._PROJECT_BIN_DIR / exe
         if local_ffmpeg.exists():
             return str(local_ffmpeg)
 
@@ -118,7 +120,8 @@ class FFmpeg:
         優先使用專案內的 FFprobe，若無則使用系統 PATH
         """
         # 1. 優先使用專案內的 FFprobe
-        local_ffprobe = self._PROJECT_BIN_DIR / "ffprobe.exe"
+        exe = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
+        local_ffprobe = self._PROJECT_BIN_DIR / exe
         if local_ffprobe.exists():
             return str(local_ffprobe)
 
@@ -139,8 +142,8 @@ class FFmpeg:
     @classmethod
     def is_installed(cls) -> bool:
         """檢查 FFmpeg 是否已安裝"""
-        local_ffmpeg = cls._PROJECT_BIN_DIR / "ffmpeg.exe"
-        return local_ffmpeg.exists() or shutil.which("ffmpeg") is not None
+        exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+        return (cls._PROJECT_BIN_DIR / exe).exists() or shutil.which("ffmpeg") is not None
 
     async def get_media_info(self, input_path: str | Path) -> MediaInfo:
         """取得媒體資訊"""

@@ -32,14 +32,20 @@ def _get_internal_dir() -> Path:
 
 def get_base_data_dir() -> Path:
     """
-    取得基礎數據目錄 (預設為 %APPDATA%/MediaTranX)
+    取得基礎數據目錄
+    Frozen Windows: %APPDATA%/MediaTranX
+    Frozen Linux:   ~/.local/share/MediaTranX
+    Dev:            app root (core/backend/)
     支援透過環境變數 MEDIATRANX_HOME 自定義。
     """
     custom_home = os.environ.get('MEDIATRANX_HOME')
     if custom_home:
         path = Path(custom_home)
     elif _is_frozen():
-        appdata = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
+        if sys.platform == "win32":
+            appdata = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
+        else:
+            appdata = os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local' / 'share'))
         path = Path(appdata) / 'MediaTranX'
     else:
         path = _get_app_root()
@@ -134,6 +140,28 @@ def get_models_dir(category: str = "") -> Path:
 def get_venv_dir() -> Path:
     """AI 推理環境目錄 (%APPDATA%/MediaTranX/.venv)"""
     return get_base_data_dir() / ".venv"
+
+
+def get_venv_python() -> Path:
+    """取得 venv 中的 Python 執行檔路徑（跨平台）"""
+    venv = get_venv_dir()
+    if sys.platform == "win32":
+        return venv / "Scripts" / "python.exe"
+    return venv / "bin" / "python"
+
+
+def get_venv_site_packages() -> Path:
+    """取得 venv 中的 site-packages 路徑（跨平台）"""
+    venv = get_venv_dir()
+    if sys.platform == "win32":
+        return venv / "Lib" / "site-packages"
+    # Linux/macOS: lib/python3.XX/site-packages
+    import glob
+    pattern = str(venv / "lib" / "python3.*" / "site-packages")
+    matches = glob.glob(pattern)
+    if matches:
+        return Path(matches[0])
+    return venv / "lib" / "python3.12" / "site-packages"
 
 
 def get_temp_dir() -> Path:

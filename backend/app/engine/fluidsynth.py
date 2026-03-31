@@ -11,8 +11,10 @@ from app.engine.paths import get_fluidsynth_dir
 
 logger = logging.getLogger(__name__)
 
+import sys as _sys
+
 SF2_FILENAME = "FluidR3_GM.sf2"
-DLL_FILENAME = "libfluidsynth-3.dll"
+DLL_FILENAME = "libfluidsynth-3.dll" if _sys.platform == "win32" else "libfluidsynth.so"
 
 
 class FluidSynthWrapper:
@@ -30,11 +32,18 @@ class FluidSynthWrapper:
         return self._dir / DLL_FILENAME
 
     def is_available(self) -> dict:
-        """Check availability of FluidSynth DLL and SoundFont."""
+        """Check availability of FluidSynth library and SoundFont."""
+        if _sys.platform == "win32":
+            dll_ok = self.dll_path.exists()
+        else:
+            # Linux/macOS: check system libfluidsynth or bundled
+            import shutil
+            dll_ok = self.dll_path.exists() or shutil.which("fluidsynth") is not None
+        sf2_ok = self.sf2_path.exists()
         return {
-            "dll_available": self.dll_path.exists(),
-            "sf2_available": self.sf2_path.exists(),
-            "ready": self.dll_path.exists() and self.sf2_path.exists(),
+            "dll_available": dll_ok,
+            "sf2_available": sf2_ok,
+            "ready": dll_ok and sf2_ok,
         }
 
     def render_midi_to_wav(

@@ -79,7 +79,8 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
             env = os.environ.copy()
             env["UV_PROJECT_ENVIRONMENT"] = str(get_base_data_dir() / ".venv")
             env["UV_DATA_DIR"] = str(get_base_data_dir() / "uv_data")
-            venv_python = get_base_data_dir() / ".venv" / "Scripts" / "python.exe"
+            from app.engine.paths import get_venv_python
+            venv_python = get_venv_python()
 
             async def run_uv(cmd: list, prog_start: float, prog_end: float) -> int:
                 process = await asyncio.create_subprocess_exec(
@@ -191,10 +192,11 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
 
             # 將 .venv site-packages 注入 sys.path
             import sys as _sys
-            venv_site = str(get_base_data_dir() / ".venv" / "Lib" / "site-packages")
+            from app.engine.paths import get_venv_site_packages
+            venv_site = str(get_venv_site_packages())
             if venv_site not in _sys.path:
                 _sys.path.append(venv_site)
-            torch_lib = str(get_base_data_dir() / ".venv" / "Lib" / "site-packages" / "torch" / "lib")
+            torch_lib = str(Path(venv_site) / "torch" / "lib")
             import os as _os
             if _os.path.isdir(torch_lib) and hasattr(_os, 'add_dll_directory'):
                 try: _os.add_dll_directory(torch_lib)

@@ -136,7 +136,7 @@ export const useTaskStore = defineStore('tasks', () => {
   // 重新載入任務列表（輪詢核心）
   async function refreshTasks(): Promise<void> {
     try {
-      const response = await fetch(`${getApiBase()}/tasks`)
+      const response = await fetch(`${getApiBase()}/tasks/`)
       const data = await response.json()
 
       const previousTasks = new Map(tasks.value)

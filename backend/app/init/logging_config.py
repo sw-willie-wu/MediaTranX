@@ -14,10 +14,10 @@ def configure_logging(is_frozen: bool) -> None:
     handlers: list[logging.Handler] = [logging.StreamHandler()]  # stdout → Electron pipe
 
     if is_frozen:
-        appdata = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
         error_log = os.environ.get('MEDIATRANX_ERROR_LOG')
         if not error_log:
-            error_log = str(Path(appdata) / 'MediaTranX' / 'logs' / 'core_error.log')
+            from app.engine.paths import get_base_data_dir
+            error_log = str(get_base_data_dir() / 'logs' / 'core_error.log')
         Path(error_log).parent.mkdir(parents=True, exist_ok=True)
 
         error_handler = logging.FileHandler(error_log, encoding='utf-8')

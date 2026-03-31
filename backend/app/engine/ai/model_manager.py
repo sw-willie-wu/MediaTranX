@@ -415,7 +415,13 @@ class ModelManager:
         return path
 
     def is_ai_env_ready(self) -> bool:
-        """檢查環境就緒狀態"""
+        """檢查環境就緒狀態（支援 venv 和 Docker 系統安裝）"""
+        try:
+            import torch  # noqa: F401
+            return True
+        except ImportError:
+            pass
+        # Fallback: 檢查外部 venv（Electron packaged mode）
         venv_path = get_base_data_dir() / ".venv"
         return venv_path.exists() and len(list(venv_path.glob("**/site-packages/torch"))) > 0
 

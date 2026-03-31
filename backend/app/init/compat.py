@@ -38,9 +38,10 @@ def _patch_pyfluidsynth_dll_dir() -> None:
     """
     pyfluidsynth 在 import 時硬編碼 os.add_dll_directory('C:\\tools\\fluidsynth\\bin')，
     路徑不存在會直接 crash，連帶影響 pretty_midi 和 basic-pitch。
-    預先建立該目錄避免 FileNotFoundError。
+    預先建立該目錄避免 FileNotFoundError（僅 Windows）。
     """
-    import os
+    if sys.platform != "win32":
+        return
     from pathlib import Path
     hardcoded = Path("C:/tools/fluidsynth/bin")
     if not hardcoded.exists():

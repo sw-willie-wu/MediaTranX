@@ -294,6 +294,7 @@ class PTHRuntime(BaseRuntime):
         config = {
             "model_id": model_id,
             "variant": variant,
+            "filename": variant_spec.get("filename", ""),
             "vram_mb": variant_spec.get("vram_mb", 2000),
             "arch": variant_spec.get("arch"),
             "scale": variant_spec.get("scale", 4),

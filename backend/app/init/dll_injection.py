@@ -10,7 +10,10 @@ from pathlib import Path
 
 
 def inject_paths() -> None:
-    """注入 sys.path 和 DLL 搜尋路徑"""
+    """注入 sys.path 和 DLL 搜尋路徑（僅 Windows frozen mode 需要）"""
+    if sys.platform != "win32":
+        return
+
     appdata = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
     if not appdata:
         return
