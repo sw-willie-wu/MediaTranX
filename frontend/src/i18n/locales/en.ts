@@ -754,6 +754,7 @@ export default {
       local: 'Local',
       category_image: 'Image Processing',
       category_audio: 'Audio Processing',
+      category_video: 'Video Processing',
       category_llm: 'Large Language Models',
     },
     remote: {

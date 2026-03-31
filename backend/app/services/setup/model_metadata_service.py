@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 MODEL_CATEGORIES = [
     {"key": "image", "label": "影像處理", "order": 0},
     {"key": "audio", "label": "語音處理", "order": 1},
-    {"key": "llm", "label": "大語言模型", "order": 2},
+    {"key": "video", "label": "影片處理", "order": 2},
+    {"key": "llm", "label": "大語言模型", "order": 3},
 ]
 
 # 舊分類 → 新分類的映射
@@ -28,6 +29,7 @@ _CATEGORY_MAP = {
     "midi": "audio",
     "translate": "llm",
     "vlm": "llm",
+    "interpolate": "video",
 }
 
 # ─── 顯示用常數 ──────────────────────────────────────────────────────────────
@@ -103,6 +105,10 @@ _SEPARATE_LABELS = {
     "demucs": {"label": "HTDemucs", "description": "音源分離（人聲/鼓/貝斯/吉他/鋼琴/其他）"},
 }
 
+_INTERPOLATE_LABELS = {
+    "rife": {"label": "RIFE", "description": "影片補幀（Frame Interpolation）"},
+}
+
 _VARIANT_DESC = {
     "x2plus": "2x",
     "x4plus": "4x",
@@ -159,6 +165,7 @@ class ModelMetadataService:
         all_models.extend(self._enumerate_translate_models())
         all_models.extend(self._enumerate_vlm_models())
         all_models.extend(self._enumerate_alignment_models())
+        all_models.extend(self._enumerate_rife_models())
         all_models.extend(self._enumerate_midi_models())
 
         # 保留原始分類作為 subcategory（前端模型篩選用），映射到大類作為 category（tab 分類用）
@@ -377,6 +384,36 @@ class ModelMetadataService:
             })
         return items
 
+
+    def _enumerate_rife_models(self) -> list[dict]:
+        """Enumerate RIFE interpolation models"""
+        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
+        from app.engine.paths import get_models_dir
+
+        rife_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})
+        rife_variants = rife_config.get("variants", {})
+        items = []
+
+        for variant_name, variant_spec in rife_variants.items():
+            family_meta = _INTERPOLATE_LABELS.get("rife", {"label": "RIFE", "description": ""})
+            label = f"{family_meta['label']} {variant_name}"
+
+            model_dir = get_models_dir() / SLOT_RIFE
+            filename = variant_spec.get("filename", "")
+            downloaded = (model_dir / filename).exists()
+
+            items.append({
+                "id": f"rife-{variant_name}",
+                "family": "rife",
+                "variant": variant_name,
+                "category": "interpolate",
+                "label": label,
+                "description": family_meta["description"],
+                "downloaded": downloaded,
+                "size_mb": variant_spec.get("size_mb", 0),
+                "vram_mb": variant_spec.get("vram_mb", 0),
+            })
+        return items
 
     def _enumerate_midi_models(self) -> list[dict]:
         """列舉 MIDI 相關模型（FluidSynth SoundFont）"""

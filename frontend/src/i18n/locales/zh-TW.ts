@@ -754,6 +754,7 @@ export default {
       local: '本地端',
       category_image: '影像處理',
       category_audio: '語音處理',
+      category_video: '影片處理',
       category_llm: '大語言模型',
     },
     remote: {

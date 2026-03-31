@@ -23,6 +23,7 @@ SLOT_PTH = "pth"      # PTH 模型共用（一次只載入一個）
 SLOT_VLM = "vlm"      # VLM 模型（一次只載入一個）
 SLOT_DEMUCS = "demucs"  # 音源分離（一次只載入一個）
 SLOT_BASIC_PITCH = "basic_pitch"  # 音訊轉 MIDI（basic-pitch）
+SLOT_RIFE = "rife"
 SLOT_SEGMENT = "segment"  # 物件分割（MobileSAM）
 
 # ═══════════════════════════════════════════════════════════
@@ -93,6 +94,25 @@ MODELS_REGISTRY = {
                     "model_name": "basic_pitch",
                     "size_mb": 10,
                     "vram_mb": 0,
+                },
+            },
+        },
+        # ▸ RIFE（影片補幀）
+        "rife": {
+            "slot": SLOT_RIFE,
+            "description": "RIFE 影片補幀",
+            "variants": {
+                "v4.22": {
+                    "url": "https://github.com/hzwer/Practical-RIFE/raw/main/train_log_v4.22/flownet.pkl",
+                    "filename": "rife-v4.22-flownet.pkl",
+                    "size_mb": 30,
+                    "vram_mb": 1500,
+                },
+                "v4.22-lite": {
+                    "url": "https://github.com/hzwer/Practical-RIFE/raw/main/train_log_v4.22_lite/flownet.pkl",
+                    "filename": "rife-v4.22-lite-flownet.pkl",
+                    "size_mb": 30,
+                    "vram_mb": 1000,
                 },
             },
         },

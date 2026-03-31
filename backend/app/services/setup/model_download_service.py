@@ -61,6 +61,10 @@ def handle_model_download(params: dict, progress_callback: Callable) -> dict:
         lang_code = item_id[len("alignment-"):]
         _download_alignment(lang_code, progress_callback)
 
+    elif item_id.startswith("rife-"):
+        variant = item_id[len("rife-"):]
+        _download_rife(variant, progress_callback)
+
     elif item_id == "basic-pitch":
         _download_basic_pitch(progress_callback)
 
@@ -268,6 +272,33 @@ def _download_demucs(variant: str, progress_callback: Callable) -> None:
 
     progress_callback(0.15, f"下載 {model_name} checkpoint...")
     _download_from_url(url, target_path, progress_callback, 0.15, 0.95)
+    progress_callback(0.95, "模型下載完成")
+
+
+def _download_rife(variant: str, progress_callback: Callable) -> None:
+    """Download RIFE model checkpoint"""
+    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
+
+    family = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife")
+    if not family:
+        raise ValueError("rife not registered")
+
+    variant_spec = family["variants"].get(variant)
+    if not variant_spec:
+        raise ValueError(f"Unknown RIFE variant: {variant}")
+
+    url = variant_spec["url"]
+    filename = variant_spec["filename"]
+
+    target_dir = get_models_dir() / SLOT_RIFE
+    target_path = target_dir / filename
+
+    if target_path.exists():
+        progress_callback(0.95, "模型已存在")
+        return
+
+    progress_callback(0.1, f"下載 RIFE {variant}...")
+    _download_from_url(url, target_path, progress_callback, 0.1, 0.95)
     progress_callback(0.95, "模型下載完成")
 
 
