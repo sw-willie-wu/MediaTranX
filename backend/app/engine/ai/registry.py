@@ -102,17 +102,12 @@ MODELS_REGISTRY = {
             "slot": SLOT_RIFE,
             "description": "RIFE 影片補幀",
             "variants": {
-                "v4.22": {
-                    "url": "https://github.com/hzwer/Practical-RIFE/raw/main/train_log_v4.22/flownet.pkl",
-                    "filename": "rife-v4.22-flownet.pkl",
-                    "size_mb": 30,
+                "v4.26": {
+                    "url": "https://huggingface.co/hzwer/RIFE/resolve/main/RIFEv4.26_0921.zip",
+                    "zip_entry": "RIFEv4.26_0921/flownet.pkl",
+                    "filename": "flownet-v4.26.pkl",
+                    "size_mb": 23,
                     "vram_mb": 1500,
-                },
-                "v4.22-lite": {
-                    "url": "https://github.com/hzwer/Practical-RIFE/raw/main/train_log_v4.22_lite/flownet.pkl",
-                    "filename": "rife-v4.22-lite-flownet.pkl",
-                    "size_mb": 30,
-                    "vram_mb": 1000,
                 },
             },
         },
@@ -301,6 +296,15 @@ MODELS_REGISTRY = {
                     "vram_mb": 2000,
                     "scale": 4,
                     "arch": "RRDBNet",
+                },
+                "animevideov3": {
+                    "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-animevideov3.pth",
+                    "filename": "realesr-animevideov3.pth",
+                    "size_mb": 2,
+                    "vram_mb": 500,
+                    "scale": 4,
+                    "arch": "SRVGGNetCompact",
+                    "subcategory": "video_enhance",
                 },
             },
         },

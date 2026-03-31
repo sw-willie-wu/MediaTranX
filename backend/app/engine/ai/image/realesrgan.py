@@ -25,24 +25,8 @@ class RealESRGANWrapper(PTHRuntime):
     """
     
     def __init__(self):
-        super().__init__(slot=SLOT_PTH, use_spandrel=False)
-        logger.info("RealESRGANWrapper initialized (PTHRuntime)")
-    
-    def _build_arch(self, config: dict):
-        """構建 RRDBNet 架構（PTHRuntime 要求）"""
-        from basicsr.archs.rrdbnet_arch import RRDBNet
-
-        scale = config.get("scale", 4)
-        # x4plus-anime 使用 6 blocks，其餘使用 23 blocks
-        num_block = 6 if "anime" in config.get("filename", "") else 23
-        return RRDBNet(
-            num_in_ch=3,
-            num_out_ch=3,
-            num_feat=64,
-            num_block=num_block,
-            num_grow_ch=32,
-            scale=scale,
-        )
+        super().__init__(slot=SLOT_PTH, use_spandrel=True)
+        logger.info("RealESRGANWrapper initialized (PTHRuntime, spandrel)")
     
     def enhance(
         self,

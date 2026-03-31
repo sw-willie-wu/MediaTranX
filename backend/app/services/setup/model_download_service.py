@@ -276,7 +276,9 @@ def _download_demucs(variant: str, progress_callback: Callable) -> None:
 
 
 def _download_rife(variant: str, progress_callback: Callable) -> None:
-    """Download RIFE model checkpoint"""
+    """Download RIFE model checkpoint (extracts flownet.pkl from zip)"""
+    import io
+    import zipfile
     from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
 
     family = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife")
@@ -289,6 +291,7 @@ def _download_rife(variant: str, progress_callback: Callable) -> None:
 
     url = variant_spec["url"]
     filename = variant_spec["filename"]
+    zip_entry = variant_spec.get("zip_entry", "")
 
     target_dir = get_models_dir() / SLOT_RIFE
     target_path = target_dir / filename
@@ -297,8 +300,29 @@ def _download_rife(variant: str, progress_callback: Callable) -> None:
         progress_callback(0.95, "模型已存在")
         return
 
+    import tempfile
     progress_callback(0.1, f"下載 RIFE {variant}...")
-    _download_from_url(url, target_path, progress_callback, 0.1, 0.95)
+
+    # Download zip to temp, extract flownet.pkl
+    tmp_zip = Path(tempfile.mktemp(suffix=".zip"))
+    try:
+        _download_from_url(url, tmp_zip, progress_callback, 0.1, 0.80)
+        progress_callback(0.85, "解壓模型...")
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(tmp_zip, "r") as zf:
+            # Find flownet.pkl in zip
+            pkl_name = zip_entry or next(
+                (n for n in zf.namelist() if n.endswith("flownet.pkl")), None
+            )
+            if not pkl_name:
+                raise RuntimeError("flownet.pkl not found in zip")
+            data = zf.read(pkl_name)
+            target_path.write_bytes(data)
+            logger.info(f"Extracted {pkl_name} → {target_path} ({len(data)} bytes)")
+    finally:
+        tmp_zip.unlink(missing_ok=True)
+
     progress_callback(0.95, "模型下載完成")
 
 
