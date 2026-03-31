@@ -35,8 +35,8 @@ src/backend/static/
 **/*.dll
 **/*.so
 **/*.sf2
-models/
-!backend/app/models/
+/models/
+backend/models/
 
 # Env (保留 .env.production)
 .env
