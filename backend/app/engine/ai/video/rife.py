@@ -8,10 +8,6 @@ import logging
 from pathlib import Path
 from typing import Optional, Callable
 
-import numpy as np
-import torch
-from PIL import Image
-
 from app.engine.paths import get_models_dir
 from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
 from app.engine.ai.model_manager import get_model_manager
@@ -51,6 +47,7 @@ class RIFEWrapper:
         return model_path
 
     def _load_model(self, variant: str):
+        import torch
         if self._model is not None and self._variant == variant:
             return
         model_path = self._get_model_path(variant)
@@ -70,6 +67,7 @@ class RIFEWrapper:
 
     def _unload(self):
         if self._model is not None:
+            import torch
             del self._model
             self._model = None
             self._variant = None
@@ -78,14 +76,18 @@ class RIFEWrapper:
 
     def _np_to_tensor(self, arr: np.ndarray) -> torch.Tensor:
         """Convert HWC uint8 numpy array to NCHW float tensor on device."""
+        import numpy as np
+        import torch
         return torch.from_numpy(arr.astype(np.float32) / 255.0).permute(2, 0, 1).unsqueeze(0).to(self._device)
 
     def _tensor_to_np(self, tensor: torch.Tensor) -> np.ndarray:
         """Convert NCHW float tensor to HWC uint8 numpy array."""
+        import numpy as np
         return (tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
 
     def interpolate_np(self, arr0: np.ndarray, arr1: np.ndarray, num_mid: int = 1) -> list[np.ndarray]:
         """Interpolate between two numpy frames (H,W,3 uint8). Returns list of mid frames."""
+        import torch
         assert self._model is not None, "Model not loaded"
         t0 = self._np_to_tensor(arr0)
         t1 = self._np_to_tensor(arr1)
@@ -109,6 +111,9 @@ class RIFEWrapper:
 
     def interpolate(self, img0: Image.Image, img1: Image.Image, num_mid: int = 1) -> list[Image.Image]:
         """Interpolate between two PIL images. Returns list of mid frames."""
+        import numpy as np
+        import torch
+        from PIL import Image
         assert self._model is not None, "Model not loaded"
         def to_tensor(img: Image.Image) -> torch.Tensor:
             arr = np.array(img.convert("RGB")).astype(np.float32) / 255.0

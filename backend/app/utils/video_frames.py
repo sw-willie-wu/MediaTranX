@@ -6,14 +6,14 @@ Two modes:
 - File-based: extract_frames / encode_frames (write to disk, for slow per-frame processing like super-res)
 - Pipe-based: FramePipe context manager (zero-disk I/O, for fast per-frame processing like RIFE)
 """
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
 import subprocess
 from pathlib import Path
 from typing import Callable, Generator, Optional
-
-import numpy as np
 
 from app.engine.ffmpeg import get_ffmpeg
 
@@ -110,6 +110,7 @@ class FramePipe:
 
     def read_frames(self) -> Generator[np.ndarray, None, None]:
         """Yield decoded frames as numpy arrays (H, W, 3) uint8."""
+        import numpy as np
         assert self._decoder is not None, "Call open() first"
         while True:
             raw = self._decoder.stdout.read(self._frame_size)

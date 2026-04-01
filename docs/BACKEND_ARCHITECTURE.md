@@ -102,7 +102,27 @@ remote/
 
 ---
 
-## 2. Import 規則
+## 2. 模型 Metadata i18n 規範（強制）
+
+`model_metadata_service.py` 中所有面向前端的 `description` 欄位**禁止**使用中文或英文硬編碼字串。必須使用 i18n key，由前端負責翻譯。
+
+```python
+# ✗ 禁止
+{"label": "Real-ESRGAN", "description": "通用超解析（寫實）"}
+{"label": "Real-ESRGAN", "description": "General Super-Resolution"}
+
+# ✓ 正確：使用 i18n key
+{"label": "Real-ESRGAN", "description": "models.realesrgan"}
+```
+
+- `label` 使用模型英文名稱（如 `Real-ESRGAN`、`Whisper Large-v3`），不需翻譯
+- `description` 使用 `models.<key>` 格式的 i18n key
+- 複合描述用 `||` 分隔（如 `"models.size.light_fast||models.quant.q4km"`），前端以 ` · ` 合併顯示
+- 新增模型時必須同時在 `en.ts` 和 `zh-TW.ts` 的 `models` 區塊加入對應翻譯
+
+---
+
+## 3. Import 規則
 
 ### 2.1 Lazy Import（強制）
 
@@ -153,7 +173,7 @@ from app.workers.task_manager import TaskManager, get_task_manager
 
 ---
 
-## 3. Service 規範
+## 4. Service 規範
 
 ### 3.1 結構模板
 
@@ -269,7 +289,7 @@ output_dir = Path(custom_output_dir) if custom_output_dir else self._file_servic
 
 ---
 
-## 4. Route 規範
+## 5. Route 規範
 
 ### 4.1 結構模板
 
@@ -334,7 +354,7 @@ router.include_router(compress_router)
 
 ---
 
-## 5. 任務系統規範
+## 6. 任務系統規範
 
 ### 5.1 任務狀態
 
@@ -365,7 +385,7 @@ def _execute(self, params, progress_callback):
 
 ---
 
-## 6. 日誌規範
+## 7. 日誌規範
 
 ### 6.1 Logger 建立
 
@@ -393,7 +413,7 @@ logger = logging.getLogger(__name__)
 
 ---
 
-## 7. 路徑規範
+## 8. 路徑規範
 
 ### 7.1 所有路徑必須透過 `engine/paths.py`
 
@@ -426,7 +446,7 @@ path = get_models_dir("image")
 
 ---
 
-## 8. 錯誤處理規範
+## 9. 錯誤處理規範
 
 ### 8.1 Service 層
 
@@ -461,7 +481,7 @@ Engine 方法失敗時直接拋異常，由上層 Service/TaskManager 處理。�
 
 ---
 
-## 9. 命名規範
+## 10. 命名規範
 
 ### 9.1 檔案命名
 
@@ -495,7 +515,7 @@ def get_image_compress_service() -> ImageCompressService:
 
 ---
 
-## 10. 新增功能 Checklist
+## 11. 新增功能 Checklist
 
 新增一個處理功能時，按順序完成：
 

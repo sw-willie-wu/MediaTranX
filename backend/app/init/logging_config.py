@@ -8,9 +8,12 @@ import os
 from pathlib import Path
 
 
+LOG_FORMAT = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+
+
 def configure_logging(is_frozen: bool) -> None:
-    """配置日誌系統"""
-    log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    """配置日誌系統（app + uvicorn 統一格式）"""
+    log_formatter = logging.Formatter(LOG_FORMAT)
     handlers: list[logging.Handler] = [logging.StreamHandler()]  # stdout → Electron pipe
 
     if is_frozen:
@@ -29,6 +32,12 @@ def configure_logging(is_frozen: bool) -> None:
         h.setFormatter(log_formatter)
 
     logging.basicConfig(level=logging.INFO, handlers=handlers)
+
+    # 統一 uvicorn logger 格式（覆蓋 uvicorn 預設的 formatter）
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uv_logger = logging.getLogger(name)
+        uv_logger.handlers.clear()
+        uv_logger.propagate = True  # 讓 uvicorn 的 log 走 root logger
 
     if is_frozen:
         logging.info(f"Backend started in frozen mode. Error log: {error_log}")

@@ -32,6 +32,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MediaTranX Backend")
     parser.add_argument("--host", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8001)
+    parser.add_argument("--mode", type=str, default="production", choices=["production", "dev"])
     args = parser.parse_args()
 
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    is_dev = args.mode == "dev"
+    if is_dev:
+        os.environ["MEDIATRANX_DEV"] = "1"
+
+    # 根據 mode 調整 app + uvicorn log level
+    import logging as _logging
+    app_level = _logging.DEBUG if is_dev else _logging.WARNING
+    _logging.getLogger().setLevel(app_level)
+
+    uvicorn.run(
+        app, host=args.host, port=args.port,
+        log_level="debug" if is_dev else "warning",
+    )
