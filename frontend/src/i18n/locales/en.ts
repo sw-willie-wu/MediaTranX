@@ -310,6 +310,8 @@ export default {
       transcode: 'Transcode',
       cut: 'Cut',
       subtitle: 'Subtitle',
+      interpolate: 'Interpolate',
+      enhance: 'Enhance',
     },
 
     group: {
@@ -406,6 +408,36 @@ export default {
       min_silence_hint: 'Pauses exceeding this duration will create a new segment (default 200ms)',
       vad_threshold: 'VAD Sensitivity',
       vad_threshold_hint: 'Lower values are more sensitive, more likely to segment (default 0.3)',
+    },
+
+    interpolate: {
+      title: 'Frame Interpolation Settings',
+      description: 'Increase video frame rate using AI interpolation.',
+      model: 'Model',
+      model_recommended: '(Recommended)',
+      model_fast: '(Fast)',
+      mode: 'Interpolation Mode',
+      mode_2x: '2x Frame Rate',
+      mode_4x: '4x Frame Rate',
+      mode_custom: 'Custom FPS',
+      target_fps: 'Target FPS',
+      current_fps: 'Current FPS',
+      output_fps: 'Output FPS',
+      fps_warning: 'Target FPS must be higher than source FPS',
+      output_format: 'Output Format',
+      video_codec: 'Video Codec',
+      task_label: 'Video · Frame Interpolation',
+    },
+
+    enhance: {
+      title: 'Video Enhancement Settings',
+      description: 'Upscale video resolution using AI super-resolution.',
+      model: 'Model',
+      variant: 'Variant',
+      output_resolution: 'Output Resolution',
+      output_format: 'Output Format',
+      video_codec: 'Video Codec',
+      task_label: 'Video · Enhancement',
     },
   },
 
@@ -852,6 +884,55 @@ export default {
       audio: 'Audio Tools',
       image: 'Image Tools',
       document: 'Document Tools',
+    },
+  },
+
+  // ── Model descriptions ────────────────────────────────────────────────
+  models: {
+    // Image upscale
+    realesrgan: 'General Super-Resolution (Realistic)',
+    swinir: 'Transformer Super-Resolution',
+    bsrgan: 'Blind Super-Resolution',
+    real_cugan: 'Anime-Style Super-Resolution',
+    waifu2x: 'Classic Anime Super-Resolution',
+    // Face restore
+    codeformer: 'VQ-GAN Face Restoration',
+    gfpgan: 'GAN Face Restoration',
+    // Segment
+    mobilesam: 'Lightweight Segmentation (AI Removal)',
+    // Separate
+    demucs: 'Source Separation (Vocals/Drums/Bass/Guitar/Piano/Other)',
+    // Interpolation
+    rife: 'Video Frame Interpolation',
+    // MIDI
+    fluidsynth: 'MIDI Synth Engine + GM SoundFont (WAV/MP3 Export)',
+    // Whisper
+    whisper: {
+      tiny: 'Ultra-Fast Speech Recognition',
+      base: 'Fast Speech Recognition',
+      small: 'Lightweight Speech Recognition',
+      medium: 'Balanced Accuracy & Speed',
+      large_v3: 'Highest Accuracy Speech Recognition',
+    },
+    // Size descriptions
+    size: {
+      ultra_light: 'Ultra-light, Fastest',
+      light_fast: 'Light, Fast',
+      balanced: 'Balanced Accuracy & Speed',
+      highest: 'Highest Translation Accuracy',
+      high_precision: 'High Precision Translation',
+      ultra_light_ocr: 'Ultra-light OCR',
+      light_ocr_recommended: 'Light OCR (Recommended)',
+      high_precision_ocr: 'High Precision OCR',
+    },
+    // Quantization descriptions
+    quant: {
+      q8: 'High Precision Quantization',
+      q4km: 'Standard Quantization',
+      q4ks: 'Standard Quantization, Slightly Less VRAM',
+      q3kl: 'Light Quantization',
+      q3km: 'Light Quantization, Less VRAM',
+      q3ks: 'Light Quantization, Least VRAM',
     },
   },
 }
