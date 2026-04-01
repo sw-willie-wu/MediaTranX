@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 # ─── 分類定義（前端 tab 動態產生）────────────────────────────────────────────
 
 MODEL_CATEGORIES = [
-    {"key": "image", "label": "影像處理", "order": 0},
-    {"key": "audio", "label": "語音處理", "order": 1},
-    {"key": "video", "label": "影片處理", "order": 2},
+    {"key": "image", "label": "圖像處理", "order": 0},
+    {"key": "video", "label": "影片處理", "order": 1},
+    {"key": "audio", "label": "語音處理", "order": 2},
     {"key": "llm", "label": "大語言模型", "order": 3},
 ]
 
@@ -30,52 +30,53 @@ _CATEGORY_MAP = {
     "translate": "llm",
     "vlm": "llm",
     "interpolate": "video",
+    "video_enhance": "video",
 }
 
 # ─── 顯示用常數 ──────────────────────────────────────────────────────────────
 
 _WHISPER_DISPLAY = [
-    ("tiny", "Whisper Tiny", "極速語音辨識"),
-    ("base", "Whisper Base", "快速語音辨識"),
-    ("small", "Whisper Small", "輕量語音辨識"),
-    ("medium", "Whisper Medium", "平衡精度與速度"),
-    ("large-v3", "Whisper Large-v3", "最高精度語音辨識"),
+    ("tiny", "Whisper Tiny", "models.whisper.tiny"),
+    ("base", "Whisper Base", "models.whisper.base"),
+    ("small", "Whisper Small", "models.whisper.small"),
+    ("medium", "Whisper Medium", "models.whisper.medium"),
+    ("large-v3", "Whisper Large-v3", "models.whisper.large_v3"),
 ]
 
 _SIZE_DESC = {
     "translategemma": {
-        "4b": "輕量，速度快",
-        "12b": "平衡精度與速度",
-        "27b": "最高翻譯精度",
+        "4b": "models.size.light_fast",
+        "12b": "models.size.balanced",
+        "27b": "models.size.highest",
     },
     "qwen3": {
-        "1.7b": "超輕量，速度極快",
-        "4b": "輕量，速度快",
-        "8b": "平衡精度與速度",
-        "14b": "高精度翻譯",
+        "1.7b": "models.size.ultra_light",
+        "4b": "models.size.light_fast",
+        "8b": "models.size.balanced",
+        "14b": "models.size.high_precision",
     },
     "qwen3vl": {
-        "2b": "超輕量 OCR",
-        "4b": "輕量 OCR（推薦）",
-        "8b": "高精度 OCR",
+        "2b": "models.size.ultra_light_ocr",
+        "4b": "models.size.light_ocr_recommended",
+        "8b": "models.size.high_precision_ocr",
     },
     "internvl2.5": {
-        "1b": "超輕量 OCR",
-        "4b": "輕量 OCR（推薦）",
+        "1b": "models.size.ultra_light_ocr",
+        "4b": "models.size.light_ocr_recommended",
     },
     "gemma3": {
-        "4b": "輕量 OCR（推薦）",
-        "12b": "高精度 OCR",
+        "4b": "models.size.light_ocr_recommended",
+        "12b": "models.size.high_precision_ocr",
     },
 }
 
 _QUANT_DESC = {
-    "Q8_0": "高精度量化",
-    "Q4_K_M": "標準量化",
-    "Q4_K_S": "標準量化，略省 VRAM",
-    "Q3_K_L": "輕量量化",
-    "Q3_K_M": "輕量量化，省 VRAM",
-    "Q3_K_S": "輕量量化，最省 VRAM",
+    "Q8_0": "models.quant.q8",
+    "Q4_K_M": "models.quant.q4km",
+    "Q4_K_S": "models.quant.q4ks",
+    "Q3_K_L": "models.quant.q3kl",
+    "Q3_K_M": "models.quant.q3km",
+    "Q3_K_S": "models.quant.q3ks",
 }
 
 _VLM_FAMILY_LABELS = {
@@ -85,28 +86,28 @@ _VLM_FAMILY_LABELS = {
 }
 
 _UPSCALE_LABELS = {
-    "realesrgan": {"label": "Real-ESRGAN", "description": "通用超解析（寫實）"},
-    "swinir": {"label": "SwinIR", "description": "Transformer 超解析"},
-    "bsrgan": {"label": "BSRGAN", "description": "盲超解析"},
-    "real-cugan": {"label": "Real-CUGAN", "description": "動漫風格超解析"},
-    "waifu2x": {"label": "Waifu2x", "description": "經典動漫超解析"},
+    "realesrgan": {"label": "Real-ESRGAN", "description": "models.realesrgan"},
+    "swinir": {"label": "SwinIR", "description": "models.swinir"},
+    "bsrgan": {"label": "BSRGAN", "description": "models.bsrgan"},
+    "real-cugan": {"label": "Real-CUGAN", "description": "models.real_cugan"},
+    "waifu2x": {"label": "Waifu2x", "description": "models.waifu2x"},
 }
 
 _FACE_RESTORE_LABELS = {
-    "codeformer": {"label": "CodeFormer", "description": "VQ-GAN 人臉修復"},
-    "gfpgan": {"label": "GFPGAN", "description": "GAN 人臉修復"},
+    "codeformer": {"label": "CodeFormer", "description": "models.codeformer"},
+    "gfpgan": {"label": "GFPGAN", "description": "models.gfpgan"},
 }
 
 _SEGMENT_LABELS = {
-    "mobilesam": {"label": "MobileSAM", "description": "輕量物件分割（AI 移除用）"},
+    "mobilesam": {"label": "MobileSAM", "description": "models.mobilesam"},
 }
 
 _SEPARATE_LABELS = {
-    "demucs": {"label": "HTDemucs", "description": "音源分離（人聲/鼓/貝斯/吉他/鋼琴/其他）"},
+    "demucs": {"label": "HTDemucs", "description": "models.demucs"},
 }
 
 _INTERPOLATE_LABELS = {
-    "rife": {"label": "RIFE", "description": "影片補幀（Frame Interpolation）"},
+    "rife": {"label": "RIFE", "description": "models.rife"},
 }
 
 _VARIANT_DESC = {
@@ -123,6 +124,8 @@ _VARIANT_DESC = {
     "cunet": "CUnet 變體",
     "v1.4": "v1.4",
     "htdemucs_6s": "6-Stem",
+    "v4.26": "v4.26",
+    "animevideov3": "4x - Video (Fast)",
 }
 
 _LANG_NAMES = {
@@ -212,7 +215,7 @@ class ModelMetadataService:
                     "id": f"{model_family}-{variant_name}",
                     "family": model_family,
                     "variant": variant_name,
-                    "category": category,
+                    "category": variant_spec.get("subcategory", category),
                     "label": label,
                     "description": family_meta["description"],
                     "downloaded": downloaded,
@@ -305,7 +308,7 @@ class ModelMetadataService:
 
                     size_desc = _SIZE_DESC.get(model_family, {}).get(size, "")
                     quant_desc = _QUANT_DESC.get(quant, "")
-                    description = f"{size_desc} · {quant_desc}" if size_desc and quant_desc else (size_desc or quant_desc)
+                    description = f"{size_desc}||{quant_desc}" if size_desc and quant_desc else (size_desc or quant_desc)
 
                     items.append({
                         "id": f"{model_family}-{size}-{quant}",
@@ -344,12 +347,14 @@ class ModelMetadataService:
                     )
                     total_mb = quant_spec.get("size_mb", 0) + quant_spec.get("mmproj_size_mb", 0)
                     quant_desc = _QUANT_DESC.get(quant, quant)
+                    size_desc = _SIZE_DESC.get(model_family, {}).get(size, "")
+                    description = f"{size_desc}||{quant_desc}" if size_desc and quant_desc else (size_desc or quant_desc)
                     items.append({
                         "id": f"{model_family}-{size}-{quant}",
                         "family": model_family,
                         "variant": f"{size}:{quant}",
                         "label": f"{family_label} {size.upper()} {quant}",
-                        "description": f"{_SIZE_DESC.get(model_family, {}).get(size, '')} · {quant_desc}",
+                        "description": description,
                         "category": "vlm",
                         "downloaded": downloaded,
                         "size_mb": total_mb,
@@ -396,7 +401,8 @@ class ModelMetadataService:
 
         for variant_name, variant_spec in rife_variants.items():
             family_meta = _INTERPOLATE_LABELS.get("rife", {"label": "RIFE", "description": ""})
-            label = f"{family_meta['label']} {variant_name}"
+            variant_desc = _VARIANT_DESC.get(variant_name, variant_name)
+            label = f"{family_meta['label']} - {variant_desc}" if len(rife_variants) > 1 else family_meta['label']
 
             model_dir = get_models_dir() / SLOT_RIFE
             filename = variant_spec.get("filename", "")
@@ -436,7 +442,7 @@ class ModelMetadataService:
             "variant": "default",
             "category": "midi",
             "label": "FluidR3 GM SoundFont",
-            "description": "MIDI 音色合成引擎 + GM 音色庫（匯出 WAV/MP3 用）",
+            "description": "models.fluidsynth",
             "downloaded": sf2_ok and dll_ok,
             "size_mb": 142,
             "vram_mb": 0,

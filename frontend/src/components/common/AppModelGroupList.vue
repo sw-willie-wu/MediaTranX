@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 interface ModelItem {
   id: string
@@ -80,6 +80,15 @@ function formatSize(mb: number): string {
   if (mb >= 1000) return `${(mb / 1000).toFixed(1)} GB`
   return `${mb} MB`
 }
+
+/** Translate a description that may be an i18n key or a composite "key1||key2" */
+function tDesc(desc: string): string {
+  if (!desc) return ''
+  if (desc.includes('||')) {
+    return desc.split('||').map(part => te(part) ? t(part) : part).join(' · ')
+  }
+  return te(desc) ? t(desc) : desc
+}
 </script>
 
 <template>
@@ -88,13 +97,13 @@ function formatSize(mb: number): string {
       <!-- Family header -->
       <div class="family-header">
         <span class="family-label">{{ group.familyLabel }}</span>
-        <span v-if="group.description" class="family-desc">{{ group.description }}</span>
+        <span v-if="group.description" class="family-desc">{{ tDesc(group.description) }}</span>
       </div>
 
       <!-- Single variant: action in header row -->
       <template v-if="group.items.length === 1">
         <div class="model-row">
-          <span class="row-label">{{ group.description }}</span>
+          <span class="row-label">{{ tDesc(group.description) }}</span>
           <span class="row-size">{{ formatSize(group.items[0].size_mb) }}</span>
           <span v-if="group.items[0].vram_mb" class="row-vram">{{ formatSize(group.items[0].vram_mb) }} VRAM</span>
           <span v-else class="row-vram"></span>
@@ -312,8 +321,8 @@ function formatSize(mb: number): string {
 
   &:hover {
     color: var(--color-danger);
-    border-color: rgba(239, 68, 68, 0.4);
-    background: rgba(239, 68, 68, 0.08);
+    border-color: color-mix(in srgb, var(--color-danger) 40%, transparent);
+    background: color-mix(in srgb, var(--color-danger) 8%, transparent);
   }
 }
 </style>
