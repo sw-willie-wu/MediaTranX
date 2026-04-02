@@ -6,9 +6,11 @@ const activeFileName = ref('')
 /** Titlebar fixed actions — undo/redo/save-as */
 const _canUndo = ref(false)
 const _canRedo = ref(false)
+const _canSave = ref(false)
 const _canSaveAs = ref(false)
 let _onUndo: (() => void) | null = null
 let _onRedo: (() => void) | null = null
+let _onSave: (() => void) | null = null
 let _onSaveAs: (() => void) | null = null
 let _stopWatch: WatchStopHandle | null = null
 
@@ -37,18 +39,22 @@ export function useTitlebar() {
   function registerActions(actions: {
     canUndo: () => boolean
     canRedo: () => boolean
+    canSave?: () => boolean
     canSaveAs: () => boolean
     onUndo: () => void
     onRedo: () => void
+    onSave?: () => void
     onSaveAs: () => void
   }) {
     _onUndo = actions.onUndo
     _onRedo = actions.onRedo
+    _onSave = actions.onSave ?? null
     _onSaveAs = actions.onSaveAs
     _stopWatch?.()
     _stopWatch = watchEffect(() => {
       _canUndo.value = actions.canUndo()
       _canRedo.value = actions.canRedo()
+      _canSave.value = actions.canSave?.() ?? false
       _canSaveAs.value = actions.canSaveAs()
     })
   }
@@ -58,14 +64,17 @@ export function useTitlebar() {
     _stopWatch = null
     _canUndo.value = false
     _canRedo.value = false
+    _canSave.value = false
     _canSaveAs.value = false
     _onUndo = null
     _onRedo = null
+    _onSave = null
     _onSaveAs = null
   }
 
   function undo() { _onUndo?.() }
   function redo() { _onRedo?.() }
+  function save() { _onSave?.() }
   function saveAs() { _onSaveAs?.() }
 
   function setExtraActions(actions: TitlebarExtraAction[]) {
@@ -83,9 +92,11 @@ export function useTitlebar() {
     // Fixed actions state
     canUndo: readonly(_canUndo),
     canRedo: readonly(_canRedo),
+    canSave: readonly(_canSave),
     canSaveAs: readonly(_canSaveAs),
     undo,
     redo,
+    save,
     saveAs,
     // Extra actions
     extraActions: readonly(_extraActions),

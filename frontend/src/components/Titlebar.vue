@@ -11,7 +11,7 @@ import { useTitlebar } from '@/composables/useTitlebar'
 const route = useRoute()
 const isMaximized = ref(false)
 const { t } = useI18n()
-const { activeFileName, canUndo, canRedo, canSaveAs, undo, redo, saveAs, extraActions } = useTitlebar()
+const { activeFileName, canUndo, canRedo, canSave, canSaveAs, undo, redo, save, saveAs, extraActions } = useTitlebar()
 
 const isToolPage = computed(() => !!toolTitleKeys[route.path])
 
@@ -72,7 +72,7 @@ onMounted(async () => {
         <button class="titlebar-action" :disabled="!canRedo" :data-tooltip="$t('titlebar.redo')" @click="redo">
           <i class="bi bi-arrow-return-right flip-v"></i>
         </button>
-        <button class="titlebar-action" :disabled="!canSaveAs" :data-tooltip="$t('titlebar.save_as')" @click="saveAs">
+        <button class="titlebar-action" :class="{ 'is-highlighted': canSaveAs }" :disabled="!canSaveAs" :data-tooltip="$t('titlebar.save_as')" @click="saveAs">
           <i class="bi bi-floppy"></i>
         </button>
         <div v-if="extraActions.length" class="titlebar-separator"></div>
@@ -165,6 +165,10 @@ onMounted(async () => {
   &:disabled {
     opacity: 0.25;
     cursor: default;
+  }
+
+  &.is-highlighted {
+    color: var(--color-primary);
   }
 
   // Tooltip — 下方浮出
