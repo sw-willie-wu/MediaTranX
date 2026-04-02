@@ -310,7 +310,7 @@ export default {
       transcode: '轉檔',
       cut: '剪輯',
       subtitle: '字幕',
-      interpolate: 'AI 補幀',
+      interpolate: '補幀',
       enhance: '畫面強化',
     },
 
@@ -426,7 +426,7 @@ export default {
       fps_warning: '目標 FPS 必須高於來源 FPS',
       output_format: '輸出格式',
       video_codec: '影像編碼',
-      task_label: '影片 · AI 補幀',
+      task_label: '影片 · 補幀',
     },
 
     enhance: {
@@ -570,7 +570,7 @@ export default {
     },
 
     midi: {
-      title: 'MIDI 編輯器',
+      title: 'MIDI 編輯設定',
       description: '編輯 MIDI 音符、調整音色、匯出音訊。',
       unsupported: '此檔案格式不支援 MIDI 編輯，請載入 .mid 檔案。',
       task_label: '音訊 · MIDI 匯出',
@@ -603,6 +603,7 @@ export default {
       tool_select: '選取',
       tool_draw: '繪製',
       tool_erase: '橡皮擦',
+      new_midi: '新增 MIDI',
       loop: '循環播放',
       global_settings: '全域設定',
       tools: '工具',

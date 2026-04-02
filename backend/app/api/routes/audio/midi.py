@@ -27,6 +27,17 @@ class MidiSaveRequest(BaseModel):
     data: dict = Field(..., description="MIDI JSON data")
 
 
+@router.post("/midi/create")
+async def create_midi(request: MidiSaveRequest):
+    """Create a new MIDI file from editor data, returns file_id."""
+    try:
+        service = get_audio_midi_service()
+        file_id = service.create_midi(request.data)
+        return {"file_id": file_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/midi/{file_id}")
 async def read_midi(file_id: str):
     try:

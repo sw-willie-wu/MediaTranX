@@ -570,7 +570,7 @@ export default {
     },
 
     midi: {
-      title: 'MIDI Editor',
+      title: 'MIDI Edit Settings',
       description: 'Edit MIDI notes, adjust instruments, and export audio.',
       unsupported: 'This file format does not support MIDI editing. Please load a .mid file.',
       task_label: 'Audio · MIDI Export',
@@ -603,6 +603,7 @@ export default {
       tool_select: 'Select',
       tool_draw: 'Draw',
       tool_erase: 'Erase',
+      new_midi: 'New MIDI',
       loop: 'Loop',
       global_settings: 'Global Settings',
       tools: 'Tools',

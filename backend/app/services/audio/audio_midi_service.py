@@ -43,6 +43,24 @@ class AudioMidiService:
             raise ValueError(f"File not found: {file_id}")
         return midi_to_json(file_info.file_path)
 
+    def create_midi(self, data: dict) -> str:
+        """Create a new .mid file from editor JSON, register it, and return file_id."""
+        from app.utils.midi import json_to_midi
+        from uuid import uuid4
+
+        file_id = str(uuid4())
+        temp_dir = self._file_service._upload_dir
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        midi_path = temp_dir / f"{file_id}.mid"
+        json_to_midi(data, str(midi_path))
+        self._file_service.register_output(
+            file_id=file_id,
+            file_path=midi_path,
+            original_filename="Untitled.mid",
+        )
+        logger.info(f"MIDI created: {midi_path} ({file_id})")
+        return file_id
+
     def save_midi(self, file_id: str, data: dict) -> dict:
         """Save edited MIDI JSON back to .mid file."""
         from app.utils.midi import json_to_midi

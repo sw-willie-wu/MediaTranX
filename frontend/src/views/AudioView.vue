@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, watchEffect, defineAsyncComponent, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+import { ref, computed, watch, watchEffect, nextTick, defineAsyncComponent, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
@@ -359,6 +359,42 @@ async function handleJumpToMidi(midiFileId: string) {
   currentFunction.value = 'midi-edit'
 }
 
+// ── 新增空白 MIDI ──
+function makeMidiThumbnail(): string {
+  const size = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = size; canvas.height = size
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#1e293b'; ctx.fillRect(0, 0, size, size)
+  ctx.fillStyle = '#64748b'; ctx.font = '48px serif'
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+  ctx.fillText('\u266B', size / 2, size / 2)
+  return canvas.toDataURL()
+}
+
+let blankMidiCounter = 0
+
+async function createBlankMidi() {
+  blankMidiCounter++
+  const name = blankMidiCounter === 1 ? 'Untitled.mid' : `Untitled ${blankMidiCounter}.mid`
+  const file = new File([new Uint8Array(0)], name, { type: 'audio/midi' })
+  const entryId = await collection.addEntry(file)
+  collection.updateEntry(entryId, { status: 'idle', thumbnailUrl: makeMidiThumbnail() })
+  currentFunction.value = 'midi-edit'
+  // 等 panel 渲染後重置 editor 為空白狀態
+  await nextTick()
+  if (midiEditPanelRef.value?.editor) {
+    const editor = midiEditPanelRef.value.editor
+    editor.tracks.value = []
+    editor.selectedNoteIds.value = new Set()
+    editor.activeTrackIndex.value = 0
+    editor.tempo.value = 120
+    editor.timeSignature.value = [4, 4]
+    editor.addTrack('Track 1', 0, false)
+    editor.isDirty.value = false
+  }
+}
+
 // Ctrl+A / clearSelection 由 AppFilmstrip 內部處理
 
 // ── Titlebar actions ──────────────────────────────────────────────────────
@@ -374,10 +410,23 @@ function registerTitlebar() {
       if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.editor.canRedo.value ?? false
       return false
     },
-    canSaveAs: () => hasResult.value,
+    canSaveAs: () => {
+      if (currentFunction.value === 'midi-edit') {
+        const editor = midiEditPanelRef.value?.editor
+        if (!editor) return false
+        return editor.isDirty.value && editor.tracks.value.some(t => t.notes.length > 0)
+      }
+      return hasResult.value
+    },
     onUndo: () => { midiEditPanelRef.value?.editor.undo() },
     onRedo: () => { midiEditPanelRef.value?.editor.redo() },
-    onSaveAs: () => onDownload(),
+    onSaveAs: () => {
+      if (currentFunction.value === 'midi-edit') {
+        midiEditPanelRef.value?.execute()
+      } else {
+        onDownload()
+      }
+    },
   })
 }
 
@@ -431,6 +480,12 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
 
     <template #preview="{ file, previewUrl }">
       <div v-if="currentFunction === 'midi-edit' && isMidiFile && midiEditPanelRef?.editor && midiEditPanelRef.editor.tracks.value.length > 0" class="midi-editor-preview">
+        <!-- Loading overlay -->
+        <Transition name="fade">
+          <div v-if="midiEditPanelRef.editor.isLoading.value" class="midi-loading-overlay">
+            <div class="spinner" />
+          </div>
+        </Transition>
         <!-- Track bar -->
         <div class="midi-track-bar" @wheel.prevent="onTrackBarWheel">
           <div
@@ -687,6 +742,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           :current-file-name="currentFileName"
           :source-dir="sourceDir"
           @submit="handlePanelSubmit"
+          @create-blank="createBlankMidi"
         />
       </div>
     </template>
@@ -909,6 +965,33 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
   text-align: right;
   flex-shrink: 0;
 }
+
+.midi-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 8px;
+
+  .spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 
 /* ── Track settings transition ── */
 .track-settings-enter-active,
