@@ -1,26 +1,19 @@
 """
-日誌配置
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-設定 logging 格式、handler、以及 frozen 模式下的 error log 檔案。
+Logging configuration.
 """
 import logging
-import os
 from pathlib import Path
-
 
 LOG_FORMAT = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 
 
-def configure_logging(is_frozen: bool) -> None:
-    """配置日誌系統（app + uvicorn 統一格式）"""
+def configure_logging(settings) -> None:
+    """Configure logging system based on settings."""
     log_formatter = logging.Formatter(LOG_FORMAT)
-    handlers: list[logging.Handler] = [logging.StreamHandler()]  # stdout → Electron pipe
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
 
-    if is_frozen:
-        error_log = os.environ.get('MEDIATRANX_ERROR_LOG')
-        if not error_log:
-            from app.engine.paths import get_base_data_dir
-            error_log = str(get_base_data_dir() / 'logs' / 'core_error.log')
+    if settings.is_frozen:
+        error_log = str(Path(settings.path.data) / 'logs' / 'core_error.log')
         Path(error_log).parent.mkdir(parents=True, exist_ok=True)
 
         error_handler = logging.FileHandler(error_log, encoding='utf-8')
@@ -33,11 +26,11 @@ def configure_logging(is_frozen: bool) -> None:
 
     logging.basicConfig(level=logging.INFO, handlers=handlers)
 
-    # 統一 uvicorn logger 格式（覆蓋 uvicorn 預設的 formatter）
+    # Unify uvicorn logger format
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         uv_logger = logging.getLogger(name)
         uv_logger.handlers.clear()
-        uv_logger.propagate = True  # 讓 uvicorn 的 log 走 root logger
+        uv_logger.propagate = True
 
-    if is_frozen:
+    if settings.is_frozen:
         logging.info(f"Backend started in frozen mode. Error log: {error_log}")
