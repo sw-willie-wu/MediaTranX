@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -19,22 +19,12 @@ TASK_TYPE_IMAGE_REMOVE_OBJECT = "image.remove_object"
 
 
 class ImageRemoveObjectService:
-    _instance: Optional["ImageRemoveObjectService"] = None
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
         self._lama_model = None
         self._task_manager.register_handler(TASK_TYPE_IMAGE_REMOVE_OBJECT, self._handle_remove_object_task)
-        self._initialized = True
         logger.info("ImageRemoveObjectService initialized")
 
     async def submit_remove_object(
@@ -203,8 +193,8 @@ class ImageRemoveObjectService:
         rough_mask = self._decode_mask(mask_data, w, h)
 
         # === GPU 排隊管線 ===
-        from app.engine.ai.model_manager import get_model_manager
-        manager = get_model_manager()
+        from app.init.container import get_container
+        manager = get_container().model_manager()
 
         with manager.gpu_session():
             # 略微膨脹筆刷遮罩（填補筆觸縫隙），直接送 LaMa（跳過 SAM，避免遮罩過大）
@@ -243,13 +233,3 @@ class ImageRemoveObjectService:
         target_dir = Path(custom_dir) if custom_dir else self._file_service.output_dir
         target_dir.mkdir(parents=True, exist_ok=True)
         return target_dir / f"{Path(file_info.original_filename).stem}_removed_{uuid4().hex[:8]}.png"
-
-
-_image_remove_object_service: Optional[ImageRemoveObjectService] = None
-
-
-def get_image_remove_object_service() -> ImageRemoveObjectService:
-    global _image_remove_object_service
-    if _image_remove_object_service is None:
-        _image_remove_object_service = ImageRemoveObjectService()
-    return _image_remove_object_service

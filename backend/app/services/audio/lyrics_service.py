@@ -15,8 +15,8 @@ from app.utils.prompts import (
     segments_to_srt,
     parse_srt_response,
 )
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -31,21 +31,11 @@ def _format_lrc_time(seconds: float) -> str:
 
 
 class AudioLyricsService:
-    _instance: Optional["AudioLyricsService"] = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
         self._task_manager.register_handler(TASK_TYPE_AUDIO_LYRICS, self._handle_task)
-        self._initialized = True
         logger.info("AudioLyricsService initialized")
 
     async def submit_lyrics(
@@ -176,8 +166,8 @@ class AudioLyricsService:
             stage_progress("demucs", 1.0, "人聲分離完成")
 
             # === GPU 排隊管線 ===
-            from app.engine.ai.model_manager import get_model_manager
-            manager = get_model_manager()
+            from app.init.container import get_container
+            manager = get_container().model_manager()
 
             with manager.gpu_session():
                 # === Whisper 語音辨識 ===
@@ -385,13 +375,3 @@ class AudioLyricsService:
                 # txt: 純文字，一行一段
                 for seg in segments:
                     f.write(seg.text.strip() + "\n")
-
-
-_service: Optional[AudioLyricsService] = None
-
-
-def get_audio_lyrics_service() -> AudioLyricsService:
-    global _service
-    if _service is None:
-        _service = AudioLyricsService()
-    return _service

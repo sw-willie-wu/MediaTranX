@@ -172,16 +172,16 @@ class OllamaProvider(RemoteProvider):
             body = e.read().decode("utf-8", errors="replace")
             raise self._parse_error(e.code, body)
         except urllib.error.URLError as e:
-            from app.exceptions import RemoteApiError
+            from app.handler.exceptions import RemoteApiError
             raise RemoteApiError("connection_failed", f"Ollama: {e}")
         except OSError as e:
-            from app.exceptions import RemoteApiError
+            from app.handler.exceptions import RemoteApiError
             raise RemoteApiError("connection_failed", f"Ollama: {e}")
 
     @staticmethod
     def _parse_error(status: int, body: str):
         """解析 Ollama API 錯誤，回傳 RemoteApiError"""
-        from app.exceptions import RemoteApiError
+        from app.handler.exceptions import RemoteApiError
         body_lower = body.lower()
         if status == 500 and ("eof" in body_lower or "load" in body_lower):
             return RemoteApiError("gpu_oom", f"Ollama 500: {body[:200]}")

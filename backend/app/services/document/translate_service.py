@@ -20,8 +20,8 @@ from app.utils.prompts import (
     parse_srt_response,
     split_text,
 )
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -129,20 +129,9 @@ class TranslateService:
     整合 TranslateGemma 和檔案管理
     """
 
-    _instance: Optional["TranslateService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
 
         # 註冊任務處理器
         self._task_manager.register_handler(
@@ -150,7 +139,6 @@ class TranslateService:
             self._handle_translate_task,
         )
 
-        self._initialized = True
         logger.info("TranslateService initialized")
 
     async def submit_translate(
@@ -293,14 +281,14 @@ class TranslateService:
                 translated_segments = None
         else:
             # === 本地翻譯 ===
-            from app.engine.ai.model_manager import get_model_manager
+            from app.init.container import get_container
             from app.engine.ai.runtime.llama_server import LlamaServerRuntime
             from app.engine.ai.registry import SLOT_LLM
             from app.utils.translate import translate_srt_local, translate_text_local
 
             variant = f"{model_size}:{quantization}" if quantization else model_size
 
-            with get_model_manager().gpu_session():
+            with get_container().model_manager().gpu_session():
                 runtime = LlamaServerRuntime(SLOT_LLM)
                 translate_progress(0.0, "載入翻譯模型...")
 
@@ -385,15 +373,3 @@ class TranslateService:
             "source_chars": len(text),
             "translated_chars": translated_chars,
         }
-
-
-# 全域服務實例
-_translate_service: Optional[TranslateService] = None
-
-
-def get_translate_service() -> TranslateService:
-    """取得全域翻譯服務實例"""
-    global _translate_service
-    if _translate_service is None:
-        _translate_service = TranslateService()
-    return _translate_service

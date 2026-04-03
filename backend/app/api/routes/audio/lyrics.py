@@ -4,10 +4,12 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.audio.lyrics_service import get_audio_lyrics_service
+from app.init.container import AppContainer
+from app.services.audio.lyrics_service import AudioLyricsService
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +40,12 @@ class LyricsResponse(BaseModel):
 
 
 @router.post("/lyrics", response_model=LyricsResponse)
-async def extract_lyrics(request: LyricsRequest):
+@inject
+async def extract_lyrics(
+    request: LyricsRequest,
+    service: AudioLyricsService = Depends(Provide[AppContainer.audio_lyrics]),
+):
     try:
-        service = get_audio_lyrics_service()
         task_id = await service.submit_lyrics(
             file_id=request.file_id,
             whisper_size=request.whisper_size,

@@ -3,10 +3,12 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.image.remove_bg_service import get_image_remove_bg_service
+from app.init.container import AppContainer
+from app.services.image.remove_bg_service import ImageRemoveBgService
 
 router = APIRouter()
 
@@ -23,10 +25,13 @@ class ImageRemoveBgResponse(BaseModel):
 
 
 @router.post("/remove-bg", response_model=ImageRemoveBgResponse)
-async def remove_bg(request: ImageRemoveBgRequest):
+@inject
+async def remove_bg(
+    request: ImageRemoveBgRequest,
+    service: ImageRemoveBgService = Depends(Provide[AppContainer.image_remove_bg]),
+):
     """提交去背任務"""
     try:
-        service = get_image_remove_bg_service()
         task_id = await service.submit_remove_bg(
             file_id=request.file_id,
             mode=request.mode,

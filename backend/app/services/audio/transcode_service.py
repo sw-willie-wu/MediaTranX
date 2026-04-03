@@ -10,10 +10,9 @@ from uuid import uuid4
 from app.engine.ffmpeg import (
     FFmpeg,
     FFmpegError,
-    get_ffmpeg,
 )
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -25,28 +24,16 @@ class AudioTranscodeService:
     音訊轉檔服務
     """
 
-    _instance: Optional["AudioTranscodeService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-
-        self._ffmpeg: FFmpeg = get_ffmpeg()
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, ffmpeg: FFmpeg, file_service: FileService, task_manager: TaskManager):
+        self._ffmpeg = ffmpeg
+        self._file_service = file_service
+        self._task_manager = task_manager
 
         self._task_manager.register_handler(
             TASK_TYPE_AUDIO_TRANSCODE,
             self._handle_transcode_task
         )
 
-        self._initialized = True
         logger.info("AudioTranscodeService initialized")
 
     async def get_audio_info(self, file_id: str) -> dict:
@@ -216,13 +203,3 @@ class AudioTranscodeService:
         except Exception as e:
             logger.error(f"Audio transcode failed: {e}")
             raise
-
-
-_audio_transcode_service: Optional[AudioTranscodeService] = None
-
-
-def get_audio_transcode_service() -> AudioTranscodeService:
-    global _audio_transcode_service
-    if _audio_transcode_service is None:
-        _audio_transcode_service = AudioTranscodeService()
-    return _audio_transcode_service

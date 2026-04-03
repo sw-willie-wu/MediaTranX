@@ -199,10 +199,12 @@ class AlignmentEngine:
         self._unload_model()
 
         from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
-        from app.engine.paths import get_models_dir
+        from app.init.configs import get_settings
 
         model_id = LANG_MODELS[language]
-        cache_dir = str(get_models_dir() / "alignment")
+        models_dir = Path(get_settings().path.models)
+        models_dir.mkdir(parents=True, exist_ok=True)
+        cache_dir = str(models_dir / "alignment")
 
         logger.info(f"Loading alignment model: {model_id} on {self._device}")
         self._processor = Wav2Vec2Processor.from_pretrained(model_id, cache_dir=cache_dir)

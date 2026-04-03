@@ -11,7 +11,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Optional
 
-from app.engine.paths import get_ffmpeg_dir
+from app.handler.exceptions import FFmpegError
+from app.init.configs import get_settings
 
 
 class VideoCodec(str, Enum):
@@ -79,16 +80,17 @@ class TranscodeOptions:
     extra_args: Optional[list[str]] = None
 
 
-class FFmpegError(Exception):
-    """FFmpeg 錯誤"""
-    pass
-
-
 class FFmpeg:
     """FFmpeg 封裝類別"""
 
     # FFmpeg 路徑（dev: bin/ffmpeg, packaged: resources/ffmpeg）
-    _PROJECT_BIN_DIR = get_ffmpeg_dir()
+    _PROJECT_BIN_DIR: Path = None  # type: ignore  # resolved lazily
+
+    @classmethod
+    def _get_bin_dir(cls) -> Path:
+        if cls._PROJECT_BIN_DIR is None:
+            cls._PROJECT_BIN_DIR = Path(get_settings().path.ffmpeg)
+        return cls._PROJECT_BIN_DIR
 
     def __init__(self):
         self.ffmpeg_path = self._find_ffmpeg()
@@ -99,9 +101,10 @@ class FFmpeg:
         尋找 FFmpeg 執行檔
         優先使用專案內的 FFmpeg，若無則使用系統 PATH
         """
+        bin_dir = self._get_bin_dir()
         # 1. 優先使用專案內的 FFmpeg
         exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-        local_ffmpeg = self._PROJECT_BIN_DIR / exe
+        local_ffmpeg = bin_dir / exe
         if local_ffmpeg.exists():
             return str(local_ffmpeg)
 
@@ -111,7 +114,7 @@ class FFmpeg:
             return system_path
 
         raise FFmpegError(
-            f"找不到 FFmpeg。請將 FFmpeg 放置於 {self._PROJECT_BIN_DIR} 或加入系統 PATH"
+            f"找不到 FFmpeg。請將 FFmpeg 放置於 {bin_dir} 或加入系統 PATH"
         )
 
     def _find_ffprobe(self) -> str:
@@ -119,9 +122,10 @@ class FFmpeg:
         尋找 FFprobe 執行檔
         優先使用專案內的 FFprobe，若無則使用系統 PATH
         """
+        bin_dir = self._get_bin_dir()
         # 1. 優先使用專案內的 FFprobe
         exe = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
-        local_ffprobe = self._PROJECT_BIN_DIR / exe
+        local_ffprobe = bin_dir / exe
         if local_ffprobe.exists():
             return str(local_ffprobe)
 
@@ -131,19 +135,19 @@ class FFmpeg:
             return system_path
 
         raise FFmpegError(
-            f"找不到 FFprobe。請將 FFprobe 放置於 {self._PROJECT_BIN_DIR} 或加入系統 PATH"
+            f"找不到 FFprobe。請將 FFprobe 放置於 {bin_dir} 或加入系統 PATH"
         )
 
     @classmethod
     def get_bin_dir(cls) -> Path:
         """取得 FFmpeg 二進位檔目錄"""
-        return cls._PROJECT_BIN_DIR
+        return cls._get_bin_dir()
 
     @classmethod
     def is_installed(cls) -> bool:
         """檢查 FFmpeg 是否已安裝"""
         exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-        return (cls._PROJECT_BIN_DIR / exe).exists() or shutil.which("ffmpeg") is not None
+        return (cls._get_bin_dir() / exe).exists() or shutil.which("ffmpeg") is not None
 
     async def get_media_info(self, input_path: str | Path) -> MediaInfo:
         """取得媒體資訊"""
@@ -530,15 +534,3 @@ class FFmpeg:
             raise FFmpegError(f"轉檔失敗: {stderr.decode()}")
 
         return output_path
-
-
-# 單例
-_ffmpeg: Optional[FFmpeg] = None
-
-
-def get_ffmpeg() -> FFmpeg:
-    """取得 FFmpeg 單例"""
-    global _ffmpeg
-    if _ffmpeg is None:
-        _ffmpeg = FFmpeg()
-    return _ffmpeg

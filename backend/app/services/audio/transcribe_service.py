@@ -14,8 +14,8 @@ from app.utils.prompts import (
     parse_srt_response,
     SUMMARIZE_PARAMS,
 )
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -45,22 +45,12 @@ def _write_srt(result: TranscribeResult, output_path: Path) -> None:
 
 
 class AudioTranscribeService:
-    _instance: Optional["AudioTranscribeService"] = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._whisper: WhisperWrapper = get_whisper()
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+        self._file_service = file_service
+        self._task_manager = task_manager
         self._task_manager.register_handler(TASK_TYPE_AUDIO_TRANSCRIBE, self._handle_task)
-        self._initialized = True
         logger.info("AudioTranscribeService initialized")
 
     def get_model_status(self, model_size: str = "medium") -> dict:
@@ -186,8 +176,8 @@ class AudioTranscribeService:
             progress_callback(s + p * (e - s), msg)
 
         # === GPU 排隊管線 ===
-        from app.engine.ai.model_manager import get_model_manager
-        manager = get_model_manager()
+        from app.init.container import get_container
+        manager = get_container().model_manager()
 
         with manager.gpu_session():
             # === 人聲分離 ===
@@ -499,12 +489,3 @@ class AudioTranscribeService:
             "target_language": target_lang,
             "summarized": do_summarize,
         }
-
-
-_service: Optional[AudioTranscribeService] = None
-
-def get_audio_transcribe_service() -> AudioTranscribeService:
-    global _service
-    if _service is None:
-        _service = AudioTranscribeService()
-    return _service

@@ -281,8 +281,8 @@ class PTHRuntime(BaseRuntime):
         model_path = self._manager.get_model_path(model_id, variant)
         if not model_path:
             # PTH 格式可能是本地檔案（無 repo_id）
-            from app.engine.paths import get_models_dir
-            local_path = get_models_dir() / family["slot"] / variant_spec["filename"]
+            from app.init.configs import get_settings
+            local_path = Path(get_settings().path.models) / family["slot"] / variant_spec["filename"]
             if local_path.exists():
                 model_path = local_path
             else:

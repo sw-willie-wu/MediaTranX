@@ -5,16 +5,22 @@
 import logging
 import shutil
 
-from app.engine.paths import get_models_dir
+from pathlib import Path
+from app.init.configs import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _models_dir(category: str = "") -> Path:
+    d = Path(get_settings().path.models)
+    return d / category if category else d
 
 
 def remove_model(item_id: str) -> None:
     """刪除已下載的模型/工具檔案"""
     if item_id.startswith("whisper-"):
         size = item_id[len("whisper-"):]
-        model_dir = get_models_dir("whisper") / size
+        model_dir = _models_dir("whisper") / size
         if model_dir.exists():
             shutil.rmtree(model_dir)
             logger.info(f"Removed whisper model: {size}")
@@ -29,7 +35,7 @@ def remove_model(item_id: str) -> None:
         variant = specs.get(size, {}).get("variants", {}).get(quant)
 
         if variant:
-            p = get_models_dir("translategemma") / variant["filename"]
+            p = _models_dir("translategemma") / variant["filename"]
             if p.exists():
                 p.unlink()
                 logger.info(f"Removed translategemma model: {item_id}")
@@ -44,7 +50,7 @@ def remove_model(item_id: str) -> None:
         variant = specs.get(size, {}).get("variants", {}).get(quant)
 
         if variant:
-            p = get_models_dir("qwen3") / variant["filename"]
+            p = _models_dir("qwen3") / variant["filename"]
             if p.exists():
                 p.unlink()
                 logger.info(f"Removed qwen3 model: {item_id}")
@@ -63,7 +69,7 @@ def remove_model(item_id: str) -> None:
         variant = config.get("specs", {}).get(size, {}).get("variants", {}).get(quant)
         if variant:
             slot = config.get("slot", "vlm")
-            target_dir = get_models_dir() / slot
+            target_dir = _models_dir() / slot
             for fname in [variant.get("filename"), variant.get("mmproj_filename")]:
                 if fname:
                     p = target_dir / fname
@@ -89,8 +95,8 @@ def remove_model(item_id: str) -> None:
             if variant:
                 variant_spec = model_config.get("variants", {}).get(variant)
                 if variant_spec:
-                    from app.engine.ai.model_manager import get_model_manager
-                    manager = get_model_manager()
+                    from app.init.container import get_container
+                    manager = get_container().model_manager()
                     model_path = manager.get_model_path(family, variant)
                     if model_path and model_path.exists():
                         model_path.unlink()
@@ -99,8 +105,8 @@ def remove_model(item_id: str) -> None:
                 variants = model_config.get("variants", {})
                 if variants:
                     first_variant = list(variants.keys())[0]
-                    from app.engine.ai.model_manager import get_model_manager
-                    manager = get_model_manager()
+                    from app.init.container import get_container
+                    manager = get_container().model_manager()
                     model_path = manager.get_model_path(family, first_variant)
                     if model_path and model_path.exists():
                         model_path.unlink()

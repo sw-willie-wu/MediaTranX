@@ -3,10 +3,12 @@ MIDI editor API routes.
 """
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.audio.audio_midi_service import get_audio_midi_service
+from app.init.container import AppContainer
+from app.services.audio.audio_midi_service import AudioMidiService
 
 router = APIRouter()
 
@@ -28,10 +30,13 @@ class MidiSaveRequest(BaseModel):
 
 
 @router.post("/midi/create")
-async def create_midi(request: MidiSaveRequest):
+@inject
+async def create_midi(
+    request: MidiSaveRequest,
+    service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
+):
     """Create a new MIDI file from editor data, returns file_id."""
     try:
-        service = get_audio_midi_service()
         file_id = service.create_midi(request.data)
         return {"file_id": file_id}
     except Exception as e:
@@ -39,9 +44,12 @@ async def create_midi(request: MidiSaveRequest):
 
 
 @router.get("/midi/{file_id}")
-async def read_midi(file_id: str):
+@inject
+async def read_midi(
+    file_id: str,
+    service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
+):
     try:
-        service = get_audio_midi_service()
         return service.read_midi(file_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -50,9 +58,13 @@ async def read_midi(file_id: str):
 
 
 @router.put("/midi/{file_id}")
-async def save_midi(file_id: str, request: MidiSaveRequest):
+@inject
+async def save_midi(
+    file_id: str,
+    request: MidiSaveRequest,
+    service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
+):
     try:
-        service = get_audio_midi_service()
         return service.save_midi(file_id, request.data)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -61,9 +73,12 @@ async def save_midi(file_id: str, request: MidiSaveRequest):
 
 
 @router.post("/midi/export", response_model=MidiExportResponse)
-async def export_midi(request: MidiExportRequest):
+@inject
+async def export_midi(
+    request: MidiExportRequest,
+    service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
+):
     try:
-        service = get_audio_midi_service()
         task_id = await service.submit_export(
             file_id=request.file_id,
             output_format=request.output_format,

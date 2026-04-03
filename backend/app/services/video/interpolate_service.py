@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-from app.engine.paths import get_temp_dir
-from app.services.files.file_service import get_file_service, FileService
-from app.workers.task_manager import get_task_manager, TaskManager
+from app.init.configs import get_settings
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -18,21 +18,11 @@ TASK_TYPE_INTERPOLATE = "video.interpolate"
 
 
 class InterpolateService:
-    _instance: Optional["InterpolateService"] = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
         self._task_manager.register_handler(TASK_TYPE_INTERPOLATE, self._handle_task)
-        self._initialized = True
         logger.info("InterpolateService initialized")
 
     async def submit(self, file_id: str, model: str = "v4.26", mode: str = "2x",
@@ -55,7 +45,7 @@ class InterpolateService:
             loop.close()
 
     async def _execute(self, params: dict, progress_callback) -> dict:
-        from app.engine.ffmpeg import get_ffmpeg
+        from app.init.container import get_container
         from app.engine.ai.video.rife import get_rife
 
         file_id = params["file_id"]
@@ -70,7 +60,7 @@ class InterpolateService:
         if not file_info:
             raise ValueError(f"File not found: {file_id}")
 
-        ffmpeg = get_ffmpeg()
+        ffmpeg = get_container().ffmpeg()
         media_info = await ffmpeg.get_media_info(file_info.file_path)
         source_fps = media_info.fps or 30.0
         width = media_info.width
@@ -97,7 +87,9 @@ class InterpolateService:
         if output_dir:
             output_path = Path(output_dir) / output_filename
         else:
-            output_path = get_temp_dir() / "video_frames" / output_filename
+            temp_dir = Path(get_settings().path.temp)
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            output_path = temp_dir / "video_frames" / output_filename
 
         # Pipe mode: FFmpeg decode → RIFE → FFmpeg encode (zero disk I/O)
         progress_callback(0.0, "補幀中...")
@@ -134,12 +126,3 @@ class InterpolateService:
             "output_fps": out_fps,
             "frame_count": total_out,
         }
-
-
-_service: Optional[InterpolateService] = None
-
-def get_interpolate_service() -> InterpolateService:
-    global _service
-    if _service is None:
-        _service = InterpolateService()
-    return _service

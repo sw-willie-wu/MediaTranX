@@ -5,8 +5,8 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 logger = logging.getLogger(__name__)
 
 TASK_TYPE_IMAGE_UPSCALE = "image.upscale"
@@ -26,27 +26,16 @@ def _parse_model_id(model_id: str, known_families: list) -> tuple:
 
 
 class ImageUpscaleService:
-    _instance: Optional["ImageUpscaleService"] = None
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_UPSCALE,
             self._handle_upscale_task,
         )
 
-        self._initialized = True
         logger.info("ImageUpscaleService initialized")
 
     async def submit_upscale(
@@ -89,8 +78,8 @@ class ImageUpscaleService:
         file_info = self._file_service.get_file(file_id)
 
         # === GPU 排隊管線 ===
-        from app.engine.ai.model_manager import get_model_manager
-        manager = get_model_manager()
+        from app.init.container import get_container
+        manager = get_container().model_manager()
 
         with manager.gpu_session():
             # ── 超解析 ──────────────────────────────────────────
@@ -199,13 +188,3 @@ class ImageUpscaleService:
         target_dir = Path(custom_dir) if custom_dir else self._file_service.output_dir
         target_dir.mkdir(parents=True, exist_ok=True)
         return target_dir / f"{Path(file_info.original_filename).stem}_x{scale}_{uuid4().hex[:8]}.png"
-
-
-_image_upscale_service: Optional[ImageUpscaleService] = None
-
-
-def get_image_upscale_service() -> ImageUpscaleService:
-    global _image_upscale_service
-    if _image_upscale_service is None:
-        _image_upscale_service = ImageUpscaleService()
-    return _image_upscale_service

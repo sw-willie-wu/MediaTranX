@@ -1,7 +1,11 @@
 """Video interpolation API routes."""
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
+
+from app.init.container import AppContainer
+from app.services.video.interpolate_service import InterpolateService
 
 router = APIRouter()
 
@@ -21,19 +25,22 @@ class InterpolateResponse(BaseModel):
 @router.get("/rife/status")
 async def rife_status():
     from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
-    from app.engine.paths import get_models_dir
+    from app.init.configs import get_settings
+    from pathlib import Path
     rife = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})
     variants = {}
     for name, spec in rife.get("variants", {}).items():
-        model_path = get_models_dir() / "rife" / spec["filename"]
+        model_path = Path(get_settings().path.models) / "rife" / spec["filename"]
         variants[name] = {"downloaded": model_path.exists()}
     return {"variants": variants}
 
 @router.post("/interpolate", response_model=InterpolateResponse)
-async def interpolate_video(request: InterpolateRequest):
+@inject
+async def interpolate_video(
+    request: InterpolateRequest,
+    service: InterpolateService = Depends(Provide[AppContainer.video_interpolate]),
+):
     try:
-        from app.services.video.interpolate_service import get_interpolate_service
-        service = get_interpolate_service()
         task_id = await service.submit(file_id=request.file_id, model=request.model, mode=request.mode, target_fps=request.target_fps, output_format=request.output_format, video_codec=request.video_codec, output_dir=request.output_dir)
         return InterpolateResponse(task_id=task_id)
     except ValueError as e:

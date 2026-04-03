@@ -1,6 +1,5 @@
 from .model_manager import (
     ModelManager,
-    get_model_manager,
 )
 from .registry import (
     SLOT_WHISPER,
@@ -15,7 +14,7 @@ from .audio import (
 )
 
 __all__ = [
-    "ModelManager", "get_model_manager",
+    "ModelManager",
     "SLOT_WHISPER", "SLOT_LLM", "SLOT_PTH",
     "WhisperWrapper", "get_whisper", "TranscribeSegment", "TranscribeResult",
 ]

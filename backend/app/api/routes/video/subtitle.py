@@ -3,11 +3,13 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.video.subtitle_service import get_subtitle_service
-from app.services.setup.language_service import get_language_service
+from app.init.container import AppContainer
+from app.services.video.subtitle_service import SubtitleService
+from app.services.setup.language_service import LanguageService
 
 router = APIRouter()
 
@@ -100,10 +102,13 @@ class ModelStatusResponse(BaseModel):
 
 
 @router.get("/whisper/status", response_model=ModelStatusResponse)
-async def get_whisper_status(model_size: str = "medium"):
+@inject
+async def get_whisper_status(
+    model_size: str = "medium",
+    service: SubtitleService = Depends(Provide[AppContainer.video_subtitle]),
+):
     """查詢 Whisper 模型狀態"""
     try:
-        service = get_subtitle_service()
         status = service.get_model_status(model_size)
         return ModelStatusResponse(**status)
     except Exception as e:
@@ -111,29 +116,42 @@ async def get_whisper_status(model_size: str = "medium"):
 
 
 @router.get("/translategemma/status", response_model=ModelStatusResponse)
-async def get_translategemma_status(model_size: str = "4b"):
+@inject
+async def get_translategemma_status(
+    model_size: str = "4b",
+    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
+):
     """查詢 TranslateGemma 模型狀態"""
     try:
-        status = get_language_service().get_model_status("translategemma", model_size)
+        status = language_service.get_model_status("translategemma", model_size)
         return ModelStatusResponse(**status)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/translate/status")
-async def get_translate_model_status(model_type: str = "translategemma", model_size: str = "4b", quantization: str | None = None):
+@inject
+async def get_translate_model_status(
+    model_type: str = "translategemma",
+    model_size: str = "4b",
+    quantization: str | None = None,
+    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
+):
     """查詢翻譯模型狀態（通用，支援 translategemma 和 qwen3）"""
     try:
-        status = get_language_service().get_model_status(model_type, model_size, quantization)
+        status = language_service.get_model_status(model_type, model_size, quantization)
         return status
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/translategemma/languages")
-async def get_translategemma_languages():
+@inject
+async def get_translategemma_languages(
+    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
+):
     """取得翻譯模型支援的翻譯語言列表"""
-    return get_language_service().get_supported_languages()
+    return language_service.get_supported_languages()
 
 
 class TranslateTestResponse(BaseModel):
@@ -185,7 +203,11 @@ async def test_translate(request: TranslateTestRequest):
 
 
 @router.post("/subtitle/generate", response_model=SubtitleGenerateResponse)
-async def generate_subtitle(request: SubtitleGenerateRequest):
+@inject
+async def generate_subtitle(
+    request: SubtitleGenerateRequest,
+    service: SubtitleService = Depends(Provide[AppContainer.video_subtitle]),
+):
     """
     提交字幕生成任務
 
@@ -207,7 +229,6 @@ async def generate_subtitle(request: SubtitleGenerateRequest):
     - **vad_threshold**: VAD 門檻值 (0.1-0.9)
     """
     try:
-        service = get_subtitle_service()
         task_id = await service.submit_subtitle_generate(
             file_id=request.file_id,
             language=request.language,

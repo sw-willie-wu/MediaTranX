@@ -15,7 +15,7 @@ import subprocess
 from pathlib import Path
 from typing import Callable, Generator, Optional
 
-from app.engine.ffmpeg import get_ffmpeg
+from app.init.container import get_container
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class FramePipe:
 
     def open(self):
         """Start decoder and encoder FFmpeg processes."""
-        ffmpeg = get_ffmpeg()
+        ffmpeg = get_container().ffmpeg()
         ffmpeg_path = ffmpeg.ffmpeg_path
 
         # Decoder: video → raw RGB frames on stdout
@@ -146,7 +146,7 @@ async def extract_frames(
     output_dir.mkdir(parents=True, exist_ok=True)
     input_path = Path(input_path)
 
-    ffmpeg = get_ffmpeg()
+    ffmpeg = get_container().ffmpeg()
     media_info = await ffmpeg.get_media_info(input_path)
     duration = media_info.duration or 0.0
 
@@ -200,7 +200,7 @@ async def encode_frames(
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    ffmpeg = get_ffmpeg()
+    ffmpeg = get_container().ffmpeg()
 
     codec_map = {
         "h264": "libx264",

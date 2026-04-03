@@ -3,10 +3,12 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.image.upscale_service import get_image_upscale_service
+from app.init.container import AppContainer
+from app.services.image.upscale_service import ImageUpscaleService
 
 router = APIRouter()
 
@@ -31,10 +33,13 @@ class ImageUpscaleResponse(BaseModel):
 
 
 @router.post("/upscale", response_model=ImageUpscaleResponse)
-async def upscale_image(request: ImageUpscaleRequest):
+@inject
+async def upscale_image(
+    request: ImageUpscaleRequest,
+    service: ImageUpscaleService = Depends(Provide[AppContainer.image_upscale]),
+):
     """提交圖片超解析任務"""
     try:
-        service = get_image_upscale_service()
         task_id = await service.submit_upscale(
             file_id=request.file_id,
             model_id=request.model_id,

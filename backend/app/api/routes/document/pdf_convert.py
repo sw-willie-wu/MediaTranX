@@ -1,10 +1,12 @@
 """PDF / 文件轉換 API 路由"""
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.document.pdf_convert_service import get_pdf_convert_service
+from app.init.container import AppContainer
+from app.services.document.pdf_convert_service import DocumentPdfConvertService
 
 router = APIRouter()
 
@@ -17,10 +19,13 @@ class PdfConvertRequest(BaseModel):
 
 
 @router.post("/pdf-convert")
-async def convert_document(request: PdfConvertRequest):
+@inject
+async def convert_document(
+    request: PdfConvertRequest,
+    service: DocumentPdfConvertService = Depends(Provide[AppContainer.doc_pdf_convert]),
+):
     """提交文件轉換任務"""
     try:
-        service = get_pdf_convert_service()
         task_id = await service.submit(
             file_id=request.file_id,
             output_format=request.output_format,

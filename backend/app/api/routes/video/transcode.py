@@ -3,10 +3,12 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.video.transcode_service import get_transcode_service
+from app.init.container import AppContainer
+from app.services.video.transcode_service import TranscodeService
 
 router = APIRouter()
 
@@ -85,22 +87,27 @@ class FFmpegStatusResponse(BaseModel):
 
 
 @router.get("/ffmpeg/status", response_model=FFmpegStatusResponse)
-async def get_ffmpeg_status():
+@inject
+async def get_ffmpeg_status(
+    service: TranscodeService = Depends(Provide[AppContainer.video_transcode]),
+):
     """檢查 FFmpeg 安裝狀態"""
-    service = get_transcode_service()
     status = service.get_ffmpeg_status()
     return FFmpegStatusResponse(**status)
 
 
 @router.get("/info/{file_id}", response_model=MediaInfoResponse)
-async def get_media_info(file_id: str):
+@inject
+async def get_media_info(
+    file_id: str,
+    service: TranscodeService = Depends(Provide[AppContainer.video_transcode]),
+):
     """
     取得媒體檔案資訊
 
     - **file_id**: 已上傳的檔案 ID
     """
     try:
-        service = get_transcode_service()
         info = await service.get_media_info(file_id)
         return MediaInfoResponse(**info)
     except ValueError as e:
@@ -110,7 +117,11 @@ async def get_media_info(file_id: str):
 
 
 @router.post("/transcode", response_model=TranscodeResponse)
-async def transcode_video(request: TranscodeRequest):
+@inject
+async def transcode_video(
+    request: TranscodeRequest,
+    service: TranscodeService = Depends(Provide[AppContainer.video_transcode]),
+):
     """
     提交影片轉檔任務
 
@@ -122,7 +133,6 @@ async def transcode_video(request: TranscodeRequest):
     - **crf**: 0-51，建議 18-28，越小品質越好但檔案越大
     """
     try:
-        service = get_transcode_service()
         task_id = await service.submit_transcode(
             file_id=request.file_id,
             output_format=request.output_format,
@@ -145,7 +155,11 @@ async def transcode_video(request: TranscodeRequest):
 
 
 @router.post("/cut", response_model=CutResponse)
-async def cut_video(request: CutRequest):
+@inject
+async def cut_video(
+    request: CutRequest,
+    service: TranscodeService = Depends(Provide[AppContainer.video_transcode]),
+):
     """
     提交影片剪輯任務
 
@@ -154,7 +168,6 @@ async def cut_video(request: CutRequest):
     - **stream_copy**: 是否使用 stream copy（預設 True，快速但可能不精確）
     """
     try:
-        service = get_transcode_service()
         task_id = await service.submit_cut(
             file_id=request.file_id,
             start_time=request.start_time,
@@ -171,7 +184,11 @@ async def cut_video(request: CutRequest):
 
 
 @router.post("/extract-audio", response_model=ExtractAudioResponse)
-async def extract_audio(request: ExtractAudioRequest):
+@inject
+async def extract_audio(
+    request: ExtractAudioRequest,
+    service: TranscodeService = Depends(Provide[AppContainer.video_transcode]),
+):
     """
     提交提取音訊任務
 
@@ -179,7 +196,6 @@ async def extract_audio(request: ExtractAudioRequest):
     - **audio_bitrate**: 音訊位元率 (e.g., 128k, 192k, 256k, 320k)
     """
     try:
-        service = get_transcode_service()
         task_id = await service.submit_extract_audio(
             file_id=request.file_id,
             audio_format=request.audio_format,

@@ -8,9 +8,9 @@ import logging
 from pathlib import Path
 from typing import Optional, Callable
 
-from app.engine.paths import get_models_dir
+from app.init.configs import get_settings
 from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
-from app.engine.ai.model_manager import get_model_manager
+from app.init.container import get_container
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class RIFEWrapper:
         self._model = None
         self._device = None
         self._variant = None
-        self._manager = get_model_manager()
+        self._manager = get_container().model_manager()
         logger.info("RIFEWrapper initialized")
 
     def _get_model_path(self, variant: str) -> Path:
@@ -38,7 +38,7 @@ class RIFEWrapper:
         variant_spec = family.get("variants", {}).get(variant)
         if not variant_spec:
             raise ValueError(f"Unknown RIFE variant: {variant}")
-        model_path = get_models_dir() / SLOT_RIFE / variant_spec["filename"]
+        model_path = Path(get_settings().path.models) / SLOT_RIFE / variant_spec["filename"]
         if not model_path.exists():
             raise FileNotFoundError(
                 f"RIFE model not found: {model_path}. "

@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-from app.engine.paths import get_temp_dir
-from app.services.files.file_service import get_file_service, FileService
-from app.workers.task_manager import get_task_manager, TaskManager
+from app.init.configs import get_settings
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -18,21 +18,11 @@ TASK_TYPE_ENHANCE = "video.enhance"
 
 
 class EnhanceService:
-    _instance: Optional["EnhanceService"] = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
         self._task_manager.register_handler(TASK_TYPE_ENHANCE, self._handle_task)
-        self._initialized = True
         logger.info("EnhanceService initialized")
 
     async def submit(self, file_id: str, model: str = "realesrgan", variant: str = "x4plus",
@@ -55,7 +45,7 @@ class EnhanceService:
             loop.close()
 
     async def _execute(self, params: dict, progress_callback) -> dict:
-        from app.engine.ffmpeg import get_ffmpeg
+        from app.init.container import get_container
         from app.engine.ai.image.realesrgan import get_realesrgan
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
         from app.utils.video_frames import FramePipe
@@ -77,7 +67,7 @@ class EnhanceService:
             raise ValueError(f"Unknown variant: {variant}")
         scale = variant_spec.get("scale", 4)
 
-        ffmpeg = get_ffmpeg()
+        ffmpeg = get_container().ffmpeg()
         media_info = await ffmpeg.get_media_info(file_info.file_path)
         source_fps = media_info.fps or 30.0
         width = media_info.width
@@ -90,7 +80,9 @@ class EnhanceService:
         if output_dir:
             output_path = Path(output_dir) / output_filename
         else:
-            output_path = get_temp_dir() / "video_frames" / output_filename
+            temp_dir = Path(get_settings().path.temp)
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            output_path = temp_dir / "video_frames" / output_filename
 
         # Pipe: FFmpeg decode → Real-ESRGAN → FFmpeg encode
         # Decoder reads at source resolution, encoder writes at scaled resolution
@@ -190,12 +182,3 @@ class EnhanceService:
             "scale": scale,
             "frame_count": frame_idx,
         }
-
-
-_service: Optional[EnhanceService] = None
-
-def get_enhance_service() -> EnhanceService:
-    global _service
-    if _service is None:
-        _service = EnhanceService()
-    return _service

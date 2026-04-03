@@ -1,9 +1,11 @@
-from .transcode_service import TranscodeService, get_transcode_service
-from .subtitle_service import SubtitleService, get_subtitle_service
+from .transcode_service import TranscodeService
+from .subtitle_service import SubtitleService
+from .interpolate_service import InterpolateService
+from .enhance_service import EnhanceService
 
 __all__ = [
     "TranscodeService",
-    "get_transcode_service",
     "SubtitleService",
-    "get_subtitle_service",
+    "InterpolateService",
+    "EnhanceService",
 ]

@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 
-from app.engine.paths import get_fluidsynth_dir
+from app.init.configs import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class FluidSynthWrapper:
     """SoundFont loading/unloading and MIDI→WAV rendering."""
 
     def __init__(self):
-        self._dir = get_fluidsynth_dir()
+        self._dir = Path(get_settings().path.fluidsynth)
 
     @property
     def sf2_path(self) -> Path:
@@ -162,14 +162,3 @@ class FluidSynthWrapper:
 
         logger.info(f"MIDI rendered to WAV: {out}")
         return out
-
-
-# Singleton
-_fluidsynth: Optional[FluidSynthWrapper] = None
-
-
-def get_fluidsynth() -> FluidSynthWrapper:
-    global _fluidsynth
-    if _fluidsynth is None:
-        _fluidsynth = FluidSynthWrapper()
-    return _fluidsynth

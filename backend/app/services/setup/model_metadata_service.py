@@ -5,7 +5,7 @@
 Route 不應直接 import engine.ai.registry / engine.ai.model_manager。
 """
 import logging
-from typing import Optional
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -137,20 +137,9 @@ _LANG_NAMES = {
 
 
 class ModelMetadataService:
-    """模型 Metadata 查詢服務（單例）"""
-
-    _instance: Optional["ModelMetadataService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    """模型 Metadata 查詢服務"""
 
     def __init__(self):
-        if self._initialized:
-            return
-        self._initialized = True
         logger.info("ModelMetadataService initialized")
 
     def list_all(self) -> dict:
@@ -180,10 +169,10 @@ class ModelMetadataService:
 
     def _enumerate_pth_models(self) -> list[dict]:
         """列舉 PyTorch 模型（超解析、人臉修復、分割）"""
-        from app.engine.ai.model_manager import get_model_manager
+        from app.init.container import get_container
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
 
-        manager = get_model_manager()
+        manager = get_container().model_manager()
         items = []
         pth_models = MODELS_REGISTRY.get(FORMAT_PTH, {})
 
@@ -228,10 +217,10 @@ class ModelMetadataService:
     def _enumerate_whisper_models(self) -> list[dict]:
         """列舉 Whisper STT 模型"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
-        from app.engine.paths import get_models_dir
+        from app.init.configs import get_settings
 
         whisper_variants = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("whisper", {}).get("variants", {})
-        whisper_dir = get_models_dir("whisper")
+        whisper_dir = Path(get_settings().path.models) / "whisper"
         items = []
 
         for size, label, description in _WHISPER_DISPLAY:
@@ -255,7 +244,7 @@ class ModelMetadataService:
     def _enumerate_demucs_models(self) -> list[dict]:
         """列舉 Demucs 音源分離模型"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
-        from app.engine.paths import get_models_dir
+        from app.init.configs import get_settings
 
         demucs_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("demucs", {})
         demucs_variants = demucs_config.get("variants", {})
@@ -266,7 +255,7 @@ class ModelMetadataService:
             variant_desc = _VARIANT_DESC.get(variant_name, variant_name)
             label = f"{family_meta['label']} - {variant_desc}" if len(demucs_variants) > 1 else family_meta['label']
 
-            checkpoints_dir = get_models_dir() / "demucs" / "checkpoints"
+            checkpoints_dir = Path(get_settings().path.models) / "demucs" / "checkpoints"
             downloaded = (
                 checkpoints_dir.exists()
                 and any(f.suffix == ".th" for f in checkpoints_dir.iterdir())
@@ -288,7 +277,7 @@ class ModelMetadataService:
     def _enumerate_translate_models(self) -> list[dict]:
         """從 registry 動態枚舉所有翻譯模型"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
-        from app.engine.paths import get_models_dir
+        from app.init.configs import get_settings
 
         items = []
         gguf_models = MODELS_REGISTRY.get(FORMAT_GGUF, {})
@@ -298,7 +287,7 @@ class ModelMetadataService:
                 continue
 
             name_prefix = "TranslateGemma" if model_family == "translategemma" else "Qwen3"
-            target_dir = get_models_dir(model_family)
+            target_dir = Path(get_settings().path.models) / model_family
             specs = config.get("specs", {})
 
             for size, size_spec in specs.items():
@@ -326,14 +315,14 @@ class ModelMetadataService:
     def _enumerate_vlm_models(self) -> list[dict]:
         """從 registry 動態枚舉所有 VLM OCR 模型"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_VLM
-        from app.engine.paths import get_models_dir
+        from app.init.configs import get_settings
 
         items = []
         vlm_models = MODELS_REGISTRY.get(FORMAT_VLM, {})
 
         for model_family, config in vlm_models.items():
             slot = config.get("slot", "vlm")
-            target_dir = get_models_dir() / slot
+            target_dir = Path(get_settings().path.models) / slot
             specs = config.get("specs", {})
             family_label = _VLM_FAMILY_LABELS.get(model_family, model_family)
 
@@ -365,9 +354,9 @@ class ModelMetadataService:
     def _enumerate_alignment_models(self) -> list[dict]:
         """列舉 Wav2Vec2 語音對齊模型"""
         from app.engine.ai.audio.wav2vec2 import LANG_MODELS
-        from app.engine.paths import get_models_dir
+        from app.init.configs import get_settings
 
-        align_dir = get_models_dir("alignment")
+        align_dir = Path(get_settings().path.models) / "alignment"
         items = []
 
         for lang_code, repo_id in LANG_MODELS.items():
@@ -393,7 +382,7 @@ class ModelMetadataService:
     def _enumerate_rife_models(self) -> list[dict]:
         """Enumerate RIFE interpolation models"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
-        from app.engine.paths import get_models_dir
+        from app.init.configs import get_settings
 
         rife_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})
         rife_variants = rife_config.get("variants", {})
@@ -404,7 +393,7 @@ class ModelMetadataService:
             variant_desc = _VARIANT_DESC.get(variant_name, variant_name)
             label = f"{family_meta['label']} - {variant_desc}" if len(rife_variants) > 1 else family_meta['label']
 
-            model_dir = get_models_dir() / SLOT_RIFE
+            model_dir = Path(get_settings().path.models) / SLOT_RIFE
             filename = variant_spec.get("filename", "")
             downloaded = (model_dir / filename).exists()
 
@@ -428,8 +417,8 @@ class ModelMetadataService:
         # FluidSynth + SoundFont（basic-pitch 模型內建於套件，不需管理）
         import sys
         import shutil
-        from app.engine.paths import get_fluidsynth_dir
-        fs_dir = get_fluidsynth_dir()
+        from app.init.configs import get_settings
+        fs_dir = Path(get_settings().path.fluidsynth)
         sf2_ok = (fs_dir / "FluidR3_GM.sf2").exists()
         if sys.platform == "win32":
             dll_ok = (fs_dir / "libfluidsynth-3.dll").exists() and (fs_dir / "libglib-2.0-0.dll").exists()
@@ -449,14 +438,3 @@ class ModelMetadataService:
         })
 
         return items
-
-
-_model_metadata_service: Optional[ModelMetadataService] = None
-
-
-def get_model_metadata_service() -> ModelMetadataService:
-    """取得 ModelMetadataService 單例"""
-    global _model_metadata_service
-    if _model_metadata_service is None:
-        _model_metadata_service = ModelMetadataService()
-    return _model_metadata_service

@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -19,27 +19,15 @@ class ImageCropService:
     圖片裁切服務
     """
 
-    _instance: Optional["ImageCropService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_CROP,
             self._handle_crop_task
         )
 
-        self._initialized = True
         logger.info("ImageCropService initialized")
 
     async def submit_crop(
@@ -152,13 +140,3 @@ class ImageCropService:
             "source_width": img_width,
             "source_height": img_height,
         }
-
-
-_image_crop_service: Optional[ImageCropService] = None
-
-
-def get_image_crop_service() -> ImageCropService:
-    global _image_crop_service
-    if _image_crop_service is None:
-        _image_crop_service = ImageCropService()
-    return _image_crop_service

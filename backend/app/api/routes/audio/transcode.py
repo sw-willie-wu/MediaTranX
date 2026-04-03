@@ -4,10 +4,12 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.audio.transcode_service import get_audio_transcode_service
+from app.init.container import AppContainer
+from app.services.audio.transcode_service import AudioTranscodeService
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +58,13 @@ class AudioInfoResponse(BaseModel):
 
 
 @router.get("/info/{file_id}", response_model=AudioInfoResponse)
-async def get_audio_info(file_id: str):
+@inject
+async def get_audio_info(
+    file_id: str,
+    service: AudioTranscodeService = Depends(Provide[AppContainer.audio_transcode]),
+):
     """取得音訊檔案資訊"""
     try:
-        service = get_audio_transcode_service()
         info = await service.get_audio_info(file_id)
         return AudioInfoResponse(**info)
     except ValueError as e:
@@ -69,10 +74,13 @@ async def get_audio_info(file_id: str):
 
 
 @router.post("/transcode", response_model=AudioTranscodeResponse)
-async def transcode_audio(request: AudioTranscodeRequest):
+@inject
+async def transcode_audio(
+    request: AudioTranscodeRequest,
+    service: AudioTranscodeService = Depends(Provide[AppContainer.audio_transcode]),
+):
     """提交音訊轉檔任務"""
     try:
-        service = get_audio_transcode_service()
         codec = _FORMAT_CODEC_MAP.get(request.output_format)
         if not codec:
             raise ValueError(f"Unsupported format: {request.output_format}")

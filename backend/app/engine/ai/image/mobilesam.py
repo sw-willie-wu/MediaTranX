@@ -6,6 +6,7 @@ MobileSAM 物件分割模組
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Optional, Callable, Any
 
 import numpy as np
@@ -54,8 +55,8 @@ class MobileSAMWrapper(PackageRuntime):
         """解析 MobileSAM 模型路徑"""
         model_path = self._manager.get_model_path(model_id, variant or "default")
         if not model_path:
-            from app.engine.paths import get_models_dir
-            model_path = get_models_dir("mobilesam") / "mobile_sam.pt"
+            from app.init.configs import get_settings
+            model_path = Path(get_settings().path.models) / "mobilesam" / "mobile_sam.pt"
             if not model_path.exists():
                 raise FileNotFoundError(
                     "MobileSAM 模型未下載，請至設定 → 模型管理下載"

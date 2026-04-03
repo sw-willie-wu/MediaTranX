@@ -220,8 +220,8 @@ class WhisperWrapper(PackageRuntime):
         """查詢模型狀態"""
         model_path = self._manager.get_model_path("whisper", model_size)
 
-        from app.engine.paths import get_base_data_dir
-        venv_fw = get_base_data_dir() / ".venv" / "Lib" / "site-packages" / "faster_whisper"
+        from app.init.configs import get_settings
+        venv_fw = Path(get_settings().path.venv) / "Lib" / "site-packages" / "faster_whisper"
         available = venv_fw.is_dir()
 
         return {

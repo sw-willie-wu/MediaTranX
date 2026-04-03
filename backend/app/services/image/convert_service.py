@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -20,27 +20,15 @@ class ImageConvertService:
     圖片轉檔服務
     """
 
-    _instance: Optional["ImageConvertService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_CONVERT,
             self._handle_convert_task
         )
 
-        self._initialized = True
         logger.info("ImageConvertService initialized")
 
     async def get_image_info(self, file_id: str) -> dict:
@@ -233,13 +221,3 @@ class ImageConvertService:
             "output_filename": output_info.filename,
             "output_size": output_info.file_size,
         }
-
-
-_image_convert_service: Optional[ImageConvertService] = None
-
-
-def get_image_convert_service() -> ImageConvertService:
-    global _image_convert_service
-    if _image_convert_service is None:
-        _image_convert_service = ImageConvertService()
-    return _image_convert_service

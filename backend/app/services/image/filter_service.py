@@ -7,11 +7,11 @@ import hashlib
 import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 from uuid import uuid4
 
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -21,27 +21,15 @@ TASK_TYPE_IMAGE_FILTER = "image.filter"
 class ImageFilterService:
     """圖片調整服務"""
 
-    _instance: Optional["ImageFilterService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_FILTER,
             self._handle_filter_task
         )
 
-        self._initialized = True
         logger.info("ImageFilterService initialized")
 
     async def submit_filter(
@@ -410,13 +398,3 @@ class ImageFilterService:
             "output_file_id":  output_file_id,
             "output_filename": output_info.filename,
         }
-
-
-_image_filter_service: Optional[ImageFilterService] = None
-
-
-def get_image_filter_service() -> ImageFilterService:
-    global _image_filter_service
-    if _image_filter_service is None:
-        _image_filter_service = ImageFilterService()
-    return _image_filter_service

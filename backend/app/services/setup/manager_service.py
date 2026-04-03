@@ -5,9 +5,8 @@ SetupService singleton + 系統狀態查詢 + 各功能模組 delegation。
 import sys
 import logging
 import asyncio
-from typing import Optional
-
-from app.engine.paths import get_base_data_dir
+from app.init.configs import get_settings
+from app.workers.task_manager import TaskManager
 
 from .ai_env_service import initialize_ai_env
 from .model_download_service import handle_model_download
@@ -26,39 +25,28 @@ def _detect_installed_torch() -> str | None:
 
 
 class SetupService:
-    """環境設置單例"""
-    _instance: Optional["SetupService"] = None
+    """環境設置服務"""
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
+    def __init__(self, task_manager: TaskManager):
         self._setup_lock = asyncio.Lock()
-        self._initialized = True
 
         # 向 TaskManager 註冊模型下載 handler
-        from app.workers.task_manager import get_task_manager
-        get_task_manager().register_handler("setup.model_download", self._handle_model_download)
+        task_manager.register_handler("setup.model_download", self._handle_model_download)
         logger.info("SetupService initialized, registered setup.model_download handler")
 
     async def get_system_status(self) -> dict:
         """取得詳細系統與環境狀態"""
         from app.engine.device import get_device_info, select_torch_index
-        from app.engine.ai.model_manager import get_model_manager
+        from app.init.container import get_container
 
         device = get_device_info()
-        manager = get_model_manager()
+        manager = get_container().model_manager()
         torch_idx = select_torch_index()
         return {
             "device": device,
             "ai_env_ready": manager.is_ai_env_ready(),
             "llama_ready": manager.is_llama_ready(),
-            "base_dir": str(get_base_data_dir()),
+            "base_dir": get_settings().path.data,
             "python_version": sys.version.split()[0],
             "torch_index": torch_idx,
             "torch_installed": _detect_installed_torch(),
@@ -75,7 +63,3 @@ class SetupService:
     def remove_model(self, item_id: str) -> None:
         """刪除已下載的模型/工具檔案"""
         remove_model(item_id)
-
-
-def get_setup_service() -> SetupService:
-    return SetupService()

@@ -9,10 +9,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from app.models.task import TaskData, TaskStatus  # noqa: F401 – re-export
 from app.models.file import FileData
+
+
+def _serialize_dt(v: datetime) -> str:
+    return v.isoformat()
 
 
 class TaskResponse(BaseModel):
@@ -28,10 +32,8 @@ class TaskResponse(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    _serialize_created_at = field_serializer("created_at")(_serialize_dt)
+    _serialize_updated_at = field_serializer("updated_at")(_serialize_dt)
 
     @classmethod
     def from_task_data(cls, t: TaskData) -> TaskResponse:
@@ -57,10 +59,7 @@ class ProgressUpdate(BaseModel):
     message: str = ""
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    _serialize_timestamp = field_serializer("timestamp")(_serialize_dt)
 
 
 class FileInfo(BaseModel):
@@ -74,6 +73,8 @@ class FileInfo(BaseModel):
     source_dir: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     metadata: Optional[dict] = None
+
+    _serialize_created_at = field_serializer("created_at")(_serialize_dt)
 
     @classmethod
     def from_file_data(cls, f: FileData) -> FileInfo:

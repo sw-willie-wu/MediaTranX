@@ -20,20 +20,9 @@ logger = logging.getLogger(__name__)
 
 
 class LanguageService:
-    """語言與翻譯選項查詢服務（單例）"""
-
-    _instance: Optional["LanguageService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    """語言與翻譯選項查詢服務"""
 
     def __init__(self):
-        if self._initialized:
-            return
-        self._initialized = True
         logger.info("LanguageService initialized")
 
     def get_whisper_languages(self) -> list[dict]:
@@ -62,12 +51,13 @@ class LanguageService:
 
     def get_model_status(self, model_id: str = "translategemma", model_size: str = "4b", quantization: Optional[str] = None) -> dict:
         """查詢翻譯模型狀態（llama-server 二進位 + 模型檔案）"""
-        from app.engine.ai.model_manager import get_model_manager
+        from app.init.container import get_container
 
-        available = get_model_manager().is_llama_ready()
+        mm = get_container().model_manager()
+        available = mm.is_llama_ready()
         variant = f"{model_size}:{quantization}" if quantization else model_size
         model_downloaded = (
-            get_model_manager().get_model_path(model_id, variant) is not None
+            mm.get_model_path(model_id, variant) is not None
         )
 
         return {
@@ -78,12 +68,13 @@ class LanguageService:
 
     def get_vlm_status(self, model_id: str = "qwen3vl", size: str = "4b", quantization: Optional[str] = None) -> dict:
         """查詢 VLM 模型狀態"""
-        from app.engine.ai.model_manager import get_model_manager
+        from app.init.container import get_container
 
-        available = get_model_manager().is_llama_ready()
+        mm = get_container().model_manager()
+        available = mm.is_llama_ready()
         variant = f"{size}:{quantization}" if quantization else size
         model_downloaded = (
-            get_model_manager().get_model_path(model_id, variant) is not None
+            mm.get_model_path(model_id, variant) is not None
         )
 
         return {
@@ -92,14 +83,3 @@ class LanguageService:
             "size": size,
             "model_downloaded": model_downloaded,
         }
-
-
-_language_service: Optional[LanguageService] = None
-
-
-def get_language_service() -> LanguageService:
-    """取得 LanguageService 單例"""
-    global _language_service
-    if _language_service is None:
-        _language_service = LanguageService()
-    return _language_service

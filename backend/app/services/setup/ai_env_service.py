@@ -14,9 +14,8 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-from app.engine.paths import get_base_data_dir, get_llama_bin_dir, _get_app_root, _is_frozen
+from app.init.configs import get_settings
 from app.engine.device import get_device_info, select_torch_index
-from app.workers.progress_tracker import get_progress_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +46,9 @@ def _check_torch_variant(expected_variant: str) -> bool:
 def _check_llama_server() -> bool:
     """檢查 llama-server 二進位是否存在"""
     import sys as _sys
+    settings = get_settings()
     exe_name = "llama-server.exe" if _sys.platform == "win32" else "llama-server"
-    return (get_llama_bin_dir() / exe_name).exists()
+    return (Path(settings.path.llama_bin) / exe_name).exists()
 
 
 async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
@@ -60,12 +60,14 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
       Step 4: 下載 llama-server 二進位
     """
     async with setup_lock:
-        tracker = get_progress_tracker()
+        from app.init.container import get_container
+        tracker = get_container().progress_tracker()
         await tracker.emit(task_id, 0.05, "開始診斷硬體環境...", stage="processing")
 
-        app_root = _get_app_root()
-        uv_exe = app_root / "resources" / "uv.exe" if _is_frozen() else "uv"
-        cwd = str(app_root / "resources") if _is_frozen() else str(app_root)
+        settings = get_settings()
+        app_root = Path(settings.path.data)
+        uv_exe = app_root / "resources" / "uv.exe" if settings.is_frozen else "uv"
+        cwd = str(app_root / "resources") if settings.is_frozen else str(app_root)
         logger.info(f"uv setup: app_root={app_root}, cwd={cwd}, uv={uv_exe}")
 
         device = get_device_info()
@@ -77,10 +79,10 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
 
         try:
             env = os.environ.copy()
-            env["UV_PROJECT_ENVIRONMENT"] = str(get_base_data_dir() / ".venv")
-            env["UV_DATA_DIR"] = str(get_base_data_dir() / "uv_data")
-            from app.engine.paths import get_venv_python
-            venv_python = get_venv_python()
+            venv = Path(settings.path.venv)
+            env["UV_PROJECT_ENVIRONMENT"] = str(venv)
+            env["UV_DATA_DIR"] = str(Path(settings.path.data) / "uv_data")
+            venv_python = venv / ("Scripts/python.exe" if settings.platform == "win32" else "bin/python")
 
             async def run_uv(cmd: list, prog_start: float, prog_end: float) -> int:
                 process = await asyncio.create_subprocess_exec(
@@ -164,6 +166,9 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
                     str(uv_exe), "pip", "install",
                     "--python", str(venv_python),
                     "--no-deps",
+                    "--reinstall-package", "torch",
+                    "--reinstall-package", "torchvision",
+                    "--reinstall-package", "torchaudio",
                     "--index-url", index_url,
                     "torch", "torchvision", "torchaudio",
                 ], 0.35, 0.59)
@@ -192,8 +197,12 @@ async def initialize_ai_env(setup_lock: asyncio.Lock, task_id: str):
 
             # 將 .venv site-packages 注入 sys.path
             import sys as _sys
-            from app.engine.paths import get_venv_site_packages
-            venv_site = str(get_venv_site_packages())
+            if settings.platform == "win32":
+                venv_site = str(venv / "Lib" / "site-packages")
+            else:
+                import glob as _glob
+                _matches = _glob.glob(str(venv / "lib" / "python3.*" / "site-packages"))
+                venv_site = _matches[0] if _matches else str(venv / "lib" / "python3.12" / "site-packages")
             if venv_site not in _sys.path:
                 _sys.path.append(venv_site)
             torch_lib = str(Path(venv_site) / "torch" / "lib")
@@ -222,7 +231,7 @@ def download_llama_server(
     解壓後放置到 bin/llama/ 目錄。失敗時回傳 False。
     """
     try:
-        llama_bin = get_llama_bin_dir()
+        llama_bin = Path(get_settings().path.llama_bin)
         llama_bin.mkdir(parents=True, exist_ok=True)
 
         system = platform.system()
@@ -298,7 +307,8 @@ def download_llama_server(
                     tracker.emit(task_id, prog, msg, stage="processing"), loop
                 )
 
-        tracker = get_progress_tracker()
+        from app.init.container import get_container
+        tracker = get_container().progress_tracker()
 
         with tempfile.TemporaryDirectory(prefix="mediatranx_llama_") as tmpdir:
             archive = Path(tmpdir) / url.split("/")[-1]

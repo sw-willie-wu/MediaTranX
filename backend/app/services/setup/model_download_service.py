@@ -9,9 +9,18 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
-from app.engine.paths import get_models_dir
+from app.init.configs import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _models_dir(category: str = "") -> Path:
+    """Get models directory with optional category subdirectory, ensuring it exists."""
+    d = Path(get_settings().path.models)
+    if category:
+        d = d / category
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 # ─── 公開介面 ────────────────────────────────────────────────────────────────
@@ -155,7 +164,7 @@ def _download_whisper(size: str, progress_callback: Callable, snapshot_download)
         raise ValueError(f"未知的 Whisper 模型大小: {size}")
 
     repo_id = variant_spec["repo_id"]
-    local_dir = get_models_dir("whisper") / size
+    local_dir = _models_dir("whisper") / size
     local_dir.mkdir(parents=True, exist_ok=True)
 
     model_bin = local_dir / "model.bin"
@@ -184,7 +193,7 @@ def _download_vlm(model_family: str, size: str, quant: str, progress_callback: C
         raise ValueError(f"未知的 VLM 模型變體: {model_family}-{size}-{quant}")
 
     slot = config.get("slot", "vlm")
-    target_dir = get_models_dir() / slot
+    target_dir = _models_dir() / slot
     target_dir.mkdir(parents=True, exist_ok=True)
 
     progress_callback(0.05, f"下載 {model_family} {size} {quant} 主模型...")
@@ -221,7 +230,7 @@ def _download_translate(model_type: str, size: str, quant: str, progress_callbac
     if not variant:
         raise ValueError(f"未知的模型變體: {model_type}-{size}-{quant}")
 
-    target_dir = get_models_dir(model_type)
+    target_dir = _models_dir(model_type)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     progress_callback(0.1, f"下載 {model_type} {size} {quant} 中...")
@@ -263,7 +272,7 @@ def _download_demucs(variant: str, progress_callback: Callable) -> None:
     folder, filename = DEMUCS_MODELS[model_name]
     url = f"https://dl.fbaipublicfiles.com/demucs/{folder}/{filename}"
 
-    checkpoints_dir = get_models_dir() / SLOT_DEMUCS / "checkpoints"
+    checkpoints_dir = _models_dir() / SLOT_DEMUCS / "checkpoints"
     target_path = checkpoints_dir / filename
 
     if target_path.exists():
@@ -293,7 +302,7 @@ def _download_rife(variant: str, progress_callback: Callable) -> None:
     filename = variant_spec["filename"]
     zip_entry = variant_spec.get("zip_entry", "")
 
-    target_dir = get_models_dir() / SLOT_RIFE
+    target_dir = _models_dir() / SLOT_RIFE
     target_path = target_dir / filename
 
     if target_path.exists():
@@ -329,13 +338,12 @@ def _download_rife(variant: str, progress_callback: Callable) -> None:
 def _download_alignment(lang_code: str, progress_callback: Callable) -> None:
     """下載 Wav2Vec2 alignment 模型（透過 transformers 從 HuggingFace 下載）"""
     from app.engine.ai.audio.wav2vec2 import LANG_MODELS
-    from app.engine.paths import get_models_dir
 
     if lang_code not in LANG_MODELS:
         raise ValueError(f"不支援的語言: {lang_code}")
 
     repo_id = LANG_MODELS[lang_code]
-    cache_dir = str(get_models_dir("alignment"))
+    cache_dir = str(_models_dir("alignment"))
     progress_callback(0.1, f"下載 {repo_id}...")
 
     try:
@@ -402,7 +410,7 @@ def _download_pth_model(model_id: str, progress_callback: Callable) -> None:
     if not slot:
         raise ValueError(f"模型 {family} 缺少 slot 配置")
 
-    target_dir = get_models_dir() / slot
+    target_dir = _models_dir() / slot
     target_dir.mkdir(parents=True, exist_ok=True)
 
     filename = variant_spec["filename"]
@@ -511,9 +519,7 @@ def _download_basic_pitch(progress_callback: Callable) -> None:
 
 def _download_fluidsynth(progress_callback: Callable) -> None:
     """Download FluidSynth DLL + FluidR3 GM SoundFont."""
-    from app.engine.paths import get_fluidsynth_dir
-
-    dest = get_fluidsynth_dir()
+    dest = Path(get_settings().path.fluidsynth)
     dest.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Download FluidSynth Windows release (zip with all DLLs)

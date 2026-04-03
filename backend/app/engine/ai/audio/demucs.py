@@ -41,7 +41,7 @@ class DemucsWrapper(PackageRuntime):
         import functools
         import torch
         from demucs.api import Separator
-        from app.engine.paths import get_models_dir
+        from app.init.configs import get_settings
 
         if on_progress:
             on_progress(0.3, "正在載入 Demucs 模型...")
@@ -49,7 +49,9 @@ class DemucsWrapper(PackageRuntime):
         model_name = config.get("model_name", "htdemucs_6s")
 
         # 將 torch hub cache 指向 models/demucs/，讓 checkpoint 統一存放
-        hub_dir = str(get_models_dir() / SLOT_DEMUCS)
+        models_dir = Path(get_settings().path.models)
+        models_dir.mkdir(parents=True, exist_ok=True)
+        hub_dir = str(models_dir / SLOT_DEMUCS)
         original_hub_dir = torch.hub.get_dir()
         torch.hub.set_dir(hub_dir)
 
@@ -116,8 +118,8 @@ class DemucsWrapper(PackageRuntime):
         # 檢查 models/demucs/checkpoints/ 是否有模型 checkpoint
         model_downloaded = False
         try:
-            from app.engine.paths import get_models_dir
-            checkpoints_dir = get_models_dir() / SLOT_DEMUCS / "checkpoints"
+            from app.init.configs import get_settings
+            checkpoints_dir = Path(get_settings().path.models) / SLOT_DEMUCS / "checkpoints"
             if checkpoints_dir.exists():
                 model_downloaded = any(f.suffix == ".th" for f in checkpoints_dir.iterdir())
         except Exception:

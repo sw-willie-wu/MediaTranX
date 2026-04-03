@@ -197,13 +197,13 @@ class GeminiProvider(RemoteProvider):
             body = e.read().decode("utf-8", errors="replace")
             raise self._parse_error(e.code, body)
         except (urllib.error.URLError, OSError) as e:
-            from app.exceptions import RemoteApiError
+            from app.handler.exceptions import RemoteApiError
             raise RemoteApiError("connection_failed", f"Gemini: {e}")
 
     @staticmethod
     def _parse_error(status: int, body: str):
         """解析 Gemini API 錯誤，回傳 RemoteApiError"""
-        from app.exceptions import RemoteApiError
+        from app.handler.exceptions import RemoteApiError
         body_lower = body.lower()
         if status == 429 or "quota" in body_lower or "resource_exhausted" in body_lower:
             return RemoteApiError("quota_exceeded", body[:200])

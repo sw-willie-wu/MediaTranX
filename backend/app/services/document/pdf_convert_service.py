@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -19,21 +19,11 @@ TASK_TYPE = "document.pdf_convert"
 
 
 class DocumentPdfConvertService:
-    _instance: Optional["DocumentPdfConvertService"] = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
         self._task_manager.register_handler(TASK_TYPE, self._handle_task)
-        self._initialized = True
         logger.info("DocumentPdfConvertService initialized")
 
     async def submit(
@@ -146,13 +136,3 @@ class DocumentPdfConvertService:
                 progress_callback(0.1 + (i + 1) / total * 0.85, f"渲染頁面 {i+1}/{total}...")
         doc.close()
         output_path.write_bytes(buf.getvalue())
-
-
-_service: Optional[DocumentPdfConvertService] = None
-
-
-def get_pdf_convert_service() -> DocumentPdfConvertService:
-    global _service
-    if _service is None:
-        _service = DocumentPdfConvertService()
-    return _service

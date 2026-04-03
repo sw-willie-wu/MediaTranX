@@ -12,21 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 class TaskHistoryService:
-    """任務歷史紀錄服務（單例）"""
-
-    _instance: Optional["TaskHistoryService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    """任務歷史紀錄服務"""
 
     def __init__(self):
-        if self._initialized:
-            return
         self._dao = TaskHistoryDAO()
-        self._initialized = True
         logger.info("TaskHistoryService initialized")
 
     def save(
@@ -72,13 +61,3 @@ class TaskHistoryService:
     def clear(self) -> int:
         """清空所有歷史紀錄"""
         return self._dao.clear()
-
-
-_task_history_service: Optional[TaskHistoryService] = None
-
-
-def get_task_history_service() -> TaskHistoryService:
-    global _task_history_service
-    if _task_history_service is None:
-        _task_history_service = TaskHistoryService()
-    return _task_history_service

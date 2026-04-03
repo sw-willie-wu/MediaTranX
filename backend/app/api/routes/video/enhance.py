@@ -1,7 +1,11 @@
 """Video enhancement API routes."""
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
+
+from app.init.container import AppContainer
+from app.services.video.enhance_service import EnhanceService
 
 router = APIRouter()
 
@@ -18,10 +22,12 @@ class EnhanceResponse(BaseModel):
     message: str = "畫面強化任務已提交"
 
 @router.post("/enhance", response_model=EnhanceResponse)
-async def enhance_video(request: EnhanceRequest):
+@inject
+async def enhance_video(
+    request: EnhanceRequest,
+    service: EnhanceService = Depends(Provide[AppContainer.video_enhance]),
+):
     try:
-        from app.services.video.enhance_service import get_enhance_service
-        service = get_enhance_service()
         task_id = await service.submit(file_id=request.file_id, model=request.model, variant=request.variant, output_format=request.output_format, video_codec=request.video_codec, output_dir=request.output_dir)
         return EnhanceResponse(task_id=task_id)
     except ValueError as e:

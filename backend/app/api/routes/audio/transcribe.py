@@ -1,10 +1,13 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.audio.transcribe_service import get_audio_transcribe_service
+from app.init.container import AppContainer
+from app.services.audio.transcribe_service import AudioTranscribeService
+from app.services.setup.language_service import LanguageService
 
 logger = logging.getLogger(__name__)
 
@@ -42,24 +45,32 @@ class AudioTranscribeResponse(BaseModel):
     message: str = "逐字稿轉譯任務已提交"
 
 @router.get("/transcribe/languages")
-async def get_transcribe_languages():
+@inject
+async def get_transcribe_languages(
+    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
+):
     """取得 Whisper 支援的語言列表"""
-    from app.services.setup.language_service import get_language_service
-    return get_language_service().get_whisper_languages()
+    return language_service.get_whisper_languages()
 
 
 @router.get("/transcribe/status")
-async def get_transcribe_status(model_size: str = "medium"):
+@inject
+async def get_transcribe_status(
+    model_size: str = "medium",
+    service: AudioTranscribeService = Depends(Provide[AppContainer.audio_transcribe]),
+):
     try:
-        service = get_audio_transcribe_service()
         return service.get_model_status(model_size)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/transcribe", response_model=AudioTranscribeResponse)
-async def transcribe_audio(request: AudioTranscribeRequest):
+@inject
+async def transcribe_audio(
+    request: AudioTranscribeRequest,
+    service: AudioTranscribeService = Depends(Provide[AppContainer.audio_transcribe]),
+):
     try:
-        service = get_audio_transcribe_service()
         task_id = await service.submit_transcribe(
             file_id=request.file_id,
             language=request.language,

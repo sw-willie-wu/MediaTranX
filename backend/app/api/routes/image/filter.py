@@ -3,10 +3,12 @@
 """
 import asyncio
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.image.filter_service import get_image_filter_service
+from app.init.container import AppContainer
+from app.services.image.filter_service import ImageFilterService
 
 router = APIRouter()
 
@@ -55,10 +57,13 @@ class ImageFilterPreviewResponse(BaseModel):
 
 
 @router.post("/filter", response_model=ImageFilterResponse)
-async def filter_image(request: ImageFilterRequest):
+@inject
+async def filter_image(
+    request: ImageFilterRequest,
+    service: ImageFilterService = Depends(Provide[AppContainer.image_filter]),
+):
     """提交圖片調整任務"""
     try:
-        service = get_image_filter_service()
         task_id = await service.submit_filter(
             file_id=request.file_id,
             brightness=request.brightness,
@@ -81,10 +86,13 @@ async def filter_image(request: ImageFilterRequest):
 
 
 @router.post("/filter/preview", response_model=ImageFilterPreviewResponse)
-async def preview_filter(request: ImageFilterPreviewRequest):
+@inject
+async def preview_filter(
+    request: ImageFilterPreviewRequest,
+    service: ImageFilterService = Depends(Provide[AppContainer.image_filter]),
+):
     """同步生成預覽圖（降解析度，回傳 base64 data URI）"""
     try:
-        service = get_image_filter_service()
         params = request.model_dump(exclude={"file_id"})
         data_uri = await asyncio.to_thread(
             service.generate_preview,
