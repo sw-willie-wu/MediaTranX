@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Dict, Callable, Set
 
-from app.engine.paths import get_models_dir, get_base_data_dir, get_llama_bin_dir
+from app.init.configs import SETTINGS
 from .registry import (
     MODELS_REGISTRY,
     FORMAT_PKG,
@@ -27,24 +27,11 @@ class ModelManager:
     """
     模型管理器單例
     """
-    _instance: Optional["ModelManager"] = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
     def __init__(self):
-        if self._initialized:
-            return
-        
         self._lock = threading.RLock()
         self._gpu_lock = threading.Lock()
         self._loaded_slots: Set[str] = set()
         self._unloaders: Dict[str, Callable[[], None]] = {}
-        
-        self._initialized = True
         logger.info("ModelManager (V5) initialized with Registry")
 
     @contextmanager
@@ -97,7 +84,7 @@ class ModelManager:
                 import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-            except ImportError:
+            except Exception:
                 pass
 
             self._loaded_slots.add(slot)
@@ -237,21 +224,22 @@ class ModelManager:
         
         family = MODELS_REGISTRY[fmt][model_id]
         slot = family.get("slot", "")
-        base_dir = get_models_dir() / slot
-        
+        models_dir = SETTINGS.path.models
+        base_dir = models_dir / slot
+
         # PKG 格式（目錄型，如 Whisper）
         if fmt == FORMAT_PKG:
             target = base_dir / variant if variant else base_dir
             # 檢查關鍵檔案判斷完整性
             marker = target / "model.bin"
             return target if marker.exists() else None
-        
+
         # GGUF 格式（單檔型，存放於 models/{model_id}/）
         elif fmt == FORMAT_GGUF:
             config = self.get_model_config(model_id, variant)
             if not config or "filename" not in config:
                 return None
-            target = get_models_dir(model_id) / config["filename"]
+            target = (models_dir / model_id) / config["filename"]
             return target if target.exists() else None
         
         # PTH 格式（單檔型）
@@ -300,7 +288,8 @@ class ModelManager:
         
         family = MODELS_REGISTRY[fmt][model_id]
         slot = family.get("slot", "")
-        base_dir = get_models_dir() / slot
+        models_dir = SETTINGS.path.models
+        base_dir = models_dir / slot
         base_dir.mkdir(parents=True, exist_ok=True)
         
         if on_progress:
@@ -414,16 +403,11 @@ class ModelManager:
         
         return path
 
-    def is_ai_env_ready(self) -> bool:
-        """檢查環境就緒狀態"""
-        venv_path = get_base_data_dir() / ".venv"
-        return venv_path.exists() and len(list(venv_path.glob("**/site-packages/torch"))) > 0
-
     def is_llama_ready(self) -> bool:
         """檢查 llama-server 二進位是否存在"""
         import sys
         exe_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
-        return (get_llama_bin_dir() / exe_name).exists()
+        return (SETTINGS.path.llama / exe_name).exists()
 
     def unload_all(self):
         """強制清空所有已註冊的模型顯存"""
@@ -438,9 +422,6 @@ class ModelManager:
                 import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-            except ImportError:
+            except Exception:
                 pass
 
-               
-def get_model_manager() -> ModelManager:
-    return ModelManager()

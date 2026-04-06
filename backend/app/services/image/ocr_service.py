@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
+from PIL import Image as PILImage
+
 from app.utils.prompts import DEFAULT_VLM_MODEL, build_ocr_messages, OCR_PARAMS
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -18,22 +20,12 @@ TASK_TYPE_IMAGE_OCR_REMOTE = "image.ocr.remote"
 
 
 class ImageOcrService:
-    _instance: Optional["ImageOcrService"] = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
         self._task_manager.register_handler(TASK_TYPE_IMAGE_OCR, self._handle_task)
         self._task_manager.register_handler(TASK_TYPE_IMAGE_OCR_REMOTE, self._handle_remote_task)
-        self._initialized = True
         logger.info("ImageOcrService initialized")
 
     def get_status(
@@ -43,8 +35,8 @@ class ImageOcrService:
         quantization: Optional[str] = None,
     ) -> dict:
         """查詢 VLM OCR 狀態"""
-        from app.services.setup.language_service import get_language_service
-        return get_language_service().get_vlm_status(model_id=model_id, size=size, quantization=quantization)
+        from app.init.container import get_container
+        return get_container().language_service().get_vlm_status(model_id=model_id, size=size, quantization=quantization)
 
     async def submit_ocr(
         self,
@@ -88,12 +80,12 @@ class ImageOcrService:
 
         progress_callback(0.05, "準備辨識...")
 
-        from app.engine.ai.model_manager import get_model_manager
-        if not get_model_manager().is_llama_ready():
+        from app.init.container import get_container
+        if not get_container().model_manager().is_llama_ready():
             raise RuntimeError("llama-server 未安裝，請先至設定頁面安裝 AI 核心環境")
 
         # === GPU 排隊管線 ===
-        manager = get_model_manager()
+        manager = get_container().model_manager()
 
         with manager.gpu_session():
             # 執行 VLM OCR
@@ -188,8 +180,8 @@ class ImageOcrService:
         progress_callback(0.05, f"連接 {provider}...")
 
         # 取得連線資訊
-        from app.services.setup.remote_service import get_remote_service
-        remote_svc = get_remote_service()
+        from app.init.container import get_container
+        remote_svc = get_container().remote_service()
         p = remote_svc.get_provider_for_connection(conn_id, provider)
         if p is None:
             raise RuntimeError(f"Provider not available: {provider}")
@@ -201,7 +193,6 @@ class ImageOcrService:
         MAX_SIZE_BYTES = 4 * 1024 * 1024  # 4MB（base64 後約 5.3MB）
         MAX_DIMENSION = 2048
 
-        from PIL import Image as PILImage
         import io
 
         img = PILImage.open(image_path)
@@ -287,13 +278,3 @@ class ImageOcrService:
             "output_filename": output_info.filename,
             "char_count": len(final_text),
         }
-
-
-_service: Optional[ImageOcrService] = None
-
-
-def get_image_ocr_service() -> ImageOcrService:
-    global _service
-    if _service is None:
-        _service = ImageOcrService()
-    return _service

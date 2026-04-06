@@ -6,6 +6,8 @@ import logging
 from abc import abstractmethod
 from typing import Optional, Callable, Any
 
+import torch
+
 from .base import BaseRuntime
 
 logger = logging.getLogger(__name__)
@@ -76,7 +78,6 @@ class PackageRuntime(BaseRuntime):
 
             if self._device and "cuda" in self._device:
                 try:
-                    import torch
                     torch.cuda.empty_cache()
                     logger.info("CUDA cache cleared")
                 except Exception as e:
@@ -104,10 +105,9 @@ class PackageRuntime(BaseRuntime):
             return preferred
 
         try:
-            import torch
             if torch.cuda.is_available():
                 return "cuda"
-        except ImportError:
+        except Exception:
             pass
 
         logger.info("No GPU acceleration available, using CPU")

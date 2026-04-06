@@ -55,15 +55,15 @@ class LlamaServerRuntime(BaseRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
         from app.engine.device import has_nvidia_gpu
-        from app.engine.paths import get_llama_bin_dir
+        from app.init.configs import SETTINGS
 
         if on_progress:
             on_progress(0.05, "正在準備 llama-server...")
 
         # 找 llama-server 執行檔
-        llama_bin = get_llama_bin_dir()
+        llama_dir = SETTINGS.path.llama
         exe_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
-        server_exe = llama_bin / exe_name
+        server_exe = llama_dir / exe_name
         if not server_exe.exists():
             raise FileNotFoundError(
                 f"llama-server 未找到：{server_exe}\n"
@@ -96,9 +96,8 @@ class LlamaServerRuntime(BaseRuntime):
         if on_progress:
             on_progress(0.2, f"啟動 llama-server（port {self._port}）...")
 
-        from app.engine.paths import get_base_data_dir, _is_frozen
-        base = get_base_data_dir()
-        log_dir = base / "logs" if _is_frozen() else base
+        base = SETTINGS.path.data
+        log_dir = base / "logs" if SETTINGS.is_frozen else base
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "llama_server.log"
         self._log_file = open(str(log_path), "a", encoding="utf-8")  # noqa: SIM115
@@ -107,7 +106,7 @@ class LlamaServerRuntime(BaseRuntime):
             cmd,
             stdout=self._log_file,
             stderr=self._log_file,
-            cwd=str(llama_bin),
+            cwd=str(llama_dir),
         )
 
         self._wait_ready(on_progress)
@@ -248,7 +247,7 @@ class LlamaServerRuntime(BaseRuntime):
 
     def _resolve_vlm_path(self, model_id: str, variant: Optional[str]):
         from app.engine.ai.registry import FORMAT_VLM, MODELS_REGISTRY
-        from app.engine.paths import get_models_dir
+        from app.init.configs import SETTINGS
 
         family = MODELS_REGISTRY[FORMAT_VLM][model_id]
 
@@ -269,7 +268,7 @@ class LlamaServerRuntime(BaseRuntime):
             raise ValueError(f"Unknown quantization '{quant}' for {model_id}/{size}")
 
         slot = family["slot"]
-        base_dir = get_models_dir() / slot
+        base_dir = SETTINGS.path.models / slot
 
         main_path = base_dir / variant_spec["filename"]
         if not main_path.exists():

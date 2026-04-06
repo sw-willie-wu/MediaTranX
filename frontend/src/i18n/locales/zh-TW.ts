@@ -6,20 +6,13 @@ export default {
     audio: '音訊工具',
     video: '影片工具',
     document: '文件工具',
-    tasks: '任務',
+    tasks: '任務管理',
     settings: '設定',
     restart: '重新啟動',
   },
 
   // ── 標題列 ────────────────────────────────────────────────────────────
   titlebar: {
-    image: '圖片工具',
-    video: '影片工具',
-    audio: '音訊工具',
-    document: '文件工具',
-    history: '歷史紀錄',
-    tasks: '執行任務',
-    settings: '設定',
     minimize: '最小化',
     restore: '還原',
     maximize: '最大化',
@@ -310,6 +303,8 @@ export default {
       transcode: '轉檔',
       cut: '剪輯',
       subtitle: '字幕',
+      interpolate: '補幀',
+      enhance: '畫面強化',
     },
 
     group: {
@@ -406,6 +401,36 @@ export default {
       min_silence_hint: '停頓超過此時長會分句（預設 200ms）',
       vad_threshold: 'VAD 敏感度',
       vad_threshold_hint: '越低越敏感，更容易分句（預設 0.3）',
+    },
+
+    interpolate: {
+      title: '補幀設定',
+      description: '使用 AI 插幀提升影片幀率。',
+      model: '模型',
+      model_recommended: '（推薦）',
+      model_fast: '（快速）',
+      mode: '補幀模式',
+      mode_2x: '2 倍幀率',
+      mode_4x: '4 倍幀率',
+      mode_custom: '自訂 FPS',
+      target_fps: '目標 FPS',
+      current_fps: '目前 FPS',
+      output_fps: '輸出 FPS',
+      fps_warning: '目標 FPS 必須高於來源 FPS',
+      output_format: '輸出格式',
+      video_codec: '影像編碼',
+      task_label: '影片 · 補幀',
+    },
+
+    enhance: {
+      title: '畫面強化設定',
+      description: '使用 AI 超解析提升影片解析度。',
+      model: '模型',
+      variant: '變體',
+      output_resolution: '輸出解析度',
+      output_format: '輸出格式',
+      video_codec: '影像編碼',
+      task_label: '影片 · 畫面強化',
     },
   },
 
@@ -538,7 +563,7 @@ export default {
     },
 
     midi: {
-      title: 'MIDI 編輯器',
+      title: 'MIDI 編輯設定',
       description: '編輯 MIDI 音符、調整音色、匯出音訊。',
       unsupported: '此檔案格式不支援 MIDI 編輯，請載入 .mid 檔案。',
       task_label: '音訊 · MIDI 匯出',
@@ -571,6 +596,7 @@ export default {
       tool_select: '選取',
       tool_draw: '繪製',
       tool_erase: '橡皮擦',
+      new_midi: '新增 MIDI',
       loop: '循環播放',
       global_settings: '全域設定',
       tools: '工具',
@@ -665,7 +691,7 @@ export default {
     tab: {
       general: '一般',
       system: '系統資訊',
-      models: 'AI 模組管理',
+      models: 'AI 模型管理',
       about: '關於',
     },
 
@@ -745,15 +771,16 @@ export default {
     },
 
     models: {
-      title: '模型與工具',
+      title: '模型列表',
       hint: '最多同時進行 4 個下載，超過將自動排隊',
       loading: '載入中...',
       refresh: '重新整理',
       remove_model: '移除模型',
       install: '安裝',
       local: '本地端',
-      category_image: '影像處理',
+      category_image: '圖像處理',
       category_audio: '語音處理',
+      category_video: '影片處理',
       category_llm: '大語言模型',
     },
     remote: {
@@ -851,6 +878,46 @@ export default {
       audio: '音訊工具',
       image: '圖片工具',
       document: '文件工具',
+    },
+  },
+
+  // ── 模型描述 ──────────────────────────────────────────────────────────
+  models: {
+    realesrgan: '通用超解析（寫實）',
+    swinir: 'Transformer 超解析',
+    bsrgan: '盲超解析',
+    real_cugan: '動漫風格超解析',
+    waifu2x: '經典動漫超解析',
+    codeformer: 'VQ-GAN 人臉修復',
+    gfpgan: 'GAN 人臉修復',
+    mobilesam: '輕量物件分割（AI 移除用）',
+    demucs: '音源分離（人聲/鼓/貝斯/吉他/鋼琴/其他）',
+    rife: '影片補幀（Frame Interpolation）',
+    fluidsynth: 'MIDI 音色合成引擎 + GM 音色庫（匯出 WAV/MP3 用）',
+    whisper: {
+      tiny: '極速語音辨識',
+      base: '快速語音辨識',
+      small: '輕量語音辨識',
+      medium: '平衡精度與速度',
+      large_v3: '最高精度語音辨識',
+    },
+    size: {
+      ultra_light: '超輕量，速度極快',
+      light_fast: '輕量，速度快',
+      balanced: '平衡精度與速度',
+      highest: '最高翻譯精度',
+      high_precision: '高精度翻譯',
+      ultra_light_ocr: '超輕量 OCR',
+      light_ocr_recommended: '輕量 OCR（推薦）',
+      high_precision_ocr: '高精度 OCR',
+    },
+    quant: {
+      q8: '高精度量化',
+      q4km: '標準量化',
+      q4ks: '標準量化，略省 VRAM',
+      q3kl: '輕量量化',
+      q3km: '輕量量化，省 VRAM',
+      q3ks: '輕量量化，最省 VRAM',
     },
   },
 }

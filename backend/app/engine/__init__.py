@@ -2,7 +2,6 @@ from .device import get_device, get_compute_type
 from .ffmpeg import (
     FFmpeg,
     FFmpegError,
-    get_ffmpeg,
     MediaInfo,
     TranscodeOptions,
     TranscodeProgress,
@@ -12,7 +11,6 @@ from .ffmpeg import (
 )
 from .ai import (
     ModelManager,
-    get_model_manager,
     SLOT_WHISPER,
     SLOT_LLM,
     SLOT_PTH,
@@ -27,7 +25,6 @@ __all__ = [
     "get_compute_type",
     "FFmpeg",
     "FFmpegError",
-    "get_ffmpeg",
     "MediaInfo",
     "TranscodeOptions",
     "TranscodeProgress",
@@ -35,7 +32,6 @@ __all__ = [
     "AudioCodec",
     "QualityPreset",
     "ModelManager",
-    "get_model_manager",
     "SLOT_WHISPER",
     "SLOT_LLM",
     "SLOT_PTH",

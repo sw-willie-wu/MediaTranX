@@ -3,10 +3,12 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.image.convert_service import get_image_convert_service
+from app.init.container import AppContainer
+from app.services.image.convert_service import ImageConvertService
 
 router = APIRouter()
 
@@ -39,10 +41,13 @@ class ImageInfoResponse(BaseModel):
 
 
 @router.get("/info/{file_id}", response_model=ImageInfoResponse)
-async def get_image_info(file_id: str):
+@inject
+async def get_image_info(
+    file_id: str,
+    service: ImageConvertService = Depends(Provide[AppContainer.image_convert]),
+):
     """取得圖片檔案資訊"""
     try:
-        service = get_image_convert_service()
         info = await service.get_image_info(file_id)
         return ImageInfoResponse(**info)
     except ValueError as e:
@@ -52,10 +57,13 @@ async def get_image_info(file_id: str):
 
 
 @router.post("/convert", response_model=ImageConvertResponse)
-async def convert_image(request: ImageConvertRequest):
+@inject
+async def convert_image(
+    request: ImageConvertRequest,
+    service: ImageConvertService = Depends(Provide[AppContainer.image_convert]),
+):
     """提交圖片轉檔任務"""
     try:
-        service = get_image_convert_service()
         task_id = await service.submit_convert(
             file_id=request.file_id,
             output_format=request.output_format,

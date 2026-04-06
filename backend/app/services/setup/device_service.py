@@ -5,26 +5,13 @@
 Route 不應直接 import engine.device。
 """
 import logging
-from typing import Optional
-
 logger = logging.getLogger(__name__)
 
 
 class DeviceService:
-    """裝置資訊查詢服務（單例）"""
-
-    _instance: Optional["DeviceService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    """裝置資訊查詢服務"""
 
     def __init__(self):
-        if self._initialized:
-            return
-        self._initialized = True
         logger.info("DeviceService initialized")
 
     def get_device_info(self) -> dict:
@@ -51,14 +38,3 @@ class DeviceService:
         """根據驅動版本選擇 PyTorch wheel 類型"""
         from app.engine.device import select_torch_index
         return select_torch_index()
-
-
-_device_service: Optional[DeviceService] = None
-
-
-def get_device_service() -> DeviceService:
-    """取得 DeviceService 單例"""
-    global _device_service
-    if _device_service is None:
-        _device_service = DeviceService()
-    return _device_service

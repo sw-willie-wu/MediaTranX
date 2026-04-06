@@ -9,9 +9,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
-
-class TaskCancelledError(Exception):
-    """任務被取消時由 progress_callback 拋出"""
+from app.handler.exceptions import TaskCancelledError  # noqa: F401 — re-export for back-compat
 
 
 class TaskStatus(str, Enum):

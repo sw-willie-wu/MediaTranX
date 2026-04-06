@@ -1,6 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from app.services.audio.volume_service import get_audio_volume_service
+
+from app.init.container import AppContainer
+from app.services.audio.volume_service import AudioVolumeService
 
 router = APIRouter()
 
@@ -14,9 +17,12 @@ class AudioVolumeResponse(BaseModel):
     message: str = "音量調整任務已提交"
 
 @router.post("/volume", response_model=AudioVolumeResponse)
-async def adjust_volume(request: AudioVolumeRequest):
+@inject
+async def adjust_volume(
+    request: AudioVolumeRequest,
+    service: AudioVolumeService = Depends(Provide[AppContainer.audio_volume]),
+):
     try:
-        service = get_audio_volume_service()
         task_id = await service.submit_volume(
             file_id=request.file_id,
             volume_db=request.volume_db,

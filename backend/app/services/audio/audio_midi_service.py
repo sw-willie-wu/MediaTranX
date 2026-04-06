@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,21 +17,11 @@ TASK_TYPE_AUDIO_MIDI_EXPORT = "audio.midi_export"
 
 
 class AudioMidiService:
-    _instance: Optional["AudioMidiService"] = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
         self._task_manager.register_handler(TASK_TYPE_AUDIO_MIDI_EXPORT, self._handle_export)
-        self._initialized = True
         logger.info("AudioMidiService initialized")
 
     def read_midi(self, file_id: str) -> dict:
@@ -42,6 +32,24 @@ class AudioMidiService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
         return midi_to_json(file_info.file_path)
+
+    def create_midi(self, data: dict) -> str:
+        """Create a new .mid file from editor JSON, register it, and return file_id."""
+        from app.utils.midi import json_to_midi
+        from uuid import uuid4
+
+        file_id = str(uuid4())
+        temp_dir = self._file_service._upload_dir
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        midi_path = temp_dir / f"{file_id}.mid"
+        json_to_midi(data, str(midi_path))
+        self._file_service.register_output(
+            file_id=file_id,
+            file_path=midi_path,
+            original_filename="Untitled.mid",
+        )
+        logger.info(f"MIDI created: {midi_path} ({file_id})")
+        return file_id
 
     def save_midi(self, file_id: str, data: dict) -> dict:
         """Save edited MIDI JSON back to .mid file."""
@@ -77,7 +85,7 @@ class AudioMidiService:
 
     def _handle_export(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         """Handle MIDI export task — render to WAV/MP3."""
-        from app.engine.fluidsynth import get_fluidsynth
+        from app.init.container import get_container
 
         file_id = params["file_id"]
         output_format = params.get("output_format", "wav")
@@ -100,7 +108,7 @@ class AudioMidiService:
 
         progress_callback(0.05, "準備匯出...")
 
-        fluidsynth = get_fluidsynth()
+        fluidsynth = get_container().fluidsynth()
 
         # Render to WAV
         wav_filename = f"{original_stem}.wav"
@@ -150,13 +158,3 @@ class AudioMidiService:
             "output_file_id": output_file_id,
             "output_filename": final_filename,
         }
-
-
-_service: Optional[AudioMidiService] = None
-
-
-def get_audio_midi_service() -> AudioMidiService:
-    global _service
-    if _service is None:
-        _service = AudioMidiService()
-    return _service

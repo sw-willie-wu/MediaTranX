@@ -839,7 +839,29 @@ frontend/src/
 
 ---
 
-## 27. Composables 總覽
+## 27. i18n 規範
+
+### 模型 Metadata 翻譯
+
+後端 `model_metadata_service.py` 回傳的模型 `description` 為 i18n key（如 `models.realesrgan`），**不是**直接顯示文字。
+
+- 前端用 `$te(key)` 檢查 key 是否存在，存在則 `$t(key)` 翻譯，否則直接顯示原始字串
+- 複合描述以 `||` 分隔（如 `"models.size.light_fast||models.quant.q4km"`），前端拆開翻譯後以 ` · ` 合併
+- 新增模型時必須在 `en.ts` 和 `zh-TW.ts` 的 `models` 區塊加入翻譯
+
+```typescript
+// AppModelGroupList.vue 中的 tDesc helper
+function tDesc(desc: string): string {
+  if (desc.includes('||')) {
+    return desc.split('||').map(k => te(k.trim()) ? t(k.trim()) : k.trim()).join(' · ')
+  }
+  return te(desc) ? t(desc) : desc
+}
+```
+
+---
+
+## 28. Composables 總覽
 
 | Composable | 用途 |
 |---|---|

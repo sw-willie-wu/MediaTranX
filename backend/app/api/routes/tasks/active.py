@@ -1,33 +1,42 @@
 """
 進行中任務端點
 """
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 
-from app.workers.task_manager import get_task_manager
+from app.init.container import AppContainer
+from app.workers.task_manager import TaskManager
 from app.api.schemas.common import TaskResponse
 
 router = APIRouter()
 
 
 @router.get("/", response_model=List[TaskResponse])
-async def list_tasks():
+@inject
+async def list_tasks(
+    task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
+):
     """列出所有任務"""
-    task_manager = get_task_manager()
     return [TaskResponse.from_task_data(t) for t in task_manager.get_all_tasks()]
 
 
 @router.get("/active", response_model=List[TaskResponse])
-async def list_active_tasks():
+@inject
+async def list_active_tasks(
+    task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
+):
     """列出進行中的任務"""
-    task_manager = get_task_manager()
     return [TaskResponse.from_task_data(t) for t in task_manager.get_active_tasks()]
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
-async def get_task(task_id: str):
+@inject
+async def get_task(
+    task_id: str,
+    task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
+):
     """取得任務狀態"""
-    task_manager = get_task_manager()
     task = task_manager.get_task(task_id)
 
     if task is None:
@@ -37,10 +46,12 @@ async def get_task(task_id: str):
 
 
 @router.post("/{task_id}/cancel")
-async def cancel_task(task_id: str):
+@inject
+async def cancel_task(
+    task_id: str,
+    task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
+):
     """取消任務"""
-    task_manager = get_task_manager()
-
     if not await task_manager.cancel(task_id):
         raise HTTPException(status_code=400, detail="Cannot cancel task")
 
@@ -48,10 +59,12 @@ async def cancel_task(task_id: str):
 
 
 @router.delete("/{task_id}")
-async def remove_task(task_id: str):
+@inject
+async def remove_task(
+    task_id: str,
+    task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
+):
     """移除已完成的任務"""
-    task_manager = get_task_manager()
-
     if not task_manager.remove(task_id):
         raise HTTPException(status_code=400, detail="Cannot remove task")
 

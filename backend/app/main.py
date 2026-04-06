@@ -1,37 +1,56 @@
 """
-FastAPI 應用程式進入點
+FastAPI application entry point.
 """
-import os
-import sys
+from app.init import SETTINGS, bootstrap
 
-# --- 0. 偵測編譯模式 ---
-IS_FROZEN = getattr(sys, 'frozen', False) or "__compiled__" in globals() or hasattr(sys, "nuitka_binary")
+bootstrap()
 
-# --- 1. 修正編譯後的導入路徑（必須在任何 app.* import 之前）---
-if IS_FROZEN:
-    _internal_path = os.path.dirname(sys.executable)
-    if _internal_path not in sys.path:
-        sys.path.insert(0, _internal_path)
+# DI Container (before route imports to satisfy factory functions)
+from app.init.container import init_container
+container = init_container()
 
-# --- 2. Bootstrap（DLL 注入、相容層、日誌）---
-from app.init import bootstrap
-bootstrap(IS_FROZEN)
-
-# --- 3. App ---
+# --- 4. App ---
 from fastapi import FastAPI
 from app.api import build_router
+from app.handler.error_responses import register_exception_handlers
 
-app: FastAPI = FastAPI(title="MediaTranX API")
+from app.init.lifespan import build_lifespan
+app: FastAPI = FastAPI(title="MediaTranX API", lifespan=build_lifespan())
+register_exception_handlers(app)
+app.container = container
+
 app = build_router(app)
 
-# --- 4. 服務啟動 ---
+# --- 5. Start ---
 if __name__ == "__main__":
-    import uvicorn
     import argparse
+    import uvicorn
 
     parser = argparse.ArgumentParser(description="MediaTranX Backend")
-    parser.add_argument("--host", type=str, default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8001)
+    parser.add_argument("--host", type=str, default=None)
+    parser.add_argument("--port", type=int, default=None)
+    parser.add_argument("--mode", type=str, default=None, choices=["production", "dev"])
     args = parser.parse_args()
 
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    # Override settings with CLI args if provided
+    if args.mode:
+        SETTINGS.server.mode = args.mode
+        if args.mode == "dev" and SETTINGS.server.log_level == "warning":
+            SETTINGS.server.log_level = "debug"
+    if args.host:
+        SETTINGS.server.host = args.host
+    if args.port:
+        SETTINGS.server.port = args.port
+
+    # Adjust app log level
+    import logging as _logging
+    _logging.getLogger().setLevel(
+        _logging.DEBUG if SETTINGS.server.mode == "dev" else _logging.WARNING
+    )
+
+    uvicorn.run(
+        app,
+        host=SETTINGS.server.host,
+        port=SETTINGS.server.port,
+        log_level=SETTINGS.server.log_level,
+    )

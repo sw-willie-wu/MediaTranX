@@ -8,6 +8,8 @@ import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfo
 import VideoTranscodePanel from '@/components/video/panels/VideoTranscodePanel.vue'
 import VideoCutPanel from '@/components/video/panels/VideoCutPanel.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
+import VideoInterpolatePanel from '@/components/video/panels/VideoInterpolatePanel.vue'
+import VideoEnhancePanel from '@/components/video/panels/VideoEnhancePanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTitlebar } from '@/composables/useTitlebar'
@@ -42,11 +44,15 @@ watch(mediaInfo, (info) => {
 const transcodePanelRef = ref<InstanceType<typeof VideoTranscodePanel> | null>(null)
 const cutPanelRef = ref<InstanceType<typeof VideoCutPanel> | null>(null)
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
+const interpolatePanelRef = ref<InstanceType<typeof VideoInterpolatePanel> | null>(null)
+const enhancePanelRef = ref<InstanceType<typeof VideoEnhancePanel> | null>(null)
 
 const subFunctions = computed(() => [
-  { id: 'transcode', name: t('video.functions.transcode'), icon: 'bi-arrow-repeat',   group: t('video.group.edit') },
-  { id: 'cut',       name: t('video.functions.cut'),       icon: 'bi-scissors',       group: t('video.group.edit') },
-  { id: 'subtitle',  name: t('video.functions.subtitle'),  icon: 'bi-badge-cc-fill',  group: t('video.group.ai') },
+  { id: 'transcode',   name: t('video.functions.transcode'),   icon: 'bi-arrow-repeat',   group: t('video.group.edit') },
+  { id: 'cut',         name: t('video.functions.cut'),         icon: 'bi-scissors',       group: t('video.group.edit') },
+  { id: 'subtitle',    name: t('video.functions.subtitle'),    icon: 'bi-badge-cc-fill',  group: t('video.group.ai') },
+  { id: 'interpolate', name: t('video.functions.interpolate'), icon: 'bi-speedometer2',   group: t('video.group.ai') },
+  { id: 'enhance',     name: t('video.functions.enhance'),     icon: 'bi-stars',          group: t('video.group.ai') },
 ])
 
 const currentFunction = ref('transcode')
@@ -78,9 +84,11 @@ function handleExecute() {
 
 function handleSingleExecute() {
   switch (currentFunction.value) {
-    case 'transcode': transcodePanelRef.value?.execute(); break
-    case 'cut':       cutPanelRef.value?.execute(); break
-    case 'subtitle':  subtitlePanelRef.value?.submitGenerate(); break
+    case 'transcode':   transcodePanelRef.value?.execute(); break
+    case 'cut':         cutPanelRef.value?.execute(); break
+    case 'subtitle':    subtitlePanelRef.value?.submitGenerate(); break
+    case 'interpolate': interpolatePanelRef.value?.execute(); break
+    case 'enhance':     enhancePanelRef.value?.execute(); break
   }
 }
 
@@ -268,6 +276,24 @@ onUnmounted(() => { clearActions() })
             @complete="handleSubtitleComplete"
           />
         </div>
+
+        <VideoInterpolatePanel
+          v-else-if="currentFunction === 'interpolate'"
+          ref="interpolatePanelRef"
+          :file-id="activeFileId"
+          :current-file-name="currentFileName"
+          :media-info="mediaInfo"
+          @submit="handlePanelSubmit"
+        />
+
+        <VideoEnhancePanel
+          v-else-if="currentFunction === 'enhance'"
+          ref="enhancePanelRef"
+          :file-id="activeFileId"
+          :current-file-name="currentFileName"
+          :media-info="mediaInfo"
+          @submit="handlePanelSubmit"
+        />
       </div>
     </template>
   </ToolLayout>

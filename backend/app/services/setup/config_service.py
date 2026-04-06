@@ -1,62 +1,52 @@
 """
-應用程式設定服務
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-包裝 engine.paths 的設定操作，提供給 Route 層使用。
-Route 不應直接 import engine.paths 的 config 函數。
+Application configuration service.
+Reads from pydantic-settings, writes path overrides to .env file.
 """
 import logging
-from typing import Optional
-
 logger = logging.getLogger(__name__)
 
 
 class ConfigService:
-    """應用程式設定管理服務（單例）"""
-
-    _instance: Optional["ConfigService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    """Application configuration service."""
 
     def __init__(self):
-        if self._initialized:
-            return
-        self._initialized = True
         logger.info("ConfigService initialized")
 
     def get_config(self) -> dict:
-        """取得應用程式設定（含有效路徑）"""
-        from app.engine.paths import get_models_dir, get_temp_dir, get_app_config
-        config = get_app_config()
+        """Get current configuration with effective paths."""
+        from app.init.configs import SETTINGS
         return {
-            "models_dir": config.get("models_dir", ""),
-            "effective_models_dir": str(get_models_dir()),
-            "temp_dir": config.get("temp_dir", ""),
-            "effective_temp_dir": str(get_temp_dir()),
+            "models_dir": SETTINGS.path.models,
+            "temp_dir": SETTINGS.path.temp,
         }
 
     def update_config(self, models_dir: str = "", temp_dir: str = "") -> dict:
-        """更新應用程式設定，回傳 {ok, needs_restart}"""
-        from app.engine.paths import get_app_config, save_app_config
-        config = get_app_config()
-        for key, val in {"models_dir": models_dir, "temp_dir": temp_dir}.items():
-            if val.strip():
-                config[key] = val.strip()
-            else:
-                config.pop(key, None)
-        save_app_config(config)
-        return {"ok": True, "needs_restart": True}
+        """Write path overrides to .env file. Requires restart to take effect."""
+        from app.init.configs import SETTINGS
+        env_path = SETTINGS.path.data / ".env"
 
+        lines: list[str] = []
+        if env_path.exists():
+            lines = env_path.read_text(encoding="utf-8").splitlines()
 
-_config_service: Optional[ConfigService] = None
+        updates = {}
+        if models_dir:
+            updates["MEDIATRANX_PATH__MODELS"] = models_dir
+        if temp_dir:
+            updates["MEDIATRANX_PATH__TEMP"] = temp_dir
 
+        if not updates:
+            return {"ok": True, "restart_required": False}
 
-def get_config_service() -> ConfigService:
-    """取得 ConfigService 單例"""
-    global _config_service
-    if _config_service is None:
-        _config_service = ConfigService()
-    return _config_service
+        for env_key, value in updates.items():
+            found = False
+            for i, line in enumerate(lines):
+                if line.startswith(f"{env_key}="):
+                    lines[i] = f"{env_key}={value}"
+                    found = True
+                    break
+            if not found:
+                lines.append(f"{env_key}={value}")
+
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return {"ok": True, "restart_required": True}

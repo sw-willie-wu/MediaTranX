@@ -1,23 +1,45 @@
-FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
 
 WORKDIR /app
 
 # 安裝系統依賴
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.12 python3.12-dev python3-pip \
-    curl ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
+    ffmpeg \
+    fluidsynth \
+    libfluidsynth3 \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# 安裝 uv
+# 安裝 uv（用於匯出 requirements）
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# 安裝 Python 依賴（利用 layer cache）
+# 從 uv.lock 匯出 requirements，用 pip 裝進系統 Python
 COPY backend/pyproject.toml backend/uv.lock ./
-RUN uv sync --frozen --no-install-project
+RUN uv export --frozen --no-hashes --all-extras \
+    | grep -v -E '^(torch|torchvision|torchaudio|nvidia-|tensorflow)' \
+    > requirements.txt \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir --no-deps \
+    git+https://github.com/facebookresearch/demucs
+
+# 安裝 llama-server（從 GitHub releases 下載最新版）
+RUN python -c "\
+import urllib.request, json, tarfile, io, shutil, os;\
+r = json.loads(urllib.request.urlopen('https://api.github.com/repos/ggml-org/llama.cpp/releases/latest').read());\
+tag = r['tag_name'];\
+url = f'https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-ubuntu-x64.tar.gz';\
+print(f'Downloading llama-server {tag}');\
+data = urllib.request.urlopen(url).read();\
+tf = tarfile.open(fileobj=io.BytesIO(data));\
+os.makedirs('/app/bin/llama', exist_ok=True);\
+m = [m for m in tf.getmembers() if m.name.endswith('/llama-server')][0];\
+m.name = 'llama-server';\
+tf.extract(m, '/app/bin/llama');\
+os.chmod('/app/bin/llama/llama-server', 0o755);\
+print(f'llama-server {tag} installed')"
 
 # 複製原始碼
 COPY backend/app/ ./app/
-COPY backend/bin/ ./bin/
 
 EXPOSE 8001
-CMD ["uv", "run", "python", "-u", "-m", "app.main", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["python", "-u", "-m", "app.main", "--host", "0.0.0.0", "--port", "8001"]

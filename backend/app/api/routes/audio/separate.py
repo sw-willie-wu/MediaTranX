@@ -1,7 +1,11 @@
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException
+
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from app.services.audio.separate_service import get_audio_separate_service
+
+from app.init.container import AppContainer
+from app.services.audio.separate_service import AudioSeparateService
 
 router = APIRouter()
 
@@ -21,18 +25,24 @@ class AudioSeparateResponse(BaseModel):
 
 
 @router.get("/separate/status")
-async def get_separate_status(model_name: str = "htdemucs_6s"):
+@inject
+async def get_separate_status(
+    model_name: str = "htdemucs_6s",
+    service: AudioSeparateService = Depends(Provide[AppContainer.audio_separate]),
+):
     try:
-        service = get_audio_separate_service()
         return service.get_model_status(model_name)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/separate", response_model=AudioSeparateResponse)
-async def separate_audio(request: AudioSeparateRequest):
+@inject
+async def separate_audio(
+    request: AudioSeparateRequest,
+    service: AudioSeparateService = Depends(Provide[AppContainer.audio_separate]),
+):
     try:
-        service = get_audio_separate_service()
         task_id = await service.submit_separate(
             file_id=request.file_id,
             model_name=request.model_name,

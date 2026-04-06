@@ -374,29 +374,37 @@ onBeforeUnmount(() => {
   padding: 0 4px;
   min-height: 4.85rem;
 
-  // Fade edges to hint scrollable content
+  // Fade edges with arrow to hint scrollable content
   &::before,
   &::after {
-    content: '';
     position: absolute;
     top: 0;
     bottom: 0;
     width: 48px;
+    display: flex;
+    align-items: center;
     pointer-events: none;
     z-index: 2;
     transition: opacity 0.15s ease;
+    color: var(--text-muted);
+    font-family: 'bootstrap-icons';
+    font-size: 0.85rem;
+    opacity: 0;
   }
 
   &::before {
+    content: '\F284'; /* bi-chevron-left */
     left: 0;
-    background: linear-gradient(to right, var(--bg-gradient-end), transparent);
-    opacity: 0;
+    padding-left: 0.5rem;
+    background: linear-gradient(to right, var(--bg-gradient-end) 30%, transparent);
   }
 
   &::after {
+    content: '\F285'; /* bi-chevron-right */
     right: 0;
-    background: linear-gradient(to left, var(--bg-gradient-end), transparent);
-    opacity: 0;
+    justify-content: flex-end;
+    padding-right: 0.5rem;
+    background: linear-gradient(to left, var(--bg-gradient-end) 30%, transparent);
   }
 
   &.can-scroll-left::before { opacity: 1; }

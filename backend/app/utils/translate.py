@@ -73,8 +73,8 @@ def get_cloud_provider(
     remote_model: str,
 ) -> "RemoteProvider":
     """取得雲端 provider 實例"""
-    from app.services.setup.remote_service import get_remote_service
-    prov = get_remote_service().get_provider_for_connection(conn_id, provider)
+    from app.init.container import get_container
+    prov = get_container().remote_service().get_provider_for_connection(conn_id, provider)
     if prov is None:
         raise RuntimeError(f"找不到可用的 {provider} 連線")
     return prov

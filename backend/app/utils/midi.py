@@ -11,6 +11,8 @@ import math
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 # Rotating colour palette for track visualisation (12 colours).
@@ -339,7 +341,6 @@ def transcribe_drums(audio_path: str | Path, sr: int = 44100) -> dict[str, Any]:
     Uses ``librosa`` for onset detection and ``numpy`` for spectral analysis.
     """
     import librosa
-    import numpy as np
 
     audio_path = Path(audio_path)
     y, sr = librosa.load(str(audio_path), sr=sr, mono=True)

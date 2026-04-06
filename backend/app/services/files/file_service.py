@@ -13,7 +13,7 @@ from typing import Dict, Optional
 from uuid import uuid4
 
 from app.models.file import FileData
-from app.engine.paths import get_temp_dir
+from app.init.configs import SETTINGS
 
 logger = logging.getLogger(__name__)
 
@@ -24,21 +24,13 @@ class FileService:
     管理上傳檔案和處理結果
     """
 
-    _instance: Optional["FileService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        """單例模式"""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
     def __init__(self, base_dir: Optional[str] = None):
-        if self._initialized:
-            return
-
         # 設定基礎目錄（所有中間產物統一放 temp，使用者存檔時才透過 saveFileDialog 選目的地）
-        base_temp = Path(base_dir) / "temp" if base_dir else get_temp_dir()
+        if base_dir:
+            base_temp = Path(base_dir) / "temp"
+        else:
+            base_temp = SETTINGS.path.temp
+            base_temp.mkdir(parents=True, exist_ok=True)
         self._upload_dir = base_temp / "uploads"
         self._output_dir = base_temp / "results"
 
@@ -49,7 +41,6 @@ class FileService:
         # 檔案索引
         self._files: Dict[str, FileData] = {}
 
-        self._initialized = True
         logger.info(f"FileService initialized. Upload dir: {self._upload_dir}")
 
     @property
@@ -348,15 +339,3 @@ class FileService:
 
         logger.info(f"cleanup_all: removed {len(to_delete)} session files")
         return len(to_delete)
-
-
-# 全域檔案服務實例
-_file_service: Optional[FileService] = None
-
-
-def get_file_service() -> FileService:
-    """取得全域檔案服務實例"""
-    global _file_service
-    if _file_service is None:
-        _file_service = FileService()
-    return _file_service

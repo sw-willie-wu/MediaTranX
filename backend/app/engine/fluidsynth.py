@@ -7,19 +7,24 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 
-from app.engine.paths import get_fluidsynth_dir
+import numpy as np
+import soundfile as sf
+
+from app.init.configs import SETTINGS
 
 logger = logging.getLogger(__name__)
 
+import sys as _sys
+
 SF2_FILENAME = "FluidR3_GM.sf2"
-DLL_FILENAME = "libfluidsynth-3.dll"
+DLL_FILENAME = "libfluidsynth-3.dll" if _sys.platform == "win32" else "libfluidsynth.so"
 
 
 class FluidSynthWrapper:
     """SoundFont loading/unloading and MIDI→WAV rendering."""
 
     def __init__(self):
-        self._dir = get_fluidsynth_dir()
+        self._dir = SETTINGS.path.fluidsynth
 
     @property
     def sf2_path(self) -> Path:
@@ -30,11 +35,18 @@ class FluidSynthWrapper:
         return self._dir / DLL_FILENAME
 
     def is_available(self) -> dict:
-        """Check availability of FluidSynth DLL and SoundFont."""
+        """Check availability of FluidSynth library and SoundFont."""
+        if _sys.platform == "win32":
+            dll_ok = self.dll_path.exists()
+        else:
+            # Linux/macOS: check system libfluidsynth or bundled
+            import shutil
+            dll_ok = self.dll_path.exists() or shutil.which("fluidsynth") is not None
+        sf2_ok = self.sf2_path.exists()
         return {
-            "dll_available": self.dll_path.exists(),
-            "sf2_available": self.sf2_path.exists(),
-            "ready": self.dll_path.exists() and self.sf2_path.exists(),
+            "dll_available": dll_ok,
+            "sf2_available": sf2_ok,
+            "ready": dll_ok and sf2_ok,
         }
 
     def render_midi_to_wav(
@@ -76,8 +88,6 @@ class FluidSynthWrapper:
             os.environ["PATH"] = dll_dir + os.pathsep + os.environ.get("PATH", "")
 
         import fluidsynth
-        import numpy as np
-        import soundfile as sf
 
         if on_progress:
             on_progress(0.2, "Initializing synthesizer...")
@@ -153,14 +163,3 @@ class FluidSynthWrapper:
 
         logger.info(f"MIDI rendered to WAV: {out}")
         return out
-
-
-# Singleton
-_fluidsynth: Optional[FluidSynthWrapper] = None
-
-
-def get_fluidsynth() -> FluidSynthWrapper:
-    global _fluidsynth
-    if _fluidsynth is None:
-        _fluidsynth = FluidSynthWrapper()
-    return _fluidsynth

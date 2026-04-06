@@ -3,21 +3,25 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pathlib import Path
 from pydantic import BaseModel
 
-from app.services.files.file_service import get_file_service
+from app.init.container import AppContainer
+from app.services.files.file_service import FileService
 from app.api.schemas.common import FileInfo, FileUploadResponse
 
 router = APIRouter()
 
 
 @router.post("/upload", response_model=FileUploadResponse)
+@inject
 async def upload_file(
     file: UploadFile = File(...),
-    source_dir: Optional[str] = Form(default=None)
+    source_dir: Optional[str] = Form(default=None),
+    file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
     上傳檔案
@@ -29,8 +33,6 @@ async def upload_file(
     Returns:
         FileUploadResponse: 包含 file_id 的回應
     """
-    file_service = get_file_service()
-
     content = await file.read()
     file_data = await file_service.save_upload(
         filename=file.filename or "unnamed",
@@ -52,13 +54,15 @@ class RegisterRequest(BaseModel):
 
 
 @router.post("/register", response_model=FileUploadResponse)
-async def register_local_file(req: RegisterRequest):
+@inject
+async def register_local_file(
+    req: RegisterRequest,
+    file_service: FileService = Depends(Provide[AppContainer.file_service]),
+):
     """
     註冊本機檔案（不複製），直接用原始路徑。
     適用於 Electron 桌面環境，避免大檔案複製。
     """
-    file_service = get_file_service()
-
     try:
         file_data = file_service.register_local_file(req.file_path)
     except FileNotFoundError as e:
@@ -73,14 +77,17 @@ async def register_local_file(req: RegisterRequest):
 
 
 @router.get("/{file_id}", response_model=FileInfo)
-async def get_file_info(file_id: str):
+@inject
+async def get_file_info(
+    file_id: str,
+    file_service: FileService = Depends(Provide[AppContainer.file_service]),
+):
     """
     取得檔案資訊
 
     Args:
         file_id: 檔案 ID
     """
-    file_service = get_file_service()
     file_data = file_service.get_file(file_id)
 
     if file_data is None:
@@ -90,14 +97,17 @@ async def get_file_info(file_id: str):
 
 
 @router.get("/{file_id}/download")
-async def download_file(file_id: str):
+@inject
+async def download_file(
+    file_id: str,
+    file_service: FileService = Depends(Provide[AppContainer.file_service]),
+):
     """
     下載檔案
 
     Args:
         file_id: 檔案 ID
     """
-    file_service = get_file_service()
     file_data = file_service.get_file(file_id)
 
     if file_data is None:
@@ -115,26 +125,30 @@ async def download_file(file_id: str):
 
 
 @router.post("/cleanup")
-async def cleanup_all_files():
+@inject
+async def cleanup_all_files(
+    file_service: FileService = Depends(Provide[AppContainer.file_service]),
+):
     """
     清除本次 session 所有暫存與輸出檔案。
     由 Electron 在應用程式關閉前呼叫（autoCleanTemp 設定啟用時）。
     """
-    file_service = get_file_service()
     count = file_service.cleanup_all()
     return {"status": "ok", "deleted": count}
 
 
 @router.delete("/{file_id}")
-async def delete_file(file_id: str):
+@inject
+async def delete_file(
+    file_id: str,
+    file_service: FileService = Depends(Provide[AppContainer.file_service]),
+):
     """
     刪除檔案
 
     Args:
         file_id: 檔案 ID
     """
-    file_service = get_file_service()
-
     if not file_service.delete_file(file_id):
         raise HTTPException(status_code=404, detail="File not found")
 

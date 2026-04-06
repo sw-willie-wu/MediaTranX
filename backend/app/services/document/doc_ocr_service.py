@@ -10,8 +10,8 @@ from typing import Callable, Optional
 from uuid import uuid4
 
 from app.utils.prompts import DEFAULT_VLM_MODEL, build_ocr_messages
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -22,28 +22,18 @@ _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"}
 
 
 class DocumentOcrService:
-    _instance: Optional["DocumentOcrService"] = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
         self._task_manager.register_handler(TASK_TYPE, self._handle_task)
         self._task_manager.register_handler(TASK_TYPE_REMOTE, self._handle_remote_task)
-        self._initialized = True
         logger.info("DocumentOcrService initialized")
 
     def get_status(self, model_id: str = DEFAULT_VLM_MODEL, size: str = "4b",
                    quantization: Optional[str] = None) -> dict:
-        from app.services.setup.language_service import get_language_service
-        return get_language_service().get_vlm_status(model_id=model_id, size=size, quantization=quantization)
+        from app.init.container import get_container
+        return get_container().language_service().get_vlm_status(model_id=model_id, size=size, quantization=quantization)
 
     async def submit(
         self,
@@ -108,8 +98,8 @@ class DocumentOcrService:
 
         progress_callback(0.05, f"連接 {provider}...")
 
-        from app.services.setup.remote_service import get_remote_service
-        remote_svc = get_remote_service()
+        from app.init.container import get_container
+        remote_svc = get_container().remote_service()
         prov = remote_svc.get_provider_for_connection(conn_id, provider)
         if prov is None:
             raise RuntimeError(f"Provider not available: {provider}")
@@ -222,8 +212,8 @@ class DocumentOcrService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        from app.engine.ai.model_manager import get_model_manager
-        if not get_model_manager().is_llama_ready():
+        from app.init.container import get_container
+        if not get_container().model_manager().is_llama_ready():
             raise RuntimeError("llama-server 未安裝，請先至設定頁面安裝 AI 核心環境")
 
         model_id = params.get("model_id", DEFAULT_VLM_MODEL)
@@ -238,7 +228,7 @@ class DocumentOcrService:
         progress_callback(0.05, "準備辨識...")
 
         # === GPU 排隊管線 ===
-        manager = get_model_manager()
+        manager = get_container().model_manager()
 
         with manager.gpu_session():
             if src_ext == ".pdf":
@@ -319,13 +309,3 @@ class DocumentOcrService:
                 parts.append(f"{header}{text}")
             return "\n\n---\n\n".join(parts)
         return "\n\n".join(page_results)
-
-
-_service: Optional[DocumentOcrService] = None
-
-
-def get_doc_ocr_service() -> DocumentOcrService:
-    global _service
-    if _service is None:
-        _service = DocumentOcrService()
-    return _service

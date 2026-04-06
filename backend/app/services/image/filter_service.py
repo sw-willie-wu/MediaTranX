@@ -7,11 +7,14 @@ import hashlib
 import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 from uuid import uuid4
 
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+import numpy as np
+from PIL import Image, ImageEnhance, ImageFilter
+
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -21,27 +24,15 @@ TASK_TYPE_IMAGE_FILTER = "image.filter"
 class ImageFilterService:
     """圖片調整服務"""
 
-    _instance: Optional["ImageFilterService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_FILTER,
             self._handle_filter_task
         )
 
-        self._initialized = True
         logger.info("ImageFilterService initialized")
 
     async def submit_filter(
@@ -95,8 +86,6 @@ class ImageFilterService:
     @staticmethod
     def _apply_hue(img: Image.Image, degrees: float) -> Image.Image:
         """色相旋轉（向量化 HSV 轉換）"""
-        import numpy as np
-        from PIL import Image
         if degrees == 0:
             return img
 
@@ -139,8 +128,6 @@ class ImageFilterService:
     @staticmethod
     def _apply_warmth(img: Image.Image, warmth: float) -> Image.Image:
         """色溫調整（正值暖色、負值冷色）"""
-        import numpy as np
-        from PIL import Image
         if warmth == 0:
             return img
 
@@ -157,8 +144,6 @@ class ImageFilterService:
     @staticmethod
     def _apply_sepia(img: Image.Image, intensity: float) -> Image.Image:
         """復古色調"""
-        import numpy as np
-        from PIL import Image
         if intensity <= 0:
             return img
 
@@ -176,8 +161,6 @@ class ImageFilterService:
     @staticmethod
     def _apply_invert(img: Image.Image, intensity: float) -> Image.Image:
         """負片"""
-        import numpy as np
-        from PIL import Image
         if intensity <= 0:
             return img
 
@@ -189,8 +172,6 @@ class ImageFilterService:
     @staticmethod
     def _apply_vignette(img: Image.Image, intensity: float) -> Image.Image:
         """暈影（徑向漸層暗角）"""
-        import numpy as np
-        from PIL import Image
         if intensity <= 0:
             return img
 
@@ -219,7 +200,6 @@ class ImageFilterService:
     def _load_preview_thumb(file_path: str, max_size: int) -> tuple[bytes, bytes | None]:
         """載入並縮圖，回傳 (PNG rgb bytes, PNG alpha bytes | None)"""
         import io
-        from PIL import Image
         raw = Image.open(file_path)
         raw.thumbnail((max_size, max_size), Image.LANCZOS)
 
@@ -245,7 +225,6 @@ class ImageFilterService:
         """同步生成預覽圖，縮圖後套用所有效果，回傳 base64 JPEG/PNG 字串"""
         import base64
         import io
-        from PIL import Image
 
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -274,8 +253,6 @@ class ImageFilterService:
 
     def _apply_all(self, img: Image.Image, params: dict, progress_callback) -> Image.Image:
         """套用所有調整（供 generate_preview 與 _execute_filter 共用）"""
-        import numpy as np
-        from PIL import Image, ImageEnhance, ImageFilter
         grayscale = params.get("grayscale", 0.0)
         if grayscale > 0:
             gray = img.convert("L").convert("RGB")
@@ -346,7 +323,6 @@ class ImageFilterService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        from PIL import Image
         from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
 
         progress_callback(0.05, "載入圖片...")
@@ -410,13 +386,3 @@ class ImageFilterService:
             "output_file_id":  output_file_id,
             "output_filename": output_info.filename,
         }
-
-
-_image_filter_service: Optional[ImageFilterService] = None
-
-
-def get_image_filter_service() -> ImageFilterService:
-    global _image_filter_service
-    if _image_filter_service is None:
-        _image_filter_service = ImageFilterService()
-    return _image_filter_service

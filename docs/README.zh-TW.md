@@ -8,8 +8,7 @@
 
 [English](../README.md)
 
-<!-- 在這裡加截圖 -->
-<!-- ![MediaTranX 截圖](images/screenshot.png) -->
+[![Demo 影片](https://img.youtube.com/vi/r5vivvL1Nds/maxresdefault.jpg)](https://youtu.be/r5vivvL1Nds)
 
 ---
 
@@ -30,13 +29,16 @@
 - AI 語音轉文字（Faster-Whisper）+ 摘要
 - AI 音源分離（Demucs 6 軌）
 - AI 歌詞提取 + 精準對齊
+- MIDI 匯出（Basic Pitch + FluidSynth）
 - 透過本地 LLM 或雲端 API 翻譯
 
 ### 影片工具
 - 格式轉碼（MP4、MKV、AVI、MOV、WebM 等）
-- 剪切（Stream Copy）
+- 剪切（Stream Copy）、音訊提取
 - AI 字幕提取（Whisper）
 - AI 字幕翻譯
+- AI 補幀（RIFE）
+- AI 超解析（Real-ESRGAN）
 
 ### 文件工具
 - OCR 文字辨識（視覺語言模型）
@@ -63,6 +65,7 @@
 | **VLM（OCR）** | Qwen3-VL（2B/4B/8B）、InternVL2.5（1B/4B）、Gemma 3（4B/12B） |
 | **音源分離** | Demucs HTDemucs 6 軌 |
 | **精準對齊** | Wav2Vec2（16 種語言） |
+| **影片補幀** | RIFE v4.22 / v4.25 |
 | **物件分割** | MobileSAM |
 
 模型透過內建的模型管理器按需下載。
@@ -75,7 +78,7 @@
 前端：Vue 3 + TypeScript + Pinia + Vite
 後端：FastAPI + Python 3.12 + uv
 AI：  PyTorch / CTranslate2 / llama-server
-媒體：FFmpeg
+媒體：FFmpeg / FluidSynth
 ```
 
 ---
@@ -122,37 +125,49 @@ graph TB
 git clone https://github.com/sw-willie-wu/MediaTranX.git
 cd MediaTranX
 
-# 前端
-cd frontend
-npm install
-
 # 後端
-cd ../backend
+cd backend
 uv sync
+
+# 手動下載二進位工具（FFmpeg、FluidSynth、llama-server）到 bin/
+
+# 前端
+cd ../frontend
+npm install
 ```
 
 ### 啟動
 
 ```bash
-# 終端 1：前端（port 8000）
+# 終端 1：後端（port 8001）
+cd backend
+uv run python -m app.main --mode dev --port 8001
+
+# 終端 2：前端（port 8000）
 cd frontend
 npm run dev
-
-# 終端 2：後端（port 8001）
-cd backend
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
 開啟瀏覽器 `http://localhost:8000`。
 
-### 安裝 AI 環境
+### 環境變數
 
-首次啟動後，到 **設定 > AI 環境** 點擊 **安裝核心模組**：
-1. 工具執行模組（Whisper、Demucs、HuggingFace 等）
-2. 深度學習推理模組（PyTorch — 自動偵測 CUDA / CPU）
-3. 語言推理模組（llama-server）
+後端透過環境變數設定（pydantic-settings，前綴 `MEDIATRANX_`）：
 
-安裝完成後到 **設定 > 模型與工具** 下載所需模型。
+| 變數 | 說明 | 預設值（dev） |
+|------|------|--------------|
+| `MEDIATRANX_PATH__DATA` | 資料根目錄 | `.`（cwd） |
+| `MEDIATRANX_PATH__VENV` | Python venv 路徑 | `.venv` |
+| `MEDIATRANX_PATH__BIN` | 二進位工具目錄 | `bin` |
+| `MEDIATRANX_PATH__MODELS` | AI 模型目錄 | `models` |
+| `MEDIATRANX_DB__DSN` | 資料庫連線字串 | `sqlite:///mediatranx.db` |
+| `MEDIATRANX_SERVER__MODE` | `production` 或 `dev` | `production` |
+
+開發模式下也可以寫在後端目錄的 `.env` 檔案中。
+
+### 下載 AI 模型
+
+啟動後，到 **設定 > AI 模型** 下載所需模型。
 
 ---
 

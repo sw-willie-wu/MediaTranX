@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
-from app.engine.ffmpeg import FFmpeg, FFmpegError, get_ffmpeg
+from app.engine.ffmpeg import FFmpeg
+from app.handler.exceptions import FFmpegError
 from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
 from app.utils.prompts import (
     WHISPER_TO_BCP47,
@@ -17,8 +18,8 @@ from app.utils.prompts import (
     segments_to_srt,
     parse_srt_response,
 )
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -69,23 +70,11 @@ class SubtitleService:
     整合 FFmpeg（提取音訊）、faster-whisper（語音辨識）和檔案管理
     """
 
-    _instance: Optional["SubtitleService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        """單例模式"""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-
-        self._ffmpeg: FFmpeg = get_ffmpeg()
+    def __init__(self, ffmpeg: FFmpeg, file_service: FileService, task_manager: TaskManager):
+        self._ffmpeg = ffmpeg
         self._whisper: WhisperWrapper = get_whisper()
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+        self._file_service = file_service
+        self._task_manager = task_manager
 
         # 註冊任務處理器
         self._task_manager.register_handler(
@@ -93,7 +82,6 @@ class SubtitleService:
             self._handle_subtitle_task,
         )
 
-        self._initialized = True
         logger.info("SubtitleService initialized")
 
     def get_model_status(self, model_size: str = "medium") -> dict:
@@ -260,8 +248,8 @@ class SubtitleService:
 
             # === GPU 排隊管線 ===
             # 同時只有一個任務使用 GPU，模型用完即卸載
-            from app.engine.ai.model_manager import get_model_manager
-            manager = get_model_manager()
+            from app.init.container import get_container
+            manager = get_container().model_manager()
 
             with manager.gpu_session():
                 # === 階段 2: 語音辨識 ===
@@ -519,15 +507,3 @@ class SubtitleService:
 
         if proc.returncode != 0:
             raise FFmpegError(f"音訊提取失敗: {stderr.decode()}")
-
-
-# 全域服務實例
-_subtitle_service: Optional[SubtitleService] = None
-
-
-def get_subtitle_service() -> SubtitleService:
-    """取得全域字幕服務實例"""
-    global _subtitle_service
-    if _subtitle_service is None:
-        _subtitle_service = SubtitleService()
-    return _subtitle_service

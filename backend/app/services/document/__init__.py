@@ -1,6 +1,11 @@
-from .translate_service import TranslateService, get_translate_service
+from .translate_service import TranslateService
+from .doc_ocr_service import DocumentOcrService
+from .pdf_convert_service import DocumentPdfConvertService
+from .split_service import DocumentSplitService
 
 __all__ = [
     "TranslateService",
-    "get_translate_service",
+    "DocumentOcrService",
+    "DocumentPdfConvertService",
+    "DocumentSplitService",
 ]

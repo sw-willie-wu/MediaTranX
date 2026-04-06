@@ -5,16 +5,17 @@
 Route 不應直接 import engine.ai.registry / engine.ai.model_manager。
 """
 import logging
-from typing import Optional
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 # ─── 分類定義（前端 tab 動態產生）────────────────────────────────────────────
 
 MODEL_CATEGORIES = [
-    {"key": "image", "label": "影像處理", "order": 0},
-    {"key": "audio", "label": "語音處理", "order": 1},
-    {"key": "llm", "label": "大語言模型", "order": 2},
+    {"key": "image", "label": "圖像處理", "order": 0},
+    {"key": "video", "label": "影片處理", "order": 1},
+    {"key": "audio", "label": "語音處理", "order": 2},
+    {"key": "llm", "label": "大語言模型", "order": 3},
 ]
 
 # 舊分類 → 新分類的映射
@@ -28,52 +29,54 @@ _CATEGORY_MAP = {
     "midi": "audio",
     "translate": "llm",
     "vlm": "llm",
+    "interpolate": "video",
+    "video_enhance": "video",
 }
 
 # ─── 顯示用常數 ──────────────────────────────────────────────────────────────
 
 _WHISPER_DISPLAY = [
-    ("tiny", "Whisper Tiny", "極速語音辨識"),
-    ("base", "Whisper Base", "快速語音辨識"),
-    ("small", "Whisper Small", "輕量語音辨識"),
-    ("medium", "Whisper Medium", "平衡精度與速度"),
-    ("large-v3", "Whisper Large-v3", "最高精度語音辨識"),
+    ("tiny", "Whisper Tiny", "models.whisper.tiny"),
+    ("base", "Whisper Base", "models.whisper.base"),
+    ("small", "Whisper Small", "models.whisper.small"),
+    ("medium", "Whisper Medium", "models.whisper.medium"),
+    ("large-v3", "Whisper Large-v3", "models.whisper.large_v3"),
 ]
 
 _SIZE_DESC = {
     "translategemma": {
-        "4b": "輕量，速度快",
-        "12b": "平衡精度與速度",
-        "27b": "最高翻譯精度",
+        "4b": "models.size.light_fast",
+        "12b": "models.size.balanced",
+        "27b": "models.size.highest",
     },
     "qwen3": {
-        "1.7b": "超輕量，速度極快",
-        "4b": "輕量，速度快",
-        "8b": "平衡精度與速度",
-        "14b": "高精度翻譯",
+        "1.7b": "models.size.ultra_light",
+        "4b": "models.size.light_fast",
+        "8b": "models.size.balanced",
+        "14b": "models.size.high_precision",
     },
     "qwen3vl": {
-        "2b": "超輕量 OCR",
-        "4b": "輕量 OCR（推薦）",
-        "8b": "高精度 OCR",
+        "2b": "models.size.ultra_light_ocr",
+        "4b": "models.size.light_ocr_recommended",
+        "8b": "models.size.high_precision_ocr",
     },
     "internvl2.5": {
-        "1b": "超輕量 OCR",
-        "4b": "輕量 OCR（推薦）",
+        "1b": "models.size.ultra_light_ocr",
+        "4b": "models.size.light_ocr_recommended",
     },
     "gemma3": {
-        "4b": "輕量 OCR（推薦）",
-        "12b": "高精度 OCR",
+        "4b": "models.size.light_ocr_recommended",
+        "12b": "models.size.high_precision_ocr",
     },
 }
 
 _QUANT_DESC = {
-    "Q8_0": "高精度量化",
-    "Q4_K_M": "標準量化",
-    "Q4_K_S": "標準量化，略省 VRAM",
-    "Q3_K_L": "輕量量化",
-    "Q3_K_M": "輕量量化，省 VRAM",
-    "Q3_K_S": "輕量量化，最省 VRAM",
+    "Q8_0": "models.quant.q8",
+    "Q4_K_M": "models.quant.q4km",
+    "Q4_K_S": "models.quant.q4ks",
+    "Q3_K_L": "models.quant.q3kl",
+    "Q3_K_M": "models.quant.q3km",
+    "Q3_K_S": "models.quant.q3ks",
 }
 
 _VLM_FAMILY_LABELS = {
@@ -83,24 +86,28 @@ _VLM_FAMILY_LABELS = {
 }
 
 _UPSCALE_LABELS = {
-    "realesrgan": {"label": "Real-ESRGAN", "description": "通用超解析（寫實）"},
-    "swinir": {"label": "SwinIR", "description": "Transformer 超解析"},
-    "bsrgan": {"label": "BSRGAN", "description": "盲超解析"},
-    "real-cugan": {"label": "Real-CUGAN", "description": "動漫風格超解析"},
-    "waifu2x": {"label": "Waifu2x", "description": "經典動漫超解析"},
+    "realesrgan": {"label": "Real-ESRGAN", "description": "models.realesrgan"},
+    "swinir": {"label": "SwinIR", "description": "models.swinir"},
+    "bsrgan": {"label": "BSRGAN", "description": "models.bsrgan"},
+    "real-cugan": {"label": "Real-CUGAN", "description": "models.real_cugan"},
+    "waifu2x": {"label": "Waifu2x", "description": "models.waifu2x"},
 }
 
 _FACE_RESTORE_LABELS = {
-    "codeformer": {"label": "CodeFormer", "description": "VQ-GAN 人臉修復"},
-    "gfpgan": {"label": "GFPGAN", "description": "GAN 人臉修復"},
+    "codeformer": {"label": "CodeFormer", "description": "models.codeformer"},
+    "gfpgan": {"label": "GFPGAN", "description": "models.gfpgan"},
 }
 
 _SEGMENT_LABELS = {
-    "mobilesam": {"label": "MobileSAM", "description": "輕量物件分割（AI 移除用）"},
+    "mobilesam": {"label": "MobileSAM", "description": "models.mobilesam"},
 }
 
 _SEPARATE_LABELS = {
-    "demucs": {"label": "HTDemucs", "description": "音源分離（人聲/鼓/貝斯/吉他/鋼琴/其他）"},
+    "demucs": {"label": "HTDemucs", "description": "models.demucs"},
+}
+
+_INTERPOLATE_LABELS = {
+    "rife": {"label": "RIFE", "description": "models.rife"},
 }
 
 _VARIANT_DESC = {
@@ -117,6 +124,8 @@ _VARIANT_DESC = {
     "cunet": "CUnet 變體",
     "v1.4": "v1.4",
     "htdemucs_6s": "6-Stem",
+    "v4.26": "v4.26",
+    "animevideov3": "4x - Video (Fast)",
 }
 
 _LANG_NAMES = {
@@ -128,20 +137,9 @@ _LANG_NAMES = {
 
 
 class ModelMetadataService:
-    """模型 Metadata 查詢服務（單例）"""
-
-    _instance: Optional["ModelMetadataService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    """模型 Metadata 查詢服務"""
 
     def __init__(self):
-        if self._initialized:
-            return
-        self._initialized = True
         logger.info("ModelMetadataService initialized")
 
     def list_all(self) -> dict:
@@ -159,6 +157,7 @@ class ModelMetadataService:
         all_models.extend(self._enumerate_translate_models())
         all_models.extend(self._enumerate_vlm_models())
         all_models.extend(self._enumerate_alignment_models())
+        all_models.extend(self._enumerate_rife_models())
         all_models.extend(self._enumerate_midi_models())
 
         # 保留原始分類作為 subcategory（前端模型篩選用），映射到大類作為 category（tab 分類用）
@@ -170,10 +169,10 @@ class ModelMetadataService:
 
     def _enumerate_pth_models(self) -> list[dict]:
         """列舉 PyTorch 模型（超解析、人臉修復、分割）"""
-        from app.engine.ai.model_manager import get_model_manager
+        from app.init.container import get_container
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
 
-        manager = get_model_manager()
+        manager = get_container().model_manager()
         items = []
         pth_models = MODELS_REGISTRY.get(FORMAT_PTH, {})
 
@@ -205,7 +204,7 @@ class ModelMetadataService:
                     "id": f"{model_family}-{variant_name}",
                     "family": model_family,
                     "variant": variant_name,
-                    "category": category,
+                    "category": variant_spec.get("subcategory", category),
                     "label": label,
                     "description": family_meta["description"],
                     "downloaded": downloaded,
@@ -218,10 +217,10 @@ class ModelMetadataService:
     def _enumerate_whisper_models(self) -> list[dict]:
         """列舉 Whisper STT 模型"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
-        from app.engine.paths import get_models_dir
+        from app.init.configs import SETTINGS
 
         whisper_variants = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("whisper", {}).get("variants", {})
-        whisper_dir = get_models_dir("whisper")
+        whisper_dir = SETTINGS.path.models / "whisper"
         items = []
 
         for size, label, description in _WHISPER_DISPLAY:
@@ -245,7 +244,7 @@ class ModelMetadataService:
     def _enumerate_demucs_models(self) -> list[dict]:
         """列舉 Demucs 音源分離模型"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
-        from app.engine.paths import get_models_dir
+        from app.init.configs import SETTINGS
 
         demucs_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("demucs", {})
         demucs_variants = demucs_config.get("variants", {})
@@ -256,7 +255,7 @@ class ModelMetadataService:
             variant_desc = _VARIANT_DESC.get(variant_name, variant_name)
             label = f"{family_meta['label']} - {variant_desc}" if len(demucs_variants) > 1 else family_meta['label']
 
-            checkpoints_dir = get_models_dir() / "demucs" / "checkpoints"
+            checkpoints_dir = SETTINGS.path.models / "demucs" / "checkpoints"
             downloaded = (
                 checkpoints_dir.exists()
                 and any(f.suffix == ".th" for f in checkpoints_dir.iterdir())
@@ -278,7 +277,7 @@ class ModelMetadataService:
     def _enumerate_translate_models(self) -> list[dict]:
         """從 registry 動態枚舉所有翻譯模型"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
-        from app.engine.paths import get_models_dir
+        from app.init.configs import SETTINGS
 
         items = []
         gguf_models = MODELS_REGISTRY.get(FORMAT_GGUF, {})
@@ -288,7 +287,7 @@ class ModelMetadataService:
                 continue
 
             name_prefix = "TranslateGemma" if model_family == "translategemma" else "Qwen3"
-            target_dir = get_models_dir(model_family)
+            target_dir = SETTINGS.path.models / model_family
             specs = config.get("specs", {})
 
             for size, size_spec in specs.items():
@@ -298,7 +297,7 @@ class ModelMetadataService:
 
                     size_desc = _SIZE_DESC.get(model_family, {}).get(size, "")
                     quant_desc = _QUANT_DESC.get(quant, "")
-                    description = f"{size_desc} · {quant_desc}" if size_desc and quant_desc else (size_desc or quant_desc)
+                    description = f"{size_desc}||{quant_desc}" if size_desc and quant_desc else (size_desc or quant_desc)
 
                     items.append({
                         "id": f"{model_family}-{size}-{quant}",
@@ -316,14 +315,14 @@ class ModelMetadataService:
     def _enumerate_vlm_models(self) -> list[dict]:
         """從 registry 動態枚舉所有 VLM OCR 模型"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_VLM
-        from app.engine.paths import get_models_dir
+        from app.init.configs import SETTINGS
 
         items = []
         vlm_models = MODELS_REGISTRY.get(FORMAT_VLM, {})
 
         for model_family, config in vlm_models.items():
             slot = config.get("slot", "vlm")
-            target_dir = get_models_dir() / slot
+            target_dir = SETTINGS.path.models / slot
             specs = config.get("specs", {})
             family_label = _VLM_FAMILY_LABELS.get(model_family, model_family)
 
@@ -337,12 +336,14 @@ class ModelMetadataService:
                     )
                     total_mb = quant_spec.get("size_mb", 0) + quant_spec.get("mmproj_size_mb", 0)
                     quant_desc = _QUANT_DESC.get(quant, quant)
+                    size_desc = _SIZE_DESC.get(model_family, {}).get(size, "")
+                    description = f"{size_desc}||{quant_desc}" if size_desc and quant_desc else (size_desc or quant_desc)
                     items.append({
                         "id": f"{model_family}-{size}-{quant}",
                         "family": model_family,
                         "variant": f"{size}:{quant}",
                         "label": f"{family_label} {size.upper()} {quant}",
-                        "description": f"{_SIZE_DESC.get(model_family, {}).get(size, '')} · {quant_desc}",
+                        "description": description,
                         "category": "vlm",
                         "downloaded": downloaded,
                         "size_mb": total_mb,
@@ -353,9 +354,9 @@ class ModelMetadataService:
     def _enumerate_alignment_models(self) -> list[dict]:
         """列舉 Wav2Vec2 語音對齊模型"""
         from app.engine.ai.audio.wav2vec2 import LANG_MODELS
-        from app.engine.paths import get_models_dir
+        from app.init.configs import SETTINGS
 
-        align_dir = get_models_dir("alignment")
+        align_dir = SETTINGS.path.models / "alignment"
         items = []
 
         for lang_code, repo_id in LANG_MODELS.items():
@@ -378,37 +379,39 @@ class ModelMetadataService:
         return items
 
 
-    def _enumerate_midi_models(self) -> list[dict]:
-        """列舉 MIDI 相關模型（FluidSynth SoundFont）"""
+    def _enumerate_rife_models(self) -> list[dict]:
+        """Enumerate RIFE interpolation models"""
+        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
+        from app.init.configs import SETTINGS
+
+        rife_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})
+        rife_variants = rife_config.get("variants", {})
         items = []
 
-        # FluidSynth + SoundFont（basic-pitch 模型內建於套件，不需管理）
-        from app.engine.paths import get_fluidsynth_dir
-        fs_dir = get_fluidsynth_dir()
-        sf2_ok = (fs_dir / "FluidR3_GM.sf2").exists()
-        dll_ok = (fs_dir / "libfluidsynth-3.dll").exists() and (fs_dir / "libglib-2.0-0.dll").exists()
+        for variant_name, variant_spec in rife_variants.items():
+            family_meta = _INTERPOLATE_LABELS.get("rife", {"label": "RIFE", "description": ""})
+            variant_desc = _VARIANT_DESC.get(variant_name, variant_name)
+            label = f"{family_meta['label']} - {variant_desc}" if len(rife_variants) > 1 else family_meta['label']
 
-        items.append({
-            "id": "fluidsynth",
-            "family": "fluidsynth",
-            "variant": "default",
-            "category": "midi",
-            "label": "FluidR3 GM SoundFont",
-            "description": "MIDI 音色合成引擎 + GM 音色庫（匯出 WAV/MP3 用）",
-            "downloaded": sf2_ok and dll_ok,
-            "size_mb": 142,
-            "vram_mb": 0,
-        })
+            model_dir = SETTINGS.path.models / SLOT_RIFE
+            filename = variant_spec.get("filename", "")
+            downloaded = (model_dir / filename).exists()
 
+            items.append({
+                "id": f"rife-{variant_name}",
+                "family": "rife",
+                "variant": variant_name,
+                "category": "interpolate",
+                "label": label,
+                "description": family_meta["description"],
+                "downloaded": downloaded,
+                "size_mb": variant_spec.get("size_mb", 0),
+                "vram_mb": variant_spec.get("vram_mb", 0),
+            })
         return items
 
-
-_model_metadata_service: Optional[ModelMetadataService] = None
-
-
-def get_model_metadata_service() -> ModelMetadataService:
-    """取得 ModelMetadataService 單例"""
-    global _model_metadata_service
-    if _model_metadata_service is None:
-        _model_metadata_service = ModelMetadataService()
-    return _model_metadata_service
+    def _enumerate_midi_models(self) -> list[dict]:
+        """列舉 MIDI 相關模型。
+        FluidSynth + SoundFont 已由 Electron 啟動時下載，不列入模型管理。
+        basic-pitch 模型內建於套件，不需管理。"""
+        return []

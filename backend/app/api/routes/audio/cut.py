@@ -1,6 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from app.services.audio.cut_service import get_audio_cut_service
+
+from app.init.container import AppContainer
+from app.services.audio.cut_service import AudioCutService
 
 router = APIRouter()
 
@@ -14,9 +17,12 @@ class AudioCutResponse(BaseModel):
     message: str = "音訊剪輯任務已提交"
 
 @router.post("/cut", response_model=AudioCutResponse)
-async def cut_audio(request: AudioCutRequest):
+@inject
+async def cut_audio(
+    request: AudioCutRequest,
+    service: AudioCutService = Depends(Provide[AppContainer.audio_cut]),
+):
     try:
-        service = get_audio_cut_service()
         task_id = await service.submit_cut(
             file_id=request.file_id,
             start_time=request.start_time,

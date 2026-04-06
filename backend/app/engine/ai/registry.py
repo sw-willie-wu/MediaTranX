@@ -23,6 +23,7 @@ SLOT_PTH = "pth"      # PTH 模型共用（一次只載入一個）
 SLOT_VLM = "vlm"      # VLM 模型（一次只載入一個）
 SLOT_DEMUCS = "demucs"  # 音源分離（一次只載入一個）
 SLOT_BASIC_PITCH = "basic_pitch"  # 音訊轉 MIDI（basic-pitch）
+SLOT_RIFE = "rife"
 SLOT_SEGMENT = "segment"  # 物件分割（MobileSAM）
 
 # ═══════════════════════════════════════════════════════════
@@ -93,6 +94,20 @@ MODELS_REGISTRY = {
                     "model_name": "basic_pitch",
                     "size_mb": 10,
                     "vram_mb": 0,
+                },
+            },
+        },
+        # ▸ RIFE（影片補幀）
+        "rife": {
+            "slot": SLOT_RIFE,
+            "description": "RIFE 影片補幀",
+            "variants": {
+                "v4.26": {
+                    "url": "https://huggingface.co/hzwer/RIFE/resolve/main/RIFEv4.26_0921.zip",
+                    "zip_entry": "RIFEv4.26_0921/flownet.pkl",
+                    "filename": "flownet-v4.26.pkl",
+                    "size_mb": 23,
+                    "vram_mb": 1500,
                 },
             },
         },
@@ -281,6 +296,15 @@ MODELS_REGISTRY = {
                     "vram_mb": 2000,
                     "scale": 4,
                     "arch": "RRDBNet",
+                },
+                "animevideov3": {
+                    "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-animevideov3.pth",
+                    "filename": "realesr-animevideov3.pth",
+                    "size_mb": 2,
+                    "vram_mb": 500,
+                    "scale": 4,
+                    "arch": "SRVGGNetCompact",
+                    "subcategory": "video_enhance",
                 },
             },
         },

@@ -1,10 +1,12 @@
 """PDF 分割 API 路由"""
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.document.split_service import get_split_service
+from app.init.container import AppContainer
+from app.services.document.split_service import DocumentSplitService
 
 router = APIRouter()
 
@@ -17,10 +19,13 @@ class DocumentSplitRequest(BaseModel):
 
 
 @router.post("/split")
-async def split_document(request: DocumentSplitRequest):
+@inject
+async def split_document(
+    request: DocumentSplitRequest,
+    service: DocumentSplitService = Depends(Provide[AppContainer.doc_split]),
+):
     """提交 PDF 分割任務"""
     try:
-        service = get_split_service()
         task_id = await service.submit(
             file_id=request.file_id,
             pages=request.pages,

@@ -1,23 +1,19 @@
 """
-日誌配置
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-設定 logging 格式、handler、以及 frozen 模式下的 error log 檔案。
+Logging configuration.
 """
 import logging
-import os
 from pathlib import Path
 
+LOG_FORMAT = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 
-def configure_logging(is_frozen: bool) -> None:
-    """配置日誌系統"""
-    log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-    handlers: list[logging.Handler] = [logging.StreamHandler()]  # stdout → Electron pipe
 
-    if is_frozen:
-        appdata = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
-        error_log = os.environ.get('MEDIATRANX_ERROR_LOG')
-        if not error_log:
-            error_log = str(Path(appdata) / 'MediaTranX' / 'logs' / 'core_error.log')
+def configure_logging(settings) -> None:
+    """Configure logging system based on settings."""
+    log_formatter = logging.Formatter(LOG_FORMAT)
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+
+    if settings.is_frozen:
+        error_log = str(settings.path.data / 'logs' / 'core_error.log')
         Path(error_log).parent.mkdir(parents=True, exist_ok=True)
 
         error_handler = logging.FileHandler(error_log, encoding='utf-8')
@@ -30,5 +26,11 @@ def configure_logging(is_frozen: bool) -> None:
 
     logging.basicConfig(level=logging.INFO, handlers=handlers)
 
-    if is_frozen:
+    # Unify uvicorn logger format
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uv_logger = logging.getLogger(name)
+        uv_logger.handlers.clear()
+        uv_logger.propagate = True
+
+    if settings.is_frozen:
         logging.info(f"Backend started in frozen mode. Error log: {error_log}")

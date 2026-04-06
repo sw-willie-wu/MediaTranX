@@ -6,6 +6,7 @@ import AppToggle from '@/components/common/AppToggle.vue'
 import AppRange from '@/components/common/AppRange.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useMidiEditor } from '@/composables/useMidiEditor'
+import { apiFetch } from '@/composables/useApi'
 
 const props = defineProps<{
   fileId: string | null
@@ -15,11 +16,18 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   submit: [taskId: string]
+  'create-blank': []
 }>()
 
 const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 const editor = useMidiEditor()
+
+// ── FluidSynth status ──
+const sfReady = ref(false)
+apiFetch('/audio/soundfont/info').then(async r => {
+  if (r.ok) { sfReady.value = (await r.json()).exists }
+})
 
 // ── MIDI file detection ──
 
@@ -36,16 +44,27 @@ watch([() => props.fileId, () => props.currentFileName], async ([id]) => {
   if (id && isMidiFile.value && id !== _lastLoadedId) {
     _lastLoadedId = id
     await editor.loadFromApi(id)
-  } else if (!id || !isMidiFile.value) {
+  } else if (!id && isMidiFile.value) {
+    // 空白 MIDI（無 fileId）→ 重置 editor
+    _lastLoadedId = null
+    if (editor.tracks.value.length > 0) {
+      editor.tracks.value = []
+      editor.selectedNoteIds.value = new Set()
+      editor.activeTrackIndex.value = 0
+      editor.tempo.value = 120
+      editor.timeSignature.value = [4, 4]
+      editor.addTrack('Track 1', 0, false)
+      editor.isDirty.value = false
+    }
+  } else if (!isMidiFile.value) {
     _lastLoadedId = null
   }
 }, { immediate: true })
 
 // ── Export state ──
 
-const exportFormat = ref('mid')
+const exportFormat = ref('wav')
 const exportFormatOptions = [
-  { value: 'mid', label: 'MIDI' },
   { value: 'wav', label: 'WAV' },
   { value: 'mp3', label: 'MP3' },
 ]
@@ -164,15 +183,52 @@ function onTransposeChange(val: number) {
 // ── Execute ──
 
 async function execute() {
-  if (!props.fileId) return
-  // Save current state first
-  await editor.saveToApi(props.fileId)
-  // Just save for MIDI format, no export task needed
-  if (exportFormat.value === 'mid') {
-    return
+  // 彈出儲存對話框讓使用者選路徑
+  const ext = exportFormat.value
+  const defaultName = (props.currentFileName?.replace(/\.(mid|midi)$/i, '') ?? 'Untitled') + `.${ext}`
+  if (window.electron?.saveFileDialog) {
+    const filters = ext === 'wav'
+      ? [{ name: 'WAV Audio', extensions: ['wav'] }]
+      : [{ name: 'MP3 Audio', extensions: ['mp3'] }]
+    const savePath = await window.electron.saveFileDialog({
+      defaultPath: defaultName,
+      filters,
+    })
+    if (!savePath) return // 使用者取消
+    outputPath.value = savePath
   }
+
+  let fileId = props.fileId
+
+  // 空白 MIDI → 先 create 拿 fileId
+  if (!fileId) {
+    const payload = {
+      ticks_per_beat: editor.ticksPerBeat?.value ?? 480,
+      tempo: editor.tempo.value,
+      time_signature: [...editor.timeSignature.value],
+      tracks: editor.tracks.value.map(t => ({
+        name: t.name, instrument: t.instrument, color: t.color,
+        volume: t.volume, pan: t.pan, muted: t.muted, is_drum: t.isDrum,
+        notes: t.notes.map(n => ({
+          pitch: n.pitch, start: n.start, duration: n.duration, velocity: n.velocity,
+        })),
+      })),
+    }
+    const res = await apiFetch('/audio/midi/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: payload }),
+    })
+    if (!res.ok) return
+    const result = await res.json()
+    fileId = result.file_id
+  } else {
+    // 已有 fileId → save
+    await editor.saveToApi(fileId)
+  }
+
   const body: Record<string, string> = {
-    file_id: props.fileId,
+    file_id: fileId,
     output_format: exportFormat.value,
   }
   if (outputPath.value) {
@@ -192,7 +248,12 @@ async function execute() {
 
 defineExpose({
   execute,
-  isDisabled: computed(() => !props.fileId || !isMidiFile.value || editor.isLoading.value),
+  isDisabled: computed(() => {
+    if (!isMidiFile.value || editor.isLoading.value) return true
+    // 有 fileId（已存檔的 MIDI）或有音符（空白 MIDI 已編輯）
+    if (props.fileId) return false
+    return editor.tracks.value.every(t => t.notes.length === 0)
+  }),
   isLoading: computed(() => editor.isLoading.value),
   getParams: () => ({ output_format: exportFormat.value }),
   editor,
@@ -224,6 +285,14 @@ defineExpose({
             @click="editor.toolMode.value = 'draw'"
           >
             <i class="bi bi-pencil"></i>
+          </button>
+          <span class="midi-tool-divider" />
+          <button
+            class="midi-tool-btn"
+            :data-tooltip="$t('audio.midi.new_midi')"
+            @click="emit('create-blank')"
+          >
+            <i class="bi bi-file-earmark-plus"></i>
           </button>
         </div>
       </div>
@@ -307,7 +376,7 @@ defineExpose({
         </div>
       </div>
 
-      <div v-if="exportFormat !== 'mid'" class="info-box info-box--info">
+      <div v-if="exportFormat !== 'mid' && !sfReady" class="info-box info-box--info">
         <i class="bi bi-info-circle"></i>
         {{ $t('audio.midi.soundfont_missing') }}
       </div>
@@ -320,7 +389,15 @@ defineExpose({
 
 .midi-tool-selector {
   display: flex;
+  align-items: center;
   gap: 4px;
+}
+
+.midi-tool-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--input-border);
+  margin: 0 2px;
 }
 
 .midi-tool-btn {

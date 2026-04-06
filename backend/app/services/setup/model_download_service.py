@@ -9,9 +9,21 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
-from app.engine.paths import get_models_dir
+import numpy as np
+import soundfile as sf
+
+from app.init.configs import SETTINGS
 
 logger = logging.getLogger(__name__)
+
+
+def _models_dir(category: str = "") -> Path:
+    """Get models directory with optional category subdirectory, ensuring it exists."""
+    d = SETTINGS.path.models
+    if category:
+        d = d / category
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 # ─── 公開介面 ────────────────────────────────────────────────────────────────
@@ -61,11 +73,12 @@ def handle_model_download(params: dict, progress_callback: Callable) -> dict:
         lang_code = item_id[len("alignment-"):]
         _download_alignment(lang_code, progress_callback)
 
+    elif item_id.startswith("rife-"):
+        variant = item_id[len("rife-"):]
+        _download_rife(variant, progress_callback)
+
     elif item_id == "basic-pitch":
         _download_basic_pitch(progress_callback)
-
-    elif item_id == "fluidsynth":
-        _download_fluidsynth(progress_callback)
 
     else:
         _download_pth_model(item_id, progress_callback)
@@ -151,7 +164,7 @@ def _download_whisper(size: str, progress_callback: Callable, snapshot_download)
         raise ValueError(f"未知的 Whisper 模型大小: {size}")
 
     repo_id = variant_spec["repo_id"]
-    local_dir = get_models_dir("whisper") / size
+    local_dir = _models_dir("whisper") / size
     local_dir.mkdir(parents=True, exist_ok=True)
 
     model_bin = local_dir / "model.bin"
@@ -180,7 +193,7 @@ def _download_vlm(model_family: str, size: str, quant: str, progress_callback: C
         raise ValueError(f"未知的 VLM 模型變體: {model_family}-{size}-{quant}")
 
     slot = config.get("slot", "vlm")
-    target_dir = get_models_dir() / slot
+    target_dir = _models_dir() / slot
     target_dir.mkdir(parents=True, exist_ok=True)
 
     progress_callback(0.05, f"下載 {model_family} {size} {quant} 主模型...")
@@ -217,7 +230,7 @@ def _download_translate(model_type: str, size: str, quant: str, progress_callbac
     if not variant:
         raise ValueError(f"未知的模型變體: {model_type}-{size}-{quant}")
 
-    target_dir = get_models_dir(model_type)
+    target_dir = _models_dir(model_type)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     progress_callback(0.1, f"下載 {model_type} {size} {quant} 中...")
@@ -259,7 +272,7 @@ def _download_demucs(variant: str, progress_callback: Callable) -> None:
     folder, filename = DEMUCS_MODELS[model_name]
     url = f"https://dl.fbaipublicfiles.com/demucs/{folder}/{filename}"
 
-    checkpoints_dir = get_models_dir() / SLOT_DEMUCS / "checkpoints"
+    checkpoints_dir = _models_dir() / SLOT_DEMUCS / "checkpoints"
     target_path = checkpoints_dir / filename
 
     if target_path.exists():
@@ -271,16 +284,66 @@ def _download_demucs(variant: str, progress_callback: Callable) -> None:
     progress_callback(0.95, "模型下載完成")
 
 
+def _download_rife(variant: str, progress_callback: Callable) -> None:
+    """Download RIFE model checkpoint (extracts flownet.pkl from zip)"""
+    import io
+    import zipfile
+    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
+
+    family = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife")
+    if not family:
+        raise ValueError("rife not registered")
+
+    variant_spec = family["variants"].get(variant)
+    if not variant_spec:
+        raise ValueError(f"Unknown RIFE variant: {variant}")
+
+    url = variant_spec["url"]
+    filename = variant_spec["filename"]
+    zip_entry = variant_spec.get("zip_entry", "")
+
+    target_dir = _models_dir() / SLOT_RIFE
+    target_path = target_dir / filename
+
+    if target_path.exists():
+        progress_callback(0.95, "模型已存在")
+        return
+
+    import tempfile
+    progress_callback(0.1, f"下載 RIFE {variant}...")
+
+    # Download zip to temp, extract flownet.pkl
+    tmp_zip = Path(tempfile.mktemp(suffix=".zip"))
+    try:
+        _download_from_url(url, tmp_zip, progress_callback, 0.1, 0.80)
+        progress_callback(0.85, "解壓模型...")
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(tmp_zip, "r") as zf:
+            # Find flownet.pkl in zip
+            pkl_name = zip_entry or next(
+                (n for n in zf.namelist() if n.endswith("flownet.pkl")), None
+            )
+            if not pkl_name:
+                raise RuntimeError("flownet.pkl not found in zip")
+            data = zf.read(pkl_name)
+            target_path.write_bytes(data)
+            logger.info(f"Extracted {pkl_name} → {target_path} ({len(data)} bytes)")
+    finally:
+        tmp_zip.unlink(missing_ok=True)
+
+    progress_callback(0.95, "模型下載完成")
+
+
 def _download_alignment(lang_code: str, progress_callback: Callable) -> None:
     """下載 Wav2Vec2 alignment 模型（透過 transformers 從 HuggingFace 下載）"""
     from app.engine.ai.audio.wav2vec2 import LANG_MODELS
-    from app.engine.paths import get_models_dir
 
     if lang_code not in LANG_MODELS:
         raise ValueError(f"不支援的語言: {lang_code}")
 
     repo_id = LANG_MODELS[lang_code]
-    cache_dir = str(get_models_dir("alignment"))
+    cache_dir = str(_models_dir("alignment"))
     progress_callback(0.1, f"下載 {repo_id}...")
 
     try:
@@ -347,7 +410,7 @@ def _download_pth_model(model_id: str, progress_callback: Callable) -> None:
     if not slot:
         raise ValueError(f"模型 {family} 缺少 slot 配置")
 
-    target_dir = get_models_dir() / slot
+    target_dir = _models_dir() / slot
     target_dir.mkdir(parents=True, exist_ok=True)
 
     filename = variant_spec["filename"]
@@ -425,13 +488,8 @@ def _download_basic_pitch(progress_callback: Callable) -> None:
     """Trigger basic-pitch model download by running a dummy inference."""
     progress_callback(0.1, "Downloading Basic Pitch model...")
 
-    import numpy as np
-    import tempfile
-
     # Create a tiny silent audio file to trigger model auto-download
     try:
-        import soundfile as sf
-
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             tmp_path = f.name
             sf.write(tmp_path, np.zeros(44100, dtype=np.float32), 44100)
@@ -454,37 +512,3 @@ def _download_basic_pitch(progress_callback: Callable) -> None:
     progress_callback(0.95, "Basic Pitch model ready")
 
 
-def _download_fluidsynth(progress_callback: Callable) -> None:
-    """Download FluidSynth DLL + FluidR3 GM SoundFont."""
-    from app.engine.paths import get_fluidsynth_dir
-
-    dest = get_fluidsynth_dir()
-    dest.mkdir(parents=True, exist_ok=True)
-
-    # Step 1: Download FluidSynth Windows release (zip with all DLLs)
-    progress_callback(0.1, "Downloading FluidSynth...")
-    dll_url = "https://github.com/FluidSynth/fluidsynth/releases/download/v2.5.2/fluidsynth-v2.5.2-win10-x64-glib.zip"
-
-    import io
-    import zipfile
-    import requests
-
-    response = requests.get(dll_url, stream=True, timeout=120, allow_redirects=True)
-    response.raise_for_status()
-    buf = io.BytesIO(response.content)
-
-    progress_callback(0.3, "Extracting FluidSynth DLLs...")
-    with zipfile.ZipFile(buf) as zf:
-        for name in zf.namelist():
-            if name.endswith(".dll") and "/bin/" in name:
-                dll_data = zf.read(name)
-                dll_filename = name.rsplit("/", 1)[-1]
-                (dest / dll_filename).write_bytes(dll_data)
-                logger.info(f"Extracted {dll_filename} to {dest}")
-
-    # Step 2: Download SoundFont (FluidR3 GM, SF2 stereo ~141MB)
-    progress_callback(0.4, "Downloading SoundFont (FluidR3 GM)...")
-    sf2_url = "https://musical-artifacts.com/artifacts/738/FluidR3_GM.sf2"
-    _download_from_url(sf2_url, dest / "FluidR3_GM.sf2", progress_callback, 0.4, 0.95)
-
-    progress_callback(0.95, "FluidSynth + SoundFont ready")

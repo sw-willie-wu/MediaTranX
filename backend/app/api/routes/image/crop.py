@@ -3,10 +3,12 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.image.crop_service import get_image_crop_service
+from app.init.container import AppContainer
+from app.services.image.crop_service import ImageCropService
 
 router = APIRouter()
 
@@ -28,10 +30,13 @@ class ImageCropResponse(BaseModel):
 
 
 @router.post("/crop", response_model=ImageCropResponse)
-async def crop_image(request: ImageCropRequest):
+@inject
+async def crop_image(
+    request: ImageCropRequest,
+    service: ImageCropService = Depends(Provide[AppContainer.image_crop]),
+):
     """提交圖片裁切任務"""
     try:
-        service = get_image_crop_service()
         task_id = await service.submit_crop(
             file_id=request.file_id,
             x=request.x,

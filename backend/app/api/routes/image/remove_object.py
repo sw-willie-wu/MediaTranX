@@ -3,10 +3,12 @@ AI 物件移除 API 路由
 """
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.image.remove_object_service import get_image_remove_object_service
+from app.init.container import AppContainer
+from app.services.image.remove_object_service import ImageRemoveObjectService
 
 router = APIRouter()
 
@@ -23,10 +25,13 @@ class ImageRemoveObjectResponse(BaseModel):
 
 
 @router.post("/remove-object", response_model=ImageRemoveObjectResponse)
-async def remove_object(request: ImageRemoveObjectRequest):
+@inject
+async def remove_object(
+    request: ImageRemoveObjectRequest,
+    service: ImageRemoveObjectService = Depends(Provide[AppContainer.image_remove_object]),
+):
     """提交 AI 物件移除任務"""
     try:
-        service = get_image_remove_object_service()
         task_id = await service.submit_remove_object(
             file_id=request.file_id,
             mask_data=request.mask_data,

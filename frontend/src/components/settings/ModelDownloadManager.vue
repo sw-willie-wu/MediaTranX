@@ -13,6 +13,13 @@ const taskStore = useTaskStore()
 const modelStore = useModelStore()
 
 const activeTab = ref('')
+const tabsRef = ref<HTMLElement | null>(null)
+
+function onTabsWheel(e: WheelEvent) {
+  if (tabsRef.value) {
+    tabsRef.value.scrollLeft += e.deltaY || e.deltaX
+  }
+}
 const downloadingTaskId = ref<Record<string, string>>({})
 
 // ── Remote connections ──
@@ -225,7 +232,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <h6 class="section-title mt">{{ $t('settings.models.title') }}</h6>
+  <h6 class="section-title">{{ $t('settings.models.title') }}</h6>
   <p class="download-hint"><i class="bi bi-info-circle"></i> {{ $t('settings.models.hint') }}</p>
 
   <div v-if="modelStore.loading && !modelStore.loaded" class="models-loading">
@@ -235,7 +242,7 @@ onMounted(() => {
 
   <template v-else-if="modelStore.loaded">
     <!-- Category tabs -->
-    <div class="category-tabs">
+    <div class="category-tabs" ref="tabsRef" @wheel.prevent="onTabsWheel">
       <button
         v-for="cat in modelStore.categories"
         :key="cat.key"
@@ -428,11 +435,13 @@ onMounted(() => {
   background: var(--input-bg);
   border: 1px solid var(--input-border);
   border-radius: 8px;
+  overflow-x: auto;
 }
 
 .category-tab {
-  flex: 1;
-  padding: 0.4rem 0.5rem;
+  flex: 1 0 0%;
+  min-width: max-content;
+  padding: 0.4rem 0.75rem;
   background: transparent;
   border: none;
   border-radius: 6px;
@@ -700,12 +709,12 @@ onMounted(() => {
 
   &.success {
     color: var(--color-success);
-    background: rgba(16, 185, 129, 0.1);
+    background: color-mix(in srgb, var(--color-success) 10%, transparent);
   }
 
   &.error {
     color: var(--color-danger);
-    background: rgba(239, 68, 68, 0.1);
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
   }
 }
 

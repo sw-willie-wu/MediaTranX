@@ -4,12 +4,13 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 from uuid import uuid4
 
-from app.engine.ffmpeg import FFmpeg, FFmpegError, get_ffmpeg
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.engine.ffmpeg import FFmpeg
+from app.handler.exceptions import FFmpegError
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,22 +18,12 @@ TASK_TYPE_AUDIO_CUT = "audio.cut"
 
 
 class AudioCutService:
-    _instance: Optional["AudioCutService"] = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._ffmpeg: FFmpeg = get_ffmpeg()
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, ffmpeg: FFmpeg, file_service: FileService, task_manager: TaskManager):
+        self._ffmpeg = ffmpeg
+        self._file_service = file_service
+        self._task_manager = task_manager
         self._task_manager.register_handler(TASK_TYPE_AUDIO_CUT, self._handle_task)
-        self._initialized = True
         logger.info("AudioCutService initialized")
 
     async def submit_cut(
@@ -95,12 +86,3 @@ class AudioCutService:
         )
         progress_callback(1.0, "剪輯完成")
         return {"output_file_id": output_file_id, "output_filename": output_info.filename}
-
-
-_service: Optional[AudioCutService] = None
-
-def get_audio_cut_service() -> AudioCutService:
-    global _service
-    if _service is None:
-        _service = AudioCutService()
-    return _service

@@ -3,11 +3,13 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.document.translate_service import get_translate_service
-from app.services.setup.language_service import get_language_service
+from app.init.container import AppContainer
+from app.services.document.translate_service import TranslateService
+from app.services.setup.language_service import LanguageService
 
 router = APIRouter()
 
@@ -40,23 +42,35 @@ class TranslateGemmaStatusResponse(BaseModel):
 
 
 @router.get("/translategemma/status", response_model=TranslateGemmaStatusResponse)
-async def get_translategemma_status(model_type: str = "translategemma", model_size: str = "4b"):
+@inject
+async def get_translategemma_status(
+    model_type: str = "translategemma",
+    model_size: str = "4b",
+    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
+):
     """查詢翻譯模型狀態"""
     try:
-        status = get_language_service().get_model_status(model_type, model_size)
+        status = language_service.get_model_status(model_type, model_size)
         return TranslateGemmaStatusResponse(**status)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/translategemma/languages")
-async def get_translategemma_languages():
+@inject
+async def get_translategemma_languages(
+    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
+):
     """取得 TranslateGemma 支援的翻譯語言列表"""
-    return get_language_service().get_supported_languages()
+    return language_service.get_supported_languages()
 
 
 @router.post("/translate", response_model=DocumentTranslateResponse)
-async def translate_document(request: DocumentTranslateRequest):
+@inject
+async def translate_document(
+    request: DocumentTranslateRequest,
+    service: TranslateService = Depends(Provide[AppContainer.doc_translate]),
+):
     """
     提交文件翻譯任務
 
@@ -64,7 +78,6 @@ async def translate_document(request: DocumentTranslateRequest):
     首次使用時會自動下載指定大小的模型。
     """
     try:
-        service = get_translate_service()
         task_id = await service.submit_translate(
             file_id=request.file_id,
             source_language=request.source_language,

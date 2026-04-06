@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
+import soundfile as sf
+
 from app.engine.ai.audio.demucs import DemucsWrapper, get_demucs
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,22 +19,12 @@ TASK_TYPE_AUDIO_SEPARATE = "audio.separate"
 
 
 class AudioSeparateService:
-    _instance: Optional["AudioSeparateService"] = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._demucs: DemucsWrapper = get_demucs()
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+        self._file_service = file_service
+        self._task_manager = task_manager
         self._task_manager.register_handler(TASK_TYPE_AUDIO_SEPARATE, self._handle_task)
-        self._initialized = True
         logger.info("AudioSeparateService initialized")
 
     def get_model_status(self, model_name: str = "htdemucs_6s") -> dict:
@@ -63,8 +55,6 @@ class AudioSeparateService:
         return task_id
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        import soundfile as sf
-
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -90,8 +80,8 @@ class AudioSeparateService:
         progress_callback(0.0, "載入模型...")
 
         # === GPU 排隊管線 ===
-        from app.engine.ai.model_manager import get_model_manager
-        manager = get_model_manager()
+        from app.init.container import get_container
+        manager = get_container().model_manager()
 
         with manager.gpu_session():
             # 執行分離
@@ -219,13 +209,3 @@ class AudioSeparateService:
 
         progress_callback(1.0, "分離完成")
         return result
-
-
-_service: Optional[AudioSeparateService] = None
-
-
-def get_audio_separate_service() -> AudioSeparateService:
-    global _service
-    if _service is None:
-        _service = AudioSeparateService()
-    return _service

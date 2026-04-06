@@ -119,6 +119,9 @@ const zoomY = ref(1)
 const needsRedraw = ref(true)
 let animFrameId = 0
 
+// ── Piano glissando state ──
+const pianoLastPitch = ref<number | null>(null)
+
 // ── Drag state ──
 
 const dragState = ref<{
@@ -392,20 +395,25 @@ function draw() {
     ctx.setLineDash([])
   }
 
-  // 8b. Draw preview (ghost note while dragging in draw mode)
+  // 8b. Draw preview (ghost notes while dragging in draw mode — supports vertical chord drag)
   if (dragState.value && dragState.value.type === 'draw') {
     const ds = dragState.value
     const endBeat = xToBeat(ds.currentX)
     const snappedEnd = snapBeat(Math.max(0, endBeat))
     const duration = Math.max(props.gridSize, snappedEnd - ds.startBeat)
     const nx = beatToX(ds.startBeat)
-    const ny = pitchToY(ds.startPitch)
     const nw = duration * zoomX.value
+    const endPitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, yToPitch(ds.currentY)))
+    const lowP = Math.min(ds.startPitch, endPitch)
+    const highP = Math.max(ds.startPitch, endPitch)
     const track = activeTrack.value
     const color = track?.color ?? '#4FC3F7'
     ctx.globalAlpha = 0.5
     ctx.fillStyle = color
-    fillRoundRect(ctx, Math.max(PIANO_KEY_WIDTH, nx), ny + 1, nw, rh - 2, NOTE_RADIUS)
+    for (let p = lowP; p <= highP; p++) {
+      const ny = pitchToY(p)
+      fillRoundRect(ctx, Math.max(PIANO_KEY_WIDTH, nx), ny + 1, nw, rh - 2, NOTE_RADIUS)
+    }
     ctx.globalAlpha = 1.0
   }
 
@@ -562,12 +570,13 @@ function onMouseDown(e: MouseEvent) {
 
   const { x, y } = getCanvasPos(e)
 
-  // Piano key area — play note preview
+  // Piano key area — play note preview (hold + drag for glissando)
   if (x < PIANO_KEY_WIDTH) {
     if (y > BAR_RULER_HEIGHT) {
       const pitch = yToPitch(y)
       if (pitch >= MIN_PITCH && pitch <= MAX_PITCH) {
         emit('play-note', pitch)
+        pianoLastPitch.value = pitch
       }
     }
     return
@@ -680,6 +689,18 @@ function onMouseMove(e: MouseEvent) {
   const canvas = canvasRef.value
   if (!canvas) return
 
+  // Piano glissando — play notes while dragging over piano keys
+  if (pianoLastPitch.value !== null && e.buttons === 1) {
+    if (x < PIANO_KEY_WIDTH && y > BAR_RULER_HEIGHT) {
+      const pitch = yToPitch(y)
+      if (pitch >= MIN_PITCH && pitch <= MAX_PITCH && pitch !== pianoLastPitch.value) {
+        emit('play-note', pitch)
+        pianoLastPitch.value = pitch
+      }
+    }
+    return
+  }
+
   // Update cursor style
   if (props.toolMode === 'draw') {
     canvas.style.cursor = 'crosshair'
@@ -712,6 +733,7 @@ function onMouseMove(e: MouseEvent) {
 }
 
 function onMouseUp(_e: MouseEvent) {
+  pianoLastPitch.value = null
   if (!dragState.value) return
 
   const ds = dragState.value
@@ -773,7 +795,12 @@ function onMouseUp(_e: MouseEvent) {
     const endBeat = xToBeat(ds.currentX)
     const snappedEnd = snapBeat(Math.max(0, endBeat))
     const duration = Math.max(props.gridSize, snappedEnd - ds.startBeat)
-    emit('add-note', ds.startPitch, ds.startBeat, duration, 100)
+    const endPitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, yToPitch(ds.currentY)))
+    const lowPitch = Math.min(ds.startPitch, endPitch)
+    const highPitch = Math.max(ds.startPitch, endPitch)
+    for (let p = lowPitch; p <= highPitch; p++) {
+      emit('add-note', p, ds.startBeat, duration, 100)
+    }
   }
 
   dragState.value = null

@@ -15,6 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Callable, Any
 
+import numpy as np
+import soundfile as sf
+import torch
+from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
+
 logger = logging.getLogger(__name__)
 
 
@@ -101,9 +106,6 @@ class AlignmentEngine:
 
         if not segments:
             return segments
-
-        import torch
-        import numpy as np
 
         # 選擇 device
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -198,11 +200,12 @@ class AlignmentEngine:
 
         self._unload_model()
 
-        from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
-        from app.engine.paths import get_models_dir
+        from app.init.configs import SETTINGS
 
         model_id = LANG_MODELS[language]
-        cache_dir = str(get_models_dir() / "alignment")
+        models_dir = SETTINGS.path.models
+        models_dir.mkdir(parents=True, exist_ok=True)
+        cache_dir = str(models_dir / "alignment")
 
         logger.info(f"Loading alignment model: {model_id} on {self._device}")
         self._processor = Wav2Vec2Processor.from_pretrained(model_id, cache_dir=cache_dir)
@@ -220,7 +223,6 @@ class AlignmentEngine:
             self._processor = None
             self._loaded_lang = None
             try:
-                import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             except Exception:
@@ -229,8 +231,6 @@ class AlignmentEngine:
 
     def _load_audio(self, audio_path: str) -> list[float]:
         """讀取音訊並 resample 到 16kHz mono"""
-        import numpy as np
-
         # 用 ffmpeg 轉成 16kHz mono PCM
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp.close()
@@ -241,7 +241,6 @@ class AlignmentEngine:
                  "-f", "wav", tmp.name],
                 capture_output=True, check=True
             )
-            import soundfile as sf
             data, sr = sf.read(tmp.name, dtype="float32")
             return data.tolist()
         finally:
@@ -260,8 +259,6 @@ class AlignmentEngine:
         使用 Viterbi algorithm 找最佳路徑，
         將文字 token 對齊到 frame-level phoneme probabilities。
         """
-        import torch
-
         if not text.strip():
             return []
 
@@ -312,8 +309,6 @@ class AlignmentEngine:
         用動態規劃找 tokens 在 frames 中的最佳位置。
         回傳 [(token_id, start_frame, end_frame, score), ...]
         """
-        import torch
-
         num_frames = log_probs.shape[0]
         num_tokens = len(tokens)
 

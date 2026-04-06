@@ -16,10 +16,9 @@ from app.engine.ffmpeg import (
     VideoCodec,
     AudioCodec,
     QualityPreset,
-    get_ffmpeg,
 )
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -35,22 +34,10 @@ class TranscodeService:
     整合 FFmpeg、檔案管理和任務管理
     """
 
-    _instance: Optional["TranscodeService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        """單例模式"""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-
-        self._ffmpeg: FFmpeg = get_ffmpeg()
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, ffmpeg: FFmpeg, file_service: FileService, task_manager: TaskManager):
+        self._ffmpeg = ffmpeg
+        self._file_service = file_service
+        self._task_manager = task_manager
 
         # 註冊任務處理器
         self._task_manager.register_handler(
@@ -66,7 +53,6 @@ class TranscodeService:
             self._handle_extract_audio_task
         )
 
-        self._initialized = True
         logger.info("TranscodeService initialized")
 
     def get_ffmpeg_status(self) -> dict:
@@ -532,15 +518,3 @@ class TranscodeService:
         except FFmpegError as e:
             logger.error(f"Extract audio failed: {e}")
             raise
-
-
-# 全域服務實例
-_transcode_service: Optional[TranscodeService] = None
-
-
-def get_transcode_service() -> TranscodeService:
-    """取得全域轉檔服務實例"""
-    global _transcode_service
-    if _transcode_service is None:
-        _transcode_service = TranscodeService()
-    return _transcode_service

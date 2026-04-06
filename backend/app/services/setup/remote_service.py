@@ -12,21 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 class RemoteService:
-    """Remote API 連線管理服務（單例）"""
-
-    _instance: Optional["RemoteService"] = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    """Remote API 連線管理服務"""
 
     def __init__(self):
-        if self._initialized:
-            return
         self._dao = ApiConnectionDAO()
-        self._initialized = True
         logger.info("RemoteService initialized")
 
     def get_connections(self, provider: Optional[str] = None) -> list[dict]:
@@ -139,14 +128,3 @@ class RemoteService:
             if c.is_active:
                 return self._get_provider(c.provider, c.endpoint, c.api_key)
         return None
-
-
-_remote_service: Optional[RemoteService] = None
-
-
-def get_remote_service() -> RemoteService:
-    """取得 RemoteService 單例"""
-    global _remote_service
-    if _remote_service is None:
-        _remote_service = RemoteService()
-    return _remote_service
