@@ -6,10 +6,10 @@ MobileSAM 物件分割模組
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Optional, Callable, Any
 
 import numpy as np
+import torch
 
 from app.engine.ai.runtime.package import PackageRuntime
 from app.engine.ai.registry import SLOT_SEGMENT
@@ -42,7 +42,6 @@ class MobileSAMWrapper(PackageRuntime):
             on_progress(0.3, "載入 MobileSAM...")
 
         from mobile_sam import sam_model_registry
-        import torch
 
         sam = sam_model_registry["vit_t"](checkpoint=str(model_path))
         sam.to(torch.device(device))
@@ -55,8 +54,8 @@ class MobileSAMWrapper(PackageRuntime):
         """解析 MobileSAM 模型路徑"""
         model_path = self._manager.get_model_path(model_id, variant or "default")
         if not model_path:
-            from app.init.configs import get_settings
-            model_path = Path(get_settings().path.models) / "mobilesam" / "mobile_sam.pt"
+            from app.init.configs import SETTINGS
+            model_path = SETTINGS.path.models / "mobilesam" / "mobile_sam.pt"
             if not model_path.exists():
                 raise FileNotFoundError(
                     "MobileSAM 模型未下載，請至設定 → 模型管理下載"

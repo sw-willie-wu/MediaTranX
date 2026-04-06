@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
+from PIL import Image as PILImage
+
 from app.utils.prompts import DEFAULT_VLM_MODEL, build_ocr_messages, OCR_PARAMS
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
@@ -191,7 +193,6 @@ class ImageOcrService:
         MAX_SIZE_BYTES = 4 * 1024 * 1024  # 4MB（base64 後約 5.3MB）
         MAX_DIMENSION = 2048
 
-        from PIL import Image as PILImage
         import io
 
         img = PILImage.open(image_path)

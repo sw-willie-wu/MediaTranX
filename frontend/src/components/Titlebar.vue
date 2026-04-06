@@ -17,17 +17,16 @@ const isToolPage = computed(() => !!toolTitleKeys[route.path])
 
 // 工具頁路徑
 const toolTitleKeys: Record<string, string> = {
-  '/image': 'titlebar.image',
-  '/video': 'titlebar.video',
-  '/audio': 'titlebar.audio',
-  '/document': 'titlebar.document',
+  '/image': 'nav.image',
+  '/video': 'nav.video',
+  '/audio': 'nav.audio',
+  '/document': 'nav.document',
 }
 
 // 非工具頁路徑
 const pageTitleKeys: Record<string, string> = {
-  '/history': 'titlebar.history',
-  '/tasks': 'titlebar.tasks',
-  '/settings': 'titlebar.settings',
+  '/tasks': 'nav.tasks',
+  '/settings': 'nav.settings',
 }
 
 const pageTitle = computed(() => {

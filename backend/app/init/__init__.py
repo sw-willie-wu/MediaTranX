@@ -1,42 +1,27 @@
 """
-Application bootstrap — runs all startup tasks in order.
+Application initialization — single entry point for all startup tasks.
 """
-import logging
+# 1. Inject .venv/site-packages (before any third-party import)
+from app.init.setup import inject_paths
+inject_paths()
 
+# 2. Settings (now pydantic is importable)
+from app.init.configs import SETTINGS
 
-def bootstrap(settings) -> None:
+def bootstrap() -> None:
     """
     Execute all startup tasks.
 
-    Order matters:
-    1. DLL/path injection (so subsequent imports find packages and DLLs)
-    2. Compat patches (fix third-party API changes)
-    3. Logging config
-    4. Nuitka patches (frozen mode only)
-    5. Diagnostics (frozen mode only)
+    1. inject_paths() — already done at module level above
+    2. DLL registration (Windows frozen only)
+    3. Compat patches (third-party API fixes)
+    4. Logging config
     """
-    from app.init.dll_injection import inject_paths
-    inject_paths(settings)
+    from app.init.setup import register_dlls
+    register_dlls(SETTINGS)
 
     from app.init.compat import apply_compat_patches
-    apply_compat_patches(settings)
+    apply_compat_patches(SETTINGS)
 
     from app.init.logging_config import configure_logging
-    configure_logging(settings)
-
-    if settings.is_frozen:
-        from app.init.nuitka_compat import apply_nuitka_patches
-        apply_nuitka_patches()
-
-    if settings.is_frozen:
-        _run_diagnostics()
-
-
-def _run_diagnostics() -> None:
-    """Frozen mode startup diagnostics."""
-    try:
-        from app.init.container import get_container
-        llama_ok = get_container().model_manager().is_llama_ready()
-        logging.info(f"Startup Diagnostic: llama-server binary {'found' if llama_ok else 'NOT found'}")
-    except Exception as e:
-        logging.error(f"Startup Diagnostic: llama-server check failed: {e}")
+    configure_logging(SETTINGS)

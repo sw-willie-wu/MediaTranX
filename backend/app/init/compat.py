@@ -34,8 +34,7 @@ def _patch_pyfluidsynth_dll_dir(settings) -> None:
     """
     if settings.platform != "win32":
         return
-    from pathlib import Path
-    fs_dir = Path(settings.path.fluidsynth)
+    fs_dir = settings.path.fluidsynth
     fs_dir.mkdir(parents=True, exist_ok=True)
 
 

@@ -2,24 +2,17 @@ export default {
   // ── Navigation ────────────────────────────────────────────────────────
   nav: {
     home: 'Home',
-    image: 'Image',
-    audio: 'Audio',
-    video: 'Video',
-    document: 'Document',
-    tasks: 'Tasks',
+    image: 'Image Tools',
+    audio: 'Audio Tools',
+    video: 'Video Tools',
+    document: 'Document Tools',
+    tasks: 'Task Manager',
     settings: 'Settings',
     restart: 'Restart',
   },
 
   // ── Title bar ─────────────────────────────────────────────────────────
   titlebar: {
-    image: 'Image Tools',
-    video: 'Video Tools',
-    audio: 'Audio Tools',
-    document: 'Document Tools',
-    history: 'History',
-    tasks: 'Tasks',
-    settings: 'Settings',
     minimize: 'Minimize',
     restore: 'Restore',
     maximize: 'Maximize',
@@ -698,7 +691,7 @@ export default {
     tab: {
       general: 'General',
       system: 'System Info',
-      models: 'AI Modules',
+      models: 'AI Models',
       about: 'About',
     },
 
@@ -778,7 +771,7 @@ export default {
     },
 
     models: {
-      title: 'Models & Tools',
+      title: 'Model List',
       hint: 'Max 4 concurrent downloads, extras will be queued',
       loading: 'Loading...',
       refresh: 'Refresh',

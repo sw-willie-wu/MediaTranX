@@ -45,6 +45,7 @@ async def remove_model_item(
 @inject
 async def download_model_item(
     request: DownloadRequest,
+    setup_service: SetupService = Depends(Provide[AppContainer.setup_service]),
     task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
 ):
     """提交工具/模型下載任務"""

@@ -8,6 +8,10 @@ from __future__ import annotations
 import logging
 from typing import Optional, Callable
 
+import numpy as np
+import torch
+from PIL import Image
+
 from app.engine.ai.runtime.pth import PTHRuntime
 from app.engine.ai.registry import FORMAT_PTH, MODELS_REGISTRY, SLOT_PTH
 
@@ -31,7 +35,6 @@ class SwinIRWrapper(PTHRuntime):
     def _get_tile_size(self) -> int:
         """SwinIR Transformer 注意力是 O(n²)，需要比 CNN 更小的 tile"""
         try:
-            import torch
             if not torch.cuda.is_available():
                 return 128
             free_vram, _ = torch.cuda.mem_get_info()
@@ -77,8 +80,6 @@ class SwinIRWrapper(PTHRuntime):
                 variant=model_id,
                 on_progress=on_progress
             ) as model:
-                import numpy as np
-                from PIL import Image
                 img_array = np.array(image.convert("RGB"))
                 img_tensor = self._image_to_tensor(img_array)
 
@@ -95,14 +96,11 @@ class SwinIRWrapper(PTHRuntime):
     
     def _image_to_tensor(self, image: np.ndarray):
         """將 numpy 影像轉為 tensor (C, H, W)"""
-        import numpy as np
-        import torch
         tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float() / 255.0
         return tensor.to(self._device)
     
     def _tensor_to_image(self, tensor):
         """將 tensor 轉回 numpy 影像"""
-        import numpy as np
         array = (tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
         return array
 

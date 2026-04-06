@@ -1,14 +1,97 @@
 <script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useConfirm } from '@/composables/useConfirm'
+import { apiFetch } from '@/composables/useApi'
 import AppIcon from '@/assets/icon.svg'
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
+const electron = (window as any).electron
 
-const appVersion = (window as any).electron?.appVersion ?? 'dev'
+const appVersion = electron?.appVersion ?? 'dev'
+
+// Component versions from backend
+const envInfo = ref<Record<string, any>>({})
+const envLoading = ref(true)
+
+// Reinstall state
+const reinstalling = ref(false)
+const reinstallDone = ref(false)
+const reinstallError = ref('')
+const reinstallDetail = ref('')
+const reinstallPercent = ref(0)
+
+const components = computed(() => envInfo.value.components || {})
+
+const llamaDisplay = computed(() => {
+  const llama = components.value.llama
+  if (!llama) return '—'
+  if (typeof llama === 'object') {
+    const variant = llama.variant ? ` (${llama.variant.toUpperCase()})` : ''
+    return `${llama.tag}${variant}`
+  }
+  return llama
+})
+
+const pytorchDisplay = computed(() => {
+  const pt = components.value.pytorch
+  if (!pt) return '—'
+  if (typeof pt === 'object') {
+    const variant = pt.variant ? ` (${pt.variant})` : ''
+    return `${pt.tag}${variant}`
+  }
+  return pt
+})
+
+function toolTag(tool: any): string {
+  if (!tool) return '—'
+  return typeof tool === 'object' ? tool.tag || '—' : tool
+}
+
+async function loadEnvInfo() {
+  try {
+    const res = await apiFetch('/setup/status')
+    if (res.ok) envInfo.value = await res.json()
+  } catch (_) {}
+  envLoading.value = false
+}
+
+async function reinstallEnv() {
+  const ok = await confirm({
+    title: t('settings.ai.reinstall_title', '重新安裝環境'),
+    message: t('settings.ai.reinstall_confirm', '將重新安裝環境並重新下載工具，完成後需要重新啟動。確定嗎？'),
+    type: 'warning',
+  })
+  if (!ok) return
+
+  reinstalling.value = true
+  reinstallDone.value = false
+  reinstallError.value = ''
+  electron?.reinstallAiEnv()
+}
+
+function handleReinstallProgress(data: any) {
+  reinstallPercent.value = data.percent || 0
+  reinstallDetail.value = data.detail || ''
+  if (data.stage === 'done') {
+    reinstalling.value = false
+    reinstallDone.value = true
+    loadEnvInfo()  // refresh versions
+  } else if (data.stage === 'error') {
+    reinstalling.value = false
+    reinstallError.value = data.detail || 'Unknown error'
+  }
+}
 
 function restartApp() {
-  ;(window as any).electron?.restart()
+  electron?.restart()
 }
+
+onMounted(() => {
+  loadEnvInfo()
+  electron?.onReinstallProgress(handleReinstallProgress)
+})
 </script>
 
 <template>
@@ -31,6 +114,55 @@ function restartApp() {
     <a href="https://github.com/sw-willie-wu/MediaTranX" target="_blank" class="btn-secondary about-link-btn"><i class="bi bi-github"></i> {{ $t('settings.about.github') }}</a>
     <button class="btn-secondary about-link-btn"><i class="bi bi-chat-dots"></i> {{ $t('settings.about.feedback') }}</button>
     <button class="btn-secondary about-link-btn"><i class="bi bi-globe"></i> {{ $t('settings.about.website') }}</button>
+  </div>
+
+  <h6 class="section-title mt">{{ $t('settings.about.components', '元件資訊') }}</h6>
+  <div class="component-list" v-if="!envLoading && components">
+    <!-- Binary tools (always shown) -->
+    <div class="component-row" v-if="components.ffmpeg">
+      <span class="component-label">FFmpeg</span>
+      <span class="component-value">{{ toolTag(components.ffmpeg) }}</span>
+    </div>
+    <div class="component-row" v-if="components.fluidsynth">
+      <span class="component-label">FluidSynth</span>
+      <span class="component-value">{{ toolTag(components.fluidsynth) }}</span>
+    </div>
+    <div class="component-row" v-if="components.llama">
+      <span class="component-label">llama-server</span>
+      <span class="component-value">{{ llamaDisplay }}</span>
+    </div>
+    <div class="component-row" v-if="components.pytorch">
+      <span class="component-label">PyTorch</span>
+      <span class="component-value">{{ pytorchDisplay }}</span>
+    </div>
+
+  </div>
+  <!-- Reinstall -->
+  <div class="reinstall-row">
+    <template v-if="reinstalling">
+      <div class="reinstall-progress">
+        <div class="reinstall-bar">
+          <div class="reinstall-fill" :style="{ width: reinstallPercent + '%' }"></div>
+        </div>
+        <span class="reinstall-detail">{{ reinstallDetail }}</span>
+      </div>
+    </template>
+    <template v-else-if="reinstallDone">
+      <button class="btn-primary" @click="restartApp">
+        <i class="bi bi-arrow-clockwise"></i> {{ $t('settings.ai.restart_now', '立即重新啟動') }}
+      </button>
+    </template>
+    <template v-else-if="reinstallError">
+      <p class="reinstall-error"><i class="bi bi-exclamation-triangle"></i> {{ reinstallError }}</p>
+      <button class="btn-secondary" @click="reinstallEnv">
+        <i class="bi bi-arrow-repeat"></i> {{ $t('settings.ai.retry', '重試') }}
+      </button>
+    </template>
+    <template v-else>
+      <button class="btn-secondary" @click="reinstallEnv">
+        <i class="bi bi-arrow-repeat"></i> {{ $t('settings.ai.reinstall_button', '重新安裝環境') }}
+      </button>
+    </template>
   </div>
 
   <h6 class="section-title mt">{{ $t('settings.about.credits') }}</h6>
@@ -102,6 +234,59 @@ function restartApp() {
   color: var(--text-muted);
   font-size: 0.8rem;
   line-height: 1.6;
+}
+
+.component-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.component-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0.75rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.component-label { color: var(--text-secondary); }
+.component-value { color: var(--text-primary); font-weight: 500; font-family: monospace; }
+
+.reinstall-row { margin-top: 0.75rem; margin-bottom: 0.5rem; }
+
+.reinstall-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.reinstall-bar {
+  height: 4px;
+  background: var(--input-bg);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.reinstall-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.3s ease;
+}
+
+.reinstall-detail {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.reinstall-error {
+  font-size: 0.8rem;
+  color: var(--color-danger);
+  margin-bottom: 0.5rem;
 }
 
 .about-footer {

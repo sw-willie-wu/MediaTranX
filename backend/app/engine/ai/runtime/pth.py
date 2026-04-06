@@ -6,6 +6,9 @@ import logging
 from pathlib import Path
 from typing import Optional, Callable, Any
 
+import torch
+import torch.nn.functional as F
+
 from .base import BaseRuntime
 
 logger = logging.getLogger(__name__)
@@ -81,7 +84,6 @@ class PTHRuntime(BaseRuntime):
     
     def _load_with_torch(self, model_path: Path, device: str, config: dict) -> Any:
         """使用原生 PyTorch 載入（需子類提供架構）"""
-        import torch
         state_dict = torch.load(str(model_path), map_location=device)
 
         # 部分模型（如 Real-ESRGAN）weights 包在 params_ema / params 下
@@ -105,7 +107,6 @@ class PTHRuntime(BaseRuntime):
     def _get_tile_size(self) -> int:
         """根據空閒 VRAM 動態決定 tile size"""
         try:
-            import torch
             if not torch.cuda.is_available():
                 return 256
             free_vram, _ = torch.cuda.mem_get_info()
@@ -129,7 +130,6 @@ class PTHRuntime(BaseRuntime):
     ):
         """分塊推理，避免大圖 OOM，支援進度回調"""
         import math
-        import torch
 
         _, _, h, w = img_tensor.shape
         tiles_x = math.ceil(w / tile_size)
@@ -181,9 +181,6 @@ class PTHRuntime(BaseRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ):
         """智能推理：大圖自動分塊，小圖整張處理"""
-        import torch
-        import torch.nn.functional as F
-
         _, _, h, w = img_tensor.shape
         tile_size = self._get_tile_size()
 
@@ -224,10 +221,9 @@ class PTHRuntime(BaseRuntime):
         
         # CUDA 檢測
         try:
-            import torch
             if torch.cuda.is_available():
                 return "cuda"
-        except ImportError:
+        except Exception:
             pass
         
         # DirectML 檢測（預留）
@@ -249,7 +245,6 @@ class PTHRuntime(BaseRuntime):
             # 清空 CUDA cache
             if self._device and "cuda" in self._device:
                 try:
-                    import torch
                     torch.cuda.empty_cache()
                     logger.info("CUDA cache cleared")
                 except Exception as e:
@@ -281,8 +276,8 @@ class PTHRuntime(BaseRuntime):
         model_path = self._manager.get_model_path(model_id, variant)
         if not model_path:
             # PTH 格式可能是本地檔案（無 repo_id）
-            from app.init.configs import get_settings
-            local_path = Path(get_settings().path.models) / family["slot"] / variant_spec["filename"]
+            from app.init.configs import SETTINGS
+            local_path = SETTINGS.path.models / family["slot"] / variant_spec["filename"]
             if local_path.exists():
                 model_path = local_path
             else:

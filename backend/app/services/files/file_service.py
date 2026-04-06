@@ -13,7 +13,7 @@ from typing import Dict, Optional
 from uuid import uuid4
 
 from app.models.file import FileData
-from app.init.configs import get_settings
+from app.init.configs import SETTINGS
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class FileService:
         if base_dir:
             base_temp = Path(base_dir) / "temp"
         else:
-            base_temp = Path(get_settings().path.temp)
+            base_temp = SETTINGS.path.temp
             base_temp.mkdir(parents=True, exist_ok=True)
         self._upload_dir = base_temp / "uploads"
         self._output_dir = base_temp / "results"

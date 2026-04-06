@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
+from PIL import Image
+
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -72,7 +74,6 @@ class ImageCropService:
         progress_callback: Callable[[float, str], None]
     ) -> dict:
         """執行圖片裁切"""
-        from PIL import Image
         from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
 
         file_id = params["file_id"]

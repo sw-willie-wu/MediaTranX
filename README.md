@@ -8,8 +8,7 @@
 
 [繁體中文](docs/README.zh-TW.md)
 
-<!-- Add screenshots here -->
-<!-- ![MediaTranX Screenshot](docs/images/screenshot.png) -->
+[![Demo Video](https://img.youtube.com/vi/r5vivvL1Nds/maxresdefault.jpg)](https://youtu.be/r5vivvL1Nds)
 
 ---
 
@@ -30,13 +29,16 @@
 - AI transcription (Faster-Whisper) with summarization
 - AI source separation (Demucs 6-stem)
 - AI lyrics extraction with forced alignment
+- MIDI export (Basic Pitch + FluidSynth)
 - Translation via local LLM or cloud API
 
 ### Video Tools
 - Format transcoding (MP4, MKV, AVI, MOV, WebM, etc.)
-- Cut with stream copy
+- Cut with stream copy, audio extraction
 - AI subtitle generation (Whisper)
 - AI subtitle translation
+- AI frame interpolation (RIFE)
+- AI super-resolution (Real-ESRGAN)
 
 ### Document Tools
 - OCR via Vision Language Models
@@ -63,6 +65,7 @@
 | **VLM (OCR)** | Qwen3-VL (2B/4B/8B), InternVL2.5 (1B/4B), Gemma 3 (4B/12B) |
 | **Source Separation** | Demucs HTDemucs 6-stem |
 | **Forced Alignment** | Wav2Vec2 (16 languages) |
+| **Frame Interpolation** | RIFE v4.22 / v4.25 |
 | **Object Segmentation** | MobileSAM |
 
 Models are downloaded on-demand through the built-in model manager.
@@ -75,7 +78,7 @@ Models are downloaded on-demand through the built-in model manager.
 Frontend:  Vue 3 + TypeScript + Pinia + Vite
 Backend:   FastAPI + Python 3.12 + uv
 AI:        PyTorch / CTranslate2 / llama-server
-Media:     FFmpeg
+Media:     FFmpeg / FluidSynth
 ```
 
 ---
@@ -122,37 +125,49 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 git clone https://github.com/sw-willie-wu/MediaTranX.git
 cd MediaTranX
 
-# Frontend
-cd frontend
-npm install
-
 # Backend
-cd ../backend
+cd backend
 uv sync
+
+# Download binary tools (FFmpeg, FluidSynth, llama-server) into bin/
+
+# Frontend
+cd ../frontend
+npm install
 ```
 
 ### Run
 
 ```bash
-# Terminal 1: Frontend (port 8000)
+# Terminal 1: Backend (port 8001)
+cd backend
+uv run python -m app.main --mode dev --port 8001
+
+# Terminal 2: Frontend (port 8000)
 cd frontend
 npm run dev
-
-# Terminal 2: Backend (port 8001)
-cd backend
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
 Open `http://localhost:8000` in your browser.
 
-### Install AI Environment
+### Environment Variables
 
-On first launch, go to **Settings > AI Environment** and click **Install Core Modules**:
-1. Tool execution modules (Whisper, Demucs, HuggingFace, etc.)
-2. Deep learning inference module (PyTorch — auto-detects CUDA / CPU)
-3. Language inference module (llama-server)
+The backend is configured via environment variables (pydantic-settings, prefix `MEDIATRANX_`):
 
-Then download models from **Settings > Models & Tools**.
+| Variable | Description | Default (dev) |
+|----------|-------------|---------------|
+| `MEDIATRANX_PATH__DATA` | Data root directory | `.` (cwd) |
+| `MEDIATRANX_PATH__VENV` | Python venv path | `.venv` |
+| `MEDIATRANX_PATH__BIN` | Binary tools directory | `bin` |
+| `MEDIATRANX_PATH__MODELS` | AI models directory | `models` |
+| `MEDIATRANX_DB__DSN` | Database connection string | `sqlite:///mediatranx.db` |
+| `MEDIATRANX_SERVER__MODE` | `production` or `dev` | `production` |
+
+These can also be set in a `.env` file in the backend directory.
+
+### Download AI Models
+
+After launch, download models from **Settings > AI Models**.
 
 ---
 

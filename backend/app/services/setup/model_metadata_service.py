@@ -217,10 +217,10 @@ class ModelMetadataService:
     def _enumerate_whisper_models(self) -> list[dict]:
         """列舉 Whisper STT 模型"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
-        from app.init.configs import get_settings
+        from app.init.configs import SETTINGS
 
         whisper_variants = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("whisper", {}).get("variants", {})
-        whisper_dir = Path(get_settings().path.models) / "whisper"
+        whisper_dir = SETTINGS.path.models / "whisper"
         items = []
 
         for size, label, description in _WHISPER_DISPLAY:
@@ -244,7 +244,7 @@ class ModelMetadataService:
     def _enumerate_demucs_models(self) -> list[dict]:
         """列舉 Demucs 音源分離模型"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
-        from app.init.configs import get_settings
+        from app.init.configs import SETTINGS
 
         demucs_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("demucs", {})
         demucs_variants = demucs_config.get("variants", {})
@@ -255,7 +255,7 @@ class ModelMetadataService:
             variant_desc = _VARIANT_DESC.get(variant_name, variant_name)
             label = f"{family_meta['label']} - {variant_desc}" if len(demucs_variants) > 1 else family_meta['label']
 
-            checkpoints_dir = Path(get_settings().path.models) / "demucs" / "checkpoints"
+            checkpoints_dir = SETTINGS.path.models / "demucs" / "checkpoints"
             downloaded = (
                 checkpoints_dir.exists()
                 and any(f.suffix == ".th" for f in checkpoints_dir.iterdir())
@@ -277,7 +277,7 @@ class ModelMetadataService:
     def _enumerate_translate_models(self) -> list[dict]:
         """從 registry 動態枚舉所有翻譯模型"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
-        from app.init.configs import get_settings
+        from app.init.configs import SETTINGS
 
         items = []
         gguf_models = MODELS_REGISTRY.get(FORMAT_GGUF, {})
@@ -287,7 +287,7 @@ class ModelMetadataService:
                 continue
 
             name_prefix = "TranslateGemma" if model_family == "translategemma" else "Qwen3"
-            target_dir = Path(get_settings().path.models) / model_family
+            target_dir = SETTINGS.path.models / model_family
             specs = config.get("specs", {})
 
             for size, size_spec in specs.items():
@@ -315,14 +315,14 @@ class ModelMetadataService:
     def _enumerate_vlm_models(self) -> list[dict]:
         """從 registry 動態枚舉所有 VLM OCR 模型"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_VLM
-        from app.init.configs import get_settings
+        from app.init.configs import SETTINGS
 
         items = []
         vlm_models = MODELS_REGISTRY.get(FORMAT_VLM, {})
 
         for model_family, config in vlm_models.items():
             slot = config.get("slot", "vlm")
-            target_dir = Path(get_settings().path.models) / slot
+            target_dir = SETTINGS.path.models / slot
             specs = config.get("specs", {})
             family_label = _VLM_FAMILY_LABELS.get(model_family, model_family)
 
@@ -354,9 +354,9 @@ class ModelMetadataService:
     def _enumerate_alignment_models(self) -> list[dict]:
         """列舉 Wav2Vec2 語音對齊模型"""
         from app.engine.ai.audio.wav2vec2 import LANG_MODELS
-        from app.init.configs import get_settings
+        from app.init.configs import SETTINGS
 
-        align_dir = Path(get_settings().path.models) / "alignment"
+        align_dir = SETTINGS.path.models / "alignment"
         items = []
 
         for lang_code, repo_id in LANG_MODELS.items():
@@ -382,7 +382,7 @@ class ModelMetadataService:
     def _enumerate_rife_models(self) -> list[dict]:
         """Enumerate RIFE interpolation models"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
-        from app.init.configs import get_settings
+        from app.init.configs import SETTINGS
 
         rife_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})
         rife_variants = rife_config.get("variants", {})
@@ -393,7 +393,7 @@ class ModelMetadataService:
             variant_desc = _VARIANT_DESC.get(variant_name, variant_name)
             label = f"{family_meta['label']} - {variant_desc}" if len(rife_variants) > 1 else family_meta['label']
 
-            model_dir = Path(get_settings().path.models) / SLOT_RIFE
+            model_dir = SETTINGS.path.models / SLOT_RIFE
             filename = variant_spec.get("filename", "")
             downloaded = (model_dir / filename).exists()
 
@@ -411,30 +411,7 @@ class ModelMetadataService:
         return items
 
     def _enumerate_midi_models(self) -> list[dict]:
-        """列舉 MIDI 相關模型（FluidSynth SoundFont）"""
-        items = []
-
-        # FluidSynth + SoundFont（basic-pitch 模型內建於套件，不需管理）
-        import sys
-        import shutil
-        from app.init.configs import get_settings
-        fs_dir = Path(get_settings().path.fluidsynth)
-        sf2_ok = (fs_dir / "FluidR3_GM.sf2").exists()
-        if sys.platform == "win32":
-            dll_ok = (fs_dir / "libfluidsynth-3.dll").exists() and (fs_dir / "libglib-2.0-0.dll").exists()
-        else:
-            dll_ok = shutil.which("fluidsynth") is not None
-
-        items.append({
-            "id": "fluidsynth",
-            "family": "fluidsynth",
-            "variant": "default",
-            "category": "midi",
-            "label": "FluidR3 GM SoundFont",
-            "description": "models.fluidsynth",
-            "downloaded": sf2_ok and dll_ok,
-            "size_mb": 142,
-            "vram_mb": 0,
-        })
-
-        return items
+        """列舉 MIDI 相關模型。
+        FluidSynth + SoundFont 已由 Electron 啟動時下載，不列入模型管理。
+        basic-pitch 模型內建於套件，不需管理。"""
+        return []

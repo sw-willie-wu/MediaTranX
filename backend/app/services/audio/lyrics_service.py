@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
+import soundfile as sf
+
 from app.utils.prompts import (
     WHISPER_TO_BCP47,
     build_srt_translate_prompt,
@@ -91,8 +93,6 @@ class AudioLyricsService:
             loop.close()
 
     async def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        import soundfile as sf
-
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
         if file_info is None:

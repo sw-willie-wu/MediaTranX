@@ -6,13 +6,13 @@ import logging
 import shutil
 
 from pathlib import Path
-from app.init.configs import get_settings
+from app.init.configs import SETTINGS
 
 logger = logging.getLogger(__name__)
 
 
 def _models_dir(category: str = "") -> Path:
-    d = Path(get_settings().path.models)
+    d = SETTINGS.path.models
     return d / category if category else d
 
 

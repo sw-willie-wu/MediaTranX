@@ -5,6 +5,10 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
+
+from PIL import Image
+from rembg import remove, new_session
+
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -46,9 +50,6 @@ class ImageRemoveBgService:
         return task_id
 
     def _handle_remove_bg_task(self, params: dict, progress_callback: Callable) -> dict:
-        from PIL import Image
-        from rembg import remove, new_session
-
         file_id = params["file_id"]
         mode = params.get("mode", "auto")
         model_name = _MODE_TO_MODEL.get(mode, "u2net")
@@ -63,8 +64,8 @@ class ImageRemoveBgService:
             progress_callback(0.1, "載入去背模型...")
             # 將 rembg 模型路徑導向 models/rembg/，統一管理
             import os
-            from app.init.configs import get_settings
-            rembg_dir = Path(get_settings().path.models) / "rembg"
+            from app.init.configs import SETTINGS
+            rembg_dir = SETTINGS.path.models / "rembg"
             rembg_dir.mkdir(parents=True, exist_ok=True)
             os.environ["U2NET_HOME"] = str(rembg_dir)
             session = new_session(model_name)

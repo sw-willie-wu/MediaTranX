@@ -15,6 +15,8 @@ import subprocess
 from pathlib import Path
 from typing import Callable, Generator, Optional
 
+import numpy as np
+
 from app.init.container import get_container
 
 logger = logging.getLogger(__name__)
@@ -110,7 +112,6 @@ class FramePipe:
 
     def read_frames(self) -> Generator[np.ndarray, None, None]:
         """Yield decoded frames as numpy arrays (H, W, 3) uint8."""
-        import numpy as np
         assert self._decoder is not None, "Call open() first"
         while True:
             raw = self._decoder.stdout.read(self._frame_size)

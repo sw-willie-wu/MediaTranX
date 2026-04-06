@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-from app.init.configs import get_settings
+from app.init.configs import SETTINGS
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -87,7 +87,7 @@ class InterpolateService:
         if output_dir:
             output_path = Path(output_dir) / output_filename
         else:
-            temp_dir = Path(get_settings().path.temp)
+            temp_dir = SETTINGS.path.temp
             temp_dir.mkdir(parents=True, exist_ok=True)
             output_path = temp_dir / "video_frames" / output_filename
 

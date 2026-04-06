@@ -25,12 +25,12 @@ class InterpolateResponse(BaseModel):
 @router.get("/rife/status")
 async def rife_status():
     from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
-    from app.init.configs import get_settings
+    from app.init.configs import SETTINGS
     from pathlib import Path
     rife = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})
     variants = {}
     for name, spec in rife.get("variants", {}).items():
-        model_path = Path(get_settings().path.models) / "rife" / spec["filename"]
+        model_path = SETTINGS.path.models / "rife" / spec["filename"]
         variants[name] = {"downloaded": model_path.exists()}
     return {"variants": variants}
 

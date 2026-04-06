@@ -12,6 +12,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from basic_pitch import ICASSP_2022_MODEL_PATH
+
 from app.engine.ai.runtime.package import PackageRuntime
 from app.engine.ai.registry import FORMAT_PKG, MODELS_REGISTRY, SLOT_BASIC_PITCH
 
@@ -41,7 +43,6 @@ class BasicPitchWrapper(PackageRuntime):
     ) -> Any:
         """載入 basic-pitch predict 函式和內建 ONNX 模型路徑"""
         from basic_pitch.inference import predict
-        from basic_pitch import ICASSP_2022_MODEL_PATH
 
         if on_progress:
             on_progress(0.3, "正在載入 Basic Pitch 模型...")

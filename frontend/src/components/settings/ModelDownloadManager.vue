@@ -232,7 +232,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <h6 class="section-title mt">{{ $t('settings.models.title') }}</h6>
+  <h6 class="section-title">{{ $t('settings.models.title') }}</h6>
   <p class="download-hint"><i class="bi bi-info-circle"></i> {{ $t('settings.models.hint') }}</p>
 
   <div v-if="modelStore.loading && !modelStore.loaded" class="models-loading">

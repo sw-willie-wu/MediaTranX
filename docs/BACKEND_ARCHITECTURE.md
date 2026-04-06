@@ -124,60 +124,55 @@ remote/
 
 ## 3. Import 規則
 
-### 2.1 Lazy Import（強制）
+### 3.1 Top-Level Import（預設）
 
-外部 AI 套件（PIL、numpy、torch、cv2、rembg、faster_whisper 等）**禁止** module-level import。
-這些套件安裝在外部 `.venv`，首次啟動時可能尚未安裝，module-level import 會導致整個 app 啟動失敗。
+所有套件（含 AI 套件如 PIL、numpy、torch）在 Electron 啟動時由 `uv sync` 安裝完成，可直接 top-level import。
 
 ```python
-# ✗ 禁止
+# ✓ 正確：直接 top-level import
 from PIL import Image
 import numpy as np
+import torch
 
 class MyService:
     def _execute(self, params, progress_callback):
-        img = Image.open(...)
-
-# ✓ 正確：在方法內 import
-class MyService:
-    def _execute(self, params, progress_callback):
-        from PIL import Image
         img = Image.open(...)
 ```
 
-Python 會快取已 import 的模組（`sys.modules`），方法內重複 `from PIL import Image` 只是一次 dict lookup，無效能損失。
+### 3.2 例外：偵測性質的 Import
 
-### 2.2 Type Hints 中使用外部套件
-
-如果 type hints 引用了外部套件的型別（如 `img: Image.Image`），必須加 `from __future__ import annotations`，否則型別標註會在 class 定義時就觸發 import：
+僅在偵測是否可用的場景中使用 lazy import（try/except 內）：
 
 ```python
-from __future__ import annotations  # 延遲型別標註求值
+# ✓ 偵測用途，保留 lazy import
+def _detect_cuda_via_torch():
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
+```
+
+### 3.3 Type Hints
+
+直接使用外部套件型別，不需要 `from __future__ import annotations`：
+
+```python
+from PIL import Image
 
 class MyService:
     @staticmethod
     def _apply_filter(img: Image.Image) -> Image.Image:
-        from PIL import Image  # 實際使用時才 import
         ...
-```
-
-### 2.3 內部模組 Import
-
-內部模組（`app.services.*`、`app.engine.*`、`app.workers.*`、`app.api.*`）可以在 module-level import，因為它們是 Nuitka 編譯的一部分。
-
-```python
-# ✓ 這些可以 module-level
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
 ```
 
 ---
 
 ## 4. Service 規範
 
-### 3.1 結構模板
+### 4.1 結構模板
 
-每個 Service 必須遵循以下結構：
+Service 由 DI Container（`dependency-injector`）管理為 Singleton，不使用手動工廠函數。
 
 ```python
 """
@@ -185,11 +180,13 @@ from app.workers.task_manager import TaskManager, get_task_manager
 """
 import logging
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 from uuid import uuid4
 
-from app.services.files.file_service import FileService, get_file_service
-from app.workers.task_manager import TaskManager, get_task_manager
+from PIL import Image  # Top-level import（AI 套件已由 Electron 安裝）
+
+from app.services.files.file_service import FileService
+from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -197,22 +194,12 @@ TASK_TYPE_XXX = "domain.action"  # e.g., "image.compress", "video.transcode"
 
 
 class XxxService:
-    """單例 Service"""
-    _instance: Optional["XxxService"] = None
+    """由 DI Container 管理的 Singleton Service"""
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._file_service: FileService = get_file_service()
-        self._task_manager: TaskManager = get_task_manager()
+    def __init__(self, file_service: FileService, task_manager: TaskManager):
+        self._file_service = file_service
+        self._task_manager = task_manager
         self._task_manager.register_handler(TASK_TYPE_XXX, self._handle_task)
-        self._initialized = True
         logger.info("XxxService initialized")
 
     # --- 公開 API（Route 呼叫）---
@@ -236,12 +223,9 @@ class XxxService:
         return self._execute(params, progress_callback)
 
     def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        from PIL import Image  # Lazy import
-
         progress_callback(0.1, "載入檔案...")
         # ... 業務邏輯 ...
 
-        # 註冊輸出
         output_info = self._file_service.register_output(
             file_id=output_file_id,
             file_path=output_path,
@@ -253,22 +237,24 @@ class XxxService:
             "output_file_id": output_file_id,
             "output_filename": output_info.filename,
         }
-
-
-# --- 工廠函數 ---
-
-_xxx_service: Optional[XxxService] = None
-
-def get_xxx_service() -> XxxService:
-    global _xxx_service
-    if _xxx_service is None:
-        _xxx_service = XxxService()
-    return _xxx_service
 ```
 
-### 3.2 規則
+**DI Container 註冊**（`app/init/container.py`）：
+```python
+from app.services.xxx import XxxService
 
-- **單例模式**：使用 `__new__` + `_initialized` 守門，不使用其他單例實作
+class AppContainer(containers.DeclarativeContainer):
+    xxx_service = providers.Singleton(
+        XxxService,
+        file_service=file_service,
+        task_manager=task_manager,
+    )
+```
+
+### 4.2 規則
+
+- **DI Singleton**：由 AppContainer 管理生命週期，不使用手動 `__new__` 單例或工廠函數
+- **建構子注入**：依賴（FileService、TaskManager）透過 `__init__` 參數注入
 - **TASK_TYPE 常數**：格式為 `"domain.action"`（如 `"image.compress"`、`"audio.transcribe"`）
 - **submit 方法**：`async`，驗證 file_id 存在後提交給 TaskManager，回傳 `task_id`
 - **_handle_task**：同步方法，作為 TaskManager 的 handler callback，在 ThreadPoolExecutor 中執行
@@ -297,11 +283,12 @@ output_dir = Path(custom_output_dir) if custom_output_dir else self._file_servic
 """
 功能說明 API 路由
 """
-from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from dependency_injector.wiring import inject, Provide
 
-from app.services.xxx import get_xxx_service
+from app.init.container import AppContainer
+from app.services.xxx import XxxService
 
 router = APIRouter()
 
@@ -319,10 +306,13 @@ class XxxResponse(BaseModel):
 
 
 @router.post("/action", response_model=XxxResponse)
-async def do_action(request: XxxRequest):
+@inject
+async def do_action(
+    request: XxxRequest,
+    service: XxxService = Depends(Provide[AppContainer.xxx_service]),
+):
     """端點說明"""
     try:
-        service = get_xxx_service()
         task_id = await service.submit_xxx(
             file_id=request.file_id,
             option=request.option,
@@ -415,34 +405,38 @@ logger = logging.getLogger(__name__)
 
 ## 8. 路徑規範
 
-### 7.1 所有路徑必須透過 `engine/paths.py`
+### 7.1 所有路徑透過 `PathSettings`（pydantic-settings）
+
+路徑由 Electron 透過 `MEDIATRANX_*` 環境變數注入，Python 的 `PathSettings` 讀取。Dev 模式下使用預設值（`core/backend/` 子目錄）。
 
 ```python
 # ✗ 禁止 hardcode
 path = Path("C:/Users/.../models/")
 
-# ✓ 正確
-from app.engine.paths import get_models_dir
-path = get_models_dir("image")
+# ✓ 正確：透過 settings
+from app.init.configs import get_settings
+settings = get_settings()
+path = Path(settings.path.models) / "image"
 ```
 
-### 7.2 路徑函數列表
+### 7.2 路徑欄位
 
-| 函數 | Dev | Packaged |
-|------|-----|----------|
-| `get_base_data_dir()` | `core/backend/` | `%APPDATA%/MediaTranX/` |
-| `get_models_dir(category)` | `backend/models/{cat}/` | `%APPDATA%/MediaTranX/models/{cat}/` |
-| `get_temp_dir()` | `backend/temp/` | `%APPDATA%/MediaTranX/temp/` |
-| `get_output_dir()` | `backend/output/` | `backend/output/`（或 APPDATA） |
-| `get_venv_dir()` | `backend/.venv/` | `%APPDATA%/MediaTranX/.venv/` |
-| `get_ffmpeg_dir()` | `bin/ffmpeg/` | `resources/ffmpeg/` |
-| `get_llama_bin_dir()` | `bin/llama/` | `resources/llama-bin/` |
+| 欄位 | Dev 預設值 | Electron 覆蓋（env var） |
+|------|-----------|------------------------|
+| `path.data` | `core/backend/` | `MEDIATRANX_DATA` → `%APPDATA%/MediaTranX/` |
+| `path.venv` | `core/backend/.venv` | `MEDIATRANX_VENV` |
+| `path.bin` | `core/backend/bin` | `MEDIATRANX_BIN` |
+| `path.models` | `core/backend/models` | `MEDIATRANX_MODELS` |
+| `path.temp` | `core/backend/data/temp` | `MEDIATRANX_TEMP` |
+| `path.ffmpeg` | 衍生自 `bin/ffmpeg` | — |
+| `path.fluidsynth` | 衍生自 `bin/fluidsynth` | — |
+| `path.llama_bin` | 衍生自 `bin/llama` | — |
 
 ### 7.3 新增外部工具
 
-1. 在 `engine/paths.py` 新增 `get_xxx_dir()` 函數
-2. Dev 模式放 `bin/<tool>/`，打包後放 `resources/<tool>/`
-3. Service 提供 `is_xxx_available() -> bool` 檢查
+1. 在 `PathSettings` 新增衍生 property（從 `bin` 計算）
+2. Dev 模式放 `bin/<tool>/`
+3. Electron 首次啟動時下載到 `{MEDIATRANX_BIN}/<tool>/`
 
 ---
 
@@ -519,14 +513,14 @@ def get_image_compress_service() -> ImageCompressService:
 
 新增一個處理功能時，按順序完成：
 
-1. [ ] **Service**：在 `services/{domain}/` 新增 `{action}_service.py`，遵循 §3 模板
-2. [ ] **Route**：在 `api/routes/{domain}/` 新增 `{action}.py`，遵循 §4 模板
-3. [ ] **註冊 Route**：在 `api/routes/{domain}/__init__.py` include 新 router
-4. [ ] **Lazy Import**：確認所有外部套件（PIL 等）都在方法內 import
-5. [ ] **Type Hints**：如果 type hints 用了外部套件型別，加 `from __future__ import annotations`
+1. [ ] **Service**：在 `services/{domain}/` 新增 `{action}_service.py`，遵循 §4 模板
+2. [ ] **DI 註冊**：在 `app/init/container.py` 的 AppContainer 註冊 Singleton
+3. [ ] **Route**：在 `api/routes/{domain}/` 新增 `{action}.py`，遵循 §5 模板（DI injection）
+4. [ ] **註冊 Route**：在 `api/routes/{domain}/__init__.py` include 新 router
+5. [ ] **Import**：外部套件直接 top-level import
 6. [ ] **日誌**：Service 初始化和任務提交/完成有 `logger.info`
-7. [ ] **路徑**：所有路徑透過 `engine/paths.py` 取得
-8. [ ] **文件**：更新 `docs/ARCHITECTURE.md` 的相關段落（API 總覽、View 結構等）
+7. [ ] **路徑**：所有路徑透過 `get_settings().path` 取得
+8. [ ] **文件**：更新 `docs/ARCHITECTURE.md` 的相關段落
 
 ### 新增本地 AI 模型
 

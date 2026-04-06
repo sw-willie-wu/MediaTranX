@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-from app.init.configs import get_settings
+import numpy as np
+from PIL import Image
+
+from app.init.configs import SETTINGS
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -49,8 +52,6 @@ class EnhanceService:
         from app.engine.ai.image.realesrgan import get_realesrgan
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
         from app.utils.video_frames import FramePipe
-        from PIL import Image
-        import numpy as np
 
         file_id = params["file_id"]
         variant = params.get("variant", "x4plus")
@@ -80,7 +81,7 @@ class EnhanceService:
         if output_dir:
             output_path = Path(output_dir) / output_filename
         else:
-            temp_dir = Path(get_settings().path.temp)
+            temp_dir = SETTINGS.path.temp
             temp_dir.mkdir(parents=True, exist_ok=True)
             output_path = temp_dir / "video_frames" / output_filename
 
