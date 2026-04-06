@@ -3,4 +3,4 @@ from pydantic import BaseModel
 
 
 class DatabaseSettings(BaseModel):
-    dsn: str = ""
+    dsn: str = "sqlite:///mediatranx.db"

@@ -7,7 +7,10 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 
-from app.init.configs import get_settings
+import numpy as np
+import soundfile as sf
+
+from app.init.configs import SETTINGS
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +24,7 @@ class FluidSynthWrapper:
     """SoundFont loading/unloading and MIDI→WAV rendering."""
 
     def __init__(self):
-        self._dir = Path(get_settings().path.fluidsynth)
+        self._dir = SETTINGS.path.fluidsynth
 
     @property
     def sf2_path(self) -> Path:
@@ -85,8 +88,6 @@ class FluidSynthWrapper:
             os.environ["PATH"] = dll_dir + os.pathsep + os.environ.get("PATH", "")
 
         import fluidsynth
-        import numpy as np
-        import soundfile as sf
 
         if on_progress:
             on_progress(0.2, "Initializing synthesizer...")

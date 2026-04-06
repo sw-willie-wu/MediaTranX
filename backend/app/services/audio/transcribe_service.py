@@ -4,9 +4,12 @@
 """
 import asyncio
 import logging
+import tempfile
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
+
+import soundfile as sf
 
 from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
 from app.utils.prompts import (
@@ -192,8 +195,6 @@ class AudioTranscribeService:
                     on_progress=lambda p, m: stage_progress("demucs", p, m),
                 )
 
-                import tempfile
-                import soundfile as sf
                 vocals = separated.get("vocals")
                 if vocals is not None:
                     temp_vocals = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)

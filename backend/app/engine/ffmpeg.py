@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from app.handler.exceptions import FFmpegError
-from app.init.configs import get_settings
+from app.init.configs import SETTINGS
 
 
 class VideoCodec(str, Enum):
@@ -89,7 +89,7 @@ class FFmpeg:
     @classmethod
     def _get_bin_dir(cls) -> Path:
         if cls._PROJECT_BIN_DIR is None:
-            cls._PROJECT_BIN_DIR = Path(get_settings().path.ffmpeg)
+            cls._PROJECT_BIN_DIR = SETTINGS.path.ffmpeg
         return cls._PROJECT_BIN_DIR
 
     def __init__(self):

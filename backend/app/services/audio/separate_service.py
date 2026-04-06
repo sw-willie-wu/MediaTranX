@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
+import soundfile as sf
+
 from app.engine.ai.audio.demucs import DemucsWrapper, get_demucs
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
@@ -53,8 +55,6 @@ class AudioSeparateService:
         return task_id
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        import soundfile as sf
-
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
         if file_info is None:

@@ -7,7 +7,6 @@ import AppToast from './components/AppToast.vue'
 import AppConfirmDialog from './components/common/AppConfirmDialog.vue'
 import AppSetupWizard from './components/common/AppSetupWizard.vue'
 import { useTheme } from './composables/useTheme'
-import { apiFetch } from './composables/useApi'
 import { useRemoteModelStore } from './stores/remoteModels'
 
 const router = useRouter()
@@ -20,7 +19,6 @@ const remoteModelStore = useRemoteModelStore()
 remoteModelStore.fetchAll()
 
 const showWizard = ref(false)
-const AI_CACHE_KEY = 'ai-module-cache'
 
 function removeSplash() {
   const overlay = document.getElementById('splash-overlay')
@@ -37,59 +35,20 @@ function isWizardEnabled(): boolean {
   } catch { return true }
 }
 
-function readAiCache(): { aiEnvReady: boolean; llamaReady: boolean } | null {
-  try {
-    const s = localStorage.getItem(AI_CACHE_KEY)
-    return s ? JSON.parse(s) : null
-  } catch { return null }
-}
-
-async function fetchAndCacheStatus(): Promise<boolean> {
-  try {
-    const res = await apiFetch('/setup/status')
-    const data = await res.json()
-    const notReady = !data.ai_env_ready || !(data.llama_ready ?? false)
-    localStorage.setItem(AI_CACHE_KEY, JSON.stringify({
-      aiEnvReady: data.ai_env_ready,
-      llamaReady: data.llama_ready ?? false,
-      torchIndex: data.torch_index ?? 'cpu',
-      torchInstalled: data.torch_installed ?? null,
-      driverVersion: data.device?.driver_version ?? null,
-    }))
-    return notReady
-  } catch {
-    return false
-  }
-}
-
 // Vue 掛載後處理 splash 與 wizard 邏輯
 onMounted(async () => {
   // 等待路由準備完成
   await router.isReady()
-  
+
   if (router.currentRoute.value.path === '/' && !window.location.hash) {
     router.replace('/')
   }
-  
-  if (!isWizardEnabled()) {
-    removeSplash()
-    // 背景更新快取
-    fetchAndCacheStatus()
-    return
+
+  if (isWizardEnabled()) {
+    showWizard.value = true
   }
 
-  const cache = readAiCache()
-  if (cache) {
-    showWizard.value = !cache.aiEnvReady || !cache.llamaReady
-    removeSplash()
-    fetchAndCacheStatus().then((notReady) => {
-      if (notReady) showWizard.value = true
-    })
-  } else {
-    const notReady = await fetchAndCacheStatus()
-    showWizard.value = notReady
-    removeSplash()
-  }
+  removeSplash()
 })
 </script>
 

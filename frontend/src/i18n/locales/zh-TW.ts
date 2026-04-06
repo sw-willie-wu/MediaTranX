@@ -6,20 +6,13 @@ export default {
     audio: '音訊工具',
     video: '影片工具',
     document: '文件工具',
-    tasks: '任務',
+    tasks: '任務管理',
     settings: '設定',
     restart: '重新啟動',
   },
 
   // ── 標題列 ────────────────────────────────────────────────────────────
   titlebar: {
-    image: '圖片工具',
-    video: '影片工具',
-    audio: '音訊工具',
-    document: '文件工具',
-    history: '歷史紀錄',
-    tasks: '執行任務',
-    settings: '設定',
     minimize: '最小化',
     restore: '還原',
     maximize: '最大化',
@@ -698,7 +691,7 @@ export default {
     tab: {
       general: '一般',
       system: '系統資訊',
-      models: 'AI 模組管理',
+      models: 'AI 模型管理',
       about: '關於',
     },
 
@@ -778,7 +771,7 @@ export default {
     },
 
     models: {
-      title: '模型與工具',
+      title: '模型列表',
       hint: '最多同時進行 4 個下載，超過將自動排隊',
       loading: '載入中...',
       refresh: '重新整理',

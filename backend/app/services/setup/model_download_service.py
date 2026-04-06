@@ -9,14 +9,17 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
-from app.init.configs import get_settings
+import numpy as np
+import soundfile as sf
+
+from app.init.configs import SETTINGS
 
 logger = logging.getLogger(__name__)
 
 
 def _models_dir(category: str = "") -> Path:
     """Get models directory with optional category subdirectory, ensuring it exists."""
-    d = Path(get_settings().path.models)
+    d = SETTINGS.path.models
     if category:
         d = d / category
     d.mkdir(parents=True, exist_ok=True)
@@ -76,9 +79,6 @@ def handle_model_download(params: dict, progress_callback: Callable) -> dict:
 
     elif item_id == "basic-pitch":
         _download_basic_pitch(progress_callback)
-
-    elif item_id == "fluidsynth":
-        _download_fluidsynth(progress_callback)
 
     else:
         _download_pth_model(item_id, progress_callback)
@@ -488,13 +488,8 @@ def _download_basic_pitch(progress_callback: Callable) -> None:
     """Trigger basic-pitch model download by running a dummy inference."""
     progress_callback(0.1, "Downloading Basic Pitch model...")
 
-    import numpy as np
-    import tempfile
-
     # Create a tiny silent audio file to trigger model auto-download
     try:
-        import soundfile as sf
-
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             tmp_path = f.name
             sf.write(tmp_path, np.zeros(44100, dtype=np.float32), 44100)
@@ -517,35 +512,3 @@ def _download_basic_pitch(progress_callback: Callable) -> None:
     progress_callback(0.95, "Basic Pitch model ready")
 
 
-def _download_fluidsynth(progress_callback: Callable) -> None:
-    """Download FluidSynth DLL + FluidR3 GM SoundFont."""
-    dest = Path(get_settings().path.fluidsynth)
-    dest.mkdir(parents=True, exist_ok=True)
-
-    # Step 1: Download FluidSynth Windows release (zip with all DLLs)
-    progress_callback(0.1, "Downloading FluidSynth...")
-    dll_url = "https://github.com/FluidSynth/fluidsynth/releases/download/v2.5.2/fluidsynth-v2.5.2-win10-x64-glib.zip"
-
-    import io
-    import zipfile
-    import requests
-
-    response = requests.get(dll_url, stream=True, timeout=120, allow_redirects=True)
-    response.raise_for_status()
-    buf = io.BytesIO(response.content)
-
-    progress_callback(0.3, "Extracting FluidSynth DLLs...")
-    with zipfile.ZipFile(buf) as zf:
-        for name in zf.namelist():
-            if name.endswith(".dll") and "/bin/" in name:
-                dll_data = zf.read(name)
-                dll_filename = name.rsplit("/", 1)[-1]
-                (dest / dll_filename).write_bytes(dll_data)
-                logger.info(f"Extracted {dll_filename} to {dest}")
-
-    # Step 2: Download SoundFont (FluidR3 GM, SF2 stereo ~141MB)
-    progress_callback(0.4, "Downloading SoundFont (FluidR3 GM)...")
-    sf2_url = "https://musical-artifacts.com/artifacts/738/FluidR3_GM.sf2"
-    _download_from_url(sf2_url, dest / "FluidR3_GM.sf2", progress_callback, 0.4, 0.95)
-
-    progress_callback(0.95, "FluidSynth + SoundFont ready")

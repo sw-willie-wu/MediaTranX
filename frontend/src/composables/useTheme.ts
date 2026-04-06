@@ -30,6 +30,8 @@ function setTheme(mode: ThemeMode) {
   themeMode.value = mode
   localStorage.setItem('theme-mode', mode)
   updateEffectiveTheme()
+  // Sync to Electron preferences (for splash screen theme)
+  ;(window as any).electron?.savePreference('theme', effectiveTheme.value)
 }
 
 // 初始化

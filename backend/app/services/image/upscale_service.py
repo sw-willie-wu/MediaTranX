@@ -5,6 +5,9 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
+
+from PIL import Image
+
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 logger = logging.getLogger(__name__)
@@ -68,7 +71,6 @@ class ImageUpscaleService:
         return task_id
 
     def _handle_upscale_task(self, params: dict, progress_callback: Callable) -> dict:
-        from PIL import Image
         file_id  = params["file_id"]
         model_id = params["model_id"]
         scale    = params["scale"]

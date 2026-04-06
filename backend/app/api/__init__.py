@@ -6,7 +6,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.routes import api_router
 from app.handler.middleware import RequestLifecycleMiddleware
-from app.init.configs import get_settings
+from app.init.configs import SETTINGS
 
 
 LOGGER = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ LOGGER = logging.getLogger(__name__)
 
 def build_router(app: FastAPI) -> FastAPI:
     # CORS 設定：dev 允許所有 origin，prod 僅允許 file:// (null)
-    if get_settings().is_frozen:
+    if SETTINGS.is_frozen:
         _cors_origins = ["null"]
         _cors_credentials = True
     else:

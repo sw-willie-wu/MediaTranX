@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Dict, Callable, Set
 
-from app.init.configs import get_settings
+from app.init.configs import SETTINGS
 from .registry import (
     MODELS_REGISTRY,
     FORMAT_PKG,
@@ -84,7 +84,7 @@ class ModelManager:
                 import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-            except ImportError:
+            except Exception:
                 pass
 
             self._loaded_slots.add(slot)
@@ -224,7 +224,7 @@ class ModelManager:
         
         family = MODELS_REGISTRY[fmt][model_id]
         slot = family.get("slot", "")
-        models_dir = Path(get_settings().path.models)
+        models_dir = SETTINGS.path.models
         base_dir = models_dir / slot
 
         # PKG 格式（目錄型，如 Whisper）
@@ -288,7 +288,7 @@ class ModelManager:
         
         family = MODELS_REGISTRY[fmt][model_id]
         slot = family.get("slot", "")
-        models_dir = Path(get_settings().path.models)
+        models_dir = SETTINGS.path.models
         base_dir = models_dir / slot
         base_dir.mkdir(parents=True, exist_ok=True)
         
@@ -403,22 +403,11 @@ class ModelManager:
         
         return path
 
-    def is_ai_env_ready(self) -> bool:
-        """檢查環境就緒狀態（支援 venv 和 Docker 系統安裝）"""
-        try:
-            import torch  # noqa: F401
-            return True
-        except ImportError:
-            pass
-        # Fallback: 檢查外部 venv（Electron packaged mode）
-        venv_path = Path(get_settings().path.venv)
-        return venv_path.exists() and len(list(venv_path.glob("**/site-packages/torch"))) > 0
-
     def is_llama_ready(self) -> bool:
         """檢查 llama-server 二進位是否存在"""
         import sys
         exe_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
-        return (Path(get_settings().path.llama_bin) / exe_name).exists()
+        return (SETTINGS.path.llama / exe_name).exists()
 
     def unload_all(self):
         """強制清空所有已註冊的模型顯存"""
@@ -433,6 +422,6 @@ class ModelManager:
                 import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-            except ImportError:
+            except Exception:
                 pass
 

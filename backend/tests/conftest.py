@@ -1,19 +1,19 @@
 """Shared fixtures for MediaTranX backend tests."""
 import pytest
 
-from app.init.configs import AppSettings, init_settings, get_settings
+from app.init.configs import AppSettings, SETTINGS
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings():
-    """Reset global settings before each test."""
-    import app.init.configs as cfg
-    cfg._settings = None
+def _isolate_settings():
+    """Snapshot and restore SETTINGS between tests to prevent mutation leaks."""
+    snapshot = SETTINGS.model_dump()
     yield
-    cfg._settings = None
+    for key, value in snapshot.items():
+        setattr(SETTINGS, key, value)
 
 
 @pytest.fixture
 def settings() -> AppSettings:
-    """Provide a fresh AppSettings instance."""
-    return init_settings()
+    """Provide the global AppSettings instance."""
+    return SETTINGS

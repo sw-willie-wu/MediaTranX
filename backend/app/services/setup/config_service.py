@@ -3,7 +3,6 @@ Application configuration service.
 Reads from pydantic-settings, writes path overrides to .env file.
 """
 import logging
-from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
@@ -15,18 +14,16 @@ class ConfigService:
 
     def get_config(self) -> dict:
         """Get current configuration with effective paths."""
-        from app.init.configs import get_settings
-        settings = get_settings()
+        from app.init.configs import SETTINGS
         return {
-            "models_dir": settings.path.models,
-            "temp_dir": settings.path.temp,
+            "models_dir": SETTINGS.path.models,
+            "temp_dir": SETTINGS.path.temp,
         }
 
     def update_config(self, models_dir: str = "", temp_dir: str = "") -> dict:
         """Write path overrides to .env file. Requires restart to take effect."""
-        from app.init.configs import get_settings
-        settings = get_settings()
-        env_path = Path(settings.path.data) / ".env"
+        from app.init.configs import SETTINGS
+        env_path = SETTINGS.path.data / ".env"
 
         lines: list[str] = []
         if env_path.exists():

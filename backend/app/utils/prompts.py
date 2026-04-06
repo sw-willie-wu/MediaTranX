@@ -5,11 +5,14 @@
 所有 LlamaServerRuntime 呼叫由 service 層負責。
 """
 import base64
+import io
 import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -469,8 +472,6 @@ def build_ocr_messages(image_path: str, format: str = "md") -> list[dict]:
     ext = Path(image_path).suffix.lower().lstrip(".")
 
     if ext == "webp":
-        from PIL import Image
-        import io
         img = Image.open(io.BytesIO(image_bytes))
         buf = io.BytesIO()
         img.save(buf, format="PNG")

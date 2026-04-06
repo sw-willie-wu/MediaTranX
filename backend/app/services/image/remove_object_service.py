@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
+import cv2
+import numpy as np
+import torch
+from PIL import Image
+
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -56,8 +61,6 @@ class ImageRemoveObjectService:
 
     def _run_inpaint(self, image_pil: Image.Image, mask_pil: Image.Image) -> Image.Image:
         """用 LaMa 填補遮罩區域（裁切包圍框處理，支援大圖），fallback 至 OpenCV。"""
-        import numpy as np
-        from PIL import Image
         LAMA_MAX_SIZE = 1024  # LaMa 最大處理邊長
 
         try:
@@ -100,7 +103,6 @@ class ImageRemoveObjectService:
 
             # simple_lama_inpainting bug: mask_t 是 Long，需轉 float
             from simple_lama_inpainting.utils.util import prepare_img_and_mask
-            import torch
             lama = self._lama_model
             image_t, mask_t = prepare_img_and_mask(crop_img, crop_mask, lama.device)
             mask_t = mask_t.float()
@@ -133,15 +135,12 @@ class ImageRemoveObjectService:
 
         except Exception as e:
             logger.warning(f"LaMa failed ({e})，fallback 至 OpenCV inpainting")
-            import cv2
             img_bgr = cv2.cvtColor(np.array(image_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
             mask_cv = (np.array(mask_pil.convert("L")) > 127).astype(np.uint8) * 255
             result_bgr = cv2.inpaint(img_bgr, mask_cv, 10, cv2.INPAINT_TELEA)
             return Image.fromarray(cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB))
 
     def _decode_mask(self, mask_data: str, target_w: int, target_h: int):
-        import numpy as np
-        from PIL import Image
         if "," in mask_data:
             mask_data = mask_data.split(",")[1]
         mask_bytes = base64.b64decode(mask_data)
@@ -150,8 +149,6 @@ class ImageRemoveObjectService:
         return np.array(mask_img)
 
     def _refine_with_sam(self, image_rgb, rough_mask):
-        import numpy as np
-
         ys, xs = np.where(rough_mask > 127)
         if len(ys) == 0:
             return rough_mask
@@ -170,9 +167,6 @@ class ImageRemoveObjectService:
         mask_data = params["mask_data"]
 
         file_info = self._file_service.get_file(file_id)
-
-        import numpy as np
-        from PIL import Image
 
         with Image.open(file_info.file_path) as img:
             img = img.copy()
@@ -199,9 +193,8 @@ class ImageRemoveObjectService:
         with manager.gpu_session():
             # 略微膨脹筆刷遮罩（填補筆觸縫隙），直接送 LaMa（跳過 SAM，避免遮罩過大）
             progress_callback(0.35, "處理遮罩...")
-            import cv2 as _cv2
-            kernel = _cv2.getStructuringElement(_cv2.MORPH_ELLIPSE, (15, 15))
-            precise_mask = _cv2.dilate(rough_mask, kernel, iterations=2)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+            precise_mask = cv2.dilate(rough_mask, kernel, iterations=2)
 
             progress_callback(0.6, "填補背景中...")
             mask_pil = Image.fromarray(precise_mask).convert("L")

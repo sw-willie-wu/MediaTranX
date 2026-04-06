@@ -24,6 +24,8 @@ export function resolveLocale(): SupportedLocale {
 
 export function saveLocalePreference(value: SupportedLocale) {
   localStorage.setItem(STORAGE_KEY, value)
+  // Sync to Electron preferences (for splash screen locale)
+  ;(window as any).electron?.savePreference('locale', value)
 }
 
 export function getSavedPreference(): SupportedLocale {

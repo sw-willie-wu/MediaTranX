@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Any
 
+from faster_whisper import WhisperModel
+
 from app.engine.ai.runtime.package import PackageRuntime
 from app.engine.ai.registry import SLOT_WHISPER, FORMAT_PKG, MODELS_REGISTRY
 
@@ -143,7 +145,6 @@ class WhisperWrapper(PackageRuntime):
         if on_progress:
             on_progress(0.2, "正在初始化 CTranslate2...")
 
-        from faster_whisper import WhisperModel
         from app.engine.device import get_compute_type
 
         compute_type = config.get("compute_type", get_compute_type())
@@ -220,8 +221,8 @@ class WhisperWrapper(PackageRuntime):
         """查詢模型狀態"""
         model_path = self._manager.get_model_path("whisper", model_size)
 
-        from app.init.configs import get_settings
-        venv_fw = Path(get_settings().path.venv) / "Lib" / "site-packages" / "faster_whisper"
+        from app.init.configs import SETTINGS
+        venv_fw = SETTINGS.path.venv / "Lib" / "site-packages" / "faster_whisper"
         available = venv_fw.is_dir()
 
         return {
