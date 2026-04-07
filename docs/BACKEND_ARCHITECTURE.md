@@ -20,7 +20,7 @@ app/
 ├── engine/                    ← 底層封裝
 │   ├── paths.py               ← 路徑管理
 │   ├── device.py              ← GPU/CPU 偵測
-│   ├── ffmpeg.py              ← FFmpeg 操作
+│   ├── ffmpeg.py              ← FFmpegWrapper（cut / extract_audio / audio_convert / adjust_volume / transcode）
 │   └── ai/                    ← AI 模型
 │       ├── runtime/           ← Runtime 基礎類別（base、package、pth、llama_server）
 │       ├── image/             ← 影像模型（realesrgan、codeformer、mobilesam 等）
@@ -38,7 +38,9 @@ app/
 ### 禁止事項
 
 - **Route 不可**直接操作檔案、呼叫 AI 模型、import PIL/numpy/torch
-- **Service 不可**直接操作 VRAM 或啟動 subprocess，必須透過 Engine
+- **Service 不可**直接操作 VRAM 或啟動 subprocess，必須透過 Engine / Utils
+  - FFmpeg 操作：使用 `engine/ffmpeg.py` 的 `FFmpegWrapper.cut()` / `.extract_audio()` / `.audio_convert()` / `.adjust_volume()` / `.transcode()`
+  - 影片 Frame Pipe：使用 `utils/video_frames.py` 的 `FramePipe`
 - **Engine 不可**包含業務邏輯（不知道「壓縮」「轉檔」的概念，只提供技術能力）
 - **不可跨層跳躍**：Route → Engine ✗，必須經過 Service
 - **Workers 不可**依賴 API 層：Workers → `app.api.*` ✗
@@ -223,7 +225,7 @@ class XxxService:
         return self._execute(params, progress_callback)
 
     def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        progress_callback(0.1, "載入檔案...")
+        progress_callback(0.1, "task.progress.loading_image")
         # ... 業務邏輯 ...
 
         output_info = self._file_service.register_output(
@@ -232,7 +234,7 @@ class XxxService:
             original_filename=file_info.original_filename,
         )
 
-        progress_callback(1.0, "處理完成")
+        progress_callback(1.0, "task.progress.xxx_complete")
         return {
             "output_file_id": output_file_id,
             "output_filename": output_info.filename,
@@ -358,18 +360,29 @@ PENDING → PROCESSING → COMPLETED
 
 ```python
 def _execute(self, params, progress_callback):
-    progress_callback(0.1, "載入檔案...")      # 階段描述
-    progress_callback(0.5, "處理中...")
-    progress_callback(0.9, "儲存檔案...")
-    progress_callback(1.0, "完成")              # 最終必須到 1.0
-    return {"output_file_id": ...}              # 必須回傳 dict
+    progress_callback(0.1, "task.progress.loading_image")
+    progress_callback(0.5, "task.progress.processing")
+    progress_callback(0.9, "task.progress.saving_file")
+    progress_callback(1.0, "task.progress.complete")
+    return {"output_file_id": ...}
 ```
 
 - progress 值必須遞增（0.0 → 1.0）
-- message 使用中文，為使用者可讀的階段描述
+- message 使用 `task.progress.*` 格式的 i18n key，**禁止硬編碼中文或英文**
+- 動態參數以 `|` 分隔：`f"task.progress.cropping|{idx + 1}|{total}"`
+- 前端 `TasksActive.vue` 偵測 `task.progress.` 前綴後自動翻譯
+- 新增 key 時必須同步更新 `en.ts` 和 `zh-TW.ts` 的 `task.progress` 區塊
 - TaskManager 在 handler return 後自動 emit `stage="completed"` + `result`
 
-### 5.3 前端 Polling
+### 5.3 Progress i18n Key 命名慣例
+
+| 格式 | 範例 |
+|------|------|
+| 靜態訊息 | `task.progress.aligning` |
+| 帶動態參數 | `f"task.progress.cropping\|{idx}\|{total}"` |
+| 分類前綴 | `loading_*`（載入模型）、`*_complete`（完成）、`*_starting`（開始） |
+
+### 5.4 前端 Polling
 
 前端透過 `GET /api/tasks/active` 每秒輪詢進行中的任務，ProgressTracker 儲存最新的 ProgressEvent 供查詢。
 
