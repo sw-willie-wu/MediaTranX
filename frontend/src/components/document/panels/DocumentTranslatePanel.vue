@@ -2,8 +2,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
-import { useTaskStore } from '@/stores/tasks'
-import { useToast } from '@/composables/useToast'
 import { apiFetch } from '@/composables/useApi'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelStore } from '@/stores/models'
@@ -20,17 +18,13 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const taskStore = useTaskStore()
-const toast = useToast()
 const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
 
 // ── 翻譯模型（從 modelStore 取得）────────────────────────────────────────
 
-const selectedTranslateModel = ref('translategemma:4b:Q4_K_M')
-const translateEnvAvailable  = ref<boolean | null>(null)
-const isInstalling = ref(false)
+const selectedTranslateModel = ref('')
 const error = ref<string | null>(null)
 
 const localTranslateModelOptions = computed(() =>
@@ -49,18 +43,20 @@ const localTranslateModelOptions = computed(() =>
 // 合併本地 + 雲端 text 模型
 const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
 
+watch(localTranslateModelOptions, (options) => {
+  if (!selectedTranslateModel.value) {
+    const first = options.find(m => m.badge === 'ok')
+    if (first) selectedTranslateModel.value = first.value
+  }
+}, { immediate: true })
+
 async function loadTranslateModels() {
   try {
-    const statusRes = await apiFetch('/setup/status')
-    if (statusRes.ok) {
-      const s = await statusRes.json()
-      translateEnvAvailable.value = s.ai_env_ready ?? null
-    }
     await modelStore.fetchModels()
 
     // 從 localStorage 還原上次選擇
     const saved = loadPreferences()
-    if (saved && localTranslateModelOptions.value.some(m => m.value === saved)) {
+    if (saved && localTranslateModelOptions.value.some(m => m.value === saved && m.badge === 'ok')) {
       selectedTranslateModel.value = saved
     } else if (saved && saved.startsWith('remote:')) {
       selectedTranslateModel.value = saved
@@ -147,59 +143,13 @@ function parseGlossary(): Record<string, string> | undefined {
   return Object.keys(dict).length > 0 ? dict : undefined
 }
 
-// ── 安裝 ──────────────────────────────────────────────────────────────────
-
-async function installTranslate() {
-  isInstalling.value = true
-  error.value = null
-  try {
-    const response = await apiFetch('/setup/install', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ feature: 'translategemma' }),
-    })
-    if (!response.ok) {
-      const err = await response.json()
-      throw new Error(err.detail || t('document.translate.install_error'))
-    }
-    const result = await response.json()
-    if (!result.task_id) {
-      toast.show(t('document.translate.install_complete'), { type: 'success' })
-      await loadTranslateModels()
-      return
-    }
-    taskStore.addTask({
-      taskId: result.task_id, taskType: 'setup/install', status: 'pending',
-      progress: 0, message: null, result: null, error: null,
-      createdAt: new Date(), updatedAt: new Date(), label: t('document.translate.install_button'),
-    })
-    toast.show(t('document.translate.installing_toast'), { type: 'info', icon: 'bi-download' })
-    const checkDone = setInterval(async () => {
-      const task = taskStore.tasks.get(result.task_id)
-      if (task && (task.status === 'completed' || task.status === 'failed')) {
-        clearInterval(checkDone)
-        isInstalling.value = false
-        if (task.status === 'completed') {
-          toast.show(t('document.translate.install_complete'), { type: 'success' })
-          await loadTranslateModels()
-        } else {
-          error.value = t('document.translate.install_error')
-        }
-      }
-    }, 2000)
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : t('document.translate.install_error')
-    isInstalling.value = false
-  }
-}
-
 // ── 執行 ──────────────────────────────────────────────────────────────────
 
-const isDisabled = computed(() => !props.fileId || isProcessing.value || translateEnvAvailable.value === false)
+const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading  = computed(() => isProcessing.value)
 
 async function execute() {
-  if (!props.fileId) return
+  if (!props.fileId || !selectedTranslateModel.value) return
   const parsed = parseModelValue(selectedTranslateModel.value)
   const body: Record<string, any> = {
     file_id: props.fileId,
@@ -270,18 +220,11 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
       <span>{{ error }}</span>
     </div>
 
-    <!-- 未安裝：顯示安裝按鈕 -->
-    <div v-if="translateEnvAvailable === false" class="install-prompt">
-      <p class="form-hint">{{ $t('document.translate.need_install') }}</p>
-      <button class="btn-primary" :disabled="isInstalling" @click="installTranslate">
-        <span v-if="isInstalling" class="spinner-border spinner-border-sm"></span>
-        <i v-else class="bi bi-download"></i>
-        {{ isInstalling ? $t('document.translate.installing') : $t('document.translate.install_button') }}
-      </button>
-    </div>
-
-    <template v-else>
       <!-- 翻譯模型 -->
+      <div v-if="!selectedTranslateModel && !modelStore.loading" class="info-box info-box--warn">
+        <i class="bi bi-exclamation-triangle"></i>
+        <span>{{ $t('document.translate.no_model_downloaded') }}</span>
+      </div>
       <div class="form-group">
         <label>{{ $t('document.translate.model') }}</label>
         <AppSelect v-model="selectedTranslateModel" :options="translateModelOptions" />
@@ -315,7 +258,6 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
           rows="4"
         ></textarea>
       </div>
-    </template>
   </div>
 </template>
 
@@ -328,12 +270,6 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
   font-weight: 400;
   font-size: 0.78rem;
   color: var(--text-muted);
-}
-
-.install-prompt {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
 }
 
 .glossary-input {

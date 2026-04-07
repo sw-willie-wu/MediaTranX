@@ -66,7 +66,7 @@ const alignEnabled = ref(false)
 const outputFormat = ref('lrc')
 const translateEnabled = ref(false)
 const targetLanguage = ref('zh-TW')
-const selectedTranslateModel = ref('translategemma:4b:Q4_K_M')
+const selectedTranslateModel = ref('')
 const outputPath = ref('')
 
 const outputFormats = computed(() => [
@@ -89,6 +89,13 @@ const localTranslateModelOptions = computed(() =>
 )
 
 const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
+
+watch(localTranslateModelOptions, (options) => {
+  if (!selectedTranslateModel.value) {
+    const first = options.find(m => m.badge === 'ok')
+    if (first) selectedTranslateModel.value = first.value
+  }
+}, { immediate: true })
 
 // ── Translation language options ────────────────────────────────
 const translateLanguages = ref([
@@ -303,6 +310,10 @@ onMounted(() => {
             <div class="form-group">
               <label class="sub-label">{{ $t('audio.lyrics.target_language') }}</label>
               <AppSelect v-model="targetLanguage" :options="translateLanguages" />
+            </div>
+            <div v-if="!selectedTranslateModel && !modelStore.loading" class="info-box info-box--warn">
+              <i class="bi bi-exclamation-triangle"></i>
+              <span>{{ $t('audio.lyrics.no_translate_model') }}</span>
             </div>
             <div class="form-group">
               <label class="sub-label">{{ $t('audio.lyrics.translate_model') }}</label>

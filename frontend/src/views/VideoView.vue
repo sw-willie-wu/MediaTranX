@@ -106,10 +106,6 @@ function handleMultiExecute() {
   }
 }
 
-const isProcessing = ref(false)
-function handleSubtitleSubmit()  { isProcessing.value = true }
-function handleSubtitleComplete() { isProcessing.value = false }
-
 function onDownload() {
   const fmt = transcodePanelRef.value?.outputFormat ?? 'mp4'
   const isAudio = transcodePanelRef.value?.isAudioFormat ?? false
@@ -272,8 +268,7 @@ onUnmounted(() => { clearActions() })
             :fileId="activeFileId"
             :mediaInfo="mediaInfo"
             :source-dir="sourceDir"
-            @submit="handleSubtitleSubmit"
-            @complete="handleSubtitleComplete"
+            @submit="handlePanelSubmit"
           />
         </div>
 
