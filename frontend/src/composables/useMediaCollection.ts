@@ -1,9 +1,12 @@
 import { ref, computed, watch } from 'vue'
 import { useTaskStore } from '@/stores/tasks'
+import { useToast } from '@/composables/useToast'
 import { getApiBase } from '@/composables/useApi'
 import { createLogger } from '@/utils/logger'
+import i18n from '@/i18n'
 
 const log = createLogger('MediaCollection')
+const { t } = i18n.global
 
 export interface HistoryEntry {
   fileId: string
@@ -34,6 +37,7 @@ export interface MediaCollectionOptions {
 
 export function useMediaCollection(options?: MediaCollectionOptions) {
   const taskStore = useTaskStore()
+  const toast = useToast()
 
   // --- State ---
   const entries = ref<Map<string, MediaEntry>>(new Map())
@@ -243,6 +247,9 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
         } else if (task.status === 'failed' || task.status === 'cancelled') {
           const entry = entries.value.get(entryId)
           if (!entry) continue
+          if (task.status === 'failed' && task.error) {
+            toast.show(t('toast.task_failed', { label: task.label ?? task.taskType, error: task.error }), { type: 'error', icon: 'bi-x-circle' })
+          }
           log.warn(`task ${task.status}`, { taskId, entryId, error: task.error })
           updateEntry(entryId, {
             status: 'idle',

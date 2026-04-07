@@ -6,12 +6,12 @@ import AppRange from '@/components/common/AppRange.vue'
 import AppSelect, { type SelectOption } from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelStore } from '@/stores/models'
+import { useModelGuard } from '@/composables/useModelGuard'
 
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
-  aiEnvReady: boolean
 }>()
 
 const emit = defineEmits<{
@@ -21,6 +21,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
+const { guardModelReady } = useModelGuard()
 
 const selectedModelId = ref('')
 const selectedFaceModelId = ref('')
@@ -30,8 +31,8 @@ const faceRestore = ref(false)
 const faceRestoreFidelity = ref(0.7)
 const faceRestoreUpscale = ref(2)
 
-const upscaleModels = computed(() => modelStore.byCategory('upscale'))
-const faceRestoreModels = computed(() => modelStore.byCategory('face_restore'))
+const upscaleModels = computed(() => modelStore.forPanel(modelStore.byCategory('upscale')))
+const faceRestoreModels = computed(() => modelStore.forPanel(modelStore.byCategory('face_restore')))
 
 const selectedUpscaleModel = computed(() => upscaleModels.value.find(m => m.id === selectedModelId.value))
 const maxScale = computed(() => selectedUpscaleModel.value?.max_scale ?? 4)
@@ -64,13 +65,11 @@ const faceOptions = computed<SelectOption[]>(() =>
 )
 
 function selectUpscaleModel(id: string) {
-  const model = upscaleModels.value.find(m => m.id === id)
-  if (model?.downloaded) selectedModelId.value = id
+  selectedModelId.value = id
 }
 
 function selectFaceModel(id: string) {
-  const model = faceRestoreModels.value.find(m => m.id === id)
-  if (model?.downloaded) selectedFaceModelId.value = id
+  selectedFaceModelId.value = id
 }
 
 // 當模型列表載入完成後自動選取第一個已下載的模型
@@ -108,6 +107,7 @@ function getParams(): Record<string, unknown> {
 }
 
 async function execute() {
+  if (!await guardModelReady(selectedUpscaleModel.value?.downloaded === true, 'image')) return
   if (!props.fileId || !selectedModelId.value) return
 
   const taskId = await submitTask(
@@ -142,10 +142,6 @@ defineExpose({ execute, isDisabled, isLoading, upscaleScale, getParams })
         :placeholder="$t('common.loading_info')"
         @update:model-value="selectUpscaleModel"
       />
-      <div v-if="!selectedModelId && !modelStore.loading" class="info-box info-box--warn">
-        <i class="bi bi-exclamation-circle"></i>
-        <span>{{ $t('image.upscale.no_model') }}</span>
-      </div>
     </div>
 
     <!-- scale factor -->

@@ -96,7 +96,7 @@ class DocumentOcrService:
         ext = "md" if fmt == "md" else "txt"
         src_ext = Path(file_info.original_filename).suffix.lower()
 
-        progress_callback(0.05, f"連接 {provider}...")
+        progress_callback(0.05, f"task.progress.doc_ocr_connecting|{provider}")
 
         from app.init.container import get_container
         remote_svc = get_container().remote_service()
@@ -110,11 +110,11 @@ class DocumentOcrService:
                 file_info.file_path, prov, remote_model, fmt, progress_callback,
             )
         elif src_ext in _IMAGE_EXTS:
-            progress_callback(0.1, "準備圖片...")
+            progress_callback(0.1, "task.progress.doc_ocr_prepare")
             final_text = self._recognize_remote(
                 str(file_info.file_path), prov, remote_model, fmt,
             )
-            progress_callback(0.95, "辨識完成")
+            progress_callback(0.95, "task.progress.doc_ocr_recognition_complete")
         else:
             raise ValueError("不支援的檔案格式，請上傳 PDF 或圖片")
 
@@ -138,7 +138,7 @@ class DocumentOcrService:
             file_id=output_file_id, file_path=output_path, original_filename=final_filename,
         )
 
-        progress_callback(1.0, "OCR 完成")
+        progress_callback(1.0, "task.progress.doc_ocr_complete")
         return {
             "output_file_id": output_file_id,
             "output_filename": output_info.filename,
@@ -180,7 +180,7 @@ class DocumentOcrService:
             for page_idx in range(total_pages):
                 progress_callback(
                     0.05 + (page_idx / total_pages) * 0.90,
-                    f"辨識第 {page_idx + 1}/{total_pages} 頁..."
+                    f"task.progress.doc_ocr_page|{page_idx + 1}|{total_pages}"
                 )
                 page = pdf[page_idx]
                 bitmap = page.render(scale=2)
@@ -198,9 +198,9 @@ class DocumentOcrService:
                    on_progress: Optional[Callable[[float, str], None]] = None) -> str:
         """使用 LlamaServerRuntime 辨識單張圖片"""
         from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-        from app.engine.ai.registry import SLOT_VLM
+        from app.engine.ai.registry import SLOT_LLM
 
-        runtime = LlamaServerRuntime(SLOT_VLM)
+        runtime = LlamaServerRuntime(SLOT_LLM)
         messages = build_ocr_messages(image_path, format=fmt)
 
         with runtime.acquire(model_id, variant, on_progress):
@@ -225,7 +225,7 @@ class DocumentOcrService:
 
         variant = f"{size}:{quantization}" if quantization else size
 
-        progress_callback(0.05, "準備辨識...")
+        progress_callback(0.05, "task.progress.ocr_prepare")
 
         # === GPU 排隊管線 ===
         manager = get_container().model_manager()
@@ -265,7 +265,7 @@ class DocumentOcrService:
             file_id=output_file_id, file_path=output_path,
             original_filename=final_filename,
         )
-        progress_callback(1.0, "OCR 完成")
+        progress_callback(1.0, "task.progress.doc_ocr_complete")
         return {
             "output_file_id": output_file_id,
             "output_filename": output_info.filename,
@@ -280,7 +280,7 @@ class DocumentOcrService:
         page_results = []
 
         for i, page in enumerate(doc):
-            progress_callback(0.1 + i / total * 0.85, f"辨識頁面 {i+1}/{total}...")
+            progress_callback(0.1 + i / total * 0.85, f"task.progress.doc_ocr_page|{i+1}|{total}")
             bitmap = page.render(scale=2.0)
             img = bitmap.to_pil()
             img_buf = _io.BytesIO()

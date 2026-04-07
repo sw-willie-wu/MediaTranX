@@ -16,7 +16,7 @@ const settings = ref({
   theme: 'system' as ThemeMode,
   language: getSavedPreference(),
   autoCleanTemp: true,
-  showSetupWizard: true,
+
 })
 
 const themes = computed(() => [
@@ -118,10 +118,6 @@ function restartApp() {
   <div class="setting-item">
     <label class="section-subtitle">{{ $t('settings.general.language') }}</label>
     <AppSelect v-model="settings.language" :options="languages" size="sm" />
-  </div>
-
-  <div class="setting-item">
-    <AppToggle v-model="settings.showSetupWizard">{{ $t('settings.general.show_setup_wizard') }}</AppToggle>
   </div>
 
   <h6 class="section-title mt">{{ $t('settings.general.layout') }}</h6>

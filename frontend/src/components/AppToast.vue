@@ -62,9 +62,16 @@ function iconFor(type: string, icon?: string) {
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
-  color: var(--text-primary);
+  color: #f0f0f0;
   font-size: 0.9rem;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+
+  [data-theme="light"] & {
+    background: rgba(255, 255, 255, 0.85);
+    border-color: rgba(0, 0, 0, 0.08);
+    color: var(--text-primary);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  }
 }
 
 .toast-icon {
@@ -87,7 +94,7 @@ function iconFor(type: string, icon?: string) {
   background: rgba(255, 255, 255, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 5px;
-  color: var(--text-primary);
+  color: inherit;
   font-size: 0.78rem;
   font-weight: 500;
   cursor: pointer;
@@ -97,12 +104,21 @@ function iconFor(type: string, icon?: string) {
   &:hover {
     background: rgba(255, 255, 255, 0.25);
   }
+
+  [data-theme="light"] & {
+    background: rgba(0, 0, 0, 0.06);
+    border-color: rgba(0, 0, 0, 0.1);
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.1);
+    }
+  }
 }
 
 .toast-close {
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
   padding: 2px;
   display: flex;
@@ -115,7 +131,15 @@ function iconFor(type: string, icon?: string) {
   i { font-size: 1rem; }
 
   &:hover {
-    color: var(--text-primary);
+    color: #fff;
+  }
+
+  [data-theme="light"] & {
+    color: var(--text-muted);
+
+    &:hover {
+      color: var(--text-primary);
+    }
   }
 }
 

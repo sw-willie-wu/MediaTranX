@@ -12,6 +12,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const deviceInfo = ref<DeviceInfo | null>(null)
   const isLoading = ref(false)
 
+  // 工具面板是否顯示未下載模型
+  const showAllModels = ref(localStorage.getItem('showAllModels') !== 'false')
+
   // 計算屬性
   const hasGPU = computed(() => deviceInfo.value?.device === 'cuda')
   const hasMPS = computed(() => deviceInfo.value?.device === 'mps')
@@ -42,10 +45,16 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  function setShowAllModels(val: boolean) {
+    showAllModels.value = val
+    localStorage.setItem('showAllModels', String(val))
+  }
+
   return {
     // 狀態
     deviceInfo,
     isLoading,
+    showAllModels,
     hasGPU,
     hasMPS,
     isCPUOnly,
@@ -53,5 +62,6 @@ export const useSettingsStore = defineStore('settings', () => {
     deviceDisplayName,
     // 方法
     loadDeviceInfo,
+    setShowAllModels,
   }
 })

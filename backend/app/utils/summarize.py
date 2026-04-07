@@ -42,18 +42,18 @@ def map_reduce_summarize(
 
     if len(chunks) == 1:
         if on_progress:
-            on_progress(0.1, "生成摘要...")
+            on_progress(0.1, "task.progress.generating_summary")
         return chat_fn(build_summarize_prompt(full_text), 2048)
 
     # Map: 各段獨立摘要
     chunk_summaries = []
     for ci, chunk in enumerate(chunks):
         if on_progress:
-            on_progress(0.1 + 0.7 * (ci / len(chunks)), f"摘要分段 {ci + 1}/{len(chunks)}...")
+            on_progress(0.1 + 0.7 * (ci / len(chunks)), f"task.progress.summarizing_chunk|{ci + 1}|{len(chunks)}")
         chunk_summaries.append(chat_fn(build_chunk_summarize_prompt(chunk), 1024).strip())
 
     # Reduce: 合併
     if on_progress:
-        on_progress(0.85, "合併摘要...")
+        on_progress(0.85, "task.progress.merging_summary")
     merged = "\n\n".join(chunk_summaries)
     return chat_fn(build_merge_summaries_prompt(merged), 2048)

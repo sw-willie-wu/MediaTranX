@@ -55,8 +55,8 @@ def remove_model(item_id: str) -> None:
                 p.unlink()
                 logger.info(f"Removed qwen3 model: {item_id}")
 
-    elif item_id.startswith(("qwen3vl-", "internvl2.5-", "gemma3-")):
-        # VLM 模型：qwen3vl-4b-Q4_K_M
+    elif item_id.startswith(("qwen3vl-", "internvl2.5-", "gemma3-", "qwen3.5-")):
+        # GGUF 視覺模型：qwen3vl-4b-Q4_K_M
         parts = item_id.rsplit("-", 1)
         quant = parts[1]
         family_size = parts[0]
@@ -64,18 +64,17 @@ def remove_model(item_id: str) -> None:
         model_family = size_parts[0]
         size = size_parts[1]
 
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_VLM
-        config = MODELS_REGISTRY.get(FORMAT_VLM, {}).get(model_family, {})
+        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
+        config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get(model_family, {})
         variant = config.get("specs", {}).get(size, {}).get("variants", {}).get(quant)
         if variant:
-            slot = config.get("slot", "vlm")
-            target_dir = _models_dir() / slot
+            target_dir = _models_dir() / model_family
             for fname in [variant.get("filename"), variant.get("mmproj_filename")]:
                 if fname:
                     p = target_dir / fname
                     if p.exists():
                         p.unlink()
-                        logger.info(f"Removed VLM file: {fname}")
+                        logger.info(f"Removed GGUF file: {fname}")
 
     else:
         # PTH 模型（upscale / face_restore）: {family}-{variant}

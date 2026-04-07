@@ -277,7 +277,7 @@ class ImageFilterService:
         if saturation != 1.0:
             img = ImageEnhance.Color(img).enhance(saturation)
 
-        progress_callback(0.35, "套用色彩調整...")
+        progress_callback(0.35, "task.progress.applying_color")
 
         hue = params.get("hue", 0.0)
         if hue != 0:
@@ -291,7 +291,7 @@ class ImageFilterService:
         if sharpness != 1.0:
             img = ImageEnhance.Sharpness(img).enhance(sharpness)
 
-        progress_callback(0.55, "套用濾鏡效果...")
+        progress_callback(0.55, "task.progress.applying_filter")
 
         sepia = params.get("sepia", 0.0)
         if sepia > 0:
@@ -325,7 +325,7 @@ class ImageFilterService:
 
         from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
 
-        progress_callback(0.05, "載入圖片...")
+        progress_callback(0.05, "task.progress.loading_image")
 
         def _filter_single(frame: Image.Image) -> Image.Image:
             _rgba = frame.convert("RGBA")
@@ -344,17 +344,17 @@ class ImageFilterService:
             anim_fmt = animation_format(raw)
             if anim_fmt:
                 def _process_frame(frame, idx, total):
-                    progress_callback(0.15 + idx / total * 0.6, f"套用調整 ({idx + 1}/{total})...")
+                    progress_callback(0.15 + idx / total * 0.6, f"task.progress.applying_adjustment|{idx + 1}|{total}")
                     return _filter_single(frame)
                 result_frames = process_gif_frames(raw, _process_frame)
             else:
                 raw = raw.copy()
 
         if not anim_fmt:
-            progress_callback(0.15, "套用調整...")
+            progress_callback(0.15, "task.progress.applying_adjustment_single")
             img = _filter_single(raw)
 
-        progress_callback(0.75, "儲存檔案...")
+        progress_callback(0.75, "task.progress.saving_file")
 
         output_file_id    = str(uuid4())
         original_stem     = Path(file_info.original_filename).stem
@@ -379,7 +379,7 @@ class ImageFilterService:
             original_filename=file_info.original_filename,
         )
 
-        progress_callback(1.0, "調整完成")
+        progress_callback(1.0, "task.progress.adjustment_complete")
         logger.info("Image filter completed: %s → %s", file_id, output_file_id)
 
         return {

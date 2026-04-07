@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useTaskStore } from '@/stores/tasks'
 import { useSettingsStore } from '@/stores/settings'
 import { useModelStore } from '@/stores/models'
-import { useToast } from '@/composables/useToast'
 import { apiFetch } from '@/composables/useApi'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
@@ -13,25 +11,19 @@ import AppToggle from '@/components/common/AppToggle.vue'
 
 const { t } = useI18n()
 
-const taskStore = useTaskStore()
 const settings = useSettingsStore()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
-const toast = useToast()
 
 const enableTranslation = ref(false)
-const selectedTranslateModel = ref('translategemma:4b:Q4_K_M')
-const translateEnvAvailable = ref<boolean | null>(null)
-const isInstalling = ref(false)
+const selectedTranslateModel = ref('')
 
 const localTranslateModelOptions = computed(() =>
-  modelStore.byCategory('translate')
+  modelStore.forPanel(modelStore.byCapability('text'))
     .slice()
     .sort((a, b) => a.size_mb - b.size_mb)
     .map(m => {
-      const dashIdx = m.variant.indexOf('-')
-      const size = m.variant.slice(0, dashIdx)
-      const quant = m.variant.slice(dashIdx + 1)
+      const [size, quant] = m.variant.split(':')
       const key = `${m.family}:${size}:${quant}`
       return { value: key, label: m.label, sizeMb: m.size_mb, badge: m.downloaded ? 'ok' as const : 'err' as const }
     })
@@ -39,6 +31,13 @@ const localTranslateModelOptions = computed(() =>
 
 // 合併本地 + 雲端 text 模型
 const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
+
+watch(localTranslateModelOptions, (options) => {
+  if (!selectedTranslateModel.value) {
+    const first = options.find(m => m.badge === 'ok')
+    if (first) selectedTranslateModel.value = first.value
+  }
+}, { immediate: true })
 
 const targetLanguage = ref('zh-TW')
 const keepNames = ref(true)
@@ -106,7 +105,9 @@ async function autoRecommend() {
   const totalBytes = settings.deviceInfo?.memory_total
   if (!totalBytes) return
   const usableMb = totalBytes / (1024 * 1024) - 1500
-  const sorted = [...localTranslateModelOptions.value].sort((a, b) => (b.sizeMb ?? 0) - (a.sizeMb ?? 0))
+  const sorted = [...localTranslateModelOptions.value]
+    .filter(m => m.badge === 'ok')
+    .sort((a, b) => (b.sizeMb ?? 0) - (a.sizeMb ?? 0))
   const best = sorted.find(m => (m.sizeMb ?? 0) <= usableMb)
   if (best) selectedTranslateModel.value = best.value
 }
@@ -131,55 +132,8 @@ function parseGlossary(): Record<string, string> | undefined {
 
 async function loadTranslateModels() {
   try {
-    const statusRes = await apiFetch('/setup/status')
-    if (statusRes.ok) {
-      const s = await statusRes.json()
-      translateEnvAvailable.value = s.ai_env_ready ?? null
-    }
     await modelStore.fetchModels()
   } catch {}
-}
-
-async function installTranslate() {
-  isInstalling.value = true
-  try {
-    const response = await apiFetch('/setup/initialize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    })
-    if (!response.ok) {
-      const err = await response.json()
-      throw new Error(err.detail || t('video.translate.need_install'))
-    }
-    const result = await response.json()
-    taskStore.addTask({
-      taskId: result.task_id,
-      taskType: 'setup/initialize',
-      status: 'pending',
-      progress: 0,
-      message: null,
-      result: null,
-      error: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      label: t('settings.ai.install_button'),
-    })
-    toast.show(t('settings.ai.installing_toast'), { type: 'info', icon: 'bi-download' })
-
-    const checkDone = setInterval(async () => {
-      const task = taskStore.tasks.get(result.task_id)
-      if (task && (task.status === 'completed' || task.status === 'failed')) {
-        clearInterval(checkDone)
-        isInstalling.value = false
-        if (task.status === 'completed') {
-          toast.show(t('settings.ai.install_complete'), { type: 'success' })
-          await loadTranslateModels()
-        }
-      }
-    }, 2000)
-  } catch {
-    isInstalling.value = false
-  }
 }
 
 async function loadTranslateLanguages(retries = 3) {
@@ -224,18 +178,6 @@ defineExpose({
     <AppToggle v-model="enableTranslation">{{ $t('video.translate.enable') }}</AppToggle>
 
     <div v-if="enableTranslation" class="sub-params">
-      <!-- not installed -->
-      <div v-if="translateEnvAvailable === false" class="install-prompt">
-        <p class="form-hint">{{ $t('video.translate.need_install') }}</p>
-        <button class="btn-primary" :disabled="isInstalling" @click="installTranslate">
-          <span v-if="isInstalling" class="spinner-border spinner-border-sm"></span>
-          <i v-else class="bi bi-download"></i>
-          {{ isInstalling ? $t('video.translate.installing') : $t('video.translate.install_button') }}
-        </button>
-      </div>
-
-      <!-- installed -->
-      <template v-else>
         <div class="form-group">
           <label class="sub-label">{{ $t('video.translate.target_language') }}</label>
           <AppSelect v-model="targetLanguage" :options="targetLanguageOptions" />
@@ -265,7 +207,6 @@ defineExpose({
             :placeholder="$t('video.translate.glossary_format')"
           ></textarea>
         </div>
-      </template>
     </div>
   </div>
 </template>
@@ -275,12 +216,6 @@ defineExpose({
 </style>
 
 <style lang="scss" scoped>
-.install-prompt {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
 .option-row {
   display: flex;
   flex-direction: column;

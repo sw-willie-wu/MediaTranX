@@ -17,10 +17,11 @@ class InterpolateRequest(BaseModel):
     output_format: str = Field(default="mp4", description="Output container format")
     video_codec: str = Field(default="h264", description="Output video codec")
     output_dir: Optional[str] = Field(default=None, description="Output directory")
+    output_filename: Optional[str] = Field(default=None, description="Output filename")
 
 class InterpolateResponse(BaseModel):
     task_id: str
-    message: str = "補幀任務已提交"
+    message: str = "Interpolation task submitted"
 
 @router.get("/rife/status")
 async def rife_status():
@@ -41,7 +42,7 @@ async def interpolate_video(
     service: InterpolateService = Depends(Provide[AppContainer.video_interpolate]),
 ):
     try:
-        task_id = await service.submit(file_id=request.file_id, model=request.model, mode=request.mode, target_fps=request.target_fps, output_format=request.output_format, video_codec=request.video_codec, output_dir=request.output_dir)
+        task_id = await service.submit(file_id=request.file_id, model=request.model, mode=request.mode, target_fps=request.target_fps, output_format=request.output_format, video_codec=request.video_codec, output_dir=request.output_dir, output_filename=request.output_filename)
         return InterpolateResponse(task_id=task_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

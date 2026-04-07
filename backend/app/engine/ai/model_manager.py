@@ -18,7 +18,6 @@ from .registry import (
     FORMAT_PKG,
     FORMAT_GGUF,
     FORMAT_PTH,
-    FORMAT_VLM,
 )
 
 logger = logging.getLogger(__name__)
@@ -102,11 +101,11 @@ class ModelManager:
     def get_model_format(self, model_id: str) -> Optional[str]:
         """
         查詢模型所屬格式
-        
+
         Returns:
-            FORMAT_PKG / FORMAT_GGUF / FORMAT_PTH / FORMAT_VLM / None
+            FORMAT_PKG / FORMAT_GGUF / FORMAT_PTH / None
         """
-        for fmt in [FORMAT_PKG, FORMAT_GGUF, FORMAT_PTH, FORMAT_VLM]:
+        for fmt in [FORMAT_PKG, FORMAT_GGUF, FORMAT_PTH]:
             if model_id in MODELS_REGISTRY.get(fmt, {}):
                 return fmt
         return None
@@ -158,31 +157,6 @@ class ModelManager:
             # PTH: variants -> variant
             return family["variants"].get(variant) if variant else None
 
-        elif fmt == FORMAT_VLM:
-            # VLM: specs -> size -> variants -> quant（與 GGUF 相同結構，但含 mmproj 欄位）
-            if not variant:
-                return None
-            if ":" in variant:
-                size, quant = variant.split(":", 1)
-            else:
-                size = variant
-                quant = family["default_variant"].get(size)
-
-            spec = family["specs"].get(size)
-            if not spec:
-                return None
-
-            variant_spec = spec["variants"].get(quant)
-            if not variant_spec:
-                return None
-
-            return {
-                **variant_spec,
-                "layers": spec["layers"],
-                "n_ctx": spec["n_ctx"],
-                "vram_overhead_mb": spec["vram_overhead_mb"],
-            }
-
         return None
     
     def get_vram_requirement(self, model_id: str, variant: Optional[str] = None) -> int:
@@ -200,7 +174,7 @@ class ModelManager:
         if "vram_mb" in config:
             return config["vram_mb"]
         
-        # GGUF / VLM 格式：size_mb + mmproj_size_mb + vram_overhead_mb
+        # GGUF 格式：size_mb + mmproj_size_mb + vram_overhead_mb
         if "size_mb" in config and "vram_overhead_mb" in config:
             return config["size_mb"] + config.get("mmproj_size_mb", 0) + config["vram_overhead_mb"]
 
@@ -241,7 +215,7 @@ class ModelManager:
                 return None
             target = (models_dir / model_id) / config["filename"]
             return target if target.exists() else None
-        
+
         # PTH 格式（單檔型）
         elif fmt == FORMAT_PTH:
             if not variant:
@@ -251,14 +225,6 @@ class ModelManager:
             if not variant_spec or "filename" not in variant_spec:
                 return None
             target = base_dir / variant_spec["filename"]
-            return target if target.exists() else None
-
-        # VLM 格式（單檔型，主模型；mmproj 由 runtime 另行解析）
-        elif fmt == FORMAT_VLM:
-            config = self.get_model_config(model_id, variant)
-            if not config or "filename" not in config:
-                return None
-            target = base_dir / config["filename"]
             return target if target.exists() else None
 
         return None
@@ -293,7 +259,7 @@ class ModelManager:
         base_dir.mkdir(parents=True, exist_ok=True)
         
         if on_progress:
-            on_progress(0.1, f"開始下載 {model_id}...")
+            on_progress(0.1, f"task.progress.download_start|{model_id}")
         
         # PKG 格式（目錄型快照，如 Whisper）
         if fmt == FORMAT_PKG:
@@ -309,26 +275,29 @@ class ModelManager:
             )
             return Path(path)
         
-        # VLM 格式（雙檔：主模型 + mmproj）
-        elif fmt == FORMAT_VLM:
+        # GGUF 格式（單檔或雙檔：含 mmproj 的視覺模型）
+        elif fmt == FORMAT_GGUF:
             config = self.get_model_config(model_id, variant)
             if not config or "repo_id" not in config or "filename" not in config:
-                raise ValueError(f"Invalid VLM config for {model_id}/{variant}")
+                raise ValueError(f"Invalid GGUF config for {model_id}/{variant}")
 
-            # 下載主模型
+            gguf_dir = models_dir / model_id
+            gguf_dir.mkdir(parents=True, exist_ok=True)
+
+            has_mmproj = "mmproj_filename" in config
+
             def _prog_main(p, msg):
                 if on_progress:
-                    on_progress(p * 0.7, msg)
+                    on_progress(p * (0.7 if has_mmproj else 1.0), msg)
 
             path = await self._async_hf_hub_download(
                 repo_id=config["repo_id"],
                 filename=config["filename"],
-                local_dir=str(base_dir),
+                local_dir=str(gguf_dir),
                 on_progress=_prog_main,
             )
 
-            # 下載 mmproj（視覺編碼器）
-            if "mmproj_filename" in config:
+            if has_mmproj:
                 def _prog_mm(p, msg):
                     if on_progress:
                         on_progress(0.7 + p * 0.3, f"[mmproj] {msg}")
@@ -336,15 +305,15 @@ class ModelManager:
                 await self._async_hf_hub_download(
                     repo_id=config.get("mmproj_repo_id", config["repo_id"]),
                     filename=config["mmproj_filename"],
-                    local_dir=str(base_dir),
+                    local_dir=str(gguf_dir),
                     on_progress=_prog_mm,
                 )
 
             if on_progress:
-                on_progress(1.0, "下載完成")
+                on_progress(1.0, "task.progress.download_complete")
             return Path(path)
 
-        # GGUF 或 PTH 格式（單檔）
+        # PTH 格式（單檔）
         else:
             config = self.get_model_config(model_id, variant)
             if not config or "repo_id" not in config or "filename" not in config:
@@ -374,7 +343,7 @@ class ModelManager:
         path = await asyncio.to_thread(_download)
         
         if on_progress:
-            on_progress(1.0, "下載完成")
+            on_progress(1.0, "task.progress.download_complete")
         
         return path
     
@@ -399,7 +368,7 @@ class ModelManager:
         path = await asyncio.to_thread(_download)
         
         if on_progress:
-            on_progress(1.0, "下載完成")
+            on_progress(1.0, "task.progress.download_complete")
         
         return path
 

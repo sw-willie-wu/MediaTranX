@@ -7,8 +7,7 @@ from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
-from app.engine.ffmpeg import FFmpeg
-from app.handler.exceptions import FFmpegError
+from app.engine.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -19,7 +18,7 @@ TASK_TYPE_AUDIO_VOLUME = "audio.volume"
 
 class AudioVolumeService:
 
-    def __init__(self, ffmpeg: FFmpeg, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager):
         self._ffmpeg = ffmpeg
         self._file_service = file_service
         self._task_manager = task_manager
@@ -70,24 +69,16 @@ class AudioVolumeService:
             db = params["volume_db"]
             af_filter = f"volume={db:+.1f}dB"
 
-        cmd = [
-            self._ffmpeg.ffmpeg_path,
-            "-i", str(file_info.file_path),
-            "-af", af_filter,
-            "-y", str(output_path),
-        ]
-
-        progress_callback(0.0, "開始處理...")
-        process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        progress_callback(0.0, "task.progress.volume_starting")
+        await self._ffmpeg.adjust_volume(
+            input_path=file_info.file_path,
+            output_path=output_path,
+            af_filter=af_filter,
         )
-        progress_callback(0.5, "處理中...")
-        stdout, stderr = await process.communicate()
-        if process.returncode != 0:
-            raise FFmpegError(f"FFmpeg error: {stderr.decode()}")
+        progress_callback(0.5, "task.progress.volume_processing")
 
         output_info = self._file_service.register_output(
             file_id=output_file_id, file_path=output_path, original_filename=file_info.original_filename
         )
-        progress_callback(1.0, "完成")
+        progress_callback(1.0, "task.progress.volume_complete")
         return {"output_file_id": output_file_id, "output_filename": output_info.filename}

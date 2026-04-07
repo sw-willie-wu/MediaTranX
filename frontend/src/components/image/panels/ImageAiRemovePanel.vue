@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppRange from '@/components/common/AppRange.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useToast } from '@/composables/useToast'
+import { useModelStore } from '@/stores/models'
+import { useModelGuard } from '@/composables/useModelGuard'
 import type { MaskToolMode } from '@/composables/useCanvasMask'
 
 const props = defineProps<{
@@ -26,6 +28,8 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const toast = useToast()
 const { submitTask, isProcessing } = useSubmitTask()
+const modelStore = useModelStore()
+const { guardModelReady } = useModelGuard()
 
 const isAnimated = computed(() => {
   const fmt = props.imageInfo?.format?.toUpperCase()
@@ -42,6 +46,8 @@ const tools = computed<{ mode: MaskToolMode; icon: string; label: string }[]>(()
 ])
 
 async function execute() {
+  const segmentDownloaded = modelStore.byCategory('segment').some(m => m.downloaded)
+  if (!await guardModelReady(segmentDownloaded, 'image')) return
   if (!props.fileId) return
   if (!props.hasMask()) {
     toast.show(t('toast.mark_area_first'), { type: 'info', icon: 'bi-info-circle' })
@@ -59,6 +65,8 @@ async function execute() {
   )
   if (taskId) emit('submit', taskId)
 }
+
+onMounted(() => modelStore.ensureLoaded())
 
 defineExpose({ execute, isDisabled, isLoading })
 </script>

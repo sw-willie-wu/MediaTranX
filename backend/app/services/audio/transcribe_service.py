@@ -185,7 +185,7 @@ class AudioTranscribeService:
         with manager.gpu_session():
             # === 人聲分離 ===
             if do_vocal_sep:
-                stage_progress("demucs", 0.0, "人聲分離中...")
+                stage_progress("demucs", 0.0, "task.progress.separating_vocals")
                 from app.engine.ai.audio.demucs import get_demucs
                 demucs = get_demucs()
                 separated, sr = demucs.separate(
@@ -202,11 +202,11 @@ class AudioTranscribeService:
                     temp_vocals.close()
                     sf.write(temp_vocals_path, vocals.T.numpy(), sr)
                     audio_path = temp_vocals_path
-                stage_progress("demucs", 1.0, "人聲分離完成")
+                stage_progress("demucs", 1.0, "task.progress.separation_complete")
 
             try:
                 # === Whisper 轉譯 ===
-                stage_progress("whisper", 0.0, "載入模型...")
+                stage_progress("whisper", 0.0, "task.progress.load_whisper")
 
                 result = self._whisper.transcribe(
                     audio_path=audio_path,
@@ -218,7 +218,7 @@ class AudioTranscribeService:
                 )
 
                 detected_lang = result.language
-                stage_progress("whisper", 1.0, "語音辨識完成")
+                stage_progress("whisper", 1.0, "task.progress.recognition_complete")
             finally:
                 if temp_vocals_path:
                     try:
@@ -231,14 +231,14 @@ class AudioTranscribeService:
                 from app.engine.ai.audio.wav2vec2 import get_alignment_engine
                 aligner = get_alignment_engine()
                 if aligner.is_language_supported(detected_lang):
-                    stage_progress("align", 0.0, "精準對齊中...")
+                    stage_progress("align", 0.0, "task.progress.aligning")
                     result.segments = aligner.align(
                         audio_path=str(file_info.file_path),
                         segments=result.segments,
                         language=detected_lang,
                         on_progress=lambda p, m: stage_progress("align", p, m),
                     )
-                    stage_progress("align", 1.0, "對齊完成")
+                    stage_progress("align", 1.0, "task.progress.align_complete")
 
         # === 翻譯 ===
         from app.engine.ai.audio.whisper import TranscribeSegment
@@ -246,7 +246,7 @@ class AudioTranscribeService:
         original_segments = list(result.segments)
 
         if do_translate and target_lang:
-            stage_progress("translate", 0.0, "準備翻譯...")
+            stage_progress("translate", 0.0, "task.progress.prepare_translate_audio")
 
             translate_remote = params.get("translate_remote", False)
 
@@ -288,10 +288,10 @@ class AudioTranscribeService:
                 src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
                 runtime = LlamaServerRuntime(SLOT_LLM)
 
-                stage_progress("translate", 0.0, "載入翻譯模型...")
+                stage_progress("translate", 0.0, "task.progress.load_translate_model")
 
                 with runtime.acquire(translate_model_type, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
-                    stage_progress("translate", 0.05, "開始翻譯字幕...")
+                    stage_progress("translate", 0.05, "task.progress.start_translate")
                     translated_all = translate_srt_local(
                         seg_dicts, src, target_lang, runtime,
                         on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
@@ -306,7 +306,7 @@ class AudioTranscribeService:
         # === 大綱整理 ===
         summary_text = None
         if do_summarize:
-            stage_progress("summarize", 0.0, "正在生成摘要大綱...")
+            stage_progress("summarize", 0.0, "task.progress.generating_summary")
 
             # 摘要用的文本：有翻譯用翻譯後的，沒翻譯用原文
             if do_translate:
@@ -359,10 +359,10 @@ class AudioTranscribeService:
                         on_progress=lambda p, m: stage_progress("summarize", p, m),
                     )
 
-            stage_progress("summarize", 1.0, "摘要完成")
+            stage_progress("summarize", 1.0, "task.progress.summary_complete")
 
         # === 寫入輸出檔案 ===
-        stage_progress("write", 0.0, "正在寫入檔案...")
+        stage_progress("write", 0.0, "task.progress.writing_file")
 
         output_files = []
 
@@ -463,7 +463,7 @@ class AudioTranscribeService:
                 "type": "summary",
             })
 
-        progress_callback(1.0, "轉譯完成")
+        progress_callback(1.0, "task.progress.transcribe_complete")
 
         # Read transcript content for preview
         text_content = None

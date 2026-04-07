@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from fractions import Fraction
 import subprocess
 from pathlib import Path
 from typing import Callable, Generator, Optional
@@ -28,7 +29,7 @@ class FramePipe:
     Reads raw RGB frames from FFmpeg stdout, writes processed frames to FFmpeg stdin.
 
     Usage:
-        pipe = FramePipe(input_path, output_path, output_fps, video_codec='h264')
+        pipe = FramePipe(input_path, output_path, fps, input_width=W, input_height=H, output_width=W, output_height=H)
         pipe.open()
         for frame in pipe.read_frames():
             processed = process(frame)  # numpy H×W×3 uint8
@@ -40,24 +41,29 @@ class FramePipe:
         self,
         input_path: str | Path,
         output_path: str | Path,
-        output_fps: float,
-        width: int,
-        height: int,
+        output_fps: Fraction | float,
+        *,
+        input_width: int,
+        input_height: int,
+        output_width: int,
+        output_height: int,
         video_codec: str = "h264",
         crf: int = 18,
-        target_fps: float = 0,
+        target_fps: Fraction | float = 0,
     ):
         self.input_path = str(input_path)
         self.output_path = str(output_path)
-        self.output_fps = output_fps
-        self.target_fps = target_fps
-        self.width = width
-        self.height = height
+        self.output_fps = Fraction(output_fps) if not isinstance(output_fps, Fraction) else output_fps
+        self.target_fps = Fraction(target_fps) if not isinstance(target_fps, Fraction) else target_fps
+        self.input_width = input_width
+        self.input_height = input_height
+        self.output_width = output_width
+        self.output_height = output_height
         self.video_codec = video_codec
         self.crf = crf
         self._decoder: subprocess.Popen | None = None
         self._encoder: subprocess.Popen | None = None
-        self._frame_size = width * height * 3  # RGB24
+        self._frame_size = self.input_width * self.input_height * 3  # RGB24
 
     def open(self):
         """Start decoder and encoder FFmpeg processes."""
@@ -85,16 +91,16 @@ class FramePipe:
 
         # 如果 target_fps 不同於 output_fps，加 fps filter 丟掉多餘幀
         vf_args = []
-        if self.target_fps > 0 and abs(self.target_fps - self.output_fps) > 0.5:
-            vf_args = ["-vf", f"fps={self.target_fps}"]
+        if self.target_fps > 0 and abs(float(self.target_fps) - float(self.output_fps)) > 0.5:
+            vf_args = ["-vf", f"fps={self.target_fps.numerator}/{self.target_fps.denominator}"]
 
         self._encoder = subprocess.Popen([
             ffmpeg_path,
             "-y",
             "-f", "rawvideo",
             "-pix_fmt", "rgb24",
-            "-s", f"{self.width}x{self.height}",
-            "-r", str(self.output_fps),
+            "-s", f"{self.output_width}x{self.output_height}",
+            "-r", f"{self.output_fps.numerator}/{self.output_fps.denominator}",
             "-i", "pipe:0",
             "-i", self.input_path,
             "-map", "0:v:0",
@@ -108,7 +114,7 @@ class FramePipe:
             self.output_path,
         ], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        logger.info(f"FramePipe opened: {self.width}x{self.height} @ {self.output_fps}fps")
+        logger.info(f"FramePipe opened: {self.input_width}x{self.input_height} → {self.output_width}x{self.output_height} @ {float(self.output_fps):.3f}fps")
 
     def read_frames(self) -> Generator[np.ndarray, None, None]:
         """Yield decoded frames as numpy arrays (H, W, 3) uint8."""
@@ -117,7 +123,7 @@ class FramePipe:
             raw = self._decoder.stdout.read(self._frame_size)
             if len(raw) < self._frame_size:
                 break
-            frame = np.frombuffer(raw, dtype=np.uint8).reshape(self.height, self.width, 3)
+            frame = np.frombuffer(raw, dtype=np.uint8).reshape(self.input_height, self.input_width, 3)
             yield frame
 
     def write_frame(self, frame: np.ndarray):
@@ -177,7 +183,7 @@ async def extract_frames(
         m = re.search(r"time=(\d+):(\d+):(\d+\.\d+)", text)
         if m and duration > 0 and on_progress:
             t = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
-            on_progress(min(t / duration, 0.99), f"拆幀中... {t:.1f}/{duration:.1f}s")
+            on_progress(min(t / duration, 0.99), f"task.progress.extracting_frames|{t:.1f}|{duration:.1f}")
 
     await process.wait()
     if process.returncode != 0:
@@ -246,7 +252,7 @@ async def encode_frames(
         m = re.search(r"frame=\s*(\d+)", text)
         if m and total_frames > 0 and on_progress:
             frame = int(m.group(1))
-            on_progress(min(frame / total_frames, 0.99), f"編碼中... {frame}/{total_frames} 幀")
+            on_progress(min(frame / total_frames, 0.99), f"task.progress.encoding_frames|{frame}|{total_frames}")
 
     await process.wait()
     if process.returncode != 0:

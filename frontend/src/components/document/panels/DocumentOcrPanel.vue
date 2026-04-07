@@ -8,6 +8,7 @@ import { apiFetch } from '@/composables/useApi'
 import { useModelStore } from '@/stores/models'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
+import { useModelGuard } from '@/composables/useModelGuard'
 
 const props = defineProps<{
   fileId: string | null
@@ -25,15 +26,17 @@ const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
+const { guardModelReady } = useModelGuard()
 
 // ── 模型 ──────────────────────────────────────────────────────────────────
 
-const selectedModel = ref('qwen3vl:4b')
+const selectedModel = ref('')
 const available = ref<boolean | null>(null)
+const modelDownloaded = ref<boolean | null>(null)
 
 const localModelOptions = computed(() => {
   const seen = new Map<string, { value: string; label: string; downloaded: boolean }>()
-  for (const m of modelStore.byCategory('vlm')) {
+  for (const m of modelStore.forPanel(modelStore.byCapability('vision'))) {
     const [size] = m.variant.split(':')
     const key = `${m.family}:${size}`
     if (!seen.has(key)) {
@@ -48,6 +51,13 @@ const localModelOptions = computed(() => {
     badge: opt.downloaded ? 'ok' as const : 'err' as const,
   }))
 })
+
+watch(localModelOptions, (options) => {
+  if (!selectedModel.value) {
+    const first = options.find(m => m.downloaded)
+    if (first) selectedModel.value = first.value
+  }
+}, { immediate: true })
 
 // 合併本地 + 雲端 vision 模型
 const { mergedOptions: modelOptions } = useModelOptions('vision', localModelOptions)
@@ -112,6 +122,7 @@ async function checkAvailable() {
   const parsed = parseModelValue(selectedModel.value)
   if (parsed.isRemote) {
     available.value = true
+    modelDownloaded.value = true
     return
   }
   try {
@@ -120,6 +131,7 @@ async function checkAvailable() {
     if (!res.ok) return
     const data = await res.json()
     available.value = data.available
+    modelDownloaded.value = data.model_downloaded ?? null
   } catch {}
 }
 
@@ -129,11 +141,12 @@ watch(selectedModel, checkAvailable)
 // ── 執行 ──────────────────────────────────────────────────────────────────
 
 const isDisabled = computed(() =>
-  !props.fileId || isProcessing.value || available.value === false || !isPdfOrImage.value
+  !props.fileId || isProcessing.value || !isPdfOrImage.value
 )
 const isLoading = computed(() => isProcessing.value)
 
 async function execute() {
+  if (!await guardModelReady(modelDownloaded.value !== false, 'llm')) return
   if (!props.fileId) return
   const parsed = parseModelValue(selectedModel.value)
 
@@ -211,7 +224,7 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, getParams })
       <i class="bi bi-exclamation-triangle"></i>
       <div class="info-box-body">
         <span>{{ $t('document.ocr.server_not_found') }}</span>
-        <button class="info-box-action" @click="router.push('/setup')">{{ $t('document.ocr.go_to_settings') }}</button>
+        <button class="info-box-action" @click="router.push('/settings')">{{ $t('document.ocr.go_to_settings') }}</button>
       </div>
     </div>
 

@@ -108,9 +108,9 @@ def translate_text_cloud(
     for i, chunk in enumerate(chunks):
         if on_progress:
             if total == 1:
-                on_progress(0.05, "翻譯中...")
+                on_progress(0.05, "task.progress.translating")
             else:
-                on_progress(i / total, f"翻譯中... {i + 1}/{total} 段")
+                on_progress(i / total, f"task.progress.translating_segment|{i + 1}|{total}")
 
         prompt = build_translate_prompt(chunk, source_lang, target_lang, glossary=glossary)
         messages = [
@@ -125,7 +125,7 @@ def translate_text_cloud(
 
         if on_progress:
             progress = min((i + 1) / total, 1.0)
-            on_progress(progress, f"翻譯完成 {i + 1}/{total} 段")
+            on_progress(progress, f"task.progress.translated_segment|{i + 1}|{total}")
 
     return "\n\n".join(translated_chunks)
 
@@ -165,7 +165,7 @@ def translate_text_local(
 
         if on_progress:
             progress = min((i + 1) / total, 1.0)
-            on_progress(progress, f"翻譯中... {i + 1}/{total} 段")
+            on_progress(progress, f"task.progress.translating_segment|{i + 1}|{total}")
 
     return "\n\n".join(translated_chunks)
 
@@ -211,9 +211,9 @@ def translate_srt_cloud(
 
         if on_progress:
             if num_batches == 1:
-                on_progress(0.05, f"翻譯中（{total} 段）...")
+                on_progress(0.05, f"task.progress.translating_total|{total}")
             else:
-                on_progress(batch_idx / num_batches, f"翻譯中... {start}/{total} 段")
+                on_progress(batch_idx / num_batches, f"task.progress.translating_segment|{start}|{total}")
 
         srt_text = segments_to_srt(batch, start_index=start + 1)
         prompt = build_srt_translate_prompt(
@@ -234,7 +234,7 @@ def translate_srt_cloud(
 
         if on_progress:
             progress = min((batch_idx + 1) / num_batches, 1.0)
-            on_progress(progress, f"翻譯完成 {end}/{total} 段")
+            on_progress(progress, f"task.progress.translated_segment|{end}|{total}")
 
     return translated_all
 
@@ -296,6 +296,6 @@ def translate_srt_local(
 
         if on_progress:
             progress = min((batch_idx + 1) / num_batches, 1.0)
-            on_progress(progress, f"翻譯完成 {end}/{total} 段")
+            on_progress(progress, f"task.progress.translated_segment|{end}|{total}")
 
     return translated_all

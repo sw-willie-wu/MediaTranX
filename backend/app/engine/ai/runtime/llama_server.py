@@ -1,6 +1,6 @@
 """
 LlamaServerRuntime - llama-server subprocess 執行器
-取代 GGUFRuntime，透過 HTTP API 支援文字 LLM 與 VLM（視覺語言模型）
+取代 GGUFRuntime，透過 HTTP API 支援文字 LLM 與視覺語言模型（VLM）
 """
 import json
 import logging
@@ -34,8 +34,8 @@ class LlamaServerRuntime(BaseRuntime):
     acquire() yields self，外部可直接呼叫 self.chat()。
     _unload_model_impl() 終止 subprocess。
 
-    同時支援 FORMAT_GGUF（文字 LLM）和 FORMAT_VLM（視覺語言模型）。
-    VLM 在 config 中帶有 mmproj_path，啟動時自動加入 --mmproj 參數。
+    FORMAT_GGUF 同時支援文字 LLM 與視覺語言模型（VLM）。
+    視覺模型在 config 中帶有 mmproj_path，啟動時自動加入 --mmproj 參數。
     """
 
     def __init__(self, slot: str):
@@ -58,7 +58,7 @@ class LlamaServerRuntime(BaseRuntime):
         from app.init.configs import SETTINGS
 
         if on_progress:
-            on_progress(0.05, "正在準備 llama-server...")
+            on_progress(0.05, "task.progress.preparing_llama")
 
         # 找 llama-server 執行檔
         llama_dir = SETTINGS.path.llama
@@ -76,17 +76,17 @@ class LlamaServerRuntime(BaseRuntime):
 
         cmd = [
             str(server_exe),
-            "--model", str(model_path),
+            "--model", str(model_path.resolve()),
             "--port", str(self._port),
             "--host", "127.0.0.1",
             "--ctx-size", str(n_ctx),
             "--n-gpu-layers", str(n_gpu_layers),
-            "--no-jinja",
+            "--chat-template-kwargs", '{"enable_thinking":false}',
         ]
 
         mmproj_path = config.get("mmproj_path")
         if mmproj_path:
-            cmd += ["--mmproj", str(mmproj_path)]
+            cmd += ["--mmproj", str(Path(mmproj_path).resolve())]
 
         logger.info(
             f"Starting llama-server on port {self._port} "
@@ -94,7 +94,7 @@ class LlamaServerRuntime(BaseRuntime):
         )
 
         if on_progress:
-            on_progress(0.2, f"啟動 llama-server（port {self._port}）...")
+            on_progress(0.2, f"task.progress.starting_llama|{self._port}")
 
         base = SETTINGS.path.data
         log_dir = base / "logs" if SETTINGS.is_frozen else base
@@ -113,7 +113,7 @@ class LlamaServerRuntime(BaseRuntime):
 
         logger.info(f"llama-server ready on port {self._port}")
         if on_progress:
-            on_progress(1.0, "模型載入完成")
+            on_progress(1.0, "task.progress.model_loaded")
 
         return self  # acquire() 會 yield self，外部可呼叫 chat()
 
@@ -139,12 +139,10 @@ class LlamaServerRuntime(BaseRuntime):
             self._log_file = None
 
     def _resolve_model_path(self, model_id: str, variant: Optional[str] = None):
-        from app.engine.ai.registry import FORMAT_GGUF, FORMAT_VLM, MODELS_REGISTRY
+        from app.engine.ai.registry import FORMAT_GGUF, MODELS_REGISTRY
 
         if model_id in MODELS_REGISTRY.get(FORMAT_GGUF, {}):
             return self._resolve_gguf_path(model_id, variant)
-        if model_id in MODELS_REGISTRY.get(FORMAT_VLM, {}):
-            return self._resolve_vlm_path(model_id, variant)
         raise ValueError(f"Unknown model for LlamaServerRuntime: {model_id}")
 
     # ─────────────────────────────────────────────
@@ -175,6 +173,7 @@ class LlamaServerRuntime(BaseRuntime):
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "repeat_penalty": 1.1,
         }
         if stop:
             payload["stop"] = stop
@@ -243,56 +242,20 @@ class LlamaServerRuntime(BaseRuntime):
             "layers": specs["layers"],
             "n_ctx": specs["n_ctx"],
         }
+
+        # Handle mmproj for vision models
+        if "mmproj_filename" in variant_spec:
+            from app.init.configs import SETTINGS
+            base_dir = (SETTINGS.path.models / model_id).resolve()
+            mmproj_path = base_dir / variant_spec["mmproj_filename"]
+            if not mmproj_path.exists():
+                raise FileNotFoundError(
+                    f"mmproj 尚未下載：{model_id}/{size}/{quant}。"
+                    "請前往「AI 模組管理」下載後再試。"
+                )
+            config["mmproj_path"] = mmproj_path
+
         return model_path, config
-
-    def _resolve_vlm_path(self, model_id: str, variant: Optional[str]):
-        from app.engine.ai.registry import FORMAT_VLM, MODELS_REGISTRY
-        from app.init.configs import SETTINGS
-
-        family = MODELS_REGISTRY[FORMAT_VLM][model_id]
-
-        if ":" in (variant or ""):
-            size, quant = variant.split(":", 1)
-        else:
-            size = variant
-            quant = family["default_variant"].get(size)
-            if not quant:
-                raise ValueError(f"No default quantization for {model_id}/{size}")
-
-        specs = family["specs"].get(size)
-        if not specs:
-            raise ValueError(f"Unknown size '{size}' for {model_id}")
-
-        variant_spec = specs["variants"].get(quant)
-        if not variant_spec:
-            raise ValueError(f"Unknown quantization '{quant}' for {model_id}/{size}")
-
-        slot = family["slot"]
-        base_dir = SETTINGS.path.models / slot
-
-        main_path = base_dir / variant_spec["filename"]
-        if not main_path.exists():
-            raise FileNotFoundError(
-                f"VLM 主模型尚未下載：{model_id}/{size}/{quant}。"
-                "請前往「AI 模組管理」下載後再試。"
-            )
-
-        mmproj_path = base_dir / variant_spec["mmproj_filename"]
-        if not mmproj_path.exists():
-            raise FileNotFoundError(
-                f"VLM mmproj 尚未下載：{model_id}/{size}/{quant}。"
-                "請前往「AI 模組管理」下載後再試。"
-            )
-
-        config = {
-            "model_id": model_id,
-            "size": size,
-            "quantization": quant,
-            "layers": specs.get("layers", 99),
-            "n_ctx": specs.get("n_ctx", 4096),
-            "mmproj_path": mmproj_path,
-        }
-        return main_path, config
 
     # ─────────────────────────────────────────────
     # 內部工具
@@ -327,7 +290,7 @@ class LlamaServerRuntime(BaseRuntime):
                 elapsed = step * 0.5
                 on_progress(
                     0.2 + min(elapsed / timeout, 0.7) * 0.7,
-                    f"等待模型載入... ({elapsed:.0f}s)",
+                    f"task.progress.waiting_model_load|{elapsed:.0f}",
                 )
             time.sleep(0.5)
 

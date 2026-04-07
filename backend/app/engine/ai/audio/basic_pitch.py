@@ -45,7 +45,7 @@ class BasicPitchWrapper(PackageRuntime):
         from basic_pitch.inference import predict
 
         if on_progress:
-            on_progress(0.3, "正在載入 Basic Pitch 模型...")
+            on_progress(0.3, "task.progress.loading_basicpitch")
 
         logger.info(f"Basic Pitch loaded: model={ICASSP_2022_MODEL_PATH}")
         return {"predict": predict, "model_path": ICASSP_2022_MODEL_PATH}
@@ -111,7 +111,7 @@ class BasicPitchWrapper(PackageRuntime):
             每個 note: {"pitch": int, "start": float, "duration": float, "velocity": int}
         """
         if on_progress:
-            on_progress(0.0, "準備音訊轉 MIDI...")
+            on_progress(0.0, "task.progress.preparing_midi")
 
         # basic-pitch 內部使用 print/logging 輸出路徑，
         # 非 ASCII 檔名在 Windows cp950 環境會 crash。
@@ -136,7 +136,7 @@ class BasicPitchWrapper(PackageRuntime):
                 on_progress=on_progress,
             ) as bp:
                 if on_progress:
-                    on_progress(0.3, "分析音訊中...")
+                    on_progress(0.3, "task.progress.analyzing_audio")
 
                 # predict(audio_path, model_or_model_path) 回傳 (model_output, midi_data, note_events)
                 model_output, midi_data, note_events = bp["predict"](
@@ -148,7 +148,7 @@ class BasicPitchWrapper(PackageRuntime):
                 )
 
                 if on_progress:
-                    on_progress(0.8, "轉換 MIDI 事件...")
+                    on_progress(0.8, "task.progress.converting_midi")
         finally:
             if tmp_dir:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -171,7 +171,7 @@ class BasicPitchWrapper(PackageRuntime):
             })
 
         if on_progress:
-            on_progress(1.0, "音訊轉 MIDI 完成")
+            on_progress(1.0, "task.progress.midi_complete")
 
         logger.info(f"Basic Pitch: {len(notes)} notes extracted from {stem_name}")
 

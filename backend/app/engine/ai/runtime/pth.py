@@ -52,14 +52,14 @@ class PTHRuntime(BaseRuntime):
             PyTorch 模型實例
         """
         if on_progress:
-            on_progress(0.2, "正在初始化 PyTorch...")
+            on_progress(0.2, "task.progress.init_pytorch")
         
         # 設備選擇邏輯
         device = self._select_device(config.get("device"))
         self._device = device
         
         if on_progress:
-            on_progress(0.4, f"正在載入權重檔 ({device})...")
+            on_progress(0.4, f"task.progress.loading_weights|{device}")
         
         if self._use_spandrel:
             model = self._load_with_spandrel(model_path, device, config)
@@ -169,7 +169,7 @@ class PTHRuntime(BaseRuntime):
 
                 done = iy * tiles_x + ix + 1
                 if on_progress:
-                    on_progress(done / total, f"分塊推理 {done}/{total}")
+                    on_progress(done / total, f"task.progress.tile_inference|{done}|{total}")
 
         return output
 

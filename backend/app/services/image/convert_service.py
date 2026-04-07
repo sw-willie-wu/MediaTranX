@@ -110,7 +110,7 @@ class ImageConvertService:
 
         from app.utils.gif_utils import animation_format, process_gif_frames, save_animated
 
-        progress_callback(0.1, "載入圖片...")
+        progress_callback(0.1, "task.progress.loading_image")
 
         output_format = params["output_format"].upper()
 
@@ -140,7 +140,7 @@ class ImageConvertService:
             ) else None
             if keep_anim_fmt:
                 def _convert_frame(frame, idx, total):
-                    progress_callback(0.1 + idx / total * 0.5, f"轉換中 ({idx + 1}/{total})...")
+                    progress_callback(0.1 + idx / total * 0.5, f"task.progress.converting|{idx + 1}|{total}")
                     return _resize_frame(frame)
                 anim_frames = process_gif_frames(raw, _convert_frame)
             else:
@@ -151,12 +151,12 @@ class ImageConvertService:
             if output_format in ["JPEG", "JPG"] and img.mode in ["RGBA", "P"]:
                 img = img.convert("RGB")
 
-        progress_callback(0.3, "調整尺寸...")
+        progress_callback(0.3, "task.progress.resizing")
 
         if not keep_anim_fmt:
             img = _resize_frame(img)
 
-        progress_callback(0.6, "轉換格式...")
+        progress_callback(0.6, "task.progress.converting_format")
 
         # 建立輸出路徑
         custom_output_dir = params.get("output_dir")
@@ -188,7 +188,7 @@ class ImageConvertService:
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 
-        progress_callback(0.8, "儲存檔案...")
+        progress_callback(0.8, "task.progress.saving_file")
 
         if keep_anim_fmt:
             save_animated(anim_frames, output_path, keep_anim_fmt)
@@ -214,7 +214,7 @@ class ImageConvertService:
             original_filename=file_info.original_filename,
         )
 
-        progress_callback(1.0, "轉檔完成")
+        progress_callback(1.0, "task.progress.convert_complete")
 
         return {
             "output_file_id": output_file_id,

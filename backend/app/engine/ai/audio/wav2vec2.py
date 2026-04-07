@@ -38,7 +38,7 @@ LANG_MODELS: dict[str, str] = {
     "en": "jonatasgrosman/wav2vec2-large-xlsr-53-english",
     "zh": "jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn",
     "ja": "jonatasgrosman/wav2vec2-large-xlsr-53-japanese",
-    "ko": "jonatasgrosman/wav2vec2-large-xlsr-53-korean",
+    "ko": "kresnik/wav2vec2-large-xlsr-korean",
     "fr": "jonatasgrosman/wav2vec2-large-xlsr-53-french",
     "de": "jonatasgrosman/wav2vec2-large-xlsr-53-german",
     "es": "jonatasgrosman/wav2vec2-large-xlsr-53-spanish",
@@ -113,12 +113,12 @@ class AlignmentEngine:
         try:
             # 載入模型
             if on_progress:
-                on_progress(0.0, "載入對齊模型...")
+                on_progress(0.0, "task.progress.loading_alignment")
             self._ensure_model(language)
 
             # 讀取完整音訊
             if on_progress:
-                on_progress(0.1, "讀取音訊...")
+                on_progress(0.1, "task.progress.reading_audio")
             full_waveform = self._load_audio(audio_path)
 
             # 逐 segment 分段推論（避免一次送入整段長音訊導致 OOM/卡頓）
@@ -131,7 +131,7 @@ class AlignmentEngine:
             for i, seg in enumerate(segments):
                 if on_progress:
                     progress = 0.15 + 0.8 * (i / total)
-                    on_progress(progress, f"對齊片段 {i+1}/{total}...")
+                    on_progress(progress, f"task.progress.aligning_segment|{i+1}|{total}")
 
                 # 擷取 segment 對應的音訊片段（含前後 padding）
                 start_sample = max(0, int((seg.start - pad_sec) * _WAV2VEC2_SR))
@@ -186,7 +186,7 @@ class AlignmentEngine:
                     aligned_segments.append(seg)
 
             if on_progress:
-                on_progress(1.0, "對齊完成")
+                on_progress(1.0, "task.progress.align_complete")
 
             return aligned_segments
 
@@ -231,12 +231,15 @@ class AlignmentEngine:
 
     def _load_audio(self, audio_path: str) -> list[float]:
         """讀取音訊並 resample 到 16kHz mono"""
+        from app.init.container import get_container
+        ffmpeg_path = get_container().ffmpeg().ffmpeg_path
+
         # 用 ffmpeg 轉成 16kHz mono PCM
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp.close()
         try:
             subprocess.run(
-                ["ffmpeg", "-y", "-i", audio_path,
+                [ffmpeg_path, "-y", "-i", audio_path,
                  "-ar", str(_WAV2VEC2_SR), "-ac", "1",
                  "-f", "wav", tmp.name],
                 capture_output=True, check=True

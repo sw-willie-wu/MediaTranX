@@ -21,8 +21,8 @@ import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar
 
 const {
   hasFile, fileId, isUploading, currentFileName, imageInfo, isLoadingInfo,
-  aiEnvReady, canGoBack, canGoForward, activeFileId, activePreviewUrl, hasResult, activeResultMeta,
-  goBack, goForward, checkAiEnvironment, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
+  canGoBack, canGoForward, activeFileId, activePreviewUrl, hasResult, activeResultMeta,
+  goBack, goForward, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
   handleDownload, handleTextDownload, textResultFileId, textResultFilename, textResultContent,
   collection, activeId, selectedIds,
   sourceDir,
@@ -139,7 +139,6 @@ watch(currentFunction, (val, oldVal) => {
     filterPreviewParams.value = null
   }
 
-  if (val === 'upscale' || val === 'ai-remove') checkAiEnvironment(val)
   if (val === 'ai-remove') {
     nextTick(() => previewRef.value?.syncToImage())
   }
@@ -458,7 +457,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="upscalePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :ai-env-ready="aiEnvReady"
           @submit="onPanelSubmit"
         />
 

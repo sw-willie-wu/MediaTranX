@@ -9,6 +9,7 @@ import AppToggle from '@/components/common/AppToggle.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { apiFetch } from '@/composables/useApi'
+import { useModelGuard } from '@/composables/useModelGuard'
 
 const props = defineProps<{
   fileId: string | null
@@ -25,6 +26,7 @@ const { submitTask, isProcessing } = useSubmitTask()
 const filesStore = useFilesStore()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
+const { guardModelReady } = useModelGuard()
 
 // ── Whisper model status ────────────────────────────────────────
 const whisperAvailable = ref<boolean | null>(null)
@@ -66,7 +68,7 @@ const alignEnabled = ref(false)
 const outputFormat = ref('lrc')
 const translateEnabled = ref(false)
 const targetLanguage = ref('zh-TW')
-const selectedTranslateModel = ref('translategemma:4b:Q4_K_M')
+const selectedTranslateModel = ref('')
 const outputPath = ref('')
 
 const outputFormats = computed(() => [
@@ -76,19 +78,24 @@ const outputFormats = computed(() => [
 
 // ── Translation model options ───────────────────────────────────
 const localTranslateModelOptions = computed(() =>
-  modelStore.byCategory('translate')
+  modelStore.forPanel(modelStore.byCapability('text'))
     .slice()
     .sort((a, b) => a.size_mb - b.size_mb)
     .map(m => {
-      const dashIdx = m.variant.indexOf('-')
-      const size = m.variant.slice(0, dashIdx)
-      const quant = m.variant.slice(dashIdx + 1)
+      const [size, quant] = m.variant.split(':')
       const key = `${m.family}:${size}:${quant}`
       return { value: key, label: m.label, sizeMb: m.size_mb, badge: m.downloaded ? 'ok' as const : 'err' as const }
     })
 )
 
 const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
+
+watch(localTranslateModelOptions, (options) => {
+  if (!selectedTranslateModel.value) {
+    const first = options.find(m => m.badge === 'ok')
+    if (first) selectedTranslateModel.value = first.value
+  }
+}, { immediate: true })
 
 // ── Translation language options ────────────────────────────────
 const translateLanguages = ref([
@@ -158,6 +165,12 @@ watch(translateEnabled, (val) => { if (val) loadTranslateLanguages() })
 
 // ── Submit ──────────────────────────────────────────────────────
 async function execute() {
+  if (!await guardModelReady(whisperDownloadedMap.value[modelSize.value] === true, 'audio')) return
+  if (translateEnabled.value) {
+    const tParsed = parseModelValue(selectedTranslateModel.value)
+    const translateReady = tParsed.isRemote || localTranslateModelOptions.value.find(m => m.value === selectedTranslateModel.value)?.badge === 'ok'
+    if (!await guardModelReady(translateReady === true, 'llm')) return
+  }
   if (!props.fileId) return
 
   const body: Record<string, unknown> = {

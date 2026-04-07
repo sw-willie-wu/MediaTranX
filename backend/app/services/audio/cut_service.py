@@ -4,11 +4,10 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 from uuid import uuid4
 
-from app.engine.ffmpeg import FFmpeg
-from app.handler.exceptions import FFmpegError
+from app.engine.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -19,7 +18,7 @@ TASK_TYPE_AUDIO_CUT = "audio.cut"
 
 class AudioCutService:
 
-    def __init__(self, ffmpeg: FFmpeg, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager):
         self._ffmpeg = ffmpeg
         self._file_service = file_service
         self._task_manager = task_manager
@@ -31,11 +30,19 @@ class AudioCutService:
         file_id: str,
         start_time: str,
         end_time: str,
+        output_dir: Optional[str] = None,
+        output_filename: Optional[str] = None,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
-        params = {"file_id": file_id, "start_time": start_time, "end_time": end_time}
+        params = {
+            "file_id": file_id,
+            "start_time": start_time,
+            "end_time": end_time,
+            "output_dir": output_dir,
+            "output_filename": output_filename,
+        }
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_CUT, params)
         logger.info(f"Audio cut task submitted: {task_id}")
         return task_id
@@ -57,32 +64,36 @@ class AudioCutService:
         output_file_id = str(uuid4())
         ext = Path(file_info.original_filename).suffix or ".mp3"
         original_stem = Path(file_info.original_filename).stem
-        final_filename = f"{original_stem}_cut_{output_file_id[:8]}{ext}"
 
-        output_dir_path = self._file_service.output_dir
+        # 決定輸出目錄
+        custom_output_dir = params.get("output_dir")
+        if custom_output_dir:
+            output_dir_path = Path(custom_output_dir)
+        else:
+            output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
+
+        # 決定輸出檔名
+        custom_output_filename = params.get("output_filename")
+        if custom_output_filename:
+            final_filename = custom_output_filename
+        else:
+            final_filename = f"{original_stem}_cut_{output_file_id[:8]}{ext}"
+
         output_path = output_dir_path / final_filename
 
-        cmd = [
-            self._ffmpeg.ffmpeg_path,
-            "-i", str(file_info.file_path),
-            "-ss", params["start_time"],
-            "-to", params["end_time"],
-            "-acodec", "copy",
-            "-y", str(output_path),
-        ]
-
-        progress_callback(0.0, "開始剪輯...")
-        process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        progress_callback(0.0, "task.progress.cut_starting")
+        await self._ffmpeg.cut(
+            input_path=file_info.file_path,
+            output_path=output_path,
+            start_time=params["start_time"],
+            end_time=params["end_time"],
+            stream_copy=True,
         )
-        progress_callback(0.5, "剪輯中...")
-        stdout, stderr = await process.communicate()
-        if process.returncode != 0:
-            raise FFmpegError(f"FFmpeg error: {stderr.decode()}")
+        progress_callback(0.5, "task.progress.cut_processing")
 
         output_info = self._file_service.register_output(
             file_id=output_file_id, file_path=output_path, original_filename=file_info.original_filename
         )
-        progress_callback(1.0, "剪輯完成")
+        progress_callback(1.0, "task.progress.cut_complete")
         return {"output_file_id": output_file_id, "output_filename": output_info.filename}

@@ -17,6 +17,16 @@ function statusLabel(status: string) {
   return status === 'pending' ? t('tasks.active.pending') : t('tasks.active.processing')
 }
 
+function translateProgress(message: string | null): string | undefined {
+  if (!message) return undefined
+  if (!message.startsWith('task.progress.')) return message
+  const parts = message.split('|')
+  const key = parts[0]
+  if (parts.length === 1) return t(key)
+  const params = parts.slice(1)
+  return t(key, params)
+}
+
 function formatTime(date: Date) {
   return date.toLocaleTimeString('zh-TW', {
     hour: '2-digit',
@@ -57,7 +67,7 @@ onActivated(() => taskStore.refreshTasks())
         </span>
       </div>
       <div class="task-progress">
-        <ProgressBar :progress="task.progress" :message="task.message ?? undefined" :show-percentage="true" />
+        <ProgressBar :progress="task.progress" :message="translateProgress(task.message)" :show-percentage="true" />
       </div>
       <div class="task-footer">
         <span class="task-time">{{ formatTime(task.createdAt) }}</span>
@@ -193,9 +203,9 @@ onActivated(() => taskStore.refreshTasks())
   }
 }
 
-.task-list-enter-active { transition: all 0.3s ease; }
+.task-list-enter-active { transition: all 0.2s ease; }
 .task-list-leave-active { transition: all 0.2s ease; }
 .task-list-enter-from { opacity: 0; transform: translateY(-10px); }
 .task-list-leave-to { opacity: 0; transform: translateX(20px); }
-.task-list-move { transition: transform 0.25s ease; }
+.task-list-move { transition: transform 0.2s ease; }
 </style>
