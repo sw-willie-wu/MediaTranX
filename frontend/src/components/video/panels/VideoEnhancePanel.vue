@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useModelStore } from '@/stores/models'
+import { useModelGuard } from '@/composables/useModelGuard'
 import AppSelect from '@/components/common/AppSelect.vue'
 
 const { t } = useI18n()
+const modelStore = useModelStore()
+const { guardModelReady } = useModelGuard()
 
 const props = defineProps<{
   fileId: string | null
@@ -23,12 +27,16 @@ const outputFormat = ref('mp4')
 const videoCodec = ref('h264')
 const showAdvanced = ref(false)
 
-const variantOptions = computed(() => [
-  { value: 'x2plus', label: 'Real-ESRGAN x2' },
-  { value: 'x4plus', label: 'Real-ESRGAN x4' },
-  { value: 'x4plus-anime', label: 'Real-ESRGAN x4 Anime' },
-  { value: 'animevideov3', label: 'Real-ESRGAN Video x4 (Fast)' },
-])
+const variantOptions = computed(() => {
+  const allModels = [...modelStore.forPanel(modelStore.byCategory('upscale')), ...modelStore.forPanel(modelStore.byCategory('video_enhance'))]
+  const dlMap = new Map(allModels.map(m => [m.variant, m.downloaded]))
+  return [
+    { value: 'x2plus', label: 'Real-ESRGAN x2', badge: dlMap.get('x2plus') ? 'ok' as const : 'err' as const },
+    { value: 'x4plus', label: 'Real-ESRGAN x4', badge: dlMap.get('x4plus') ? 'ok' as const : 'err' as const },
+    { value: 'x4plus-anime', label: 'Real-ESRGAN x4 Anime', badge: dlMap.get('x4plus-anime') ? 'ok' as const : 'err' as const },
+    { value: 'animevideov3', label: 'Real-ESRGAN Video x4 (Fast)', badge: dlMap.get('animevideov3') ? 'ok' as const : 'err' as const },
+  ]
+})
 
 const formatOptions = computed(() => [
   { value: 'mp4', label: 'MP4' },
@@ -57,6 +65,8 @@ const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
 
 async function execute() {
+  const selected = variantOptions.value.find(v => v.value === variant.value)
+  if (!await guardModelReady(selected?.badge === 'ok', 'image')) return
   if (!props.fileId) return
 
   const taskId = await submitTask(
@@ -75,6 +85,8 @@ async function execute() {
 
   if (taskId) emit('submit', taskId)
 }
+
+onMounted(() => modelStore.ensureLoaded())
 
 defineExpose({ execute, isDisabled, isLoading })
 </script>

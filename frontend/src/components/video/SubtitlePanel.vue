@@ -9,6 +9,8 @@ import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.
 import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
 import { apiFetch, getApiBase } from '@/composables/useApi'
 import { parseModelValue } from '@/composables/useModelOptions'
+import { useModelStore } from '@/stores/models'
+import { useModelGuard } from '@/composables/useModelGuard'
 
 const { t } = useI18n()
 
@@ -35,6 +37,8 @@ const emit = defineEmits<{
 const filesStore = useFilesStore()
 const taskStore = useTaskStore()
 const toast = useToast()
+const modelStore = useModelStore()
+const { guardModelReady } = useModelGuard()
 
 const isLoading = ref(false)
 const error = ref<string | null>(null)
@@ -147,6 +151,16 @@ const translationOptions = ref<InstanceType<typeof TranslationOptionsPanel> | nu
 
 // ── 提交 ────────────────────────────────────────────────────────
 async function submitGenerate() {
+  if (!await guardModelReady(whisperDownloadedMap.value[modelSize.value] === true, 'audio')) return
+  if (translationOptions.value?.enableTranslation) {
+    const tParsed = parseModelValue(translationOptions.value.selectedTranslateModel)
+    const tModel = translationOptions.value.selectedTranslateModel
+    const translateReady = tParsed.isRemote || modelStore.byCapability('text').some(m => {
+      const [size, quant] = m.variant.split(':')
+      return `${m.family}:${size}:${quant}` === tModel && m.downloaded
+    })
+    if (!await guardModelReady(translateReady, 'llm')) return
+  }
   if (!props.fileId) return
   isLoading.value = true
   error.value = null
@@ -243,7 +257,7 @@ const isDisabled = computed(() =>
 
 defineExpose({ submitGenerate, isLoading, isDisabled })
 
-onMounted(() => { loadAllWhisperStatus(); loadLanguages() })
+onMounted(() => { loadAllWhisperStatus(); loadLanguages(); modelStore.ensureLoaded() })
 </script>
 
 <template>

@@ -1,18 +1,25 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { useTaskStore } from '@/stores/tasks'
 import { useModelStore } from '@/stores/models'
 import { apiFetch } from '@/composables/useApi'
 import AppModelGroupList from '@/components/common/AppModelGroupList.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
+import { useToast } from '@/composables/useToast'
+import { useSettingsStore } from '@/stores/settings'
+import AppToggle from '@/components/common/AppToggle.vue'
 
 const { t } = useI18n()
+const toast = useToast()
+const route = useRoute()
+const settingsStore = useSettingsStore()
 
 const taskStore = useTaskStore()
 const modelStore = useModelStore()
 
-const activeTab = ref('')
+const activeTab = ref((route.query.category as string) || '')
 const tabsRef = ref<HTMLElement | null>(null)
 
 function onTabsWheel(e: WheelEvent) {
@@ -219,7 +226,12 @@ watch(
       const task = taskStore.tasks.get(taskId)
       if (task && (task.status === 'completed' || task.status === 'failed')) {
         delete downloadingTaskId.value[itemId]
-        if (task.status === 'completed') modelStore.setDownloaded(itemId, true)
+        if (task.status === 'completed') {
+          modelStore.setDownloaded(itemId, true)
+          toast.show(t('settings.models.download_success', { id: itemId }), { type: 'success' })
+        } else {
+          toast.show(t('settings.models.download_failed', { id: itemId, error: task.error || '' }), { type: 'error' })
+        }
       }
     }
   },
@@ -232,7 +244,17 @@ onMounted(() => {
 </script>
 
 <template>
-  <h6 class="section-title">{{ $t('settings.models.title') }}</h6>
+  <!-- Display settings -->
+  <h6 class="section-title">{{ $t('settings.models.display_title') }}</h6>
+  <div class="setting-item">
+    <AppToggle :modelValue="settingsStore.showAllModels" @update:modelValue="settingsStore.setShowAllModels">
+      {{ $t('settings.models.show_all_models') }}
+    </AppToggle>
+    <p class="download-hint"><i class="bi bi-info-circle"></i> {{ $t('settings.models.show_all_models_hint') }}</p>
+  </div>
+
+  <!-- Model list -->
+  <h6 class="section-title" style="margin-top: 1.5rem;">{{ $t('settings.models.title') }}</h6>
   <p class="download-hint"><i class="bi bi-info-circle"></i> {{ $t('settings.models.hint') }}</p>
 
   <div v-if="modelStore.loading && !modelStore.loaded" class="models-loading">
@@ -356,7 +378,7 @@ onMounted(() => {
     <div v-if="showAddForm" class="conn-form">
       <div class="form-group">
         <label>{{ $t('settings.remote.provider') }}</label>
-        <AppSelect v-model="newConn.provider" :options="providerOptions" size="sm" />
+        <AppSelect v-model="newConn.provider" :options="providerOptions" />
       </div>
       <div class="form-group">
         <label>{{ $t('settings.remote.name') }}</label>

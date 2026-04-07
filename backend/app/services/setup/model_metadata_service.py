@@ -27,8 +27,7 @@ _CATEGORY_MAP = {
     "separate": "audio",
     "alignment": "audio",
     "midi": "audio",
-    "translate": "llm",
-    "vlm": "llm",
+    "gguf": "llm",
     "interpolate": "video",
     "video_enhance": "video",
 }
@@ -68,6 +67,11 @@ _SIZE_DESC = {
         "4b": "models.size.light_ocr_recommended",
         "12b": "models.size.high_precision_ocr",
     },
+    "qwen3.5": {
+        "4b": "models.size.light_fast",
+        "9b": "models.size.balanced",
+        "27b": "models.size.highest",
+    },
 }
 
 _QUANT_DESC = {
@@ -79,10 +83,13 @@ _QUANT_DESC = {
     "Q3_K_S": "models.quant.q3ks",
 }
 
-_VLM_FAMILY_LABELS = {
+_GGUF_FAMILY_LABELS = {
+    "translategemma": "TranslateGemma",
+    "qwen3": "Qwen3",
     "qwen3vl": "Qwen3-VL",
     "internvl2.5": "InternVL2.5",
     "gemma3": "Gemma 3",
+    "qwen3.5": "Qwen3.5",
 }
 
 _UPSCALE_LABELS = {
@@ -154,8 +161,7 @@ class ModelMetadataService:
         all_models.extend(self._enumerate_pth_models())
         all_models.extend(self._enumerate_whisper_models())
         all_models.extend(self._enumerate_demucs_models())
-        all_models.extend(self._enumerate_translate_models())
-        all_models.extend(self._enumerate_vlm_models())
+        all_models.extend(self._enumerate_gguf_models())
         all_models.extend(self._enumerate_alignment_models())
         all_models.extend(self._enumerate_rife_models())
         all_models.extend(self._enumerate_midi_models())
@@ -274,8 +280,8 @@ class ModelMetadataService:
             })
         return items
 
-    def _enumerate_translate_models(self) -> list[dict]:
-        """從 registry 動態枚舉所有翻譯模型"""
+    def _enumerate_gguf_models(self) -> list[dict]:
+        """從 registry 動態枚舉所有 GGUF 模型（文字 + 視覺）"""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
         from app.init.configs import SETTINGS
 
@@ -283,18 +289,24 @@ class ModelMetadataService:
         gguf_models = MODELS_REGISTRY.get(FORMAT_GGUF, {})
 
         for model_family, config in gguf_models.items():
-            if model_family not in ["translategemma", "qwen3"]:
-                continue
-
-            name_prefix = "TranslateGemma" if model_family == "translategemma" else "Qwen3"
+            family_label = _GGUF_FAMILY_LABELS.get(model_family, model_family)
+            capabilities = config.get("capabilities", ["text"])
             target_dir = SETTINGS.path.models / model_family
             specs = config.get("specs", {})
 
             for size, size_spec in specs.items():
                 variants = size_spec.get("variants", {})
                 for quant, quant_spec in variants.items():
-                    model_path = target_dir / quant_spec["filename"]
+                    # Check download status
+                    main_path = target_dir / quant_spec["filename"]
+                    has_mmproj = "mmproj_filename" in quant_spec
+                    if has_mmproj:
+                        mmproj_path = target_dir / quant_spec["mmproj_filename"]
+                        downloaded = main_path.exists() and mmproj_path.exists()
+                    else:
+                        downloaded = main_path.exists()
 
+                    total_mb = quant_spec.get("size_mb", 0) + quant_spec.get("mmproj_size_mb", 0)
                     size_desc = _SIZE_DESC.get(model_family, {}).get(size, "")
                     quant_desc = _QUANT_DESC.get(quant, "")
                     description = f"{size_desc}||{quant_desc}" if size_desc and quant_desc else (size_desc or quant_desc)
@@ -302,49 +314,11 @@ class ModelMetadataService:
                     items.append({
                         "id": f"{model_family}-{size}-{quant}",
                         "family": model_family,
-                        "variant": f"{size}-{quant}",
-                        "label": f"{name_prefix} {size.upper()} {quant}",
-                        "description": description,
-                        "category": "translate",
-                        "downloaded": model_path.exists(),
-                        "size_mb": quant_spec.get("size_mb", 0),
-                        "vram_mb": quant_spec.get("size_mb", 0) + size_spec.get("vram_overhead_mb", 0),
-                    })
-        return items
-
-    def _enumerate_vlm_models(self) -> list[dict]:
-        """從 registry 動態枚舉所有 VLM OCR 模型"""
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_VLM
-        from app.init.configs import SETTINGS
-
-        items = []
-        vlm_models = MODELS_REGISTRY.get(FORMAT_VLM, {})
-
-        for model_family, config in vlm_models.items():
-            slot = config.get("slot", "vlm")
-            target_dir = SETTINGS.path.models / slot
-            specs = config.get("specs", {})
-            family_label = _VLM_FAMILY_LABELS.get(model_family, model_family)
-
-            for size, size_spec in specs.items():
-                variants = size_spec.get("variants", {})
-                for quant, quant_spec in variants.items():
-                    main_path = target_dir / quant_spec["filename"]
-                    mmproj_path = target_dir / quant_spec.get("mmproj_filename", "")
-                    downloaded = main_path.exists() and (
-                        not quant_spec.get("mmproj_filename") or mmproj_path.exists()
-                    )
-                    total_mb = quant_spec.get("size_mb", 0) + quant_spec.get("mmproj_size_mb", 0)
-                    quant_desc = _QUANT_DESC.get(quant, quant)
-                    size_desc = _SIZE_DESC.get(model_family, {}).get(size, "")
-                    description = f"{size_desc}||{quant_desc}" if size_desc and quant_desc else (size_desc or quant_desc)
-                    items.append({
-                        "id": f"{model_family}-{size}-{quant}",
-                        "family": model_family,
                         "variant": f"{size}:{quant}",
                         "label": f"{family_label} {size.upper()} {quant}",
                         "description": description,
-                        "category": "vlm",
+                        "category": "gguf",
+                        "capabilities": capabilities,
                         "downloaded": downloaded,
                         "size_mb": total_mb,
                         "vram_mb": total_mb + size_spec.get("vram_overhead_mb", 0),

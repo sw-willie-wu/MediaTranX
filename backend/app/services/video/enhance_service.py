@@ -3,7 +3,6 @@ Video enhancement service.
 Uses Real-ESRGAN to upscale video frames.
 """
 import logging
-import shutil
 from fractions import Fraction
 from pathlib import Path
 from typing import Optional
@@ -12,7 +11,6 @@ from uuid import uuid4
 import numpy as np
 from PIL import Image
 
-from app.init.configs import SETTINGS
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -31,11 +29,11 @@ class EnhanceService:
 
     async def submit(self, file_id: str, model: str = "realesrgan", variant: str = "x4plus",
                      output_format: str = "mp4", video_codec: str = "h264",
-                     output_dir: Optional[str] = None) -> str:
+                     output_dir: Optional[str] = None, output_filename: Optional[str] = None) -> str:
         task_id = await self._task_manager.submit(TASK_TYPE_ENHANCE, {
             "file_id": file_id, "model": model, "variant": variant,
             "output_format": output_format, "video_codec": video_codec,
-            "output_dir": output_dir,
+            "output_dir": output_dir, "output_filename": output_filename,
         })
         logger.info(f"Enhancement task submitted: {task_id}")
         return task_id
@@ -79,13 +77,14 @@ class EnhanceService:
         out_h = height * scale
 
         original_stem = Path(file_info.original_filename).stem
-        output_filename = f"{original_stem}.enhanced_{variant}.{output_format}"
+        custom_output_filename = params.get("output_filename")
+        output_filename = custom_output_filename if custom_output_filename else f"{original_stem}.enhanced_{variant}.{output_format}"
         if output_dir:
-            output_path = Path(output_dir) / output_filename
+            output_dir_path = Path(output_dir)
         else:
-            temp_dir = SETTINGS.path.temp
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            output_path = temp_dir / "video_frames" / output_filename
+            output_dir_path = self._file_service.output_dir
+        output_dir_path.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir_path / output_filename
 
         # Pipe: FFmpeg decode → Real-ESRGAN → FFmpeg encode
         # Decoder reads at source resolution, encoder writes at scaled resolution

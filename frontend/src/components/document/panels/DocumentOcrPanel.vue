@@ -8,6 +8,7 @@ import { apiFetch } from '@/composables/useApi'
 import { useModelStore } from '@/stores/models'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
+import { useModelGuard } from '@/composables/useModelGuard'
 
 const props = defineProps<{
   fileId: string | null
@@ -25,6 +26,7 @@ const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
+const { guardModelReady } = useModelGuard()
 
 // ── 模型 ──────────────────────────────────────────────────────────────────
 
@@ -34,7 +36,7 @@ const modelDownloaded = ref<boolean | null>(null)
 
 const localModelOptions = computed(() => {
   const seen = new Map<string, { value: string; label: string; downloaded: boolean }>()
-  for (const m of modelStore.byCategory('vlm')) {
+  for (const m of modelStore.forPanel(modelStore.byCapability('vision'))) {
     const [size] = m.variant.split(':')
     const key = `${m.family}:${size}`
     if (!seen.has(key)) {
@@ -139,11 +141,12 @@ watch(selectedModel, checkAvailable)
 // ── 執行 ──────────────────────────────────────────────────────────────────
 
 const isDisabled = computed(() =>
-  !props.fileId || isProcessing.value || available.value === false || modelDownloaded.value === false || !isPdfOrImage.value
+  !props.fileId || isProcessing.value || !isPdfOrImage.value
 )
 const isLoading = computed(() => isProcessing.value)
 
 async function execute() {
+  if (!await guardModelReady(modelDownloaded.value !== false, 'llm')) return
   if (!props.fileId) return
   const parsed = parseModelValue(selectedModel.value)
 
@@ -223,11 +226,6 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, getParams })
         <span>{{ $t('document.ocr.server_not_found') }}</span>
         <button class="info-box-action" @click="router.push('/settings')">{{ $t('document.ocr.go_to_settings') }}</button>
       </div>
-    </div>
-
-    <div v-if="modelDownloaded === false" class="info-box info-box--warn">
-      <i class="bi bi-exclamation-triangle"></i>
-      <span>{{ $t('document.ocr.no_model_downloaded') }}</span>
     </div>
 
     <div v-if="!isPdfOrImage && props.fileId" class="info-box info-box--warn">

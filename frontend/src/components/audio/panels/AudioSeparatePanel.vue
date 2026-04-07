@@ -6,6 +6,7 @@ import AppToggle from '@/components/common/AppToggle.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useConfirm } from '@/composables/useConfirm'
 import { apiFetch } from '@/composables/useApi'
+import { useModelGuard } from '@/composables/useModelGuard'
 
 const props = defineProps<{
   fileId: string | null
@@ -21,6 +22,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 const { confirm } = useConfirm()
+const { guardModelReady } = useModelGuard()
 
 const modelName = ref('htdemucs_6s')
 const modelDownloaded = ref<boolean | null>(null)
@@ -102,6 +104,7 @@ const isDisabled = computed(() => !props.fileId || isProcessing.value || selecte
 const isLoading  = computed(() => isProcessing.value)
 
 async function execute() {
+  if (!await guardModelReady(modelDownloaded.value !== false, 'audio')) return
   if (!props.fileId) return
   const body: Record<string, unknown> = {
     file_id: props.fileId,
@@ -156,11 +159,6 @@ defineExpose({ execute, isDisabled, isLoading, getParams, onTaskComplete })
   <div class="function-settings">
     <h6 class="settings-title"><i class="bi bi-music-note-list me-2"></i>{{ $t('audio.separate.title') }}</h6>
     <p class="form-hint">{{ $t('audio.separate.description') }}</p>
-
-    <div v-if="modelDownloaded === false" class="info-box info-box--warn">
-      <i class="bi bi-exclamation-triangle"></i>
-      <span>{{ $t('audio.separate.model_not_downloaded') }}</span>
-    </div>
 
     <div class="form-group">
       <label>{{ $t('audio.separate.stems') }}</label>

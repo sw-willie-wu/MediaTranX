@@ -9,6 +9,7 @@ import AppToggle from '@/components/common/AppToggle.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { apiFetch } from '@/composables/useApi'
+import { useModelGuard } from '@/composables/useModelGuard'
 
 const props = defineProps<{
   fileId: string | null
@@ -25,6 +26,7 @@ const { submitTask, isProcessing } = useSubmitTask()
 const filesStore = useFilesStore()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
+const { guardModelReady } = useModelGuard()
 
 // ── Whisper model status ────────────────────────────────────────
 const whisperAvailable = ref<boolean | null>(null)
@@ -94,13 +96,11 @@ const outputFormats = computed(() => [
 
 // ── Translation model options ───────────────────────────────────
 const localTranslateModelOptions = computed(() =>
-  modelStore.byCategory('translate')
+  modelStore.forPanel(modelStore.byCapability('text'))
     .slice()
     .sort((a, b) => a.size_mb - b.size_mb)
     .map(m => {
-      const dashIdx = m.variant.indexOf('-')
-      const size = m.variant.slice(0, dashIdx)
-      const quant = m.variant.slice(dashIdx + 1)
+      const [size, quant] = m.variant.split(':')
       const key = `${m.family}:${size}:${quant}`
       return { value: key, label: m.label, sizeMb: m.size_mb, badge: m.downloaded ? 'ok' as const : 'err' as const }
     })
@@ -184,6 +184,12 @@ watch(translateEnabled, (val) => { if (val) loadTranslateLanguages() })
 
 // ── Submit ──────────────────────────────────────────────────────
 async function execute() {
+  if (!await guardModelReady(whisperDownloadedMap.value[modelSize.value] === true, 'audio')) return
+  if (translateEnabled.value) {
+    const tParsed = parseModelValue(selectedTranslateModel.value)
+    const translateReady = tParsed.isRemote || localTranslateModelOptions.value.find(m => m.value === selectedTranslateModel.value)?.badge === 'ok'
+    if (!await guardModelReady(translateReady === true, 'llm')) return
+  }
   if (!props.fileId) return
 
   const body: Record<string, unknown> = {
@@ -376,10 +382,6 @@ onMounted(() => {
             <div class="form-group">
               <label class="sub-label">{{ $t('audio.transcribe.target_language') }}</label>
               <AppSelect v-model="targetLanguage" :options="translateLanguages" />
-            </div>
-            <div v-if="!selectedTranslateModel && !modelStore.loading" class="info-box info-box--warn">
-              <i class="bi bi-exclamation-triangle"></i>
-              <span>{{ $t('audio.transcribe.no_translate_model') }}</span>
             </div>
             <div class="form-group">
               <label class="sub-label">{{ $t('audio.transcribe.translate_model') }}</label>

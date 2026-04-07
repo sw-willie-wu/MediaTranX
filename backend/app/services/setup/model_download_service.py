@@ -1,6 +1,6 @@
 """
 模型下載服務
-負責各種格式模型的下載：Whisper (BIN)、GGUF、VLM、PTH。
+負責各種格式模型的下載：Whisper (BIN)、GGUF、PTH。
 """
 import logging
 import shutil
@@ -46,24 +46,14 @@ def handle_model_download(params: dict, progress_callback: Callable) -> dict:
         size = item_id[len("whisper-"):]
         _download_whisper(size, progress_callback, snapshot_download)
 
-    elif item_id.startswith("translategemma-"):
-        parts = item_id.split("-", 2)
-        size, quant = parts[1], parts[2]
-        _download_translate("translategemma", size, quant, progress_callback)
-
-    elif item_id.startswith("qwen3-"):
-        parts = item_id.split("-", 2)
-        size, quant = parts[1], parts[2]
-        _download_translate("qwen3", size, quant, progress_callback)
-
-    elif item_id.startswith(("qwen3vl-", "internvl2.5-", "gemma3-")):
+    elif item_id.startswith(("translategemma-", "qwen3-", "qwen3vl-", "internvl2.5-", "gemma3-", "qwen3.5-")):
+        # Parse: {family}-{size}-{quant}
         parts = item_id.rsplit("-", 1)
         quant = parts[1]
-        family_size = parts[0]
-        size_parts = family_size.rsplit("-", 1)
-        model_family = size_parts[0]
-        size = size_parts[1]
-        _download_vlm(model_family, size, quant, progress_callback)
+        family_size = parts[0].rsplit("-", 1)
+        model_family = family_size[0]
+        size = family_size[1]
+        _download_gguf(model_family, size, quant, progress_callback)
 
     elif item_id.startswith("demucs-"):
         variant = item_id[len("demucs-"):]
@@ -181,32 +171,33 @@ def _download_whisper(size: str, progress_callback: Callable, snapshot_download)
     progress_callback(0.98, "task.progress.model_verified")
 
 
-def _download_vlm(model_family: str, size: str, quant: str, progress_callback: Callable) -> None:
-    """下載 VLM 模型（主模型 + mmproj）"""
-    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_VLM
+def _download_gguf(model_family: str, size: str, quant: str, progress_callback: Callable) -> None:
+    """下載 GGUF 模型（含 mmproj 的視覺模型）"""
+    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
 
-    config = MODELS_REGISTRY.get(FORMAT_VLM, {}).get(model_family, {})
+    config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get(model_family, {})
     specs = config.get("specs", {})
     variant = specs.get(size, {}).get("variants", {}).get(quant)
 
     if not variant:
-        raise ValueError(f"未知的 VLM 模型變體: {model_family}-{size}-{quant}")
+        raise ValueError(f"未知的模型變體: {model_family}-{size}-{quant}")
 
-    slot = config.get("slot", "vlm")
-    target_dir = _models_dir() / slot
+    target_dir = _models_dir(model_family)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    progress_callback(0.05, f"task.progress.downloading_main_model|{model_family}|{size}|{quant}")
+    has_mmproj = "mmproj_filename" in variant
+
+    progress_callback(0.05, f"task.progress.downloading_model|{model_family}|{size}|{quant}")
     _stream_download(
         repo_id=variant["repo_id"],
         filename=variant["filename"],
         target_path=target_dir / variant["filename"],
         progress_callback=progress_callback,
         base_progress=0.05,
-        end_progress=0.65,
+        end_progress=0.65 if has_mmproj else 0.95,
     )
 
-    if "mmproj_filename" in variant:
+    if has_mmproj:
         progress_callback(0.65, "task.progress.downloading_mmproj")
         _stream_download(
             repo_id=variant.get("mmproj_repo_id", variant["repo_id"]),
@@ -217,31 +208,6 @@ def _download_vlm(model_family: str, size: str, quant: str, progress_callback: C
             end_progress=0.95,
         )
 
-    progress_callback(0.95, "task.progress.vlm_download_complete")
-
-
-def _download_translate(model_type: str, size: str, quant: str, progress_callback: Callable) -> None:
-    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
-
-    model_config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get(model_type, {})
-    specs = model_config.get("specs", {})
-    variant = specs.get(size, {}).get("variants", {}).get(quant)
-
-    if not variant:
-        raise ValueError(f"未知的模型變體: {model_type}-{size}-{quant}")
-
-    target_dir = _models_dir(model_type)
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    progress_callback(0.1, f"task.progress.downloading_model|{model_type}|{size}|{quant}")
-    _stream_download(
-        repo_id=variant["repo_id"],
-        filename=variant["filename"],
-        target_path=target_dir / variant["filename"],
-        progress_callback=progress_callback,
-        base_progress=0.1,
-        end_progress=0.95,
-    )
     progress_callback(0.95, "task.progress.model_download_complete")
 
 
@@ -486,7 +452,7 @@ def _download_pth_model(model_id: str, progress_callback: Callable) -> None:
 
 def _download_basic_pitch(progress_callback: Callable) -> None:
     """Trigger basic-pitch model download by running a dummy inference."""
-    progress_callback(0.1, "Downloading Basic Pitch model...")
+    progress_callback(0.1, "task.progress.downloading_basic_pitch")
 
     # Create a tiny silent audio file to trigger model auto-download
     try:
@@ -494,7 +460,7 @@ def _download_basic_pitch(progress_callback: Callable) -> None:
             tmp_path = f.name
             sf.write(tmp_path, np.zeros(44100, dtype=np.float32), 44100)
 
-        progress_callback(0.3, "Loading Basic Pitch model...")
+        progress_callback(0.3, "task.progress.loading_basic_pitch")
         from basic_pitch.inference import predict
 
         try:
@@ -509,6 +475,6 @@ def _download_basic_pitch(progress_callback: Callable) -> None:
         logger.warning(f"Basic Pitch download trigger failed: {e}")
         raise
 
-    progress_callback(0.95, "Basic Pitch model ready")
+    progress_callback(0.95, "task.progress.basic_pitch_ready")
 
 

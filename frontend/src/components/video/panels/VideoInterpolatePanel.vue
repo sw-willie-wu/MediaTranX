@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useModelStore } from '@/stores/models'
+import { useModelGuard } from '@/composables/useModelGuard'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
 
 const { t } = useI18n()
+const modelStore = useModelStore()
+const { guardModelReady } = useModelGuard()
 
 const props = defineProps<{
   fileId: string | null
@@ -26,9 +30,13 @@ const outputFormat = ref('mp4')
 const videoCodec = ref('h264')
 const showAdvanced = ref(false)
 
-const modelOptions = computed(() => [
-  { value: 'v4.26', label: 'RIFE v4.26' },
-])
+const modelOptions = computed(() => {
+  const rifeModels = modelStore.forPanel(modelStore.byCategory('interpolate'))
+  const dlMap = new Map(rifeModels.map(m => [m.variant, m.downloaded]))
+  return [
+    { value: 'v4.26', label: 'RIFE v4.26', badge: dlMap.get('v4.26') ? 'ok' as const : 'err' as const },
+  ]
+})
 
 const modeOptions = computed(() => [
   { value: '2x', label: t('video.interpolate.mode_2x') },
@@ -67,6 +75,8 @@ const isDisabled = computed(() => !props.fileId || isProcessing.value || fpsWarn
 const isLoading = computed(() => isProcessing.value)
 
 async function execute() {
+  const selected = modelOptions.value.find(v => v.value === model.value)
+  if (!await guardModelReady(selected?.badge === 'ok', 'video')) return
   if (!props.fileId || fpsWarning.value) return
 
   const taskId = await submitTask(
@@ -86,6 +96,8 @@ async function execute() {
 
   if (taskId) emit('submit', taskId)
 }
+
+onMounted(() => modelStore.ensureLoaded())
 
 defineExpose({ execute, isDisabled, isLoading })
 </script>

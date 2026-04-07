@@ -10,6 +10,7 @@ interface ModelItem {
   variant: string
   label: string
   description?: string
+  capabilities?: string[]
   downloaded: boolean
   size_mb: number
   vram_mb?: number
@@ -19,6 +20,7 @@ interface FamilyGroup {
   family: string
   familyLabel: string
   description: string
+  capabilities: string[]
   items: ModelItem[]
 }
 
@@ -60,6 +62,7 @@ const groups = computed<FamilyGroup[]>(() => {
       family,
       familyLabel,
       description: first.description || '',
+      capabilities: first.capabilities || [],
       items: items.sort((a, b) => a.size_mb - b.size_mb),
     }
   })
@@ -97,6 +100,9 @@ function tDesc(desc: string): string {
       <!-- Family header -->
       <div class="family-header">
         <span class="family-label">{{ group.familyLabel }}</span>
+        <div v-if="group.capabilities.length" class="family-caps">
+          <span v-for="cap in group.capabilities" :key="cap" class="cap-badge" :class="`cap-${cap}`">{{ cap }}</span>
+        </div>
         <span v-if="group.description" class="family-desc">{{ tDesc(group.description) }}</span>
       </div>
 
@@ -189,6 +195,27 @@ function tDesc(desc: string): string {
   color: var(--text-primary);
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+.family-caps {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.cap-badge {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 50rem;
+  font-weight: 600;
+
+  &.cap-text {
+    color: var(--color-info);
+    background: color-mix(in srgb, var(--color-info) 20%, transparent);
+  }
+  &.cap-vision {
+    color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 20%, transparent);
+  }
 }
 
 .family-desc {

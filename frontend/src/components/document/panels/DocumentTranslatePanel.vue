@@ -7,6 +7,7 @@ import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelStore } from '@/stores/models'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
+import { useModelGuard } from '@/composables/useModelGuard'
 
 const props = defineProps<{
   fileId: string | null
@@ -21,6 +22,7 @@ const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
+const { guardModelReady } = useModelGuard()
 
 // ── 翻譯模型（從 modelStore 取得）────────────────────────────────────────
 
@@ -28,13 +30,11 @@ const selectedTranslateModel = ref('')
 const error = ref<string | null>(null)
 
 const localTranslateModelOptions = computed(() =>
-  modelStore.byCategory('translate')
+  modelStore.forPanel(modelStore.byCapability('text'))
     .slice()
     .sort((a, b) => a.size_mb - b.size_mb)
     .map(m => {
-      const dashIdx = m.variant.indexOf('-')
-      const size  = m.variant.slice(0, dashIdx)
-      const quant = m.variant.slice(dashIdx + 1)
+      const [size, quant] = m.variant.split(':')
       const key = `${m.family}:${size}:${quant}`
       return { value: key, label: m.label, sizeMb: m.size_mb, badge: m.downloaded ? 'ok' as const : 'err' as const }
     })
@@ -149,8 +149,10 @@ const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading  = computed(() => isProcessing.value)
 
 async function execute() {
-  if (!props.fileId || !selectedTranslateModel.value) return
   const parsed = parseModelValue(selectedTranslateModel.value)
+  const isModelReady = parsed.isRemote || localTranslateModelOptions.value.find(m => m.value === selectedTranslateModel.value)?.badge === 'ok'
+  if (!await guardModelReady(isModelReady === true, 'llm')) return
+  if (!props.fileId || !selectedTranslateModel.value) return
   const body: Record<string, any> = {
     file_id: props.fileId,
     source_language: sourceLanguage.value,
@@ -221,10 +223,6 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
     </div>
 
       <!-- 翻譯模型 -->
-      <div v-if="!selectedTranslateModel && !modelStore.loading" class="info-box info-box--warn">
-        <i class="bi bi-exclamation-triangle"></i>
-        <span>{{ $t('document.translate.no_model_downloaded') }}</span>
-      </div>
       <div class="form-group">
         <label>{{ $t('document.translate.model') }}</label>
         <AppSelect v-model="selectedTranslateModel" :options="translateModelOptions" />
