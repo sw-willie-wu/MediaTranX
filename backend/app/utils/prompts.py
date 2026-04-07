@@ -142,6 +142,10 @@ MODEL_CONFIGS = {
         "system_prompt": "You are a professional subtitle translator.",
         "text_suffix": " /no_think",
     },
+    "qwen3.5": {
+        "system_prompt": "You are a professional subtitle translator.",
+        "text_suffix": "",
+    },
     "translategemma": {
         "system_prompt": None,
         "text_suffix": "",

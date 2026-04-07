@@ -198,9 +198,9 @@ class DocumentOcrService:
                    on_progress: Optional[Callable[[float, str], None]] = None) -> str:
         """使用 LlamaServerRuntime 辨識單張圖片"""
         from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-        from app.engine.ai.registry import SLOT_VLM
+        from app.engine.ai.registry import SLOT_LLM
 
-        runtime = LlamaServerRuntime(SLOT_VLM)
+        runtime = LlamaServerRuntime(SLOT_LLM)
         messages = build_ocr_messages(image_path, format=fmt)
 
         with runtime.acquire(model_id, variant, on_progress):

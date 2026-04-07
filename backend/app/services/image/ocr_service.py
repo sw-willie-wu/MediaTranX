@@ -90,10 +90,10 @@ class ImageOcrService:
         with manager.gpu_session():
             # 執行 VLM OCR
             from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-            from app.engine.ai.registry import SLOT_VLM
+            from app.engine.ai.registry import SLOT_LLM
 
             variant = f"{size}:{quantization}" if quantization else size
-            runtime = LlamaServerRuntime(SLOT_VLM)
+            runtime = LlamaServerRuntime(SLOT_LLM)
             messages = build_ocr_messages(str(file_info.file_path), format=fmt)
 
             with runtime.acquire(model_id, variant, lambda p, m: progress_callback(0.1 + p * 0.85, m)):
