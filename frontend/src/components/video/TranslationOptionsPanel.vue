@@ -19,13 +19,11 @@ const enableTranslation = ref(false)
 const selectedTranslateModel = ref('')
 
 const localTranslateModelOptions = computed(() =>
-  modelStore.byCategory('translate')
+  modelStore.forPanel(modelStore.byCapability('text'))
     .slice()
     .sort((a, b) => a.size_mb - b.size_mb)
     .map(m => {
-      const dashIdx = m.variant.indexOf('-')
-      const size = m.variant.slice(0, dashIdx)
-      const quant = m.variant.slice(dashIdx + 1)
+      const [size, quant] = m.variant.split(':')
       const key = `${m.family}:${size}:${quant}`
       return { value: key, label: m.label, sizeMb: m.size_mb, badge: m.downloaded ? 'ok' as const : 'err' as const }
     })
@@ -185,10 +183,6 @@ defineExpose({
           <AppSelect v-model="targetLanguage" :options="targetLanguageOptions" />
         </div>
 
-        <div v-if="!selectedTranslateModel && !modelStore.loading" class="info-box info-box--warn">
-          <i class="bi bi-exclamation-triangle"></i>
-          <span>{{ $t('video.translate.no_model_downloaded') }}</span>
-        </div>
         <div class="form-group">
           <label class="sub-label">{{ $t('video.translate.model') }}</label>
           <AppSelect v-model="selectedTranslateModel" :options="translateModelOptions" />

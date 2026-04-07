@@ -1,12 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { apiFetch } from '@/composables/useApi'
+import { useSettingsStore } from '@/stores/settings'
 
 export interface ModelItem {
   id: string
   label: string
   category: string
   subcategory?: string
+  capabilities?: string[]
   downloaded: boolean
   size_mb: number
   family: string
@@ -59,5 +61,16 @@ export const useModelStore = defineStore('models', () => {
     return models.value.filter(m => m.category === category || m.subcategory === category)
   }
 
-  return { models, categories, loading, loaded, fetchModels, ensureLoaded, setDownloaded, byCategory }
+  function byCapability(cap: string): ModelItem[] {
+    return models.value.filter(m => m.capabilities?.includes(cap))
+  }
+
+  /** 為工具面板過濾：根據設定決定是否隱藏未下載模型 */
+  function forPanel(items: ModelItem[]): ModelItem[] {
+    const settings = useSettingsStore()
+    if (settings.showAllModels) return items
+    return items.filter(m => m.downloaded)
+  }
+
+  return { models, categories, loading, loaded, fetchModels, ensureLoaded, setDownloaded, byCategory, byCapability, forPanel }
 })
