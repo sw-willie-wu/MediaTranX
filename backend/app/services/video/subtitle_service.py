@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
-from app.engine.ffmpeg import FFmpeg
+from app.engine.ffmpeg import FFmpegWrapper
 from app.handler.exceptions import FFmpegError
 from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
 from app.utils.prompts import (
@@ -70,7 +70,7 @@ class SubtitleService:
     整合 FFmpeg（提取音訊）、faster-whisper（語音辨識）和檔案管理
     """
 
-    def __init__(self, ffmpeg: FFmpeg, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager):
         self._ffmpeg = ffmpeg
         self._whisper: WhisperWrapper = get_whisper()
         self._file_service = file_service
@@ -237,14 +237,14 @@ class SubtitleService:
         has_translation = target_language is not None
 
         # === 階段 1: 提取音訊 (0~10%) ===
-        progress_callback(0.0, "正在從影片提取音訊...")
+        progress_callback(0.0, "task.progress.extracting_audio")
 
         # 建立暫存音訊路徑
         temp_audio_path = self._file_service.upload_dir / f"temp_audio_{uuid4().hex[:8]}.wav"
 
         try:
             await self._extract_audio(file_info.file_path, temp_audio_path)
-            progress_callback(0.10, "音訊提取完成，準備語音辨識...")
+            progress_callback(0.10, "task.progress.audio_extracted")
 
             # === GPU 排隊管線 ===
             # 同時只有一個任務使用 GPU，模型用完即卸載
@@ -278,11 +278,12 @@ class SubtitleService:
                     from app.engine.ai.audio.wav2vec2 import get_alignment_engine
                     aligner = get_alignment_engine()
                     if aligner.is_language_supported(result.language):
-                        progress_callback(whisper_end - 0.05, "精準對齊中...")
+                        progress_callback(whisper_end - 0.05, "task.progress.aligning")
                         result.segments = aligner.align(
                             audio_path=temp_audio_path,
                             segments=result.segments,
                             language=result.language,
+                            on_progress=lambda p, m: progress_callback(whisper_end - 0.05 + p * 0.05, m),
                         )
 
                 # === 階段 3 (選用): 翻譯字幕 (70~95%) ===
@@ -292,7 +293,7 @@ class SubtitleService:
                 original_segments = list(result.segments)
 
                 if has_translation:
-                    progress_callback(whisper_end, "準備翻譯字幕...")
+                    progress_callback(whisper_end, "task.progress.prepare_translate")
 
                     seg_dicts = [
                         {"start": s.start, "end": s.end, "text": s.text}
@@ -320,7 +321,7 @@ class SubtitleService:
                             on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
                             keep_names=keep_names, style=translate_style, glossary=glossary,
                         )
-                        translate_progress(1.0, "翻譯完成")
+                        translate_progress(1.0, "task.progress.translate_complete")
                     else:
                         # 本地翻譯
                         from app.engine.ai.runtime.llama_server import LlamaServerRuntime
@@ -330,10 +331,10 @@ class SubtitleService:
                         variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
                         runtime = LlamaServerRuntime(SLOT_LLM)
 
-                        translate_progress(0.0, "載入翻譯模型...")
+                        translate_progress(0.0, "task.progress.load_translate_model")
 
                         with runtime.acquire(translate_model_type, variant, lambda p, m: translate_progress(p * 0.05, m)):
-                            translate_progress(0.05, "開始翻譯字幕...")
+                            translate_progress(0.05, "task.progress.start_translate")
                             translated_all = translate_srt_local(
                                 seg_dicts, src, target_language, runtime,
                                 on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
@@ -341,7 +342,7 @@ class SubtitleService:
                                 model_id=translate_model_type,
                             )
 
-                        translate_progress(1.0, "字幕翻譯完成")
+                        translate_progress(1.0, "task.progress.translate_complete")
 
                     translated = translated_all
 
@@ -352,7 +353,7 @@ class SubtitleService:
 
             # === 最終階段: 寫入字幕檔 ===
             write_start = 0.95 if has_translation else 0.90
-            progress_callback(write_start, "正在生成字幕檔...")
+            progress_callback(write_start, "task.progress.generate_file")
 
             # 決定基礎檔名
             custom_output_filename = params.get("output_filename")
@@ -458,7 +459,7 @@ class SubtitleService:
                 output_filename = output_info.filename
                 output_size = output_info.file_size
 
-            progress_callback(1.0, "字幕生成完成")
+            progress_callback(1.0, "task.progress.subtitle_complete")
 
             return {
                 "output_file_id": output_file_id,
@@ -487,23 +488,10 @@ class SubtitleService:
 
         faster-whisper 最佳輸入格式: 16kHz 單聲道 WAV
         """
-        args = [
-            self._ffmpeg.ffmpeg_path,
-            "-y",
-            "-i", str(input_path),
-            "-vn",               # 不處理影片
-            "-acodec", "pcm_s16le",  # 16-bit PCM
-            "-ar", "16000",      # 16kHz
-            "-ac", "1",          # 單聲道
-            str(output_path),
-        ]
-
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+        await self._ffmpeg.extract_audio(
+            input_path=input_path,
+            output_path=output_path,
+            audio_format="wav",
+            sample_rate=16000,
+            channels=1,
         )
-        _, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
-            raise FFmpegError(f"音訊提取失敗: {stderr.decode()}")

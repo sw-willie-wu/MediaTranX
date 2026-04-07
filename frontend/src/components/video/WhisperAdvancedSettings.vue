@@ -10,8 +10,8 @@ const showAdvanced = ref(false)
 const wordTimestamps = ref(false)
 const align = ref(false)
 const conditionOnPreviousText = ref(true)
-const minSilenceDurationMs = ref(200)
-const vadThreshold = ref(0.3)
+const minSilenceDurationMs = ref(500)
+const vadThreshold = ref(0.5)
 
 defineExpose({ wordTimestamps, align, conditionOnPreviousText, minSilenceDurationMs, vadThreshold })
 </script>

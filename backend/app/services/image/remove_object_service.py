@@ -183,7 +183,7 @@ class ImageRemoveObjectService:
         image_rgb = np.array(img_rgb)
         h, w = image_rgb.shape[:2]
 
-        progress_callback(0.1, "解析遮罩...")
+        progress_callback(0.1, "task.progress.parsing_mask")
         rough_mask = self._decode_mask(mask_data, w, h)
 
         # === GPU 排隊管線 ===
@@ -192,11 +192,11 @@ class ImageRemoveObjectService:
 
         with manager.gpu_session():
             # 略微膨脹筆刷遮罩（填補筆觸縫隙），直接送 LaMa（跳過 SAM，避免遮罩過大）
-            progress_callback(0.35, "處理遮罩...")
+            progress_callback(0.35, "task.progress.processing_mask")
             kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
             precise_mask = cv2.dilate(rough_mask, kernel, iterations=2)
 
-            progress_callback(0.6, "填補背景中...")
+            progress_callback(0.6, "task.progress.inpainting")
             mask_pil = Image.fromarray(precise_mask).convert("L")
             result_img = self._run_inpaint(img_rgb, mask_pil)
 
@@ -209,7 +209,7 @@ class ImageRemoveObjectService:
         output_file_id = str(uuid4())
         output_path = self._generate_output_path(file_info, params.get("output_dir"))
 
-        progress_callback(0.9, "儲存結果...")
+        progress_callback(0.9, "task.progress.saving_result")
         result_img.save(output_path, "PNG")
 
         output_info = self._file_service.register_output(

@@ -67,7 +67,7 @@ const vocalSeparation = ref(false)
 const alignEnabled = ref(false)
 const translateEnabled = ref(false)
 const targetLanguage = ref('zh-TW')
-const selectedTranslateModel = ref('translategemma:4b:Q4_K_M')
+const selectedTranslateModel = ref('')
 const summarizeEnabled = ref(false)
 const selectedSummarizeModel = ref('qwen3:4b:Q4_K_M')
 const outputPath = ref('')
@@ -108,6 +108,13 @@ const localTranslateModelOptions = computed(() =>
 
 const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
 const { mergedOptions: summarizeModelOptions } = useModelOptions('text', localTranslateModelOptions)
+
+watch(localTranslateModelOptions, (options) => {
+  if (!selectedTranslateModel.value) {
+    const first = options.find(m => m.badge === 'ok')
+    if (first) selectedTranslateModel.value = first.value
+  }
+}, { immediate: true })
 
 // ── Translation language options ────────────────────────────────
 const translateLanguages = ref([
@@ -369,6 +376,10 @@ onMounted(() => {
             <div class="form-group">
               <label class="sub-label">{{ $t('audio.transcribe.target_language') }}</label>
               <AppSelect v-model="targetLanguage" :options="translateLanguages" />
+            </div>
+            <div v-if="!selectedTranslateModel && !modelStore.loading" class="info-box info-box--warn">
+              <i class="bi bi-exclamation-triangle"></i>
+              <span>{{ $t('audio.transcribe.no_translate_model') }}</span>
             </div>
             <div class="form-group">
               <label class="sub-label">{{ $t('audio.transcribe.translate_model') }}</label>

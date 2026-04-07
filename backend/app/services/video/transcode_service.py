@@ -9,7 +9,7 @@ from typing import Any, Callable, Optional
 from uuid import uuid4
 
 from app.engine.ffmpeg import (
-    FFmpeg,
+    FFmpegWrapper,
     FFmpegError,
     TranscodeOptions,
     TranscodeProgress,
@@ -34,7 +34,7 @@ class TranscodeService:
     整合 FFmpeg、檔案管理和任務管理
     """
 
-    def __init__(self, ffmpeg: FFmpeg, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager):
         self._ffmpeg = ffmpeg
         self._file_service = file_service
         self._task_manager = task_manager
@@ -57,12 +57,12 @@ class TranscodeService:
 
     def get_ffmpeg_status(self) -> dict:
         """查詢 FFmpeg 安裝狀態"""
-        is_installed = FFmpeg.is_installed()
-        bin_dir = str(FFmpeg.get_bin_dir())
+        is_installed = FFmpegWrapper.is_installed()
+        bin_dir = str(FFmpegWrapper.get_bin_dir())
 
         if is_installed:
             try:
-                ffmpeg = FFmpeg()
+                ffmpeg = FFmpegWrapper()
                 return {
                     "installed": True,
                     "ffmpeg_path": ffmpeg.ffmpeg_path,
@@ -318,7 +318,7 @@ class TranscodeService:
                 f"轉檔中... {progress.percent:.1f}% (速度: {progress.speed:.1f}x)"
             )
 
-        progress_callback(0.0, "開始轉檔...")
+        progress_callback(0.0, "task.progress.transcode_starting")
 
         try:
             # 執行轉檔
@@ -336,7 +336,7 @@ class TranscodeService:
                 original_filename=file_info.original_filename,
             )
 
-            progress_callback(1.0, "轉檔完成")
+            progress_callback(1.0, "task.progress.transcode_complete")
 
             return {
                 "output_file_id": output_file_id,
@@ -405,7 +405,7 @@ class TranscodeService:
                 f"剪輯中... {progress.percent:.1f}% (速度: {progress.speed:.1f}x)"
             )
 
-        progress_callback(0.0, "開始剪輯...")
+        progress_callback(0.0, "task.progress.cut_starting")
 
         try:
             await self._ffmpeg.cut(
@@ -423,7 +423,7 @@ class TranscodeService:
                 original_filename=file_info.original_filename,
             )
 
-            progress_callback(1.0, "剪輯完成")
+            progress_callback(1.0, "task.progress.cut_complete")
 
             return {
                 "output_file_id": output_file_id,
@@ -490,7 +490,7 @@ class TranscodeService:
                 f"提取音訊中... {progress.percent:.1f}% (速度: {progress.speed:.1f}x)"
             )
 
-        progress_callback(0.0, "開始提取音訊...")
+        progress_callback(0.0, "task.progress.extract_audio_starting")
 
         try:
             await self._ffmpeg.extract_audio(
@@ -507,7 +507,7 @@ class TranscodeService:
                 original_filename=file_info.original_filename,
             )
 
-            progress_callback(1.0, "提取音訊完成")
+            progress_callback(1.0, "task.progress.extract_audio_complete")
 
             return {
                 "output_file_id": output_file_id,

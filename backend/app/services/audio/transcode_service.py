@@ -7,10 +7,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.engine.ffmpeg import (
-    FFmpeg,
-    FFmpegError,
-)
+from app.engine.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -24,7 +21,7 @@ class AudioTranscodeService:
     音訊轉檔服務
     """
 
-    def __init__(self, ffmpeg: FFmpeg, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager):
         self._ffmpeg = ffmpeg
         self._file_service = file_service
         self._task_manager = task_manager
@@ -131,75 +128,49 @@ class AudioTranscodeService:
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 
-        # 建立 FFmpeg 命令
+        # 建立 extra_args（codec-specific 參數）
         codec = params["audio_codec"]
         lossless = codec in ("flac", "alac", "pcm_s16le", "pcm_s24le", "pcm_s32le")
 
-        # Bitrate → quality 映射（libvorbis 用 -q:a 更穩定，避免 mono/bitrate 不相容）
         _VORBIS_QUALITY = {"128k": 4, "192k": 5, "256k": 7, "320k": 9}
 
-        cmd = [
-            self._ffmpeg.ffmpeg_path,
-            "-i", file_info.file_path,
-            "-vn",  # 移除影片串流
-            "-acodec", codec,
-        ]
+        extra_args: list[str] = []
+        bitrate = None
 
         if lossless:
-            # 無損格式不設 bitrate，FLAC 需要 integer sample format
             if codec == "flac":
-                cmd.extend(["-sample_fmt", "s32"])
+                extra_args.extend(["-sample_fmt", "s32"])
         elif codec == "libvorbis":
-            # libvorbis 用 quality 模式避免 mono/bitrate 不相容
             br = params.get("audio_bitrate", "192k")
             q = _VORBIS_QUALITY.get(br, 5)
-            cmd.extend(["-q:a", str(q)])
+            extra_args.extend(["-q:a", str(q)])
         elif params.get("audio_bitrate"):
-            cmd.extend(["-b:a", params["audio_bitrate"]])
+            bitrate = params["audio_bitrate"]
 
-        if params.get("sample_rate"):
-            cmd.extend(["-ar", str(params["sample_rate"])])
+        progress_callback(0.0, "task.progress.transcode_starting")
 
-        if params.get("channels"):
-            cmd.extend(["-ac", str(params["channels"])])
+        await self._ffmpeg.audio_convert(
+            input_path=file_info.file_path,
+            output_path=output_path,
+            audio_codec=codec,
+            audio_bitrate=bitrate,
+            sample_rate=params.get("sample_rate"),
+            channels=params.get("channels"),
+            extra_args=extra_args or None,
+        )
 
-        cmd.extend(["-y", str(output_path)])
+        progress_callback(0.9, "task.progress.processing")
 
-        progress_callback(0.0, "開始轉檔...")
+        output_info = self._file_service.register_output(
+            file_id=output_file_id,
+            file_path=output_path,
+            original_filename=file_info.original_filename,
+        )
 
-        # 執行轉檔
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
+        progress_callback(1.0, "task.progress.transcode_complete")
 
-            # 簡單進度模擬（音訊通常很快）
-            progress_callback(0.3, "轉檔中...")
-
-            stdout, stderr = await process.communicate()
-
-            if process.returncode != 0:
-                raise FFmpegError(f"FFmpeg error: {stderr.decode()}")
-
-            progress_callback(0.9, "處理中...")
-
-            # 註冊輸出檔案
-            output_info = self._file_service.register_output(
-                file_id=output_file_id,
-                file_path=output_path,
-                original_filename=file_info.original_filename,
-            )
-
-            progress_callback(1.0, "轉檔完成")
-
-            return {
-                "output_file_id": output_file_id,
-                "output_filename": output_info.filename,
-                "output_size": output_info.file_size,
-            }
-
-        except Exception as e:
-            logger.error(f"Audio transcode failed: {e}")
-            raise
+        return {
+            "output_file_id": output_file_id,
+            "output_filename": output_info.filename,
+            "output_size": output_info.file_size,
+        }

@@ -65,6 +65,10 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "ai: tests requiring GPU and AI models (skip in CI)",
+    "ffmpeg: tests requiring ffmpeg binary",
+]
 
 [tool.uv]
 managed = true

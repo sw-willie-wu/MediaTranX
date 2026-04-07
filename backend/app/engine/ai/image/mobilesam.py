@@ -39,7 +39,7 @@ class MobileSAMWrapper(PackageRuntime):
     ) -> Any:
         """載入 MobileSAM 模型"""
         if on_progress:
-            on_progress(0.3, "載入 MobileSAM...")
+            on_progress(0.3, "task.progress.loading_mobilesam")
 
         from mobile_sam import sam_model_registry
 

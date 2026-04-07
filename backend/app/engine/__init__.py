@@ -1,6 +1,6 @@
 from .device import get_device, get_compute_type
 from .ffmpeg import (
-    FFmpeg,
+    FFmpegWrapper,
     FFmpegError,
     MediaInfo,
     TranscodeOptions,
@@ -23,7 +23,7 @@ from .ai import (
 __all__ = [
     "get_device",
     "get_compute_type",
-    "FFmpeg",
+    "FFmpegWrapper",
     "FFmpegError",
     "MediaInfo",
     "TranscodeOptions",

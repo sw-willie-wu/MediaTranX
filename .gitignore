@@ -24,8 +24,8 @@ output/
 *.db
 *.db-shm
 *.db-wal
-test_*.py
-test_*.txt
+/test_*.py
+/test_*.txt
 
 # Build artifacts
 src/backend/static/

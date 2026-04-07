@@ -82,13 +82,13 @@ class ImageCropService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        progress_callback(0.1, "載入圖片...")
+        progress_callback(0.1, "task.progress.loading_image")
 
         with Image.open(file_info.file_path) as raw:
             img_width, img_height = raw.size
             anim_fmt = animation_format(raw)
 
-            progress_callback(0.3, "計算裁切範圍...")
+            progress_callback(0.3, "task.progress.calculating_crop")
             x = max(0, min(params["x"], img_width - 1))
             y = max(0, min(params["y"], img_height - 1))
             crop_width  = max(1, min(params["width"],  img_width  - x))
@@ -97,13 +97,13 @@ class ImageCropService:
 
             if anim_fmt:
                 def _crop_frame(frame, idx, total):
-                    progress_callback(0.4 + idx / total * 0.4, f"裁切中 ({idx + 1}/{total})...")
+                    progress_callback(0.4 + idx / total * 0.4, f"task.progress.cropping|{idx + 1}|{total}")
                     return frame.crop(box)
                 result_frames = process_gif_frames(raw, _crop_frame)
             else:
                 img = raw.copy().crop(box)
 
-        progress_callback(0.7, "儲存檔案...")
+        progress_callback(0.7, "task.progress.saving_file")
 
         # 建立輸出路徑
         custom_output_dir = params.get("output_dir")
@@ -129,7 +129,7 @@ class ImageCropService:
             original_filename=file_info.original_filename,
         )
 
-        progress_callback(1.0, "裁切完成")
+        progress_callback(1.0, "task.progress.crop_complete")
 
         return {
             "output_file_id": output_file_id,

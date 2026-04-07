@@ -45,7 +45,7 @@ class DemucsWrapper(PackageRuntime):
         from app.init.configs import SETTINGS
 
         if on_progress:
-            on_progress(0.3, "正在載入 Demucs 模型...")
+            on_progress(0.3, "task.progress.loading_demucs")
 
         model_name = config.get("model_name", "htdemucs_6s")
 
@@ -155,7 +155,7 @@ class DemucsWrapper(PackageRuntime):
         all_sources = variant_spec["sources"]
 
         if on_progress:
-            on_progress(0.0, "準備音源分離...")
+            on_progress(0.0, "task.progress.preparing_separation")
 
         with self.acquire(
             model_id="demucs",
@@ -163,14 +163,14 @@ class DemucsWrapper(PackageRuntime):
             on_progress=on_progress,
         ) as separator:
             if on_progress:
-                on_progress(0.3, "分離音源中...")
+                on_progress(0.3, "task.progress.separating")
 
             # 設定 callback 讓推論過程中能回報進度（用於 cancel check）
             if on_progress:
                 def _progress_callback(state: dict):
                     # Demucs callback 在每個 segment 推論後呼叫
                     # 呼叫 on_progress 觸發 TaskManager 的 cancel check
-                    on_progress(0.5, "分離音源中...")
+                    on_progress(0.5, "task.progress.separating")
                 separator._callback = _progress_callback
 
             # Separator.separate_audio_file 處理：讀取、resample、分段、推論
@@ -179,7 +179,7 @@ class DemucsWrapper(PackageRuntime):
             sample_rate = separator.samplerate
 
             if on_progress:
-                on_progress(0.9, "處理結果...")
+                on_progress(0.9, "task.progress.processing_results")
 
         # 篩選指定的 stems
         result = {}
@@ -190,7 +190,7 @@ class DemucsWrapper(PackageRuntime):
                 result[source_name] = separated[source_name].cpu()
 
         if on_progress:
-            on_progress(1.0, "音源分離完成")
+            on_progress(1.0, "task.progress.separation_done")
 
         return result, sample_rate
 

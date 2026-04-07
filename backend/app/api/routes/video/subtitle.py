@@ -1,7 +1,10 @@
 """
 字幕提取 API 路由
 """
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
@@ -67,6 +70,10 @@ class SubtitleGenerateRequest(BaseModel):
         ge=0.1,
         le=0.9,
         description="VAD 門檻值，越低越敏感（更容易分句）"
+    )
+    align: bool = Field(
+        default=False,
+        description="啟用精準對齊（Wav2Vec2 forced alignment）"
     )
     # 翻譯選項
     keep_names: bool = Field(

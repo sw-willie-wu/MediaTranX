@@ -64,7 +64,7 @@ class DocumentSplitService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        progress_callback(0.1, "讀取 PDF...")
+        progress_callback(0.1, "task.progress.reading_pdf")
         reader = PdfReader(str(file_info.file_path))
         total = len(reader.pages)
 
@@ -77,7 +77,7 @@ class DocumentSplitService:
         for idx in page_indices:
             writer.add_page(reader.pages[idx])
 
-        progress_callback(0.8, "寫入輸出...")
+        progress_callback(0.8, "task.progress.writing_output")
         output_file_id = str(uuid4())
         stem = Path(file_info.original_filename).stem
         label = pages_str.replace(" ", "").replace(",", "_") if pages_str else "all"
@@ -99,7 +99,7 @@ class DocumentSplitService:
             file_id=output_file_id, file_path=output_path,
             original_filename=final_filename,
         )
-        progress_callback(1.0, "分割完成")
+        progress_callback(1.0, "task.progress.split_complete")
         return {
             "output_file_id": output_file_id,
             "output_filename": output_info.filename,

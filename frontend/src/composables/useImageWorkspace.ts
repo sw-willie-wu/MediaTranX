@@ -98,7 +98,6 @@ export function useImageWorkspace() {
   const textResultFilename = ref<string | null>(null)
   const textResultContent = ref<string | null>(null)
 
-  const aiEnvReady = ref(false)
 
   // ── Derived from active entry ────────────────────────────────────────────────
 
@@ -223,21 +222,6 @@ export function useImageWorkspace() {
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
-  async function checkAiEnvironment(currentFunction?: string) {
-    try {
-      const res = await apiFetch('/setup/status')
-      const status = await res.json()
-      aiEnvReady.value = status.ai_env_ready
-      if (!aiEnvReady.value && currentFunction === 'upscale') {
-        toast.show('超解析功能需要安裝 AI 核心環境', {
-          type: 'info',
-          action: { label: '去安裝', callback: () => router.push('/setup') },
-        })
-      }
-    } catch (e) {
-      console.error('Failed to check AI status', e)
-    }
-  }
 
   async function loadImageInfo() {
     if (!activeFileId.value) return
@@ -463,7 +447,6 @@ export function useImageWorkspace() {
     imageInfo,
     isLoadingInfo,
     currentTaskId,
-    aiEnvReady,
     canGoBack,
     canGoForward,
     activeFileId,
@@ -478,7 +461,6 @@ export function useImageWorkspace() {
     // Existing methods
     goBack,
     goForward,
-    checkAiEnvironment,
     loadImageInfo,
     handleFile,
     handleRemoveFile,
