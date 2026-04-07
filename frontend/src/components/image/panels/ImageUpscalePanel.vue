@@ -11,7 +11,6 @@ import { useModelStore } from '@/stores/models'
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
-  aiEnvReady: boolean
 }>()
 
 const emit = defineEmits<{

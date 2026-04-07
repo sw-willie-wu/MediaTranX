@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { onMounted } from 'vue'
 import { useRouter, RouterView } from 'vue-router'
 import Titlebar from './components/Titlebar.vue'
 import MainSidebar from './components/MainSidebar.vue'
 import AppToast from './components/AppToast.vue'
 import AppConfirmDialog from './components/common/AppConfirmDialog.vue'
-import AppSetupWizard from './components/common/AppSetupWizard.vue'
 import { useTheme } from './composables/useTheme'
 import { useRemoteModelStore } from './stores/remoteModels'
 
@@ -18,8 +17,6 @@ useTheme()
 const remoteModelStore = useRemoteModelStore()
 remoteModelStore.fetchAll()
 
-const showWizard = ref(false)
-
 function removeSplash() {
   const overlay = document.getElementById('splash-overlay')
   if (overlay) {
@@ -28,24 +25,12 @@ function removeSplash() {
   }
 }
 
-function isWizardEnabled(): boolean {
-  try {
-    const saved = localStorage.getItem('app-settings')
-    return saved ? (JSON.parse(saved).showSetupWizard ?? true) : true
-  } catch { return true }
-}
-
-// Vue 掛載後處理 splash 與 wizard 邏輯
+// Vue 掛載後處理 splash
 onMounted(async () => {
-  // 等待路由準備完成
   await router.isReady()
 
   if (router.currentRoute.value.path === '/' && !window.location.hash) {
     router.replace('/')
-  }
-
-  if (isWizardEnabled()) {
-    showWizard.value = true
   }
 
   removeSplash()
@@ -65,7 +50,6 @@ onMounted(async () => {
     </div>
     <AppToast />
     <AppConfirmDialog />
-    <AppSetupWizard v-if="showWizard" @close="showWizard = false" />
   </div>
 </template>
 
