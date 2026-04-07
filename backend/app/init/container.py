@@ -9,7 +9,7 @@ from app.workers.progress_tracker import ProgressTracker
 from app.workers.task_manager import TaskManager
 
 # ── Engine ──
-from app.engine.ffmpeg import FFmpeg
+from app.engine.ffmpeg import FFmpegWrapper
 from app.engine.fluidsynth import FluidSynthWrapper
 from app.engine.ai.model_manager import ModelManager
 
@@ -67,7 +67,7 @@ class AppContainer(containers.DeclarativeContainer):
     )
 
     # ── Engine ──
-    ffmpeg = providers.Singleton(FFmpeg)
+    ffmpeg = providers.Singleton(FFmpegWrapper)
     fluidsynth = providers.Singleton(FluidSynthWrapper)
     model_manager = providers.Singleton(ModelManager)
 

@@ -8,6 +8,7 @@ import shutil
 import sys
 from dataclasses import dataclass
 from enum import Enum
+from fractions import Fraction
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -49,6 +50,7 @@ class MediaInfo:
     width: int
     height: int
     fps: float
+    fps_fraction: Fraction  # 精確分數如 Fraction(30000, 1001)，避免浮點精度問題
     video_codec: str
     audio_codec: str
     bitrate: int  # kbps
@@ -80,7 +82,19 @@ class TranscodeOptions:
     extra_args: Optional[list[str]] = None
 
 
-class FFmpeg:
+def _parse_time(t: float | str) -> float:
+    """Convert time to seconds. Accepts float or 'HH:MM:SS' / 'MM:SS' string."""
+    if isinstance(t, (int, float)):
+        return float(t)
+    parts = str(t).split(":")
+    if len(parts) == 3:
+        return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+    if len(parts) == 2:
+        return int(parts[0]) * 60 + float(parts[1])
+    return float(t)
+
+
+class FFmpegWrapper:
     """FFmpeg 封裝類別"""
 
     # FFmpeg 路徑（dev: bin/ffmpeg, packaged: resources/ffmpeg）
@@ -190,15 +204,19 @@ class FFmpeg:
 
         # 計算 FPS
         fps = 0.0
+        fps_fraction = Fraction(0)
         if video_stream and "r_frame_rate" in video_stream:
-            num, den = map(int, video_stream["r_frame_rate"].split("/"))
+            raw_frac = video_stream["r_frame_rate"]  # e.g. "30000/1001"
+            num, den = map(int, raw_frac.split("/"))
             fps = num / den if den else 0
+            fps_fraction = Fraction(num, den) if den else Fraction(0)
 
         return MediaInfo(
             duration=float(format_info.get("duration", 0)),
             width=int(video_stream.get("width", 0)) if video_stream else 0,
             height=int(video_stream.get("height", 0)) if video_stream else 0,
             fps=fps,
+            fps_fraction=fps_fraction,
             video_codec=video_stream.get("codec_name", "") if video_stream else "",
             audio_codec=audio_stream.get("codec_name", "") if audio_stream else "",
             bitrate=int(format_info.get("bit_rate", 0)) // 1000,
@@ -313,19 +331,19 @@ class FFmpeg:
         self,
         input_path: str | Path,
         output_path: str | Path,
-        start_time: float,
-        end_time: float,
+        start_time: float | str,
+        end_time: float | str,
         stream_copy: bool = True,
         on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
     ) -> Path:
         """
-        剪輯影片
+        剪輯影片/音訊
 
         Args:
             input_path: 輸入檔案路徑
             output_path: 輸出檔案路徑
-            start_time: 開始時間（秒）
-            end_time: 結束時間（秒）
+            start_time: 開始時間（秒數 float 或 "HH:MM:SS" 字串）
+            end_time: 結束時間（同上）
             stream_copy: 是否使用 stream copy（快速但不精確）
             on_progress: 進度回調函數
 
@@ -340,7 +358,7 @@ class FFmpeg:
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        duration = end_time - start_time
+        duration = _parse_time(end_time) - _parse_time(start_time)
         if duration <= 0:
             raise FFmpegError("結束時間必須大於開始時間")
 
@@ -394,6 +412,8 @@ class FFmpeg:
         output_path: str | Path,
         audio_format: str = "mp3",
         audio_bitrate: Optional[str] = None,
+        sample_rate: Optional[int] = None,
+        channels: Optional[int] = None,
         on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
     ) -> Path:
         """
@@ -404,6 +424,8 @@ class FFmpeg:
             output_path: 輸出檔案路徑
             audio_format: 音訊格式 (mp3, wav, flac, aac)
             audio_bitrate: 音訊位元率 (e.g. "320k")
+            sample_rate: 取樣率 (e.g. 16000)
+            channels: 聲道數 (1=mono, 2=stereo)
             on_progress: 進度回調函數
 
         Returns:
@@ -434,9 +456,14 @@ class FFmpeg:
             "-i", str(input_path),
             "-vn",
             "-c:a", codec,
-            "-progress", "pipe:1",
-            "-nostats",
         ]
+
+        if sample_rate:
+            args.extend(["-ar", str(sample_rate)])
+        if channels:
+            args.extend(["-ac", str(channels)])
+
+        args.extend(["-progress", "pipe:1", "-nostats"])
 
         if audio_bitrate and audio_format not in ("wav", "flac"):
             args.extend(["-b:a", audio_bitrate])
@@ -467,6 +494,99 @@ class FFmpeg:
         if proc.returncode != 0:
             stderr = await proc.stderr.read()
             raise FFmpegError(f"提取音訊失敗: {stderr.decode()}")
+
+        return output_path
+
+    async def adjust_volume(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        af_filter: str,
+    ) -> Path:
+        """
+        套用音訊濾鏡（如音量調整）
+
+        Args:
+            input_path: 輸入檔案路徑
+            output_path: 輸出檔案路徑
+            af_filter: FFmpeg audio filter 字串 (e.g. "volume=3dB")
+        """
+        input_path = Path(input_path)
+        output_path = Path(output_path)
+
+        if not input_path.exists():
+            raise FFmpegError(f"輸入檔案不存在: {input_path}")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        proc = await asyncio.create_subprocess_exec(
+            self.ffmpeg_path,
+            "-i", str(input_path),
+            "-af", af_filter,
+            "-y", str(output_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise FFmpegError(f"Audio filter failed: {stderr.decode()}")
+
+        return output_path
+
+    async def audio_convert(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        audio_codec: str,
+        audio_bitrate: Optional[str] = None,
+        sample_rate: Optional[int] = None,
+        channels: Optional[int] = None,
+        extra_args: Optional[list[str]] = None,
+    ) -> Path:
+        """
+        音訊格式轉換
+
+        Args:
+            input_path: 輸入檔案路徑
+            output_path: 輸出檔案路徑
+            audio_codec: 音訊編碼 (libmp3lame, flac, pcm_s16le, aac, libvorbis...)
+            audio_bitrate: 位元率 (e.g. "320k")
+            sample_rate: 取樣率 (e.g. 44100)
+            channels: 聲道數 (1=mono, 2=stereo)
+            extra_args: 額外 FFmpeg 參數
+        """
+        input_path = Path(input_path)
+        output_path = Path(output_path)
+
+        if not input_path.exists():
+            raise FFmpegError(f"輸入檔案不存在: {input_path}")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        args = [
+            self.ffmpeg_path,
+            "-i", str(input_path),
+            "-vn",
+            "-acodec", audio_codec,
+        ]
+        if audio_bitrate:
+            args.extend(["-b:a", audio_bitrate])
+        if sample_rate:
+            args.extend(["-ar", str(sample_rate)])
+        if channels:
+            args.extend(["-ac", str(channels)])
+        if extra_args:
+            args.extend(extra_args)
+        args.extend(["-y", str(output_path)])
+
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise FFmpegError(f"Audio convert failed: {stderr.decode()}")
 
         return output_path
 
