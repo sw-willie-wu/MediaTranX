@@ -16,6 +16,7 @@ class AudioSeparateRequest(BaseModel):
     stems: Optional[List[str]] = Field(default=None, description="要分離的音軌 (None=全部)")
     output_format: str = Field(default="wav", description="輸出格式 (wav, flac, mp3)")
     output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
+    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名（用於主要 stem 檔案）")
     generate_midi: bool = Field(default=False, description="同時產出多軌 MIDI 檔案")
 
 
@@ -49,6 +50,7 @@ async def separate_audio(
             stems=request.stems,
             output_format=request.output_format,
             output_dir=request.output_dir,
+            output_filename=request.output_filename,
             generate_midi=request.generate_midi,
         )
         return AudioSeparateResponse(task_id=task_id)

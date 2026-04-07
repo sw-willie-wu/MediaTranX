@@ -4,7 +4,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 from uuid import uuid4
 
 from app.engine.ffmpeg import FFmpegWrapper
@@ -30,11 +30,19 @@ class AudioCutService:
         file_id: str,
         start_time: str,
         end_time: str,
+        output_dir: Optional[str] = None,
+        output_filename: Optional[str] = None,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
-        params = {"file_id": file_id, "start_time": start_time, "end_time": end_time}
+        params = {
+            "file_id": file_id,
+            "start_time": start_time,
+            "end_time": end_time,
+            "output_dir": output_dir,
+            "output_filename": output_filename,
+        }
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_CUT, params)
         logger.info(f"Audio cut task submitted: {task_id}")
         return task_id
@@ -56,10 +64,22 @@ class AudioCutService:
         output_file_id = str(uuid4())
         ext = Path(file_info.original_filename).suffix or ".mp3"
         original_stem = Path(file_info.original_filename).stem
-        final_filename = f"{original_stem}_cut_{output_file_id[:8]}{ext}"
 
-        output_dir_path = self._file_service.output_dir
+        # 決定輸出目錄
+        custom_output_dir = params.get("output_dir")
+        if custom_output_dir:
+            output_dir_path = Path(custom_output_dir)
+        else:
+            output_dir_path = self._file_service.output_dir
         output_dir_path.mkdir(parents=True, exist_ok=True)
+
+        # 決定輸出檔名
+        custom_output_filename = params.get("output_filename")
+        if custom_output_filename:
+            final_filename = custom_output_filename
+        else:
+            final_filename = f"{original_stem}_cut_{output_file_id[:8]}{ext}"
+
         output_path = output_dir_path / final_filename
 
         progress_callback(0.0, "task.progress.cut_starting")

@@ -1,3 +1,5 @@
+from typing import Optional
+
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -11,6 +13,8 @@ class AudioCutRequest(BaseModel):
     file_id: str = Field(..., description="輸入檔案 ID")
     start_time: str = Field(default="00:00:00", description="開始時間 HH:MM:SS")
     end_time: str = Field(..., description="結束時間 HH:MM:SS")
+    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
+    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
 
 class AudioCutResponse(BaseModel):
     task_id: str
@@ -27,6 +31,8 @@ async def cut_audio(
             file_id=request.file_id,
             start_time=request.start_time,
             end_time=request.end_time,
+            output_dir=request.output_dir,
+            output_filename=request.output_filename,
         )
         return AudioCutResponse(task_id=task_id)
     except ValueError as e:

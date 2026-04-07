@@ -37,6 +37,7 @@ class AudioSeparateService:
         stems: Optional[list[str]] = None,
         output_format: str = "wav",
         output_dir: Optional[str] = None,
+        output_filename: Optional[str] = None,
         generate_midi: bool = False,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
@@ -48,6 +49,7 @@ class AudioSeparateService:
             "stems": stems,
             "output_format": output_format,
             "output_dir": output_dir,
+            "output_filename": output_filename,
             "generate_midi": generate_midi,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_SEPARATE, params)
@@ -65,6 +67,7 @@ class AudioSeparateService:
 
         original_stem = Path(file_info.original_filename).stem
         output_format = params.get("output_format", "wav")
+        custom_output_filename = params.get("output_filename")
 
         # 決定輸出目錄
         custom_output_dir = params.get("output_dir")
@@ -136,7 +139,7 @@ class AudioSeparateService:
 
         result = {
             "output_file_id": first_file_id,
-            "output_filename": f"{original_stem}.vocals.{output_format}",
+            "output_filename": custom_output_filename if custom_output_filename else f"{original_stem}.vocals.{output_format}",
             "output_files": output_files,
         }
 
