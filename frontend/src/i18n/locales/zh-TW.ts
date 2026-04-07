@@ -73,6 +73,9 @@ export default {
     advanced_options: '進階選項',
     static_preview_hint: '靜態預覽，執行後套用全部幀',
     remove_not_supported: '物件移除不支援動態圖片',
+    model_not_ready: '模型尚未下載',
+    model_not_downloaded_hint: '選擇的模型尚未下載，是否前往模型管理頁面下載？',
+    go_to_model_manager: '前往模型管理',
   },
 
   // ── Toast 通知 ─────────────────────────────────────────────────────────
@@ -260,6 +263,10 @@ export default {
       tile_inference: '分塊推理 {0}/{1}',
       preparing_llama: '正在準備 llama-server...',
       starting_llama: '啟動 llama-server（port {0}）...',
+      waiting_model_load: '等待模型載入... ({0}s)',
+      downloading_basic_pitch: '正在下載 Basic Pitch 模型...',
+      loading_basic_pitch: '正在載入 Basic Pitch 模型...',
+      basic_pitch_ready: 'Basic Pitch 模型已就緒',
       // document
       reading_document: '讀取文件...',
       extracting_page: '提取頁面 {0}/{1}...',
@@ -942,6 +949,11 @@ export default {
       category_audio: '語音處理',
       category_video: '影片處理',
       category_llm: '大語言模型',
+      download_success: '{id} 下載完成',
+      download_failed: '{id} 下載失敗：{error}',
+      display_title: '顯示設定',
+      show_all_models: '在工具面板顯示未下載的模型',
+      show_all_models_hint: '關閉後，工具面板的模型選單只會顯示已下載的模型。',
     },
     remote: {
       title: '雲端模型',

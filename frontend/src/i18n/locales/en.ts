@@ -73,6 +73,9 @@ export default {
     advanced_options: 'Advanced Options',
     static_preview_hint: 'Static preview, all frames applied after execution',
     remove_not_supported: 'Object removal does not support animated images',
+    model_not_ready: 'Model Not Downloaded',
+    model_not_downloaded_hint: 'The selected model has not been downloaded yet. Go to model manager to download it?',
+    go_to_model_manager: 'Go to Model Manager',
   },
 
   // ── Toast notifications ───────────────────────────────────────────────
@@ -260,6 +263,10 @@ export default {
       tile_inference: 'Tile inference {0}/{1}',
       preparing_llama: 'Preparing llama-server...',
       starting_llama: 'Starting llama-server (port {0})...',
+      waiting_model_load: 'Waiting for model to load... ({0}s)',
+      downloading_basic_pitch: 'Downloading Basic Pitch model...',
+      loading_basic_pitch: 'Loading Basic Pitch model...',
+      basic_pitch_ready: 'Basic Pitch model ready',
       // document
       reading_document: 'Reading document...',
       extracting_page: 'Extracting page {0}/{1}...',
@@ -942,6 +949,11 @@ export default {
       category_audio: 'Audio Processing',
       category_video: 'Video Processing',
       category_llm: 'Large Language Models',
+      download_success: '{id} download complete',
+      download_failed: '{id} download failed: {error}',
+      display_title: 'Display',
+      show_all_models: 'Show undownloaded models in tool panels',
+      show_all_models_hint: 'When disabled, tool panel dropdowns only show downloaded models.',
     },
     remote: {
       title: 'Cloud Models',

@@ -23,10 +23,7 @@ function translateProgress(message: string | null): string | undefined {
   const parts = message.split('|')
   const key = parts[0]
   if (parts.length === 1) return t(key)
-  const params: Record<string, string> = {}
-  for (let i = 1; i < parts.length; i++) {
-    params[String(i - 1)] = parts[i]
-  }
+  const params = parts.slice(1)
   return t(key, params)
 }
 
