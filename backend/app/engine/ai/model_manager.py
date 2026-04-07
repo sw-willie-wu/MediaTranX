@@ -293,7 +293,7 @@ class ModelManager:
         base_dir.mkdir(parents=True, exist_ok=True)
         
         if on_progress:
-            on_progress(0.1, f"開始下載 {model_id}...")
+            on_progress(0.1, f"task.progress.download_start|{model_id}")
         
         # PKG 格式（目錄型快照，如 Whisper）
         if fmt == FORMAT_PKG:
@@ -341,7 +341,7 @@ class ModelManager:
                 )
 
             if on_progress:
-                on_progress(1.0, "下載完成")
+                on_progress(1.0, "task.progress.download_complete")
             return Path(path)
 
         # GGUF 或 PTH 格式（單檔）
@@ -374,7 +374,7 @@ class ModelManager:
         path = await asyncio.to_thread(_download)
         
         if on_progress:
-            on_progress(1.0, "下載完成")
+            on_progress(1.0, "task.progress.download_complete")
         
         return path
     
@@ -399,7 +399,7 @@ class ModelManager:
         path = await asyncio.to_thread(_download)
         
         if on_progress:
-            on_progress(1.0, "下載完成")
+            on_progress(1.0, "task.progress.download_complete")
         
         return path
 

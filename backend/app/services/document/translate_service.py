@@ -233,14 +233,14 @@ class TranslateService:
         glossary = params.get("glossary")
 
         # === 階段 1: 讀取檔案 (0~5%) ===
-        progress_callback(0.0, "正在讀取檔案...")
+        progress_callback(0.0, "task.progress.reading_file")
 
         file_path = Path(file_info.file_path)
         text = file_path.read_text(encoding="utf-8")
         ext = Path(file_info.original_filename).suffix.lower()
         is_subtitle = ext in SUBTITLE_EXTENSIONS
 
-        progress_callback(0.05, f"檔案讀取完成 ({len(text)} 字元)，準備翻譯...")
+        progress_callback(0.05, f"task.progress.file_read_complete|{len(text)}")
 
         # === 階段 2: 翻譯 (5~95%) ===
         def translate_progress(percent: float, msg: str):
@@ -319,7 +319,7 @@ class TranslateService:
                         translated_segments = None
 
         # === 階段 3: 寫入輸出檔 (95~100%) ===
-        progress_callback(0.95, "正在寫入輸出檔...")
+        progress_callback(0.95, "task.progress.writing_output_file")
 
         output_file_id = str(uuid4())
 
@@ -357,7 +357,7 @@ class TranslateService:
             original_filename=file_info.original_filename,
         )
 
-        progress_callback(1.0, "翻譯完成")
+        progress_callback(1.0, "task.progress.translate_complete")
 
         if is_subtitle and translated_segments is not None:
             translated_chars = sum(len(s["text"]) for s in translated_segments)

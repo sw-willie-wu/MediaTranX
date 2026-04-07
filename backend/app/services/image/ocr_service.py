@@ -78,7 +78,7 @@ class ImageOcrService:
         fmt = params.get("format", "md")
         ext = "md" if fmt == "md" else "txt"
 
-        progress_callback(0.05, "準備辨識...")
+        progress_callback(0.05, "task.progress.ocr_prepare")
 
         from app.init.container import get_container
         if not get_container().model_manager().is_llama_ready():
@@ -103,7 +103,7 @@ class ImageOcrService:
             final_text = "(未偵測到文字)"
 
         # 儲存輸出檔案
-        progress_callback(0.97, "儲存結果...")
+        progress_callback(0.97, "task.progress.ocr_saving")
         output_file_id = str(uuid4())
         original_stem = Path(file_info.original_filename).stem
         custom_filename = params.get("output_filename")
@@ -126,7 +126,7 @@ class ImageOcrService:
             original_filename=final_filename,
         )
 
-        progress_callback(1.0, "OCR 完成")
+        progress_callback(1.0, "task.progress.ocr_complete")
         return {
             "output_file_id": output_file_id,
             "output_filename": output_info.filename,
@@ -177,7 +177,7 @@ class ImageOcrService:
         fmt = params.get("format", "md")
         ext = "md" if fmt == "md" else "txt"
 
-        progress_callback(0.05, f"連接 {provider}...")
+        progress_callback(0.05, f"task.progress.connecting_provider|{provider}")
 
         # 取得連線資訊
         from app.init.container import get_container
@@ -187,7 +187,7 @@ class ImageOcrService:
             raise RuntimeError(f"Provider not available: {provider}")
 
         # 讀取圖片，必要時壓縮（API 通常有 ~20MB payload 限制）
-        progress_callback(0.1, "準備圖片...")
+        progress_callback(0.1, "task.progress.prepare_image")
         image_path = Path(file_info.file_path)
 
         MAX_SIZE_BYTES = 4 * 1024 * 1024  # 4MB（base64 後約 5.3MB）
@@ -224,7 +224,7 @@ class ImageOcrService:
         else:
             prompt = "Please perform OCR on this image. Extract all text content as plain text. Output only the extracted text, no explanations."
 
-        progress_callback(0.2, "辨識中...")
+        progress_callback(0.2, "task.progress.recognizing")
 
         # 依 provider 組裝 vision messages（格式不同）
         if provider == "ollama":
@@ -249,7 +249,7 @@ class ImageOcrService:
             final_text = "(未偵測到文字)"
 
         # 儲存結果
-        progress_callback(0.95, "儲存結果...")
+        progress_callback(0.95, "task.progress.ocr_saving")
         output_file_id = str(uuid4())
         original_stem = Path(file_info.original_filename).stem
         custom_filename = params.get("output_filename")
@@ -272,7 +272,7 @@ class ImageOcrService:
             original_filename=final_filename,
         )
 
-        progress_callback(1.0, "OCR 完成")
+        progress_callback(1.0, "task.progress.ocr_complete")
         return {
             "output_file_id": output_file_id,
             "output_filename": output_info.filename,

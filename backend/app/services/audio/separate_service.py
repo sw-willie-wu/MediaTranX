@@ -77,7 +77,7 @@ class AudioSeparateService:
         midi_mode = params.get("generate_midi", False)
         demucs_progress_scale = 0.5 if midi_mode else 0.9
 
-        progress_callback(0.0, "載入模型...")
+        progress_callback(0.0, "task.progress.loading_model_generic")
 
         # === GPU 排隊管線 ===
         from app.init.container import get_container
@@ -93,7 +93,7 @@ class AudioSeparateService:
             )
 
         write_progress_base = 0.5 if midi_mode else 0.9
-        progress_callback(write_progress_base, "寫入檔案...")
+        progress_callback(write_progress_base, "task.progress.writing_file")
 
         # 儲存各 stem 為獨立檔案
         output_files = []
@@ -111,8 +111,8 @@ class AudioSeparateService:
                     tmp_path = tmp.name
                 try:
                     sf.write(tmp_path, audio_data, sample_rate)
-                    from app.engine.ffmpeg import FFmpeg
-                    ffmpeg = FFmpeg()
+                    from app.engine.ffmpeg import FFmpegWrapper
+                    ffmpeg = FFmpegWrapper()
                     ffmpeg.convert(tmp_path, str(file_path), {"format": "mp3", "bitrate": "192k"})
                 finally:
                     Path(tmp_path).unlink(missing_ok=True)
@@ -142,7 +142,7 @@ class AudioSeparateService:
 
         # --- MIDI conversion (optional) ---
         if midi_mode:
-            progress_callback(0.6, "轉換音軌至 MIDI...")
+            progress_callback(0.6, "task.progress.converting_to_midi")
 
             from app.engine.ai.audio.basic_pitch import get_basic_pitch
             from app.utils.midi import transcribe_drums, merge_tracks_to_midi
@@ -169,10 +169,10 @@ class AudioSeparateService:
 
                 try:
                     if stem_name == "drums":
-                        progress_callback(stem_progress, "鼓組轉譯中...")
+                        progress_callback(stem_progress, "task.progress.transcribing_drums")
                         track = transcribe_drums(stem_path)
                     else:
-                        progress_callback(stem_progress, f"轉換 {stem_name} 至 MIDI...")
+                        progress_callback(stem_progress, f"task.progress.converting_stem_midi|{stem_name}")
                         track = basic_pitch.audio_to_midi(stem_path)
                         track["name"] = stem_name.capitalize()
                         track["instrument"] = STEM_INSTRUMENTS.get(stem_name, 0)
@@ -187,7 +187,7 @@ class AudioSeparateService:
                     midi_errors.append(f"{stem_name}: {e}")
 
             if midi_tracks:
-                progress_callback(0.9, "合併 MIDI 音軌...")
+                progress_callback(0.9, "task.progress.merging_midi")
                 midi_filename = f"{original_stem}.mid"
                 midi_path = output_dir_path / midi_filename
                 merge_tracks_to_midi(midi_tracks, midi_path, tempo=120.0)
@@ -207,5 +207,5 @@ class AudioSeparateService:
             else:
                 logger.warning("No MIDI tracks produced")
 
-        progress_callback(1.0, "分離完成")
+        progress_callback(1.0, "task.progress.separation_done")
         return result

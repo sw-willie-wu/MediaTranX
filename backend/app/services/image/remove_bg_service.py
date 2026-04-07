@@ -61,7 +61,7 @@ class ImageRemoveBgService:
         manager = get_container().model_manager()
 
         with manager.gpu_session():
-            progress_callback(0.1, "載入去背模型...")
+            progress_callback(0.1, "task.progress.loading_rembg")
             # 將 rembg 模型路徑導向 models/rembg/，統一管理
             import os
             from app.init.configs import SETTINGS
@@ -76,7 +76,7 @@ class ImageRemoveBgService:
                 anim_fmt = animation_format(raw)
                 if anim_fmt:
                     def _remove_frame(frame, idx, total):
-                        progress_callback(0.4 + idx / total * 0.5, f"去除背景中 ({idx + 1}/{total})...")
+                        progress_callback(0.4 + idx / total * 0.5, f"task.progress.removing_bg|{idx + 1}|{total}")
                         return remove(frame, session=session)
                     result_frames = process_gif_frames(raw, _remove_frame)
                 else:
@@ -85,7 +85,7 @@ class ImageRemoveBgService:
             output_file_id = str(uuid4())
             output_path = self._generate_output_path(file_info, params.get("output_dir"))
 
-            progress_callback(0.9, "儲存結果...")
+            progress_callback(0.9, "task.progress.saving_result")
             if anim_fmt:
                 output_path = output_path.with_suffix(animation_ext(anim_fmt))
                 save_animated(result_frames, output_path, anim_fmt)

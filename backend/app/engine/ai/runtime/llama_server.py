@@ -58,7 +58,7 @@ class LlamaServerRuntime(BaseRuntime):
         from app.init.configs import SETTINGS
 
         if on_progress:
-            on_progress(0.05, "正在準備 llama-server...")
+            on_progress(0.05, "task.progress.preparing_llama")
 
         # 找 llama-server 執行檔
         llama_dir = SETTINGS.path.llama
@@ -94,7 +94,7 @@ class LlamaServerRuntime(BaseRuntime):
         )
 
         if on_progress:
-            on_progress(0.2, f"啟動 llama-server（port {self._port}）...")
+            on_progress(0.2, f"task.progress.starting_llama|{self._port}")
 
         base = SETTINGS.path.data
         log_dir = base / "logs" if SETTINGS.is_frozen else base
@@ -113,7 +113,7 @@ class LlamaServerRuntime(BaseRuntime):
 
         logger.info(f"llama-server ready on port {self._port}")
         if on_progress:
-            on_progress(1.0, "模型載入完成")
+            on_progress(1.0, "task.progress.model_loaded")
 
         return self  # acquire() 會 yield self，外部可呼叫 chat()
 

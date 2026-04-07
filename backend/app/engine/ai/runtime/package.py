@@ -63,7 +63,7 @@ class PackageRuntime(BaseRuntime):
         self._device = device
 
         if on_progress:
-            on_progress(0.1, "正在準備模型...")
+            on_progress(0.1, "task.progress.preparing_model")
 
         model = self._create_model(model_path, config, device, on_progress)
 

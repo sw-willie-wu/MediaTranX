@@ -4,6 +4,7 @@ Uses Real-ESRGAN to upscale video frames.
 """
 import logging
 import shutil
+from fractions import Fraction
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
@@ -71,6 +72,7 @@ class EnhanceService:
         ffmpeg = get_container().ffmpeg()
         media_info = await ffmpeg.get_media_info(file_info.file_path)
         source_fps = media_info.fps or 30.0
+        source_fps_frac = media_info.fps_fraction or Fraction(30)
         width = media_info.width
         height = media_info.height
         out_w = width * scale
@@ -87,54 +89,19 @@ class EnhanceService:
 
         # Pipe: FFmpeg decode → Real-ESRGAN → FFmpeg encode
         # Decoder reads at source resolution, encoder writes at scaled resolution
-        progress_callback(0.0, "畫面強化中...")
+        progress_callback(0.0, "task.progress.enhance_processing")
         realesrgan = get_realesrgan()
 
         pipe = FramePipe(
             input_path=file_info.file_path,
             output_path=output_path,
-            output_fps=source_fps,
-            width=out_w, height=out_h,
+            output_fps=source_fps_frac,
+            input_width=width, input_height=height,
+            output_width=out_w, output_height=out_h,
             video_codec=video_codec,
         )
+        pipe.open()
 
-        # Custom decoder at source resolution (FramePipe default uses output dims)
-        import subprocess
-        decoder = subprocess.Popen([
-            ffmpeg.ffmpeg_path,
-            "-i", file_info.file_path,
-            "-f", "rawvideo",
-            "-pix_fmt", "rgb24",
-            "-v", "quiet",
-            "pipe:1",
-        ], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-
-        pipe._decoder = None  # Don't use FramePipe's decoder
-        pipe.open()  # Only starts encoder
-
-        # Manually override: close the encoder's auto-started decoder
-        # Actually, FramePipe.open() starts both. Let's just use raw subprocesses.
-        pipe.close()
-
-        # Do it manually with two subprocesses
-        codec_map = {"h264": "libx264", "h265": "libx265", "vp9": "libvpx-vp9", "av1": "libsvtav1"}
-        codec_lib = codec_map.get(video_codec, "libx264")
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-        encoder = subprocess.Popen([
-            ffmpeg.ffmpeg_path, "-y",
-            "-f", "rawvideo", "-pix_fmt", "rgb24",
-            "-s", f"{out_w}x{out_h}",
-            "-r", str(source_fps),
-            "-i", "pipe:0",
-            "-i", file_info.file_path,
-            "-map", "0:v:0", "-map", "1:a?",
-            "-c:v", codec_lib, "-crf", "18",
-            "-pix_fmt", "yuv420p", "-c:a", "copy", "-shortest",
-            str(output_path),
-        ], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-        frame_size = width * height * 3
         frame_idx = 0
         duration = media_info.duration or 0.0
 
@@ -145,30 +112,22 @@ class EnhanceService:
             return f"{s // 60}:{s % 60:02d}"
 
         try:
-            while True:
-                raw = decoder.stdout.read(frame_size)
-                if len(raw) < frame_size:
-                    break
-
-                frame = np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 3)
+            for frame in pipe.read_frames():
                 img = Image.fromarray(frame)
                 enhanced = realesrgan.enhance(image=img, model_id=variant, scale=scale)
                 enhanced_arr = np.array(enhanced)
-                encoder.stdin.write(enhanced_arr.tobytes())
+                pipe.write_frame(enhanced_arr)
                 del frame, img, enhanced, enhanced_arr
 
                 frame_idx += 1
                 elapsed = frame_idx / source_fps
                 if duration > 0:
                     pct = min(elapsed / duration, 0.95)
-                    progress_callback(pct, f"畫面強化中... {_fmt_time(elapsed)}/{_fmt_time(duration)}")
+                    progress_callback(pct, f"task.progress.enhance_processing_time|{_fmt_time(elapsed)}|{_fmt_time(duration)}")
                 else:
-                    progress_callback(0.5, f"畫面強化中... {_fmt_time(elapsed)}")
+                    progress_callback(0.5, f"task.progress.enhance_processing_elapsed|{_fmt_time(elapsed)}")
         finally:
-            decoder.stdout.close()
-            decoder.wait()
-            encoder.stdin.close()
-            encoder.wait()
+            pipe.close()
 
         output_file_id = str(uuid4())
         self._file_service.register_output(
@@ -176,7 +135,7 @@ class EnhanceService:
             file_path=output_path,
             original_filename=file_info.original_filename,
         )
-        progress_callback(1.0, "畫面強化完成")
+        progress_callback(1.0, "task.progress.enhance_complete")
         return {
             "output_file_id": output_file_id,
             "output_filename": output_filename,

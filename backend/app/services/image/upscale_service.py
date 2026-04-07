@@ -86,7 +86,7 @@ class ImageUpscaleService:
         with manager.gpu_session():
             # ── 超解析 ──────────────────────────────────────────
             upscale_family, upscale_variant = _parse_model_id(model_id, _UPSCALE_FAMILIES)
-            progress_callback(0.05, f"正在載入模型: {model_id}...")
+            progress_callback(0.05, f"task.progress.load_model|{model_id}")
 
             from app.engine.ai.image import get_upscaler
             upscaler = get_upscaler(upscale_family)
@@ -135,14 +135,14 @@ class ImageUpscaleService:
                     total = len(frames)
                     result_frames = []
                     for i, (frame, duration) in enumerate(frames):
-                        progress_callback(0.05 + i / total * 0.60, f"超解析中 ({i + 1}/{total})...")
+                        progress_callback(0.05 + i / total * 0.60, f"task.progress.upscale_frame|{i + 1}|{total}")
                         result_frame = _upscale_single(frame, 0.0, 1.0 / total)
                         result_frames.append((result_frame, duration))
                 else:
                     img = raw.copy()
                     result_img = _upscale_single(img, 0.0, 1.0)
 
-            progress_callback(upscale_end, "超解析完成")
+            progress_callback(upscale_end, "task.progress.upscale_complete")
 
             # ── 人臉修復（可選，僅靜態圖）──────────────────────────────────
             if not anim_fmt and face_fix and face_restore_model_id:
@@ -150,7 +150,7 @@ class ImageUpscaleService:
                     face_family, face_variant = _parse_model_id(face_restore_model_id, _FACE_FAMILIES)
                     fidelity = params.get("face_restore_fidelity", 0.7)
                     face_upscale = params.get("face_restore_upscale", 2)
-                    progress_callback(0.75, f"正在載入人臉修復模型: {face_restore_model_id}...")
+                    progress_callback(0.75, f"task.progress.load_face_model|{face_restore_model_id}")
 
                     from app.engine.ai.image import get_face_restorer
                     restorer = get_face_restorer(face_family)
@@ -173,13 +173,14 @@ class ImageUpscaleService:
         else:
             result_img.save(output_path, "PNG")
 
-        progress_callback(0.95, "正在註冊結果...")
+        progress_callback(0.95, "task.progress.registering")
         output_info = self._file_service.register_output(
             file_id=output_file_id,
             file_path=output_path,
             original_filename=file_info.original_filename,
         )
 
+        progress_callback(1.0, "task.progress.upscale_complete")
         return {
             "output_file_id": output_file_id,
             "output_filename": output_info.filename,

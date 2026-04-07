@@ -5,6 +5,7 @@ Loads RIFE model and interpolates between frame pairs.
 from __future__ import annotations
 
 import logging
+from fractions import Fraction
 from pathlib import Path
 from typing import Optional, Callable
 
@@ -194,7 +195,7 @@ class RIFEWrapper:
 
                 if on_progress:
                     pct = (i + 1) / total_pairs
-                    on_progress(pct, f"補幀中 {pct:.0%} ({i + 1}/{total_pairs} 對)")
+                    on_progress(pct, f"task.progress.interpolating_pair|{i + 1}|{total_pairs}")
 
         # 等所有寫入完成
         for f in write_futures:
@@ -217,9 +218,10 @@ class RIFEWrapper:
         height: int = 0,
         source_fps: float = 30.0,
         duration: float = 0.0,
-        target_fps: float = 0,
+        target_fps: float | Fraction = 0,
         video_codec: str = "h264",
         on_progress: Optional[Callable[[float, str], None]] = None,
+        output_fps: float | Fraction | None = None,
     ) -> tuple[int, float]:
         """
         Pipe-based interpolation: FFmpeg decode → RIFE → FFmpeg encode.
@@ -230,12 +232,14 @@ class RIFEWrapper:
 
         self._load_model(variant)
         num_mid = multiplier - 1
-        output_fps = source_fps * multiplier
+        if output_fps is None:
+            output_fps = source_fps * multiplier
 
         pipe = FramePipe(
             input_path, output_path,
             output_fps=output_fps,
-            width=width, height=height,
+            input_width=width, input_height=height,
+            output_width=width, output_height=height,
             video_codec=video_codec,
             target_fps=target_fps,
         )
@@ -277,9 +281,9 @@ class RIFEWrapper:
                         elapsed = frame_idx / source_fps
                         if duration > 0:
                             pct = min(elapsed / duration, 0.99)
-                            on_progress(pct, f"補幀中... {_fmt_time(elapsed)}/{_fmt_time(duration)}")
+                            on_progress(pct, f"task.progress.interpolating_time|{_fmt_time(elapsed)}|{_fmt_time(duration)}")
                         else:
-                            on_progress(0.5, f"補幀中... {_fmt_time(elapsed)}")
+                            on_progress(0.5, f"task.progress.interpolating_elapsed|{_fmt_time(elapsed)}")
 
                 prev_frame = frame
                 frame_idx += 1

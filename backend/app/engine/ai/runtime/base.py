@@ -120,7 +120,7 @@ class BaseRuntime(ABC):
                 
                 # 載入新模型
                 if on_progress:
-                    on_progress(0.0, "正在準備模型...")
+                    on_progress(0.0, "task.progress.preparing_model")
                 
                 model_path, config = self._resolve_model_path(model_id, variant)
                 config["_key"] = config_key
@@ -129,7 +129,7 @@ class BaseRuntime(ABC):
                 self._current_config = config
                 
                 if on_progress:
-                    on_progress(1.0, "模型載入完成")
+                    on_progress(1.0, "task.progress.model_loaded")
             
             yield self._model
     

@@ -70,7 +70,7 @@ class DocumentPdfConvertService:
         output_dir_path.mkdir(parents=True, exist_ok=True)
         output_path = output_dir_path / final_filename
 
-        progress_callback(0.05, "讀取文件...")
+        progress_callback(0.05, "task.progress.reading_document")
 
         if output_format == "images":
             if src_ext != ".pdf":
@@ -95,7 +95,7 @@ class DocumentPdfConvertService:
             original_filename=final_filename,
         )
 
-        progress_callback(1.0, "轉換完成")
+        progress_callback(1.0, "task.progress.convert_complete")
         return {
             "output_file_id": output_file_id,
             "output_filename": output_info.filename,
@@ -108,14 +108,14 @@ class DocumentPdfConvertService:
         total = len(reader.pages)
         for i, page in enumerate(reader.pages):
             parts.append(page.extract_text() or "")
-            progress_callback(0.1 + (i + 1) / total * 0.8, f"提取頁面 {i+1}/{total}...")
+            progress_callback(0.1 + (i + 1) / total * 0.8, f"task.progress.extracting_page|{i+1}|{total}")
         return "\n\n".join(p.strip() for p in parts if p.strip())
 
     def _extract_docx_text(self, path: Path, progress_callback) -> str:
         import docx
         doc = docx.Document(str(path))
         lines = [p.text for p in doc.paragraphs if p.text.strip()]
-        progress_callback(0.9, "提取文字完成")
+        progress_callback(0.9, "task.progress.text_extraction_complete")
         return "\n".join(lines)
 
     def _maybe_to_md(self, text: str) -> str:
@@ -133,6 +133,6 @@ class DocumentPdfConvertService:
                 img_buf = io.BytesIO()
                 img.save(img_buf, format="PNG")
                 zf.writestr(f"page_{i + 1:03d}.png", img_buf.getvalue())
-                progress_callback(0.1 + (i + 1) / total * 0.85, f"渲染頁面 {i+1}/{total}...")
+                progress_callback(0.1 + (i + 1) / total * 0.85, f"task.progress.rendering_page|{i+1}|{total}")
         doc.close()
         output_path.write_bytes(buf.getvalue())

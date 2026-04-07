@@ -106,7 +106,7 @@ class AudioMidiService:
             original_stem = Path(file_info.original_filename or "midi").stem
         output_dir_path.mkdir(parents=True, exist_ok=True)
 
-        progress_callback(0.05, "準備匯出...")
+        progress_callback(0.05, "task.progress.preparing_export")
 
         fluidsynth = get_container().fluidsynth()
 
@@ -122,18 +122,18 @@ class AudioMidiService:
 
         # Convert to MP3 if needed
         if output_format == "mp3":
-            progress_callback(0.8, "轉換為 MP3...")
-            from app.engine.ffmpeg import FFmpeg
+            progress_callback(0.8, "task.progress.converting_mp3")
+            from app.engine.ffmpeg import FFmpegWrapper
             mp3_filename = f"{original_stem}.mp3"
             mp3_path = output_dir_path / mp3_filename
-            ffmpeg = FFmpeg()
+            ffmpeg = FFmpegWrapper()
             ffmpeg.convert(str(wav_path), str(mp3_path), {"format": "mp3", "bitrate": "192k"})
             wav_path.unlink(missing_ok=True)
             final_path = mp3_path
             final_filename = mp3_filename
         elif output_format == "mid":
             # Just copy/return the original MIDI file
-            progress_callback(0.9, "匯出 MIDI...")
+            progress_callback(0.9, "task.progress.exporting_midi")
             import shutil
             mid_filename = f"{original_stem}.mid"
             mid_path = output_dir_path / mid_filename
@@ -153,7 +153,7 @@ class AudioMidiService:
             original_filename=file_info.original_filename,
         )
 
-        progress_callback(1.0, "匯出完成")
+        progress_callback(1.0, "task.progress.export_complete")
         return {
             "output_file_id": output_file_id,
             "output_filename": final_filename,

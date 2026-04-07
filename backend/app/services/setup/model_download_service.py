@@ -35,7 +35,7 @@ def handle_model_download(params: dict, progress_callback: Callable) -> dict:
     """
     item_id = params.get("id", "")
     logger.info(f"Starting model download: {item_id}")
-    progress_callback(0.05, f"準備下載 {item_id}...")
+    progress_callback(0.05, f"task.progress.download_preparing|{item_id}")
 
     try:
         from huggingface_hub import hf_hub_download, snapshot_download
@@ -83,7 +83,7 @@ def handle_model_download(params: dict, progress_callback: Callable) -> dict:
     else:
         _download_pth_model(item_id, progress_callback)
 
-    progress_callback(1.0, "下載完成")
+    progress_callback(1.0, "task.progress.download_complete")
     return {"status": "ok", "id": item_id}
 
 
@@ -118,11 +118,11 @@ def _download_from_url(
                     prog = base_progress + frac * (end_progress - base_progress)
                     mb_done = downloaded / 1024 / 1024
                     mb_total = total / 1024 / 1024
-                    progress_callback(prog, f"下載中... {mb_done:.0f} / {mb_total:.0f} MB")
+                    progress_callback(prog, f"task.progress.downloading_mb|{mb_done:.0f}|{mb_total:.0f}")
 
     if target_path.exists():
         size_mb = target_path.stat().st_size / 1024 / 1024
-        progress_callback(end_progress, f"下載完成 ({size_mb:.1f} MB)")
+        progress_callback(end_progress, f"task.progress.download_done_mb|{size_mb:.1f}")
 
 
 def _stream_download(
@@ -169,16 +169,16 @@ def _download_whisper(size: str, progress_callback: Callable, snapshot_download)
 
     model_bin = local_dir / "model.bin"
     if not model_bin.exists():
-        progress_callback(0.1, f"下載 Whisper {size} 模型中...")
+        progress_callback(0.1, f"task.progress.downloading_whisper|{size}")
         _stream_download(repo_id, "model.bin", model_bin, progress_callback, 0.1, 0.9)
 
-    progress_callback(0.9, "下載設定檔與分詞器...")
+    progress_callback(0.9, "task.progress.downloading_tokenizer")
     snapshot_download(
         repo_id=repo_id,
         local_dir=str(local_dir),
         ignore_patterns=["*.md", "model.bin", "model.safetensors"],
     )
-    progress_callback(0.98, "模型檔案檢驗完成")
+    progress_callback(0.98, "task.progress.model_verified")
 
 
 def _download_vlm(model_family: str, size: str, quant: str, progress_callback: Callable) -> None:
@@ -196,7 +196,7 @@ def _download_vlm(model_family: str, size: str, quant: str, progress_callback: C
     target_dir = _models_dir() / slot
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    progress_callback(0.05, f"下載 {model_family} {size} {quant} 主模型...")
+    progress_callback(0.05, f"task.progress.downloading_main_model|{model_family}|{size}|{quant}")
     _stream_download(
         repo_id=variant["repo_id"],
         filename=variant["filename"],
@@ -207,7 +207,7 @@ def _download_vlm(model_family: str, size: str, quant: str, progress_callback: C
     )
 
     if "mmproj_filename" in variant:
-        progress_callback(0.65, f"下載 mmproj（視覺編碼器）...")
+        progress_callback(0.65, "task.progress.downloading_mmproj")
         _stream_download(
             repo_id=variant.get("mmproj_repo_id", variant["repo_id"]),
             filename=variant["mmproj_filename"],
@@ -217,7 +217,7 @@ def _download_vlm(model_family: str, size: str, quant: str, progress_callback: C
             end_progress=0.95,
         )
 
-    progress_callback(0.95, "VLM 模型下載完成")
+    progress_callback(0.95, "task.progress.vlm_download_complete")
 
 
 def _download_translate(model_type: str, size: str, quant: str, progress_callback: Callable) -> None:
@@ -233,7 +233,7 @@ def _download_translate(model_type: str, size: str, quant: str, progress_callbac
     target_dir = _models_dir(model_type)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    progress_callback(0.1, f"下載 {model_type} {size} {quant} 中...")
+    progress_callback(0.1, f"task.progress.downloading_model|{model_type}|{size}|{quant}")
     _stream_download(
         repo_id=variant["repo_id"],
         filename=variant["filename"],
@@ -242,7 +242,7 @@ def _download_translate(model_type: str, size: str, quant: str, progress_callbac
         base_progress=0.1,
         end_progress=0.95,
     )
-    progress_callback(0.95, "模型下載完成")
+    progress_callback(0.95, "task.progress.model_download_complete")
 
 
 def _download_demucs(variant: str, progress_callback: Callable) -> None:
@@ -258,7 +258,7 @@ def _download_demucs(variant: str, progress_callback: Callable) -> None:
         raise ValueError(f"未知的 demucs 變體: {variant}")
 
     model_name = variant_spec.get("model_name", variant)
-    progress_callback(0.1, f"正在下載 {model_name}...")
+    progress_callback(0.1, f"task.progress.downloading_named|{model_name}")
 
     # 模型 hash → checkpoint 檔名對照（從 demucs/remote/*.yaml + files.txt）
     DEMUCS_MODELS = {
@@ -276,12 +276,12 @@ def _download_demucs(variant: str, progress_callback: Callable) -> None:
     target_path = checkpoints_dir / filename
 
     if target_path.exists():
-        progress_callback(0.95, "模型已存在")
+        progress_callback(0.95, "task.progress.model_exists")
         return
 
-    progress_callback(0.15, f"下載 {model_name} checkpoint...")
+    progress_callback(0.15, f"task.progress.downloading_checkpoint|{model_name}")
     _download_from_url(url, target_path, progress_callback, 0.15, 0.95)
-    progress_callback(0.95, "模型下載完成")
+    progress_callback(0.95, "task.progress.model_download_complete")
 
 
 def _download_rife(variant: str, progress_callback: Callable) -> None:
@@ -306,17 +306,17 @@ def _download_rife(variant: str, progress_callback: Callable) -> None:
     target_path = target_dir / filename
 
     if target_path.exists():
-        progress_callback(0.95, "模型已存在")
+        progress_callback(0.95, "task.progress.model_exists")
         return
 
     import tempfile
-    progress_callback(0.1, f"下載 RIFE {variant}...")
+    progress_callback(0.1, f"task.progress.downloading_rife|{variant}")
 
     # Download zip to temp, extract flownet.pkl
     tmp_zip = Path(tempfile.mktemp(suffix=".zip"))
     try:
         _download_from_url(url, tmp_zip, progress_callback, 0.1, 0.80)
-        progress_callback(0.85, "解壓模型...")
+        progress_callback(0.85, "task.progress.extracting_model")
 
         target_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(tmp_zip, "r") as zf:
@@ -332,7 +332,7 @@ def _download_rife(variant: str, progress_callback: Callable) -> None:
     finally:
         tmp_zip.unlink(missing_ok=True)
 
-    progress_callback(0.95, "模型下載完成")
+    progress_callback(0.95, "task.progress.model_download_complete")
 
 
 def _download_alignment(lang_code: str, progress_callback: Callable) -> None:
@@ -344,7 +344,7 @@ def _download_alignment(lang_code: str, progress_callback: Callable) -> None:
 
     repo_id = LANG_MODELS[lang_code]
     cache_dir = str(_models_dir("alignment"))
-    progress_callback(0.1, f"下載 {repo_id}...")
+    progress_callback(0.1, f"task.progress.downloading_repo|{repo_id}")
 
     try:
         from huggingface_hub import list_repo_files, hf_hub_download
@@ -362,7 +362,7 @@ def _download_alignment(lang_code: str, progress_callback: Callable) -> None:
         total = len(download_files)
         for i, filename in enumerate(download_files):
             prog = 0.1 + (i / total) * 0.85  # 0.1 ~ 0.95
-            progress_callback(prog, f"下載 {filename}（{i + 1}/{total}）...")
+            progress_callback(prog, f"task.progress.downloading_file|{filename}|{i + 1}|{total}")
             hf_hub_download(
                 repo_id=repo_id,
                 filename=filename,
@@ -372,7 +372,7 @@ def _download_alignment(lang_code: str, progress_callback: Callable) -> None:
     except Exception as e:
         raise RuntimeError(f"Alignment 模型下載失敗: {e}")
 
-    progress_callback(0.95, "模型下載完成")
+    progress_callback(0.95, "task.progress.model_download_complete")
 
 
 def _download_pth_model(model_id: str, progress_callback: Callable) -> None:
@@ -421,14 +421,14 @@ def _download_pth_model(model_id: str, progress_callback: Callable) -> None:
 
     if "url" in variant_spec:
         url = variant_spec["url"]
-        progress_callback(0.1, f"下載 {family} {variant} 中...")
+        progress_callback(0.1, f"task.progress.downloading_variant|{family}|{variant}")
 
         if needs_unzip:
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_archive = Path(temp_dir) / "archive.zip"
                 _download_from_url(url, temp_archive, progress_callback, 0.1, 0.85)
 
-                progress_callback(0.85, "解壓縮中...")
+                progress_callback(0.85, "task.progress.decompressing")
 
                 with zipfile.ZipFile(temp_archive, 'r') as zip_ref:
                     if archive_path:
@@ -464,12 +464,12 @@ def _download_pth_model(model_id: str, progress_callback: Callable) -> None:
                     else:
                         zip_ref.extractall(target_dir)
 
-                progress_callback(0.95, "解壓縮完成")
+                progress_callback(0.95, "task.progress.decompression_complete")
         else:
             _download_from_url(url, target_path, progress_callback, 0.1, 0.95)
     elif "repo_id" in variant_spec:
         repo_id = variant_spec["repo_id"]
-        progress_callback(0.1, f"下載 {family} {variant} 中...")
+        progress_callback(0.1, f"task.progress.downloading_variant|{family}|{variant}")
         _stream_download(
             repo_id=repo_id,
             filename=filename,
@@ -481,7 +481,7 @@ def _download_pth_model(model_id: str, progress_callback: Callable) -> None:
     else:
         raise ValueError(f"模型 {family}-{variant} 缺少 url 或 repo_id 配置")
 
-    progress_callback(0.95, "模型下載完成")
+    progress_callback(0.95, "task.progress.model_download_complete")
 
 
 def _download_basic_pitch(progress_callback: Callable) -> None:

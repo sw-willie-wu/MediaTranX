@@ -143,14 +143,14 @@ class WhisperWrapper(PackageRuntime):
     ) -> Any:
         """使用 faster-whisper 載入 CTranslate2 模型"""
         if on_progress:
-            on_progress(0.2, "正在初始化 CTranslate2...")
+            on_progress(0.2, "task.progress.init_ctranslate2")
 
         from app.engine.device import get_compute_type
 
         compute_type = config.get("compute_type", get_compute_type())
 
         if on_progress:
-            on_progress(0.5, f"正在載入模型 ({device})...")
+            on_progress(0.5, f"task.progress.loading_model_device|{device}")
 
         model = WhisperModel(
             str(model_path),
@@ -275,7 +275,7 @@ class WhisperWrapper(PackageRuntime):
         try:
             # 使用 PackageRuntime 的 acquire() 載入模型
             if on_progress:
-                on_progress(0.0, "載入語音辨識模型...")
+                on_progress(0.0, "task.progress.loading_whisper")
 
             with self.acquire(
                 model_id="whisper",
@@ -283,7 +283,7 @@ class WhisperWrapper(PackageRuntime):
                 on_progress=lambda p, m: on_progress(p * 0.05, m) if on_progress else None
             ) as model:
                 if on_progress:
-                    on_progress(0.05, "開始語音辨識...")
+                    on_progress(0.05, "task.progress.start_recognition")
 
                 # 執行轉錄
                 segments_gen, info = model.transcribe(
@@ -315,10 +315,10 @@ class WhisperWrapper(PackageRuntime):
                         ))
                     if on_progress and duration > 0:
                         progress = 0.05 + (segment.end / duration) * 0.95
-                        on_progress(min(progress, 1.0), f"辨識中... {progress:.0%}")
+                        on_progress(min(progress, 1.0), f"task.progress.recognizing_pct|{progress:.0%}")
 
                 if on_progress:
-                    on_progress(0.95, "語音辨識完成")
+                    on_progress(0.95, "task.progress.recognition_complete")
 
                 result = TranscribeResult(
                     language=info.language,
@@ -328,7 +328,7 @@ class WhisperWrapper(PackageRuntime):
                 )
 
             if on_progress:
-                on_progress(1.0, "語音辨識完成")
+                on_progress(1.0, "task.progress.recognition_complete")
 
             return result
         finally:

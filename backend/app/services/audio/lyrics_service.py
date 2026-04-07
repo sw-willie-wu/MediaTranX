@@ -145,7 +145,7 @@ class AudioLyricsService:
 
         try:
             # === Demucs 人聲分離 ===
-            stage_progress("demucs", 0.0, "正在分離人聲...")
+            stage_progress("demucs", 0.0, "task.progress.lyrics_separating")
 
             from app.engine.ai.audio.demucs import get_demucs
             demucs = get_demucs()
@@ -163,7 +163,7 @@ class AudioLyricsService:
             audio_data = vocals_tensor.numpy().T
             sf.write(str(temp_vocals_path), audio_data, sample_rate)
 
-            stage_progress("demucs", 1.0, "人聲分離完成")
+            stage_progress("demucs", 1.0, "task.progress.lyrics_separation_complete")
 
             # === GPU 排隊管線 ===
             from app.init.container import get_container
@@ -182,21 +182,21 @@ class AudioLyricsService:
                 )
 
                 detected_lang = result.language
-                stage_progress("whisper", 1.0, "語音辨識完成")
+                stage_progress("whisper", 1.0, "task.progress.lyrics_recognition_complete")
 
                 # === Wav2Vec2 精準對齊 ===
                 if align and detected_lang:
                     from app.engine.ai.audio.wav2vec2 import get_alignment_engine
                     aligner = get_alignment_engine()
                     if aligner.is_language_supported(detected_lang):
-                        stage_progress("align", 0.0, "精準對齊中...")
+                        stage_progress("align", 0.0, "task.progress.lyrics_aligning")
                         result.segments = aligner.align(
                             audio_path=str(temp_vocals_path),
                             segments=result.segments,
                             language=detected_lang,
                             on_progress=lambda p, m: stage_progress("align", p, m),
                         )
-                        stage_progress("align", 1.0, "對齊完成")
+                        stage_progress("align", 1.0, "task.progress.lyrics_align_complete")
 
                 # === 翻譯 ===
                 from app.engine.ai.audio.whisper import TranscribeSegment
@@ -204,7 +204,7 @@ class AudioLyricsService:
                 original_segments = list(result.segments)
 
                 if do_translate and target_lang:
-                    stage_progress("translate", 0.0, "準備翻譯歌詞...")
+                    stage_progress("translate", 0.0, "task.progress.lyrics_prepare_translate")
 
                     translate_remote = params.get("translate_remote", False)
 
@@ -247,17 +247,17 @@ class AudioLyricsService:
                         src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
                         runtime = LlamaServerRuntime(SLOT_LLM)
 
-                        stage_progress("translate", 0.0, "載入翻譯模型...")
+                        stage_progress("translate", 0.0, "task.progress.lyrics_load_translate")
 
                         with runtime.acquire(translate_model_type, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
-                            stage_progress("translate", 0.05, "開始翻譯歌詞...")
+                            stage_progress("translate", 0.05, "task.progress.lyrics_translating")
                             translated_all = translate_srt_local(
                                 seg_dicts, src, target_lang, runtime,
                                 on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
                                 model_id=translate_model_type,
                             )
 
-                        stage_progress("translate", 1.0, "歌詞翻譯完成")
+                        stage_progress("translate", 1.0, "task.progress.lyrics_translate_complete")
 
                         result.segments = [
                             TranscribeSegment(s["start"], s["end"], s["text"])
@@ -265,7 +265,7 @@ class AudioLyricsService:
                         ]
 
             # === 階段 4: 寫入輸出檔案 (0.95 ~ 1.0) ===
-            stage_progress("write", 0.0, "正在寫入歌詞檔...")
+            stage_progress("write", 0.0, "task.progress.lyrics_writing")
 
             output_files = []
 
@@ -329,7 +329,7 @@ class AudioLyricsService:
                 })
                 output_filename_result = output_info.filename
 
-            progress_callback(1.0, "歌詞提取完成")
+            progress_callback(1.0, "task.progress.lyrics_complete")
 
             # Read lyrics content for preview
             text_content = None

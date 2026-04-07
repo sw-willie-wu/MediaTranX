@@ -20,7 +20,7 @@ class InterpolateRequest(BaseModel):
 
 class InterpolateResponse(BaseModel):
     task_id: str
-    message: str = "補幀任務已提交"
+    message: str = "Interpolation task submitted"
 
 @router.get("/rife/status")
 async def rife_status():
