@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useModelGuard } from '@/composables/useModelGuard'
 
 const props = defineProps<{
   fileId: string | null
@@ -15,6 +16,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
+const { guardModelReady } = useModelGuard()
 
 const removeBgMode = ref('auto')
 const removeBgModes = computed(() => [
@@ -35,6 +37,7 @@ function getParams(): Record<string, unknown> {
 }
 
 async function execute() {
+  if (!await guardModelReady(true, 'image')) return
   if (!props.fileId) return
   const taskId = await submitTask(
     '/image/remove-bg',
