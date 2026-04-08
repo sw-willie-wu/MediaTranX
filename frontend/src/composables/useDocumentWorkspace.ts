@@ -11,8 +11,9 @@ import { createLogger } from '@/utils/logger'
 const log = createLogger('DocumentWorkspace')
 
 const DOCUMENT_EXTS = new Set([
-  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-  '.txt', '.csv', '.rtf', '.odt', '.ods', '.odp', '.epub',
+  '.pdf', '.doc', '.docx',
+  '.txt', '.md', '.log',
+  '.srt', '.vtt', '.lrc', '.ass',
 ])
 
 /**

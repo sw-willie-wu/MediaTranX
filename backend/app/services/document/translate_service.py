@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 TASK_TYPE_DOCUMENT_TRANSLATE = "document.translate"
 
 # 字幕檔副檔名
-SUBTITLE_EXTENSIONS = {".srt", ".vtt"}
+SUBTITLE_EXTENSIONS = {".srt", ".vtt", ".lrc", ".ass"}
+SUPPORTED_EXTENSIONS = {".txt", ".md", ".log", ".srt", ".vtt", ".lrc", ".ass"}
 
 
 def _parse_srt_time(time_str: str) -> float:
@@ -236,8 +237,15 @@ class TranslateService:
         progress_callback(0.0, "task.progress.reading_file")
 
         file_path = Path(file_info.file_path)
-        text = file_path.read_text(encoding="utf-8")
         ext = Path(file_info.original_filename).suffix.lower()
+
+        if ext not in SUPPORTED_EXTENSIONS:
+            raise ValueError(
+                f"Unsupported file format: {ext}. "
+                f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+            )
+
+        text = file_path.read_text(encoding="utf-8")
         is_subtitle = ext in SUBTITLE_EXTENSIONS
 
         progress_callback(0.05, f"task.progress.file_read_complete|{len(text)}")
