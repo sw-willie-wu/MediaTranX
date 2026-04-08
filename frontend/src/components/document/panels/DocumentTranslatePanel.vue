@@ -44,9 +44,9 @@ const localTranslateModelOptions = computed(() =>
 const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
 
 watch(localTranslateModelOptions, (options) => {
-  if (!selectedTranslateModel.value) {
+  if (!selectedTranslateModel.value || !options.some(m => m.value === selectedTranslateModel.value)) {
     const first = options.find(m => m.badge === 'ok')
-    if (first) selectedTranslateModel.value = first.value
+    selectedTranslateModel.value = first?.value ?? ''
   }
 }, { immediate: true })
 

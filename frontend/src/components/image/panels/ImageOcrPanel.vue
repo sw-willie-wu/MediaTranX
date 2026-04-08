@@ -52,9 +52,9 @@ const localModelOptions = computed(() => {
 })
 
 watch(localModelOptions, (options) => {
-  if (!selectedModel.value) {
+  if (!selectedModel.value || !options.some(m => m.value === selectedModel.value)) {
     const first = options.find(m => m.downloaded)
-    if (first) selectedModel.value = first.value
+    selectedModel.value = first?.value ?? ''
   }
 }, { immediate: true })
 
@@ -165,8 +165,10 @@ function getParams(): Record<string, unknown> {
   return params
 }
 
+watch(() => modelStore.version, () => checkAvailable())
+
 async function execute() {
-  if (!await guardModelReady(modelDownloaded.value !== false, 'llm')) return
+  if (!await guardModelReady(modelDownloaded.value === true, 'llm')) return
   if (!props.fileId) return
   const taskId = await submitTask(
     '/image/ocr',

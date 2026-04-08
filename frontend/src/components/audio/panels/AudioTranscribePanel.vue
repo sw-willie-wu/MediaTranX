@@ -10,6 +10,7 @@ import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { apiFetch } from '@/composables/useApi'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { useSettingsStore } from '@/stores/settings'
 
 const props = defineProps<{
   fileId: string | null
@@ -27,6 +28,7 @@ const filesStore = useFilesStore()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
 const { guardModelReady } = useModelGuard()
+const settingsStore = useSettingsStore()
 
 // ── Whisper model status ────────────────────────────────────────
 const whisperAvailable = ref<boolean | null>(null)
@@ -40,12 +42,13 @@ const BASE_MODEL_SIZES = [
   { value: 'large-v3', label: 'Large-v3 (~3 GB)' },
 ]
 
-const modelSizes = computed(() =>
-  BASE_MODEL_SIZES.map(m => {
+const modelSizes = computed(() => {
+  const all = BASE_MODEL_SIZES.map(m => {
     const dl = whisperDownloadedMap.value[m.value]
     return { ...m, badge: dl === undefined ? null : dl ? 'ok' as const : 'err' as const }
   })
-)
+  return settingsStore.showAllModels ? all : all.filter(m => m.badge === 'ok')
+})
 
 async function loadAllModelStatus() {
   await Promise.allSettled(BASE_MODEL_SIZES.map(async ({ value: size }) => {
@@ -59,6 +62,15 @@ async function loadAllModelStatus() {
   }))
 }
 
+watch(() => modelStore.version, () => loadAllModelStatus())
+
+// Auto-reselect when filtered list no longer contains current selection
+watch(modelSizes, (sizes) => {
+  if (sizes.length > 0 && !sizes.some(m => m.value === modelSize.value)) {
+    modelSize.value = sizes[0].value
+  }
+})
+
 // ── Settings ────────────────────────────────────────────────────
 const modelSize = ref('medium')
 const language = ref('')
@@ -71,7 +83,7 @@ const translateEnabled = ref(false)
 const targetLanguage = ref('zh-TW')
 const selectedTranslateModel = ref('')
 const summarizeEnabled = ref(false)
-const selectedSummarizeModel = ref('qwen3:4b:Q4_K_M')
+const selectedSummarizeModel = ref('')
 const outputPath = ref('')
 
 const rawLanguages = ref<{ value: string; label: string }[]>([])
@@ -110,9 +122,13 @@ const { mergedOptions: translateModelOptions } = useModelOptions('text', localTr
 const { mergedOptions: summarizeModelOptions } = useModelOptions('text', localTranslateModelOptions)
 
 watch(localTranslateModelOptions, (options) => {
-  if (!selectedTranslateModel.value) {
+  if (!selectedTranslateModel.value || !options.some(m => m.value === selectedTranslateModel.value)) {
     const first = options.find(m => m.badge === 'ok')
-    if (first) selectedTranslateModel.value = first.value
+    selectedTranslateModel.value = first?.value ?? ''
+  }
+  if (!selectedSummarizeModel.value || !options.some(m => m.value === selectedSummarizeModel.value)) {
+    const first = options.find(m => m.badge === 'ok')
+    selectedSummarizeModel.value = first?.value ?? ''
   }
 }, { immediate: true })
 
@@ -189,6 +205,11 @@ async function execute() {
     const tParsed = parseModelValue(selectedTranslateModel.value)
     const translateReady = tParsed.isRemote || localTranslateModelOptions.value.find(m => m.value === selectedTranslateModel.value)?.badge === 'ok'
     if (!await guardModelReady(translateReady === true, 'llm')) return
+  }
+  if (summarizeEnabled.value) {
+    const sParsed = parseModelValue(selectedSummarizeModel.value)
+    const summarizeReady = sParsed.isRemote || localTranslateModelOptions.value.find(m => m.value === selectedSummarizeModel.value)?.badge === 'ok'
+    if (!await guardModelReady(summarizeReady === true, 'llm')) return
   }
   if (!props.fileId) return
 
@@ -337,7 +358,7 @@ onMounted(() => {
     <!-- 基本設定 -->
     <div class="form-group">
       <label>{{ $t('audio.transcribe.model') }}</label>
-      <AppSelect v-model="modelSize" :options="modelSizes" />
+      <AppSelect v-model="modelSize" :options="modelSizes" :placeholder="$t('common.no_models_available')" />
     </div>
 
     <div class="form-group">

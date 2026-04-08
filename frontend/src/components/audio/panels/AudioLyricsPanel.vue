@@ -10,6 +10,7 @@ import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { apiFetch } from '@/composables/useApi'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { useSettingsStore } from '@/stores/settings'
 
 const props = defineProps<{
   fileId: string | null
@@ -27,6 +28,7 @@ const filesStore = useFilesStore()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
 const { guardModelReady } = useModelGuard()
+const settingsStore = useSettingsStore()
 
 // ── Whisper model status ────────────────────────────────────────
 const whisperAvailable = ref<boolean | null>(null)
@@ -40,12 +42,13 @@ const BASE_MODEL_SIZES = [
   { value: 'large-v3', label: 'Large-v3 (~3 GB)' },
 ]
 
-const modelSizes = computed(() =>
-  BASE_MODEL_SIZES.map(m => {
+const modelSizes = computed(() => {
+  const all = BASE_MODEL_SIZES.map(m => {
     const dl = whisperDownloadedMap.value[m.value]
     return { ...m, badge: dl === undefined ? null : dl ? 'ok' as const : 'err' as const }
   })
-)
+  return settingsStore.showAllModels ? all : all.filter(m => m.badge === 'ok')
+})
 
 async function loadAllModelStatus() {
   await Promise.allSettled(BASE_MODEL_SIZES.map(async ({ value: size }) => {
@@ -58,6 +61,15 @@ async function loadAllModelStatus() {
     } catch {}
   }))
 }
+
+watch(() => modelStore.version, () => loadAllModelStatus())
+
+// Auto-reselect when filtered list no longer contains current selection
+watch(modelSizes, (sizes) => {
+  if (sizes.length > 0 && !sizes.some(m => m.value === modelSize.value)) {
+    modelSize.value = sizes[0].value
+  }
+})
 
 // ── Settings ────────────────────────────────────────────────────
 const showAdvanced = ref(localStorage.getItem('lyrics_advanced') === 'true')
@@ -91,9 +103,9 @@ const localTranslateModelOptions = computed(() =>
 const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
 
 watch(localTranslateModelOptions, (options) => {
-  if (!selectedTranslateModel.value) {
+  if (!selectedTranslateModel.value || !options.some(m => m.value === selectedTranslateModel.value)) {
     const first = options.find(m => m.badge === 'ok')
-    if (first) selectedTranslateModel.value = first.value
+    selectedTranslateModel.value = first?.value ?? ''
   }
 }, { immediate: true })
 
@@ -281,7 +293,7 @@ onMounted(() => {
     <!-- 基本設定 -->
     <div class="form-group">
       <label>{{ $t('audio.lyrics.model') }}</label>
-      <AppSelect v-model="modelSize" :options="modelSizes" />
+      <AppSelect v-model="modelSize" :options="modelSizes" :placeholder="$t('common.no_models_available')" />
     </div>
 
     <div class="form-group">

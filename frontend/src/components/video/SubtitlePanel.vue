@@ -11,6 +11,7 @@ import { apiFetch, getApiBase } from '@/composables/useApi'
 import { parseModelValue } from '@/composables/useModelOptions'
 import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { useSettingsStore } from '@/stores/settings'
 
 const { t } = useI18n()
 
@@ -39,6 +40,7 @@ const taskStore = useTaskStore()
 const toast = useToast()
 const modelStore = useModelStore()
 const { guardModelReady } = useModelGuard()
+const settingsStore = useSettingsStore()
 
 const isLoading = ref(false)
 const error = ref<string | null>(null)
@@ -55,12 +57,13 @@ const baseModelSizes = [
   { value: 'large-v3', label: 'Large-v3 (~3 GB)' },
 ]
 
-const modelSizesWithBadge = computed(() =>
-  baseModelSizes.map(m => {
+const modelSizesWithBadge = computed(() => {
+  const all = baseModelSizes.map(m => {
     const dl = whisperDownloadedMap.value[m.value]
     return { ...m, badge: dl === undefined ? null : dl ? 'ok' as const : 'err' as const }
   })
-)
+  return settingsStore.showAllModels ? all : all.filter(m => m.badge === 'ok')
+})
 
 async function loadAllWhisperStatus() {
   await Promise.allSettled(baseModelSizes.map(async ({ value: size }) => {
@@ -73,6 +76,15 @@ async function loadAllWhisperStatus() {
     } catch {}
   }))
 }
+
+watch(() => modelStore.version, () => loadAllWhisperStatus())
+
+// Auto-reselect when filtered list no longer contains current selection
+watch(modelSizesWithBadge, (sizes) => {
+  if (sizes.length > 0 && !sizes.some(m => m.value === modelSize.value)) {
+    modelSize.value = sizes[0].value
+  }
+})
 
 // ── 字幕選項 ────────────────────────────────────────────────────
 const language = ref('')
@@ -274,7 +286,7 @@ onMounted(() => { loadAllWhisperStatus(); loadLanguages(); modelStore.ensureLoad
 
     <div class="form-group">
       <label>{{ $t('video.subtitle.model_settings') }}</label>
-      <AppSelect v-model="modelSize" :options="modelSizesWithBadge" />
+      <AppSelect v-model="modelSize" :options="modelSizesWithBadge" :placeholder="$t('common.no_models_available')" />
     </div>
 
     <div class="form-group">
