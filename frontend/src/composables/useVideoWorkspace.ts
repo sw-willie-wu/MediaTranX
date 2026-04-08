@@ -128,7 +128,10 @@ export function useVideoWorkspace() {
   const currentTaskId = computed<string | null>(() => collection.activeEntry.value?.currentTaskId ?? null)
   const historyStack = computed(() => collection.activeEntry.value?.historyStack ?? [])
 
+  const redoStack = computed(() => collection.activeEntry.value?.redoStack ?? [])
   const hasResult = computed<boolean>(() => historyStack.value.length > 0)
+  const canGoBack = computed(() => historyStack.value.length > 0)
+  const canGoForward = computed(() => redoStack.value.length > 0)
 
   /** Preview URL: latest result if available, otherwise original */
   const activePreviewUrl = computed<string | null>(
@@ -244,6 +247,27 @@ export function useVideoWorkspace() {
     { deep: true }
   )
 
+  function goBack() {
+    const id = collection.activeId.value
+    if (!id) return
+    const popped = historyStack.value.at(-1)
+    log.info('goBack', { entryId: id, fromDepth: historyStack.value.length })
+    const stack = historyStack.value.slice(0, -1)
+    const redo = popped ? [...redoStack.value, popped] : redoStack.value
+    collection.updateEntry(id, { historyStack: stack, redoStack: redo })
+  }
+
+  function goForward() {
+    const id = collection.activeId.value
+    if (!id) return
+    const restored = redoStack.value.at(-1)
+    if (!restored) return
+    log.info('goForward', { entryId: id, redoDepth: redoStack.value.length })
+    const stack = [...historyStack.value, restored]
+    const redo = redoStack.value.slice(0, -1)
+    collection.updateEntry(id, { historyStack: stack, redoStack: redo })
+  }
+
   return {
     hasFile,
     fileId,
@@ -255,11 +279,15 @@ export function useVideoWorkspace() {
     mediaInfo,
     currentTaskId,
     hasResult,
+    canGoBack,
+    canGoForward,
     collection,
     handleFile,
     handleFiles,
     handleRemoveFile,
     handlePanelSubmit,
     handleDownload,
+    goBack,
+    goForward,
   }
 }
