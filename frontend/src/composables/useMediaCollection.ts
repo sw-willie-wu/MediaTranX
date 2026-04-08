@@ -32,7 +32,7 @@ export interface MediaEntry {
 
 export interface MediaCollectionOptions {
   /** Return false to skip adding this result to historyStack (e.g. text-only results like OCR) */
-  shouldAddToHistory?: (result: Record<string, unknown>) => boolean
+  shouldAddToHistory?: (result: Record<string, unknown>, taskType: string) => boolean
 }
 
 export function useMediaCollection(options?: MediaCollectionOptions) {
@@ -201,7 +201,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
 
             // Allow consumer to skip historyStack for non-image results (e.g. OCR text).
             // Keep currentTaskId so the consumer's watcher can still process it.
-            if (options?.shouldAddToHistory && !options.shouldAddToHistory(r)) {
+            if (options?.shouldAddToHistory && !options.shouldAddToHistory(r, task.taskType)) {
               log.info('task completed (skipped history)', { taskId, entryId, outputFileId })
               updateEntry(entryId, { status: 'done' })
               taskEntryMap.delete(taskId)
