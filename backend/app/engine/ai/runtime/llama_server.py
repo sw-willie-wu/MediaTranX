@@ -81,7 +81,7 @@ class LlamaServerRuntime(BaseRuntime):
             "--host", "127.0.0.1",
             "--ctx-size", str(n_ctx),
             "--n-gpu-layers", str(n_gpu_layers),
-            "--chat-template-kwargs", '{"enable_thinking":false}',
+            "--reasoning", "off",
         ]
 
         mmproj_path = config.get("mmproj_path")
