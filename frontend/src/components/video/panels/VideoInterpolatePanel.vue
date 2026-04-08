@@ -30,13 +30,13 @@ const outputFormat = ref('mp4')
 const videoCodec = ref('h264')
 const showAdvanced = ref(false)
 
-const modelOptions = computed(() => {
-  const rifeModels = modelStore.forPanel(modelStore.byCategory('interpolate'))
-  const dlMap = new Map(rifeModels.map(m => [m.variant, m.downloaded]))
-  return [
-    { value: 'v4.26', label: 'RIFE v4.26', badge: dlMap.get('v4.26') ? 'ok' as const : 'err' as const },
-  ]
-})
+const modelOptions = computed(() =>
+  modelStore.forPanel(modelStore.byCategory('interpolate')).map(m => ({
+    value: m.variant,
+    label: m.label,
+    badge: (m.downloaded ? 'ok' : 'err') as 'ok' | 'err',
+  }))
+)
 
 const modeOptions = computed(() => [
   { value: '2x', label: t('video.interpolate.mode_2x') },
