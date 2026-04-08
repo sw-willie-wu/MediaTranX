@@ -29,13 +29,13 @@ const showAdvanced = ref(false)
 
 const variantOptions = computed(() => {
   const allModels = [...modelStore.forPanel(modelStore.byCategory('upscale')), ...modelStore.forPanel(modelStore.byCategory('video_enhance'))]
-  return allModels
-    .filter(m => m.family === 'realesrgan')
-    .map(m => ({
-      value: m.variant,
-      label: m.label,
-      badge: (m.downloaded ? 'ok' : 'err') as 'ok' | 'err',
-    }))
+  const dlMap = new Map(allModels.map(m => [m.variant, m.downloaded]))
+  return [
+    { value: 'x2plus', label: 'Real-ESRGAN x2', badge: dlMap.get('x2plus') ? 'ok' as const : 'err' as const },
+    { value: 'x4plus', label: 'Real-ESRGAN x4', badge: dlMap.get('x4plus') ? 'ok' as const : 'err' as const },
+    { value: 'x4plus-anime', label: 'Real-ESRGAN x4 Anime', badge: dlMap.get('x4plus-anime') ? 'ok' as const : 'err' as const },
+    { value: 'animevideov3', label: 'Real-ESRGAN Video x4 (Fast)', badge: dlMap.get('animevideov3') ? 'ok' as const : 'err' as const },
+  ]
 })
 
 const formatOptions = computed(() => [
