@@ -34,9 +34,11 @@ const toast = useToast()
 
 const {
   hasFile, fileId, activeFileId, activePreviewUrl, isUploading, sourceDir, currentFileName, hasResult, audioInfo,
+  canGoBack, canGoForward,
   textResultContent, textResultFileId,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, addMidiEntry,
+  goBack, goForward,
 } = useAudioWorkspace()
 
 const selectedIds = computed(() => collection.selectedIds.value)
@@ -404,11 +406,11 @@ function registerTitlebar() {
   registerActions({
     canUndo: () => {
       if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.editor.canUndo.value ?? false
-      return false
+      return canGoBack.value
     },
     canRedo: () => {
       if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.editor.canRedo.value ?? false
-      return false
+      return canGoForward.value
     },
     canSaveAs: () => {
       if (currentFunction.value === 'midi-edit') {
@@ -418,8 +420,14 @@ function registerTitlebar() {
       }
       return hasResult.value
     },
-    onUndo: () => { midiEditPanelRef.value?.editor.undo() },
-    onRedo: () => { midiEditPanelRef.value?.editor.redo() },
+    onUndo: () => {
+      if (currentFunction.value === 'midi-edit') midiEditPanelRef.value?.editor.undo()
+      else goBack()
+    },
+    onRedo: () => {
+      if (currentFunction.value === 'midi-edit') midiEditPanelRef.value?.editor.redo()
+      else goForward()
+    },
     onSaveAs: () => {
       if (currentFunction.value === 'midi-edit') {
         midiEditPanelRef.value?.execute()
