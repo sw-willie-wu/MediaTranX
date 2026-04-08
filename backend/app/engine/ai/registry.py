@@ -35,46 +35,56 @@ MODELS_REGISTRY = {
     FORMAT_PKG: {
         "whisper": {
             "slot": SLOT_WHISPER,
-            "description": "Faster-Whisper 語音辨識",
+            "label": "Whisper",
+            "category": "stt",
+            "description": "models.whisper",
             "variants": {
                 "tiny": {
+                    "label": "tiny",
                     "repo_id": "Systran/faster-whisper-tiny",
                     "size_mb": 75,
                     "vram_mb": 500,
-                    "description": "極速辨識",
+                    "description": "models.whisper.tiny",
                 },
                 "base": {
+                    "label": "base",
                     "repo_id": "Systran/faster-whisper-base",
                     "size_mb": 145,
                     "vram_mb": 700,
-                    "description": "快速辨識",
+                    "description": "models.whisper.base",
                 },
                 "small": {
+                    "label": "small",
                     "repo_id": "Systran/faster-whisper-small",
                     "size_mb": 465,
                     "vram_mb": 1500,
-                    "description": "輕量辨識",
+                    "description": "models.whisper.small",
                 },
                 "medium": {
+                    "label": "medium",
                     "repo_id": "Systran/faster-whisper-medium",
                     "size_mb": 1534,
                     "vram_mb": 3000,
-                    "description": "精準辨識",
+                    "description": "models.whisper.medium",
                 },
                 "large-v3": {
+                    "label": "large-v3",
                     "repo_id": "Systran/faster-whisper-large-v3",
                     "size_mb": 3072,
                     "vram_mb": 5000,
-                    "description": "最精準辨識",
+                    "description": "models.whisper.large_v3",
                 },
             },
         },
         # ▸ Demucs（音源分離）
         "demucs": {
             "slot": SLOT_DEMUCS,
-            "description": "Hybrid Demucs 音源分離（6 軌）",
+            "label": "HTDemucs",
+            "category": "separate",
+            "description": "models.demucs",
             "variants": {
                 "htdemucs_6s": {
+                    "label": "6-stem",
                     "model_name": "htdemucs_6s",
                     "size_mb": 320,
                     "vram_mb": 2000,
@@ -86,9 +96,12 @@ MODELS_REGISTRY = {
         # ▸ Basic Pitch（音訊轉 MIDI）
         "basic_pitch": {
             "slot": SLOT_BASIC_PITCH,
-            "description": "Basic Pitch 音訊轉 MIDI",
+            "label": "Basic Pitch",
+            "category": "midi",
+            "description": "models.basic_pitch",
             "variants": {
                 "default": {
+                    "label": "default",
                     "model_name": "basic_pitch",
                     "size_mb": 10,
                     "vram_mb": 0,
@@ -98,9 +111,12 @@ MODELS_REGISTRY = {
         # ▸ RIFE（影片補幀）
         "rife": {
             "slot": SLOT_RIFE,
-            "description": "RIFE 影片補幀",
+            "label": "RIFE",
+            "category": "interpolate",
+            "description": "models.rife",
             "variants": {
                 "v4.26": {
+                    "label": "v4.26",
                     "url": "https://huggingface.co/hzwer/RIFE/resolve/main/RIFEv4.26_0921.zip",
                     "zip_entry": "RIFEv4.26_0921/flownet.pkl",
                     "filename": "flownet-v4.26.pkl",
@@ -502,9 +518,12 @@ MODELS_REGISTRY = {
         # ▸ Real-ESRGAN 系列
         "realesrgan": {
             "slot": "realesrgan",
-            "description": "Real-ESRGAN 超解析",
+            "label": "Real-ESRGAN",
+            "category": "upscale",
+            "description": "models.realesrgan",
             "variants": {
                 "x2plus": {
+                    "label": "2x",
                     "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth",
                     "filename": "RealESRGAN_x2plus.pth",
                     "size_mb": 64,
@@ -513,6 +532,7 @@ MODELS_REGISTRY = {
                     "arch": "RRDBNet",
                 },
                 "x4plus": {
+                    "label": "4x",
                     "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
                     "filename": "RealESRGAN_x4plus.pth",
                     "size_mb": 64,
@@ -521,6 +541,7 @@ MODELS_REGISTRY = {
                     "arch": "RRDBNet",
                 },
                 "x4plus-anime": {
+                    "label": "4x - anime",
                     "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
                     "filename": "RealESRGAN_x4plus_anime_6B.pth",
                     "size_mb": 18,
@@ -529,6 +550,7 @@ MODELS_REGISTRY = {
                     "arch": "RRDBNet",
                 },
                 "animevideov3": {
+                    "label": "4x - video",
                     "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-animevideov3.pth",
                     "filename": "realesr-animevideov3.pth",
                     "size_mb": 2,
@@ -543,9 +565,12 @@ MODELS_REGISTRY = {
         # ▸ SwinIR 系列
         "swinir": {
             "slot": "swinir",
-            "description": "SwinIR Transformer 超解析",
+            "label": "SwinIR",
+            "category": "upscale",
+            "description": "models.swinir",
             "variants": {
                 "lightweight-x4": {
+                    "label": "4x - lightweight",
                     "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth",
                     "filename": "SwinIR-S_Lightweight_x4.pth",
                     "size_mb": 12,
@@ -553,6 +578,7 @@ MODELS_REGISTRY = {
                     "scale": 4,
                 },
                 "classical-x4": {
+                    "label": "4x - classical",
                     "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DIV2K_s48w8_SwinIR-M_x4.pth",
                     "filename": "SwinIR-M_Classical_x4.pth",
                     "size_mb": 28,
@@ -560,6 +586,7 @@ MODELS_REGISTRY = {
                     "scale": 4,
                 },
                 "realworld-x4": {
+                    "label": "4x - realworld",
                     "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth",
                     "filename": "SwinIR-L_RealWorld_x4.pth",
                     "size_mb": 129,
@@ -572,9 +599,12 @@ MODELS_REGISTRY = {
         # ▸ BSRGAN
         "bsrgan": {
             "slot": "bsrgan",
-            "description": "BSRGAN 盲超解析",
+            "label": "BSRGAN",
+            "category": "upscale",
+            "description": "models.bsrgan",
             "variants": {
                 "default": {
+                    "label": "default",
                     "url": "https://github.com/cszn/KAIR/releases/download/v1.0/BSRGAN.pth",
                     "filename": "BSRGAN.pth",
                     "size_mb": 64,
@@ -589,9 +619,12 @@ MODELS_REGISTRY = {
         # 壓縮檔結構：updated_weights/up{2,3,4}x-latest-{variant}.pth
         "real-cugan": {
             "slot": "real-cugan",
-            "description": "Real-CUGAN 動漫風格超解析",
+            "label": "Real-CUGAN",
+            "category": "upscale",
+            "description": "models.real_cugan",
             "variants": {
                 "up2x-conservative": {
+                    "label": "2x - conservative",
                     "url": "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip",
                     "filename": "real-cugan-up2x-conservative.pth",
                     "unzip": True,
@@ -623,6 +656,7 @@ MODELS_REGISTRY = {
                 #     "denoise_level": -1,
                 # },
                 "up3x-conservative": {
+                    "label": "3x - conservative",
                     "url": "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip",
                     "filename": "real-cugan-up3x-conservative.pth",
                     "unzip": True,
@@ -644,6 +678,7 @@ MODELS_REGISTRY = {
                 #     "denoise_level": -1,
                 # },
                 "up4x-conservative": {
+                    "label": "4x - conservative",
                     "url": "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip",
                     "filename": "real-cugan-up4x-conservative.pth",
                     "unzip": True,
@@ -670,9 +705,12 @@ MODELS_REGISTRY = {
         # ▸ CodeFormer
         "codeformer": {
             "slot": "codeformer",
-            "description": "CodeFormer 人臉修復",
+            "label": "CodeFormer",
+            "category": "face_restore",
+            "description": "models.codeformer",
             "variants": {
                 "default": {
+                    "label": "default",
                     "url": "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth",
                     "filename": "codeformer.pth",
                     "size_mb": 357,
@@ -684,9 +722,12 @@ MODELS_REGISTRY = {
         # ▸ GFPGAN
         "gfpgan": {
             "slot": "gfpgan",
-            "description": "GFPGAN 人臉修復",
+            "label": "GFPGAN",
+            "category": "face_restore",
+            "description": "models.gfpgan",
             "variants": {
                 "v1.4": {
+                    "label": "v1.4",
                     "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth",
                     "filename": "GFPGANv1.4.pth",
                     "size_mb": 348,
@@ -698,9 +739,12 @@ MODELS_REGISTRY = {
         # ▸ MobileSAM（AI 物件移除用）
         "mobilesam": {
             "slot": "mobilesam",
-            "description": "MobileSAM 輕量物件分割",
+            "label": "MobileSAM",
+            "category": "segment",
+            "description": "models.mobilesam",
             "variants": {
                 "default": {
+                    "label": "default",
                     "url": "https://huggingface.co/dhkim2810/MobileSAM/resolve/main/mobile_sam.pt",
                     "filename": "mobile_sam.pt",
                     "size_mb": 39,
@@ -712,16 +756,49 @@ MODELS_REGISTRY = {
         # ▸ Waifu2x 系列
         "waifu2x": {
             "slot": "waifu2x",
-            "description": "Waifu2x 動漫風格超解析",
+            "label": "Waifu2x",
+            "category": "upscale",
+            "description": "models.waifu2x",
             "variants": {
-                "cunet": {
+                "cunet-art-2x": {
+                    "label": "2x - cunet",
                     "url": "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20250502.zip",
-                    "filename": "waifu2x_cunet_art.pth",
+                    "filename": "waifu2x_cunet_art_2x.pth",
                     "unzip": True,
                     "archive_path": "pretrained_models/cunet/art/scale2x.pth",
                     "size_mb": 17,
                     "vram_mb": 1200,
                     "scale": 2,
+                },
+                "cunet-art-4x": {
+                    "label": "4x - cunet",
+                    "url": "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20250502.zip",
+                    "filename": "waifu2x_cunet_art_4x.pth",
+                    "unzip": True,
+                    "archive_path": "pretrained_models/cunet/art/scale4x.pth",
+                    "size_mb": 17,
+                    "vram_mb": 1200,
+                    "scale": 4,
+                },
+                "swin-unet-art-2x": {
+                    "label": "2x - swin-unet",
+                    "url": "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20250502.zip",
+                    "filename": "waifu2x_swin_unet_art_2x.pth",
+                    "unzip": True,
+                    "archive_path": "pretrained_models/swin_unet/art/scale2x.pth",
+                    "size_mb": 52,
+                    "vram_mb": 1500,
+                    "scale": 2,
+                },
+                "swin-unet-art-4x": {
+                    "label": "4x - swin-unet",
+                    "url": "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20250502.zip",
+                    "filename": "waifu2x_swin_unet_art_4x.pth",
+                    "unzip": True,
+                    "archive_path": "pretrained_models/swin_unet/art/scale4x.pth",
+                    "size_mb": 52,
+                    "vram_mb": 1500,
+                    "scale": 4,
                 },
             },
         },

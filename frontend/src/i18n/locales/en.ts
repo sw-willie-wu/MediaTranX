@@ -591,7 +591,6 @@ export default {
       title: 'Video Enhancement Settings',
       description: 'Upscale video resolution using AI super-resolution.',
       model: 'Model',
-      variant: 'Variant',
       output_resolution: 'Output Resolution',
       output_format: 'Output Format',
       video_codec: 'Video Codec',
@@ -1071,6 +1070,7 @@ export default {
     demucs: 'Source Separation (Vocals/Drums/Bass/Guitar/Piano/Other)',
     // Interpolation
     rife: 'Video Frame Interpolation',
+    basic_pitch: 'Audio to MIDI',
     // MIDI
     fluidsynth: 'MIDI Synth Engine + GM SoundFont (WAV/MP3 Export)',
     // Whisper
