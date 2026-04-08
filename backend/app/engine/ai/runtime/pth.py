@@ -104,20 +104,25 @@ class PTHRuntime(BaseRuntime):
                 "Subclass must implement _build_arch() or enable use_spandrel=True"
             )
     
-    def _get_tile_size(self) -> int:
-        """根據空閒 VRAM 動態決定 tile size"""
+    def _get_max_pixels(self) -> int:
+        """根據空閒 VRAM 動態決定不切 tile 的最大像素數"""
         try:
             if not torch.cuda.is_available():
-                return 256
+                return 256 * 256
             free_vram, _ = torch.cuda.mem_get_info()
             free_gb = free_vram / 1024 ** 3
-            if free_gb >= 8:   return 1024
-            if free_gb >= 5:   return 768
-            if free_gb >= 3:   return 512
-            if free_gb >= 1.5: return 256
-            return 128
+            if free_gb >= 8:   return 1024 * 1024
+            if free_gb >= 5:   return 768 * 768
+            if free_gb >= 3:   return 512 * 512
+            if free_gb >= 1.5: return 256 * 256
+            return 128 * 128
         except Exception:
-            return 256
+            return 256 * 256
+
+    def _get_tile_size(self) -> int:
+        """tile 分塊大小（用於實際切塊時的邊長）"""
+        max_px = self._get_max_pixels()
+        return int(max_px ** 0.5)
 
     def _tile_inference(
         self,
@@ -182,7 +187,6 @@ class PTHRuntime(BaseRuntime):
     ):
         """智能推理：大圖自動分塊，小圖整張處理"""
         _, _, h, w = img_tensor.shape
-        tile_size = self._get_tile_size()
 
         # 部分模型（如 x2plus）用 pixel_unshuffle，要求 h/w 為 4 的倍數
         pad_h = (4 - h % 4) % 4
@@ -192,8 +196,10 @@ class PTHRuntime(BaseRuntime):
         else:
             img_padded = img_tensor
 
-        if w > tile_size or h > tile_size:
-            logger.info(f"Image {w}×{h} > tile_size {tile_size}，啟用 tiling")
+        max_pixels = self._get_max_pixels()
+        tile_size = self._get_tile_size()
+        if w * h > max_pixels:
+            logger.info(f"Image {w}×{h} ({w*h} px) > max_pixels {max_pixels}, tiling with tile_size {tile_size}")
             result = self._tile_inference(model, img_padded, scale, tile_size, on_progress=on_progress)
         else:
             with torch.no_grad():
