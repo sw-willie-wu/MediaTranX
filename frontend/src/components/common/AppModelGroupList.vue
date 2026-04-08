@@ -70,12 +70,14 @@ const groups = computed<FamilyGroup[]>(() => {
 
 /** 從完整 label 提取 variant 部分（去掉 family 前綴） */
 function variantLabel(item: ModelItem, group: FamilyGroup): string {
-  if (group.items.length === 1) return group.familyLabel
   const label = item.label
   if (label.includes(' - ')) return label.split(' - ').slice(1).join(' - ')
   // GGUF/VLM: "TranslateGemma 4B Q4_K_M" → "4B Q4_K_M"
   const prefix = group.familyLabel
-  if (label.startsWith(prefix)) return label.slice(prefix.length).trim()
+  if (label.startsWith(prefix)) {
+    const rest = label.slice(prefix.length).trim()
+    return rest || label
+  }
   return label
 }
 
@@ -109,7 +111,7 @@ function tDesc(desc: string): string {
       <!-- Single variant: action in header row -->
       <template v-if="group.items.length === 1">
         <div class="model-row">
-          <span class="row-label">{{ tDesc(group.description) }}</span>
+          <span class="row-label">{{ group.items[0].variant === 'default' ? group.familyLabel : variantLabel(group.items[0], group) }}</span>
           <span class="row-size">{{ formatSize(group.items[0].size_mb) }}</span>
           <span v-if="group.items[0].vram_mb" class="row-vram">{{ formatSize(group.items[0].vram_mb) }} VRAM</span>
           <span v-else class="row-vram"></span>
