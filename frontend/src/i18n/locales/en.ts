@@ -74,6 +74,7 @@ export default {
     static_preview_hint: 'Static preview, all frames applied after execution',
     remove_not_supported: 'Object removal does not support animated images',
     model_not_ready: 'Model Not Downloaded',
+    no_models_available: 'No models available',
     model_not_downloaded_hint: 'The selected model has not been downloaded yet. Go to model manager to download it?',
     go_to_model_manager: 'Go to Model Manager',
   },

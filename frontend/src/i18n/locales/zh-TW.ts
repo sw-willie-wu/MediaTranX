@@ -74,6 +74,7 @@ export default {
     static_preview_hint: '靜態預覽，執行後套用全部幀',
     remove_not_supported: '物件移除不支援動態圖片',
     model_not_ready: '模型尚未下載',
+    no_models_available: '無可用模型',
     model_not_downloaded_hint: '選擇的模型尚未下載，是否前往模型管理頁面下載？',
     go_to_model_manager: '前往模型管理',
   },

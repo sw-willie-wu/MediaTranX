@@ -29,6 +29,7 @@ export const useModelStore = defineStore('models', () => {
   const categories = ref<ModelCategory[]>([])
   const loading = ref(false)
   const loaded = ref(false)
+  const version = ref(0)
 
   async function fetchModels() {
     loading.value = true
@@ -39,6 +40,7 @@ export const useModelStore = defineStore('models', () => {
         models.value = data.models as ModelItem[]
         categories.value = (data.categories as ModelCategory[]).sort((a, b) => a.order - b.order)
         loaded.value = true
+        version.value++
       }
     } catch (e) {
       console.error('Failed to load models', e)
@@ -55,6 +57,7 @@ export const useModelStore = defineStore('models', () => {
   function setDownloaded(id: string, downloaded: boolean) {
     const m = models.value.find(m => m.id === id)
     if (m) m.downloaded = downloaded
+    version.value++
   }
 
   function byCategory(category: string): ModelItem[] {
@@ -72,5 +75,5 @@ export const useModelStore = defineStore('models', () => {
     return items.filter(m => m.downloaded)
   }
 
-  return { models, categories, loading, loaded, fetchModels, ensureLoaded, setDownloaded, byCategory, byCapability, forPanel }
+  return { models, categories, loading, loaded, version, fetchModels, ensureLoaded, setDownloaded, byCategory, byCapability, forPanel }
 })
