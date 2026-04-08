@@ -9,6 +9,7 @@ import { useModelStore } from '@/stores/models'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { usePersistedModel } from '@/composables/usePersistedModel'
 
 const props = defineProps<{
   fileId: string | null
@@ -26,7 +27,7 @@ const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
 const { guardModelReady } = useModelGuard()
 
-const selectedModel = ref('')
+const selectedModel = usePersistedModel('image_ocr_model')
 const available = ref<boolean | null>(null)
 const modelDownloaded = ref<boolean | null>(null)
 
@@ -52,9 +53,9 @@ const localModelOptions = computed(() => {
 })
 
 watch(localModelOptions, (options) => {
-  if (!selectedModel.value) {
+  if (!selectedModel.value || !options.some(m => m.value === selectedModel.value)) {
     const first = options.find(m => m.downloaded)
-    if (first) selectedModel.value = first.value
+    selectedModel.value = first?.value ?? ''
   }
 }, { immediate: true })
 
@@ -165,8 +166,10 @@ function getParams(): Record<string, unknown> {
   return params
 }
 
+watch(() => modelStore.version, () => checkAvailable())
+
 async function execute() {
-  if (!await guardModelReady(modelDownloaded.value !== false, 'llm')) return
+  if (!await guardModelReady(modelDownloaded.value === true, 'llm')) return
   if (!props.fileId) return
   const taskId = await submitTask(
     '/image/ocr',

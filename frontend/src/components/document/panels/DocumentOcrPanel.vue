@@ -9,6 +9,7 @@ import { useModelStore } from '@/stores/models'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { usePersistedModel } from '@/composables/usePersistedModel'
 
 const props = defineProps<{
   fileId: string | null
@@ -30,7 +31,7 @@ const { guardModelReady } = useModelGuard()
 
 // ── 模型 ──────────────────────────────────────────────────────────────────
 
-const selectedModel = ref('')
+const selectedModel = usePersistedModel('doc_ocr_model')
 const available = ref<boolean | null>(null)
 const modelDownloaded = ref<boolean | null>(null)
 
@@ -53,9 +54,9 @@ const localModelOptions = computed(() => {
 })
 
 watch(localModelOptions, (options) => {
-  if (!selectedModel.value) {
+  if (!selectedModel.value || !options.some(m => m.value === selectedModel.value)) {
     const first = options.find(m => m.downloaded)
-    if (first) selectedModel.value = first.value
+    selectedModel.value = first?.value ?? ''
   }
 }, { immediate: true })
 
@@ -145,8 +146,10 @@ const isDisabled = computed(() =>
 )
 const isLoading = computed(() => isProcessing.value)
 
+watch(() => modelStore.version, () => checkAvailable())
+
 async function execute() {
-  if (!await guardModelReady(modelDownloaded.value !== false, 'llm')) return
+  if (!await guardModelReady(modelDownloaded.value === true, 'llm')) return
   if (!props.fileId) return
   const parsed = parseModelValue(selectedModel.value)
 

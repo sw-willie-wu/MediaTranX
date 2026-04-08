@@ -238,7 +238,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
         <DocumentTranslatePanel
           v-if="currentFunction === 'translate'"
           ref="translatePanelRef"
-          :file-id="activeFileId"
+          :file-id="fileId"
           :current-file-name="currentFileName"
           @submit="handlePanelSubmit"
         />
@@ -246,7 +246,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
         <DocumentPdfConvertPanel
           v-else-if="currentFunction === 'pdf-convert'"
           ref="pdfConvertPanelRef"
-          :file-id="activeFileId"
+          :file-id="fileId"
           :current-file-name="currentFileName"
           :current-file-ext="currentFileExt"
           :source-dir="sourceDir"
@@ -256,7 +256,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
         <DocumentOcrPanel
           v-else-if="currentFunction === 'ocr'"
           ref="ocrPanelRef"
-          :file-id="activeFileId"
+          :file-id="fileId"
           :current-file-name="currentFileName"
           :current-file-ext="currentFileExt"
           :source-dir="sourceDir"
@@ -266,7 +266,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
         <DocumentSplitPanel
           v-else-if="currentFunction === 'split'"
           ref="splitPanelRef"
-          :file-id="activeFileId"
+          :file-id="fileId"
           :current-file-name="currentFileName"
           :source-dir="sourceDir"
           @submit="handlePanelSubmit"

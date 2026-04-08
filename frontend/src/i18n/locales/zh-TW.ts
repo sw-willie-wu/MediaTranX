@@ -74,6 +74,7 @@ export default {
     static_preview_hint: '靜態預覽，執行後套用全部幀',
     remove_not_supported: '物件移除不支援動態圖片',
     model_not_ready: '模型尚未下載',
+    no_models_available: '無可用模型',
     model_not_downloaded_hint: '選擇的模型尚未下載，是否前往模型管理頁面下載？',
     go_to_model_manager: '前往模型管理',
   },
@@ -590,7 +591,6 @@ export default {
       title: '畫面強化設定',
       description: '使用 AI 超解析提升影片解析度。',
       model: '模型',
-      variant: '變體',
       output_resolution: '輸出解析度',
       output_format: '輸出格式',
       video_codec: '影像編碼',
@@ -1065,6 +1065,7 @@ export default {
     mobilesam: '輕量物件分割（AI 移除用）',
     demucs: '音源分離（人聲/鼓/貝斯/吉他/鋼琴/其他）',
     rife: '影片補幀（Frame Interpolation）',
+    basic_pitch: '音訊轉 MIDI',
     fluidsynth: 'MIDI 音色合成引擎 + GM 音色庫（匯出 WAV/MP3 用）',
     whisper: {
       tiny: '極速語音辨識',

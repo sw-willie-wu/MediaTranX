@@ -76,6 +76,25 @@ def remove_model(item_id: str) -> None:
                         p.unlink()
                         logger.info(f"Removed GGUF file: {fname}")
 
+    elif item_id.startswith("demucs-"):
+        # Demucs: models/demucs/checkpoints/*.th
+        checkpoints_dir = _models_dir("demucs") / "checkpoints"
+        if checkpoints_dir.exists():
+            shutil.rmtree(checkpoints_dir)
+            logger.info(f"Removed demucs checkpoints: {item_id}")
+
+    elif item_id.startswith("rife-"):
+        # RIFE: models/rife/flownet-*.pkl
+        variant_name = item_id[len("rife-"):]
+        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
+        rife_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})
+        variant_spec = rife_config.get("variants", {}).get(variant_name)
+        if variant_spec:
+            p = _models_dir(SLOT_RIFE) / variant_spec.get("filename", "")
+            if p.exists():
+                p.unlink()
+                logger.info(f"Removed rife model: {item_id}")
+
     else:
         # PTH 模型（upscale / face_restore）: {family}-{variant}
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH

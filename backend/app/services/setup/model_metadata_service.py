@@ -34,14 +34,6 @@ _CATEGORY_MAP = {
 
 # ─── 顯示用常數 ──────────────────────────────────────────────────────────────
 
-_WHISPER_DISPLAY = [
-    ("tiny", "Whisper Tiny", "models.whisper.tiny"),
-    ("base", "Whisper Base", "models.whisper.base"),
-    ("small", "Whisper Small", "models.whisper.small"),
-    ("medium", "Whisper Medium", "models.whisper.medium"),
-    ("large-v3", "Whisper Large-v3", "models.whisper.large_v3"),
-]
-
 _SIZE_DESC = {
     "translategemma": {
         "4b": "models.size.light_fast",
@@ -92,48 +84,6 @@ _GGUF_FAMILY_LABELS = {
     "qwen3.5": "Qwen3.5",
 }
 
-_UPSCALE_LABELS = {
-    "realesrgan": {"label": "Real-ESRGAN", "description": "models.realesrgan"},
-    "swinir": {"label": "SwinIR", "description": "models.swinir"},
-    "bsrgan": {"label": "BSRGAN", "description": "models.bsrgan"},
-    "real-cugan": {"label": "Real-CUGAN", "description": "models.real_cugan"},
-    "waifu2x": {"label": "Waifu2x", "description": "models.waifu2x"},
-}
-
-_FACE_RESTORE_LABELS = {
-    "codeformer": {"label": "CodeFormer", "description": "models.codeformer"},
-    "gfpgan": {"label": "GFPGAN", "description": "models.gfpgan"},
-}
-
-_SEGMENT_LABELS = {
-    "mobilesam": {"label": "MobileSAM", "description": "models.mobilesam"},
-}
-
-_SEPARATE_LABELS = {
-    "demucs": {"label": "HTDemucs", "description": "models.demucs"},
-}
-
-_INTERPOLATE_LABELS = {
-    "rife": {"label": "RIFE", "description": "models.rife"},
-}
-
-_VARIANT_DESC = {
-    "x2plus": "2x",
-    "x4plus": "4x",
-    "x4plus-anime": "4x - anime",
-    "lightweight-x4": "4x - lightweight",
-    "classical-x4": "4x - classical",
-    "realworld-x4": "4x - realworld",
-    "default": "標準",
-    "up2x-conservative": "2x - conservative",
-    "up3x-conservative": "3x - conservative",
-    "up4x-conservative": "4x - conservative",
-    "cunet": "CUnet 變體",
-    "v1.4": "v1.4",
-    "htdemucs_6s": "6-Stem",
-    "v4.26": "v4.26",
-    "animevideov3": "4x - Video (Fast)",
-}
 
 _LANG_NAMES = {
     "en": "English", "zh": "中文", "ja": "日本語", "ko": "한국어",
@@ -183,36 +133,25 @@ class ModelMetadataService:
         pth_models = MODELS_REGISTRY.get(FORMAT_PTH, {})
 
         for model_family, config in pth_models.items():
-            if model_family in _UPSCALE_LABELS:
-                category = "upscale"
-                family_meta = _UPSCALE_LABELS[model_family]
-            elif model_family in _FACE_RESTORE_LABELS:
-                category = "face_restore"
-                family_meta = _FACE_RESTORE_LABELS[model_family]
-            elif model_family in _SEGMENT_LABELS:
-                category = "segment"
-                family_meta = _SEGMENT_LABELS[model_family]
-            elif model_family in _SEPARATE_LABELS:
-                category = "separate"
-                family_meta = _SEPARATE_LABELS[model_family]
-            else:
-                continue
+            family_label = config.get("label", model_family)
+            family_category = config.get("category", "upscale")
+            family_desc = config.get("description", "")
 
             variants = config.get("variants", {})
             for variant_name, variant_spec in variants.items():
                 model_path = manager.get_model_path(model_family, variant_name)
                 downloaded = model_path is not None and model_path.exists()
 
-                variant_desc = _VARIANT_DESC.get(variant_name, variant_name)
-                label = f"{family_meta['label']} - {variant_desc}" if len(variants) > 1 else family_meta['label']
+                variant_label = variant_spec.get("label", variant_name)
+                label = f"{family_label} - {variant_label}" if len(variants) > 1 else family_label
 
                 items.append({
                     "id": f"{model_family}-{variant_name}",
                     "family": model_family,
                     "variant": variant_name,
-                    "category": variant_spec.get("subcategory", category),
+                    "category": variant_spec.get("subcategory", family_category),
                     "label": label,
-                    "description": family_meta["description"],
+                    "description": family_desc,
                     "downloaded": downloaded,
                     "size_mb": variant_spec.get("size_mb", 0),
                     "vram_mb": variant_spec.get("vram_mb", 0),
@@ -225,22 +164,29 @@ class ModelMetadataService:
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
         from app.init.configs import SETTINGS
 
-        whisper_variants = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("whisper", {}).get("variants", {})
+        whisper_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("whisper", {})
+        family_label = whisper_config.get("label", "Whisper")
+        family_category = whisper_config.get("category", "stt")
+        family_desc = whisper_config.get("description", "")
+        whisper_variants = whisper_config.get("variants", {})
         whisper_dir = SETTINGS.path.models / "whisper"
         items = []
 
-        for size, label, description in _WHISPER_DISPLAY:
+        for size, spec in whisper_variants.items():
             model_dir = whisper_dir / size
             has_vocab = (model_dir / "vocabulary.txt").exists() or (model_dir / "vocabulary.json").exists()
             downloaded = model_dir.exists() and (model_dir / "model.bin").exists() and has_vocab
-            spec = whisper_variants.get(size, {})
+
+            variant_label = spec.get("label", size)
+            label = f"{family_label} - {variant_label}" if len(whisper_variants) > 1 else family_label
+
             items.append({
                 "id": f"whisper-{size}",
                 "family": "whisper",
                 "variant": size,
-                "category": "stt",
+                "category": family_category,
                 "label": label,
-                "description": description,
+                "description": spec.get("description", family_desc),
                 "downloaded": downloaded,
                 "size_mb": spec.get("size_mb", 0),
                 "vram_mb": spec.get("vram_mb", 0),
@@ -253,13 +199,15 @@ class ModelMetadataService:
         from app.init.configs import SETTINGS
 
         demucs_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("demucs", {})
+        family_label = demucs_config.get("label", "Demucs")
+        family_category = demucs_config.get("category", "separate")
+        family_desc = demucs_config.get("description", "")
         demucs_variants = demucs_config.get("variants", {})
         items = []
 
         for variant_name, variant_spec in demucs_variants.items():
-            family_meta = _SEPARATE_LABELS.get("demucs", {"label": "Demucs", "description": ""})
-            variant_desc = _VARIANT_DESC.get(variant_name, variant_name)
-            label = f"{family_meta['label']} - {variant_desc}" if len(demucs_variants) > 1 else family_meta['label']
+            variant_label = variant_spec.get("label", variant_name)
+            label = f"{family_label} - {variant_label}" if len(demucs_variants) > 1 else family_label
 
             checkpoints_dir = SETTINGS.path.models / "demucs" / "checkpoints"
             downloaded = (
@@ -271,9 +219,9 @@ class ModelMetadataService:
                 "id": f"demucs-{variant_name}",
                 "family": "demucs",
                 "variant": variant_name,
-                "category": "separate",
+                "category": family_category,
                 "label": label,
-                "description": family_meta["description"],
+                "description": family_desc,
                 "downloaded": downloaded,
                 "size_mb": variant_spec.get("size_mb", 0),
                 "vram_mb": variant_spec.get("vram_mb", 0),
@@ -359,13 +307,15 @@ class ModelMetadataService:
         from app.init.configs import SETTINGS
 
         rife_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})
+        family_label = rife_config.get("label", "RIFE")
+        family_category = rife_config.get("category", "interpolate")
+        family_desc = rife_config.get("description", "")
         rife_variants = rife_config.get("variants", {})
         items = []
 
         for variant_name, variant_spec in rife_variants.items():
-            family_meta = _INTERPOLATE_LABELS.get("rife", {"label": "RIFE", "description": ""})
-            variant_desc = _VARIANT_DESC.get(variant_name, variant_name)
-            label = f"{family_meta['label']} - {variant_desc}" if len(rife_variants) > 1 else family_meta['label']
+            variant_label = variant_spec.get("label", variant_name)
+            label = f"{family_label} - {variant_label}" if len(rife_variants) > 1 else family_label
 
             model_dir = SETTINGS.path.models / SLOT_RIFE
             filename = variant_spec.get("filename", "")
@@ -375,9 +325,9 @@ class ModelMetadataService:
                 "id": f"rife-{variant_name}",
                 "family": "rife",
                 "variant": variant_name,
-                "category": "interpolate",
+                "category": family_category,
                 "label": label,
-                "description": family_meta["description"],
+                "description": family_desc,
                 "downloaded": downloaded,
                 "size_mb": variant_spec.get("size_mb", 0),
                 "vram_mb": variant_spec.get("vram_mb", 0),

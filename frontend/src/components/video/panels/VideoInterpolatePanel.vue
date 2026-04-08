@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { usePersistedModel } from '@/composables/usePersistedModel'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
 
@@ -23,20 +24,20 @@ const emit = defineEmits<{
 
 const { submitTask, isProcessing } = useSubmitTask()
 
-const model = ref('v4.26')
+const model = usePersistedModel('interpolate_model', 'v4.26')
 const mode = ref('2x')
 const targetFps = ref(60)
 const outputFormat = ref('mp4')
 const videoCodec = ref('h264')
 const showAdvanced = ref(false)
 
-const modelOptions = computed(() => {
-  const rifeModels = modelStore.forPanel(modelStore.byCategory('interpolate'))
-  const dlMap = new Map(rifeModels.map(m => [m.variant, m.downloaded]))
-  return [
-    { value: 'v4.26', label: 'RIFE v4.26', badge: dlMap.get('v4.26') ? 'ok' as const : 'err' as const },
-  ]
-})
+const modelOptions = computed(() =>
+  modelStore.forPanel(modelStore.byCategory('interpolate')).map(m => ({
+    value: m.variant,
+    label: m.label,
+    badge: (m.downloaded ? 'ok' : 'err') as 'ok' | 'err',
+  }))
+)
 
 const modeOptions = computed(() => [
   { value: '2x', label: t('video.interpolate.mode_2x') },

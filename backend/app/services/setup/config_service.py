@@ -13,11 +13,26 @@ class ConfigService:
         logger.info("ConfigService initialized")
 
     def get_config(self) -> dict:
-        """Get current configuration with effective paths."""
+        """Get current configuration with effective and user-saved paths."""
         from app.init.configs import SETTINGS
+        env_path = SETTINGS.path.data / ".env"
+
+        # Read user-saved overrides from .env
+        user_models_dir = ""
+        user_temp_dir = ""
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("MEDIATRANX_PATH__MODELS="):
+                    user_models_dir = line.split("=", 1)[1].strip()
+                elif line.startswith("MEDIATRANX_PATH__TEMP="):
+                    user_temp_dir = line.split("=", 1)[1].strip()
+
         return {
-            "models_dir": SETTINGS.path.models,
-            "temp_dir": SETTINGS.path.temp,
+            "models_dir": user_models_dir,
+            "temp_dir": user_temp_dir,
+            "effective_models_dir": str(SETTINGS.path.models),
+            "effective_temp_dir": str(SETTINGS.path.temp),
         }
 
     def update_config(self, models_dir: str = "", temp_dir: str = "") -> dict:

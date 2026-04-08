@@ -70,13 +70,16 @@ const triggerRef = ref<HTMLElement | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
 const dropdownStyle = ref<Record<string, string>>({})
 
+const isEmpty = computed(() => flatOptions.value.length === 0)
+
 const selectedLabel = computed(() => {
+  if (isEmpty.value) return props.placeholder ?? t('common.select')
   const found = flatOptions.value.find(o => o.value === props.modelValue)
   return found ? found.label : (props.placeholder ?? t('common.select'))
 })
 
 function toggle() {
-  if (props.disabled) return
+  if (props.disabled || isEmpty.value) return
   isOpen.value ? close() : open()
 }
 
@@ -155,9 +158,9 @@ onBeforeUnmount(() => {
     class="app-select-trigger"
     :class="[
       size === 'sm' ? 'app-select-sm' : '',
-      { 'app-select-open': isOpen, 'app-select-disabled': disabled }
+      { 'app-select-open': isOpen, 'app-select-disabled': disabled || isEmpty }
     ]"
-    :disabled="disabled"
+    :disabled="disabled || isEmpty"
     @click="toggle"
   >
     <span class="app-select-value">{{ selectedLabel }}</span>

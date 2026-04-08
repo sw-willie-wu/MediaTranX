@@ -1,8 +1,14 @@
 # MediaTranX
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/sw-willie-wu/MediaTranX)](https://github.com/sw-willie-wu/MediaTranX/stargazers)
 [![GitHub release](https://img.shields.io/github/v/release/sw-willie-wu/MediaTranX)](https://github.com/sw-willie-wu/MediaTranX/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows)](https://github.com/sw-willie-wu/MediaTranX/releases)
+[![GitHub stars](https://img.shields.io/github/stars/sw-willie-wu/MediaTranX)](https://github.com/sw-willie-wu/MediaTranX/stargazers)
+
+[![Electron](https://img.shields.io/badge/Electron-34-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![Vue 3](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
 
 **基於 AI 的本地多媒體處理工具** — 語音辨識、翻譯、超解析、OCR 與格式轉換。所有 AI 推理在你的電腦上本地執行。
 
@@ -181,4 +187,4 @@ npm run dev
 
 ## 授權
 
-MIT
+MIT — 詳見 [LICENSE](../LICENSE)。

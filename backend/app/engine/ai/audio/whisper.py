@@ -320,8 +320,16 @@ class WhisperWrapper(PackageRuntime):
                 if on_progress:
                     on_progress(0.95, "task.progress.recognition_complete")
 
+                # 中文輸出轉繁體
+                detected_lang = info.language
+                if detected_lang == "zh" or (language and language.startswith("zh")):
+                    import opencc
+                    converter = opencc.OpenCC('s2t')
+                    for seg in segments:
+                        seg.text = converter.convert(seg.text)
+
                 result = TranscribeResult(
-                    language=info.language,
+                    language=detected_lang,
                     language_probability=info.language_probability,
                     segments=segments,
                     duration=duration,

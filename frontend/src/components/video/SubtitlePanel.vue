@@ -11,6 +11,8 @@ import { apiFetch, getApiBase } from '@/composables/useApi'
 import { parseModelValue } from '@/composables/useModelOptions'
 import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { usePersistedModel } from '@/composables/usePersistedModel'
+import { useSettingsStore } from '@/stores/settings'
 
 const { t } = useI18n()
 
@@ -39,44 +41,33 @@ const taskStore = useTaskStore()
 const toast = useToast()
 const modelStore = useModelStore()
 const { guardModelReady } = useModelGuard()
+const settingsStore = useSettingsStore()
 
 const isLoading = ref(false)
 const error = ref<string | null>(null)
 
 // ── Whisper 模型狀態 ────────────────────────────────────────────
-const whisperAvailable = ref<boolean | null>(null)
-const whisperDownloadedMap = ref<Record<string, boolean | null>>({})
-
-const baseModelSizes = [
-  { value: 'tiny',     label: 'Tiny (~75 MB)' },
-  { value: 'base',     label: 'Base (~145 MB)' },
-  { value: 'small',    label: 'Small (~484 MB)' },
-  { value: 'medium',   label: 'Medium (~1.5 GB)' },
-  { value: 'large-v3', label: 'Large-v3 (~3 GB)' },
-]
-
 const modelSizesWithBadge = computed(() =>
-  baseModelSizes.map(m => {
-    const dl = whisperDownloadedMap.value[m.value]
-    return { ...m, badge: dl === undefined ? null : dl ? 'ok' as const : 'err' as const }
-  })
+  modelStore.forPanel(modelStore.byCategory('stt')).map(m => ({
+    value: m.variant,
+    label: m.label,
+    badge: (m.downloaded ? 'ok' : 'err') as 'ok' | 'err',
+  }))
 )
 
-async function loadAllWhisperStatus() {
-  await Promise.allSettled(baseModelSizes.map(async ({ value: size }) => {
-    try {
-      const res = await fetch(`${getApiBase()}/video/whisper/status?model_size=${size}`)
-      if (!res.ok) return
-      const data = await res.json()
-      whisperDownloadedMap.value[size] = data.model_downloaded
-      if (whisperAvailable.value === null) whisperAvailable.value = data.available
-    } catch {}
-  }))
-}
+// Auto-select first downloaded model when current selection is not downloaded or not in list
+watch(modelSizesWithBadge, (sizes) => {
+  if (sizes.length === 0) return
+  const current = sizes.find(m => m.value === modelSize.value)
+  if (!current || current.badge !== 'ok') {
+    const firstOk = sizes.find(m => m.badge === 'ok')
+    if (firstOk) modelSize.value = firstOk.value
+  }
+})
 
 // ── 字幕選項 ────────────────────────────────────────────────────
 const language = ref('')
-const modelSize = ref('medium')
+const modelSize = usePersistedModel('subtitle_whisper_model', 'medium')
 const outputFormat = ref('srt')
 const outputPath = ref('')
 
@@ -151,7 +142,8 @@ const translationOptions = ref<InstanceType<typeof TranslationOptionsPanel> | nu
 
 // ── 提交 ────────────────────────────────────────────────────────
 async function submitGenerate() {
-  if (!await guardModelReady(whisperDownloadedMap.value[modelSize.value] === true, 'audio')) return
+  const whisperModel = modelStore.byCategory('stt').find(m => m.variant === modelSize.value)
+  if (!await guardModelReady(whisperModel?.downloaded === true, 'audio')) return
   if (translationOptions.value?.enableTranslation) {
     const tParsed = parseModelValue(translationOptions.value.selectedTranslateModel)
     const tModel = translationOptions.value.selectedTranslateModel
@@ -252,12 +244,12 @@ async function submitGenerate() {
 }
 
 const isDisabled = computed(() =>
-  isLoading.value || !props.fileId || whisperAvailable.value === false
+  isLoading.value || !props.fileId
 )
 
 defineExpose({ submitGenerate, isLoading, isDisabled })
 
-onMounted(() => { loadAllWhisperStatus(); loadLanguages(); modelStore.ensureLoaded() })
+onMounted(() => { loadLanguages(); modelStore.ensureLoaded() })
 </script>
 
 <template>
@@ -274,7 +266,7 @@ onMounted(() => { loadAllWhisperStatus(); loadLanguages(); modelStore.ensureLoad
 
     <div class="form-group">
       <label>{{ $t('video.subtitle.model_settings') }}</label>
-      <AppSelect v-model="modelSize" :options="modelSizesWithBadge" />
+      <AppSelect v-model="modelSize" :options="modelSizesWithBadge" :placeholder="$t('common.no_models_available')" />
     </div>
 
     <div class="form-group">

@@ -7,6 +7,7 @@ import AppSelect, { type SelectOption } from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { usePersistedModel } from '@/composables/usePersistedModel'
 
 
 const props = defineProps<{
@@ -23,8 +24,8 @@ const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
 const { guardModelReady } = useModelGuard()
 
-const selectedModelId = ref('')
-const selectedFaceModelId = ref('')
+const selectedModelId = usePersistedModel('upscale_model')
+const selectedFaceModelId = usePersistedModel('upscale_face_model')
 const upscaleScale = ref(4)
 const sharpen = ref(false)
 const faceRestore = ref(false)

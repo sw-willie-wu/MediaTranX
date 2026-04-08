@@ -10,6 +10,8 @@ import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { apiFetch } from '@/composables/useApi'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { usePersistedModel } from '@/composables/usePersistedModel'
+import { useSettingsStore } from '@/stores/settings'
 
 const props = defineProps<{
   fileId: string | null
@@ -27,48 +29,37 @@ const filesStore = useFilesStore()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
 const { guardModelReady } = useModelGuard()
+const settingsStore = useSettingsStore()
 
 // ── Whisper model status ────────────────────────────────────────
-const whisperAvailable = ref<boolean | null>(null)
-const whisperDownloadedMap = ref<Record<string, boolean | null>>({})
-
-const BASE_MODEL_SIZES = [
-  { value: 'tiny',     label: 'Tiny (~75 MB)' },
-  { value: 'base',     label: 'Base (~145 MB)' },
-  { value: 'small',    label: 'Small (~484 MB)' },
-  { value: 'medium',   label: 'Medium (~1.5 GB)' },
-  { value: 'large-v3', label: 'Large-v3 (~3 GB)' },
-]
-
 const modelSizes = computed(() =>
-  BASE_MODEL_SIZES.map(m => {
-    const dl = whisperDownloadedMap.value[m.value]
-    return { ...m, badge: dl === undefined ? null : dl ? 'ok' as const : 'err' as const }
-  })
+  modelStore.forPanel(modelStore.byCategory('stt')).map(m => ({
+    value: m.variant,
+    label: m.label,
+    badge: (m.downloaded ? 'ok' : 'err') as 'ok' | 'err',
+  }))
 )
 
-async function loadAllModelStatus() {
-  await Promise.allSettled(BASE_MODEL_SIZES.map(async ({ value: size }) => {
-    try {
-      const res = await apiFetch(`/audio/transcribe/status?model_size=${size}`)
-      if (!res.ok) return
-      const data = await res.json()
-      whisperDownloadedMap.value[size] = data.model_downloaded
-      if (whisperAvailable.value === null) whisperAvailable.value = data.available
-    } catch {}
-  }))
-}
+// Auto-select first downloaded model when current selection is not downloaded or not in list
+watch(modelSizes, (sizes) => {
+  if (sizes.length === 0) return
+  const current = sizes.find(m => m.value === modelSize.value)
+  if (!current || current.badge !== 'ok') {
+    const firstOk = sizes.find(m => m.badge === 'ok')
+    if (firstOk) modelSize.value = firstOk.value
+  }
+})
 
 // ── Settings ────────────────────────────────────────────────────
 const showAdvanced = ref(localStorage.getItem('lyrics_advanced') === 'true')
 watch(showAdvanced, (v) => localStorage.setItem('lyrics_advanced', String(v)))
 
-const modelSize = ref('medium')
+const modelSize = usePersistedModel('lyrics_whisper_model', 'medium')
 const alignEnabled = ref(false)
 const outputFormat = ref('lrc')
 const translateEnabled = ref(false)
 const targetLanguage = ref('zh-TW')
-const selectedTranslateModel = ref('')
+const selectedTranslateModel = usePersistedModel('lyrics_translate_model')
 const outputPath = ref('')
 
 const outputFormats = computed(() => [
@@ -91,9 +82,9 @@ const localTranslateModelOptions = computed(() =>
 const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
 
 watch(localTranslateModelOptions, (options) => {
-  if (!selectedTranslateModel.value) {
+  if (!selectedTranslateModel.value || !options.some(m => m.value === selectedTranslateModel.value)) {
     const first = options.find(m => m.badge === 'ok')
-    if (first) selectedTranslateModel.value = first.value
+    selectedTranslateModel.value = first?.value ?? ''
   }
 }, { immediate: true })
 
@@ -165,7 +156,8 @@ watch(translateEnabled, (val) => { if (val) loadTranslateLanguages() })
 
 // ── Submit ──────────────────────────────────────────────────────
 async function execute() {
-  if (!await guardModelReady(whisperDownloadedMap.value[modelSize.value] === true, 'audio')) return
+  const whisperModel = modelStore.byCategory('stt').find(m => m.variant === modelSize.value)
+  if (!await guardModelReady(whisperModel?.downloaded === true, 'audio')) return
   if (translateEnabled.value) {
     const tParsed = parseModelValue(selectedTranslateModel.value)
     const translateReady = tParsed.isRemote || localTranslateModelOptions.value.find(m => m.value === selectedTranslateModel.value)?.badge === 'ok'
@@ -262,7 +254,6 @@ function getParams() {
 defineExpose({ execute, isDisabled, isLoading, getParams })
 
 onMounted(() => {
-  loadAllModelStatus()
   modelStore.fetchModels()
   remoteStore.fetchAll()
 })
@@ -273,15 +264,10 @@ onMounted(() => {
     <h6 class="settings-title"><i class="bi bi-music-note-list me-2"></i>{{ $t('audio.lyrics.title') }}</h6>
     <p class="form-hint">{{ $t('audio.lyrics.description') }}</p>
 
-    <div v-if="whisperAvailable === false" class="info-box info-box--warn">
-      <i class="bi bi-exclamation-triangle"></i>
-      <span>{{ $t('audio.transcribe.not_installed') }}</span>
-    </div>
-
     <!-- 基本設定 -->
     <div class="form-group">
       <label>{{ $t('audio.lyrics.model') }}</label>
-      <AppSelect v-model="modelSize" :options="modelSizes" />
+      <AppSelect v-model="modelSize" :options="modelSizes" :placeholder="$t('common.no_models_available')" />
     </div>
 
     <div class="form-group">

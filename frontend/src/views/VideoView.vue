@@ -18,8 +18,10 @@ const { t } = useI18n()
 
 const {
   hasFile, fileId, activeFileId, activePreviewUrl, isUploading, sourceDir, currentFileName, mediaInfo, hasResult,
+  canGoBack, canGoForward,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload,
+  goBack, goForward,
 } = useVideoWorkspace()
 
 const selectedIds = computed(() => collection.selectedIds.value)
@@ -169,11 +171,11 @@ const { registerActions, clearActions } = useTitlebar()
 
 function registerTitlebar() {
   registerActions({
-    canUndo: () => false,
-    canRedo: () => false,
+    canUndo: () => canGoBack.value,
+    canRedo: () => canGoForward.value,
     canSaveAs: () => hasResult.value,
-    onUndo: () => {},
-    onRedo: () => {},
+    onUndo: () => goBack(),
+    onRedo: () => goForward(),
     onSaveAs: () => onDownload(),
   })
 }

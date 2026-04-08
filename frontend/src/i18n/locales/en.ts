@@ -74,6 +74,7 @@ export default {
     static_preview_hint: 'Static preview, all frames applied after execution',
     remove_not_supported: 'Object removal does not support animated images',
     model_not_ready: 'Model Not Downloaded',
+    no_models_available: 'No models available',
     model_not_downloaded_hint: 'The selected model has not been downloaded yet. Go to model manager to download it?',
     go_to_model_manager: 'Go to Model Manager',
   },
@@ -590,7 +591,6 @@ export default {
       title: 'Video Enhancement Settings',
       description: 'Upscale video resolution using AI super-resolution.',
       model: 'Model',
-      variant: 'Variant',
       output_resolution: 'Output Resolution',
       output_format: 'Output Format',
       video_codec: 'Video Codec',
@@ -1070,6 +1070,7 @@ export default {
     demucs: 'Source Separation (Vocals/Drums/Bass/Guitar/Piano/Other)',
     // Interpolation
     rife: 'Video Frame Interpolation',
+    basic_pitch: 'Audio to MIDI',
     // MIDI
     fluidsynth: 'MIDI Synth Engine + GM SoundFont (WAV/MP3 Export)',
     // Whisper

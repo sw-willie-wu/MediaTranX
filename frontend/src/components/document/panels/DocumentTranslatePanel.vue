@@ -8,6 +8,7 @@ import { useModelStore } from '@/stores/models'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { usePersistedModel } from '@/composables/usePersistedModel'
 
 const props = defineProps<{
   fileId: string | null
@@ -26,7 +27,7 @@ const { guardModelReady } = useModelGuard()
 
 // ── 翻譯模型（從 modelStore 取得）────────────────────────────────────────
 
-const selectedTranslateModel = ref('')
+const selectedTranslateModel = usePersistedModel('doc_translate_model')
 const error = ref<string | null>(null)
 
 const localTranslateModelOptions = computed(() =>
@@ -44,9 +45,9 @@ const localTranslateModelOptions = computed(() =>
 const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
 
 watch(localTranslateModelOptions, (options) => {
-  if (!selectedTranslateModel.value) {
+  if (!selectedTranslateModel.value || !options.some(m => m.value === selectedTranslateModel.value)) {
     const first = options.find(m => m.badge === 'ok')
-    if (first) selectedTranslateModel.value = first.value
+    selectedTranslateModel.value = first?.value ?? ''
   }
 }, { immediate: true })
 

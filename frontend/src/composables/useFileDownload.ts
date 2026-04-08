@@ -32,11 +32,22 @@ export function useFileDownload() {
     })
     if (!destPath) return
 
-    log.info('downloadFile', { fileId, destPath })
+    // Try to get the file's disk path for direct copy (skip HTTP)
+    let srcPath: string | undefined
+    try {
+      const infoRes = await fetch(`${getApiBase()}/files/${fileId}`)
+      if (infoRes.ok) {
+        const info = await infoRes.json()
+        srcPath = info.file_path
+      }
+    } catch {}
+
+    log.info('downloadFile', { fileId, destPath, srcPath })
     try {
       await window.electron.downloadToPath(
         `${getApiBase()}/files/${fileId}/download`,
         destPath,
+        srcPath,
       )
       log.info('downloadFile done', { fileId, destPath })
       toast.show(t('toast.saved'), {
