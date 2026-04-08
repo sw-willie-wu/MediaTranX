@@ -55,6 +55,7 @@ const resolutions = computed(() => [
   { value: '1920x1080', label: '1080p (1920x1080)' },
   { value: '1280x720', label: '720p (1280x720)' },
   { value: '854x480', label: '480p (854x480)' },
+  { value: '640x360', label: '360p (640x360)' },
   { value: 'custom', label: t('video.transcode.custom') },
 ])
 
