@@ -9,6 +9,7 @@ import { useModelStore } from '@/stores/models'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { usePersistedModel } from '@/composables/usePersistedModel'
 
 const props = defineProps<{
   fileId: string | null
@@ -30,7 +31,7 @@ const { guardModelReady } = useModelGuard()
 
 // ── 模型 ──────────────────────────────────────────────────────────────────
 
-const selectedModel = ref('')
+const selectedModel = usePersistedModel('doc_ocr_model')
 const available = ref<boolean | null>(null)
 const modelDownloaded = ref<boolean | null>(null)
 

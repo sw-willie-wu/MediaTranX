@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { usePersistedModel } from '@/composables/usePersistedModel'
 import AppSelect from '@/components/common/AppSelect.vue'
 
 const { t } = useI18n()
@@ -22,20 +23,20 @@ const emit = defineEmits<{
 
 const { submitTask, isProcessing } = useSubmitTask()
 
-const variant = ref('x4plus')
+const variant = usePersistedModel('enhance_model', 'x4plus')
 const outputFormat = ref('mp4')
 const videoCodec = ref('h264')
 const showAdvanced = ref(false)
 
 const variantOptions = computed(() => {
   const allModels = [...modelStore.forPanel(modelStore.byCategory('upscale')), ...modelStore.forPanel(modelStore.byCategory('video_enhance'))]
-  const dlMap = new Map(allModels.map(m => [m.variant, m.downloaded]))
-  return [
-    { value: 'x2plus', label: 'Real-ESRGAN x2', badge: dlMap.get('x2plus') ? 'ok' as const : 'err' as const },
-    { value: 'x4plus', label: 'Real-ESRGAN x4', badge: dlMap.get('x4plus') ? 'ok' as const : 'err' as const },
-    { value: 'x4plus-anime', label: 'Real-ESRGAN x4 Anime', badge: dlMap.get('x4plus-anime') ? 'ok' as const : 'err' as const },
-    { value: 'animevideov3', label: 'Real-ESRGAN Video x4 (Fast)', badge: dlMap.get('animevideov3') ? 'ok' as const : 'err' as const },
-  ]
+  return allModels
+    .filter(m => m.family === 'realesrgan')
+    .map(m => ({
+      value: m.variant,
+      label: m.label,
+      badge: (m.downloaded ? 'ok' : 'err') as 'ok' | 'err',
+    }))
 })
 
 const formatOptions = computed(() => [
@@ -97,7 +98,7 @@ defineExpose({ execute, isDisabled, isLoading })
     <p class="form-hint">{{ $t('video.enhance.description') }}</p>
 
     <div class="form-group">
-      <label>{{ $t('video.enhance.variant') }}</label>
+      <label>{{ $t('video.enhance.model') }}</label>
       <AppSelect v-model="variant" :options="variantOptions" />
     </div>
 

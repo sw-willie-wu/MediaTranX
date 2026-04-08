@@ -8,6 +8,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { apiFetch } from '@/composables/useApi'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { useModelStore } from '@/stores/models'
+import { usePersistedModel } from '@/composables/usePersistedModel'
 
 const props = defineProps<{
   fileId: string | null
@@ -26,7 +27,7 @@ const { confirm } = useConfirm()
 const { guardModelReady } = useModelGuard()
 const modelStore = useModelStore()
 
-const modelName = ref('htdemucs_6s')
+const modelName = usePersistedModel('separate_model', 'htdemucs_6s')
 const modelDownloaded = ref<boolean | null>(null)
 const outputFormat = ref('wav')
 const outputPath = ref('')

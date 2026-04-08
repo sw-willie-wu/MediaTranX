@@ -8,6 +8,7 @@ import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
+import { usePersistedModel } from '@/composables/usePersistedModel'
 
 const { t } = useI18n()
 
@@ -16,7 +17,7 @@ const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
 
 const enableTranslation = ref(false)
-const selectedTranslateModel = ref('')
+const selectedTranslateModel = usePersistedModel('subtitle_translate_model')
 
 const localTranslateModelOptions = computed(() =>
   modelStore.forPanel(modelStore.byCapability('text'))
