@@ -28,6 +28,7 @@ import { useMidiPlayback } from '@/composables/useMidiPlayback'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTaskStore } from '@/stores/tasks'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
+import { apiFetch } from '@/composables/useApi'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -37,7 +38,7 @@ const {
   canGoBack, canGoForward,
   textResultContent, textResultFileId,
   collection,
-  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, addMidiEntry,
+  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, downloadFile, addMidiEntry,
   goBack, goForward,
 } = useAudioWorkspace()
 
@@ -101,6 +102,20 @@ function addTrack() {
 function onTrackBarWheel(e: WheelEvent) {
   const el = e.currentTarget as HTMLElement
   el.scrollLeft += e.deltaY || e.deltaX
+}
+
+// ── MIDI instrument options (with Drum Kit at top) ──
+const instrumentOptionsWithDrum = computed(() => [
+  { value: -1, label: 'Drum Kit' },
+  ...GM_INSTRUMENT_OPTIONS,
+])
+
+function onInstrumentChange(trackIdx: number, value: number) {
+  if (value === -1) {
+    midiEditPanelRef.value?.editor.updateTrack(trackIdx, { isDrum: true })
+  } else {
+    midiEditPanelRef.value?.editor.updateTrack(trackIdx, { instrument: value, isDrum: false })
+  }
 }
 
 // ── MIDI file detection ──
@@ -428,9 +443,40 @@ function registerTitlebar() {
       if (currentFunction.value === 'midi-edit') midiEditPanelRef.value?.editor.redo()
       else goForward()
     },
-    onSaveAs: () => {
+    onSaveAs: async () => {
       if (currentFunction.value === 'midi-edit') {
-        midiEditPanelRef.value?.execute()
+        const panel = midiEditPanelRef.value
+        const editor = panel?.editor
+        if (!editor) return
+        let fid = activeFileId.value
+        if (!fid) {
+          // New file — create first
+          const res = await apiFetch('/audio/midi/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              data: {
+                ticks_per_beat: editor.ticksPerBeat?.value ?? 480,
+                tempo: editor.tempo.value,
+                time_signature: [...editor.timeSignature.value],
+                tracks: editor.tracks.value.map(t => ({
+                  name: t.name, instrument: t.instrument, color: t.color,
+                  volume: t.volume, pan: t.pan, muted: t.muted, is_drum: t.isDrum,
+                  notes: t.notes.map(n => ({
+                    pitch: n.pitch, start: n.start, duration: n.duration, velocity: n.velocity,
+                  })),
+                })),
+              },
+            }),
+          })
+          if (!res.ok) return
+          const result = await res.json()
+          fid = result.file_id
+        } else {
+          await editor.saveToApi(fid)
+        }
+        const stem = currentFileName.value.replace(/\.[^.]+$/, '') || 'Untitled'
+        downloadFile(fid, `${stem}.mid`, sourceDir.value)
       } else {
         onDownload()
       }
@@ -571,10 +617,9 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
                 />
                 <AppSelect
                   class="midi-track-settings-instrument"
-                  :model-value="midiEditPanelRef!.editor.tracks.value[expandedTrackIdx].instrument"
-                  :options="GM_INSTRUMENT_OPTIONS"
-                  size="sm"
-                  @update:model-value="midiEditPanelRef!.editor.updateTrack(expandedTrackIdx!, { instrument: $event })"
+                  :model-value="midiEditPanelRef!.editor.tracks.value[expandedTrackIdx].isDrum ? -1 : midiEditPanelRef!.editor.tracks.value[expandedTrackIdx].instrument"
+                  :options="instrumentOptionsWithDrum"
+                  @update:model-value="onInstrumentChange(expandedTrackIdx!, $event)"
                 />
               </div>
               <div class="midi-track-settings-row">

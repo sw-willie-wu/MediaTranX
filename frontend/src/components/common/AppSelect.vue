@@ -85,7 +85,14 @@ function toggle() {
 
 function open() {
   isOpen.value = true
-  nextTick(updatePosition)
+  nextTick(() => {
+    updatePosition()
+    // Scroll to the currently selected option
+    const active = dropdownRef.value?.querySelector('.app-select-option-active') as HTMLElement | null
+    if (active) {
+      active.scrollIntoView({ block: 'nearest' })
+    }
+  })
 }
 
 function close() {
