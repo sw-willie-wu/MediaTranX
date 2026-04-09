@@ -1,28 +1,14 @@
 """
 MIDI editor API routes.
 """
-from typing import Optional
-
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
 from app.services.audio.audio_midi_service import AudioMidiService
 
 router = APIRouter()
-
-
-class MidiExportRequest(BaseModel):
-    file_id: str = Field(..., description="MIDI file ID")
-    output_format: str = Field(default="wav", description="輸出格式 (wav, mp3, mid)")
-    output_path: Optional[str] = Field(default=None, description="自訂輸出檔案路徑")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄 (deprecated)")
-
-
-class MidiExportResponse(BaseModel):
-    task_id: str
-    message: str = "MIDI 匯出任務已提交"
 
 
 class MidiSaveRequest(BaseModel):
@@ -72,21 +58,14 @@ async def save_midi(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/midi/export", response_model=MidiExportResponse)
+@router.post("/midi/convert")
 @inject
-async def export_midi(
-    request: MidiExportRequest,
+async def convert_audio(
+    file: UploadFile = File(...),
+    format: str = Form("mp3"),
+    output_path: str = Form(...),
     service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
 ):
-    try:
-        task_id = await service.submit_export(
-            file_id=request.file_id,
-            output_format=request.output_format,
-            output_path=request.output_path,
-            output_dir=request.output_dir,
-        )
-        return MidiExportResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    """Convert uploaded WAV to target format via FFmpeg."""
+    result = await service.convert_wav(file, format, output_path)
+    return result

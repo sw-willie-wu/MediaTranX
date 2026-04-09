@@ -44,13 +44,20 @@ class SetupService:
         """取得二進位工具版本（.version JSON 或純文字）"""
         import json
         versions = {}
-        for tool in ("ffmpeg", "fluidsynth", "llama"):
+        for tool in ("ffmpeg", "llama"):
             vfile = settings.path.bin / tool / ".version"
             if vfile.exists():
                 try:
                     versions[tool] = json.loads(vfile.read_text("utf-8").strip())
                 except (json.JSONDecodeError, ValueError):
                     pass
+        # Soundfonts
+        sf_vfile = settings.path.bin / "soundfonts" / "musyngkite" / ".version"
+        if sf_vfile.exists():
+            try:
+                versions["soundfonts"] = json.loads(sf_vfile.read_text("utf-8").strip())
+            except (json.JSONDecodeError, ValueError):
+                pass
         # PyTorch
         try:
             import torch

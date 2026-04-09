@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Callable, Optional
 from uuid import uuid4
 
 from app.services.files.file_service import FileService
@@ -13,15 +12,12 @@ from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
-TASK_TYPE_AUDIO_MIDI_EXPORT = "audio.midi_export"
-
 
 class AudioMidiService:
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_AUDIO_MIDI_EXPORT, self._handle_export)
         logger.info("AudioMidiService initialized")
 
     def read_midi(self, file_id: str) -> dict:
@@ -62,99 +58,37 @@ class AudioMidiService:
         logger.info(f"MIDI saved: {file_info.file_path}")
         return {"status": "ok", "file_id": file_id}
 
-    async def submit_export(
-        self,
-        file_id: str,
-        output_format: str = "wav",
-        output_path: Optional[str] = None,
-        output_dir: Optional[str] = None,
-    ) -> str:
-        """Submit MIDI export task (WAV/MP3 via FluidSynth)."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
-        params = {
-            "file_id": file_id,
-            "output_format": output_format,
-            "output_path": output_path,
-            "output_dir": output_dir,
-        }
-        task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_MIDI_EXPORT, params)
-        logger.info(f"MIDI export task submitted: {task_id}")
-        return task_id
+    async def convert_wav(self, file, output_format: str, output_path: str) -> dict:
+        """Convert uploaded WAV file to target format using FFmpeg."""
+        from app.engine.ffmpeg import FFmpegWrapper
 
-    def _handle_export(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        """Handle MIDI export task — render to WAV/MP3."""
-        from app.init.container import get_container
+        output_path_obj = Path(output_path)
+        output_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
-        file_id = params["file_id"]
-        output_format = params.get("output_format", "wav")
-        custom_output_path = params.get("output_path")
-        custom_output_dir = params.get("output_dir")
+        # Save uploaded audio to temp (may be WAV or WebM)
+        ext = Path(file.filename or 'export.webm').suffix or '.webm'
+        temp_wav = self._file_service.output_dir / f"_temp_export_{uuid4().hex}{ext}"
+        temp_wav.parent.mkdir(parents=True, exist_ok=True)
+        content = await file.read()
+        temp_wav.write_bytes(content)
 
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
-
-        # Determine output location: output_path (full file) > output_dir > default
-        if custom_output_path:
-            final_target = Path(custom_output_path)
-            output_dir_path = final_target.parent
-            original_stem = final_target.stem
-        else:
-            output_dir_path = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
-            original_stem = Path(file_info.original_filename or "midi").stem
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-
-        progress_callback(0.05, "task.progress.preparing_export")
-
-        fluidsynth = get_container().fluidsynth()
-
-        # Render to WAV
-        wav_filename = f"{original_stem}.wav"
-        wav_path = output_dir_path / wav_filename
-
-        fluidsynth.render_midi_to_wav(
-            midi_path=str(file_info.file_path),
-            output_path=str(wav_path),
-            on_progress=lambda p, m: progress_callback(p * 0.8, m),
-        )
-
-        # Convert to MP3 if needed
-        if output_format == "mp3":
-            progress_callback(0.8, "task.progress.converting_mp3")
-            from app.engine.ffmpeg import FFmpegWrapper
-            mp3_filename = f"{original_stem}.mp3"
-            mp3_path = output_dir_path / mp3_filename
+        try:
             ffmpeg = FFmpegWrapper()
-            ffmpeg.convert(str(wav_path), str(mp3_path), {"format": "mp3", "bitrate": "192k"})
-            wav_path.unlink(missing_ok=True)
-            final_path = mp3_path
-            final_filename = mp3_filename
-        elif output_format == "mid":
-            # Just copy/return the original MIDI file
-            progress_callback(0.9, "task.progress.exporting_midi")
-            import shutil
-            mid_filename = f"{original_stem}.mid"
-            mid_path = output_dir_path / mid_filename
-            if str(file_info.file_path) != str(mid_path):
-                shutil.copy2(str(file_info.file_path), str(mid_path))
-            final_path = mid_path
-            final_filename = mid_filename
-        else:
-            final_path = wav_path
-            final_filename = wav_filename
+            codec_map = {
+                "wav": ("pcm_s16le", None),
+                "mp3": ("libmp3lame", "192k"),
+                "flac": ("flac", None),
+                "ogg": ("libvorbis", "192k"),
+                "aac": ("aac", "192k"),
+            }
+            codec, bitrate = codec_map.get(output_format, ("libmp3lame", "192k"))
+            await ffmpeg.audio_convert(
+                input_path=temp_wav,
+                output_path=output_path_obj,
+                audio_codec=codec,
+                audio_bitrate=bitrate,
+            )
+        finally:
+            temp_wav.unlink(missing_ok=True)
 
-        # Register output
-        output_file_id = str(uuid4())
-        self._file_service.register_output(
-            file_id=output_file_id,
-            file_path=final_path,
-            original_filename=file_info.original_filename,
-        )
-
-        progress_callback(1.0, "task.progress.export_complete")
-        return {
-            "output_file_id": output_file_id,
-            "output_filename": final_filename,
-        }
+        return {"status": "ok", "output_path": str(output_path_obj)}

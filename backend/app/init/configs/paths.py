@@ -17,7 +17,6 @@ class PathSettings(BaseModel):
 
     # Windows: derived from bin. Linux/macOS: system binary name.
     ffmpeg: Path = Path("bin/ffmpeg") if _WIN else Path("ffmpeg")
-    fluidsynth: Path = Path("bin/fluidsynth") if _WIN else Path("fluidsynth")
     llama: Path = Path("bin/llama")
 
     @model_validator(mode="after")
@@ -27,8 +26,6 @@ class PathSettings(BaseModel):
             b = self.bin
             if _WIN and self.ffmpeg == Path("bin/ffmpeg"):
                 self.ffmpeg = b / "ffmpeg"
-            if _WIN and self.fluidsynth == Path("bin/fluidsynth"):
-                self.fluidsynth = b / "fluidsynth"
             if self.llama == Path("bin/llama"):
                 self.llama = b / "llama"
         return self

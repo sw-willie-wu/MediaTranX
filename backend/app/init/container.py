@@ -10,7 +10,6 @@ from app.workers.task_manager import TaskManager
 
 # ── Engine ──
 from app.engine.ffmpeg import FFmpegWrapper
-from app.engine.fluidsynth import FluidSynthWrapper
 from app.engine.ai.model_manager import ModelManager
 
 # ── Setup Services ──
@@ -68,7 +67,6 @@ class AppContainer(containers.DeclarativeContainer):
 
     # ── Engine ──
     ffmpeg = providers.Singleton(FFmpegWrapper)
-    fluidsynth = providers.Singleton(FluidSynthWrapper)
     model_manager = providers.Singleton(ModelManager)
 
     # ── Setup Services ──
