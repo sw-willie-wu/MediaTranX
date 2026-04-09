@@ -1,37 +1,7 @@
 import { ref, onUnmounted } from 'vue'
+import * as Tone from 'tone'
 import type { MidiTrack, MidiNote } from './useMidiEditor'
-import { useSoundFontSynth } from './useSoundFontSynth'
-
-// ---------------------------------------------------------------------------
-// Oscillator fallback helpers
-// ---------------------------------------------------------------------------
-
-function getWaveform(instrument: number, isDrum: boolean): OscillatorType {
-  if (isDrum) return 'square'
-  if (instrument < 8) return 'sine'       // Piano
-  if (instrument < 16) return 'sine'      // Chromatic Percussion
-  if (instrument < 24) return 'sine'      // Organ
-  if (instrument < 32) return 'sawtooth'  // Guitar
-  if (instrument < 40) return 'triangle'  // Bass
-  if (instrument < 48) return 'sawtooth'  // Strings
-  return 'sine'
-}
-
-function pitchToFreq(pitch: number): number {
-  return 440 * Math.pow(2, (pitch - 69) / 12)
-}
-
-// ---------------------------------------------------------------------------
-// Channel assignment: drum → ch9, other tracks → ch 0-8, 10-15
-// ---------------------------------------------------------------------------
-
-function assignChannel(trackIndex: number, isDrum: boolean): number {
-  if (isDrum) return 9
-  // Skip channel 9 for melodic tracks
-  if (trackIndex < 9) return trackIndex
-  if (trackIndex < 15) return trackIndex + 1
-  return trackIndex % 15  // wrap around for 16+ tracks
-}
+import { useToneSynth } from './useToneSynth'
 
 // ---------------------------------------------------------------------------
 // Composable
@@ -46,36 +16,18 @@ export function useMidiPlayback() {
   const loopEnd = ref(0)
 
   // --- Internal state ---------------------------------------------------------
-  let audioContext: AudioContext | null = null
   let tempo = 120
   let tracks: MidiTrack[] = []
   let animationFrameId = 0
-  let startTime = 0
-  let startBeat = 0
-  const scheduledNotes = new Set<string>()
-  const activeTimeouts: number[] = []  // ALL scheduled setTimeout ids (noteOn + noteOff)
 
-  // --- SoundFont synth -------------------------------------------------------
-  const sfSynth = useSoundFontSynth()
-  let sfInitialized = false
+  // --- Tone.js synth ----------------------------------------------------------
+  const synth = useToneSynth()
 
   // --- Internal helpers -------------------------------------------------------
 
-  function ensureAudioContext(): AudioContext {
-    if (!audioContext) {
-      audioContext = new AudioContext()
-    }
-    return audioContext
-  }
-
-  async function ensureSoundFont(): Promise<void> {
-    if (sfInitialized) return
-    const ctx = ensureAudioContext()
-    sfInitialized = await sfSynth.init(ctx)
-    if (sfInitialized) {
-      // Sync all track programs
-      syncTrackPrograms()
-    }
+  /** Convert beats to seconds at current tempo. */
+  function beatsToSeconds(beats: number): number {
+    return beats * (60 / tempo)
   }
 
   /** Check if a track should be audible (considering mute + solo logic). */
@@ -86,89 +38,11 @@ export function useMidiPlayback() {
     return !hasSolo || track.solo
   }
 
-  function syncTrackPrograms() {
-    if (!sfSynth.isLoaded) return
-    for (let i = 0; i < tracks.length; i++) {
-      const track = tracks[i]
-      const ch = assignChannel(i, track.isDrum)
-      sfSynth.programSelect(ch, track.instrument, track.isDrum)
-      sfSynth.setVolume(ch, isTrackAudible(i) ? (track.volume ?? 100) : 0)
-      if (track.pan !== undefined) {
-        sfSynth.setPan(ch, track.pan)
-      }
-    }
-  }
-
-  /** Unique key for a scheduled note so we don't trigger it twice. */
-  function noteKey(trackIndex: number, note: MidiNote): string {
-    return `${trackIndex}:${note.pitch}:${note.start}`
-  }
-
-  // --- SoundFont note scheduling ---
-
-  function scheduleSFNote(note: MidiNote, track: MidiTrack, trackIndex: number, when: number) {
-    if (!audioContext) return
-    const ch = assignChannel(trackIndex, track.isDrum)
-    const delay = Math.max(0, (when - audioContext.currentTime) * 1000)
-    const durationMs = (note.duration / (tempo / 60)) * 1000
-
-    const onId = window.setTimeout(() => {
-      if (!isPlaying.value) return  // guard: don't start note if already stopped
-      sfSynth.noteOn(ch, note.pitch, note.velocity)
-    }, delay)
-    activeTimeouts.push(onId)
-
-    const offId = window.setTimeout(() => {
-      sfSynth.noteOff(ch, note.pitch)
-    }, delay + durationMs)
-    activeTimeouts.push(offId)
-  }
-
-  // --- Oscillator fallback note scheduling ---
-
-  function scheduleOscNote(note: MidiNote, track: MidiTrack, when: number) {
-    if (!audioContext) return
-
-    const freq = pitchToFreq(note.pitch)
-    const osc = audioContext.createOscillator()
-    const gain = audioContext.createGain()
-
-    osc.type = getWaveform(track.instrument, track.isDrum)
-    osc.frequency.value = freq
-
-    const volume = (note.velocity / 127) * 0.15
-    gain.gain.value = volume
-
-    const durationSec = note.duration / (tempo / 60)
-    const fadeStart = Math.max(when, when + durationSec - 0.02)
-    gain.gain.setValueAtTime(volume, fadeStart)
-    gain.gain.linearRampToValueAtTime(0, when + durationSec)
-
-    osc.connect(gain).connect(audioContext.destination)
-    osc.start(when)
-    osc.stop(when + durationSec)
-  }
-
-  function scheduleNote(note: MidiNote, track: MidiTrack, trackIndex: number, when: number) {
-    if (sfSynth.isLoaded) {
-      scheduleSFNote(note, track, trackIndex, when)
-    } else {
-      scheduleOscNote(note, track, when)
-    }
-  }
-
-  /** Convert a beat position to an audioContext timestamp. */
-  function beatToTime(beat: number): number {
-    if (!audioContext) return 0
-    return startTime + ((beat - startBeat) / (tempo / 60))
-  }
-
   /** Find the beat position that is the furthest any note extends to. */
   function lastBeat(): number {
     let last = 0
     for (let i = 0; i < tracks.length; i++) {
       const track = tracks[i]
-      if (!isTrackAudible(i)) continue
       for (const note of track.notes) {
         const end = note.start + note.duration
         if (end > last) last = end
@@ -177,125 +51,174 @@ export function useMidiPlayback() {
     return last
   }
 
-  function clearActiveTimeouts() {
-    for (const id of activeTimeouts) {
-      clearTimeout(id)
+  /** Sync volume and pan for all tracks via synth channels. */
+  function syncTrackMixing() {
+    for (let i = 0; i < tracks.length; i++) {
+      const track = tracks[i]
+      const audible = isTrackAudible(i)
+      synth.setTrackVolume(i, track.volume ?? 100, !audible)
+      if (track.pan !== undefined) {
+        synth.setTrackPan(i, track.pan)
+      }
     }
-    activeTimeouts.length = 0
   }
 
-  // --- Animation frame loop ---------------------------------------------------
+  /** Pre-load per-track samplers. */
+  async function preloadInstruments(): Promise<void> {
+    const promises: Promise<unknown>[] = []
 
-  function tick() {
-    if (!audioContext || !isPlaying.value) return
-
-    const elapsed = audioContext.currentTime - startTime
-    let beat = startBeat + elapsed * (tempo / 60)
-
-    // Handle looping
-    if (loopEnabled.value && loopEnd.value > loopStart.value && beat >= loopEnd.value) {
-      startBeat = loopStart.value
-      startTime = audioContext.currentTime
-      beat = loopStart.value
-      scheduledNotes.clear()
-      clearActiveTimeouts()
-      sfSynth.allNotesOff()
+    for (let i = 0; i < tracks.length; i++) {
+      const track = tracks[i]
+      promises.push(synth.loadTrackSampler(i, track.instrument, track.isDrum))
     }
 
-    currentBeat.value = beat
+    await Promise.all(promises)
+  }
 
-    // Look-ahead window in seconds
-    const lookAhead = 0.1
-    const lookAheadBeat = beat + lookAhead * (tempo / 60)
+  /**
+   * Cancel all Transport events and schedule all notes from scratch.
+   * Uses Tone.Transport.schedule() to fire noteOn/noteOff at the correct time.
+   */
+  function scheduleAllNotes() {
+    Tone.getTransport().cancel()
 
-    // Schedule notes that fall within the look-ahead window
+    const total = lastBeat()
+
     for (let ti = 0; ti < tracks.length; ti++) {
-      const track = tracks[ti]
       if (!isTrackAudible(ti)) continue
+      const track = tracks[ti]
+
       for (const note of track.notes) {
-        if (note.start >= beat && note.start < lookAheadBeat) {
-          const key = noteKey(ti, note)
-          if (!scheduledNotes.has(key)) {
-            scheduledNotes.add(key)
-            const when = beatToTime(note.start)
-            scheduleNote(note, track, ti, when)
-          }
-        }
+        if (note.start < 0 || note.start >= total) continue
+
+        const noteOnTime = beatsToSeconds(note.start)
+        const noteOffTime = beatsToSeconds(note.start + note.duration)
+        const trackIndex = ti
+        const { pitch, velocity, duration } = note
+        const { instrument, isDrum } = track
+
+        // Schedule noteOn (pass time from Transport for sample-accurate timing)
+        Tone.getTransport().schedule((time) => {
+          synth.noteOnAt(trackIndex, pitch, velocity, instrument, isDrum, time)
+        }, noteOnTime)
+
+        // Schedule noteOff
+        Tone.getTransport().schedule((time) => {
+          synth.noteOffAt(trackIndex, pitch, instrument, isDrum, time)
+        }, noteOffTime)
       }
     }
 
-    // If not looping, stop once past all notes
-    if (!loopEnabled.value && beat > lastBeat()) {
-      stop()
-      return
+    // Schedule stop at end of song (only when not looping)
+    if (!loopEnabled.value) {
+      const endTime = beatsToSeconds(total)
+      Tone.getTransport().schedule((_time) => {
+        // Use setTimeout to defer Vue reactive state update outside Tone's audio thread
+        setTimeout(() => stop(), 0)
+      }, endTime)
+    }
+  }
+
+  // --- Beat tracking via requestAnimationFrame --------------------------------
+
+  function startBeatTracking() {
+    if (animationFrameId) return
+
+    function tick() {
+      if (!isPlaying.value) return
+
+      // Tone.Transport.seconds is the current playhead position in seconds
+      const seconds = Tone.getTransport().seconds
+      currentBeat.value = seconds / (60 / tempo)
+
+      animationFrameId = requestAnimationFrame(tick)
     }
 
     animationFrameId = requestAnimationFrame(tick)
+  }
+
+  function stopBeatTracking() {
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId)
+      animationFrameId = 0
+    }
   }
 
   // --- Public methods ---------------------------------------------------------
 
   function setTempo(bpm: number) {
     tempo = bpm
+    Tone.getTransport().bpm.value = bpm
   }
 
   function setTracks(t: MidiTrack[]) {
     tracks = t
-    syncTrackPrograms()
+    syncTrackMixing()
   }
 
   async function play() {
-    const ctx = ensureAudioContext()
+    // Init Tone.js (requires user gesture; safe to call multiple times)
+    await synth.init()
 
-    // Try to initialize SoundFont (non-blocking if already done)
-    await ensureSoundFont()
+    // Set tempo on Transport
+    Tone.getTransport().bpm.value = tempo
 
-    startTime = ctx.currentTime
-    startBeat = currentBeat.value
-    scheduledNotes.clear()
-    clearActiveTimeouts()
+    // Configure loop
+    if (loopEnabled.value && loopEnd.value > loopStart.value) {
+      Tone.getTransport().loop = true
+      Tone.getTransport().loopStart = beatsToSeconds(loopStart.value)
+      Tone.getTransport().loopEnd = beatsToSeconds(loopEnd.value)
+    } else {
+      Tone.getTransport().loop = false
+    }
+
+    // Pre-load all instruments, then schedule notes
+    await preloadInstruments()
+    scheduleAllNotes()
+
+    // Sync mixing
+    syncTrackMixing()
 
     isPlaying.value = true
-    animationFrameId = requestAnimationFrame(tick)
+    Tone.getTransport().start()
+    startBeatTracking()
   }
 
   function pause() {
-    if (animationFrameId) {
-      cancelAnimationFrame(animationFrameId)
-      animationFrameId = 0
-    }
+    Tone.getTransport().pause()
     isPlaying.value = false
-    clearActiveTimeouts()
-    sfSynth.allNotesOff()
+    stopBeatTracking()
+    synth.allNotesOff()
   }
 
   function stop() {
-    if (animationFrameId) {
-      cancelAnimationFrame(animationFrameId)
-      animationFrameId = 0
-    }
+    Tone.getTransport().stop()
+    Tone.getTransport().cancel()
     isPlaying.value = false
     currentBeat.value = 0
-    scheduledNotes.clear()
-    clearActiveTimeouts()
-    sfSynth.allNotesOff()
+    stopBeatTracking()
+    synth.allNotesOff()
   }
 
   function seekToBeat(beat: number) {
-    currentBeat.value = beat
-    scheduledNotes.clear()
-    clearActiveTimeouts()
-    sfSynth.allNotesOff()
+    const wasPlaying = isPlaying.value
 
-    if (isPlaying.value) {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId)
-        animationFrameId = 0
-      }
-      const ctx = ensureAudioContext()
-      startTime = ctx.currentTime
-      startBeat = beat
-      animationFrameId = requestAnimationFrame(tick)
+    if (wasPlaying) {
+      Tone.getTransport().pause()
+      stopBeatTracking()
+    }
+
+    synth.allNotesOff()
+
+    const seekSeconds = beatsToSeconds(beat)
+    Tone.getTransport().seconds = seekSeconds
+    currentBeat.value = beat
+
+    if (wasPlaying) {
+      // Reschedule from new position
+      scheduleAllNotes()
+      Tone.getTransport().start()
+      startBeatTracking()
     }
   }
 
@@ -303,55 +226,40 @@ export function useMidiPlayback() {
     loopStart.value = start
     loopEnd.value = end
     loopEnabled.value = end > start
+
+    if (loopEnabled.value) {
+      Tone.getTransport().loop = true
+      Tone.getTransport().loopStart = beatsToSeconds(start)
+      Tone.getTransport().loopEnd = beatsToSeconds(end)
+    } else {
+      Tone.getTransport().loop = false
+    }
   }
 
-  function playNote(pitch: number, velocity = 100, duration = 0.3, trackIndex = 0) {
-    const ctx = ensureAudioContext()
-
-    if (sfSynth.isLoaded) {
-      const track = tracks[trackIndex]
-      const ch = track ? assignChannel(trackIndex, track.isDrum) : 0
-      sfSynth.noteOn(ch, pitch, velocity)
-      setTimeout(() => {
-        sfSynth.noteOff(ch, pitch)
-      }, duration * 1000)
-      return
-    }
-
-    // Oscillator fallback — use track instrument for waveform if available
+  /**
+   * Play a single note preview (e.g. piano roll key click).
+   * Uses setTimeout for noteOff since this is a one-shot preview, not Transport-scheduled.
+   */
+  async function playNote(pitch: number, velocity = 100, duration = 0.3, trackIndex = 0) {
+    await synth.init()
     const track = tracks[trackIndex]
-    const freq = pitchToFreq(pitch)
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
+    const program = track?.instrument ?? 0
+    const isDrum = track?.isDrum ?? false
 
-    osc.type = track ? getWaveform(track.instrument, track.isDrum) : 'sine'
-    osc.frequency.value = freq
-
-    const volume = (velocity / 127) * 0.3
-    gain.gain.value = volume
-
-    const fadeStart = Math.max(ctx.currentTime, ctx.currentTime + duration - 0.02)
-    gain.gain.setValueAtTime(volume, fadeStart)
-    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration)
-
-    osc.connect(gain).connect(ctx.destination)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + duration)
+    await synth.loadTrackSampler(trackIndex, program, isDrum)
+    synth.noteOn(trackIndex, pitch, velocity, program, isDrum)
+    setTimeout(() => {
+      synth.noteOff(trackIndex, pitch, program, isDrum)
+    }, duration * 1000)
   }
 
   // --- Cleanup ----------------------------------------------------------------
 
   onUnmounted(() => {
-    if (animationFrameId) {
-      cancelAnimationFrame(animationFrameId)
-      animationFrameId = 0
-    }
-    clearActiveTimeouts()
-    sfSynth.dispose()
-    if (audioContext) {
-      audioContext.close()
-      audioContext = null
-    }
+    stopBeatTracking()
+    Tone.getTransport().stop()
+    Tone.getTransport().cancel()
+    synth.dispose()
   })
 
   // --- Return -----------------------------------------------------------------

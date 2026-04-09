@@ -306,6 +306,7 @@ export function useAudioWorkspace() {
     handleRemoveFile,
     handlePanelSubmit,
     handleDownload,
+    downloadFile,
     addMidiEntry,
     goBack,
     goForward,

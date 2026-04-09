@@ -140,7 +140,13 @@ export const useTaskStore = defineStore('tasks', () => {
       const data = await response.json()
 
       const previousTasks = new Map(tasks.value)
+      // Preserve frontend-only tasks (not from backend)
+      const frontendTasks = new Map<string, Task>()
+      for (const [id, t] of previousTasks) {
+        if (id.startsWith('midi-export-')) frontendTasks.set(id, t)
+      }
       tasks.value.clear()
+      for (const [id, t] of frontendTasks) tasks.value.set(id, t)
       for (const taskData of data) {
         const existing = previousTasks.get(taskData.task_id)
         // Log status transitions
