@@ -30,11 +30,8 @@ output/
 # Build artifacts
 src/backend/static/
 
-# Binaries (keep README)
-**/*.exe
-**/*.dll
-**/*.so
-**/*.sf2
+# Binaries
+backend/bin/
 /models/
 backend/models/
 
