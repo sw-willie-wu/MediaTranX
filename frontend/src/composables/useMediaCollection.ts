@@ -191,8 +191,8 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
         const entryId = taskEntryMap.get(taskId)
         if (!entryId) continue
 
-        if (task.status === 'completed' && task.result) {
-          const r = task.result as Record<string, unknown>
+        if (task.status === 'completed') {
+          const r = (task.result ?? {}) as Record<string, unknown>
           const outputFileId = r.output_file_id as string | undefined
           const outputFilename = r.output_filename as string | undefined
           if (outputFileId) {
@@ -237,6 +237,10 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
               currentTaskId: null,
             })
             taskEntryMap.delete(taskId)
+          } else {
+            // Completed without output file (e.g. MIDI export to disk)
+            updateEntry(entryId, { status: 'idle', currentTaskId: null })
+            taskEntryMap.delete(taskId)
           }
         } else if (task.status === 'processing') {
           const entry = entries.value.get(entryId)
@@ -248,7 +252,8 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
           const entry = entries.value.get(entryId)
           if (!entry) continue
           if (task.status === 'failed' && task.error) {
-            toast.show(t('toast.task_failed', { label: task.label ?? task.taskType, error: task.error }), { type: 'error', icon: 'bi-x-circle' })
+            const errorMsg = task.error.length > 80 ? task.error.slice(0, 80) + '...' : task.error
+            toast.show(t('toast.task_failed', { label: task.label ?? task.taskType, error: errorMsg }), { type: 'error', icon: 'bi-x-circle' })
           }
           log.warn(`task ${task.status}`, { taskId, entryId, error: task.error })
           updateEntry(entryId, {

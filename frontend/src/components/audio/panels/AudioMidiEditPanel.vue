@@ -206,12 +206,13 @@ async function execute() {
   const finalPath = outputPath.value || defaultOutputPath.value
   if (!finalPath) return
 
-  await midiExport.exportMidi(
+  const taskId = midiExport.exportMidi(
     editor.tracks.value,
     editor.tempo.value,
     exportFormat.value,
     finalPath,
   )
+  emit('submit', taskId)
 }
 
 // ── Expose ──

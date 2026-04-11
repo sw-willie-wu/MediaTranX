@@ -203,19 +203,16 @@ export function useMidiExport() {
   const exportStatus = ref('')
 
   /**
-   * Export all MIDI tracks to an audio file.
-   *
-   * @param tracks   - MidiTrack[] from useMidiEditor
-   * @param tempo    - BPM
-   * @param format   - 'wav' | 'mp3' | 'flac' | 'ogg' | 'aac'
-   * @param outputPath - Absolute filesystem path for the output file
+   * Start MIDI export. Returns taskId immediately so the caller can
+   * register it with the filmstrip for progress display and file locking.
+   * The actual rendering runs asynchronously in the background.
    */
-  async function exportMidi(
+  function exportMidi(
     tracks: MidiTrack[],
     tempo: number,
     format: string,
     outputPath: string,
-  ): Promise<void> {
+  ): string {
     isExporting.value = true
     exportStatus.value = t('audio.midi.export_loading_samples')
 
@@ -223,15 +220,17 @@ export function useMidiExport() {
     const taskId = `midi-export-${Date.now()}`
     const fileName = outputPath.replace(/\\/g, '/').split('/').pop() || 'export'
 
-    function updateTask(progress: number, message: string, status: 'processing' | 'completed' | 'failed' = 'processing') {
+    // ── Task helpers ──
+
+    function setTask(progress: number, message: string, status: 'processing' | 'completed' | 'failed' = 'processing') {
       taskStore.tasks.set(taskId, {
         taskId,
         taskType: 'audio.midi_export',
         status,
         progress,
         message,
-        result: null,
-        error: null,
+        result: status === 'completed' ? {} : null,
+        error: status === 'failed' ? message : null,
         createdAt: taskStore.tasks.get(taskId)?.createdAt ?? new Date(),
         updatedAt: new Date(),
         label: t('audio.midi.task_label'),
@@ -239,288 +238,362 @@ export function useMidiExport() {
       })
     }
 
-    updateTask(0.05, t('audio.midi.export_loading_samples'))
+    // ── Smooth progress animation ──
+    // Interpolates toward target between milestones so the bar never sits still.
+
+    let animTarget = 0.02
+    let animCurrent = 0.02
+
+    const animTimer = setInterval(() => {
+      if (animCurrent < animTarget - 0.003) {
+        animCurrent += (animTarget - animCurrent) * 0.12
+        const task = taskStore.tasks.get(taskId)
+        if (task) {
+          task.progress = animCurrent
+          task.updatedAt = new Date()
+        }
+      }
+    }, 150)
+
+    /** Set the target the animation bar creeps toward. */
+    function aimAt(value: number, msg: string) {
+      animTarget = value
+      exportStatus.value = msg
+    }
+
+    /** Instantly jump to an exact value (milestone reached). */
+    function snapTo(value: number, msg: string) {
+      animCurrent = value
+      animTarget = value
+      exportStatus.value = msg
+      setTask(value, msg)
+    }
+
+    // Create initial task entry
+    setTask(0.02, t('audio.midi.export_loading_samples'))
     toast.show(t('toast.task_submitted', { label: t('audio.midi.task_label') }), {
       type: 'info',
       icon: 'bi-music-note-beamed',
     })
 
-    try {
-      // ── 1. Determine total duration ──────────────────────────────────────
+    // ── Async export work (fire-and-forget) ──
 
-      let lastBeat = 0
-      for (let ti = 0; ti < tracks.length; ti++) {
-        if (!isTrackAudible(tracks, ti)) continue
-        const track = tracks[ti]
-        for (const note of track.notes) {
-          const end = note.start + note.duration
-          if (end > lastBeat) lastBeat = end
-        }
-      }
+    ;(async () => {
+      try {
+        // ── 1. Determine total duration ────────────────────────────────────
 
-      if (lastBeat === 0) {
-        toast.show(t('toast.save_failed'), { type: 'error', icon: 'bi-x-circle' })
-        return
-      }
+        aimAt(0.04, t('audio.midi.export_loading_samples'))
 
-      // Add 2 beats for reverb tail
-      const durationSeconds = (lastBeat + 2) * (60 / tempo)
-
-      // ── 2. Fetch soundfonts path ─────────────────────────────────────────
-
-      const soundfontsInfo = await _fetchSoundfontsInfo()
-      const soundfontsPath = soundfontsInfo.exists ? soundfontsInfo.path : null
-
-      if (!soundfontsPath && !soundfontsInfo.exists) {
-        console.warn('[MidiExport] Soundfonts not available — export may be silent')
-      }
-
-      // ── 3. Collect unique instruments needed ─────────────────────────────
-
-      // key → { dirName, trackIndices }
-      const instrumentKeys = new Map<
-        string,
-        { dirName: string; trackIndices: number[] }
-      >()
-
-      for (let ti = 0; ti < tracks.length; ti++) {
-        if (!isTrackAudible(tracks, ti)) continue
-        const track = tracks[ti]
-        const key = track.isDrum ? 'drum' : `inst_${track.instrument}`
-        const dirName = track.isDrum
-          ? GM_DRUM_SOUNDFONT_NAME
-          : GM_SOUNDFONT_NAMES[track.instrument]
-
-        if (!dirName) {
-          console.warn(`[MidiExport] No soundfont for program ${track.instrument}`)
-          continue
-        }
-
-        if (!instrumentKeys.has(key)) {
-          instrumentKeys.set(key, { dirName, trackIndices: [] })
-        }
-        instrumentKeys.get(key)!.trackIndices.push(ti)
-      }
-
-      // ── 4. Pre-build samples maps (before offline context) ────────────────
-      // We need to do this BEFORE entering the offline context because
-      // Tone.Offline's callback is synchronous (it uses OfflineAudioContext).
-
-      const samplesMaps = new Map<string, Record<string, string>>()
-
-      await Promise.all(
-        Array.from(instrumentKeys.entries()).map(async ([key, { dirName }]) => {
-          const map = key === 'drum'
-            ? await _buildDrumSamplesMap(soundfontsPath, `${dirName}-mp3`)
-            : await _buildSamplesMap(soundfontsPath, `${dirName}-mp3`)
-          samplesMaps.set(key, map)
-        }),
-      )
-
-      // ── 5. Offline render ────────────────────────────────────────────────
-
-      // Track blob URLs we create so we can revoke them after rendering
-      const blobUrls: string[] = []
-      // Collect blob URLs from samples maps to revoke later
-      for (const map of samplesMaps.values()) {
-        for (const url of Object.values(map)) {
-          if (url.startsWith('blob:')) {
-            blobUrls.push(url)
+        let lastBeat = 0
+        for (let ti = 0; ti < tracks.length; ti++) {
+          if (!isTrackAudible(tracks, ti)) continue
+          const track = tracks[ti]
+          for (const note of track.notes) {
+            const end = note.start + note.duration
+            if (end > lastBeat) lastBeat = end
           }
         }
-      }
 
-      // ── 5b. Pre-decode samples into AudioBuffers ──────────────────────────
-      exportStatus.value = t('audio.midi.export_loading_samples')
-      updateTask(0.1, t('audio.midi.export_loading_samples'))
+        if (lastBeat === 0) {
+          throw new Error('No audible notes')
+        }
 
-      const audioCtx = Tone.getContext().rawContext as AudioContext
+        // Add 2 beats for reverb tail
+        const durationSeconds = (lastBeat + 2) * (60 / tempo)
 
-      // Decode all sample blob URLs into AudioBuffers (once, shared across segments)
-      const decodedBuffers = new Map<string, { midi: number; buffer: AudioBuffer }[]>()
+        // ── 2. Fetch soundfonts path ───────────────────────────────────────
 
-      for (const [key, samplesMap] of samplesMaps.entries()) {
-        const notes: { midi: number; buffer: AudioBuffer }[] = []
+        const soundfontsInfo = await _fetchSoundfontsInfo()
+        const soundfontsPath = soundfontsInfo.exists ? soundfontsInfo.path : null
+
+        if (!soundfontsPath && !soundfontsInfo.exists) {
+          console.warn('[MidiExport] Soundfonts not available — export may be silent')
+        }
+
+        // ── 3. Collect unique instruments needed ───────────────────────────
+
+        const instrumentKeys = new Map<
+          string,
+          { dirName: string; trackIndices: number[] }
+        >()
+
+        for (let ti = 0; ti < tracks.length; ti++) {
+          if (!isTrackAudible(tracks, ti)) continue
+          const track = tracks[ti]
+          const key = track.isDrum ? 'drum' : `inst_${track.instrument}`
+          const dirName = track.isDrum
+            ? GM_DRUM_SOUNDFONT_NAME
+            : GM_SOUNDFONT_NAMES[track.instrument]
+
+          if (!dirName) {
+            console.warn(`[MidiExport] No soundfont for program ${track.instrument}`)
+            continue
+          }
+
+          if (!instrumentKeys.has(key)) {
+            instrumentKeys.set(key, { dirName, trackIndices: [] })
+          }
+          instrumentKeys.get(key)!.trackIndices.push(ti)
+        }
+
+        // ── 4. Pre-build samples maps ──────────────────────────────────────
+
+        aimAt(0.06, t('audio.midi.export_loading_samples'))
+
+        const samplesMaps = new Map<string, Record<string, string>>()
+
         await Promise.all(
-          Object.entries(samplesMap).map(async ([noteName, url]) => {
-            try {
-              const resp = await fetch(url)
-              const arrayBuf = await resp.arrayBuffer()
-              const audioBuf = await audioCtx.decodeAudioData(arrayBuf.slice(0))
-              const midi = Tone.Frequency(noteName).toMidi()
-              notes.push({ midi, buffer: audioBuf })
-            } catch { /* skip */ }
-          })
+          Array.from(instrumentKeys.entries()).map(async ([key, { dirName }]) => {
+            const map = key === 'drum'
+              ? await _buildDrumSamplesMap(soundfontsPath, `${dirName}-mp3`)
+              : await _buildSamplesMap(soundfontsPath, `${dirName}-mp3`)
+            samplesMaps.set(key, map)
+          }),
         )
-        notes.sort((a, b) => a.midi - b.midi)
-        decodedBuffers.set(key, notes)
-      }
 
-      // ── 5c. Chunked Tone.Offline rendering with effects ─────────────────────
-      // Render in 10-second segments to keep node count manageable.
-      // Uses Tone.Offline so we get Tone.js effects (EQ, Compressor, Delay, Reverb).
-      exportStatus.value = t('audio.midi.export_rendering')
-      updateTask(0.1, t('audio.midi.export_rendering'))
+        // ── 5. Offline render ──────────────────────────────────────────────
 
-      const SAMPLE_RATE = 44100
-      const SEGMENT_DURATION = 60
-      const totalSegments = Math.ceil(durationSeconds / SEGMENT_DURATION)
-      const secondsPerBeat = 60 / tempo
-      const renderedSegments: Float32Array[][] = []
+        // Collect blob URLs to revoke after rendering
+        const blobUrls: string[] = []
+        for (const map of samplesMaps.values()) {
+          for (const url of Object.values(map)) {
+            if (url.startsWith('blob:')) {
+              blobUrls.push(url)
+            }
+          }
+        }
 
-      for (let seg = 0; seg < totalSegments; seg++) {
-        const segStart = seg * SEGMENT_DURATION
-        const segEnd = Math.min((seg + 1) * SEGMENT_DURATION, durationSeconds)
-        const segLen = segEnd - segStart
+        // ── 5b. Pre-decode samples into AudioBuffers ────────────────────────
 
-        const segBuffer = await Tone.Offline(async ({ transport }) => {
-          // Effects chain (Gain/Panner → EQ → Compressor → Delay → Reverb → Destination)
-          const reverb = new Tone.Reverb({ decay: effectsState.reverb.decay, wet: effectsState.reverb.wet })
-          await reverb.ready
-          const delay = new Tone.FeedbackDelay({ delayTime: effectsState.delay.time, feedback: effectsState.delay.feedback, wet: effectsState.delay.wet })
-          const compressor = new Tone.Compressor({ threshold: effectsState.compressor.threshold, ratio: effectsState.compressor.ratio })
-          const eq = new Tone.EQ3({ low: effectsState.eq.low, mid: effectsState.eq.mid, high: effectsState.eq.high })
+        aimAt(0.09, t('audio.midi.export_loading_samples'))
 
-          eq.connect(compressor)
-          compressor.connect(delay)
-          delay.connect(reverb)
-          reverb.toDestination()
+        const audioCtx = Tone.getContext().rawContext as AudioContext
+        const decodedBuffers = new Map<string, { midi: number; buffer: AudioBuffer }[]>()
 
-          // Per-track: Sampler → Panner → Gain → EQ
-          for (let ti = 0; ti < tracks.length; ti++) {
-            if (!isTrackAudible(tracks, ti)) continue
-            const track = tracks[ti]
-            const key = track.isDrum ? 'drum' : `inst_${track.instrument}`
-            const available = decodedBuffers.get(key)
-            if (!available || available.length === 0) continue
+        for (const [key, samplesMap] of samplesMaps.entries()) {
+          const notes: { midi: number; buffer: AudioBuffer }[] = []
+          await Promise.all(
+            Object.entries(samplesMap).map(async ([noteName, url]) => {
+              try {
+                const resp = await fetch(url)
+                const arrayBuf = await resp.arrayBuffer()
+                const audioBuf = await audioCtx.decodeAudioData(arrayBuf.slice(0))
+                const midi = Tone.Frequency(noteName).toMidi()
+                notes.push({ midi, buffer: audioBuf })
+              } catch { /* skip */ }
+            })
+          )
+          notes.sort((a, b) => a.midi - b.midi)
+          decodedBuffers.set(key, notes)
+        }
 
-            const volDb = midiVolumeToDB(track.volume ?? 100)
-            const gain = new Tone.Gain(Math.pow(10, volDb / 20))
-            const panner = new Tone.Panner(midiPanToFloat(track.pan ?? 64))
-            panner.connect(gain)
-            gain.connect(eq)
+        // ── 5c. Chunked rendering with overlap crossfade ────────────────────
 
-            // Build Sampler from pre-decoded buffers
-            const sampleUrls: Record<string, string> = {}
-            for (const { midi, buffer } of available) {
-              const noteName = Tone.Frequency(midi, 'midi').toNote()
-              // Re-use the blob URL from samplesMaps (still valid)
-              const samplesMap = samplesMaps.get(key)
-              if (samplesMap && samplesMap[noteName]) {
-                sampleUrls[noteName] = samplesMap[noteName]
+        snapTo(0.10, t('audio.midi.export_rendering'))
+
+        const SAMPLE_RATE = 44100
+        const SEGMENT_DURATION = 15
+        const OVERLAP = 0.5
+        const overlapSamples = Math.round(OVERLAP * SAMPLE_RATE)
+        const secondsPerBeat = 60 / tempo
+
+        // Build segment boundaries
+        const segmentDefs: { start: number; end: number; renderStart: number; renderEnd: number }[] = []
+        for (let segStart = 0; segStart < durationSeconds; segStart += SEGMENT_DURATION) {
+          const segEnd = Math.min(segStart + SEGMENT_DURATION, durationSeconds)
+          const renderStart = segStart
+          const renderEnd = segEnd < durationSeconds ? segEnd + OVERLAP : segEnd
+          segmentDefs.push({ start: segStart, end: segEnd, renderStart, renderEnd })
+        }
+
+        const totalSegments = segmentDefs.length
+        const renderedSegments: Float32Array[][] = []
+
+        for (let seg = 0; seg < totalSegments; seg++) {
+          // Aim toward this segment's completion (leave 1% gap for smooth fill)
+          const segPctDone = 0.10 + ((seg + 0.95) / totalSegments) * 0.79
+          const renderMsg = t('audio.midi.export_rendering') + ` ${Math.round(((seg + 1) / totalSegments) * 100)}%`
+          aimAt(segPctDone, renderMsg)
+
+          const { renderStart, renderEnd } = segmentDefs[seg]
+          const renderLen = renderEnd - renderStart
+
+          const segBuffer = await Tone.Offline(async ({ transport }) => {
+            const reverb = new Tone.Reverb({ decay: effectsState.reverb.decay, wet: effectsState.reverb.wet })
+            await reverb.ready
+            const delay = new Tone.FeedbackDelay({ delayTime: effectsState.delay.time, feedback: effectsState.delay.feedback, wet: effectsState.delay.wet })
+            const compressor = new Tone.Compressor({ threshold: effectsState.compressor.threshold, ratio: effectsState.compressor.ratio })
+            const eq = new Tone.EQ3({ low: effectsState.eq.low, mid: effectsState.eq.mid, high: effectsState.eq.high })
+
+            eq.connect(compressor)
+            compressor.connect(delay)
+            delay.connect(reverb)
+            reverb.toDestination()
+
+            for (let ti = 0; ti < tracks.length; ti++) {
+              if (!isTrackAudible(tracks, ti)) continue
+              const track = tracks[ti]
+              const key = track.isDrum ? 'drum' : `inst_${track.instrument}`
+              const available = decodedBuffers.get(key)
+              if (!available || available.length === 0) continue
+
+              const volDb = midiVolumeToDB(track.volume ?? 100)
+              const gain = new Tone.Gain(Math.pow(10, volDb / 20))
+              const panner = new Tone.Panner(midiPanToFloat(track.pan ?? 64))
+              panner.connect(gain)
+              gain.connect(eq)
+
+              const sampleUrls: Record<string, string> = {}
+              for (const { midi } of available) {
+                const noteName = Tone.Frequency(midi, 'midi').toNote()
+                const samplesMap = samplesMaps.get(key)
+                if (samplesMap && samplesMap[noteName]) {
+                  sampleUrls[noteName] = samplesMap[noteName]
+                }
+              }
+
+              if (Object.keys(sampleUrls).length === 0) continue
+
+              const sampler = new Tone.Sampler({ urls: sampleUrls })
+              await Tone.loaded()
+              sampler.connect(panner)
+
+              for (const note of track.notes) {
+                const noteOnSec = note.start * secondsPerBeat
+                const noteOffSec = noteOnSec + note.duration * secondsPerBeat
+
+                if (noteOnSec >= renderEnd || noteOffSec <= renderStart) continue
+
+                const relStart = Math.max(0, noteOnSec - renderStart)
+                const relDur = Math.min(renderLen, noteOffSec - renderStart) - relStart
+                const noteName = Tone.Frequency(note.pitch, 'midi').toNote()
+                const vel = (note.velocity ?? 100) / 127
+
+                transport.schedule((time) => {
+                  sampler.triggerAttackRelease(noteName, relDur, time, vel)
+                }, relStart)
               }
             }
 
-            if (Object.keys(sampleUrls).length === 0) continue
+            transport.start()
+          }, renderLen, 2, SAMPLE_RATE)
 
-            const sampler = new Tone.Sampler({ urls: sampleUrls })
-            await Tone.loaded()
-            sampler.connect(panner)
+          const raw = segBuffer.get() as AudioBuffer
+          const channels: Float32Array[] = []
+          for (let c = 0; c < raw.numberOfChannels; c++) {
+            channels.push(new Float32Array(raw.getChannelData(c)))
+          }
+          renderedSegments.push(channels)
 
-            // Schedule notes in this segment
-            for (const note of track.notes) {
-              const noteOnSec = note.start * secondsPerBeat
-              const noteOffSec = noteOnSec + note.duration * secondsPerBeat
+          // Snap to exact milestone after segment completes
+          snapTo(0.10 + ((seg + 1) / totalSegments) * 0.80, renderMsg)
+        }
 
-              if (noteOnSec >= segEnd || noteOffSec <= segStart) continue
+        // ── 5d. Concatenate segments with crossfade ─────────────────────────
 
-              const relStart = Math.max(0, noteOnSec - segStart)
-              const relDur = Math.min(segLen, noteOffSec - segStart) - relStart
-              const noteName = Tone.Frequency(note.pitch, 'midi').toNote()
-              const vel = (note.velocity ?? 100) / 127
+        const mainSamplesPerSeg = segmentDefs.map((s) =>
+          Math.round((s.end - s.start) * SAMPLE_RATE),
+        )
+        const totalSamples = mainSamplesPerSeg.reduce((a, b) => a + b, 0)
+        const finalBuffer: Float32Array[] = [new Float32Array(totalSamples), new Float32Array(totalSamples)]
 
-              transport.schedule((time) => {
-                sampler.triggerAttackRelease(noteName, relDur, time, vel)
-              }, relStart)
+        let writeOffset = 0
+        for (let seg = 0; seg < totalSegments; seg++) {
+          const segData = renderedSegments[seg]
+          const mainLen = mainSamplesPerSeg[seg]
+
+          if (seg === 0) {
+            for (let c = 0; c < 2; c++) {
+              finalBuffer[c].set(segData[c].subarray(0, mainLen), writeOffset)
+            }
+          } else {
+            const fadeLen = Math.min(overlapSamples, mainLen, segData[0].length)
+            for (let c = 0; c < 2; c++) {
+              for (let i = 0; i < fadeLen; i++) {
+                const f = i / fadeLen
+                const prevSample = finalBuffer[c][writeOffset + i]
+                const currSample = segData[c][i]
+                finalBuffer[c][writeOffset + i] = prevSample * (1 - f) + currSample * f
+              }
+              if (mainLen > fadeLen) {
+                finalBuffer[c].set(segData[c].subarray(fadeLen, mainLen), writeOffset + fadeLen)
+              }
             }
           }
 
-          transport.start()
-        }, segLen, 2, SAMPLE_RATE)
+          const isLast = seg === totalSegments - 1
+          if (!isLast && segData[0].length > mainLen) {
+            const tailLen = Math.min(segData[0].length - mainLen, overlapSamples)
+            for (let c = 0; c < 2; c++) {
+              for (let i = 0; i < tailLen; i++) {
+                finalBuffer[c][writeOffset + mainLen + i] = segData[c][mainLen + i]
+              }
+            }
+          }
 
-        // Extract channel data
-        const raw = segBuffer.get() as AudioBuffer
-        const channels: Float32Array[] = []
-        for (let c = 0; c < raw.numberOfChannels; c++) {
-          channels.push(new Float32Array(raw.getChannelData(c)))
+          writeOffset += mainLen
         }
-        renderedSegments.push(channels)
 
-        const pct = 0.1 + ((seg + 1) / totalSegments) * 0.8
-        updateTask(pct, t('audio.midi.export_rendering') + ` ${Math.round(((seg + 1) / totalSegments) * 100)}%`)
-        exportStatus.value = t('audio.midi.export_rendering') + ` ${Math.round(((seg + 1) / totalSegments) * 100)}%`
-      }
+        const wavBuffer = {
+          numberOfChannels: 2,
+          sampleRate: SAMPLE_RATE,
+          length: totalSamples,
+          getChannelData: (c: number) => finalBuffer[c],
+        } as AudioBuffer
 
-      // ── 5d. Concatenate segments ──────────────────────────────────────────
-      const totalSamples = renderedSegments.reduce((sum, seg) => sum + seg[0].length, 0)
-      const finalBuffer: Float32Array[] = [new Float32Array(totalSamples), new Float32Array(totalSamples)]
-      let offset = 0
-      for (const seg of renderedSegments) {
-        for (let c = 0; c < 2; c++) {
-          finalBuffer[c].set(seg[c], offset)
+        const wavBlob = audioBufferToWav(wavBuffer)
+
+        for (const url of blobUrls) {
+          URL.revokeObjectURL(url)
         }
-        offset += seg[0].length
-      }
 
-      const wavBuffer = {
-        numberOfChannels: 2,
-        sampleRate: SAMPLE_RATE,
-        length: totalSamples,
-        getChannelData: (c: number) => finalBuffer[c],
-      } as AudioBuffer
+        // ── 6. Save ────────────────────────────────────────────────────────
 
-      const wavBlob = audioBufferToWav(wavBuffer)
+        const showInFolder = () => {
+          ;(window as any).electron?.showItemInFolder(outputPath)
+        }
 
-      // Revoke blob URLs now that recording is complete
-      for (const url of blobUrls) {
-        URL.revokeObjectURL(url)
-      }
+        aimAt(0.99, t('audio.midi.export_saving'))
 
-      // ── 6. Save ──────────────────────────────────────────────────────────
+        if (format === 'wav') {
+          const arrayBuf = await wavBlob.arrayBuffer()
+          await (window as any).electron.writeLocalFile(outputPath, new Uint8Array(arrayBuf))
+        } else {
+          const formData = new FormData()
+          formData.append('file', wavBlob, 'export.wav')
+          formData.append('format', format)
+          formData.append('output_path', outputPath.replace(/\\/g, '/'))
 
-      const showInFolder = () => {
-        ;(window as any).electron?.showItemInFolder(outputPath)
-      }
+          const res = await apiFetch('/audio/midi/convert', {
+            method: 'POST',
+            body: formData,
+          })
 
-      exportStatus.value = t('audio.midi.export_saving')
-      updateTask(0.92, t('audio.midi.export_saving'))
+          if (!res.ok) {
+            const errText = await res.text().catch(() => res.statusText)
+            throw new Error(`Conversion failed: ${errText}`)
+          }
+        }
 
-      if (format === 'wav') {
-        // WAV: save directly via Electron IPC
-        const arrayBuf = await wavBlob.arrayBuffer()
-        await (window as any).electron.writeLocalFile(outputPath, new Uint8Array(arrayBuf))
-      } else {
-        // Other formats: upload WAV to backend, FFmpeg converts
-        const formData = new FormData()
-        formData.append('file', wavBlob, 'export.wav')
-        formData.append('format', format)
-        formData.append('output_path', outputPath.replace(/\\/g, '/'))
-
-        const res = await apiFetch('/audio/midi/convert', {
-          method: 'POST',
-          body: formData,
+        clearInterval(animTimer)
+        setTask(1.0, t('toast.saved'), 'completed')
+        toast.show(t('toast.saved'), {
+          type: 'success',
+          icon: 'bi-check-circle',
+          action: { label: t('toast.open_folder'), callback: showInFolder },
         })
-
-        if (!res.ok) {
-          const errText = await res.text().catch(() => res.statusText)
-          throw new Error(`Conversion failed: ${errText}`)
-        }
+      } catch (err) {
+        clearInterval(animTimer)
+        console.error('[MidiExport] Export failed:', err)
+        setTask(0, String(err), 'failed')
+        toast.show(t('toast.save_failed'), { type: 'error', icon: 'bi-x-circle' })
+      } finally {
+        isExporting.value = false
+        exportStatus.value = ''
       }
+    })()
 
-      updateTask(1.0, t('toast.saved'), 'completed')
-      toast.show(t('toast.saved'), {
-        type: 'success',
-        icon: 'bi-check-circle',
-        action: { label: t('toast.open_folder'), callback: showInFolder },
-      })
-    } catch (err) {
-      console.error('[MidiExport] Export failed:', err)
-      updateTask(0, String(err), 'failed')
-      toast.show(t('toast.save_failed'), { type: 'error', icon: 'bi-x-circle' })
-    } finally {
-      isExporting.value = false
-      exportStatus.value = ''
-    }
+    return taskId
   }
 
   return {
