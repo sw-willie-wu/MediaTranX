@@ -140,7 +140,7 @@ const mediaInfoItems = computed<InfoItem[]>(() => {
     { icon: 'bi-aspect-ratio',  label: `${m.width}x${m.height}` },
     { icon: 'bi-clock',         label: formatDuration(m.duration) },
     { icon: 'bi-film',          label: m.video_codec.toUpperCase() },
-    { icon: 'bi-volume-up',     label: m.audio_codec.toUpperCase() },
+    { icon: m.audio_codec ? 'bi-volume-up' : 'bi-volume-mute', label: m.audio_codec ? m.audio_codec.toUpperCase() : 'N/A' },
     { icon: 'bi-speedometer2',  label: formatBitrate(m.bitrate) },
     { icon: 'bi-camera-reels',  label: `${m.fps.toFixed(1)} fps` },
     { icon: 'bi-hdd',           label: formatSize(m.file_size) },

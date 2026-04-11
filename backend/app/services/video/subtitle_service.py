@@ -261,9 +261,14 @@ class SubtitleService:
 
         has_translation = target_language is not None
 
-        # === Stage 1: Extract audio (0~10%) ===
+        # === Stage 0: Verify video has audio stream ===
         progress_callback(0.0, "task.progress.extracting_audio")
 
+        media_info = self._ffmpeg.get_media_info_sync(file_info.file_path)
+        if not media_info.audio_codec:
+            raise ValueError("No audio track found in video")
+
+        # === Stage 1: Extract audio (0~10%) ===
         # Create temporary audio path
         temp_audio_path = self._file_service.upload_dir / f"temp_audio_{uuid4().hex[:8]}.wav"
 
