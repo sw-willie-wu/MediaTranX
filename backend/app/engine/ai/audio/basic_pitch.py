@@ -1,8 +1,7 @@
 """
-Basic Pitch 封裝 — 音訊轉 MIDI（非鼓類音軌）
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-繼承 PackageRuntime，使用 Spotify basic-pitch（TFLite/ONNX, CPU-only）
-將音訊轉換為 MIDI note 事件
+Basic Pitch wrapper -- audio-to-MIDI (non-drum tracks).
+Inherits PackageRuntime, uses Spotify basic-pitch (TFLite/ONNX, CPU-only)
+to convert audio to MIDI note events.
 """
 from __future__ import annotations
 
@@ -22,12 +21,12 @@ logger = logging.getLogger(__name__)
 
 class BasicPitchWrapper(PackageRuntime):
     """
-    Basic Pitch 音訊轉 MIDI 封裝（繼承 PackageRuntime）
+    Basic Pitch audio-to-MIDI wrapper (inherits PackageRuntime).
 
-    職責：
-    1. 將非鼓類音軌轉換為 MIDI note 事件
-    2. 模型由 basic-pitch 套件自行管理
-    3. CPU-only，不需要 GPU
+    Responsibilities:
+    1. Convert non-drum audio tracks to MIDI note events
+    2. Model managed by the basic-pitch package itself
+    3. CPU-only, no GPU required
     """
 
     def __init__(self):
@@ -41,7 +40,7 @@ class BasicPitchWrapper(PackageRuntime):
         device: str,
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
-        """載入 basic-pitch predict 函式和內建 ONNX 模型路徑"""
+        """Load basic-pitch predict function and built-in ONNX model path."""
         from basic_pitch.inference import predict
 
         if on_progress:
@@ -52,9 +51,9 @@ class BasicPitchWrapper(PackageRuntime):
 
     def _resolve_model_path(self, model_id: str, variant: Optional[str] = None):
         """
-        解析 Basic Pitch 模型路徑
+        Resolve Basic Pitch model path.
 
-        basic-pitch 自行管理模型（內建 TFLite/ONNX），回傳 None。
+        basic-pitch manages its own model (built-in TFLite/ONNX), returns None.
         """
         family = MODELS_REGISTRY[FORMAT_PKG].get(model_id)
         if not family:
@@ -72,11 +71,11 @@ class BasicPitchWrapper(PackageRuntime):
             "vram_mb": variant_spec.get("vram_mb", 0),
         }
 
-        # basic-pitch 自行管理模型路徑，回傳 None
+        # basic-pitch manages model paths internally, return None
         return None, config
 
     def get_model_status(self) -> dict:
-        """檢查 basic-pitch 套件是否可用"""
+        """Check whether the basic-pitch package is available."""
         try:
             from basic_pitch.inference import predict  # noqa: F401
             available = True
@@ -85,7 +84,7 @@ class BasicPitchWrapper(PackageRuntime):
 
         return {
             "available": available,
-            "model_downloaded": available,  # 模型內建於套件中
+            "model_downloaded": available,  # model is built into the package
         }
 
     def audio_to_midi(
@@ -97,25 +96,25 @@ class BasicPitchWrapper(PackageRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> dict:
         """
-        將音訊轉換為 MIDI note 事件
+        Convert audio to MIDI note events.
 
         Args:
-            audio_path: 輸入音訊路徑
-            onset_threshold: onset 偵測門檻 (預設 0.3, basic-pitch 預設 0.5)
-            frame_threshold: frame 偵測門檻 (預設 0.15, basic-pitch 預設 0.3)
-            minimum_note_length: 最短音符長度 ms (預設 80, basic-pitch 預設 127.7)
-            on_progress: 進度回調
+            audio_path: Input audio path.
+            onset_threshold: Onset detection threshold (default 0.3, basic-pitch default 0.5).
+            frame_threshold: Frame detection threshold (default 0.15, basic-pitch default 0.3).
+            minimum_note_length: Minimum note length in ms (default 80, basic-pitch default 127.7).
+            on_progress: Progress callback.
 
         Returns:
-            track dict: {"name": ..., "instrument": 0, "is_drum": False, "notes": [...]}
-            每個 note: {"pitch": int, "start": float, "duration": float, "velocity": int}
+            Track dict: {"name": ..., "instrument": 0, "is_drum": False, "notes": [...]}.
+            Each note: {"pitch": int, "start": float, "duration": float, "velocity": int}.
         """
         if on_progress:
             on_progress(0.0, "task.progress.preparing_midi")
 
-        # basic-pitch 內部使用 print/logging 輸出路徑，
-        # 非 ASCII 檔名在 Windows cp950 環境會 crash。
-        # 複製到 ASCII 安全的暫存路徑再處理。
+        # basic-pitch internally uses print/logging to output paths;
+        # non-ASCII filenames crash on Windows cp950 console encoding.
+        # Copy to an ASCII-safe temp path before processing.
         src = Path(audio_path)
         safe_path: str = str(src)
         tmp_dir = None
@@ -138,7 +137,7 @@ class BasicPitchWrapper(PackageRuntime):
                 if on_progress:
                     on_progress(0.3, "task.progress.analyzing_audio")
 
-                # predict(audio_path, model_or_model_path) 回傳 (model_output, midi_data, note_events)
+                # predict(audio_path, model_or_model_path) returns (model_output, midi_data, note_events)
                 model_output, midi_data, note_events = bp["predict"](
                     safe_path,
                     bp["model_path"],
@@ -153,11 +152,11 @@ class BasicPitchWrapper(PackageRuntime):
             if tmp_dir:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
 
-        # 從音訊路徑取得 stem 名稱
+        # Get stem name from audio path
         stem_name = Path(audio_path).stem
 
-        # 轉換 note_events 為標準格式
-        # note_events 是 tuple 列表：(start_time_s, end_time_s, pitch_midi, amplitude, bends)
+        # Convert note_events to standard format
+        # note_events is a list of tuples: (start_time_s, end_time_s, pitch_midi, amplitude, bends)
         notes = []
         for event in note_events:
             start_s, end_s, pitch, amplitude = event[0], event[1], event[2], event[3]
@@ -184,13 +183,13 @@ class BasicPitchWrapper(PackageRuntime):
 
 
 # ═══════════════════════════════════════════════════════════
-# 單例工廠函數
+# Singleton factory
 # ═══════════════════════════════════════════════════════════
 _basic_pitch: Optional[BasicPitchWrapper] = None
 
 
 def get_basic_pitch() -> BasicPitchWrapper:
-    """取得 BasicPitchWrapper 單例"""
+    """Get the BasicPitchWrapper singleton."""
     global _basic_pitch
     if _basic_pitch is None:
         _basic_pitch = BasicPitchWrapper()

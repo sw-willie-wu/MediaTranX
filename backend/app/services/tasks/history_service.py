@@ -1,6 +1,6 @@
 """
-任務歷史紀錄服務
-透過 TaskHistoryDAO 持久化已完成的任務，供跨 session 查詢
+Task history service.
+Persists completed tasks via TaskHistoryDAO for cross-session queries.
 """
 import logging
 from datetime import datetime
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class TaskHistoryService:
-    """任務歷史紀錄服務"""
+    """Persistent task history service backed by TaskHistoryDAO."""
 
     def __init__(self):
         self._dao = TaskHistoryDAO()
@@ -31,7 +31,7 @@ class TaskHistoryService:
         error_code: Optional[str] = None,
         result: Optional[dict] = None,
     ) -> None:
-        """儲存已完成的任務到歷史"""
+        """Save a completed task to history."""
         self._dao.save(
             task_id=task_id,
             task_type=task_type,
@@ -51,13 +51,13 @@ class TaskHistoryService:
         page_size: int = 30,
         status: Optional[str] = None,
     ) -> dict:
-        """分頁查詢歷史紀錄"""
+        """Query history records with pagination."""
         return self._dao.query(page=page, page_size=page_size, status=status)
 
     def delete(self, task_id: str) -> bool:
-        """刪除單筆歷史紀錄"""
+        """Delete a single history record."""
         return self._dao.delete(task_id)
 
     def clear(self) -> int:
-        """清空所有歷史紀錄"""
+        """Clear all history records."""
         return self._dao.clear()

@@ -1,36 +1,36 @@
 """
-AI 模型註冊表 (Three-Layer Architecture V2)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-採用「格式優先」樹狀結構：FORMAT -> FAMILY -> SPECS
-這是系統的單一數據來源 (Single Source of Truth)
+AI model registry (Three-Layer Architecture V2).
+
+Uses a "format-first" tree structure: FORMAT -> FAMILY -> SPECS.
+This is the Single Source of Truth for the system.
 """
 
 # ═══════════════════════════════════════════════════════════
-# 格式常數 (Format Constants)
+# Format Constants
 # ═══════════════════════════════════════════════════════════
-FORMAT_PKG = "PKG"     # 套件自管模型 (Whisper, Demucs)
-FORMAT_GGUF = "GGUF"   # llama-cpp-python 單檔 (LLM)
-FORMAT_PTH = "PTH"     # PyTorch 權重檔 (CV)
-FORMAT_ONNX = "ONNX"   # ONNX Runtime (預留 DirectML 擴展)
+FORMAT_PKG = "PKG"     # Package-managed models (Whisper, Demucs)
+FORMAT_GGUF = "GGUF"   # llama-cpp-python single-file (LLM)
+FORMAT_PTH = "PTH"     # PyTorch weight files (CV)
+FORMAT_ONNX = "ONNX"   # ONNX Runtime (reserved for DirectML extension)
 
 # ═══════════════════════════════════════════════════════════
-# 插槽常數 (Slot Constants)
+# Slot Constants
 # ═══════════════════════════════════════════════════════════
 SLOT_WHISPER = "whisper"
-SLOT_LLM = "llm"      # LLM 模型共用（一次只載入一個）
-SLOT_PTH = "pth"      # PTH 模型共用（一次只載入一個）
-SLOT_DEMUCS = "demucs"  # 音源分離（一次只載入一個）
-SLOT_BASIC_PITCH = "basic_pitch"  # 音訊轉 MIDI（basic-pitch）
+SLOT_LLM = "llm"      # Shared LLM slot (only one loaded at a time)
+SLOT_PTH = "pth"      # Shared PTH slot (only one loaded at a time)
+SLOT_DEMUCS = "demucs"  # Audio source separation (only one loaded at a time)
+SLOT_BASIC_PITCH = "basic_pitch"  # Audio-to-MIDI (basic-pitch)
 SLOT_RIFE = "rife"
-SLOT_SEGMENT = "segment"  # 物件分割（MobileSAM）
+SLOT_SEGMENT = "segment"  # Object segmentation (MobileSAM)
 
 # ═══════════════════════════════════════════════════════════
-# 格式優先註冊表 (Format-First Registry)
+# Format-First Registry
 # ═══════════════════════════════════════════════════════════
 
 MODELS_REGISTRY = {
     # ───────────────────────────────────────────────────────
-    # PKG 格式：套件自管模型（Whisper、Demucs）
+    # PKG format: Package-managed models (Whisper, Demucs)
     # ───────────────────────────────────────────────────────
     FORMAT_PKG: {
         "whisper": {
@@ -76,7 +76,7 @@ MODELS_REGISTRY = {
                 },
             },
         },
-        # ▸ Demucs（音源分離）
+        # ▸ Demucs (audio source separation)
         "demucs": {
             "slot": SLOT_DEMUCS,
             "label": "HTDemucs",
@@ -93,7 +93,7 @@ MODELS_REGISTRY = {
                 },
             },
         },
-        # ▸ Basic Pitch（音訊轉 MIDI）
+        # ▸ Basic Pitch (audio-to-MIDI)
         "basic_pitch": {
             "slot": SLOT_BASIC_PITCH,
             "label": "Basic Pitch",
@@ -108,7 +108,7 @@ MODELS_REGISTRY = {
                 },
             },
         },
-        # ▸ RIFE（影片補幀）
+        # ▸ RIFE (video frame interpolation)
         "rife": {
             "slot": SLOT_RIFE,
             "label": "RIFE",
@@ -128,13 +128,13 @@ MODELS_REGISTRY = {
     },
 
     # ───────────────────────────────────────────────────────
-    # GGUF 格式：llama-server 模型（文字 + 視覺語言模型）
+    # GGUF format: llama-server models (text + vision-language models)
     # ───────────────────────────────────────────────────────
     FORMAT_GGUF: {
         "translategemma": {
             "slot": SLOT_LLM,
             "capabilities": ["text"],
-            "description": "TranslateGemma 翻譯模型",
+            "description": "TranslateGemma translation model",
             "specs": {
                 "4b": {
                     "layers": 26,
@@ -158,7 +158,7 @@ MODELS_REGISTRY = {
                             "filename": "translategemma-12b-it.Q4_K_M.gguf",
                             "size_mb": 7300,
                         },
-                        # --- 精簡：只保留 Q4_K_M，低量化品質差異大但 VRAM 省不多 ---
+                        # --- Simplified: keep only Q4_K_M; lower quants save little VRAM but degrade quality ---
                         # "Q4_K_S": {
                         #     "repo_id": "mradermacher/translategemma-12b-it-GGUF",
                         #     "filename": "translategemma-12b-it.Q4_K_S.gguf",
@@ -204,7 +204,7 @@ MODELS_REGISTRY = {
         "qwen3": {
             "slot": SLOT_LLM,
             "capabilities": ["text"],
-            "description": "Qwen3 翻譯模型",
+            "description": "Qwen3 translation model",
             "specs": {
                 "1.7b": {
                     "layers": 28,
@@ -252,7 +252,7 @@ MODELS_REGISTRY = {
                             "filename": "Qwen3-14B-Q4_K_M.gguf",
                             "size_mb": 9000,
                         },
-                        # --- 精簡：只保留 Q4_K_M，低量化品質差異大但 VRAM 省不多 ---
+                        # --- Simplified: keep only Q4_K_M; lower quants save little VRAM but degrade quality ---
                         # "Q4_K_S": {
                         #     "repo_id": "unsloth/Qwen3-14B-GGUF",
                         #     "filename": "Qwen3-14B-Q4_K_S.gguf",
@@ -283,7 +283,7 @@ MODELS_REGISTRY = {
         "qwen3vl": {
             "slot": SLOT_LLM,
             "capabilities": ["text", "vision"],
-            "description": "Qwen3-VL 視覺語言模型（OCR）",
+            "description": "Qwen3-VL vision-language model (OCR)",
             "specs": {
                 "2b": {
                     "layers": 28,
@@ -298,7 +298,7 @@ MODELS_REGISTRY = {
                             "size_mb": 1110,
                             "mmproj_size_mb": 445,
                         },
-                        # --- 精簡：小模型 Q8_0 體積大但品質提升有限 ---
+                        # --- Simplified: small model Q8_0 is large with limited quality improvement ---
                         # "Q8_0": {
                         #     "repo_id": "Qwen/Qwen3-VL-2B-Instruct-GGUF",
                         #     "filename": "Qwen3VL-2B-Instruct-Q8_0.gguf",
@@ -322,7 +322,7 @@ MODELS_REGISTRY = {
                             "size_mb": 2500,
                             "mmproj_size_mb": 454,
                         },
-                        # --- 精簡：小模型 Q8_0 體積大但品質提升有限 ---
+                        # --- Simplified: small model Q8_0 is large with limited quality improvement ---
                         # "Q8_0": {
                         #     "repo_id": "Qwen/Qwen3-VL-4B-Instruct-GGUF",
                         #     "filename": "Qwen3VL-4B-Instruct-Q8_0.gguf",
@@ -360,7 +360,7 @@ MODELS_REGISTRY = {
         "internvl2.5": {
             "slot": SLOT_LLM,
             "capabilities": ["text", "vision"],
-            "description": "InternVL2.5 視覺語言模型（OCR）",
+            "description": "InternVL2.5 vision-language model (OCR)",
             "specs": {
                 "1b": {
                     "layers": 24,
@@ -390,7 +390,7 @@ MODELS_REGISTRY = {
                             "size_mb": 2100,
                             "mmproj_size_mb": 341,
                         },
-                        # --- 精簡：小模型 Q8_0 體積大但品質提升有限 ---
+                        # --- Simplified: small model Q8_0 is large with limited quality improvement ---
                         # "Q8_0": {
                         #     "repo_id": "ggml-org/InternVL2_5-4B-GGUF",
                         #     "filename": "InternVL2_5-4B-Q8_0.gguf",
@@ -412,7 +412,7 @@ MODELS_REGISTRY = {
         "gemma3": {
             "slot": SLOT_LLM,
             "capabilities": ["text", "vision"],
-            "description": "Gemma 3 視覺語言模型（OCR）",
+            "description": "Gemma 3 vision-language model (OCR)",
             "specs": {
                 "4b": {
                     "layers": 34,
@@ -455,7 +455,7 @@ MODELS_REGISTRY = {
         "qwen3.5": {
             "slot": SLOT_LLM,
             "capabilities": ["text", "vision"],
-            "description": "Qwen3.5 多模態模型",
+            "description": "Qwen3.5 multimodal model",
             "specs": {
                 "4b": {
                     "layers": 36,
@@ -512,10 +512,10 @@ MODELS_REGISTRY = {
     },
 
     # ───────────────────────────────────────────────────────
-    # PTH 格式：PyTorch 影像處理模型
+    # PTH format: PyTorch image processing models
     # ───────────────────────────────────────────────────────
     FORMAT_PTH: {
-        # ▸ Real-ESRGAN 系列
+        # ▸ Real-ESRGAN series
         "realesrgan": {
             "slot": "realesrgan",
             "label": "Real-ESRGAN",
@@ -562,7 +562,7 @@ MODELS_REGISTRY = {
             },
         },
         
-        # ▸ SwinIR 系列
+        # ▸ SwinIR series
         "swinir": {
             "slot": "swinir",
             "label": "SwinIR",
@@ -614,9 +614,9 @@ MODELS_REGISTRY = {
             },
         },
         
-        # ▸ Real-CUGAN 系列
-        # 注意：所有變體來自同一個壓縮檔，下載後自動解壓
-        # 壓縮檔結構：updated_weights/up{2,3,4}x-latest-{variant}.pth
+        # ▸ Real-CUGAN series
+        # Note: all variants come from the same archive and are auto-extracted after download
+        # Archive structure: updated_weights/up{2,3,4}x-latest-{variant}.pth
         "real-cugan": {
             "slot": "real-cugan",
             "label": "Real-CUGAN",
@@ -644,7 +644,7 @@ MODELS_REGISTRY = {
                 #     "scale": 2,
                 #     "denoise_level": 3,
                 # },
-                # --- 精簡：conservative 已涵蓋輕降噪，no-denoise 場景極少 ---
+                # --- Simplified: conservative covers light denoising; no-denoise use case is rare ---
                 # "up2x-no-denoise": {
                 #     "url": "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip",
                 #     "filename": "real-cugan-up2x-no-denoise.pth",
@@ -666,7 +666,7 @@ MODELS_REGISTRY = {
                     "scale": 3,
                     "denoise_level": 0,
                 },
-                # --- 精簡：conservative 已涵蓋輕降噪 ---
+                # --- Simplified: conservative covers light denoising ---
                 # "up3x-no-denoise": {
                 #     "url": "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip",
                 #     "filename": "real-cugan-up3x-no-denoise.pth",
@@ -688,7 +688,7 @@ MODELS_REGISTRY = {
                     "scale": 4,
                     "denoise_level": 0,
                 },
-                # --- 精簡：conservative 已涵蓋輕降噪 ---
+                # --- Simplified: conservative covers light denoising ---
                 # "up4x-no-denoise": {
                 #     "url": "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip",
                 #     "filename": "real-cugan-up4x-no-denoise.pth",
@@ -736,7 +736,7 @@ MODELS_REGISTRY = {
             },
         },
 
-        # ▸ MobileSAM（AI 物件移除用）
+        # ▸ MobileSAM (for AI object removal)
         "mobilesam": {
             "slot": "mobilesam",
             "label": "MobileSAM",
@@ -753,7 +753,7 @@ MODELS_REGISTRY = {
             },
         },
 
-        # ▸ Waifu2x 系列
+        # ▸ Waifu2x series
         "waifu2x": {
             "slot": "waifu2x",
             "label": "Waifu2x",
@@ -806,4 +806,4 @@ MODELS_REGISTRY = {
 
 }
 
-# 模型註冊表結束
+# End of model registry

@@ -1,5 +1,5 @@
 """
-檔案處理端點
+File handling endpoints.
 """
 from typing import Optional
 
@@ -24,14 +24,14 @@ async def upload_file(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    上傳檔案
+    Upload a file.
 
     Args:
-        file: 上傳的檔案
-        source_dir: 檔案在使用者電腦上的原始目錄（由 Electron 提供）
+        file: The uploaded file
+        source_dir: Original directory on the user's machine (provided by Electron)
 
     Returns:
-        FileUploadResponse: 包含 file_id 的回應
+        FileUploadResponse containing the file_id.
     """
     content = await file.read()
     file_data = await file_service.save_upload(
@@ -60,8 +60,8 @@ async def register_local_file(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    註冊本機檔案（不複製），直接用原始路徑。
-    適用於 Electron 桌面環境，避免大檔案複製。
+    Register a local file (without copying); uses the original path directly.
+    Designed for the Electron desktop environment to avoid copying large files.
     """
     try:
         file_data = file_service.register_local_file(req.file_path)
@@ -83,10 +83,10 @@ async def get_file_info(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    取得檔案資訊
+    Get file information.
 
     Args:
-        file_id: 檔案 ID
+        file_id: File ID
     """
     file_data = file_service.get_file(file_id)
 
@@ -103,10 +103,10 @@ async def download_file(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    下載檔案
+    Download a file.
 
     Args:
-        file_id: 檔案 ID
+        file_id: File ID
     """
     file_data = file_service.get_file(file_id)
 
@@ -130,8 +130,8 @@ async def cleanup_all_files(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    清除本次 session 所有暫存與輸出檔案。
-    由 Electron 在應用程式關閉前呼叫（autoCleanTemp 設定啟用時）。
+    Clean up all temporary and output files for this session.
+    Called by Electron before the application closes (when autoCleanTemp is enabled).
     """
     count = file_service.cleanup_all()
     return {"status": "ok", "deleted": count}
@@ -144,10 +144,10 @@ async def delete_file(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    刪除檔案
+    Delete a file.
 
     Args:
-        file_id: 檔案 ID
+        file_id: File ID
     """
     if not file_service.delete_file(file_id):
         raise HTTPException(status_code=404, detail="File not found")

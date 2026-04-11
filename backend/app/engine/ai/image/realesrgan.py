@@ -1,7 +1,6 @@
 """
-Real-ESRGAN 超解析推理封裝 (Three-Layer Architecture V3)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-重構：繼承 PTHRuntime，支援 CUDA/CPU 自動切換與 DirectML 預留
+Real-ESRGAN super-resolution inference wrapper (Three-Layer Architecture V3).
+Refactored: inherits PTHRuntime, supports CUDA/CPU auto-switching and DirectML reservation.
 """
 from __future__ import annotations
 
@@ -20,12 +19,12 @@ logger = logging.getLogger(__name__)
 
 class RealESRGANWrapper(PTHRuntime):
     """
-    Real-ESRGAN 超解析封裝（繼承 PTHRuntime）
-    
-    職責：
-    1. 影像超解析推理（2x/4x）
-    2. Tile 處理（大圖分塊）
-    3. 設備自動切換由 PTHRuntime 處理
+    Real-ESRGAN super-resolution wrapper (inherits PTHRuntime).
+
+    Responsibilities:
+    1. Image super-resolution inference (2x/4x)
+    2. Tile processing (large image chunking)
+    3. Device auto-switching handled by PTHRuntime
     """
     
     def __init__(self):
@@ -40,18 +39,18 @@ class RealESRGANWrapper(PTHRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Image.Image:
         """
-        執行超解析推理
-        
+        Run super-resolution inference.
+
         Args:
-            image: 輸入影像
-            model_id: 模型變體（x2plus/x4plus/x4plus-anime）
-            scale: 放大倍數
-            on_progress: 進度回調
-            
+            image: Input image.
+            model_id: Model variant (x2plus/x4plus/x4plus-anime).
+            scale: Scale factor.
+            on_progress: Progress callback.
+
         Returns:
-            增強後的影像
+            Enhanced image.
         """
-        # 獲取 VRAM 需求並 acquire 鎖
+        # Get VRAM requirement and acquire lock
         variant_spec = MODELS_REGISTRY[FORMAT_PTH]["realesrgan"]["variants"].get(model_id)
         if not variant_spec:
             raise ValueError(f"Unknown RealESRGAN variant: {model_id}")
@@ -76,7 +75,7 @@ class RealESRGANWrapper(PTHRuntime):
             output_array = (output_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
             result = Image.fromarray(output_array)
 
-            # 釋放 GPU tensor，避免批次跑時 OOM
+            # Release GPU tensors to avoid OOM during batch processing
             del img_tensor, output_tensor
             torch.cuda.empty_cache()
 
@@ -84,12 +83,12 @@ class RealESRGANWrapper(PTHRuntime):
 
 
 # ═══════════════════════════════════════════════════════════
-# 單例工廠函數（向後兼容）
+# Singleton factory (backward compatible)
 # ═══════════════════════════════════════════════════════════
 _realesrgan: Optional[RealESRGANWrapper] = None
 
 def get_realesrgan() -> RealESRGANWrapper:
-    """取得 RealESRGANWrapper 單例"""
+    """Get the RealESRGANWrapper singleton."""
     global _realesrgan
     if _realesrgan is None:
         _realesrgan = RealESRGANWrapper()

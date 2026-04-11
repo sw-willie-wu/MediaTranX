@@ -1,8 +1,8 @@
 """
-跨層共用的檔案 domain models
+Cross-layer shared file domain models.
 
-FileData 供 services、api 層共用，
-避免 services 反向依賴 api.schemas。
+FileData is shared by services and api layers
+to avoid services depending on api.schemas.
 """
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -11,7 +11,7 @@ from typing import Optional
 
 @dataclass
 class FileData:
-    """檔案內部狀態（供 FileService 使用）"""
+    """File internal state (used by FileService)."""
     file_id: str
     filename: str
     original_filename: str

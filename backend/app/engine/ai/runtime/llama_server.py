@@ -1,6 +1,6 @@
 """
-LlamaServerRuntime - llama-server subprocess 執行器
-取代 GGUFRuntime，透過 HTTP API 支援文字 LLM 與視覺語言模型（VLM）
+LlamaServerRuntime - llama-server subprocess executor.
+Replaces GGUFRuntime; supports text LLM and vision language models (VLM) via HTTP API.
 """
 import json
 import logging
@@ -15,7 +15,7 @@ from .base import BaseRuntime
 
 logger = logging.getLogger(__name__)
 
-LLAMA_SERVER_STARTUP_TIMEOUT = 120  # 秒
+LLAMA_SERVER_STARTUP_TIMEOUT = 120  # seconds
 
 
 def _find_free_port(start: int = 18080, end: int = 18200) -> int:
@@ -23,19 +23,19 @@ def _find_free_port(start: int = 18080, end: int = 18200) -> int:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if s.connect_ex(("127.0.0.1", port)) != 0:
                 return port
-    raise RuntimeError("找不到可用的 port 給 llama-server")
+    raise RuntimeError("No available port found for llama-server")
 
 
 class LlamaServerRuntime(BaseRuntime):
     """
-    llama-server subprocess 執行器
+    llama-server subprocess executor.
 
-    _load_model_impl() 啟動 llama-server subprocess，等待就緒後回傳 self。
-    acquire() yields self，外部可直接呼叫 self.chat()。
-    _unload_model_impl() 終止 subprocess。
+    _load_model_impl() starts a llama-server subprocess and waits until ready.
+    acquire() yields self so callers can invoke self.chat() directly.
+    _unload_model_impl() terminates the subprocess.
 
-    FORMAT_GGUF 同時支援文字 LLM 與視覺語言模型（VLM）。
-    視覺模型在 config 中帶有 mmproj_path，啟動時自動加入 --mmproj 參數。
+    FORMAT_GGUF supports both text LLM and vision language models (VLM).
+    Vision models carry mmproj_path in config; --mmproj is added at startup automatically.
     """
 
     def __init__(self, slot: str):
@@ -45,7 +45,7 @@ class LlamaServerRuntime(BaseRuntime):
         self._log_file = None
 
     # ─────────────────────────────────────────────
-    # BaseRuntime 介面實作
+    # BaseRuntime interface implementation
     # ─────────────────────────────────────────────
 
     def _load_model_impl(
@@ -60,14 +60,14 @@ class LlamaServerRuntime(BaseRuntime):
         if on_progress:
             on_progress(0.05, "task.progress.preparing_llama")
 
-        # 找 llama-server 執行檔
+        # Locate llama-server executable
         llama_dir = SETTINGS.path.llama
         exe_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
         server_exe = llama_dir / exe_name
         if not server_exe.exists():
             raise FileNotFoundError(
-                f"llama-server 未找到：{server_exe}\n"
-                "請前往設定頁面重新安裝 AI 核心。"
+                f"llama-server not found: {server_exe}\n"
+                "Please go to Settings and re-install the AI core."
             )
 
         self._port = _find_free_port()
@@ -115,7 +115,7 @@ class LlamaServerRuntime(BaseRuntime):
         if on_progress:
             on_progress(1.0, "task.progress.model_loaded")
 
-        return self  # acquire() 會 yield self，外部可呼叫 chat()
+        return self  # acquire() yields self so callers can invoke chat()
 
     def _unload_model_impl(self) -> None:
         if self._process is not None:
@@ -146,7 +146,7 @@ class LlamaServerRuntime(BaseRuntime):
         raise ValueError(f"Unknown model for LlamaServerRuntime: {model_id}")
 
     # ─────────────────────────────────────────────
-    # 推理 API
+    # Inference API
     # ─────────────────────────────────────────────
 
     def chat(
@@ -157,16 +157,16 @@ class LlamaServerRuntime(BaseRuntime):
         stop: Optional[list[str]] = None,
     ) -> str:
         """
-        呼叫 llama-server /v1/chat/completions
+        Call llama-server /v1/chat/completions.
 
         Returns:
-            模型回應的文字內容（已 strip）
+            The model response text (stripped).
         """
         import urllib.error
         import urllib.request
 
         if not self._port:
-            raise RuntimeError("llama-server 尚未啟動，請先呼叫 acquire()")
+            raise RuntimeError("llama-server not started; call acquire() first")
 
         payload: dict = {
             "model": "local",
@@ -204,7 +204,7 @@ class LlamaServerRuntime(BaseRuntime):
         return re.sub(r'<think>[\s\S]*?</think>\s*', '', text).strip()
 
     # ─────────────────────────────────────────────
-    # 內部路徑解析
+    # Internal path resolution
     # ─────────────────────────────────────────────
 
     def _resolve_gguf_path(self, model_id: str, variant: Optional[str]):
@@ -231,8 +231,8 @@ class LlamaServerRuntime(BaseRuntime):
         model_path = self._manager.get_model_path(model_id, f"{size}:{quant}")
         if not model_path:
             raise FileNotFoundError(
-                f"模型尚未下載：{model_id}/{size}/{quant}。"
-                "請前往「AI 模組管理」下載後再試。"
+                f"Model not downloaded: {model_id}/{size}/{quant}. "
+                "Please download it from AI Module Management first."
             )
 
         config = {
@@ -250,15 +250,15 @@ class LlamaServerRuntime(BaseRuntime):
             mmproj_path = base_dir / variant_spec["mmproj_filename"]
             if not mmproj_path.exists():
                 raise FileNotFoundError(
-                    f"mmproj 尚未下載：{model_id}/{size}/{quant}。"
-                    "請前往「AI 模組管理」下載後再試。"
+                    f"mmproj not downloaded: {model_id}/{size}/{quant}. "
+                    "Please download it from AI Module Management first."
                 )
             config["mmproj_path"] = mmproj_path
 
         return model_path, config
 
     # ─────────────────────────────────────────────
-    # 內部工具
+    # Internal utilities
     # ─────────────────────────────────────────────
 
     def _wait_ready(
@@ -274,7 +274,7 @@ class LlamaServerRuntime(BaseRuntime):
         while time.time() < deadline:
             if self._process and self._process.poll() is not None:
                 raise RuntimeError(
-                    f"llama-server 意外退出 (code {self._process.returncode})"
+                    f"llama-server exited unexpectedly (code {self._process.returncode})"
                 )
             try:
                 url = f"http://127.0.0.1:{self._port}/health"
@@ -294,4 +294,4 @@ class LlamaServerRuntime(BaseRuntime):
                 )
             time.sleep(0.5)
 
-        raise TimeoutError(f"llama-server 啟動超時 ({timeout}s)")
+        raise TimeoutError(f"llama-server startup timed out ({timeout}s)")

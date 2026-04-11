@@ -1,8 +1,8 @@
 """
-API 層 Pydantic 模型定義
+API-layer Pydantic model definitions.
 
-TaskStatus 和 domain dataclasses 定義於 app.models，
-此處僅放 API 序列化用的 Pydantic models。
+TaskStatus and domain dataclasses are defined in app.models;
+this module contains only Pydantic models for API serialization.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def _serialize_dt(v: datetime) -> str:
 
 
 class TaskResponse(BaseModel):
-    """任務 API 回應模型"""
+    """Task API response model."""
     task_id: str
     task_type: str
     status: TaskStatus = TaskStatus.PENDING
@@ -52,7 +52,7 @@ class TaskResponse(BaseModel):
 
 
 class ProgressUpdate(BaseModel):
-    """進度更新模型（用於 SSE）"""
+    """Progress update model (for SSE)."""
     task_id: str
     progress: float = Field(ge=0.0, le=1.0)
     stage: str = "processing"
@@ -63,7 +63,7 @@ class ProgressUpdate(BaseModel):
 
 
 class FileInfo(BaseModel):
-    """檔案 API 回應模型"""
+    """File API response model."""
     file_id: str
     filename: str
     original_filename: str
@@ -92,7 +92,7 @@ class FileInfo(BaseModel):
 
 
 class FileUploadResponse(BaseModel):
-    """檔案上傳回應"""
+    """File upload response."""
     file_id: str
     filename: str
     file_size: int
@@ -100,7 +100,7 @@ class FileUploadResponse(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    """錯誤回應模型"""
+    """Error response model."""
     error: str
     detail: Optional[str] = None
     code: Optional[str] = None

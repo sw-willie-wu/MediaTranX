@@ -1,8 +1,8 @@
 """
 Google Gemini Provider
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-透過 Google Gemini REST API 存取 Gemini 系列模型。
-API 文件：https://ai.google.dev/api
+Access Gemini-series models via Google Gemini REST API.
+API docs: https://ai.google.dev/api
 """
 from __future__ import annotations
 
@@ -18,29 +18,29 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com"
 
-# ── 過濾規則 ──
-# 只保留通用 LLM 模型，排除特殊用途和重複變體
+# ── Filter rules ──
+# Keep only general-purpose LLM models; exclude special-purpose and duplicate variants.
 #
-# 保留的模型：
+# Kept models:
 #   gemini-3.1-pro-preview        (text, vision)
 #   gemini-3-flash-preview        (text, vision)
 #   gemini-2.5-flash              (text, vision)
 #   gemini-2.5-pro                (text, vision)
 #
-# 排除的模型：
-#   *-image-*                     圖片生成（非 LLM）
-#   *-native-audio-*              語音對話
-#   *-tts*                        語音合成
-#   *-lite*                       精簡版（有主版本就夠）
-#   *-computer-use-*              UI 自動化
-#   *embedding*                   向量嵌入
-#   *deep-research*               研究 agent
-#   *robotics*                    機器人
-#   *veo*                         影片生成
-#   *lyria*                       音樂生成
-#   *imagen*                      圖片生成
-#   *custom-tools*                工具特化版
-#   *aqa*, *bisheng*, *text-*     舊版/內部模型
+# Excluded models:
+#   *-image-*                     Image generation (not LLM)
+#   *-native-audio-*              Voice conversation
+#   *-tts*                        Text-to-speech
+#   *-lite*                       Lite variant (main version suffices)
+#   *-computer-use-*              UI automation
+#   *embedding*                   Vector embedding
+#   *deep-research*               Research agent
+#   *robotics*                    Robotics
+#   *veo*                         Video generation
+#   *lyria*                       Music generation
+#   *imagen*                      Image generation
+#   *custom-tools*                Tool-specialized variant
+#   *aqa*, *bisheng*, *text-*     Legacy/internal models
 _HIDDEN_KEYWORDS = [
     "embedding", "aqa", "bisheng", "text-",
     "-image-", "-image", "imagen",
@@ -55,22 +55,22 @@ class GeminiProvider(RemoteProvider):
     """
     Google Gemini REST API Provider
 
-    支援：
-    - 連線檢查（GET /v1beta/models）
-    - 模型列舉（GET /v1beta/models）
-    - 文字對話（POST /v1beta/models/{model}:generateContent）
+    Supports:
+    - Connection check (GET /v1beta/models)
+    - Model listing (GET /v1beta/models)
+    - Text chat (POST /v1beta/models/{model}:generateContent)
     """
 
     def __init__(self, endpoint: str = DEFAULT_GEMINI_ENDPOINT, api_key: Optional[str] = None):
         super().__init__(endpoint, api_key)
 
     def _api_url(self, path: str) -> str:
-        """建立帶 API key 的 URL"""
+        """Build a URL with the API key."""
         sep = "&" if "?" in path else "?"
         return f"{self.endpoint}{path}{sep}key={self.api_key}" if self.api_key else f"{self.endpoint}{path}"
 
     def connect(self) -> bool:
-        """檢查 API key 是否有效"""
+        """Check if the API key is valid."""
         try:
             url = self._api_url("/v1beta/models?pageSize=1")
             req = urllib.request.Request(url, method="GET")
@@ -87,7 +87,7 @@ class GeminiProvider(RemoteProvider):
             return False
 
     def list_models(self) -> list[RemoteModel]:
-        """列舉可用模型（分頁取全部）"""
+        """List available models (paginated, fetches all)."""
         try:
             all_models: list[dict] = []
             page_token = ""
@@ -104,7 +104,7 @@ class GeminiProvider(RemoteProvider):
                 if not page_token:
                     break
 
-            # 過濾 + 去重
+            # Filter + deduplicate
             seen: dict[str, RemoteModel] = {}
             for m in all_models:
                 name = m.get("name", "")  # e.g. "models/gemini-2.0-flash"
@@ -112,11 +112,11 @@ class GeminiProvider(RemoteProvider):
 
                 model_lower = model_id.lower()
 
-                # 過濾特殊用途變體
+                # Filter out special-purpose variants
                 if any(kw in model_lower for kw in _HIDDEN_KEYWORDS):
                     continue
 
-                # 去重：去掉版本/日期後綴
+                # Deduplicate: strip version/date suffixes
                 family_key = self._model_family_key(model_id)
                 if family_key in seen:
                     continue
@@ -144,7 +144,7 @@ class GeminiProvider(RemoteProvider):
         temperature: float = 0.1,
     ) -> str:
         """Gemini generateContent"""
-        # 轉換 messages 到 Gemini 格式
+        # Convert messages to Gemini format
         contents = []
         for msg in messages:
             role = "user" if msg["role"] == "user" else "model"
@@ -154,12 +154,12 @@ class GeminiProvider(RemoteProvider):
             if isinstance(content, str):
                 parts.append({"text": content})
             elif isinstance(content, list):
-                # 支援多部分 content（text + image）
+                # Support multi-part content (text + image)
                 for part in content:
                     if part.get("type") == "text":
                         parts.append({"text": part["text"]})
                     elif part.get("type") == "image":
-                        # 自訂格式：{"type": "image", "mime_type": ..., "data": base64}
+                        # Custom format: {"type": "image", "mime_type": ..., "data": base64}
                         parts.append({
                             "inline_data": {
                                 "mime_type": part["mime_type"],
@@ -202,7 +202,7 @@ class GeminiProvider(RemoteProvider):
 
     @staticmethod
     def _parse_error(status: int, body: str):
-        """解析 Gemini API 錯誤，回傳 RemoteApiError"""
+        """Parse Gemini API error and return a RemoteApiError."""
         from app.handler.exceptions import RemoteApiError
         body_lower = body.lower()
         if status == 429 or "quota" in body_lower or "resource_exhausted" in body_lower:
@@ -218,12 +218,12 @@ class GeminiProvider(RemoteProvider):
     @staticmethod
     def _methods_to_capabilities(model_id: str, methods: list[str]) -> list[str]:
         """
-        從 supportedGenerationMethods 推斷 capabilities
+        Infer capabilities from supportedGenerationMethods.
 
-        常見 methods：
-        - generateContent → text
-        - generateMessage → text (legacy)
-        - embedContent → embedding
+        Common methods:
+        - generateContent -> text
+        - generateMessage -> text (legacy)
+        - embedContent -> embedding
         """
         caps = []
 
@@ -233,7 +233,7 @@ class GeminiProvider(RemoteProvider):
         if "embedContent" in methods or "embedText" in methods:
             caps.append("embedding")
 
-        # Gemini Pro Vision / Flash 等支援圖片
+        # Gemini Pro Vision / Flash etc. support images
         model_lower = model_id.lower()
         if any(kw in model_lower for kw in ["flash", "pro", "ultra", "2.0", "2.5"]):
             if "text" in caps:
@@ -246,18 +246,18 @@ class GeminiProvider(RemoteProvider):
 
     @staticmethod
     def _model_family_key(model_id: str) -> str:
-        """去掉版本/日期後綴：
-        gemini-2.0-flash-001 → gemini-2.0-flash
-        gemini-3.1-pro-preview-05-20 → gemini-3.1-pro-preview
+        """Strip version/date suffixes:
+        gemini-2.0-flash-001 -> gemini-2.0-flash
+        gemini-3.1-pro-preview-05-20 -> gemini-3.1-pro-preview
         """
         import re
-        # 去掉尾部的 -001 或 -05-20 日期後綴
+        # Remove trailing -001 or -05-20 date suffixes
         key = re.sub(r'-\d{2,4}(-\d{2}){0,2}$', '', model_id)
         return key
 
 
 # ═══════════════════════════════════════════════════════════
-# 單例工廠函數
+# Singleton factory
 # ═══════════════════════════════════════════════════════════
 _gemini: Optional[GeminiProvider] = None
 
@@ -266,7 +266,7 @@ def get_gemini_provider(
     endpoint: str = DEFAULT_GEMINI_ENDPOINT,
     api_key: Optional[str] = None,
 ) -> GeminiProvider:
-    """取得 GeminiProvider 單例"""
+    """Get the GeminiProvider singleton."""
     global _gemini
     if _gemini is None or _gemini.endpoint != endpoint or _gemini.api_key != api_key:
         _gemini = GeminiProvider(endpoint, api_key)

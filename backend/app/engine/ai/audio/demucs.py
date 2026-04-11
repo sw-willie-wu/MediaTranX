@@ -1,8 +1,7 @@
 """
-Demucs 音源分離模組
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-繼承 PackageRuntime，使用 demucs 套件進行 6 軌音源分離
-（vocals, drums, bass, guitar, piano, other）
+Demucs audio source separation module.
+Inherits PackageRuntime, uses the demucs package for 6-stem source separation
+(vocals, drums, bass, guitar, piano, other).
 """
 from __future__ import annotations
 
@@ -20,12 +19,12 @@ logger = logging.getLogger(__name__)
 
 class DemucsWrapper(PackageRuntime):
     """
-    Demucs 音源分離封裝（繼承 PackageRuntime）
+    Demucs audio source separation wrapper (inherits PackageRuntime).
 
-    職責：
-    1. 6 軌音源分離（vocals, drums, bass, guitar, piano, other）
-    2. 模型由 demucs 套件自行管理載入
-    3. 設備自動切換由 PackageRuntime 處理
+    Responsibilities:
+    1. 6-stem source separation (vocals, drums, bass, guitar, piano, other)
+    2. Model loading managed by the demucs package itself
+    3. Device auto-switching handled by PackageRuntime
     """
 
     def __init__(self):
@@ -39,7 +38,7 @@ class DemucsWrapper(PackageRuntime):
         device: str,
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
-        """使用 demucs.api.Separator 載入模型"""
+        """Load model using demucs.api.Separator."""
         import functools
         from demucs.api import Separator
         from app.init.configs import SETTINGS
@@ -49,14 +48,14 @@ class DemucsWrapper(PackageRuntime):
 
         model_name = config.get("model_name", "htdemucs_6s")
 
-        # 將 torch hub cache 指向 models/demucs/，讓 checkpoint 統一存放
+        # Point torch hub cache to models/demucs/ for unified checkpoint storage
         models_dir = SETTINGS.path.models
         models_dir.mkdir(parents=True, exist_ok=True)
         hub_dir = str(models_dir / SLOT_DEMUCS)
         original_hub_dir = torch.hub.get_dir()
         torch.hub.set_dir(hub_dir)
 
-        # PyTorch 2.6+ 預設 weights_only=True，demucs checkpoint 需要 weights_only=False
+        # PyTorch 2.6+ defaults to weights_only=True; demucs checkpoints require weights_only=False
         _original_load = torch.load
         torch.load = functools.partial(_original_load, weights_only=False)
         try:
@@ -75,10 +74,10 @@ class DemucsWrapper(PackageRuntime):
 
     def _resolve_model_path(self, model_id: str, variant: Optional[str] = None):
         """
-        解析 Demucs 模型路徑
+        Resolve Demucs model path.
 
-        Demucs 模型由套件自行下載到 repo 目錄，
-        這裡回傳 models/demucs/ 作為 repo 目錄。
+        Demucs models are downloaded by the package to a repo directory;
+        returns models/demucs/ as the repo directory.
         """
         family = MODELS_REGISTRY[FORMAT_PKG].get(model_id)
         if not family:
@@ -96,11 +95,11 @@ class DemucsWrapper(PackageRuntime):
             "sources": variant_spec.get("sources", []),
         }
 
-        # demucs 自行管理模型路徑（torch hub cache），回傳 None
+        # demucs manages model paths internally (torch hub cache), return None
         return None, config
 
     def get_model_status(self, variant: str = "htdemucs_6s") -> dict:
-        """檢查模型是否可用（demucs 套件 + torch hub cache 中有 checkpoint）"""
+        """Check model availability (demucs package + checkpoint in torch hub cache)."""
         family = MODELS_REGISTRY[FORMAT_PKG].get("demucs")
         if not family:
             return {"available": False, "model_downloaded": False}
@@ -109,14 +108,14 @@ class DemucsWrapper(PackageRuntime):
         if not variant_spec:
             return {"available": False, "model_downloaded": False}
 
-        # 檢查 demucs 套件是否已安裝
+        # Check if demucs package is installed
         try:
             from demucs.api import Separator  # noqa: F401
             available = True
         except (ImportError, ModuleNotFoundError):
             available = False
 
-        # 檢查 models/demucs/checkpoints/ 是否有模型 checkpoint
+        # Check if models/demucs/checkpoints/ has model checkpoint
         model_downloaded = False
         try:
             from app.init.configs import SETTINGS
@@ -139,13 +138,13 @@ class DemucsWrapper(PackageRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> tuple[Dict[str, Any], int]:
         """
-        執行音源分離
+        Execute audio source separation.
 
         Args:
-            audio_path: 輸入音訊路徑
-            variant: 模型變體
-            stems: 要分離的音軌名稱（None=全部）
-            on_progress: 進度回調
+            audio_path: Input audio path.
+            variant: Model variant.
+            stems: Stem names to separate (None=all).
+            on_progress: Progress callback.
 
         Returns:
             ({stem_name: tensor}, sample_rate)
@@ -165,15 +164,15 @@ class DemucsWrapper(PackageRuntime):
             if on_progress:
                 on_progress(0.3, "task.progress.separating")
 
-            # 設定 callback 讓推論過程中能回報進度（用於 cancel check）
+            # Set callback for progress reporting during inference (used for cancel check)
             if on_progress:
                 def _progress_callback(state: dict):
-                    # Demucs callback 在每個 segment 推論後呼叫
-                    # 呼叫 on_progress 觸發 TaskManager 的 cancel check
+                    # Demucs callback is called after each segment inference
+                    # Calling on_progress triggers TaskManager's cancel check
                     on_progress(0.5, "task.progress.separating")
                 separator._callback = _progress_callback
 
-            # Separator.separate_audio_file 處理：讀取、resample、分段、推論
+            # Separator.separate_audio_file handles: read, resample, segment, infer
             origin, separated = separator.separate_audio_file(audio_path)
 
             sample_rate = separator.samplerate
@@ -181,7 +180,7 @@ class DemucsWrapper(PackageRuntime):
             if on_progress:
                 on_progress(0.9, "task.progress.processing_results")
 
-        # 篩選指定的 stems
+        # Filter specified stems
         result = {}
         for source_name in all_sources:
             if stems and source_name not in stems:
@@ -196,13 +195,13 @@ class DemucsWrapper(PackageRuntime):
 
 
 # ═══════════════════════════════════════════════════════════
-# 單例工廠函數
+# Singleton factory
 # ═══════════════════════════════════════════════════════════
 _demucs: Optional[DemucsWrapper] = None
 
 
 def get_demucs() -> DemucsWrapper:
-    """取得 DemucsWrapper 單例"""
+    """Get the DemucsWrapper singleton."""
     global _demucs
     if _demucs is None:
         _demucs = DemucsWrapper()

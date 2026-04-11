@@ -1,10 +1,10 @@
 """
-批次翻譯工具函式
+Batch translation utility functions.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-提供 SRT 格式批次翻譯，供各 service 共用。
-支援雲端（RemoteProvider）和本地（LlamaServerRuntime）兩種後端。
+Provides SRT-format batch translation, shared across services.
+Supports both cloud (RemoteProvider) and local (LlamaServerRuntime) backends.
 
-所有翻譯統一使用 SRT 格式（靠編號對齊，比逐行 split 更穩定）。
+All translations use SRT format (aligned by index, more stable than line-split).
 """
 from __future__ import annotations
 
@@ -16,25 +16,25 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# 本地 LLM：context window 小（~8K），分小批
+# Local LLM: small context window (~8K), use small batches
 LOCAL_BATCH_SIZE = 5
 LOCAL_TEXT_CHUNK_SIZE = 1500
 
-# 雲端每批最大 token 數估算（含 prompt 開銷，留 buffer 給 output）
-# 粗估：1 token ≈ 4 chars (英文) / 1.5 chars (CJK)，取保守值 2 chars/token
+# Estimated max input tokens per cloud batch (including prompt overhead, buffer for output)
+# Rough estimate: 1 token ~ 4 chars (English) / 1.5 chars (CJK), using conservative 2 chars/token
 _CLOUD_MAX_INPUT_TOKENS = {
-    "ollama":  3000,    # Ollama 模型通常 4K~8K context
-    "default": 30000,   # OpenAI 128K / Gemini 1M，留大量 buffer 給 output
+    "ollama":  3000,    # Ollama models typically have 4K~8K context
+    "default": 30000,   # OpenAI 128K / Gemini 1M, large buffer for output
 }
 
 
 def _estimate_tokens(text: str) -> int:
-    """粗估 token 數（保守：2 chars/token）"""
+    """Rough token count estimate (conservative: 2 chars/token)."""
     return len(text) // 2
 
 
 def _calc_cloud_srt_batch_size(prov, seg_dicts: list[dict]) -> int:
-    """根據 provider 和段落內容動態計算 SRT 批次大小"""
+    """Dynamically calculate SRT batch size based on provider and segment content."""
     provider_name = type(prov).__name__.lower().replace("provider", "")
     max_tokens = _CLOUD_MAX_INPUT_TOKENS.get(provider_name, _CLOUD_MAX_INPUT_TOKENS["default"])
     logger.debug(f"Cloud batch calc: provider={provider_name}, max_tokens={max_tokens}, segments={len(seg_dicts)}")
@@ -42,28 +42,28 @@ def _calc_cloud_srt_batch_size(prov, seg_dicts: list[dict]) -> int:
     if not seg_dicts:
         return 1
 
-    # 估算平均每段的 token 數
-    sample = seg_dicts[:20]  # 取前 20 段估算
+    # Estimate average tokens per segment
+    sample = seg_dicts[:20]  # Sample first 20 segments
     avg_chars = sum(len(s.get("text", "")) for s in sample) / len(sample)
-    # SRT 格式每段額外開銷：編號 + 時間軸 ≈ 40 chars
+    # SRT format overhead per segment: index + timecode ~ 40 chars
     avg_tokens_per_seg = int((avg_chars + 40) / 2)
 
     if avg_tokens_per_seg <= 0:
         return len(seg_dicts)
 
-    # prompt 模板開銷 ≈ 500 tokens
+    # Prompt template overhead ~ 500 tokens
     batch_size = max(1, (max_tokens - 500) // avg_tokens_per_seg)
-    # 上限：不超過總段數
+    # Cap: do not exceed total segment count
     result = min(batch_size, len(seg_dicts))
     logger.info(f"Cloud SRT batch_size={result} (avg_tokens/seg={avg_tokens_per_seg})")
     return result
 
 
 def _get_cloud_text_chunk_size(prov) -> int:
-    """根據 provider 取得純文字翻譯的 chunk 大小（字元數）"""
+    """Get plain-text translation chunk size (in characters) based on provider."""
     provider_name = type(prov).__name__.lower().replace("provider", "")
     max_tokens = _CLOUD_MAX_INPUT_TOKENS.get(provider_name, _CLOUD_MAX_INPUT_TOKENS["default"])
-    # 留一半給 output，再乘 2 chars/token
+    # Reserve half for output, multiply by 2 chars/token
     return max(1000, (max_tokens // 2) * 2)
 
 
@@ -72,11 +72,11 @@ def get_cloud_provider(
     conn_id: Optional[int],
     remote_model: str,
 ) -> "RemoteProvider":
-    """取得雲端 provider 實例"""
+    """Get a cloud provider instance."""
     from app.init.container import get_container
     prov = get_container().remote_service().get_provider_for_connection(conn_id, provider)
     if prov is None:
-        raise RuntimeError(f"找不到可用的 {provider} 連線")
+        raise RuntimeError(f"No available {provider} connection found")
     return prov
 
 
@@ -91,10 +91,11 @@ def translate_text_cloud(
     glossary: Optional[dict[str, str]] = None,
 ) -> str:
     """
-    純文字分 chunk 翻譯（雲端），適用於 OCR 結果、文件等無時間軸的文字。
+    Chunked plain-text translation (cloud). Suitable for OCR results,
+    documents, and other text without timestamps.
 
     Returns:
-        翻譯後的完整文字
+        The fully translated text.
     """
     from app.utils.prompts import build_translate_prompt, split_text
 
@@ -141,10 +142,11 @@ def translate_text_local(
     model_id: str = "translategemma",
 ) -> str:
     """
-    純文字分 chunk 翻譯（本地 LLM），需在 runtime.acquire() context 內呼叫。
+    Chunked plain-text translation (local LLM). Must be called within
+    a runtime.acquire() context.
 
     Returns:
-        翻譯後的完整文字
+        The fully translated text.
     """
     from app.utils.prompts import build_translate_prompt, build_translate_messages, split_text
 
@@ -183,15 +185,15 @@ def translate_srt_cloud(
     glossary: Optional[dict[str, str]] = None,
 ) -> list[dict]:
     """
-    雲端 SRT 批次翻譯
+    Cloud SRT batch translation.
 
     Args:
         seg_dicts: [{"start": float, "end": float, "text": str}, ...]
-        prov: RemoteProvider 實例
-        model: 雲端模型 ID
+        prov: RemoteProvider instance
+        model: Cloud model ID
 
     Returns:
-        翻譯後的 seg_dicts 列表
+        Translated seg_dicts list.
     """
     from app.utils.prompts import build_srt_translate_prompt, segments_to_srt, parse_srt_response
 
@@ -252,15 +254,15 @@ def translate_srt_local(
     model_id: str = "translategemma",
 ) -> list[dict]:
     """
-    本地 LLM SRT 批次翻譯（需在 runtime.acquire() context 內呼叫）
+    Local LLM SRT batch translation (must be called within runtime.acquire() context).
 
     Args:
         seg_dicts: [{"start": float, "end": float, "text": str}, ...]
-        runtime: 已 acquire 的 LlamaServerRuntime 實例
-        model_id: prompt 模板 ID
+        runtime: An acquired LlamaServerRuntime instance
+        model_id: Prompt template ID
 
     Returns:
-        翻譯後的 seg_dicts 列表
+        Translated seg_dicts list.
     """
     from app.utils.prompts import (
         build_srt_translate_prompt, build_translate_messages,

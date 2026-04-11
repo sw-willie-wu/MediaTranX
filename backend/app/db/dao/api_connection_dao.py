@@ -1,5 +1,5 @@
 """
-Remote API 連線設定 DAO
+Remote API connection settings DAO.
 """
 import logging
 from datetime import datetime
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class ApiConnectionDAO:
-    """Remote API 連線設定資料存取"""
+    """Remote API connection settings data access."""
 
     def create(
         self,
@@ -23,7 +23,7 @@ class ApiConnectionDAO:
         endpoint: str,
         api_key: Optional[str] = None,
     ) -> ApiConnection:
-        """新增連線設定"""
+        """Add a connection setting."""
         with Session(get_engine()) as session:
             conn = ApiConnection(
                 provider=provider,
@@ -38,24 +38,24 @@ class ApiConnectionDAO:
             return conn
 
     def get_by_id(self, conn_id: int) -> Optional[ApiConnection]:
-        """取得單筆連線"""
+        """Get a single connection."""
         with Session(get_engine()) as session:
             return session.get(ApiConnection, conn_id)
 
     def get_by_provider(self, provider: str) -> list[ApiConnection]:
-        """取得指定 provider 的所有連線"""
+        """Get all connections for a specific provider."""
         with Session(get_engine()) as session:
             stmt = select(ApiConnection).where(ApiConnection.provider == provider)
             return list(session.exec(stmt).all())
 
     def get_all(self) -> list[ApiConnection]:
-        """取得所有連線"""
+        """Get all connections."""
         with Session(get_engine()) as session:
             stmt = select(ApiConnection).order_by(ApiConnection.provider)
             return list(session.exec(stmt).all())
 
     def get_enabled(self, provider: Optional[str] = None) -> list[ApiConnection]:
-        """取得所有啟用的連線"""
+        """Get all enabled connections."""
         with Session(get_engine()) as session:
             stmt = select(ApiConnection).where(ApiConnection.enabled == True)
             if provider:
@@ -70,7 +70,7 @@ class ApiConnectionDAO:
         api_key: Optional[str] = None,
         enabled: Optional[bool] = None,
     ) -> Optional[ApiConnection]:
-        """更新連線設定"""
+        """Update a connection setting."""
         with Session(get_engine()) as session:
             conn = session.get(ApiConnection, conn_id)
             if not conn:
@@ -90,7 +90,7 @@ class ApiConnectionDAO:
             return conn
 
     def delete(self, conn_id: int) -> bool:
-        """刪除連線設定"""
+        """Delete a connection setting."""
         with Session(get_engine()) as session:
             conn = session.get(ApiConnection, conn_id)
             if not conn:

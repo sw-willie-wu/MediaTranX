@@ -1,5 +1,5 @@
 """
-任務歷史紀錄 Model
+Task history model.
 """
 from datetime import datetime
 from typing import Optional
@@ -8,7 +8,7 @@ from sqlmodel import SQLModel, Field
 
 
 class TaskHistory(SQLModel, table=True):
-    """任務歷史紀錄"""
+    """Task history record."""
     __tablename__ = "task_history"
 
     task_id: str = Field(primary_key=True)

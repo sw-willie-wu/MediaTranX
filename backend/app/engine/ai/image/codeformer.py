@@ -1,7 +1,6 @@
 """
-CodeFormer 人臉修復封裝 (Three-Layer Architecture V3)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-重構：繼承 PTHRuntime，支援自然度調整
+CodeFormer face restoration wrapper (Three-Layer Architecture V3).
+Refactored: inherits PTHRuntime, supports fidelity adjustment.
 """
 from __future__ import annotations
 
@@ -20,12 +19,12 @@ logger = logging.getLogger(__name__)
 
 class CodeFormerWrapper(PTHRuntime):
     """
-    CodeFormer 人臉修復封裝
-    
-    特性：
-    1. 使用 VQ-GAN 技術進行人臉修復
-    2. 支援自然度 (fidelity) 調整（0~1）
-    3. 處理低解析度/模糊/損壞的人臉影像
+    CodeFormer face restoration wrapper.
+
+    Features:
+    1. Uses VQ-GAN for face restoration
+    2. Supports fidelity adjustment (0~1)
+    3. Handles low-resolution/blurry/damaged face images
     """
     
     def __init__(self):
@@ -40,20 +39,21 @@ class CodeFormerWrapper(PTHRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Image.Image:
         """
-        執行 CodeFormer 人臉修復推理
-        
+        Run CodeFormer face restoration inference.
+
         Args:
-            image: 輸入影像
-            model_id: 模型變體（目前僅 "default"）
-            fidelity: 自然度權重（0 = 更清晰但可能失真，1 = 保持原貌）
-            on_progress: 進度回調
-            
+            image: Input image.
+            model_id: Model variant (currently only "default").
+            fidelity: Fidelity weight (0 = sharper but may distort, 1 = preserve original).
+            on_progress: Progress callback.
+
         Returns:
-            修復後的影像
-            
-        TODO: 目前是簡易實作，未來可整合 CodeFormer 完整流程（人臉偵測、對齊、修復、貼回）
+            Restored image.
+
+        TODO: Currently a simplified implementation; future integration with full CodeFormer
+              pipeline (face detection, alignment, restoration, paste-back).
         """
-        # 獲取 VRAM 需求
+        # Get VRAM requirement
         variant_spec = MODELS_REGISTRY[FORMAT_PTH]["codeformer"]["variants"].get(model_id)
         if not variant_spec:
             raise ValueError(f"Unknown CodeFormer variant: {model_id}")
@@ -62,20 +62,20 @@ class CodeFormerWrapper(PTHRuntime):
         self._manager.acquire(SLOT_PTH, required_vram_mb=vram_needed)
         
         try:
-            # 使用 PTHRuntime 載入模型
+            # Load model using PTHRuntime
             with self.acquire(
                 model_id="codeformer",
                 variant=model_id,
                 on_progress=on_progress
             ) as model:
-                # 簡易推理流程（實際使用需要完整的人臉檢測 pipeline）
+                # Simplified inference (production use requires full face detection pipeline)
                 img_array = np.array(image.convert("RGB"))
                 img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0).float() / 255.0
                 img_tensor = img_tensor.to(self._device)
                 
                 with torch.no_grad():
-                    # CodeFormer 需要特殊處理（w 參數控制 fidelity）
-                    # 這裡是簡化版本，實際需依 CodeFormer 官方 API
+                    # CodeFormer requires special handling (w parameter controls fidelity)
+                    # This is a simplified version; actual use should follow the CodeFormer official API
                     if hasattr(model, 'forward'):
                         output_tensor = model(img_tensor)
                     else:
@@ -89,12 +89,12 @@ class CodeFormerWrapper(PTHRuntime):
 
 
 # ═══════════════════════════════════════════════════════════
-# 單例工廠函數
+# Singleton factory
 # ═══════════════════════════════════════════════════════════
 _codeformer: Optional[CodeFormerWrapper] = None
 
 def get_codeformer() -> CodeFormerWrapper:
-    """取得 CodeFormerWrapper 單例"""
+    """Get the CodeFormerWrapper singleton."""
     global _codeformer
     if _codeformer is None:
         _codeformer = CodeFormerWrapper()

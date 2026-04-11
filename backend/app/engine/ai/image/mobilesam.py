@@ -1,7 +1,6 @@
 """
-MobileSAM 物件分割模組
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-繼承 PackageRuntime，提供圖片物件分割功能（用於 AI 移除物件）。
+MobileSAM object segmentation module.
+Inherits PackageRuntime, provides image object segmentation (for AI object removal).
 """
 from __future__ import annotations
 
@@ -19,11 +18,11 @@ logger = logging.getLogger(__name__)
 
 class MobileSAMWrapper(PackageRuntime):
     """
-    MobileSAM 物件分割封裝（繼承 PackageRuntime）
+    MobileSAM object segmentation wrapper (inherits PackageRuntime).
 
-    職責：
-    1. 載入 MobileSAM 模型
-    2. 提供 SamPredictor 用於 box-based 分割
+    Responsibilities:
+    1. Load MobileSAM model
+    2. Provide SamPredictor for box-based segmentation
     """
 
     def __init__(self):
@@ -37,7 +36,7 @@ class MobileSAMWrapper(PackageRuntime):
         device: str,
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
-        """載入 MobileSAM 模型"""
+        """Load MobileSAM model."""
         if on_progress:
             on_progress(0.3, "task.progress.loading_mobilesam")
 
@@ -51,14 +50,14 @@ class MobileSAMWrapper(PackageRuntime):
         return sam
 
     def _resolve_model_path(self, model_id: str, variant: Optional[str] = None):
-        """解析 MobileSAM 模型路徑"""
+        """Resolve MobileSAM model path."""
         model_path = self._manager.get_model_path(model_id, variant or "default")
         if not model_path:
             from app.init.configs import SETTINGS
             model_path = SETTINGS.path.models / "mobilesam" / "mobile_sam.pt"
             if not model_path.exists():
                 raise FileNotFoundError(
-                    "MobileSAM 模型未下載，請至設定 → 模型管理下載"
+                    "MobileSAM model not downloaded. Please download it from Settings > Model Management."
                 )
 
         config = {
@@ -74,14 +73,14 @@ class MobileSAMWrapper(PackageRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> np.ndarray:
         """
-        用 bounding box 預測物件遮罩
+        Predict object mask using a bounding box.
 
         Args:
-            image_rgb: RGB 圖片 (H, W, 3) numpy array
-            box: [x1, y1, x2, y2] bounding box
+            image_rgb: RGB image (H, W, 3) numpy array.
+            box: [x1, y1, x2, y2] bounding box.
 
         Returns:
-            遮罩 (H, W) uint8 numpy array (0 or 255)
+            Mask (H, W) uint8 numpy array (0 or 255).
         """
         with self.acquire(
             model_id="mobilesam",
@@ -101,13 +100,13 @@ class MobileSAMWrapper(PackageRuntime):
 
 
 # ═══════════════════════════════════════════════════════════
-# 單例工廠函數
+# Singleton factory
 # ═══════════════════════════════════════════════════════════
 _mobilesam: Optional[MobileSAMWrapper] = None
 
 
 def get_mobilesam() -> MobileSAMWrapper:
-    """取得 MobileSAMWrapper 單例"""
+    """Get the MobileSAMWrapper singleton."""
     global _mobilesam
     if _mobilesam is None:
         _mobilesam = MobileSAMWrapper()

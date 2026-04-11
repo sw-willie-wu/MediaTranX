@@ -1,5 +1,5 @@
 """
-任務歷史紀錄 DAO
+Task history DAO.
 """
 import json
 import logging
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class TaskHistoryDAO:
-    """任務歷史紀錄資料存取"""
+    """Task history data access."""
 
     def save(
         self,
@@ -30,7 +30,7 @@ class TaskHistoryDAO:
         error_code: Optional[str] = None,
         result: Optional[dict] = None,
     ) -> None:
-        """儲存已完成的任務到歷史"""
+        """Save a completed task to history."""
         with Session(get_engine()) as session:
             existing = session.get(TaskHistory, task_id)
             if existing:
@@ -65,7 +65,7 @@ class TaskHistoryDAO:
         page_size: int = 30,
         status: Optional[str] = None,
     ) -> dict:
-        """分頁查詢歷史紀錄"""
+        """Query history records with pagination."""
         with Session(get_engine()) as session:
             # Count
             count_stmt = select(func.count()).select_from(TaskHistory)
@@ -98,7 +98,7 @@ class TaskHistoryDAO:
             }
 
     def delete(self, task_id: str) -> bool:
-        """刪除單筆歷史紀錄"""
+        """Delete a single history record."""
         with Session(get_engine()) as session:
             record = session.get(TaskHistory, task_id)
             if record:
@@ -108,7 +108,7 @@ class TaskHistoryDAO:
             return False
 
     def clear(self) -> int:
-        """清空所有歷史紀錄"""
+        """Clear all history records."""
         with Session(get_engine()) as session:
             stmt = select(TaskHistory)
             rows = session.exec(stmt).all()

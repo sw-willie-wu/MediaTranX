@@ -1,8 +1,8 @@
 """
 Ollama Provider
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-透過 Ollama REST API 存取本地或遠端 Ollama 服務。
-API 文件：https://github.com/ollama/ollama/blob/main/docs/api.md
+Access local or remote Ollama services via REST API.
+API docs: https://github.com/ollama/ollama/blob/main/docs/api.md
 """
 from __future__ import annotations
 
@@ -23,18 +23,18 @@ class OllamaProvider(RemoteProvider):
     """
     Ollama REST API Provider
 
-    支援：
-    - 連線檢查（GET /api/version）
-    - 模型列舉（GET /api/tags）
-    - 文字對話（POST /api/chat）
+    Supports:
+    - Connection check (GET /api/version)
+    - Model listing (GET /api/tags)
+    - Text chat (POST /api/chat)
     """
 
     def __init__(self, endpoint: str = DEFAULT_OLLAMA_ENDPOINT, api_key: Optional[str] = None):
         super().__init__(endpoint, api_key)
-        self._caps_cache: dict[str, list[str]] = {}  # model_name → capabilities
+        self._caps_cache: dict[str, list[str]] = {}  # model_name -> capabilities
 
     def connect(self) -> bool:
-        """檢查 Ollama 服務是否運行"""
+        """Check if the Ollama service is running."""
         try:
             req = urllib.request.Request(
                 f"{self.endpoint}/api/version",
@@ -50,7 +50,7 @@ class OllamaProvider(RemoteProvider):
             return False
 
     def list_models(self) -> list[RemoteModel]:
-        """列舉 Ollama 已安裝的模型（含 capabilities 偵測）"""
+        """List installed Ollama models (with capability detection)."""
         try:
             req = urllib.request.Request(
                 f"{self.endpoint}/api/tags",
@@ -81,16 +81,16 @@ class OllamaProvider(RemoteProvider):
 
     def _detect_capabilities(self, model_name: str, families: list[str]) -> list[str]:
         """
-        偵測模型 capabilities
+        Detect model capabilities.
 
-        透過 /api/show 的 capabilities 欄位取得（Ollama 原生支援）。
-        Fallback: 從模型名稱和 families 推斷。
+        Uses the capabilities field from /api/show (native Ollama support).
+        Fallback: infer from model name and families.
         """
-        # 快取命中
+        # Cache hit
         if model_name in self._caps_cache:
             return self._caps_cache[model_name]
 
-        # 呼叫 /api/show 取得官方 capabilities
+        # Call /api/show to get official capabilities
         try:
             payload = json.dumps({"name": model_name}).encode("utf-8")
             req = urllib.request.Request(
@@ -103,8 +103,8 @@ class OllamaProvider(RemoteProvider):
                 info = json.loads(resp.read())
                 ollama_caps = info.get("capabilities", [])
                 if ollama_caps:
-                    # Ollama 回傳格式：["completion", "vision", "tools", "thinking"]
-                    # 轉換成我們的格式
+                    # Ollama response format: ["completion", "vision", "tools", "thinking"]
+                    # Convert to our format
                     caps = ["text"]
                     if "vision" in ollama_caps:
                         caps.append("vision")
@@ -117,7 +117,7 @@ class OllamaProvider(RemoteProvider):
         except Exception:
             pass
 
-        # Fallback: 從名稱和 families 推斷
+        # Fallback: infer from name and families
         caps = ["text"]
         name_lower = model_name.lower()
         if any(kw in name_lower for kw in ["vl", "vision", "llava", "bakllava", "moondream"]):
@@ -142,7 +142,7 @@ class OllamaProvider(RemoteProvider):
         Ollama chat completion
 
         Args:
-            model: 模型名稱（例如 "llama3.2:3b"）
+            model: Model name (e.g. "llama3.2:3b")
             messages: [{"role": "user", "content": "..."}]
         """
         payload = {
@@ -180,7 +180,7 @@ class OllamaProvider(RemoteProvider):
 
     @staticmethod
     def _parse_error(status: int, body: str):
-        """解析 Ollama API 錯誤，回傳 RemoteApiError"""
+        """Parse Ollama API error and return a RemoteApiError."""
         from app.handler.exceptions import RemoteApiError
         body_lower = body.lower()
         if status == 500 and ("eof" in body_lower or "load" in body_lower):
@@ -193,14 +193,14 @@ class OllamaProvider(RemoteProvider):
 
     def pull_model(self, model_name: str, on_progress: Optional[callable] = None) -> bool:
         """
-        拉取模型（ollama pull）
+        Pull a model (ollama pull).
 
         Args:
-            model_name: 模型名稱（例如 "llama3.2:3b"）
-            on_progress: 進度回調 (completed_bytes, total_bytes)
+            model_name: Model name (e.g. "llama3.2:3b")
+            on_progress: Progress callback (completed_bytes, total_bytes)
 
         Returns:
-            True 如果成功
+            True if successful
         """
         payload = {
             "name": model_name,
@@ -234,13 +234,13 @@ class OllamaProvider(RemoteProvider):
 
 
 # ═══════════════════════════════════════════════════════════
-# 單例工廠函數
+# Singleton factory
 # ═══════════════════════════════════════════════════════════
 _ollama: Optional[OllamaProvider] = None
 
 
 def get_ollama_provider(endpoint: str = DEFAULT_OLLAMA_ENDPOINT) -> OllamaProvider:
-    """取得 OllamaProvider 單例"""
+    """Get the OllamaProvider singleton."""
     global _ollama
     if _ollama is None or _ollama.endpoint != endpoint:
         _ollama = OllamaProvider(endpoint)

@@ -1,6 +1,6 @@
 """
-BaseRuntime - 所有模型執行器的抽象基類
-負責統一的生命週期管理與 VRAM 鎖協調
+BaseRuntime - abstract base class for all model executors.
+Responsible for unified lifecycle management and VRAM lock coordination.
 """
 import logging
 import threading
@@ -13,29 +13,29 @@ logger = logging.getLogger(__name__)
 
 class BaseRuntime(ABC):
     """
-    模型執行器基類
-    
-    職責：
-    1. 管理模型的載入/卸載生命週期
-    2. 透過 ModelManager 獲取 VRAM 鎖
-    3. 提供 @contextmanager 的 acquire() 介面
+    Model executor base class.
+
+    Responsibilities:
+    1. Manage model load/unload lifecycle
+    2. Acquire VRAM locks via ModelManager
+    3. Provide @contextmanager acquire() interface
     """
-    
+
     def __init__(self, slot: str):
         """
         Args:
-            slot: 模型插槽名稱（用於 VRAM 鎖協調）
+            slot: Model slot name (used for VRAM lock coordination).
         """
         self._slot = slot
         self._lock = threading.RLock()
         self._model: Optional[Any] = None
         self._current_config: Optional[dict] = None
         
-        # 延遲 import 避免循環依賴
+        # Lazy import to avoid circular dependency
         from app.init.container import get_container
         self._manager = get_container().model_manager()
         
-        # 註冊卸載回調
+        # Register unload callback
         self._manager.register_unloader(slot, self._unload_model)
         
         logger.debug(f"BaseRuntime initialized for slot: {slot}")
@@ -48,28 +48,28 @@ class BaseRuntime(ABC):
         on_progress: Optional[Callable[[float, str], None]] = None
     ) -> Any:
         """
-        子類實作：載入模型的具體邏輯
-        
+        Subclass implementation: concrete model loading logic.
+
         Args:
-            model_path: 模型路徑（可能是 Path 或 str）
-            config: 模型配置字典
-            on_progress: 進度回調
-            
+            model_path: Model path (may be Path or str).
+            config: Model configuration dict.
+            on_progress: Progress callback.
+
         Returns:
-            載入的模型物件
+            Loaded model object.
         """
         pass
     
     @abstractmethod
     def _unload_model_impl(self) -> None:
         """
-        子類實作：卸載模型的具體邏輯
-        注意：某些格式（如 BIN）需要特殊處理以避免 Windows 崩潰
+        Subclass implementation: concrete model unloading logic.
+        Note: some formats (e.g. BIN) require special handling to avoid Windows crashes.
         """
         pass
     
     def _unload_model(self) -> None:
-        """統一的卸載入口（由 ModelManager 呼叫）"""
+        """Unified unload entry point (called by ModelManager)."""
         with self._lock:
             if self._model is not None:
                 logger.info(f"Unloading model from slot: {self._slot}")
@@ -86,22 +86,22 @@ class BaseRuntime(ABC):
         on_progress: Optional[Callable[[float, str], None]] = None
     ):
         """
-        獲取模型實例的 Context Manager
-        
-        使用範例：
+        Context manager for acquiring a model instance.
+
+        Example usage:
             with runtime.acquire("whisper", "medium") as model:
                 result = model.transcribe(audio)
-        
+
         Args:
-            model_id: 模型家族 ID
-            variant: 模型變體（如 size, quantization）
-            on_progress: 載入進度回調
-            
+            model_id: Model family ID.
+            variant: Model variant (e.g. size, quantization).
+            on_progress: Loading progress callback.
+
         Yields:
-            載入的模型物件
+            Loaded model object.
         """
         with self._lock:
-            # 檢查是否需要重新載入
+            # Check if reload is needed
             config_key = f"{model_id}:{variant}"
             needs_reload = (
                 self._model is None or 
@@ -110,15 +110,15 @@ class BaseRuntime(ABC):
             )
             
             if needs_reload:
-                # 卸載舊模型
+                # Unload old model
                 if self._model is not None:
                     self._unload_model_impl()
                     self._model = None
                 
-                # 獲取 VRAM 鎖
+                # Acquire VRAM lock
                 self._manager.acquire(self._slot)
                 
-                # 載入新模型
+                # Load new model
                 if on_progress:
                     on_progress(0.0, "task.progress.preparing_model")
                 
@@ -135,20 +135,20 @@ class BaseRuntime(ABC):
     
     def _resolve_model_path(self, model_id: str, variant: Optional[str] = None):
         """
-        解析模型路徑與配置（由子類覆寫以支援不同格式）
+        Resolve model path and configuration (override in subclasses for different formats).
         
         Returns:
             (model_path, config_dict)
         """
-        # 預設實作：從 ModelManager 獲取
+        # Default implementation: get from ModelManager
         path = self._manager.get_model_path(model_id, variant)
         config = {"model_id": model_id, "variant": variant}
         return path, config
     
     def is_loaded(self) -> bool:
-        """檢查模型是否已載入"""
+        """Check if a model is loaded."""
         return self._model is not None
     
     def get_current_config(self) -> Optional[dict]:
-        """獲取當前載入的模型配置"""
+        """Get the currently loaded model configuration."""
         return self._current_config.copy() if self._current_config else None

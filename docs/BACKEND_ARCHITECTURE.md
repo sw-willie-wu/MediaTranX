@@ -124,14 +124,16 @@ remote/
 
 ---
 
-## 3. Import 規則
+## 3. Import 規則（Cold Start 優化）
 
-### 3.1 Top-Level Import（預設）
+為加速啟動（cold start 從 37 秒降至 ~8 秒），採用 **lazy container + TYPE_CHECKING** 模式，避免 module-level 觸發大量 import chain。
 
-所有套件（含 AI 套件如 PIL、numpy、torch）在 Electron 啟動時由 `uv sync` 安裝完成，可直接 top-level import。
+### 3.1 Service / Engine 檔案
+
+AI 套件（PIL、numpy、torch 等）在 Electron 啟動時由 `uv sync` 安裝完成，可直接 top-level import。這些檔案在容器首次 resolve 時才被載入，不影響啟動速度。
 
 ```python
-# ✓ 正確：直接 top-level import
+# ✓ 正確：Service / Engine 內直接 top-level import
 from PIL import Image
 import numpy as np
 import torch
@@ -141,9 +143,71 @@ class MyService:
         img = Image.open(...)
 ```
 
-### 3.2 例外：偵測性質的 Import
+### 3.2 Container（`container.py`）
 
-僅在偵測是否可用的場景中使用 lazy import（try/except 內）：
+Domain service 使用 `_lazy()` factory 延遲 import，避免在 container 模組載入時觸發所有 service 的 import chain：
+
+```python
+# ✓ 正確：_lazy() 延遲 import
+image_upscale = providers.Singleton(
+    _lazy("app.services.image.upscale_service", "ImageUpscaleService"),
+    file_service=file_service, task_manager=task_manager,
+)
+
+# ✗ 禁止：直接 import 會拖慢啟動
+from app.services.image.upscale_service import ImageUpscaleService
+image_upscale = providers.Singleton(ImageUpscaleService, ...)
+```
+
+### 3.3 Route 檔案
+
+Domain service 的 import 放在 `TYPE_CHECKING` guard 內，搭配 `from __future__ import annotations` 讓型別標注在 runtime 不求值。這樣 route 模組載入時不會觸發 service import chain：
+
+```python
+# ✓ 正確：Route 檔案的 service import
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.init.container import AppContainer
+
+if TYPE_CHECKING:
+    from app.services.image.upscale_service import ImageUpscaleService
+
+router = APIRouter()
+
+@router.post("/upscale")
+@inject
+async def upscale_image(
+    request: UpscaleRequest,
+    service: ImageUpscaleService = Depends(Provide[AppContainer.image_upscale]),
+):
+    ...
+```
+
+### 3.4 Engine `__init__.py`
+
+Engine 的 `__init__.py` **不可**在 module level 直接 re-export wrapper class（會觸發整條 import chain）。消費者直接從具體模組 import。工廠函數內使用 lazy import：
+
+```python
+# ✗ 禁止：__init__.py 中 eagerly re-export
+from .realesrgan import RealESRGANWrapper   # 觸發 torch import chain
+
+# ✓ 正確：消費者直接 import 具體模組
+from app.engine.ai.image.realesrgan import RealESRGANWrapper
+
+# ✓ 正確：工廠函數使用 lazy import
+def get_upscaler(model_id: str):
+    if model_id == "realesrgan":
+        from app.engine.ai.image.realesrgan import RealESRGANWrapper
+        return RealESRGANWrapper(...)
+```
+
+### 3.5 偵測性質的 Import
+
+僅在偵測是否可用的場景中使用 try/except lazy import：
 
 ```python
 # ✓ 偵測用途，保留 lazy import
@@ -155,26 +219,13 @@ def _detect_cuda_via_torch():
         return False
 ```
 
-### 3.3 Type Hints
-
-直接使用外部套件型別，不需要 `from __future__ import annotations`：
-
-```python
-from PIL import Image
-
-class MyService:
-    @staticmethod
-    def _apply_filter(img: Image.Image) -> Image.Image:
-        ...
-```
-
 ---
 
 ## 4. Service 規範
 
 ### 4.1 結構模板
 
-Service 由 DI Container（`dependency-injector`）管理為 Singleton，不使用手動工廠函數。
+Service 由 DI Container（`dependency-injector`）管理為 Singleton，不使用手動 `__new__` 單例或工廠函數。
 
 ```python
 """
@@ -222,9 +273,11 @@ class XxxService:
     # --- 任務 Handler（ThreadPoolExecutor 內執行）---
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+        """薄 wrapper，由 TaskManager 呼叫。直接委派給 _execute。"""
         return self._execute(params, progress_callback)
 
     def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+        """實際業務邏輯。"""
         progress_callback(0.1, "task.progress.loading_image")
         # ... 業務邏輯 ...
 
@@ -241,13 +294,16 @@ class XxxService:
         }
 ```
 
+> **多任務型別的 Service**：若一個 Service 處理多種任務（如 `video.cut` + `video.transcode`），
+> 每種任務使用獨立的 handler/execute 對：`_handle_cut_task` + `_execute_cut`、
+> `_handle_transcode_task` + `_execute_transcode`。
+
 **DI Container 註冊**（`app/init/container.py`）：
 ```python
-from app.services.xxx import XxxService
-
+# ✓ 使用 _lazy() 延遲 import（參見 §3.2）
 class AppContainer(containers.DeclarativeContainer):
     xxx_service = providers.Singleton(
-        XxxService,
+        _lazy("app.services.xxx", "XxxService"),
         file_service=file_service,
         task_manager=task_manager,
     )
@@ -255,12 +311,12 @@ class AppContainer(containers.DeclarativeContainer):
 
 ### 4.2 規則
 
-- **DI Singleton**：由 AppContainer 管理生命週期，不使用手動 `__new__` 單例或工廠函數
+- **DI Singleton**：由 AppContainer 以 `_lazy()` 註冊管理生命週期，不使用手動 `__new__` 單例或工廠函數
 - **建構子注入**：依賴（FileService、TaskManager）透過 `__init__` 參數注入
 - **TASK_TYPE 常數**：格式為 `"domain.action"`（如 `"image.compress"`、`"audio.transcribe"`）
 - **submit 方法**：`async`，驗證 file_id 存在後提交給 TaskManager，回傳 `task_id`
-- **_handle_task**：同步方法，作為 TaskManager 的 handler callback，在 ThreadPoolExecutor 中執行
-- **_execute**：實際業務邏輯，接收 `params` dict 和 `progress_callback`
+- **_handle_task + _execute**：標準方法名。`_handle_task` 是 TaskManager 的 handler callback（同步，在 ThreadPoolExecutor 中執行），薄 wrapper 委派給 `_execute`
+- **多任務型別**：Service 有多種任務時，使用 `_handle_{variant}_task` + `_execute_{variant}`（如 `_handle_cut_task` + `_execute_cut`）
 - **progress_callback**：從 0.0 呼叫到 1.0，最終的結果由 TaskManager 自動 emit `stage="completed"`
 - **結果 dict**：必須包含 `output_file_id`，前端依此取得處理結果
 
@@ -285,12 +341,17 @@ output_dir = Path(custom_output_dir) if custom_output_dir else self._file_servic
 """
 功能說明 API 路由
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from dependency_injector.wiring import inject, Provide
 
 from app.init.container import AppContainer
-from app.services.xxx import XxxService
+
+if TYPE_CHECKING:
+    from app.services.xxx import XxxService
 
 router = APIRouter()
 

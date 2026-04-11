@@ -1,5 +1,5 @@
 """
-健康檢查端點
+Health check endpoints.
 """
 import logging
 
@@ -15,15 +15,15 @@ router = APIRouter()
 
 @router.get("/health")
 async def health_check():
-    """淺層健康檢查"""
+    """Shallow health check."""
     return {"status": "ok"}
 
 
 @router.get("/health/deep")
 async def deep_health_check():
     """
-    深層健康檢查：驗證 DB 連線和 TaskManager 狀態。
-    回傳各子系統狀態；任一 failed 則整體 status 為 degraded。
+    Deep health check: verify DB connection and TaskManager status.
+    Returns per-subsystem status; overall status is degraded if any check fails.
     """
     checks = {}
 
@@ -60,7 +60,7 @@ async def deep_health_check():
 async def device_info(
     service: DeviceService = Depends(Provide[AppContainer.device_service]),
 ):
-    """取得裝置資訊（GPU/CPU）"""
+    """Get device information (GPU/CPU)."""
     return service.get_device_info()
 
 
@@ -69,6 +69,6 @@ async def device_info(
 async def refresh_device(
     service: DeviceService = Depends(Provide[AppContainer.device_service]),
 ):
-    """清除裝置快取並重新偵測（CUDA DLL 安裝後呼叫）"""
+    """Clear device cache and re-detect (called after CUDA DLL installation)."""
     service.refresh_cache()
     return service.get_device_info()

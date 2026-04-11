@@ -1,5 +1,5 @@
 """
-進度追蹤模組
+Progress tracking module.
 """
 import logging
 import threading
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ProgressEvent:
-    """進度事件"""
+    """Progress event."""
     task_id: str
     progress: float
     stage: str
@@ -22,7 +22,7 @@ class ProgressEvent:
 
 
 class ProgressTracker:
-    """進度追蹤器，供 polling 查詢最新進度"""
+    """Progress tracker for polling the latest progress."""
 
     def __init__(self):
         self._latest_progress: Dict[str, ProgressEvent] = {}
@@ -48,7 +48,7 @@ class ProgressTracker:
 
     def create_callback(self, task_id: str) -> Callable[[float, str], None]:
         """
-        建立同步的進度回調函數（用於 ThreadPoolExecutor 中的 handler）
+        Create a synchronous progress callback (for handlers in ThreadPoolExecutor).
         """
         lock = self._lock
         progress_dict = self._latest_progress
@@ -66,11 +66,11 @@ class ProgressTracker:
         return callback
 
     def get_progress(self, task_id: str) -> Optional[ProgressEvent]:
-        """取得任務的最新進度"""
+        """Get the latest progress for a task."""
         with self._lock:
             return self._latest_progress.get(task_id)
 
     def cleanup(self, task_id: str) -> None:
-        """清理任務的進度記錄"""
+        """Clean up progress records for a task."""
         with self._lock:
             self._latest_progress.pop(task_id, None)

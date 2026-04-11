@@ -162,30 +162,30 @@ class RIFEWrapper:
         num_mid = multiplier - 1
         out_idx = 1
 
-        # Prefetch: 用 thread 預載下一幀 + 非同步存檔
+        # Prefetch: use thread to preload next frame + async file saving
         write_pool = ThreadPoolExecutor(max_workers=4)
         write_futures = []
 
         def save_frame(img: Image.Image, path: Path):
             img.save(path)
 
-        # 預載第一幀
+        # Preload first frame
         current_img = Image.open(frame_files[0])
 
         for i in range(len(frame_files)):
-            # 複製原始幀到 output（用 thread 寫檔）
+            # Copy original frame to output (write file via thread)
             out_path = output_dir / f"{out_idx:06d}.{fmt}"
             write_futures.append(write_pool.submit(save_frame, current_img, out_path))
             out_idx += 1
 
             if i < total_pairs:
-                # 預載下一幀（在 GPU 推理前就開始讀）
+                # Preload next frame (start reading before GPU inference)
                 next_img = Image.open(frame_files[i + 1])
 
-                # GPU 推理
+                # GPU inference
                 mid_frames = self.interpolate(current_img, next_img, num_mid=num_mid)
 
-                # 非同步寫入中間幀
+                # Async write interpolated frame
                 for mid in mid_frames:
                     mid_path = output_dir / f"{out_idx:06d}.{fmt}"
                     write_futures.append(write_pool.submit(save_frame, mid, mid_path))
@@ -197,7 +197,7 @@ class RIFEWrapper:
                     pct = (i + 1) / total_pairs
                     on_progress(pct, f"task.progress.interpolating_pair|{i + 1}|{total_pairs}")
 
-        # 等所有寫入完成
+        # Wait for all writes to complete
         for f in write_futures:
             f.result()
         write_pool.shutdown(wait=False)
@@ -245,7 +245,7 @@ class RIFEWrapper:
         )
         pipe.open()
 
-        # Async encoder: 用 queue + thread 解耦 GPU 推理和 FFmpeg 編碼
+        # Async encoder: use queue + thread to decouple GPU inference and FFmpeg encoding
         from queue import Queue
         from threading import Thread
 

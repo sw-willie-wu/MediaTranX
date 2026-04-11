@@ -1,7 +1,6 @@
 """
-資料庫層
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-使用 SQLModel (SQLAlchemy + Pydantic) 管理持久化資料。
+Database layer.
+Uses SQLModel (SQLAlchemy + Pydantic) for persistent data management.
 """
 from .database import get_engine, get_session, init_db
 
