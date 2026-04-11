@@ -1,5 +1,5 @@
 """
-模型管理路由（列表、下載、移除）
+Model management routes (list, download, remove).
 """
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,14 +13,14 @@ from app.workers.task_manager import TaskManager
 router = APIRouter()
 
 
-# ─── 端點 ────────────────────────────────────────────────────────────────────
+# ─── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.get("/models")
 @inject
 async def get_models_status(
     model_metadata_service: ModelMetadataService = Depends(Provide[AppContainer.model_metadata]),
 ):
-    """取得所有工具/模型的安裝/下載狀態"""
+    """Get installation/download status of all tools/models."""
     return model_metadata_service.list_all()
 
 
@@ -34,7 +34,7 @@ async def remove_model_item(
     request: DownloadRequest,
     setup_service: SetupService = Depends(Provide[AppContainer.setup_service]),
 ):
-    """刪除已下載的工具/模型檔案"""
+    """Delete downloaded tool/model files."""
     if not request.id:
         raise HTTPException(status_code=400, detail="Missing id")
     setup_service.remove_model(request.id)
@@ -48,7 +48,7 @@ async def download_model_item(
     setup_service: SetupService = Depends(Provide[AppContainer.setup_service]),
     task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
 ):
-    """提交工具/模型下載任務"""
+    """Submit tool/model download task."""
     if not request.id:
         raise HTTPException(status_code=400, detail="Missing id")
 

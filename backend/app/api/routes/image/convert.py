@@ -1,38 +1,41 @@
 """
-圖片轉檔 API 路由
+Image conversion API routes.
 """
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.image.convert_service import ImageConvertService
+
+if TYPE_CHECKING:
+    from app.services.image.convert_service import ImageConvertService
 
 router = APIRouter()
 
 
 class ImageConvertRequest(BaseModel):
-    """圖片轉檔請求"""
-    file_id: str = Field(..., description="輸入檔案 ID")
-    output_format: str = Field(default="png", description="輸出格式 (png, jpg, webp, gif, bmp)")
-    quality: int = Field(default=85, ge=1, le=100, description="品質 (1-100)")
-    width: Optional[int] = Field(default=None, gt=0, description="目標寬度")
-    height: Optional[int] = Field(default=None, gt=0, description="目標高度")
-    scale: Optional[float] = Field(default=None, gt=0, description="縮放比例")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
-    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
+    """Image conversion request."""
+    file_id: str = Field(..., description="Input file ID")
+    output_format: str = Field(default="png", description="Output format (png, jpg, webp, gif, bmp)")
+    quality: int = Field(default=85, ge=1, le=100, description="Quality (1-100)")
+    width: Optional[int] = Field(default=None, gt=0, description="Target width")
+    height: Optional[int] = Field(default=None, gt=0, description="Target height")
+    scale: Optional[float] = Field(default=None, gt=0, description="Scale ratio")
+    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
+    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class ImageConvertResponse(BaseModel):
-    """圖片轉檔回應"""
+    """Image conversion response."""
     task_id: str
-    message: str = "圖片轉檔任務已提交"
+    message: str = "Image conversion task submitted"
 
 
 class ImageInfoResponse(BaseModel):
-    """圖片資訊回應"""
+    """Image info response."""
     width: int
     height: int
     format: str
@@ -46,7 +49,7 @@ async def get_image_info(
     file_id: str,
     service: ImageConvertService = Depends(Provide[AppContainer.image_convert]),
 ):
-    """取得圖片檔案資訊"""
+    """Get image file info."""
     try:
         info = await service.get_image_info(file_id)
         return ImageInfoResponse(**info)
@@ -62,7 +65,7 @@ async def convert_image(
     request: ImageConvertRequest,
     service: ImageConvertService = Depends(Provide[AppContainer.image_convert]),
 ):
-    """提交圖片轉檔任務"""
+    """Submit image conversion task."""
     try:
         task_id = await service.submit_convert(
             file_id=request.file_id,

@@ -1,5 +1,5 @@
 """
-Remote API 連線管理路由
+Remote API connection management routes.
 """
 from typing import Optional
 
@@ -39,7 +39,7 @@ async def get_connections(
     provider: Optional[str] = None,
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
-    """取得所有連線設定"""
+    """Get all connection settings."""
     return {"connections": service.get_connections(provider)}
 
 
@@ -49,7 +49,7 @@ async def add_connection(
     data: ConnectionCreate,
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
-    """新增連線"""
+    """Add a new connection."""
     conn = service.add_connection(
         provider=data.provider,
         name=data.name,
@@ -66,7 +66,7 @@ async def update_connection(
     data: ConnectionUpdate,
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
-    """更新連線"""
+    """Update a connection."""
     conn = service.update_connection(
         conn_id,
         **data.model_dump(exclude_none=True),
@@ -82,7 +82,7 @@ async def delete_connection(
     conn_id: int,
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
-    """刪除連線"""
+    """Delete a connection."""
     if not service.delete_connection(conn_id):
         raise HTTPException(status_code=404, detail="Connection not found")
     return {"ok": True}
@@ -94,7 +94,7 @@ async def test_connection(
     data: ConnectionTest,
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
-    """測試連線"""
+    """Test a connection."""
     try:
         return service.test_connection(
             provider=data.provider,
@@ -115,7 +115,7 @@ async def list_remote_models(
     api_key: Optional[str] = None,
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
-    """列舉遠端可用模型"""
+    """List available remote models."""
     try:
         return {"models": service.list_remote_models(provider, endpoint, api_key)}
     except ValueError as e:

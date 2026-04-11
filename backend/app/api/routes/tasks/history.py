@@ -1,5 +1,5 @@
 """
-任務歷史紀錄端點
+Task history endpoints.
 """
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,7 +19,7 @@ async def list_history(
     status: Optional[str] = Query(default=None),
     history: TaskHistoryService = Depends(Provide[AppContainer.task_history]),
 ):
-    """查詢歷史紀錄（分頁）"""
+    """Query task history (paginated)."""
     return history.query(page=page, page_size=page_size, status=status)
 
 
@@ -29,7 +29,7 @@ async def delete_history_item(
     task_id: str,
     history: TaskHistoryService = Depends(Provide[AppContainer.task_history]),
 ):
-    """刪除單筆歷史紀錄"""
+    """Delete a single history entry."""
     if not history.delete(task_id):
         raise HTTPException(status_code=404, detail="History item not found")
     return {"status": "deleted", "task_id": task_id}
@@ -40,6 +40,6 @@ async def delete_history_item(
 async def clear_history(
     history: TaskHistoryService = Depends(Provide[AppContainer.task_history]),
 ):
-    """清空所有歷史紀錄"""
+    """Clear all history entries."""
     count = history.clear()
     return {"status": "cleared", "count": count}

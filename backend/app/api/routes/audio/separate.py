@@ -1,28 +1,31 @@
-from typing import Optional, List
+from __future__ import annotations
+from typing import Optional, List, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.audio.separate_service import AudioSeparateService
+
+if TYPE_CHECKING:
+    from app.services.audio.separate_service import AudioSeparateService
 
 router = APIRouter()
 
 
 class AudioSeparateRequest(BaseModel):
-    file_id: str = Field(..., description="輸入檔案 ID")
-    model_name: str = Field(default="htdemucs_6s", description="Demucs 模型名稱")
-    stems: Optional[List[str]] = Field(default=None, description="要分離的音軌 (None=全部)")
-    output_format: str = Field(default="wav", description="輸出格式 (wav, flac, mp3)")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
-    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名（用於主要 stem 檔案）")
-    generate_midi: bool = Field(default=False, description="同時產出多軌 MIDI 檔案")
+    file_id: str = Field(..., description="Input file ID")
+    model_name: str = Field(default="htdemucs_6s", description="Demucs model name")
+    stems: Optional[List[str]] = Field(default=None, description="Stems to separate (None=all)")
+    output_format: str = Field(default="wav", description="Output format (wav, flac, mp3)")
+    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
+    output_filename: Optional[str] = Field(default=None, description="Custom output filename (for the primary stem file)")
+    generate_midi: bool = Field(default=False, description="Also generate multi-track MIDI file")
 
 
 class AudioSeparateResponse(BaseModel):
     task_id: str
-    message: str = "音源分離任務已提交"
+    message: str = "Audio separation task submitted"
 
 
 @router.get("/separate/status")

@@ -1,24 +1,27 @@
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.audio.cut_service import AudioCutService
+
+if TYPE_CHECKING:
+    from app.services.audio.cut_service import AudioCutService
 
 router = APIRouter()
 
 class AudioCutRequest(BaseModel):
-    file_id: str = Field(..., description="輸入檔案 ID")
-    start_time: str = Field(default="00:00:00", description="開始時間 HH:MM:SS")
-    end_time: str = Field(..., description="結束時間 HH:MM:SS")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
-    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
+    file_id: str = Field(..., description="Input file ID")
+    start_time: str = Field(default="00:00:00", description="Start time HH:MM:SS")
+    end_time: str = Field(..., description="End time HH:MM:SS")
+    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
+    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 class AudioCutResponse(BaseModel):
     task_id: str
-    message: str = "音訊剪輯任務已提交"
+    message: str = "Audio cut task submitted"
 
 @router.post("/cut", response_model=AudioCutResponse)
 @inject

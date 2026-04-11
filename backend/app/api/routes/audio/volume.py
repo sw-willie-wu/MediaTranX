@@ -1,20 +1,25 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.audio.volume_service import AudioVolumeService
+
+if TYPE_CHECKING:
+    from app.services.audio.volume_service import AudioVolumeService
 
 router = APIRouter()
 
 class AudioVolumeRequest(BaseModel):
-    file_id: str = Field(..., description="輸入檔案 ID")
-    volume_db: float = Field(default=0.0, ge=-30.0, le=30.0, description="音量調整 dB")
-    normalize: bool = Field(default=False, description="響度正規化")
+    file_id: str = Field(..., description="Input file ID")
+    volume_db: float = Field(default=0.0, ge=-30.0, le=30.0, description="Volume adjustment in dB")
+    normalize: bool = Field(default=False, description="Loudness normalization")
 
 class AudioVolumeResponse(BaseModel):
     task_id: str
-    message: str = "音量調整任務已提交"
+    message: str = "Volume adjustment task submitted"
 
 @router.post("/volume", response_model=AudioVolumeResponse)
 @inject

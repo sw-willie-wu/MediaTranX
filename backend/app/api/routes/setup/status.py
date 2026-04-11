@@ -1,5 +1,5 @@
 """
-系統狀態路由
+System status routes.
 """
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends
@@ -15,5 +15,5 @@ router = APIRouter()
 async def get_status(
     service: SetupService = Depends(Provide[AppContainer.setup_service]),
 ):
-    """取得系統環境狀態"""
+    """Get system environment status."""
     return await service.get_system_status()

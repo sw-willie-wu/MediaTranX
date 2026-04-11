@@ -1,15 +1,18 @@
 """
-歌詞提取 API 路由
+Lyrics extraction API routes.
 """
+from __future__ import annotations
 import logging
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.audio.lyrics_service import AudioLyricsService
+
+if TYPE_CHECKING:
+    from app.services.audio.lyrics_service import AudioLyricsService
 
 logger = logging.getLogger(__name__)
 
@@ -17,26 +20,26 @@ router = APIRouter()
 
 
 class LyricsRequest(BaseModel):
-    file_id: str = Field(..., description="輸入檔案 ID")
-    whisper_size: str = Field(default="medium", description="Whisper 模型大小")
-    align: bool = Field(default=False, description="啟用 Wav2Vec2 精準對齊")
-    translate: bool = Field(default=False, description="是否翻譯歌詞")
-    target_lang: Optional[str] = Field(default=None, description="翻譯目標語言")
-    translate_model_type: str = Field(default="translategemma", description="翻譯模型類型")
-    translate_model_size: str = Field(default="4b", description="翻譯模型大小")
-    translate_quantization: Optional[str] = Field(default=None, description="翻譯模型量化精度")
-    translate_remote: bool = Field(default=False, description="使用雲端翻譯")
-    translate_provider: Optional[str] = Field(default=None, description="雲端服務提供者")
-    translate_conn_id: Optional[int] = Field(default=None, description="雲端連線 ID")
-    translate_remote_model: Optional[str] = Field(default=None, description="雲端模型 ID")
-    output_format: str = Field(default="lrc", description="輸出格式 (lrc, txt)")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
-    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
+    file_id: str = Field(..., description="Input file ID")
+    whisper_size: str = Field(default="medium", description="Whisper model size")
+    align: bool = Field(default=False, description="Enable Wav2Vec2 precise alignment")
+    translate: bool = Field(default=False, description="Whether to translate lyrics")
+    target_lang: Optional[str] = Field(default=None, description="Translation target language")
+    translate_model_type: str = Field(default="translategemma", description="Translation model type")
+    translate_model_size: str = Field(default="4b", description="Translation model size")
+    translate_quantization: Optional[str] = Field(default=None, description="Translation model quantization")
+    translate_remote: bool = Field(default=False, description="Use cloud translation")
+    translate_provider: Optional[str] = Field(default=None, description="Cloud service provider")
+    translate_conn_id: Optional[int] = Field(default=None, description="Cloud connection ID")
+    translate_remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
+    output_format: str = Field(default="lrc", description="Output format (lrc, txt)")
+    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
+    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class LyricsResponse(BaseModel):
     task_id: str
-    message: str = "歌詞提取任務已提交"
+    message: str = "Lyrics extraction task submitted"
 
 
 @router.post("/lyrics", response_model=LyricsResponse)

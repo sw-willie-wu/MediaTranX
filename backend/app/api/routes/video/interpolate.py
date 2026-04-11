@@ -1,11 +1,15 @@
 """Video interpolation API routes."""
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
+
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional
 
 from app.init.container import AppContainer
-from app.services.video.interpolate_service import InterpolateService
+
+if TYPE_CHECKING:
+    from app.services.video.interpolate_service import InterpolateService
 
 router = APIRouter()
 
@@ -24,16 +28,11 @@ class InterpolateResponse(BaseModel):
     message: str = "Interpolation task submitted"
 
 @router.get("/rife/status")
-async def rife_status():
-    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
-    from app.init.configs import SETTINGS
-    from pathlib import Path
-    rife = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})
-    variants = {}
-    for name, spec in rife.get("variants", {}).items():
-        model_path = SETTINGS.path.models / "rife" / spec["filename"]
-        variants[name] = {"downloaded": model_path.exists()}
-    return {"variants": variants}
+@inject
+async def rife_status(
+    service: InterpolateService = Depends(Provide[AppContainer.video_interpolate]),
+):
+    return service.get_rife_status()
 
 @router.post("/interpolate", response_model=InterpolateResponse)
 @inject

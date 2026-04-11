@@ -1,55 +1,58 @@
+from __future__ import annotations
 import logging
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.audio.transcribe_service import AudioTranscribeService
 from app.services.setup.language_service import LanguageService
+
+if TYPE_CHECKING:
+    from app.services.audio.transcribe_service import AudioTranscribeService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 class AudioTranscribeRequest(BaseModel):
-    file_id: str = Field(..., description="輸入檔案 ID")
-    language: Optional[str] = Field(default=None, description="語言代碼，None=自動偵測")
-    model_size: str = Field(default="medium", description="Whisper 模型大小")
-    output_format: str = Field(default="txt", description="輸出格式 (txt, srt)")
-    vocal_separation: bool = Field(default=False, description="人聲分離前處理")
-    align: bool = Field(default=False, description="精準對齊")
-    translate: bool = Field(default=False, description="翻譯")
-    target_lang: Optional[str] = Field(default=None, description="翻譯目標語言")
-    translate_model_type: str = Field(default="translategemma", description="翻譯模型類型")
-    translate_model_size: str = Field(default="4b", description="翻譯模型大小")
-    translate_quantization: Optional[str] = Field(default=None, description="翻譯模型量化精度")
-    translate_remote: bool = Field(default=False, description="使用雲端翻譯")
-    translate_provider: Optional[str] = Field(default=None, description="雲端服務提供者")
-    translate_conn_id: Optional[int] = Field(default=None, description="雲端連線 ID")
-    translate_remote_model: Optional[str] = Field(default=None, description="雲端模型 ID")
-    summarize: bool = Field(default=False, description="大綱整理")
-    summarize_model_type: str = Field(default="qwen3", description="大綱模型類型")
-    summarize_model_size: str = Field(default="4b", description="大綱模型大小")
-    summarize_quantization: Optional[str] = Field(default=None, description="大綱模型量化精度")
-    summarize_remote: bool = Field(default=False, description="使用雲端大綱模型")
-    summarize_provider: Optional[str] = Field(default=None, description="雲端服務提供者")
-    summarize_conn_id: Optional[int] = Field(default=None, description="雲端連線 ID")
-    summarize_remote_model: Optional[str] = Field(default=None, description="雲端模型 ID")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
-    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
+    file_id: str = Field(..., description="Input file ID")
+    language: Optional[str] = Field(default=None, description="Language code, None=auto-detect")
+    model_size: str = Field(default="medium", description="Whisper model size")
+    output_format: str = Field(default="txt", description="Output format (txt, srt)")
+    vocal_separation: bool = Field(default=False, description="Vocal separation preprocessing")
+    align: bool = Field(default=False, description="Precise alignment")
+    translate: bool = Field(default=False, description="Translation")
+    target_lang: Optional[str] = Field(default=None, description="Translation target language")
+    translate_model_type: str = Field(default="translategemma", description="Translation model type")
+    translate_model_size: str = Field(default="4b", description="Translation model size")
+    translate_quantization: Optional[str] = Field(default=None, description="Translation model quantization")
+    translate_remote: bool = Field(default=False, description="Use cloud translation")
+    translate_provider: Optional[str] = Field(default=None, description="Cloud service provider")
+    translate_conn_id: Optional[int] = Field(default=None, description="Cloud connection ID")
+    translate_remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
+    summarize: bool = Field(default=False, description="Outline summarization")
+    summarize_model_type: str = Field(default="qwen3", description="Summarization model type")
+    summarize_model_size: str = Field(default="4b", description="Summarization model size")
+    summarize_quantization: Optional[str] = Field(default=None, description="Summarization model quantization")
+    summarize_remote: bool = Field(default=False, description="Use cloud summarization model")
+    summarize_provider: Optional[str] = Field(default=None, description="Cloud service provider")
+    summarize_conn_id: Optional[int] = Field(default=None, description="Cloud connection ID")
+    summarize_remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
+    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
+    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 class AudioTranscribeResponse(BaseModel):
     task_id: str
-    message: str = "逐字稿轉譯任務已提交"
+    message: str = "Transcription task submitted"
 
 @router.get("/transcribe/languages")
 @inject
 async def get_transcribe_languages(
     language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
 ):
-    """取得 Whisper 支援的語言列表"""
+    """Get the list of languages supported by Whisper."""
     return language_service.get_whisper_languages()
 
 

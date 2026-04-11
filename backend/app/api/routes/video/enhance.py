@@ -1,11 +1,15 @@
 """Video enhancement API routes."""
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
+
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional
 
 from app.init.container import AppContainer
-from app.services.video.enhance_service import EnhanceService
+
+if TYPE_CHECKING:
+    from app.services.video.enhance_service import EnhanceService
 
 router = APIRouter()
 
@@ -20,7 +24,7 @@ class EnhanceRequest(BaseModel):
 
 class EnhanceResponse(BaseModel):
     task_id: str
-    message: str = "畫面強化任務已提交"
+    message: str = "Video enhancement task submitted"
 
 @router.post("/enhance", response_model=EnhanceResponse)
 @inject

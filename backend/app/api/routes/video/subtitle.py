@@ -1,8 +1,9 @@
 """
-字幕提取 API 路由
+Subtitle extraction API routes.
 """
+from __future__ import annotations
 import logging
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
@@ -11,98 +12,100 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.video.subtitle_service import SubtitleService
 from app.services.setup.language_service import LanguageService
+
+if TYPE_CHECKING:
+    from app.services.video.subtitle_service import SubtitleService
 
 router = APIRouter()
 
 
 class SubtitleGenerateRequest(BaseModel):
-    """字幕生成請求"""
-    file_id: str = Field(..., description="輸入影片檔案 ID")
+    """Subtitle generation request."""
+    file_id: str = Field(..., description="Input video file ID")
     language: Optional[str] = Field(
         default=None,
-        description="語言代碼 (None=自動偵測, zh=中文, en=英文, ja=日文...)"
+        description="Language code (None=auto-detect, zh=Chinese, en=English, ja=Japanese...)"
     )
     model_size: str = Field(
         default="medium",
-        description="模型大小 (tiny, base, small, medium, large-v3)"
+        description="Model size (tiny, base, small, medium, large-v3)"
     )
     output_format: str = Field(
         default="srt",
-        description="輸出格式 (srt, vtt)"
+        description="Output format (srt, vtt)"
     )
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
-    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
+    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
+    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
     target_language: Optional[str] = Field(
         default=None,
-        description="翻譯目標語言 (None=不翻譯, zh-TW=繁體中文, en=英文...)"
+        description="Translation target language (None=no translation, zh-TW, en, ja...)"
     )
     translate_model_size: str = Field(
         default="4b",
-        description="翻譯模型大小 (4b, 12b, 27b)"
+        description="Translation model size (4b, 12b, 27b)"
     )
     translate_model_type: str = Field(
         default="translategemma",
-        description="翻譯模型類型 (translategemma, qwen3)"
+        description="Translation model type (translategemma, qwen3)"
     )
     translate_quantization: Optional[str] = Field(
         default=None,
-        description="翻譯模型量化精度 (Q4_K_M, Q4_K_S, Q3_K_L, Q3_K_M, Q3_K_S, Q8_0 等)"
+        description="Translation model quantization (Q4_K_M, Q4_K_S, Q3_K_L, Q3_K_M, Q3_K_S, Q8_0, etc.)"
     )
-    # 進階分句參數
+    # Advanced segmentation parameters
     word_timestamps: bool = Field(
         default=False,
-        description="啟用詞級時間戳（有助於更精確分句）"
+        description="Enable word-level timestamps (helps with more precise segmentation)"
     )
     condition_on_previous_text: bool = Field(
         default=True,
-        description="根據前文調整辨識（關閉可避免句子合併，適合多人對話）"
+        description="Condition on previous text (disable to avoid sentence merging, suited for multi-speaker)"
     )
     min_silence_duration_ms: int = Field(
         default=500,
         ge=100,
         le=2000,
-        description="最小靜音時長（毫秒），低於此值的停頓不會分句"
+        description="Minimum silence duration (ms); pauses shorter than this won't trigger a split"
     )
     vad_threshold: float = Field(
         default=0.5,
         ge=0.1,
         le=0.9,
-        description="VAD 門檻值，越低越敏感（更容易分句）"
+        description="VAD threshold; lower = more sensitive (more splits)"
     )
     align: bool = Field(
         default=False,
-        description="啟用精準對齊（Wav2Vec2 forced alignment）"
+        description="Enable precise alignment (Wav2Vec2 forced alignment)"
     )
-    # 翻譯選項
+    # Translation options
     keep_names: bool = Field(
         default=True,
-        description="保留人名和專有名詞原文"
+        description="Keep proper nouns and names in original language"
     )
     translate_style: str = Field(
         default="colloquial",
-        description="翻譯風格：colloquial（口語化）、formal（正式）、literal（直譯）"
+        description="Translation style: colloquial, formal, or literal"
     )
     glossary: Optional[dict[str, str]] = Field(
         default=None,
-        description="專有名詞對照表 {原文: 譯文}"
+        description="Glossary {source_term: translation}"
     )
-    # 雲端翻譯
-    translate_remote: bool = Field(default=False, description="是否使用雲端模型翻譯")
-    translate_provider: Optional[str] = Field(default=None, description="雲端 provider")
-    translate_conn_id: Optional[int] = Field(default=None, description="連線 ID")
-    translate_remote_model: Optional[str] = Field(default=None, description="雲端模型 ID")
+    # Cloud translation
+    translate_remote: bool = Field(default=False, description="Whether to use cloud model for translation")
+    translate_provider: Optional[str] = Field(default=None, description="Cloud provider")
+    translate_conn_id: Optional[int] = Field(default=None, description="Connection ID")
+    translate_remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
 
 
 class SubtitleGenerateResponse(BaseModel):
-    """字幕生成回應"""
+    """Subtitle generation response."""
     task_id: str
-    message: str = "字幕生成任務已提交"
+    message: str = "Subtitle generation task submitted"
 
 
 class ModelStatusResponse(BaseModel):
-    """模型狀態回應（僅套件可用性 + 模型是否已下載）"""
+    """Model status response (package availability + model download status)."""
     available: bool
     model_size: str
     model_downloaded: bool
@@ -114,7 +117,7 @@ async def get_whisper_status(
     model_size: str = "medium",
     service: SubtitleService = Depends(Provide[AppContainer.video_subtitle]),
 ):
-    """查詢 Whisper 模型狀態"""
+    """Query Whisper model status."""
     try:
         status = service.get_model_status(model_size)
         return ModelStatusResponse(**status)
@@ -128,7 +131,7 @@ async def get_translategemma_status(
     model_size: str = "4b",
     language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
 ):
-    """查詢 TranslateGemma 模型狀態"""
+    """Query TranslateGemma model status."""
     try:
         status = language_service.get_model_status("translategemma", model_size)
         return ModelStatusResponse(**status)
@@ -144,7 +147,7 @@ async def get_translate_model_status(
     quantization: str | None = None,
     language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
 ):
-    """查詢翻譯模型狀態（通用，支援 translategemma 和 qwen3）"""
+    """Query translation model status (generic, supports translategemma and qwen3)."""
     try:
         status = language_service.get_model_status(model_type, model_size, quantization)
         return status
@@ -157,54 +160,41 @@ async def get_translate_model_status(
 async def get_translategemma_languages(
     language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
 ):
-    """取得翻譯模型支援的翻譯語言列表"""
+    """Get the list of languages supported by the translation model."""
     return language_service.get_supported_languages()
 
 
 class TranslateTestResponse(BaseModel):
-    """翻譯測試回應"""
+    """Translation test response."""
     result: str
     prompt: str
 
 
 class TranslateTestRequest(BaseModel):
-    """翻譯測試請求"""
-    text: str = Field(..., description="要翻譯的文字（可以是 SRT 格式）")
-    target_language: str = Field(default="zh-TW", description="目標語言")
-    source_language: str = Field(default="ja", description="來源語言")
-    model_size: str = Field(default="4b", description="模型大小: 4b, 12b")
+    """Translation test request."""
+    text: str = Field(..., description="Text to translate (can be SRT format)")
+    target_language: str = Field(default="zh-TW", description="Target language")
+    source_language: str = Field(default="ja", description="Source language")
+    model_size: str = Field(default="4b", description="Model size: 4b, 12b")
 
 
 @router.post("/translategemma/test", response_model=TranslateTestResponse)
-async def test_translate(request: TranslateTestRequest):
+@inject
+async def test_translate(
+    request: TranslateTestRequest,
+    service: SubtitleService = Depends(Provide[AppContainer.video_subtitle]),
+):
     """
-    測試翻譯（開發用）— 使用 llama-server messages API
+    Test translation (for development) -- uses llama-server messages API.
     """
     try:
-        from app.utils.prompts import LANG_NAMES_EN
-        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-        from app.engine.ai.registry import SLOT_LLM
-
-        source_name = LANG_NAMES_EN.get(request.source_language, request.source_language)
-        target_name = LANG_NAMES_EN.get(request.target_language, request.target_language)
-        variant = request.model_size
-
-        user_msg = (
-            f"Translate the following {source_name} subtitles to {target_name}. "
-            f"Keep SRT format and timestamps unchanged. Output only the translation.\n\n"
-            f"{request.text}"
+        data = service.test_translate(
+            text=request.text,
+            target_language=request.target_language,
+            source_language=request.source_language,
+            model_size=request.model_size,
         )
-        messages = [{"role": "user", "content": user_msg}]
-
-        runtime = LlamaServerRuntime(SLOT_LLM)
-        with runtime.acquire("translategemma", variant):
-            result = runtime.chat(
-                messages=messages,
-                max_tokens=len(request.text) * 3,
-                temperature=0.1,
-            )
-
-        return TranslateTestResponse(result=result, prompt=user_msg)
+        return TranslateTestResponse(result=data["result"], prompt=data["prompt"])
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -216,24 +206,24 @@ async def generate_subtitle(
     service: SubtitleService = Depends(Provide[AppContainer.video_subtitle]),
 ):
     """
-    提交字幕生成任務
+    Submit subtitle generation task.
 
-    使用 faster-whisper 從影片中提取語音並生成字幕檔。
-    首次使用時會自動下載指定大小的模型。
-    可選擇翻譯字幕到指定語言。
+    Uses faster-whisper to extract speech from video and generate subtitle files.
+    The specified model is automatically downloaded on first use.
+    Optionally translates subtitles to a target language.
 
-    支援的選項：
-    - **language**: None (自動偵測), zh, en, ja, ko, fr, de, es...
-    - **model_size**: tiny, base, small, medium (推薦), large-v3
-    - **output_format**: srt (預設), vtt
-    - **target_language**: None (不翻譯), zh-TW, en, ja...
-    - **translate_model_size**: 4b (推薦), 12b, 27b
+    Supported options:
+    - **language**: None (auto-detect), zh, en, ja, ko, fr, de, es...
+    - **model_size**: tiny, base, small, medium (recommended), large-v3
+    - **output_format**: srt (default), vtt
+    - **target_language**: None (no translation), zh-TW, en, ja...
+    - **translate_model_size**: 4b (recommended), 12b, 27b
 
-    進階分句選項（適合多人對話場景）：
-    - **word_timestamps**: 啟用詞級時間戳
-    - **condition_on_previous_text**: 關閉可避免句子合併
-    - **min_silence_duration_ms**: 最小靜音時長 (100-2000ms)
-    - **vad_threshold**: VAD 門檻值 (0.1-0.9)
+    Advanced segmentation options (for multi-speaker scenarios):
+    - **word_timestamps**: Enable word-level timestamps
+    - **condition_on_previous_text**: Disable to avoid sentence merging
+    - **min_silence_duration_ms**: Minimum silence duration (100-2000ms)
+    - **vad_threshold**: VAD threshold (0.1-0.9)
     """
     try:
         task_id = await service.submit_subtitle_generate(

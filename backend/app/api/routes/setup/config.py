@@ -1,5 +1,5 @@
 """
-應用程式設定路由
+Application configuration routes.
 """
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends
@@ -17,7 +17,7 @@ router = APIRouter()
 async def get_config(
     config_service: ConfigService = Depends(Provide[AppContainer.config_service]),
 ):
-    """取得應用程式設定"""
+    """Get application configuration."""
     return config_service.get_config()
 
 
@@ -32,7 +32,7 @@ async def update_config(
     data: AppConfigUpdate,
     config_service: ConfigService = Depends(Provide[AppContainer.config_service]),
 ):
-    """更新應用程式設定，重啟後生效"""
+    """Update application configuration (takes effect after restart)."""
     return config_service.update_config(
         models_dir=data.models_dir,
         temp_dir=data.temp_dir,
@@ -44,5 +44,5 @@ async def update_config(
 async def get_translate_styles(
     language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
 ):
-    """取得翻譯風格選項列表"""
+    """Get list of translation style options."""
     return language_service.get_translate_styles()

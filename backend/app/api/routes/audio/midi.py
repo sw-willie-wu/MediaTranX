@@ -1,12 +1,17 @@
 """
 MIDI editor API routes.
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.audio.audio_midi_service import AudioMidiService
+
+if TYPE_CHECKING:
+    from app.services.audio.audio_midi_service import AudioMidiService
 
 router = APIRouter()
 
