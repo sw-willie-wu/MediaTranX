@@ -5,7 +5,7 @@ Uses Real-ESRGAN to upscale video frames.
 import logging
 from fractions import Fraction
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 from uuid import uuid4
 
 import numpy as np
@@ -16,21 +16,22 @@ from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
-TASK_TYPE_ENHANCE = "video.enhance"
+TASK_TYPE_VIDEO_ENHANCE = "video.enhance"
 
 
 class EnhanceService:
+    """Video frame-by-frame enhancement using Real-ESRGAN super-resolution."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_ENHANCE, self._handle_task)
+        self._task_manager.register_handler(TASK_TYPE_VIDEO_ENHANCE, self._handle_task)
         logger.info("EnhanceService initialized")
 
     async def submit(self, file_id: str, model: str = "realesrgan", variant: str = "x4plus",
                      output_format: str = "mp4", video_codec: str = "h264",
                      output_dir: Optional[str] = None, output_filename: Optional[str] = None) -> str:
-        task_id = await self._task_manager.submit(TASK_TYPE_ENHANCE, {
+        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_ENHANCE, {
             "file_id": file_id, "model": model, "variant": variant,
             "output_format": output_format, "video_codec": video_codec,
             "output_dir": output_dir, "output_filename": output_filename,
@@ -38,15 +39,10 @@ class EnhanceService:
         logger.info(f"Enhancement task submitted: {task_id}")
         return task_id
 
-    def _handle_task(self, params: dict, progress_callback) -> dict:
-        import asyncio
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(self._execute(params, progress_callback))
-        finally:
-            loop.close()
+    def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+        return self._execute(params, progress_callback)
 
-    async def _execute(self, params: dict, progress_callback) -> dict:
+    def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         from app.init.container import get_container
         from app.engine.ai.image.realesrgan import get_realesrgan
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
@@ -68,7 +64,7 @@ class EnhanceService:
         scale = variant_spec.get("scale", 4)
 
         ffmpeg = get_container().ffmpeg()
-        media_info = await ffmpeg.get_media_info(file_info.file_path)
+        media_info = ffmpeg.get_media_info_sync(file_info.file_path)
         source_fps = media_info.fps or 30.0
         source_fps_frac = media_info.fps_fraction or Fraction(30)
         width = media_info.width
@@ -79,12 +75,9 @@ class EnhanceService:
         original_stem = Path(file_info.original_filename).stem
         custom_output_filename = params.get("output_filename")
         output_filename = custom_output_filename if custom_output_filename else f"{original_stem}.enhanced_{variant}.{output_format}"
-        if output_dir:
-            output_dir_path = Path(output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / output_filename
+        output_dir = Path(output_dir) if output_dir else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / output_filename
 
         # Pipe: FFmpeg decode → Real-ESRGAN → FFmpeg encode
         # Decoder reads at source resolution, encoder writes at scaled resolution

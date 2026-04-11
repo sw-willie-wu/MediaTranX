@@ -1,6 +1,6 @@
 """
-檔案服務模組
-處理檔案上傳、下載和管理
+File service module.
+Handles file upload, download, and management.
 """
 import aiofiles
 import logging
@@ -19,13 +19,10 @@ logger = logging.getLogger(__name__)
 
 
 class FileService:
-    """
-    檔案服務
-    管理上傳檔案和處理結果
-    """
+    """File upload, output registration, and lifecycle management service."""
 
     def __init__(self, base_dir: Optional[str] = None):
-        # 設定基礎目錄（所有中間產物統一放 temp，使用者存檔時才透過 saveFileDialog 選目的地）
+        # Set base directory (all intermediate files go to temp; user picks destination via saveFileDialog)
         if base_dir:
             base_temp = Path(base_dir) / "temp"
         else:
@@ -34,11 +31,11 @@ class FileService:
         self._upload_dir = base_temp / "uploads"
         self._output_dir = base_temp / "results"
 
-        # 確保目錄存在
+        # Ensure directories exist
         self._upload_dir.mkdir(parents=True, exist_ok=True)
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 檔案索引
+        # File index
         self._files: Dict[str, FileData] = {}
 
         logger.info(f"FileService initialized. Upload dir: {self._upload_dir}")
@@ -59,33 +56,33 @@ class FileService:
         source_dir: Optional[str] = None
     ) -> FileData:
         """
-        儲存上傳的檔案
+        Save an uploaded file.
 
         Args:
-            filename: 原始檔名
-            content: 檔案內容
-            mime_type: MIME 類型（可選，會自動偵測）
-            source_dir: 來源目錄（檔案在使用者電腦上的原始目錄）
+            filename: Original filename
+            content: File content bytes
+            mime_type: MIME type (optional, auto-detected)
+            source_dir: Source directory (original directory on the user's machine)
 
         Returns:
-            FileData: 檔案資訊
+            FileData: File information
         """
         file_id = str(uuid4())
         ext = Path(filename).suffix
         safe_filename = f"{file_id}{ext}"
         file_path = self._upload_dir / safe_filename
 
-        # 寫入檔案
+        # Write file
         async with aiofiles.open(file_path, 'wb') as f:
             await f.write(content)
 
-        # 偵測 MIME 類型
+        # Detect MIME type
         if mime_type is None:
             mime_type, _ = mimetypes.guess_type(filename)
             if mime_type is None:
                 mime_type = "application/octet-stream"
 
-        # 建立檔案資訊
+        # Create file info
         file_info = FileData(
             file_id=file_id,
             filename=safe_filename,
@@ -104,11 +101,11 @@ class FileService:
 
     def register_local_file(self, file_path: str) -> FileData:
         """
-        直接註冊本機檔案（不複製），適用於 Electron 本地環境。
+        Register a local file directly (no copy), for Electron local environment.
         """
         path = Path(file_path)
         if not path.exists():
-            raise FileNotFoundError(f"檔案不存在: {file_path}")
+            raise FileNotFoundError(f"File not found: {file_path}")
 
         file_id = str(uuid4())
         mime_type, _ = mimetypes.guess_type(path.name)
@@ -137,29 +134,29 @@ class FileService:
         mime_type: Optional[str] = None
     ) -> FileData:
         """
-        串流方式儲存上傳的檔案
+        Save an uploaded file via streaming.
 
         Args:
-            filename: 原始檔名
-            file_stream: 檔案串流（SpooledTemporaryFile 或類似物件）
-            mime_type: MIME 類型
+            filename: Original filename
+            file_stream: File stream (SpooledTemporaryFile or similar)
+            mime_type: MIME type
 
         Returns:
-            FileData: 檔案資訊
+            FileData: File information
         """
         file_id = str(uuid4())
         ext = Path(filename).suffix
         safe_filename = f"{file_id}{ext}"
         file_path = self._upload_dir / safe_filename
 
-        # 串流寫入
+        # Stream write
         file_size = 0
         async with aiofiles.open(file_path, 'wb') as f:
             while chunk := await file_stream.read(1024 * 1024):  # 1MB chunks
                 await f.write(chunk)
                 file_size += len(chunk)
 
-        # 偵測 MIME 類型
+        # Detect MIME type
         if mime_type is None:
             mime_type, _ = mimetypes.guess_type(filename)
             if mime_type is None:
@@ -181,11 +178,11 @@ class FileService:
         return file_info
 
     def get_file(self, file_id: str) -> Optional[FileData]:
-        """取得檔案資訊"""
+        """Get file information."""
         return self._files.get(file_id)
 
     def get_file_path(self, file_id: str) -> Optional[Path]:
-        """取得檔案路徑"""
+        """Get file path."""
         file_info = self._files.get(file_id)
         if file_info:
             return Path(file_info.file_path)
@@ -198,12 +195,12 @@ class FileService:
         ext: Optional[str] = None
     ) -> tuple[str, Path]:
         """
-        建立輸出檔案路徑
+        Create an output file path.
 
         Args:
-            original_filename: 原始檔名
-            suffix: 檔名後綴（如 "_upscaled"）
-            ext: 副檔名（可選，預設保持原本）
+            original_filename: Original filename
+            suffix: Filename suffix (e.g., "_upscaled")
+            ext: Extension (optional, keeps original by default)
 
         Returns:
             (file_id, file_path)
@@ -227,16 +224,16 @@ class FileService:
         mime_type: Optional[str] = None
     ) -> FileData:
         """
-        註冊輸出檔案
+        Register an output file.
 
         Args:
-            file_id: 檔案 ID
-            file_path: 檔案路徑
-            original_filename: 原始檔名
-            mime_type: MIME 類型
+            file_id: File ID
+            file_path: File path
+            original_filename: Original filename
+            mime_type: MIME type
 
         Returns:
-            FileData: 檔案資訊
+            FileData: File information
         """
         if not file_path.exists():
             raise FileNotFoundError(f"Output file not found: {file_path}")
@@ -263,13 +260,13 @@ class FileService:
 
     def delete_file(self, file_id: str) -> bool:
         """
-        刪除檔案
+        Delete a file.
 
         Args:
-            file_id: 檔案 ID
+            file_id: File ID
 
         Returns:
-            是否成功刪除
+            Whether deletion was successful
         """
         file_info = self._files.get(file_id)
         if file_info is None:
@@ -277,7 +274,7 @@ class FileService:
 
         try:
             file_path = Path(file_info.file_path)
-            # 只刪除 temp 目錄內的檔案，避免誤刪使用者原始檔案（register_local_file 的路徑）
+            # Only delete files within the temp directory to avoid deleting user's original files (from register_local_file)
             is_managed = (
                 str(file_path).startswith(str(self._upload_dir)) or
                 str(file_path).startswith(str(self._output_dir))
@@ -294,13 +291,13 @@ class FileService:
 
     def cleanup_temp(self, max_age_hours: int = 24) -> int:
         """
-        清理過期的暫存檔案（僅 upload_dir，依時間過濾）
+        Clean up expired temporary files (upload_dir only, filtered by age).
 
         Args:
-            max_age_hours: 最大保留時間（小時）
+            max_age_hours: Maximum retention time (hours)
 
         Returns:
-            清理的檔案數量
+            Number of files cleaned up
         """
         now = datetime.utcnow()
         to_delete = []
@@ -318,17 +315,17 @@ class FileService:
 
     def cleanup_all(self) -> int:
         """
-        清除本次 session 所有暫存檔案（upload_dir + output_dir）。
-        供關閉應用程式時呼叫。
+        Remove all temporary files for this session (upload_dir + output_dir).
+        Called when the application shuts down.
 
         Returns:
-            清理的檔案數量
+            Number of files cleaned up
         """
         to_delete = list(self._files.keys())
         for file_id in to_delete:
             self.delete_file(file_id)
 
-        # 補清目錄內殘留的實體檔案（未被索引的）
+        # Clean up remaining physical files in directories (not indexed)
         for directory in (self._upload_dir, self._output_dir):
             try:
                 for f in directory.iterdir():

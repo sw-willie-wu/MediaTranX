@@ -1,7 +1,4 @@
-"""
-音訊剪輯服務
-"""
-import asyncio
+"""Audio cut service."""
 import logging
 from pathlib import Path
 from typing import Callable, Optional
@@ -17,6 +14,7 @@ TASK_TYPE_AUDIO_CUT = "audio.cut"
 
 
 class AudioCutService:
+    """Audio trimming service using FFmpeg stream copy."""
 
     def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager):
         self._ffmpeg = ffmpeg
@@ -48,14 +46,9 @@ class AudioCutService:
         return task_id
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(self._execute(params, progress_callback))
-        finally:
-            loop.close()
+        return self._execute(params, progress_callback)
 
-    async def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+    def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -65,25 +58,21 @@ class AudioCutService:
         ext = Path(file_info.original_filename).suffix or ".mp3"
         original_stem = Path(file_info.original_filename).stem
 
-        # 決定輸出目錄
-        custom_output_dir = params.get("output_dir")
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
+        # Determine output directory
+        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 決定輸出檔名
+        # Determine output filename
         custom_output_filename = params.get("output_filename")
         if custom_output_filename:
             final_filename = custom_output_filename
         else:
             final_filename = f"{original_stem}_cut_{output_file_id[:8]}{ext}"
 
-        output_path = output_dir_path / final_filename
+        output_path = output_dir / final_filename
 
         progress_callback(0.0, "task.progress.cut_starting")
-        await self._ffmpeg.cut(
+        self._ffmpeg.cut_sync(
             input_path=file_info.file_path,
             output_path=output_path,
             start_time=params["start_time"],

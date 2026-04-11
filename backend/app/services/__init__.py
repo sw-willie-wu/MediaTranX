@@ -1,2 +1,2 @@
 # Services are wired via DI container (app.init.container).
-# Import from subpackages directly: e.g. from app.services.audio import AudioTranscodeService
+# Import from specific modules directly: e.g. from app.services.audio.transcode_service import AudioTranscodeService

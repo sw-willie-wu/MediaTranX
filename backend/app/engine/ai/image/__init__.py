@@ -1,82 +1,52 @@
-"""
-image - PTH 模型集合（超解析 + 人臉修復）
-"""
-from app.engine.ai.runtime.pth import PTHRuntime
-
-# Upscale wrappers
-from .realesrgan import RealESRGANWrapper, get_realesrgan
-from .swinir import SwinIRWrapper, get_swinir
-from .bsrgan import BSRGANWrapper, get_bsrgan
-from .real_cugan import RealCUGANWrapper, get_real_cugan
-from .waifu2x import Waifu2xWrapper, get_waifu2x
-
-# Face restore wrappers
-from .codeformer import CodeFormerWrapper, get_codeformer
-from .gfpgan import GFPGANWrapper, get_gfpgan
+"""Image AI engine wrappers. Import from specific modules directly."""
 
 
-def get_upscaler(model_id: str) -> PTHRuntime:
+def get_upscaler(model_id: str):
     """
-    根據 model_id 取得對應的超解析 wrapper
+    Get the corresponding upscale wrapper by model_id (lazy import).
 
     Args:
-        model_id: 模型家族 ID（realesrgan/swinir/bsrgan/real-cugan/waifu2x）
+        model_id: Model family ID (realesrgan/swinir/bsrgan/real-cugan/waifu2x).
 
     Returns:
-        對應的 wrapper 實例
+        The corresponding wrapper instance.
     """
-    model_map = {
-        "realesrgan": get_realesrgan,
-        "swinir": get_swinir,
-        "bsrgan": get_bsrgan,
-        "real-cugan": get_real_cugan,
-        "waifu2x": get_waifu2x,
-    }
-
-    factory = model_map.get(model_id)
-    if not factory:
-        raise ValueError(f"Unknown upscale model: {model_id}. Available: {list(model_map.keys())}")
-
-    return factory()
+    if model_id == "realesrgan":
+        from .realesrgan import get_realesrgan
+        return get_realesrgan()
+    elif model_id == "swinir":
+        from .swinir import get_swinir
+        return get_swinir()
+    elif model_id == "bsrgan":
+        from .bsrgan import get_bsrgan
+        return get_bsrgan()
+    elif model_id == "real-cugan":
+        from .real_cugan import get_real_cugan
+        return get_real_cugan()
+    elif model_id == "waifu2x":
+        from .waifu2x import get_waifu2x
+        return get_waifu2x()
+    else:
+        available = ["realesrgan", "swinir", "bsrgan", "real-cugan", "waifu2x"]
+        raise ValueError(f"Unknown upscale model: {model_id}. Available: {available}")
 
 
 def get_face_restorer(model_id: str):
     """
-    根據 model_id 取得對應的人臉修復 wrapper
+    Get the corresponding face restoration wrapper by model_id (lazy import).
 
     Args:
-        model_id: 模型家族 ID（codeformer/gfpgan）
+        model_id: Model family ID (codeformer/gfpgan).
 
     Returns:
-        對應的 wrapper 實例
+        The corresponding wrapper instance.
     """
-    model_map = {
-        "codeformer": get_codeformer,
-        "gfpgan": get_gfpgan,
-    }
-
-    factory = model_map.get(model_id)
-    if not factory:
-        raise ValueError(f"Unknown face_restore model: {model_id}. Available: {list(model_map.keys())}")
-
-    return factory()
-
-
-__all__ = [
-    "get_upscaler",
-    "get_face_restorer",
-    "get_realesrgan",
-    "get_swinir",
-    "get_bsrgan",
-    "get_real_cugan",
-    "get_waifu2x",
-    "get_codeformer",
-    "get_gfpgan",
-    "RealESRGANWrapper",
-    "SwinIRWrapper",
-    "BSRGANWrapper",
-    "RealCUGANWrapper",
-    "Waifu2xWrapper",
-    "CodeFormerWrapper",
-    "GFPGANWrapper",
-]
+    if model_id == "codeformer":
+        from .codeformer import get_codeformer
+        return get_codeformer()
+    elif model_id == "gfpgan":
+        from .gfpgan import get_gfpgan
+        return get_gfpgan()
+    else:
+        available = ["codeformer", "gfpgan"]
+        raise ValueError(f"Unknown face_restore model: {model_id}. Available: {available}")

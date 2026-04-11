@@ -1,9 +1,10 @@
 """
-Setup 管理服務（精簡版）
-SetupService singleton + 系統狀態查詢 + 各功能模組 delegation。
+Setup management service.
+SetupService singleton + system status query + feature module delegation.
 """
 import sys
 import logging
+from typing import Callable
 from app.init.configs import SETTINGS
 from app.workers.task_manager import TaskManager
 
@@ -14,15 +15,15 @@ logger = logging.getLogger(__name__)
 
 
 class SetupService:
-    """環境設置服務"""
+    """Environment setup, system status, and model download/removal service."""
 
     def __init__(self, task_manager: TaskManager):
-        # 向 TaskManager 註冊模型下載 handler
+        # Register model download handler with TaskManager
         task_manager.register_handler("setup.model_download", self._handle_model_download)
         logger.info("SetupService initialized, registered setup.model_download handler")
 
     async def get_system_status(self) -> dict:
-        """取得詳細系統與環境狀態"""
+        """Get detailed system and environment status."""
         from pathlib import Path
         from app.engine.device import get_device_info, select_torch_index
         from app.init.container import get_container
@@ -41,7 +42,7 @@ class SetupService:
 
     @staticmethod
     def _get_component_versions(settings) -> dict:
-        """取得二進位工具版本（.version JSON 或純文字）"""
+        """Get binary tool versions (.version JSON or plain text)."""
         import json
         versions = {}
         for tool in ("ffmpeg", "llama"):
@@ -69,10 +70,10 @@ class SetupService:
             pass
         return versions
 
-    def _handle_model_download(self, params: dict, progress_callback) -> dict:
-        """模型下載任務處理器（同步，由 ThreadPoolExecutor 執行）"""
+    def _handle_model_download(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+        """Model download task handler (synchronous, runs in ThreadPoolExecutor)."""
         return handle_model_download(params, progress_callback)
 
     def remove_model(self, item_id: str) -> None:
-        """刪除已下載的模型/工具檔案"""
+        """Delete downloaded model/tool files."""
         remove_model(item_id)

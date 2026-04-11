@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class AudioMidiService:
+    """MIDI read/write/export and WAV conversion service."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
@@ -32,7 +33,6 @@ class AudioMidiService:
     def create_midi(self, data: dict) -> str:
         """Create a new .mid file from editor JSON, register it, and return file_id."""
         from app.utils.midi import json_to_midi
-        from uuid import uuid4
 
         file_id = str(uuid4())
         temp_dir = self._file_service._upload_dir
