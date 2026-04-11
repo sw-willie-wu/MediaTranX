@@ -2,7 +2,7 @@
 Cross-layer shared file domain models.
 
 FileData is shared by services and api layers
-to avoid services depending on api.schemas.
+to avoid services depending on the API layer.
 """
 from dataclasses import dataclass, field
 from datetime import datetime, timezone

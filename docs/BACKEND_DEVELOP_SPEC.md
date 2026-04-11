@@ -11,7 +11,7 @@ app/
 ├── init/                      ← 啟動初始化（DLL 注入、日誌、相容層）
 ├── api/
 │   ├── routes/                ← 路由層：參數驗證 → 呼叫 Service → 回傳 Response
-│   └── schemas/               ← Pydantic response models（API 專用）
+│   └── (Response models defined in route files directly)
 ├── db/                        ← 資料庫層（SQLModel）
 │   ├── database.py            ← Engine 建立、migration
 │   ├── models/                ← ORM models（api_connection、task_history）
@@ -30,7 +30,7 @@ app/
 │       ├── registry.py        ← 模型註冊表
 │       └── model_manager.py   ← VRAM / Slot 管理
 ├── workers/                   ← TaskManager、ProgressTracker
-├── models/                    ← 跨層共用 domain types（enum、dataclass）
+├── types/                     ← 跨層共用 domain types（enum、dataclass）
 ├── utils/                     ← 工具函數（gif_utils）
 └── exceptions.py              ← 自訂例外階層
 ```
@@ -47,15 +47,15 @@ app/
 
 ### 跨層共用型別
 
-跨層共用的 domain models 放在 `app/models/`（純 Python dataclass + enum），避免 workers/services 反向依賴 API 層：
+跨層共用的 domain types 放在 `app/types/`（純 Python dataclass + enum），避免 workers/services 反向依賴 API 層：
 
 ```
-app/models/
+app/types/
   task.py   ← TaskStatus (enum) + TaskData (dataclass)
   file.py   ← FileData (dataclass)
 ```
 
-API 層的 Pydantic models（`TaskResponse`、`FileInfo`）在 `api/schemas/common.py`，routes 透過 `from_task_data()` / `from_file_data()` 轉換。
+API 層的 Pydantic models（`TaskResponse`、`FileInfo`）直接定義在對應的 route 檔案中（`routes/tasks/active.py`、`routes/files.py`），透過 `from_task_data()` / `from_file_data()` 轉換。
 
 ### 資料庫層（app/db/）
 
@@ -389,7 +389,7 @@ async def do_action(
 
 ### 4.2 規則
 
-- Request/Response 模型定義在 route 檔案內，不放到 `schemas/common.py`（除非多個 route 共用）
+- Request/Response 模型定義在 route 檔案內
 - `Field(...)` 表示必填，`Field(default=...)` 表示選填
 - 錯誤處理：`ValueError` → 404，其他 → 500
 - Route 內**不可**有業務邏輯，只做：驗證 → 呼叫 Service → 回傳
@@ -594,7 +594,7 @@ def get_image_compress_service() -> ImageCompressService:
 5. [ ] **Import**：外部套件直接 top-level import
 6. [ ] **日誌**：Service 初始化和任務提交/完成有 `logger.info`
 7. [ ] **路徑**：所有路徑透過 `get_settings().path` 取得
-8. [ ] **文件**：更新 `docs/ARCHITECTURE.md` 的相關段落
+8. [ ] **文件**：更新 `docs/ARCHITECTURE.md` 和本文件的相關段落
 
 ### 新增本地 AI 模型
 

@@ -113,7 +113,7 @@ graph TB
     Engine --> FFmpeg["FFmpeg"]
 ```
 
-詳見 [ARCHITECTURE.md](ARCHITECTURE.md)。
+詳見 [架構文件](ARCHITECTURE.md)。
 
 ---
 
@@ -180,8 +180,8 @@ npm run dev
 ## 文件
 
 - [架構文件](ARCHITECTURE.md) — 系統概覽、API 端點、資料流
-- [後端開發規範](BACKEND_ARCHITECTURE.md) — 後端開發規則
-- [前端設計系統](FRONTEND_DESIGN_SYSTEM.md) — UI/UX 規範
+- [後端開發規範](BACKEND_DEVELOP_SPEC.md) — 後端開發規則
+- [前端開發規範](FRONTEND_DEVELOP_SPEC.md) — UI/UX 規範
 
 ---
 

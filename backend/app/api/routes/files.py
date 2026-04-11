@@ -1,17 +1,59 @@
 """
 File handling endpoints.
 """
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pathlib import Path
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_serializer
 
 from app.init.container import AppContainer
 from app.services.files.file_service import FileService
-from app.api.schemas.common import FileInfo, FileUploadResponse
+from app.types.file import FileData
+
+
+def _serialize_dt(v: datetime) -> str:
+    return v.isoformat()
+
+
+class FileInfo(BaseModel):
+    """File API response model."""
+    file_id: str
+    filename: str
+    original_filename: str
+    file_path: str
+    file_size: int
+    mime_type: str
+    source_dir: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    metadata: Optional[dict] = None
+
+    _serialize_created_at = field_serializer("created_at")(_serialize_dt)
+
+    @classmethod
+    def from_file_data(cls, f: FileData) -> "FileInfo":
+        return cls(
+            file_id=f.file_id,
+            filename=f.filename,
+            original_filename=f.original_filename,
+            file_path=f.file_path,
+            file_size=f.file_size,
+            mime_type=f.mime_type,
+            source_dir=f.source_dir,
+            created_at=f.created_at,
+            metadata=f.metadata,
+        )
+
+
+class FileUploadResponse(BaseModel):
+    """File upload response."""
+    file_id: str
+    filename: str
+    file_size: int
+    mime_type: str
 
 router = APIRouter()
 

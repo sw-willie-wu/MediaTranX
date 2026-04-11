@@ -1,13 +1,52 @@
 """
 Active task endpoints.
 """
+from datetime import datetime
+from typing import Any, List, Optional
+
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List
+from pydantic import BaseModel, Field, field_serializer
 
 from app.init.container import AppContainer
+from app.types.task import TaskData, TaskStatus
 from app.workers.task_manager import TaskManager
-from app.api.schemas.common import TaskResponse
+
+
+def _serialize_dt(v: datetime) -> str:
+    return v.isoformat()
+
+
+class TaskResponse(BaseModel):
+    """Task API response model."""
+    task_id: str
+    task_type: str
+    status: TaskStatus = TaskStatus.PENDING
+    progress: float = Field(default=0.0, ge=0.0, le=1.0)
+    message: Optional[str] = None
+    result: Optional[Any] = None
+    error: Optional[str] = None
+    error_code: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    _serialize_created_at = field_serializer("created_at")(_serialize_dt)
+    _serialize_updated_at = field_serializer("updated_at")(_serialize_dt)
+
+    @classmethod
+    def from_task_data(cls, t: TaskData) -> "TaskResponse":
+        return cls(
+            task_id=t.task_id,
+            task_type=t.task_type,
+            status=t.status,
+            progress=t.progress,
+            message=t.message,
+            result=t.result,
+            error=t.error,
+            error_code=getattr(t, 'error_code', None),
+            created_at=t.created_at,
+            updated_at=t.updated_at,
+        )
 
 router = APIRouter()
 

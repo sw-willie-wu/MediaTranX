@@ -2,7 +2,7 @@
 Cross-layer shared task domain models.
 
 TaskStatus and TaskData are shared by workers, services, and api layers
-to avoid workers depending on api.schemas.
+to avoid workers depending on the API layer.
 """
 from dataclasses import dataclass, field
 from datetime import datetime, timezone

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Optional
 from uuid import uuid4
 
-from app.models.file import FileData
+from app.types.file import FileData
 from app.init.configs import SETTINGS
 
 logger = logging.getLogger(__name__)

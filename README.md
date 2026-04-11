@@ -180,8 +180,8 @@ After launch, download models from **Settings > AI Models**.
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — System overview, API endpoints, data flow
-- [Backend Architecture](docs/BACKEND_ARCHITECTURE.md) — Backend development guidelines
-- [Frontend Design System](docs/FRONTEND_DESIGN_SYSTEM.md) — UI/UX specifications
+- [Backend Development Spec](docs/BACKEND_DEVELOP_SPEC.md) — Backend development guidelines
+- [Frontend Development Spec](docs/FRONTEND_DEVELOP_SPEC.md) — UI/UX specifications
 
 ---
 
