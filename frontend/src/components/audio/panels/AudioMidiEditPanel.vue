@@ -203,8 +203,21 @@ async function execute() {
     await editor.saveToApi(fileId)
   }
 
-  const finalPath = outputPath.value || defaultOutputPath.value
+  let finalPath = outputPath.value || defaultOutputPath.value
   if (!finalPath) return
+
+  // If no directory in path (e.g. sourceDir is empty), prompt user to pick
+  if (!finalPath.includes('/') && !finalPath.includes('\\')) {
+    if (!window.electron?.saveFileDialog) return
+    const ext = exportFormat.value
+    const result = await window.electron.saveFileDialog({
+      defaultPath: finalPath,
+      filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+    })
+    if (!result) return
+    finalPath = result
+    outputPath.value = result
+  }
 
   const taskId = midiExport.exportMidi(
     editor.tracks.value,

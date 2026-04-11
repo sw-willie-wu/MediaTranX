@@ -3,7 +3,7 @@ Task history service.
 Persists completed tasks via TaskHistoryDAO for cross-session queries.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.db.dao.task_history_dao import TaskHistoryDAO
@@ -42,6 +42,30 @@ class TaskHistoryService:
             file_name=file_name,
             error=error,
             error_code=error_code,
+            result=result,
+        )
+
+    def save_frontend_task(
+        self,
+        task_id: str,
+        task_type: str,
+        status: str,
+        label: Optional[str] = None,
+        file_name: Optional[str] = None,
+        error: Optional[str] = None,
+        result: Optional[dict] = None,
+    ) -> None:
+        """Save a frontend-only task (e.g. MIDI export) to history."""
+        now = datetime.now(timezone.utc)
+        self.save(
+            task_id=task_id,
+            task_type=task_type,
+            status=status,
+            created_at=now,
+            completed_at=now,
+            label=label,
+            file_name=file_name,
+            error=error,
             result=result,
         )
 

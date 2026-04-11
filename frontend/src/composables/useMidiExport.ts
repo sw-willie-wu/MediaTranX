@@ -577,6 +577,20 @@ export function useMidiExport() {
 
         clearInterval(animTimer)
         setTask(1.0, t('toast.saved'), 'completed')
+
+        // Save to task history DB
+        apiFetch('/tasks/history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            task_id: taskId,
+            task_type: 'audio.midi_export',
+            status: 'completed',
+            label: t('audio.midi.task_label'),
+            file_name: fileName,
+          }),
+        }).catch(() => {})
+
         toast.show(t('toast.saved'), {
           type: 'success',
           icon: 'bi-check-circle',
@@ -586,6 +600,21 @@ export function useMidiExport() {
         clearInterval(animTimer)
         console.error('[MidiExport] Export failed:', err)
         setTask(0, String(err), 'failed')
+
+        // Save failure to task history DB
+        apiFetch('/tasks/history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            task_id: taskId,
+            task_type: 'audio.midi_export',
+            status: 'failed',
+            label: t('audio.midi.task_label'),
+            file_name: fileName,
+            error: String(err),
+          }),
+        }).catch(() => {})
+
         toast.show(t('toast.save_failed'), { type: 'error', icon: 'bi-x-circle' })
       } finally {
         isExporting.value = false
