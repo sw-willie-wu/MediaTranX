@@ -1,6 +1,4 @@
-"""
-去背服務（rembg）
-"""
+"""Background removal service (rembg)."""
 import logging
 from pathlib import Path
 from typing import Callable, Optional
@@ -26,11 +24,12 @@ _MODE_TO_MODEL = {
 
 
 class ImageRemoveBgService:
+    """Background removal service using rembg (U2-Net / ISNet)."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_IMAGE_REMOVE_BG, self._handle_remove_bg_task)
+        self._task_manager.register_handler(TASK_TYPE_IMAGE_REMOVE_BG, self._handle_task)
         logger.info("ImageRemoveBgService initialized")
 
     async def submit_remove_bg(
@@ -47,22 +46,26 @@ class ImageRemoveBgService:
             "mode": mode,
             "output_dir": output_dir,
         })
+        logger.info(f"Image remove-bg task submitted: {task_id}")
         return task_id
 
-    def _handle_remove_bg_task(self, params: dict, progress_callback: Callable) -> dict:
+    def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+        return self._execute(params, progress_callback)
+
+    def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
         mode = params.get("mode", "auto")
         model_name = _MODE_TO_MODEL.get(mode, "u2net")
 
         file_info = self._file_service.get_file(file_id)
 
-        # === GPU 排隊管線 ===
+        # === GPU queue pipeline ===
         from app.init.container import get_container
         manager = get_container().model_manager()
 
         with manager.gpu_session():
             progress_callback(0.1, "task.progress.loading_rembg")
-            # 將 rembg 模型路徑導向 models/rembg/，統一管理
+            # Redirect rembg model path to models/rembg/ for unified management
             import os
             from app.init.configs import SETTINGS
             rembg_dir = SETTINGS.path.models / "rembg"
@@ -104,6 +107,6 @@ class ImageRemoveBgService:
         }
 
     def _generate_output_path(self, file_info, custom_dir) -> Path:
-        target_dir = Path(custom_dir) if custom_dir else self._file_service.output_dir
-        target_dir.mkdir(parents=True, exist_ok=True)
-        return target_dir / f"{Path(file_info.original_filename).stem}_nobg_{uuid4().hex[:8]}.png"
+        output_dir = Path(custom_dir) if custom_dir else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir / f"{Path(file_info.original_filename).stem}_nobg_{uuid4().hex[:8]}.png"

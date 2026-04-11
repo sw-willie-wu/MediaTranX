@@ -1,6 +1,4 @@
-"""
-圖片裁切服務
-"""
+"""Image cropping service."""
 import logging
 from pathlib import Path
 from typing import Callable, Optional
@@ -17,9 +15,7 @@ TASK_TYPE_IMAGE_CROP = "image.crop"
 
 
 class ImageCropService:
-    """
-    圖片裁切服務
-    """
+    """Image cropping service with animated format support."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
@@ -27,7 +23,7 @@ class ImageCropService:
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_CROP,
-            self._handle_crop_task
+            self._handle_task
         )
 
         logger.info("ImageCropService initialized")
@@ -41,7 +37,7 @@ class ImageCropService:
         height: int = 0,
         output_dir: Optional[str] = None,
     ) -> str:
-        """提交圖片裁切任務"""
+        """Submit an image crop task."""
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
@@ -60,20 +56,20 @@ class ImageCropService:
 
         return task_id
 
-    def _handle_crop_task(
+    def _handle_task(
         self,
         params: dict,
         progress_callback: Callable[[float, str], None]
     ) -> dict:
-        """處理裁切任務（同步）"""
-        return self._execute_crop(params, progress_callback)
+        """Handle crop task (synchronous)."""
+        return self._execute(params, progress_callback)
 
-    def _execute_crop(
+    def _execute(
         self,
         params: dict,
         progress_callback: Callable[[float, str], None]
     ) -> dict:
-        """執行圖片裁切"""
+        """Execute image cropping."""
         from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
 
         file_id = params["file_id"]
@@ -105,16 +101,16 @@ class ImageCropService:
 
         progress_callback(0.7, "task.progress.saving_file")
 
-        # 建立輸出路徑
+        # Build output path
         custom_output_dir = params.get("output_dir")
         output_file_id = str(uuid4())
         original_stem = Path(file_info.original_filename).stem
         ext = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
         final_filename = f"{original_stem}_cropped_{output_file_id[:8]}.{ext}"
 
-        output_dir_path = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
+        output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
 
         if anim_fmt:
             save_animated(result_frames, output_path, anim_fmt)
@@ -122,7 +118,7 @@ class ImageCropService:
             img.save(str(output_path), format="PNG")
             img.close()
 
-        # 註冊輸出檔案
+        # Register output file
         output_info = self._file_service.register_output(
             file_id=output_file_id,
             file_path=output_path,

@@ -1,7 +1,4 @@
-"""
-影片轉檔服務
-"""
-import asyncio
+"""Video transcoding service."""
 import logging
 from dataclasses import asdict
 from pathlib import Path
@@ -22,41 +19,28 @@ from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
-# 任務類型常數
-TASK_TYPE_TRANSCODE = "video.transcode"
-TASK_TYPE_CUT = "video.cut"
-TASK_TYPE_EXTRACT_AUDIO = "video.extract_audio"
+# Task type constant
+TASK_TYPE_VIDEO_TRANSCODE = "video.transcode"
 
 
-class TranscodeService:
-    """
-    影片轉檔服務
-    整合 FFmpeg、檔案管理和任務管理
-    """
+class VideoTranscodeService:
+    """Video transcoding service with codec, preset, CRF, and resolution options."""
 
     def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager):
         self._ffmpeg = ffmpeg
         self._file_service = file_service
         self._task_manager = task_manager
 
-        # 註冊任務處理器
+        # Register task handler
         self._task_manager.register_handler(
-            TASK_TYPE_TRANSCODE,
-            self._handle_transcode_task
-        )
-        self._task_manager.register_handler(
-            TASK_TYPE_CUT,
-            self._handle_cut_task
-        )
-        self._task_manager.register_handler(
-            TASK_TYPE_EXTRACT_AUDIO,
-            self._handle_extract_audio_task
+            TASK_TYPE_VIDEO_TRANSCODE,
+            self._handle_task
         )
 
-        logger.info("TranscodeService initialized")
+        logger.info("VideoTranscodeService initialized")
 
     def get_ffmpeg_status(self) -> dict:
-        """查詢 FFmpeg 安裝狀態"""
+        """Query FFmpeg installation status."""
         is_installed = FFmpegWrapper.is_installed()
         bin_dir = str(FFmpegWrapper.get_bin_dir())
 
@@ -76,13 +60,13 @@ class TranscodeService:
 
     async def get_media_info(self, file_id: str) -> dict:
         """
-        取得媒體資訊
+        Get media information.
 
         Args:
-            file_id: 檔案 ID
+            file_id: File ID
 
         Returns:
-            媒體資訊字典
+            Media information dictionary
         """
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -107,30 +91,30 @@ class TranscodeService:
         output_filename: Optional[str] = None,
     ) -> str:
         """
-        提交轉檔任務
+        Submit a transcoding task.
 
         Args:
-            file_id: 輸入檔案 ID
-            output_format: 輸出格式 (mp4, mkv, webm, etc.)
-            video_codec: 影片編碼器 (h264, h265, vp9, av1, copy)
-            audio_codec: 音訊編碼器 (aac, mp3, opus, flac, copy)
-            preset: 編碼速度預設 (ultrafast, fast, medium, slow, veryslow)
-            crf: 品質值 (0-51, 越小越好)
-            resolution: 解析度 (e.g., "1920x1080")
-            fps: 幀率
-            audio_bitrate: 音訊位元率 (e.g., "128k")
-            output_dir: 自訂輸出目錄（可選）
-            output_filename: 自訂輸出檔名（可選，不含副檔名）
+            file_id: Input file ID
+            output_format: Output format (mp4, mkv, webm, etc.)
+            video_codec: Video codec (h264, h265, vp9, av1, copy)
+            audio_codec: Audio codec (aac, mp3, opus, flac, copy)
+            preset: Encoding speed preset (ultrafast, fast, medium, slow, veryslow)
+            crf: Quality value (0-51, lower is better)
+            resolution: Resolution (e.g., "1920x1080")
+            fps: Frame rate
+            audio_bitrate: Audio bitrate (e.g., "128k")
+            output_dir: Custom output directory (optional)
+            output_filename: Custom output filename (optional, without extension)
 
         Returns:
-            task_id: 任務 ID
+            task_id: Task ID
         """
-        # 驗證檔案存在
+        # Validate file exists
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        # 建立任務參數
+        # Build task parameters
         params = {
             "file_id": file_id,
             "output_format": output_format,
@@ -146,103 +130,34 @@ class TranscodeService:
             "output_filename": output_filename,
         }
 
-        # 提交任務
-        task_id = await self._task_manager.submit(TASK_TYPE_TRANSCODE, params)
+        # Submit task
+        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_TRANSCODE, params)
         logger.info(f"Transcode task submitted: {task_id} for file {file_id}")
 
         return task_id
 
-    async def submit_cut(
+    def _handle_task(
         self,
-        file_id: str,
-        start_time: float,
-        end_time: float,
-        stream_copy: bool = True,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
-    ) -> str:
-        """提交剪輯任務"""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        params: dict,
+        progress_callback: Callable[[float, str], None]
+    ) -> dict:
+        """Handle transcoding task (runs in executor)."""
+        return self._execute(params, progress_callback)
 
-        params = {
-            "file_id": file_id,
-            "start_time": start_time,
-            "end_time": end_time,
-            "stream_copy": stream_copy,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
-        }
-
-        task_id = await self._task_manager.submit(TASK_TYPE_CUT, params)
-        logger.info(f"Cut task submitted: {task_id} for file {file_id}")
-        return task_id
-
-    async def submit_extract_audio(
-        self,
-        file_id: str,
-        audio_format: str = "mp3",
-        audio_bitrate: Optional[str] = None,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
-    ) -> str:
-        """提交提取音訊任務"""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
-
-        params = {
-            "file_id": file_id,
-            "audio_format": audio_format,
-            "audio_bitrate": audio_bitrate,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
-        }
-
-        task_id = await self._task_manager.submit(TASK_TYPE_EXTRACT_AUDIO, params)
-        logger.info(f"Extract audio task submitted: {task_id} for file {file_id}")
-        return task_id
-
-    def _handle_transcode_task(
+    def _execute(
         self,
         params: dict,
         progress_callback: Callable[[float, str], None]
     ) -> dict:
         """
-        處理轉檔任務（在 executor 中執行）
+        Execute transcoding.
 
         Args:
-            params: 任務參數
-            progress_callback: 進度回調 (percent, message)
+            params: Task parameters
+            progress_callback: Progress callback
 
         Returns:
-            結果字典
-        """
-        # 在新的事件循環中執行異步代碼
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(
-                self._execute_transcode(params, progress_callback)
-            )
-        finally:
-            loop.close()
-
-    async def _execute_transcode(
-        self,
-        params: dict,
-        progress_callback: Callable[[float, str], None]
-    ) -> dict:
-        """
-        執行轉檔
-
-        Args:
-            params: 任務參數
-            progress_callback: 進度回調
-
-        Returns:
-            結果字典
+            Result dictionary
         """
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
@@ -250,7 +165,7 @@ class TranscodeService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        # 映射編碼器
+        # Map codec strings to enums
         video_codec_map = {
             "h264": VideoCodec.H264,
             "h265": VideoCodec.H265,
@@ -275,7 +190,7 @@ class TranscodeService:
             "veryslow": QualityPreset.VERYSLOW,
         }
 
-        # 建立轉檔選項
+        # Build transcode options
         options = TranscodeOptions(
             output_format=params["output_format"],
             video_codec=video_codec_map.get(params["video_codec"], VideoCodec.H264),
@@ -288,48 +203,45 @@ class TranscodeService:
             audio_bitrate=params.get("audio_bitrate"),
         )
 
-        # 建立輸出路徑
+        # Build output path
         custom_output_dir = params.get("output_dir")
         custom_output_filename = params.get("output_filename")
         output_file_id = str(uuid4())
 
-        # 決定檔名
+        # Determine filename
         if custom_output_filename:
-            # 使用自訂檔名（移除使用者可能輸入的副檔名，統一用選擇的格式）
+            # Use custom filename (strip user-provided extension, use selected format)
             base_name = Path(custom_output_filename).stem
             final_filename = f"{base_name}.{params['output_format']}"
         else:
-            # 自動產生檔名
+            # Auto-generate filename
             original_stem = Path(file_info.original_filename).stem
             final_filename = f"{original_stem}_transcoded_{output_file_id[:8]}.{params['output_format']}"
 
-        # 決定輸出目錄（優先自訂 > 預設 output）
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
+        # Determine output directory (custom dir takes priority over default)
+        output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
 
-        # 進度回調包裝
+        # Progress callback wrapper
         def on_ffmpeg_progress(progress: TranscodeProgress):
             progress_callback(
                 progress.percent / 100,
-                f"轉檔中... {progress.percent:.1f}% (速度: {progress.speed:.1f}x)"
+                f"Transcoding... {progress.percent:.1f}% (speed: {progress.speed:.1f}x)"
             )
 
         progress_callback(0.0, "task.progress.transcode_starting")
 
         try:
-            # 執行轉檔
-            await self._ffmpeg.transcode(
+            # Execute transcode
+            self._ffmpeg.transcode_sync(
                 input_path=file_info.file_path,
                 output_path=output_path,
                 options=options,
                 on_progress=on_ffmpeg_progress
             )
 
-            # 註冊輸出檔案
+            # Register output file
             output_info = self._file_service.register_output(
                 file_id=output_file_id,
                 file_path=output_path,
@@ -346,175 +258,4 @@ class TranscodeService:
 
         except FFmpegError as e:
             logger.error(f"Transcode failed: {e}")
-            raise
-
-    def _handle_cut_task(
-        self,
-        params: dict,
-        progress_callback: Callable[[float, str], None]
-    ) -> dict:
-        """處理剪輯任務（在 executor 中執行）"""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(
-                self._execute_cut(params, progress_callback)
-            )
-        finally:
-            loop.close()
-
-    async def _execute_cut(
-        self,
-        params: dict,
-        progress_callback: Callable[[float, str], None]
-    ) -> dict:
-        """執行剪輯"""
-        file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
-
-        start_time = params["start_time"]
-        end_time = params["end_time"]
-        stream_copy = params.get("stream_copy", True)
-
-        # 建立輸出路徑
-        custom_output_dir = params.get("output_dir")
-        custom_output_filename = params.get("output_filename")
-        output_file_id = str(uuid4())
-
-        original_ext = Path(file_info.original_filename).suffix
-        if custom_output_filename:
-            base_name = Path(custom_output_filename).stem
-            final_filename = f"{base_name}{original_ext}"
-        else:
-            original_stem = Path(file_info.original_filename).stem
-            final_filename = f"{original_stem}_cut_{output_file_id[:8]}{original_ext}"
-
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
-
-        def on_ffmpeg_progress(progress: TranscodeProgress):
-            progress_callback(
-                progress.percent / 100,
-                f"剪輯中... {progress.percent:.1f}% (速度: {progress.speed:.1f}x)"
-            )
-
-        progress_callback(0.0, "task.progress.cut_starting")
-
-        try:
-            await self._ffmpeg.cut(
-                input_path=file_info.file_path,
-                output_path=output_path,
-                start_time=start_time,
-                end_time=end_time,
-                stream_copy=stream_copy,
-                on_progress=on_ffmpeg_progress,
-            )
-
-            output_info = self._file_service.register_output(
-                file_id=output_file_id,
-                file_path=output_path,
-                original_filename=file_info.original_filename,
-            )
-
-            progress_callback(1.0, "task.progress.cut_complete")
-
-            return {
-                "output_file_id": output_file_id,
-                "output_filename": output_info.filename,
-                "output_size": output_info.file_size,
-            }
-
-        except FFmpegError as e:
-            logger.error(f"Cut failed: {e}")
-            raise
-
-    def _handle_extract_audio_task(
-        self,
-        params: dict,
-        progress_callback: Callable[[float, str], None]
-    ) -> dict:
-        """處理提取音訊任務（在 executor 中執行）"""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(
-                self._execute_extract_audio(params, progress_callback)
-            )
-        finally:
-            loop.close()
-
-    async def _execute_extract_audio(
-        self,
-        params: dict,
-        progress_callback: Callable[[float, str], None]
-    ) -> dict:
-        """執行提取音訊"""
-        file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
-
-        audio_format = params.get("audio_format", "mp3")
-        audio_bitrate = params.get("audio_bitrate")
-
-        # 建立輸出路徑
-        custom_output_dir = params.get("output_dir")
-        custom_output_filename = params.get("output_filename")
-        output_file_id = str(uuid4())
-
-        if custom_output_filename:
-            base_name = Path(custom_output_filename).stem
-            final_filename = f"{base_name}.{audio_format}"
-        else:
-            original_stem = Path(file_info.original_filename).stem
-            final_filename = f"{original_stem}_audio_{output_file_id[:8]}.{audio_format}"
-
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
-
-        def on_ffmpeg_progress(progress: TranscodeProgress):
-            progress_callback(
-                progress.percent / 100,
-                f"提取音訊中... {progress.percent:.1f}% (速度: {progress.speed:.1f}x)"
-            )
-
-        progress_callback(0.0, "task.progress.extract_audio_starting")
-
-        try:
-            await self._ffmpeg.extract_audio(
-                input_path=file_info.file_path,
-                output_path=output_path,
-                audio_format=audio_format,
-                audio_bitrate=audio_bitrate,
-                on_progress=on_ffmpeg_progress,
-            )
-
-            output_info = self._file_service.register_output(
-                file_id=output_file_id,
-                file_path=output_path,
-                original_filename=file_info.original_filename,
-            )
-
-            progress_callback(1.0, "task.progress.extract_audio_complete")
-
-            return {
-                "output_file_id": output_file_id,
-                "output_filename": output_info.filename,
-                "output_size": output_info.file_size,
-            }
-
-        except FFmpegError as e:
-            logger.error(f"Extract audio failed: {e}")
             raise

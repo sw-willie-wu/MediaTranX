@@ -1,6 +1,4 @@
-"""
-圖片調整服務
-"""
+"""Image adjustment service."""
 from __future__ import annotations
 
 import hashlib
@@ -22,7 +20,7 @@ TASK_TYPE_IMAGE_FILTER = "image.filter"
 
 
 class ImageFilterService:
-    """圖片調整服務"""
+    """Image adjustment service for brightness, contrast, hue, effects, and more."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
@@ -30,7 +28,7 @@ class ImageFilterService:
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_FILTER,
-            self._handle_filter_task
+            self._handle_task
         )
 
         logger.info("ImageFilterService initialized")
@@ -50,7 +48,7 @@ class ImageFilterService:
         blur:       float = 0.0,
         vignette:   float = 0.0,
     ) -> str:
-        """提交圖片調整任務"""
+        """Submit an image adjustment task."""
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
@@ -74,18 +72,18 @@ class ImageFilterService:
         logger.info(f"Image filter task submitted: {task_id}")
         return task_id
 
-    def _handle_filter_task(
+    def _handle_task(
         self,
         params: dict,
         progress_callback: Callable[[float, str], None],
     ) -> dict:
-        return self._execute_filter(params, progress_callback)
+        return self._execute(params, progress_callback)
 
-    # ── 調整方法 ───────────────────────────────────────────────────────────────
+    # -- Adjustment methods --
 
     @staticmethod
     def _apply_hue(img: Image.Image, degrees: float) -> Image.Image:
-        """色相旋轉（向量化 HSV 轉換）"""
+        """Hue rotation (vectorized HSV conversion)."""
         if degrees == 0:
             return img
 
@@ -127,7 +125,7 @@ class ImageFilterService:
 
     @staticmethod
     def _apply_warmth(img: Image.Image, warmth: float) -> Image.Image:
-        """色溫調整（正值暖色、負值冷色）"""
+        """Color temperature adjustment (positive=warm, negative=cool)."""
         if warmth == 0:
             return img
 
@@ -143,7 +141,7 @@ class ImageFilterService:
 
     @staticmethod
     def _apply_sepia(img: Image.Image, intensity: float) -> Image.Image:
-        """復古色調"""
+        """Sepia tone effect."""
         if intensity <= 0:
             return img
 
@@ -160,7 +158,7 @@ class ImageFilterService:
 
     @staticmethod
     def _apply_invert(img: Image.Image, intensity: float) -> Image.Image:
-        """負片"""
+        """Invert (negative) effect."""
         if intensity <= 0:
             return img
 
@@ -171,7 +169,7 @@ class ImageFilterService:
 
     @staticmethod
     def _apply_vignette(img: Image.Image, intensity: float) -> Image.Image:
-        """暈影（徑向漸層暗角）"""
+        """Vignette effect (radial gradient darkening)."""
         if intensity <= 0:
             return img
 
@@ -191,14 +189,14 @@ class ImageFilterService:
 
         return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB")
 
-    # ── 預覽（同步，降解析度）──────────────────────────────────────────────────
+    # -- Preview (synchronous, reduced resolution) --
 
     # LRU cache for base thumbnails — avoids re-reading & resizing on every slider drag
     # Stores (RGB bytes, alpha bytes | None) so alpha compositing can be done per-preview.
     @staticmethod
     @lru_cache(maxsize=8)
     def _load_preview_thumb(file_path: str, max_size: int) -> tuple[bytes, bytes | None]:
-        """載入並縮圖，回傳 (PNG rgb bytes, PNG alpha bytes | None)"""
+        """Load and thumbnail image, return (PNG rgb bytes, PNG alpha bytes | None)."""
         import io
         raw = Image.open(file_path)
         raw.thumbnail((max_size, max_size), Image.LANCZOS)
@@ -222,7 +220,7 @@ class ImageFilterService:
         return buf_rgb.getvalue(), buf_alpha
 
     def generate_preview(self, file_id: str, params: dict, max_size: int = 900) -> str:
-        """同步生成預覽圖，縮圖後套用所有效果，回傳 base64 JPEG/PNG 字串"""
+        """Generate preview synchronously: thumbnail then apply all effects, return base64 JPEG/PNG string."""
         import base64
         import io
 
@@ -230,17 +228,17 @@ class ImageFilterService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        # 使用快取的縮圖，避免重複 disk I/O + resize
+        # Use cached thumbnail to avoid repeated disk I/O + resize
         rgb_bytes, alpha_bytes = self._load_preview_thumb(str(file_info.file_path), max_size)
         img = Image.open(io.BytesIO(rgb_bytes)).convert("RGB")
 
-        # 套用與 _execute_filter 相同的效果順序（不需要 progress callback）
+        # Apply same effect order as _execute (no progress callback needed)
         def noop(_p, _m): pass
         img = self._apply_all(img, params, noop)
 
         buf = io.BytesIO()
         if alpha_bytes is not None:
-            # 保留透明通道：套用效果後合成回 RGBA，輸出 PNG
+            # Preserve transparency: composite back to RGBA after effects, output PNG
             alpha = Image.open(io.BytesIO(alpha_bytes)).convert("L")
             out = img.convert("RGBA")
             out.putalpha(alpha)
@@ -252,7 +250,7 @@ class ImageFilterService:
         return f"data:{mime};base64," + base64.b64encode(buf.getvalue()).decode()
 
     def _apply_all(self, img: Image.Image, params: dict, progress_callback) -> Image.Image:
-        """套用所有調整（供 generate_preview 與 _execute_filter 共用）"""
+        """Apply all adjustments (shared by generate_preview and _execute)."""
         grayscale = params.get("grayscale", 0.0)
         if grayscale > 0:
             gray = img.convert("L").convert("RGB")
@@ -311,9 +309,9 @@ class ImageFilterService:
 
         return img
 
-    # ── 主執行流程 ─────────────────────────────────────────────────────────────
+    # -- Main execution flow --
 
-    def _execute_filter(
+    def _execute(
         self,
         params: dict,
         progress_callback: Callable[[float, str], None],
@@ -361,11 +359,11 @@ class ImageFilterService:
         ext               = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
         final_filename    = f"{original_stem}_adjusted_{output_file_id[:8]}.{ext}"
 
-        # 調整結果一律存到系統暫存目錄，使用者按下載時才決定存放位置
-        output_dir_path = self._file_service.output_dir
+        # Save adjusted results to system temp dir; user chooses final location on download
+        output_dir = self._file_service.output_dir
 
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
 
         if anim_fmt:
             save_animated(result_frames, output_path, anim_fmt)

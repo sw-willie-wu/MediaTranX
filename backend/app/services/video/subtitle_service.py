@@ -1,8 +1,7 @@
 """
-字幕提取服務
-使用 faster-whisper 從影片中提取語音並生成字幕檔
+Subtitle extraction service.
+Uses faster-whisper to extract speech from video and generate subtitle files.
 """
-import asyncio
 import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -23,12 +22,12 @@ from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
-# 任務類型常數
-TASK_TYPE_SUBTITLE_GENERATE = "video.subtitle_generate"
+# Task type constant
+TASK_TYPE_VIDEO_SUBTITLE_GENERATE = "video.subtitle_generate"
 
 
 def _format_srt_time(seconds: float) -> str:
-    """將秒數格式化為 SRT 時間格式 (HH:MM:SS,mmm)"""
+    """Format seconds as SRT time format (HH:MM:SS,mmm)."""
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
@@ -37,7 +36,7 @@ def _format_srt_time(seconds: float) -> str:
 
 
 def _format_vtt_time(seconds: float) -> str:
-    """將秒數格式化為 VTT 時間格式 (HH:MM:SS.mmm)"""
+    """Format seconds as VTT time format (HH:MM:SS.mmm)."""
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
@@ -46,7 +45,7 @@ def _format_vtt_time(seconds: float) -> str:
 
 
 def _write_srt(result: TranscribeResult, output_path: Path) -> None:
-    """將轉錄結果寫入 SRT 格式"""
+    """Write transcription result in SRT format."""
     with open(output_path, "w", encoding="utf-8") as f:
         for i, seg in enumerate(result.segments, 1):
             f.write(f"{i}\n")
@@ -55,7 +54,7 @@ def _write_srt(result: TranscribeResult, output_path: Path) -> None:
 
 
 def _write_vtt(result: TranscribeResult, output_path: Path) -> None:
-    """將轉錄結果寫入 VTT 格式"""
+    """Write transcription result in VTT format."""
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("WEBVTT\n\n")
         for i, seg in enumerate(result.segments, 1):
@@ -65,10 +64,7 @@ def _write_vtt(result: TranscribeResult, output_path: Path) -> None:
 
 
 class SubtitleService:
-    """
-    字幕提取服務
-    整合 FFmpeg（提取音訊）、faster-whisper（語音辨識）和檔案管理
-    """
+    """Subtitle generation from video using FFmpeg audio extraction and Whisper STT."""
 
     def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager):
         self._ffmpeg = ffmpeg
@@ -76,17 +72,55 @@ class SubtitleService:
         self._file_service = file_service
         self._task_manager = task_manager
 
-        # 註冊任務處理器
+        # Register task handler
         self._task_manager.register_handler(
-            TASK_TYPE_SUBTITLE_GENERATE,
-            self._handle_subtitle_task,
+            TASK_TYPE_VIDEO_SUBTITLE_GENERATE,
+            self._handle_task,
         )
 
         logger.info("SubtitleService initialized")
 
     def get_model_status(self, model_size: str = "medium") -> dict:
-        """查詢 Whisper 模型狀態"""
+        """Query Whisper model status."""
         return self._whisper.get_model_status(model_size)
+
+    def test_translate(
+        self,
+        text: str,
+        target_language: str = "zh-TW",
+        source_language: str = "ja",
+        model_size: str = "4b",
+    ) -> dict:
+        """
+        Test translation (dev use) -- using llama-server messages API.
+
+        Returns:
+            dict with keys 'result' and 'prompt'
+        """
+        from app.utils.prompts import LANG_NAMES_EN
+        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
+        from app.engine.ai.registry import SLOT_LLM
+
+        source_name = LANG_NAMES_EN.get(source_language, source_language)
+        target_name = LANG_NAMES_EN.get(target_language, target_language)
+        variant = model_size
+
+        user_msg = (
+            f"Translate the following {source_name} subtitles to {target_name}. "
+            f"Keep SRT format and timestamps unchanged. Output only the translation.\n\n"
+            f"{text}"
+        )
+        messages = [{"role": "user", "content": user_msg}]
+
+        runtime = LlamaServerRuntime(SLOT_LLM)
+        with runtime.acquire("translategemma", variant):
+            result = runtime.chat(
+                messages=messages,
+                max_tokens=len(text) * 3,
+                temperature=0.1,
+            )
+
+        return {"result": result, "prompt": user_msg}
 
     async def submit_subtitle_generate(
         self,
@@ -100,49 +134,49 @@ class SubtitleService:
         translate_model_size: str = "4b",
         translate_model_type: str = "translategemma",
         translate_quantization: Optional[str] = None,
-        # 進階分句參數
+        # Advanced segmentation parameters
         word_timestamps: bool = False,
         condition_on_previous_text: bool = True,
         min_silence_duration_ms: int = 500,
         vad_threshold: float = 0.5,
-        # 翻譯選項
+        # Translation options
         keep_names: bool = True,
         translate_style: str = "colloquial",
         glossary: Optional[dict[str, str]] = None,
-        # 雲端翻譯
+        # Cloud translation
         translate_remote: bool = False,
         translate_provider: Optional[str] = None,
         translate_conn_id: Optional[int] = None,
         translate_remote_model: Optional[str] = None,
     ) -> str:
         """
-        提交字幕生成任務
+        Submit a subtitle generation task.
 
         Args:
-            file_id: 輸入影片檔案 ID
-            language: 語言代碼 (None=自動偵測, "zh"=中文, "en"=英文...)
-            model_size: 模型大小 (tiny, base, small, medium, large-v3)
-            output_format: 輸出格式 (srt, vtt)
-            output_dir: 自訂輸出目錄（可選）
-            output_filename: 自訂輸出檔名（可選）
-            target_language: 翻譯目標語言 (None=不翻譯)
-            translate_model_size: 翻譯模型大小 (4b, 12b, 27b)
-            word_timestamps: 啟用詞級時間戳
-            condition_on_previous_text: 是否根據前文調整辨識
-            min_silence_duration_ms: 最小靜音時長（毫秒）
-            vad_threshold: VAD 門檻值 (0-1)
-            keep_names: 保留人名和專有名詞原文
-            translate_style: 翻譯風格 (colloquial/formal/literal)
+            file_id: Input video file ID
+            language: Language code (None=auto-detect, "zh"=Chinese, "en"=English...)
+            model_size: Model size (tiny, base, small, medium, large-v3)
+            output_format: Output format (srt, vtt)
+            output_dir: Custom output directory (optional)
+            output_filename: Custom output filename (optional)
+            target_language: Translation target language (None=no translation)
+            translate_model_size: Translation model size (4b, 12b, 27b)
+            word_timestamps: Enable word-level timestamps
+            condition_on_previous_text: Whether to condition on previous text for recognition
+            min_silence_duration_ms: Minimum silence duration (ms)
+            vad_threshold: VAD threshold (0-1)
+            keep_names: Preserve proper nouns in original language
+            translate_style: Translation style (colloquial/formal/literal)
 
         Returns:
-            task_id: 任務 ID
+            task_id: Task ID
         """
-        # 驗證檔案存在
+        # Validate file exists
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        # 建立任務參數
+        # Build task parameters
         params = {
             "file_id": file_id,
             "language": language,
@@ -167,47 +201,38 @@ class SubtitleService:
             "translate_remote_model": translate_remote_model,
         }
 
-        # 提交任務
-        task_id = await self._task_manager.submit(TASK_TYPE_SUBTITLE_GENERATE, params)
+        # Submit task
+        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_SUBTITLE_GENERATE, params)
         logger.info(f"Subtitle generate task submitted: {task_id} for file {file_id}")
 
         return task_id
 
-    def _handle_subtitle_task(
+    def _handle_task(
+        self,
+        params: dict,
+        progress_callback: Callable[[float, str], None]
+    ) -> dict:
+        """Handle subtitle generation task (runs in executor)."""
+        return self._execute(params, progress_callback)
+
+    def _execute(
         self,
         params: dict,
         progress_callback: Callable[[float, str], None]
     ) -> dict:
         """
-        處理字幕生成任務（在 executor 中執行）
-        """
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(
-                self._execute_subtitle_generate(params, progress_callback)
-            )
-        finally:
-            loop.close()
+        Execute subtitle generation.
 
-    async def _execute_subtitle_generate(
-        self,
-        params: dict,
-        progress_callback: Callable[[float, str], None]
-    ) -> dict:
-        """
-        執行字幕生成
+        Without translation:
+        1. Extract audio from video via FFmpeg (WAV 16kHz mono) -- progress 0~10%
+        2. Transcribe audio via faster-whisper -- progress 10~90%
+        3. Write segments to SRT/VTT subtitle file -- progress 90~100%
 
-        無翻譯流程:
-        1. 用 FFmpeg 從影片提取音訊 (WAV 16kHz mono) — 進度 0~10%
-        2. 用 faster-whisper 轉錄音訊 — 進度 10~90%
-        3. 將 segments 寫成 SRT/VTT 字幕檔 — 進度 90~100%
-
-        有翻譯流程:
-        1. 用 FFmpeg 從影片提取音訊 — 進度 0~10%
-        2. 用 faster-whisper 轉錄音訊 — 進度 10~70%
-        3. 用 TranslateGemma 翻譯 — 進度 70~95%
-        4. 將 segments 寫成 SRT/VTT 字幕檔 — 進度 95~100%
+        With translation:
+        1. Extract audio from video via FFmpeg -- progress 0~10%
+        2. Transcribe audio via faster-whisper -- progress 10~70%
+        3. Translate via TranslateGemma -- progress 70~95%
+        4. Write segments to SRT/VTT subtitle file -- progress 95~100%
         """
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
@@ -218,42 +243,42 @@ class SubtitleService:
         language = params.get("language")  # None = auto detect
         model_size = params.get("model_size", "medium")
         output_format = params.get("output_format", "srt")
-        target_language = params.get("target_language")  # None = 不翻譯
+        target_language = params.get("target_language")  # None = no translation
         translate_model_size = params.get("translate_model_size", "4b")
         translate_model_type = params.get("translate_model_type", "translategemma")
         translate_quantization = params.get("translate_quantization")
 
-        # 進階分句參數
+        # Advanced segmentation parameters
         word_timestamps = params.get("word_timestamps", False)
         condition_on_previous_text = params.get("condition_on_previous_text", True)
         min_silence_duration_ms = params.get("min_silence_duration_ms", 500)
         vad_threshold = params.get("vad_threshold", 0.5)
 
-        # 翻譯選項
+        # Translation options
         keep_names = params.get("keep_names", True)
         translate_style = params.get("translate_style", "colloquial")
         glossary = params.get("glossary")
 
         has_translation = target_language is not None
 
-        # === 階段 1: 提取音訊 (0~10%) ===
+        # === Stage 1: Extract audio (0~10%) ===
         progress_callback(0.0, "task.progress.extracting_audio")
 
-        # 建立暫存音訊路徑
+        # Create temporary audio path
         temp_audio_path = self._file_service.upload_dir / f"temp_audio_{uuid4().hex[:8]}.wav"
 
         try:
-            await self._extract_audio(file_info.file_path, temp_audio_path)
+            self._extract_audio_sync(file_info.file_path, temp_audio_path)
             progress_callback(0.10, "task.progress.audio_extracted")
 
-            # === GPU 排隊管線 ===
-            # 同時只有一個任務使用 GPU，模型用完即卸載
+            # === GPU queue pipeline ===
+            # Only one task uses the GPU at a time; models are unloaded after use
             from app.init.container import get_container
             manager = get_container().model_manager()
 
             with manager.gpu_session():
-                # === 階段 2: 語音辨識 ===
-                # 無翻譯: 10~90%, 有翻譯: 10~70%
+                # === Stage 2: Speech recognition ===
+                # Without translation: 10~90%, with translation: 10~70%
                 whisper_end = 0.70 if has_translation else 0.90
                 whisper_range = whisper_end - 0.10
 
@@ -271,9 +296,9 @@ class SubtitleService:
                     min_silence_duration_ms=min_silence_duration_ms,
                     vad_threshold=vad_threshold,
                 )
-                # Whisper 已在 transcribe() 的 finally 中自動卸載
+                # Whisper is auto-unloaded in transcribe()'s finally block
 
-                # === Forced Alignment（可選）===
+                # === Forced Alignment (optional) ===
                 if params.get("align", False) and result.language:
                     from app.engine.ai.audio.wav2vec2 import get_alignment_engine
                     aligner = get_alignment_engine()
@@ -286,10 +311,10 @@ class SubtitleService:
                             on_progress=lambda p, m: progress_callback(whisper_end - 0.05 + p * 0.05, m),
                         )
 
-                # === 階段 3 (選用): 翻譯字幕 (70~95%) ===
+                # === Stage 3 (optional): Translate subtitles (70~95%) ===
                 from app.engine.ai.audio.whisper import TranscribeSegment
 
-                # 保存原始 segments（用於翻譯時輸出雙語字幕）
+                # Save original segments (for bilingual subtitle output when translating)
                 original_segments = list(result.segments)
 
                 if has_translation:
@@ -308,7 +333,7 @@ class SubtitleService:
                     translate_remote = params.get("translate_remote", False)
 
                     if translate_remote:
-                        # 雲端翻譯（批次）
+                        # Cloud translation (batch)
                         from app.utils.translate import get_cloud_provider, translate_srt_cloud
 
                         provider = params.get("translate_provider", "")
@@ -323,7 +348,7 @@ class SubtitleService:
                         )
                         translate_progress(1.0, "task.progress.translate_complete")
                     else:
-                        # 本地翻譯
+                        # Local translation
                         from app.engine.ai.runtime.llama_server import LlamaServerRuntime
                         from app.engine.ai.registry import SLOT_LLM
                         from app.utils.translate import translate_srt_local
@@ -351,40 +376,36 @@ class SubtitleService:
                         for s in translated
                     ]
 
-            # === 最終階段: 寫入字幕檔 ===
+            # === Final stage: Write subtitle file ===
             write_start = 0.95 if has_translation else 0.90
             progress_callback(write_start, "task.progress.generate_file")
 
-            # 決定基礎檔名
+            # Determine base filename
             custom_output_filename = params.get("output_filename")
             if custom_output_filename:
                 base_name = Path(custom_output_filename).stem
             else:
                 base_name = Path(file_info.original_filename).stem
 
-            # 決定輸出目錄（優先自訂 > 預設 output）
-            custom_output_dir = params.get("output_dir")
-            if custom_output_dir:
-                output_dir_path = Path(custom_output_dir)
-            else:
-                output_dir_path = self._file_service.output_dir
-            output_dir_path.mkdir(parents=True, exist_ok=True)
+            # Determine output directory (custom dir takes priority over default)
+            output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+            output_dir.mkdir(parents=True, exist_ok=True)
 
             output_files = []
 
             if has_translation:
-                # 有翻譯：輸出兩個檔案
-                # 1. 原始語言字幕 (XXX.<source_lang>.srt)
+                # With translation: output two files
+                # 1. Source language subtitles (XXX.<source_lang>.srt)
                 source_lang = result.language  # e.g. "ja", "en"
                 source_filename = f"{base_name}.{source_lang}.{output_format}"
-                source_path = output_dir_path / source_filename
+                source_path = output_dir / source_filename
 
-                # 建立原始語言的 result（使用翻譯前的 segments）
+                # Build source language result (using pre-translation segments)
                 from app.engine.ai.audio.whisper import TranscribeResult
                 original_result = TranscribeResult(
                     language=result.language,
                     language_probability=result.language_probability,
-                    segments=original_segments,  # 翻譯前保存的
+                    segments=original_segments,  # saved before translation
                     duration=result.duration,
                 )
 
@@ -407,9 +428,9 @@ class SubtitleService:
                     "type": "source",
                 })
 
-                # 2. 翻譯後字幕 (XXX.<target_lang>.srt)
+                # 2. Translated subtitles (XXX.<target_lang>.srt)
                 target_filename = f"{base_name}.{target_language}.{output_format}"
-                target_path = output_dir_path / target_filename
+                target_path = output_dir / target_filename
 
                 if output_format == "vtt":
                     _write_vtt(result, target_path)
@@ -430,13 +451,13 @@ class SubtitleService:
                     "type": "translated",
                 })
 
-                output_file_id = target_file_id  # 主要輸出為翻譯後的檔案
+                output_file_id = target_file_id  # primary output is the translated file
                 output_filename = target_info.filename
                 output_size = target_info.file_size
             else:
-                # 無翻譯：輸出單一檔案 (XXX.srt)
+                # No translation: output single file (XXX.srt)
                 final_filename = f"{base_name}.{output_format}"
-                output_path = output_dir_path / final_filename
+                output_path = output_dir / final_filename
 
                 if output_format == "vtt":
                     _write_vtt(result, output_path)
@@ -475,20 +496,20 @@ class SubtitleService:
             }
 
         finally:
-            # 清理暫存音訊檔
+            # Clean up temporary audio file
             if temp_audio_path.exists():
                 try:
                     temp_audio_path.unlink()
                 except OSError:
                     logger.warning(f"Failed to delete temp audio: {temp_audio_path}")
 
-    async def _extract_audio(self, input_path: Path, output_path: Path) -> None:
+    def _extract_audio_sync(self, input_path: Path, output_path: Path) -> None:
         """
-        用 FFmpeg 從影片中提取音訊為 WAV (16kHz, mono)
+        Extract audio from video as WAV (16kHz, mono) using FFmpeg.
 
-        faster-whisper 最佳輸入格式: 16kHz 單聲道 WAV
+        Optimal input format for faster-whisper: 16kHz mono WAV.
         """
-        await self._ffmpeg.extract_audio(
+        self._ffmpeg.extract_audio_sync(
             input_path=input_path,
             output_path=output_path,
             audio_format="wav",
