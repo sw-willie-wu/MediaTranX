@@ -189,11 +189,20 @@ def segments_to_srt(segments: list[dict], start_index: int = 1) -> str:
 
 
 def parse_srt_response(srt_text: str, original_segments: list[dict]) -> list[dict]:
-    """Parse translated SRT text and return segments."""
-    pattern = r'(\d+)\s*\n(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})\s*\n([\s\S]*?)(?=\n\n\d+\s*\n|\n*$)'
-    matches = re.findall(pattern, srt_text.strip() + "\n\n")
+    """Parse translated SRT text and return segments.
+
+    Falls back to original text for segments that can't be parsed.
+    """
+    # Strip markdown code fences (some models wrap output in ```srt ... ```)
+    cleaned = srt_text.strip()
+    cleaned = re.sub(r'^```(?:srt)?\s*\n', '', cleaned)
+    cleaned = re.sub(r'\n```\s*$', '', cleaned)
+
+    pattern = r'(\d+)\s*\n(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})\s*\n([\s\S]*?)(?=\n\n\d+\s*\n|\n\d+\s*\n|\n*$)'
+    matches = re.findall(pattern, cleaned.strip() + "\n\n")
 
     translated = []
+    fallback_count = 0
     for i, orig_seg in enumerate(original_segments):
         if i < len(matches):
             _, _, _, text = matches[i]
@@ -205,6 +214,15 @@ def parse_srt_response(srt_text: str, original_segments: list[dict]) -> list[dic
             })
         else:
             translated.append(orig_seg)
+            fallback_count += 1
+
+    if fallback_count > 0:
+        logger.warning(
+            f"SRT parse: {fallback_count}/{len(original_segments)} segments fell back to original "
+            f"(parsed {len(matches)}, expected {len(original_segments)})"
+        )
+        # Log first 500 chars of raw response for debugging
+        logger.debug(f"SRT parse raw response (first 500 chars): {srt_text[:500]}")
 
     return translated
 

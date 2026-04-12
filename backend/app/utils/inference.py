@@ -43,6 +43,7 @@ def get_inference_config(model_family: str, size: str, task: str) -> dict:
         "n_ctx_min": spec.get("n_ctx_min", 2048),
         "n_ctx_max": spec.get("n_ctx_max", 8192),
         "vram_per_ctx_token": spec.get("vram_per_ctx_token", 0.04),
+        "max_srt_batch": spec.get("max_srt_batch", 0),
     }
 
 
@@ -127,5 +128,60 @@ def calc_n_ctx(spec: dict, available_vram_mb: float,
 
 
 def estimate_tokens(text: str) -> int:
-    """Rough token estimate: 1 token ≈ 3.5 chars for mixed CJK/English."""
-    return max(1, len(text) // 3)
+    """Rough token estimate based on character types.
+
+    CJK characters: ~1.5 tokens each (most tokenizers split CJK into 1-2 tokens)
+    ASCII/Latin: ~4 chars per token (subword tokenization)
+    """
+    cjk = 0
+    ascii_chars = 0
+    for ch in text:
+        cp = ord(ch)
+        if (0x3000 <= cp <= 0x9FFF) or (0xF900 <= cp <= 0xFAFF) or (0xAC00 <= cp <= 0xD7AF):
+            cjk += 1
+        else:
+            ascii_chars += 1
+    return max(1, int(cjk * 1.5) + ascii_chars // 4)
+
+
+def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
+                  duration: float = 30.0):
+    """
+    Context manager that emits interpolated progress while waiting for a blocking call.
+
+    Usage:
+        with fake_progress(callback, 0.1, 0.5, "task.progress.translating"):
+            result = runtime.chat(...)  # blocking LLM call
+
+    Progress interpolates from start_pct to (end_pct - 1%) over `duration` seconds,
+    then stops. Real progress is reported by the caller after the `with` block.
+    """
+    import threading
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _ctx():
+        if not on_progress:
+            yield
+            return
+
+        stop = threading.Event()
+        target = end_pct - 0.01
+        steps = max(1, int(duration))
+
+        def _run():
+            current = start_pct
+            step_size = (target - current) / steps
+            while not stop.is_set() and current < target:
+                current = min(current + step_size, target)
+                on_progress(current, message)
+                stop.wait(1.0)
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        try:
+            yield
+        finally:
+            stop.set()
+
+    return _ctx()

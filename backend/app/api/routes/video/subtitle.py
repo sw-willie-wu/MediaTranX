@@ -62,13 +62,13 @@ class SubtitleGenerateRequest(BaseModel):
         description="Condition on previous text (disable to avoid sentence merging, suited for multi-speaker)"
     )
     min_silence_duration_ms: int = Field(
-        default=500,
+        default=200,
         ge=100,
         le=2000,
         description="Minimum silence duration (ms); pauses shorter than this won't trigger a split"
     )
     vad_threshold: float = Field(
-        default=0.5,
+        default=0.3,
         ge=0.1,
         le=0.9,
         description="VAD threshold; lower = more sensitive (more splits)"

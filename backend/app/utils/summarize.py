@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 def map_reduce_summarize(
     full_text: str,
     chat_fn: Callable[[str, int], str],
+    max_tokens_per_chunk: int,
     on_progress: Optional[Callable[[float, str], None]] = None,
-    max_tokens_per_chunk: int = 2000,
     model_family: str = "default",
     source_lang: Optional[str] = None,
 ) -> str:
@@ -44,20 +44,22 @@ def map_reduce_summarize(
     chunks = split_text_for_context(full_text, max_tokens=max_tokens_per_chunk)
     logger.info(f"map_reduce_summarize: {len(full_text)} chars, chunks={len(chunks)}")
 
+    from app.utils.inference import fake_progress
+
     if len(chunks) == 1:
-        if on_progress:
-            on_progress(0.1, "task.progress.generating_summary")
-        return chat_fn(build_summarize_prompt(full_text, source_lang), 2048)
+        with fake_progress(on_progress, 0.1, 0.95, "task.progress.generating_summary"):
+            return chat_fn(build_summarize_prompt(full_text, source_lang), 2048)
 
     # Map: summarize each chunk independently
     chunk_summaries = []
     for ci, chunk in enumerate(chunks):
-        if on_progress:
-            on_progress(0.1 + 0.7 * (ci / len(chunks)), f"task.progress.summarizing_chunk|{ci + 1}|{len(chunks)}")
-        chunk_summaries.append(chat_fn(build_chunk_summarize_prompt(chunk, source_lang), 1024).strip())
+        start_pct = 0.1 + 0.7 * (ci / len(chunks))
+        end_pct = 0.1 + 0.7 * ((ci + 1) / len(chunks))
+        with fake_progress(on_progress, start_pct, end_pct,
+                           f"task.progress.summarizing_chunk|{ci + 1}|{len(chunks)}"):
+            chunk_summaries.append(chat_fn(build_chunk_summarize_prompt(chunk, source_lang), 1024).strip())
 
     # Reduce: merge summaries
-    if on_progress:
-        on_progress(0.85, "task.progress.merging_summary")
-    merged = "\n\n".join(chunk_summaries)
-    return chat_fn(build_merge_summaries_prompt(merged, source_lang), 2048)
+    with fake_progress(on_progress, 0.85, 0.95, "task.progress.merging_summary"):
+        merged = "\n\n".join(chunk_summaries)
+        return chat_fn(build_merge_summaries_prompt(merged, source_lang), 2048)

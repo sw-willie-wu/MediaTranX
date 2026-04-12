@@ -129,6 +129,7 @@ export default {
       registering: '正在註冊結果...',
       // ocr (image)
       ocr_prepare: '準備辨識...',
+      ocr_recognizing: '辨識文字中...',
       ocr_saving: '儲存結果...',
       ocr_complete: 'OCR 完成',
       connecting_provider: '連接 {0}...',

@@ -151,7 +151,7 @@ MODELS_REGISTRY = {
             "specs": {
                 "1.7b": {
                     "layers": 28,
-                    "n_ctx_min": 2048, "n_ctx_max": 32768, "n_ctx_default": 4096, "vram_per_ctx_token": 0.02,
+                    "n_ctx_min": 2048, "n_ctx_max": 32768, "n_ctx_default": 4096, "vram_per_ctx_token": 0.02, "max_srt_batch": 15,
                     "vram_overhead_mb": 300,
                     "variants": {
                         "Q8_0": {
@@ -163,7 +163,7 @@ MODELS_REGISTRY = {
                 },
                 "4b": {
                     "layers": 36,
-                    "n_ctx_min": 4096, "n_ctx_max": 32768, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03,
+                    "n_ctx_min": 4096, "n_ctx_max": 32768, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03, "max_srt_batch": 15,
                     "vram_overhead_mb": 400,
                     "variants": {
                         "Q4_K_M": {
@@ -226,19 +226,9 @@ MODELS_REGISTRY = {
         "qwen3vl": {
             "slot": SLOT_LLM,
             "label": "Qwen3-VL",
-            "capabilities": ["text", "vision"],
+            "capabilities": ["vision"],
             "description": "Qwen3-VL vision-language model (OCR)",
             "inference": {
-                "translate": {
-                    "temperature": 0.1, "top_k": 40, "top_p": 0.9,
-                    "prompt_builder": "default",
-                    "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 4, "max_tokens_cap": 16384,
-                },
-                "summarize": {
-                    "temperature": 0.3, "top_k": 50, "top_p": 0.95,
-                    "prompt_builder": "default",
-                    "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 0.5, "max_tokens_cap": 4096,
-                },
                 "ocr": {
                     "temperature": 0.0, "top_k": 40, "top_p": 0.9,
                     "prompt_builder": "default",
@@ -343,7 +333,7 @@ MODELS_REGISTRY = {
             "specs": {
                 "1b": {
                     "layers": 24,
-                    "n_ctx_min": 2048, "n_ctx_max": 8192, "n_ctx_default": 4096, "vram_per_ctx_token": 0.02,
+                    "n_ctx_min": 2048, "n_ctx_max": 8192, "n_ctx_default": 4096, "vram_per_ctx_token": 0.02, "max_srt_batch": 15,
                     "vram_overhead_mb": 400,
                     "variants": {
                         "Q8_0": {
@@ -358,7 +348,7 @@ MODELS_REGISTRY = {
                 },
                 "4b": {
                     "layers": 36,
-                    "n_ctx_min": 4096, "n_ctx_max": 8192, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03,
+                    "n_ctx_min": 4096, "n_ctx_max": 8192, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03, "max_srt_batch": 15,
                     "vram_overhead_mb": 600,
                     "variants": {
                         "Q4_K_M": {
@@ -391,8 +381,8 @@ MODELS_REGISTRY = {
         "gemma3": {
             "slot": SLOT_LLM,
             "label": "Gemma3",
-            "capabilities": ["text", "vision"],
-            "description": "Gemma 3 vision-language model (OCR)",
+            "capabilities": ["text"],
+            "description": "Gemma 3 text model",
             "inference": {
                 "translate": {
                     "temperature": 0.1, "top_k": 40, "top_p": 0.9,
@@ -404,23 +394,19 @@ MODELS_REGISTRY = {
                     "prompt_builder": "gemma",
                     "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 0.5, "max_tokens_cap": 4096,
                 },
-                "ocr": {
-                    "temperature": 0.0, "top_k": 40, "top_p": 0.9,
-                    "prompt_builder": "gemma",
-                    "max_tokens_strategy": "context_ratio", "max_tokens_ratio": 0.5,
-                },
             },
             "specs": {
                 "4b": {
                     "layers": 34,
-                    "n_ctx_min": 2048, "n_ctx_max": 32768, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03,
+                    "n_ctx_min": 2048, "n_ctx_max": 32768, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03, "max_srt_batch": 15,
                     "vram_overhead_mb": 600,
                     "variants": {
                         "Q4_K_M": {
                             "repo_id": "ggml-org/gemma-3-4b-it-GGUF",
                             "filename": "gemma-3-4b-it-Q4_K_M.gguf",
                             "mmproj_repo_id": "ggml-org/gemma-3-4b-it-GGUF",
-                            "mmproj_filename": "mmproj-model-f16.gguf",
+                            "mmproj_filename": "mmproj-gemma3-4b-f16.gguf",
+                            "mmproj_remote_filename": "mmproj-model-f16.gguf",
                             "size_mb": 2490,
                             "mmproj_size_mb": 851,
                         },
@@ -435,7 +421,8 @@ MODELS_REGISTRY = {
                             "repo_id": "ggml-org/gemma-3-12b-it-GGUF",
                             "filename": "gemma-3-12b-it-Q4_K_M.gguf",
                             "mmproj_repo_id": "ggml-org/gemma-3-12b-it-GGUF",
-                            "mmproj_filename": "mmproj-model-f16.gguf",
+                            "mmproj_filename": "mmproj-gemma3-12b-f16.gguf",
+                            "mmproj_remote_filename": "mmproj-model-f16.gguf",
                             "size_mb": 7300,
                             "mmproj_size_mb": 854,
                         },
@@ -474,7 +461,7 @@ MODELS_REGISTRY = {
             "specs": {
                 "e2b": {
                     "layers": 26,
-                    "n_ctx_min": 2048, "n_ctx_max": 131072, "n_ctx_default": 8192, "vram_per_ctx_token": 0.02,
+                    "n_ctx_min": 2048, "n_ctx_max": 131072, "n_ctx_default": 8192, "vram_per_ctx_token": 0.02, "max_srt_batch": 15,
                     "vram_overhead_mb": 500,
                     "variants": {
                         "Q8_0": {
@@ -489,7 +476,7 @@ MODELS_REGISTRY = {
                 },
                 "e4b": {
                     "layers": 34,
-                    "n_ctx_min": 4096, "n_ctx_max": 131072, "n_ctx_default": 16384, "vram_per_ctx_token": 0.03,
+                    "n_ctx_min": 4096, "n_ctx_max": 131072, "n_ctx_default": 16384, "vram_per_ctx_token": 0.03, "max_srt_batch": 15,
                     "vram_overhead_mb": 600,
                     "variants": {
                         "Q4_K_M": {
@@ -551,7 +538,7 @@ MODELS_REGISTRY = {
             "specs": {
                 "4b": {
                     "layers": 36,
-                    "n_ctx_min": 4096, "n_ctx_max": 131072, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03,
+                    "n_ctx_min": 4096, "n_ctx_max": 131072, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03, "max_srt_batch": 15,
                     "vram_overhead_mb": 500,
                     "variants": {
                         "Q4_K_M": {

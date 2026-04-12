@@ -242,8 +242,8 @@ class WhisperWrapper(PackageRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
         word_timestamps: bool = False,
         condition_on_previous_text: bool = True,
-        min_silence_duration_ms: int = 500,
-        vad_threshold: float = 0.5,
+        min_silence_duration_ms: int = 200,
+        vad_threshold: float = 0.3,
     ) -> TranscribeResult:
         """
         Transcribe audio.

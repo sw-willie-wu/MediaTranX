@@ -199,9 +199,11 @@ def _download_gguf(model_family: str, size: str, quant: str, progress_callback: 
 
     if has_mmproj:
         progress_callback(0.65, "task.progress.downloading_mmproj")
+        # mmproj_remote_filename: actual filename on HuggingFace (may differ from local name)
+        remote_mmproj = variant.get("mmproj_remote_filename", variant["mmproj_filename"])
         _stream_download(
             repo_id=variant.get("mmproj_repo_id", variant["repo_id"]),
-            filename=variant["mmproj_filename"],
+            filename=remote_mmproj,
             target_path=target_dir / variant["mmproj_filename"],
             progress_callback=progress_callback,
             base_progress=0.65,

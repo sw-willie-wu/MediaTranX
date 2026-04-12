@@ -129,6 +129,7 @@ export default {
       registering: 'Registering result...',
       // ocr (image)
       ocr_prepare: 'Preparing recognition...',
+      ocr_recognizing: 'Recognizing text...',
       ocr_saving: 'Saving result...',
       ocr_complete: 'OCR complete',
       connecting_provider: 'Connecting to {0}...',

@@ -16,46 +16,65 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Estimated max input tokens per cloud batch (including prompt overhead, buffer for output)
-# Rough estimate: 1 token ~ 4 chars (English) / 1.5 chars (CJK), using conservative 2 chars/token
-_CLOUD_MAX_INPUT_TOKENS = {
-    "ollama":  3000,    # Ollama models typically have 4K~8K context
-    "default": 30000,   # OpenAI 128K / Gemini 1M, large buffer for output
+# Default context sizes for cloud providers (used when actual ctx is unknown)
+_CLOUD_DEFAULT_CTX = {
+    "ollama":  8192,     # Ollama models typically 4K~32K, query via /api/show for actual
+    "default": 128000,   # OpenAI 128K / Gemini 1M
 }
 
 
-def _calc_cloud_srt_batch_size(prov, seg_dicts: list[dict]) -> int:
-    """Dynamically calculate SRT batch size based on provider and segment content."""
-    provider_name = type(prov).__name__.lower().replace("provider", "")
-    max_tokens = _CLOUD_MAX_INPUT_TOKENS.get(provider_name, _CLOUD_MAX_INPUT_TOKENS["default"])
-    logger.debug(f"Cloud batch calc: provider={provider_name}, max_tokens={max_tokens}, segments={len(seg_dicts)}")
+def _calc_srt_batch_size(n_ctx: int, seg_dicts: list[dict], max_batch: int = 0) -> int:
+    """
+    Calculate SRT translation batch size from context window and segment content.
+    Shared by both local and cloud translation paths.
 
+    Args:
+        n_ctx: context window size (tokens)
+        seg_dicts: subtitle segments
+        max_batch: hard cap (0 = no cap)
+    """
     if not seg_dicts:
         return 1
 
-    # Estimate average tokens per segment
-    sample = seg_dicts[:20]  # Sample first 20 segments
-    avg_chars = sum(len(s.get("text", "")) for s in sample) / len(sample)
-    # SRT format overhead per segment: index + timecode ~ 40 chars
-    avg_tokens_per_seg = int((avg_chars + 40) / 2)
+    from app.utils.inference import estimate_tokens
 
-    if avg_tokens_per_seg <= 0:
-        return len(seg_dicts)
+    # Estimate average tokens per segment (sample first 20)
+    sample = seg_dicts[:20]
+    avg_text_tokens = sum(estimate_tokens(s.get("text", "")) for s in sample) // len(sample)
+    # SRT format overhead per segment: index + timestamp + blank line ≈ 13 tokens
+    avg_seg_tokens = max(1, avg_text_tokens + 13)
 
-    # Prompt template overhead ~ 500 tokens
-    batch_size = max(1, (max_tokens - 500) // avg_tokens_per_seg)
-    # Cap: do not exceed total segment count
+    # Each segment appears in both input AND output (translation ≈ same length)
+    # Total per segment ≈ input + output = 2 × avg_seg_tokens
+    # Conservative: 50% utilization to absorb token estimation error + prompt overhead
+    tokens_per_seg = avg_seg_tokens * 2
+    batch_size = max(1, n_ctx // 2 // tokens_per_seg)
+
+    if max_batch > 0:
+        batch_size = min(batch_size, max_batch)
+
     result = min(batch_size, len(seg_dicts))
-    logger.info(f"Cloud SRT batch_size={result} (avg_tokens/seg={avg_tokens_per_seg})")
+    logger.info(f"SRT batch_size={result} (n_ctx={n_ctx}, avg_seg_tokens={avg_seg_tokens}, segs={len(seg_dicts)})")
     return result
 
 
-def _get_cloud_text_chunk_size(prov) -> int:
-    """Get plain-text translation chunk size (in characters) based on provider."""
+def _get_cloud_ctx(prov, model: str = "") -> int:
+    """Get context window size for a cloud provider."""
     provider_name = type(prov).__name__.lower().replace("provider", "")
-    max_tokens = _CLOUD_MAX_INPUT_TOKENS.get(provider_name, _CLOUD_MAX_INPUT_TOKENS["default"])
-    # Reserve half for output, multiply by 2 chars/token
-    return max(1000, (max_tokens // 2) * 2)
+    if provider_name == "ollama":
+        # Query actual model context via /api/show
+        try:
+            return prov.get_model_ctx(model)
+        except Exception:
+            pass
+    return _CLOUD_DEFAULT_CTX.get(provider_name, _CLOUD_DEFAULT_CTX["default"])
+
+
+def _get_cloud_text_chunk_size(prov, model: str = "") -> int:
+    """Get plain-text translation chunk size (in characters) based on provider context."""
+    n_ctx = _get_cloud_ctx(prov, model)
+    # Reserve half for output, ~2 chars per token
+    return max(1000, (n_ctx // 4) * 2)
 
 
 def get_cloud_provider(
@@ -94,7 +113,7 @@ def translate_text_cloud(
     remote_config = get_remote_inference_config("translate")
 
     if max_chars is None:
-        max_chars = _get_cloud_text_chunk_size(prov)
+        max_chars = _get_cloud_text_chunk_size(prov, model)
     chunks = split_text(text, max_chars=max_chars)
     total = len(chunks)
     logger.info(f"translate_text_cloud: {len(text)} chars, max_chars={max_chars}, chunks={total}")
@@ -163,28 +182,34 @@ def translate_text_local(
     logger.info(f"translate_text_local: {len(text)} chars, max_chars={max_chars}, chunks={total}")
     translated_chunks = []
 
+    from app.utils.inference import fake_progress
+
     for i, chunk in enumerate(chunks):
         result = builder(chunk, source_lang, target_lang, format, style, glossary)
         input_tokens = estimate_tokens(chunk)
         max_tokens = calc_max_tokens(config, n_ctx, input_tokens)
 
-        if result["mode"] == "chat":
-            output = runtime.chat(
-                messages=result["messages"], max_tokens=max_tokens,
-                temperature=config["temperature"],
-                top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
-            )
-        else:
-            output = runtime.complete(
-                prompt=result["prompt"], max_tokens=max_tokens,
-                temperature=config["temperature"],
-                top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
-            )
+        chunk_start_pct = i / total
+        chunk_end_pct = (i + 1) / total
+
+        with fake_progress(on_progress, chunk_start_pct, chunk_end_pct,
+                           f"task.progress.translating_segment|{i + 1}|{total}"):
+            if result["mode"] == "chat":
+                output = runtime.chat(
+                    messages=result["messages"], max_tokens=max_tokens,
+                    temperature=config["temperature"],
+                    top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+                )
+            else:
+                output = runtime.complete(
+                    prompt=result["prompt"], max_tokens=max_tokens,
+                    temperature=config["temperature"],
+                    top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+                )
         translated_chunks.append(output)
 
         if on_progress:
-            progress = min((i + 1) / total, 1.0)
-            on_progress(progress, f"task.progress.translating_segment|{i + 1}|{total}")
+            on_progress(chunk_end_pct, f"task.progress.translating_segment|{i + 1}|{total}")
 
     return "\n\n".join(translated_chunks)
 
@@ -218,7 +243,8 @@ def translate_srt_cloud(
     remote_config = get_remote_inference_config("translate")
 
     if batch_size is None:
-        batch_size = _calc_cloud_srt_batch_size(prov, seg_dicts)
+        n_ctx = _get_cloud_ctx(prov, model)
+        batch_size = _calc_srt_batch_size(n_ctx, seg_dicts)
 
     total = len(seg_dicts)
     num_batches = (total + batch_size - 1) // batch_size
@@ -286,7 +312,7 @@ def translate_srt_local(
     Returns:
         Translated seg_dicts list.
     """
-    from app.utils.inference import get_inference_config, calc_max_tokens, calc_batch_size, estimate_tokens
+    from app.utils.inference import get_inference_config, calc_max_tokens, estimate_tokens
     from app.utils.prompts import get_prompt_builder, segments_to_srt, parse_srt_response
 
     config = get_inference_config(model_family, model_size, "translate")
@@ -295,13 +321,15 @@ def translate_srt_local(
 
     # Auto batch size if not specified
     if batch_size is None:
-        avg_seg_tokens = sum(estimate_tokens(s["text"]) for s in seg_dicts) // max(1, len(seg_dicts))
-        batch_size = calc_batch_size(n_ctx, n_ctx // 3, 200, max(1, avg_seg_tokens))
+        max_batch = config.get("max_srt_batch", 0)
+        batch_size = _calc_srt_batch_size(n_ctx, seg_dicts, max_batch=max_batch)
 
     total = len(seg_dicts)
     num_batches = (total + batch_size - 1) // batch_size
     logger.info(f"translate_srt_local: {total} segments, batch_size={batch_size}, batches={num_batches}")
     translated_all = []
+
+    from app.utils.inference import fake_progress
 
     for batch_idx in range(num_batches):
         start = batch_idx * batch_size
@@ -313,18 +341,23 @@ def translate_srt_local(
         input_tokens = estimate_tokens(srt_text)
         max_tokens = calc_max_tokens(config, n_ctx, input_tokens)
 
-        if result["mode"] == "chat":
-            translated_srt = runtime.chat(
-                messages=result["messages"], max_tokens=max_tokens,
-                temperature=config["temperature"],
-                top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
-            )
-        else:
-            translated_srt = runtime.complete(
-                prompt=result["prompt"], max_tokens=max_tokens,
-                temperature=config["temperature"],
-                top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
-            )
+        batch_start_pct = batch_idx / num_batches
+        batch_end_pct = (batch_idx + 1) / num_batches
+
+        with fake_progress(on_progress, batch_start_pct, batch_end_pct,
+                           f"task.progress.translating_segment|{start + 1}|{total}"):
+            if result["mode"] == "chat":
+                translated_srt = runtime.chat(
+                    messages=result["messages"], max_tokens=max_tokens,
+                    temperature=config["temperature"],
+                    top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+                )
+            else:
+                translated_srt = runtime.complete(
+                    prompt=result["prompt"], max_tokens=max_tokens,
+                    temperature=config["temperature"],
+                    top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+                )
 
         batch_translated = parse_srt_response(translated_srt, batch)
         translated_all.extend(batch_translated)
