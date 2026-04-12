@@ -34,11 +34,6 @@ _CATEGORY_MAP = {
 # --- Display constants ---
 
 _SIZE_DESC = {
-    "translategemma": {
-        "4b": "models.size.light_fast",
-        "12b": "models.size.balanced",
-        "27b": "models.size.highest",
-    },
     "qwen3": {
         "1.7b": "models.size.ultra_light",
         "4b": "models.size.light_fast",
@@ -268,6 +263,9 @@ class ModelMetadataService:
                         "downloaded": downloaded,
                         "size_mb": total_mb,
                         "vram_mb": total_mb + size_spec.get("vram_overhead_mb", 0),
+                        "n_ctx_default": size_spec.get("n_ctx_default", 4096),
+                        "n_ctx_min": size_spec.get("n_ctx_min", 2048),
+                        "n_ctx_max": size_spec.get("n_ctx_max", 8192),
                     })
         return items
 

@@ -1,6 +1,6 @@
 """
 Document translation service.
-Uses TranslateGemma to translate uploaded text files.
+Translates uploaded text files using local LLM.
 Supports plain text files and subtitle files (SRT, VTT).
 """
 import logging
@@ -144,7 +144,7 @@ class TranslateService:
         source_language: str,
         target_language: str,
         model_size: str = "4b",
-        model_type: str = "translategemma",
+        model_family: str = "gemma4",
         quantization: Optional[str] = None,
         translate_style: str = "colloquial",
         glossary: Optional[dict[str, str]] = None,
@@ -174,7 +174,7 @@ class TranslateService:
             "source_language": source_language,
             "target_language": target_language,
             "model_size": model_size,
-            "model_type": model_type,
+            "model_family": model_family,
             "quantization": quantization,
             "translate_style": translate_style,
             "glossary": glossary,
@@ -217,7 +217,7 @@ class TranslateService:
         source_language = params["source_language"]
         target_language = params["target_language"]
         model_size = params.get("model_size", "4b")
-        model_type = params.get("model_type", "translategemma")
+        model_family = params.get("model_family", "gemma4")
         quantization = params.get("quantization")
         translate_style = params.get("translate_style", "colloquial")
         glossary = params.get("glossary")
@@ -289,7 +289,7 @@ class TranslateService:
                 runtime = LlamaServerRuntime(SLOT_LLM)
                 translate_progress(0.0, "task.progress.load_translate_model")
 
-                with runtime.acquire(model_type, variant, lambda p, m: translate_progress(p * 0.05, m)):
+                with runtime.acquire(model_family, variant, lambda p, m: translate_progress(p * 0.05, m)):
                     if is_subtitle:
                         if ext == ".vtt":
                             segments = _parse_vtt(text)
@@ -303,7 +303,8 @@ class TranslateService:
                         translated_segments = translate_srt_local(
                             segments, src, target_language, runtime,
                             on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
-                            style=translate_style, glossary=glossary, model_id=model_type,
+                            style=translate_style, glossary=glossary,
+                            model_family=model_family, model_size=model_size,
                         )
                         translated_text = None
                     else:
@@ -311,7 +312,8 @@ class TranslateService:
                         translated_text = translate_text_local(
                             text, source_language, target_language, runtime,
                             on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
-                            glossary=glossary, model_id=model_type,
+                            glossary=glossary, model_family=model_family,
+                            model_size=model_size,
                         )
                         translated_segments = None
 

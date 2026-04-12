@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.utils.prompts import DEFAULT_VLM_MODEL, build_ocr_messages
+from app.utils.prompts import DEFAULT_VLM_MODEL
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -31,15 +31,15 @@ class DocumentOcrService:
         self._task_manager.register_handler(TASK_TYPE_DOCUMENT_OCR_REMOTE, self._handle_remote_task)
         logger.info("DocumentOcrService initialized")
 
-    def get_status(self, model_id: str = DEFAULT_VLM_MODEL, size: str = "4b",
+    def get_status(self, model_family: str = DEFAULT_VLM_MODEL, size: str = "4b",
                    quantization: Optional[str] = None) -> dict:
         from app.init.container import get_container
-        return get_container().language_service().get_vlm_status(model_id=model_id, size=size, quantization=quantization)
+        return get_container().language_service().get_vlm_status(model_family=model_family, size=size, quantization=quantization)
 
     async def submit(
         self,
         file_id: str,
-        model_id: str = DEFAULT_VLM_MODEL,
+        model_family: str = DEFAULT_VLM_MODEL,
         size: str = "4b",
         quantization: Optional[str] = None,
         format: str = "md",
@@ -50,7 +50,7 @@ class DocumentOcrService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
         params = {
-            "file_id": file_id, "model_id": model_id,
+            "file_id": file_id, "model_family": model_family,
             "size": size, "quantization": quantization,
             "format": format, "output_dir": output_dir,
             "output_filename": output_filename,
@@ -153,6 +153,7 @@ class DocumentOcrService:
         """Recognize text in a single image using remote VLM."""
         import base64
         from app.utils.prompts import OCR_SYSTEM_MD, OCR_SYSTEM_TXT, OCR_USER_MD, OCR_USER_TXT
+        from app.utils.inference import get_remote_inference_config
 
         with open(image_path, "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode()
@@ -167,7 +168,12 @@ class DocumentOcrService:
                 {"type": "text", "text": user_prompt},
             ]},
         ]
-        return prov.chat(model=model, messages=messages, max_tokens=4096, temperature=0.0)
+        remote_config = get_remote_inference_config("ocr")
+        return prov.chat(
+            model=model, messages=messages,
+            max_tokens=remote_config["max_tokens"],
+            temperature=remote_config["temperature"],
+        )
 
     def _ocr_pdf_remote(self, pdf_path: str, prov, model: str, fmt: str,
                         progress_callback: Callable[[float, str], None]) -> str:
@@ -196,17 +202,28 @@ class DocumentOcrService:
         pdf.close()
         return "\n\n---\n\n".join(all_texts)
 
-    def _recognize(self, image_path: str, model_id: str, variant: str, fmt: str,
+    def _recognize(self, image_path: str, model_family: str, variant: str, fmt: str,
                    on_progress: Optional[Callable[[float, str], None]] = None) -> str:
         """Recognize text in a single image using LlamaServerRuntime."""
         from app.engine.ai.runtime.llama_server import LlamaServerRuntime
         from app.engine.ai.registry import SLOT_LLM
+        from app.utils.inference import get_inference_config, calc_max_tokens
+        from app.utils.prompts import get_prompt_builder
+
+        variant_size = variant.split(":")[0] if ":" in variant else variant
+        config = get_inference_config(model_family, variant_size, "ocr")
+        builder = get_prompt_builder("ocr", config["prompt_builder"], thinking=config.get("thinking", False))
+        result = builder(image_path, output_format=fmt, source_lang=None)
+        max_tokens = calc_max_tokens(config, config["n_ctx"], 1000)  # ~1000 tokens for image
 
         runtime = LlamaServerRuntime(SLOT_LLM)
-        messages = build_ocr_messages(image_path, format=fmt)
 
-        with runtime.acquire(model_id, variant, on_progress):
-            return runtime.chat(messages=messages, max_tokens=4096, temperature=0.0)
+        with runtime.acquire(model_family, variant, on_progress):
+            return runtime.chat(
+                messages=result["messages"], max_tokens=max_tokens,
+                temperature=config["temperature"],
+                top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+            )
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
@@ -218,7 +235,7 @@ class DocumentOcrService:
         if not get_container().model_manager().is_llama_ready():
             raise RuntimeError("llama-server not installed; please install AI core environment in settings")
 
-        model_id = params.get("model_id", DEFAULT_VLM_MODEL)
+        model_family = params.get("model_family", DEFAULT_VLM_MODEL)
         size = params.get("size", "4b")
         quantization = params.get("quantization")
         fmt = params.get("format", "md")
@@ -235,12 +252,12 @@ class DocumentOcrService:
         with manager.gpu_session():
             if src_ext == ".pdf":
                 final_text = self._ocr_pdf(
-                    file_info.file_path, model_id, variant, fmt, progress_callback,
+                    file_info.file_path, model_family, variant, fmt, progress_callback,
                 )
             elif src_ext in _IMAGE_EXTS:
                 final_text = self._recognize(
                     image_path=str(file_info.file_path),
-                    model_id=model_id, variant=variant, fmt=fmt,
+                    model_family=model_family, variant=variant, fmt=fmt,
                     on_progress=lambda p, m: progress_callback(0.1 + p * 0.85, m),
                 )
             else:
@@ -270,7 +287,7 @@ class DocumentOcrService:
             "char_count": len(final_text),
         }
 
-    def _ocr_pdf(self, src_path: Path, model_id, variant, fmt, progress_callback) -> str:
+    def _ocr_pdf(self, src_path: Path, model_family, variant, fmt, progress_callback) -> str:
         import io as _io
         import pypdfium2
         doc = pypdfium2.PdfDocument(str(src_path))
@@ -291,7 +308,7 @@ class DocumentOcrService:
             try:
                 text = self._recognize(
                     image_path=tmp_path,
-                    model_id=model_id, variant=variant, fmt=fmt,
+                    model_family=model_family, variant=variant, fmt=fmt,
                     on_progress=lambda p, m: None,
                 )
                 page_results.append(text.strip())

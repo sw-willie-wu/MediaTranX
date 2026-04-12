@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from PIL import Image as PILImage
 
-from app.utils.prompts import DEFAULT_VLM_MODEL, build_ocr_messages, OCR_PARAMS
+from app.utils.prompts import DEFAULT_VLM_MODEL
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -31,18 +31,18 @@ class ImageOcrService:
 
     def get_status(
         self,
-        model_id: str = DEFAULT_VLM_MODEL,
+        model_family: str = DEFAULT_VLM_MODEL,
         size: str = "4b",
         quantization: Optional[str] = None,
     ) -> dict:
         """Query VLM OCR status."""
         from app.init.container import get_container
-        return get_container().language_service().get_vlm_status(model_id=model_id, size=size, quantization=quantization)
+        return get_container().language_service().get_vlm_status(model_family=model_family, size=size, quantization=quantization)
 
     async def submit_ocr(
         self,
         file_id: str,
-        model_id: str = DEFAULT_VLM_MODEL,
+        model_family: str = DEFAULT_VLM_MODEL,
         size: str = "4b",
         quantization: Optional[str] = None,
         format: str = "md",
@@ -56,7 +56,7 @@ class ImageOcrService:
 
         params = {
             "file_id": file_id,
-            "model_id": model_id,
+            "model_family": model_family,
             "size": size,
             "quantization": quantization,
             "format": format,
@@ -73,7 +73,7 @@ class ImageOcrService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        model_id = params.get("model_id", DEFAULT_VLM_MODEL)
+        model_family = params.get("model_family", DEFAULT_VLM_MODEL)
         size = params.get("size", "4b")
         quantization = params.get("quantization")
         fmt = params.get("format", "md")
@@ -93,12 +93,24 @@ class ImageOcrService:
             from app.engine.ai.runtime.llama_server import LlamaServerRuntime
             from app.engine.ai.registry import SLOT_LLM
 
-            variant = f"{size}:{quantization}" if quantization else size
-            runtime = LlamaServerRuntime(SLOT_LLM)
-            messages = build_ocr_messages(str(file_info.file_path), format=fmt)
+            from app.utils.inference import get_inference_config, calc_max_tokens
+            from app.utils.prompts import get_prompt_builder
 
-            with runtime.acquire(model_id, variant, lambda p, m: progress_callback(0.1 + p * 0.85, m)):
-                final_text = runtime.chat(messages=messages, max_tokens=4096, temperature=0.0)
+            variant = f"{size}:{quantization}" if quantization else size
+            variant_size = variant.split(":")[0] if ":" in variant else variant
+            runtime = LlamaServerRuntime(SLOT_LLM)
+
+            config = get_inference_config(model_family, variant_size, "ocr")
+            builder = get_prompt_builder("ocr", config["prompt_builder"], thinking=config.get("thinking", False))
+            result = builder(str(file_info.file_path), output_format=fmt, source_lang=None)
+            max_tokens = calc_max_tokens(config, config["n_ctx"], 1000)  # ~1000 tokens for image
+
+            with runtime.acquire(model_family, variant, lambda p, m: progress_callback(0.1 + p * 0.85, m)):
+                final_text = runtime.chat(
+                    messages=result["messages"], max_tokens=max_tokens,
+                    temperature=config["temperature"],
+                    top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+                )
 
         if not final_text.strip():
             final_text = "(No text detected)"
@@ -240,7 +252,13 @@ class ImageOcrService:
                 {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_b64}"}},
             ]}]
 
-        final_text = p.chat(model=remote_model, messages=messages, max_tokens=4096, temperature=0.1)
+        from app.utils.inference import get_remote_inference_config
+        remote_config = get_remote_inference_config("ocr")
+        final_text = p.chat(
+            model=remote_model, messages=messages,
+            max_tokens=remote_config["max_tokens"],
+            temperature=remote_config["temperature"],
+        )
 
         if not final_text.strip():
             final_text = "(No text detected)"
