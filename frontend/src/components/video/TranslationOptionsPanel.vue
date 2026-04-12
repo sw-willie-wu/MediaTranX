@@ -70,7 +70,7 @@ const translateStyles = computed(() =>
 
 async function loadTranslateStyles() {
   try {
-    const res = await apiFetch('/setup/translate-styles')
+    const res = await apiFetch('/llm/translate/styles')
     if (res.ok) rawTranslateStyles.value = await res.json()
   } catch {}
 }
@@ -140,7 +140,7 @@ async function loadTranslateModels() {
 async function loadTranslateLanguages(retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
-      const response = await apiFetch('/video/translategemma/languages')
+      const response = await apiFetch('/llm/translate/languages')
       if (response.ok) { translateLanguages.value = await response.json(); return }
     } catch {}
     if (i < retries - 1) await new Promise(r => setTimeout(r, 1000))

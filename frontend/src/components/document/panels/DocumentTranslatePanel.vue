@@ -92,7 +92,7 @@ const languageOptions = computed(() =>
 
 async function loadLanguages() {
   try {
-    const res = await apiFetch('/document/translategemma/languages')
+    const res = await apiFetch('/llm/translate/languages')
     if (res.ok) translateLanguages.value = await res.json()
   } catch {}
 }
@@ -117,7 +117,7 @@ const translateStyles = computed(() =>
 
 async function loadTranslateStyles() {
   try {
-    const res = await apiFetch('/setup/translate-styles')
+    const res = await apiFetch('/llm/translate/styles')
     if (res.ok) rawTranslateStyles.value = await res.json()
   } catch {}
 }

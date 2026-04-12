@@ -19,7 +19,7 @@ router = APIRouter()
 
 class ImageOcrRequest(BaseModel):
     file_id: str = Field(..., description="Input file ID")
-    model_id: Optional[str] = Field(default=None, description="VLM model ID (None=use default)")
+    model_family: Optional[str] = Field(default=None, description="VLM model family (None=use default)")
     size: str = Field(default="4b", description="Model size")
     quantization: Optional[str] = Field(default=None, description="Quantization format")
     format: str = Field(default="md", description="Output format: txt or md")
@@ -57,10 +57,10 @@ async def ocr_image(
                 output_filename=request.output_filename,
             )
         else:
-            model_id = request.model_id or language_service.get_default_vlm_model()
+            model_family = request.model_family or language_service.get_default_vlm_model()
             task_id = await service.submit_ocr(
                 file_id=request.file_id,
-                model_id=model_id,
+                model_family=model_family,
                 size=request.size,
                 quantization=request.quantization,
                 format=request.format,
@@ -77,7 +77,7 @@ async def ocr_image(
 @router.get("/ocr/status")
 @inject
 async def get_ocr_status(
-    model_id: Optional[str] = None,
+    model_family: Optional[str] = None,
     size: str = "4b",
     quantization: Optional[str] = None,
     service: ImageOcrService = Depends(Provide[AppContainer.image_ocr]),
@@ -85,7 +85,7 @@ async def get_ocr_status(
 ):
     """Query VLM OCR environment status."""
     try:
-        effective_model_id = model_id or language_service.get_default_vlm_model()
-        return service.get_status(model_id=effective_model_id, size=size, quantization=quantization)
+        effective_model_family = model_family or language_service.get_default_vlm_model()
+        return service.get_status(model_family=effective_model_family, size=size, quantization=quantization)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

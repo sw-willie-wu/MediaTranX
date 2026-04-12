@@ -122,7 +122,7 @@ const translateLanguages = ref([
 
 async function loadTranslateLanguages() {
   try {
-    const res = await apiFetch('/video/translategemma/languages')
+    const res = await apiFetch('/llm/translate/languages')
     if (res.ok) {
       const data = await res.json()
       translateLanguages.value = data.map((l: { code: string; name: string }) => ({

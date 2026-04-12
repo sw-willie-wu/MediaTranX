@@ -915,7 +915,7 @@ export default {
       website: '官方網站',
       credits: '技術致謝',
       credits_intro: 'MediaTranX 建立在眾多卓越的開源技術之上：',
-      credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, TranslateGemma, Llama-cpp-python 等。',
+      credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, Llama-cpp-python 等。',
       copyright: '© 2026 MediaTranX Project. All rights reserved.',
     },
 

@@ -915,7 +915,7 @@ export default {
       website: 'Website',
       credits: 'Credits',
       credits_intro: 'MediaTranX is built on many excellent open-source technologies:',
-      credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, TranslateGemma, Llama-cpp-python, etc.',
+      credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, Llama-cpp-python, etc.',
       copyright: '© 2026 MediaTranX Project. All rights reserved.',
     },
 
