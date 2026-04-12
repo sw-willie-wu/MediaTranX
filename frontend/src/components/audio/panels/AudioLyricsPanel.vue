@@ -183,7 +183,7 @@ async function execute() {
       body.translate_remote_model = parsed.modelId
     } else {
       const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
-      body.translate_model_type = tmType
+      body.translate_model_family = tmType
       body.translate_model_size = tmSize
       body.translate_quantization = tmQuant
     }
@@ -231,7 +231,7 @@ function getParams() {
       body.translate_remote_model = parsed.modelId
     } else {
       const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
-      body.translate_model_type = tmType
+      body.translate_model_family = tmType
       body.translate_model_size = tmSize
       body.translate_quantization = tmQuant
     }

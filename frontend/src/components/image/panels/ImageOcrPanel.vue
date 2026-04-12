@@ -119,7 +119,7 @@ async function checkAvailable() {
   }
   try {
     const [family, size] = selectedModel.value.split(':')
-    const res = await apiFetch(`/image/ocr/status?model_id=${family}&size=${size}`)
+    const res = await apiFetch(`/image/ocr/status?model_family=${family}&size=${size}`)
     if (!res.ok) return
     const data = await res.json()
     available.value = data.available
@@ -150,7 +150,7 @@ function getParams(): Record<string, unknown> {
     params.remote_model = parsed.modelId
   } else {
     const [family, size] = selectedModel.value.split(':')
-    params.model_id = family
+    params.model_family = family
     params.size = size
   }
   if (outputPath.value) {

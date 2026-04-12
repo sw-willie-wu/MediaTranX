@@ -214,7 +214,7 @@ async function execute() {
       body.translate_remote_model = parsed.modelId
     } else {
       const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
-      body.translate_model_type = tmType
+      body.translate_model_family = tmType
       body.translate_model_size = tmSize
       body.translate_quantization = tmQuant
     }
@@ -229,7 +229,7 @@ async function execute() {
       body.summarize_remote_model = parsed.modelId
     } else {
       const [smType, smSize, smQuant] = selectedSummarizeModel.value.split(':')
-      body.summarize_model_type = smType
+      body.summarize_model_family = smType
       body.summarize_model_size = smSize
       body.summarize_quantization = smQuant
     }
@@ -280,7 +280,7 @@ function getParams() {
       body.translate_remote_model = parsed.modelId
     } else {
       const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
-      body.translate_model_type = tmType
+      body.translate_model_family = tmType
       body.translate_model_size = tmSize
       body.translate_quantization = tmQuant
     }
@@ -295,7 +295,7 @@ function getParams() {
       body.summarize_remote_model = parsed.modelId
     } else {
       const [smType, smSize, smQuant] = selectedSummarizeModel.value.split(':')
-      body.summarize_model_type = smType
+      body.summarize_model_family = smType
       body.summarize_model_size = smSize
       body.summarize_quantization = smQuant
     }
