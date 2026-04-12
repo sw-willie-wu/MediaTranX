@@ -16,21 +16,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Local LLM: small context window (~8K), use small batches
-LOCAL_BATCH_SIZE = 5
-LOCAL_TEXT_CHUNK_SIZE = 1500
-
 # Estimated max input tokens per cloud batch (including prompt overhead, buffer for output)
 # Rough estimate: 1 token ~ 4 chars (English) / 1.5 chars (CJK), using conservative 2 chars/token
 _CLOUD_MAX_INPUT_TOKENS = {
     "ollama":  3000,    # Ollama models typically have 4K~8K context
     "default": 30000,   # OpenAI 128K / Gemini 1M, large buffer for output
 }
-
-
-def _estimate_tokens(text: str) -> int:
-    """Rough token count estimate (conservative: 2 chars/token)."""
-    return len(text) // 2
 
 
 def _calc_cloud_srt_batch_size(prov, seg_dicts: list[dict]) -> int:
@@ -97,7 +88,10 @@ def translate_text_cloud(
     Returns:
         The fully translated text.
     """
+    from app.utils.inference import get_remote_inference_config
     from app.utils.prompts import build_translate_prompt, split_text
+
+    remote_config = get_remote_inference_config("translate")
 
     if max_chars is None:
         max_chars = _get_cloud_text_chunk_size(prov)
@@ -118,9 +112,10 @@ def translate_text_cloud(
             {"role": "system", "content": "You are a professional translator."},
             {"role": "user", "content": prompt},
         ]
+        max_tokens = min(max(len(chunk) * 4, 100), remote_config["max_tokens"])
         result = prov.chat(
             model=model, messages=messages,
-            max_tokens=max(len(chunk) * 4, 100), temperature=0.1,
+            max_tokens=max_tokens, temperature=remote_config["temperature"],
         )
         translated_chunks.append(result)
 
@@ -137,9 +132,12 @@ def translate_text_local(
     target_lang: str,
     runtime,
     on_progress: Optional[Callable[[float, str], None]] = None,
-    max_chars: int = LOCAL_TEXT_CHUNK_SIZE,
+    max_chars: Optional[int] = None,
     glossary: Optional[dict[str, str]] = None,
-    model_id: str = "translategemma",
+    model_family: str = "gemma4",
+    model_size: str = "4b",
+    style: str = "colloquial",
+    format: str = "text",
 ) -> str:
     """
     Chunked plain-text translation (local LLM). Must be called within
@@ -148,7 +146,17 @@ def translate_text_local(
     Returns:
         The fully translated text.
     """
-    from app.utils.prompts import build_translate_prompt, build_translate_messages, split_text
+    from app.utils.inference import get_inference_config, calc_max_tokens, estimate_tokens
+    from app.utils.prompts import get_prompt_builder, split_text
+
+    config = get_inference_config(model_family, model_size, "translate")
+    builder = get_prompt_builder("translate", config["prompt_builder"], thinking=config.get("thinking", False))
+    n_ctx = config["n_ctx"]
+
+    # Auto-calculate chunk size from model capacity if not specified
+    if max_chars is None:
+        chunk_tokens = n_ctx // 3  # Reserve 2/3 for output + prompt overhead
+        max_chars = int(chunk_tokens * 3.5)
 
     chunks = split_text(text, max_chars=max_chars)
     total = len(chunks)
@@ -156,14 +164,23 @@ def translate_text_local(
     translated_chunks = []
 
     for i, chunk in enumerate(chunks):
-        prompt = build_translate_prompt(chunk, source_lang, target_lang, glossary=glossary, model_id=model_id)
-        messages = build_translate_messages(prompt, model_id)
-        result = runtime.chat(
-            messages=messages,
-            max_tokens=max(len(chunk) * 4, 100),
-            temperature=0.1,
-        )
-        translated_chunks.append(result)
+        result = builder(chunk, source_lang, target_lang, format, style, glossary)
+        input_tokens = estimate_tokens(chunk)
+        max_tokens = calc_max_tokens(config, n_ctx, input_tokens)
+
+        if result["mode"] == "chat":
+            output = runtime.chat(
+                messages=result["messages"], max_tokens=max_tokens,
+                temperature=config["temperature"],
+                top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+            )
+        else:
+            output = runtime.complete(
+                prompt=result["prompt"], max_tokens=max_tokens,
+                temperature=config["temperature"],
+                top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+            )
+        translated_chunks.append(output)
 
         if on_progress:
             progress = min((i + 1) / total, 1.0)
@@ -195,7 +212,10 @@ def translate_srt_cloud(
     Returns:
         Translated seg_dicts list.
     """
+    from app.utils.inference import get_remote_inference_config
     from app.utils.prompts import build_srt_translate_prompt, segments_to_srt, parse_srt_response
+
+    remote_config = get_remote_inference_config("translate")
 
     if batch_size is None:
         batch_size = _calc_cloud_srt_batch_size(prov, seg_dicts)
@@ -204,7 +224,6 @@ def translate_srt_cloud(
     num_batches = (total + batch_size - 1) // batch_size
     logger.info(f"translate_srt_cloud: {total} segments, batch_size={batch_size}, batches={num_batches}")
     translated_all = []
-    num_batches = (total + batch_size - 1) // batch_size
 
     for batch_idx in range(num_batches):
         start = batch_idx * batch_size
@@ -226,9 +245,10 @@ def translate_srt_cloud(
             {"role": "system", "content": "You are a professional subtitle translator."},
             {"role": "user", "content": prompt},
         ]
+        max_tokens = min(len(srt_text) * 3, remote_config["max_tokens"])
         translated_srt = prov.chat(
             model=model, messages=messages,
-            max_tokens=len(srt_text) * 3, temperature=0.1,
+            max_tokens=max_tokens, temperature=remote_config["temperature"],
         )
 
         batch_translated = parse_srt_response(translated_srt, batch)
@@ -247,11 +267,12 @@ def translate_srt_local(
     target_lang: str,
     runtime,
     on_progress: Optional[Callable[[float, str], None]] = None,
-    batch_size: int = LOCAL_BATCH_SIZE,
+    batch_size: Optional[int] = None,
     keep_names: bool = True,
     style: str = "colloquial",
     glossary: Optional[dict[str, str]] = None,
-    model_id: str = "translategemma",
+    model_family: str = "gemma4",
+    model_size: str = "4b",
 ) -> list[dict]:
     """
     Local LLM SRT batch translation (must be called within runtime.acquire() context).
@@ -259,21 +280,28 @@ def translate_srt_local(
     Args:
         seg_dicts: [{"start": float, "end": float, "text": str}, ...]
         runtime: An acquired LlamaServerRuntime instance
-        model_id: Prompt template ID
+        model_family: Model family for inference config
+        model_size: Model size variant (e.g. "4b", "12b")
 
     Returns:
         Translated seg_dicts list.
     """
-    from app.utils.prompts import (
-        build_srt_translate_prompt, build_translate_messages,
-        segments_to_srt, parse_srt_response,
-    )
+    from app.utils.inference import get_inference_config, calc_max_tokens, calc_batch_size, estimate_tokens
+    from app.utils.prompts import get_prompt_builder, segments_to_srt, parse_srt_response
+
+    config = get_inference_config(model_family, model_size, "translate")
+    builder = get_prompt_builder("translate", config["prompt_builder"], thinking=config.get("thinking", False))
+    n_ctx = config["n_ctx"]
+
+    # Auto batch size if not specified
+    if batch_size is None:
+        avg_seg_tokens = sum(estimate_tokens(s["text"]) for s in seg_dicts) // max(1, len(seg_dicts))
+        batch_size = calc_batch_size(n_ctx, n_ctx // 3, 200, max(1, avg_seg_tokens))
 
     total = len(seg_dicts)
     num_batches = (total + batch_size - 1) // batch_size
     logger.info(f"translate_srt_local: {total} segments, batch_size={batch_size}, batches={num_batches}")
     translated_all = []
-    num_batches = (total + batch_size - 1) // batch_size
 
     for batch_idx in range(num_batches):
         start = batch_idx * batch_size
@@ -281,17 +309,22 @@ def translate_srt_local(
         batch = seg_dicts[start:end]
 
         srt_text = segments_to_srt(batch, start_index=start + 1)
-        prompt = build_srt_translate_prompt(
-            srt_text, source_lang, target_lang,
-            keep_names=keep_names, style=style, glossary=glossary,
-            model_id=model_id,
-        )
-        messages = build_translate_messages(prompt, model_id)
-        translated_srt = runtime.chat(
-            messages=messages,
-            max_tokens=len(srt_text) * 3,
-            temperature=0.1,
-        )
+        result = builder(srt_text, source_lang, target_lang, "srt", style, glossary)
+        input_tokens = estimate_tokens(srt_text)
+        max_tokens = calc_max_tokens(config, n_ctx, input_tokens)
+
+        if result["mode"] == "chat":
+            translated_srt = runtime.chat(
+                messages=result["messages"], max_tokens=max_tokens,
+                temperature=config["temperature"],
+                top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+            )
+        else:
+            translated_srt = runtime.complete(
+                prompt=result["prompt"], max_tokens=max_tokens,
+                temperature=config["temperature"],
+                top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+            )
 
         batch_translated = parse_srt_response(translated_srt, batch)
         translated_all.extend(batch_translated)

@@ -121,37 +121,22 @@ STYLE_OPTIONS = [
     {"value": "literal",    "label": "直譯"},
 ]
 
-# Translation style instructions (Chinese, used in prompts sent to the model)
+# Translation style instructions (English, used in prompts sent to the model)
 STYLE_INSTRUCTIONS = {
-    "colloquial": "使用口語化的翻譯風格",
-    "formal": "使用正式、書面的翻譯風格",
-    "literal": "盡量直譯，保持原文結構",
+    "colloquial": "Use a colloquial, conversational translation style",
+    "formal": "Use a formal, written translation style",
+    "literal": "Translate as literally as possible, preserving original structure",
 }
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Inference parameter defaults
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
+# ── Legacy compat (used by old build_*_prompt functions, will be removed) ──
 TRANSLATE_PARAMS = {"temperature": 0.1, "top_k": 40, "top_p": 0.9}
 SUMMARIZE_PARAMS = {"temperature": 0.3, "top_k": 40, "top_p": 0.9}
 OCR_PARAMS = {"temperature": 0.1, "top_k": 40, "top_p": 0.9}
-
-# Model-specific config: system prompt and text suffix per model
 MODEL_CONFIGS = {
-    "qwen3": {
-        "system_prompt": "You are a professional subtitle translator.",
-        "text_suffix": " /no_think",
-    },
-    "qwen3.5": {
-        "system_prompt": "You are a professional subtitle translator.",
-        "text_suffix": "",
-    },
-    "translategemma": {
-        "system_prompt": None,
-        "text_suffix": "",
-    },
+    "gemma4": {"system_prompt": "You are a professional subtitle translator.", "text_suffix": ""},
+    "qwen3": {"system_prompt": "You are a professional subtitle translator.", "text_suffix": " /no_think"},
+    "qwen3.5": {"system_prompt": "You are a professional subtitle translator.", "text_suffix": ""},
 }
-
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Translation result dataclass
@@ -289,13 +274,13 @@ def build_translate_prompt(
     source_lang: str,
     target_lang: str,
     glossary: Optional[dict[str, str]] = None,
-    model_id: str = "translategemma",
+    model_id: str = "gemma4",
 ) -> str:
     """Build a translation prompt for chat"""
     source_name = LANG_NAMES_EN.get(source_lang, source_lang)
     target_name = LANG_NAMES_EN.get(target_lang, target_lang)
     glossary_text = format_glossary(glossary)
-    config = MODEL_CONFIGS.get(model_id, MODEL_CONFIGS["translategemma"])
+    config = MODEL_CONFIGS.get(model_id, MODEL_CONFIGS["gemma4"])
     suffix = config["text_suffix"]
 
     return (
@@ -313,12 +298,12 @@ def build_srt_translate_prompt(
     keep_names: bool = True,
     style: str = "colloquial",
     glossary: Optional[dict[str, str]] = None,
-    model_id: str = "translategemma",
+    model_id: str = "gemma4",
 ) -> str:
     """Build SRT translation prompt"""
     target_zh = LANG_NAMES_ZH.get(target_lang, target_lang)
     style_text = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS["colloquial"])
-    config = MODEL_CONFIGS.get(model_id, MODEL_CONFIGS["translategemma"])
+    config = MODEL_CONFIGS.get(model_id, MODEL_CONFIGS["gemma4"])
     suffix = config["text_suffix"]
 
     if keep_names:
@@ -342,10 +327,10 @@ def build_srt_translate_prompt(
 
 def build_translate_messages(
     prompt: str,
-    model_id: str = "translategemma",
+    model_id: str = "gemma4",
 ) -> list[dict]:
     """Build a messages list based on model configuration."""
-    config = MODEL_CONFIGS.get(model_id, MODEL_CONFIGS["translategemma"])
+    config = MODEL_CONFIGS.get(model_id, MODEL_CONFIGS["gemma4"])
     messages = []
     if config["system_prompt"]:
         messages.append({"role": "system", "content": config["system_prompt"]})
@@ -353,31 +338,41 @@ def build_translate_messages(
     return messages
 
 
-def build_summarize_prompt(text: str) -> str:
+def _summarize_lang_instruction(source_lang: Optional[str] = None) -> str:
+    """Build the language instruction fragment for summarize prompts."""
+    if source_lang:
+        lang_name = LANG_NAMES_EN.get(source_lang, source_lang)
+        return f"Write the summary in {lang_name}."
+    return "Write the summary in the same language as the text."
+
+
+def build_summarize_prompt(text: str, source_lang: Optional[str] = None) -> str:
     """Build a prompt for generating a bullet-point outline summary of a transcript."""
+    lang_inst = _summarize_lang_instruction(source_lang)
     return (
         "Generate a bullet-point outline summary of the following transcript. "
-        "Write the summary in the same language as the transcript text:\n\n"
+        f"{lang_inst}\n\n"
         f"{text}"
     )
 
 
-def build_chunk_summarize_prompt(text: str) -> str:
+def build_chunk_summarize_prompt(text: str, source_lang: Optional[str] = None) -> str:
     """Build a prompt for summarizing a single chunk of a long transcript."""
+    lang_inst = _summarize_lang_instruction(source_lang)
     return (
         "Summarize the following transcript segment into key bullet points. "
-        "Keep it concise. Write in the same language as the text:\n\n"
+        f"Keep it concise. {lang_inst}\n\n"
         f"{text}"
     )
 
 
-def build_merge_summaries_prompt(summaries: str) -> str:
+def build_merge_summaries_prompt(summaries: str, source_lang: Optional[str] = None) -> str:
     """Build a prompt for merging multiple chunk summaries into a final outline."""
+    lang_inst = _summarize_lang_instruction(source_lang)
     return (
         "The following are summaries of consecutive parts of a transcript. "
         "Merge them into a single coherent bullet-point outline. "
-        "Remove duplicates and organize by topic. "
-        "Write in the same language as the summaries:\n\n"
+        f"Remove duplicates and organize by topic. {lang_inst}\n\n"
         f"{summaries}"
     )
 
@@ -504,3 +499,196 @@ def build_ocr_messages(image_path: str, format: str = "md") -> list[dict]:
             ],
         },
     ]
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Per-model prompt builders
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# ── Translate format instructions ──
+
+_FORMAT_INSTRUCTIONS = {
+    "text": "Output only the translation, no explanations.",
+    "srt": "Keep SRT format and timestamps unchanged. Output only the translated SRT.",
+    "lrc": "Keep LRC timestamps [mm:ss.xx] unchanged. Output only the translated LRC.",
+    "ass": "Keep ASS format, styles, and timestamps unchanged. Output only the translated ASS.",
+    "markdown": "Preserve all Markdown formatting (headings, tables, lists, code blocks). Output only the translated Markdown.",
+}
+
+
+def _build_translate_user_prompt(text, source_lang, target_lang,
+                                  format="text", style="colloquial", glossary=None):
+    """Build the user-facing translation instruction (shared across builders)."""
+    source_name = LANG_NAMES_EN.get(source_lang, source_lang)
+    target_name = LANG_NAMES_EN.get(target_lang, target_lang)
+    style_text = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS["colloquial"])
+    format_inst = _FORMAT_INSTRUCTIONS.get(format, _FORMAT_INSTRUCTIONS["text"])
+    glossary_text = format_glossary(glossary)
+
+    return (
+        f"Translate the following {source_name} text to {target_name}.\n"
+        f"Style: {style_text}\n"
+        f"{format_inst}\n"
+        f"{glossary_text}\n"
+        f"{text}"
+    ).strip()
+
+
+def _build_summarize_user_prompt(text, source_lang=None):
+    """Build summarize instruction with explicit language."""
+    lang_name = LANG_NAMES_EN.get(source_lang, source_lang) if source_lang else None
+    lang_inst = f"Write the summary in {lang_name}." if lang_name else "Write the summary in the same language as the text."
+    return (
+        f"Generate a bullet-point outline summary of the following transcript. "
+        f"{lang_inst}\n\n"
+        f"{text}"
+    )
+
+
+# ── Builder: default (supports system role) ──
+
+def _translate_default(text, source_lang, target_lang, format, style, glossary):
+    prompt = _build_translate_user_prompt(text, source_lang, target_lang, format, style, glossary)
+    return {
+        "mode": "chat",
+        "messages": [
+            {"role": "system", "content": "You are a professional translator."},
+            {"role": "user", "content": prompt},
+        ],
+    }
+
+def _summarize_default(text, source_lang=None):
+    prompt = _build_summarize_user_prompt(text, source_lang)
+    return {
+        "mode": "chat",
+        "messages": [
+            {"role": "system", "content": "You are a professional text summarizer."},
+            {"role": "user", "content": prompt},
+        ],
+    }
+
+def _ocr_default(image_path, output_format="md", source_lang=None):
+    messages = build_ocr_messages(image_path, format=output_format)
+    return {"mode": "chat", "messages": messages}
+
+
+# ── Builder: qwen3 (/no_think suffix) ──
+
+def _translate_qwen3(text, source_lang, target_lang, format, style, glossary):
+    prompt = _build_translate_user_prompt(text, source_lang, target_lang, format, style, glossary)
+    return {
+        "mode": "chat",
+        "messages": [
+            {"role": "system", "content": "You are a professional translator."},
+            {"role": "user", "content": f"{prompt} /no_think"},
+        ],
+    }
+
+def _summarize_qwen3(text, source_lang=None):
+    prompt = _build_summarize_user_prompt(text, source_lang)
+    return {
+        "mode": "chat",
+        "messages": [
+            {"role": "system", "content": "You are a professional text summarizer."},
+            {"role": "user", "content": f"{prompt} /no_think"},
+        ],
+    }
+
+def _ocr_qwen3(image_path, output_format="md", source_lang=None):
+    messages = build_ocr_messages(image_path, format=output_format)
+    # Append /no_think to the last user message
+    last = messages[-1]
+    if isinstance(last["content"], list):
+        last["content"].append({"type": "text", "text": "/no_think"})
+    else:
+        last["content"] += " /no_think"
+    return {"mode": "chat", "messages": messages}
+
+
+# ── Builder: gemma (no system role) ──
+
+def _translate_gemma(text, source_lang, target_lang, format, style, glossary):
+    prompt = _build_translate_user_prompt(text, source_lang, target_lang, format, style, glossary)
+    return {
+        "mode": "chat",
+        "messages": [
+            {"role": "user", "content": f"You are a professional translator. {prompt}"},
+        ],
+    }
+
+def _summarize_gemma(text, source_lang=None):
+    prompt = _build_summarize_user_prompt(text, source_lang)
+    return {
+        "mode": "chat",
+        "messages": [
+            {"role": "user", "content": f"You are a professional text summarizer. {prompt}"},
+        ],
+    }
+
+def _ocr_gemma(image_path, output_format="md", source_lang=None):
+    messages = build_ocr_messages(image_path, format=output_format)
+    # Gemma: merge system into user
+    if messages and messages[0]["role"] == "system":
+        system_content = messages[0]["content"]
+        messages = messages[1:]
+        if messages and isinstance(messages[0]["content"], list):
+            messages[0]["content"].insert(0, {"type": "text", "text": system_content + "\n\n"})
+        elif messages:
+            messages[0]["content"] = system_content + "\n\n" + messages[0]["content"]
+    return {"mode": "chat", "messages": messages}
+
+
+# ── Dispatch tables ──
+
+_TRANSLATE_BUILDERS = {
+    "default": _translate_default,
+    "qwen3": _translate_qwen3,
+    "qwen3.5": _translate_default,
+    "gemma3": _translate_gemma,
+    "gemma4": _translate_gemma,
+    "gemma": _translate_gemma,
+    "internvl2.5": _translate_default,
+}
+
+_SUMMARIZE_BUILDERS = {
+    "default": _summarize_default,
+    "qwen3": _summarize_qwen3,
+    "gemma3": _summarize_gemma,
+    "gemma4": _summarize_gemma,
+    "gemma": _summarize_gemma,
+}
+
+_OCR_BUILDERS = {
+    "default": _ocr_default,
+    "qwen3": _ocr_qwen3,
+    "qwen3vl": _ocr_qwen3,
+    "qwen3.5": _ocr_qwen3,
+    "gemma3": _ocr_gemma,
+    "gemma4": _ocr_gemma,
+    "gemma": _ocr_gemma,
+}
+
+
+def get_prompt_builder(task: str, model_family: str, thinking: bool = False):
+    """
+    Get the prompt builder function for a task + model combination.
+
+    Args:
+        task: "translate", "summarize", or "ocr"
+        model_family: prompt builder key from inference config
+        thinking: when True, skip /no_think for models that support thinking mode.
+                  Output <think> blocks are always stripped by LlamaServerRuntime.
+
+    Returns a callable that produces {"mode": "chat"/"completion", "messages"/"prompt": ...}
+    """
+    # When thinking is enabled, Qwen3 should NOT add /no_think — use default builder
+    if thinking and model_family in ("qwen3",):
+        model_family = "default"
+
+    tables = {
+        "translate": _TRANSLATE_BUILDERS,
+        "summarize": _SUMMARIZE_BUILDERS,
+        "ocr": _OCR_BUILDERS,
+    }
+    task_builders = tables.get(task, {})
+    return task_builders.get(model_family, task_builders.get("default", _translate_default))

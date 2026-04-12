@@ -17,6 +17,8 @@ def map_reduce_summarize(
     chat_fn: Callable[[str, int], str],
     on_progress: Optional[Callable[[float, str], None]] = None,
     max_tokens_per_chunk: int = 2000,
+    model_family: str = "default",
+    source_lang: Optional[str] = None,
 ) -> str:
     """
     Map-reduce summarization.
@@ -26,6 +28,8 @@ def map_reduce_summarize(
         chat_fn: LLM call function (prompt, max_tokens) -> str
         on_progress: Progress callback (0.0~1.0, message)
         max_tokens_per_chunk: Maximum tokens per chunk
+        model_family: Model family for prompt builder (for future use)
+        source_lang: Source language code for explicit language instruction
 
     Returns:
         Summary text.
@@ -43,17 +47,17 @@ def map_reduce_summarize(
     if len(chunks) == 1:
         if on_progress:
             on_progress(0.1, "task.progress.generating_summary")
-        return chat_fn(build_summarize_prompt(full_text), 2048)
+        return chat_fn(build_summarize_prompt(full_text, source_lang), 2048)
 
     # Map: summarize each chunk independently
     chunk_summaries = []
     for ci, chunk in enumerate(chunks):
         if on_progress:
             on_progress(0.1 + 0.7 * (ci / len(chunks)), f"task.progress.summarizing_chunk|{ci + 1}|{len(chunks)}")
-        chunk_summaries.append(chat_fn(build_chunk_summarize_prompt(chunk), 1024).strip())
+        chunk_summaries.append(chat_fn(build_chunk_summarize_prompt(chunk, source_lang), 1024).strip())
 
     # Reduce: merge summaries
     if on_progress:
         on_progress(0.85, "task.progress.merging_summary")
     merged = "\n\n".join(chunk_summaries)
-    return chat_fn(build_merge_summaries_prompt(merged), 2048)
+    return chat_fn(build_merge_summaries_prompt(merged, source_lang), 2048)

@@ -149,7 +149,7 @@ class ModelManager:
             return {
                 **variant_spec,
                 "layers": spec["layers"],
-                "n_ctx": spec["n_ctx"],
+                "n_ctx": spec.get("n_ctx_default", spec.get("n_ctx", 4096)),
                 "vram_overhead_mb": spec["vram_overhead_mb"],
             }
         
@@ -185,7 +185,7 @@ class ModelManager:
         Get the local path of a model (adapted for format-first registry).
 
         Args:
-            model_id: Model family ID (e.g. "whisper", "translategemma", "realesrgan").
+            model_id: Model family ID (e.g. "whisper", "qwen3", "realesrgan").
             variant: Variant (e.g. "medium", "4b:Q4_K_M", "x4plus").
 
         Returns:
