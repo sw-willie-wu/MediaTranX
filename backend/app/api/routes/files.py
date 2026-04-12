@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, field_serializer
 
 from app.init.container import AppContainer
 from app.services.files.file_service import FileService
-from app.types.file import FileData
+from app.schemas.file import FileData
 
 
 def _serialize_dt(v: datetime) -> str:

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_serializer
 
 from app.init.container import AppContainer
-from app.types.task import TaskData, TaskStatus
+from app.schemas.task import TaskData, TaskStatus
 from app.workers.task_manager import TaskManager
 
 

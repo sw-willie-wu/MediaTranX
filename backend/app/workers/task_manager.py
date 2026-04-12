@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
 from app.handler.exceptions import TaskCancelledError
-from app.types.task import TaskData, TaskStatus
+from app.schemas.task import TaskData, TaskStatus
 from .progress_tracker import ProgressTracker
 
 logger = logging.getLogger(__name__)

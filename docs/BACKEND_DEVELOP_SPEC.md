@@ -30,7 +30,7 @@ app/
 │       ├── registry.py        ← 模型註冊表（含推理參數 inference config）
 │       └── model_manager.py   ← VRAM / Slot 管理
 ├── workers/                   ← TaskManager、ProgressTracker
-├── types/                     ← 跨層共用 domain types（enum、dataclass）
+├── schemas/                   ← 跨層共用 domain types（enum、dataclass）
 ├── utils/                     ← 工具函數（inference、prompts、translate、summarize）
 └── exceptions.py              ← 自訂例外階層
 ```
@@ -47,10 +47,10 @@ app/
 
 ### 跨層共用型別
 
-跨層共用的 domain types 放在 `app/types/`（純 Python dataclass + enum），避免 workers/services 反向依賴 API 層：
+跨層共用的 domain types 放在 `app/schemas/`（純 Python dataclass + enum），避免 workers/services 反向依賴 API 層：
 
 ```
-app/types/
+app/schemas/
   task.py   ← TaskStatus (enum) + TaskData (dataclass)
   file.py   ← FileData (dataclass)
 ```
