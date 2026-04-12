@@ -105,7 +105,7 @@ class ImageOcrService:
             from app.utils.inference import fake_progress
 
             with runtime.acquire(model_family, variant, lambda p, m: progress_callback(0.1 + p * 0.85, m)):
-                with fake_progress(progress_callback, 0.95, 1.0, "task.progress.ocr_recognizing"):
+                with fake_progress(progress_callback, 0.95, 1.0, "task.progress.ocr_recognizing", runtime=runtime):
                     final_text = runtime.chat(
                         messages=result["messages"], max_tokens=max_tokens,
                         temperature=config["temperature"],

@@ -457,7 +457,7 @@ class AudioTranscribeService:
 
         # Write summary file
         if summary_text:
-            summary_filename = f"{base_name}.draft.txt"
+            summary_filename = f"{base_name}.draft.md"
             summary_path = output_dir / summary_filename
             with open(summary_path, "w", encoding="utf-8") as f:
                 f.write(summary_text)

@@ -193,7 +193,8 @@ def translate_text_local(
         chunk_end_pct = (i + 1) / total
 
         with fake_progress(on_progress, chunk_start_pct, chunk_end_pct,
-                           f"task.progress.translating_segment|{i + 1}|{total}"):
+                           f"task.progress.translating_segment|{i + 1}|{total}",
+                           runtime=runtime):
             if result["mode"] == "chat":
                 output = runtime.chat(
                     messages=result["messages"], max_tokens=max_tokens,
@@ -345,7 +346,8 @@ def translate_srt_local(
         batch_end_pct = (batch_idx + 1) / num_batches
 
         with fake_progress(on_progress, batch_start_pct, batch_end_pct,
-                           f"task.progress.translating_segment|{start + 1}|{total}"):
+                           f"task.progress.translating_segment|{start + 1}|{total}",
+                           runtime=runtime):
             if result["mode"] == "chat":
                 translated_srt = runtime.chat(
                     messages=result["messages"], max_tokens=max_tokens,

@@ -145,7 +145,7 @@ def estimate_tokens(text: str) -> int:
 
 
 def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
-                  duration: float = 30.0):
+                  duration: float = 30.0, runtime=None):
     """
     Context manager that emits interpolated progress while waiting for a blocking call.
 
@@ -166,6 +166,7 @@ def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
             return
 
         stop = threading.Event()
+        cancelled_error = [None]  # mutable container for cross-thread error
         target = end_pct - 0.01
         steps = max(1, int(duration))
 
@@ -174,7 +175,19 @@ def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
             step_size = (target - current) / steps
             while not stop.is_set() and current < target:
                 current = min(current + step_size, target)
-                on_progress(current, message)
+                try:
+                    on_progress(current, message)
+                except Exception as e:
+                    # TaskCancelledError from cancellable callback
+                    cancelled_error[0] = e
+                    # Kill llama-server to unblock the HTTP call in main thread
+                    if runtime is not None and hasattr(runtime, '_process') and runtime._process:
+                        try:
+                            runtime._process.kill()
+                        except Exception:
+                            pass
+                    stop.set()
+                    return
                 stop.wait(1.0)
 
         t = threading.Thread(target=_run, daemon=True)
@@ -183,5 +196,8 @@ def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
             yield
         finally:
             stop.set()
+            # Re-raise cancel error caught in background thread
+            if cancelled_error[0] is not None:
+                raise cancelled_error[0]
 
     return _ctx()

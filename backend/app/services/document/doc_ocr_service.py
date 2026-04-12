@@ -218,7 +218,7 @@ class DocumentOcrService:
         runtime = get_container().llama_runtime()
 
         with runtime.acquire(model_family, variant, on_progress):
-            with fake_progress(on_progress, 0.0, 1.0, "task.progress.ocr_recognizing"):
+            with fake_progress(on_progress, 0.0, 1.0, "task.progress.ocr_recognizing", runtime=runtime):
                 return runtime.chat(
                     messages=result["messages"], max_tokens=max_tokens,
                     temperature=config["temperature"],

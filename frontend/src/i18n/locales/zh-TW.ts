@@ -680,7 +680,7 @@ export default {
       summarize: '大綱整理',
       summarize_hint: '使用 LLM 生成逐字稿摘要大綱',
       generate_outline: '生成大綱',
-      generate_outline_hint: '使用 LLM 生成大綱，額外輸出一份 .draft.txt 檔案',
+      generate_outline_hint: '使用 LLM 生成 Markdown 大綱，額外輸出一份 .draft.md 檔案',
       outline_model: '大綱模型',
       output_file: '輸出路徑',
       select_output: '選擇輸出路徑',
