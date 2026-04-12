@@ -78,53 +78,6 @@ class SubtitleService:
         """Query Whisper model status."""
         return self._whisper.get_model_status(model_size)
 
-    def test_translate(
-        self,
-        text: str,
-        target_language: str = "zh-TW",
-        source_language: str = "ja",
-        model_size: str = "4b",
-        model_family: str = "gemma4",
-        thinking: bool = False,
-    ) -> dict:
-        """
-        Test translation (dev use) -- using llama-server messages API.
-
-        Returns:
-            dict with keys 'result' and 'prompt'
-        """
-        from app.utils.inference import get_inference_config, calc_max_tokens, estimate_tokens
-        from app.utils.prompts import get_prompt_builder
-        from app.init.container import get_container
-
-        variant = model_size
-
-        config = get_inference_config(model_family, model_size, "translate")
-        # Request-level thinking overrides registry default
-        use_thinking = thinking or config.get("thinking", False)
-        builder = get_prompt_builder("translate", config["prompt_builder"], thinking=use_thinking)
-        result = builder(text, source_language, target_language, "text", "colloquial", None)
-        input_tokens = estimate_tokens(text)
-        max_tokens = calc_max_tokens(config, config["n_ctx"], input_tokens)
-
-        runtime = get_container().llama_runtime()
-        with runtime.acquire(model_family, variant):
-            if result["mode"] == "chat":
-                output = runtime.chat(
-                    messages=result["messages"], max_tokens=max_tokens,
-                    temperature=config["temperature"],
-                    top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
-                )
-            else:
-                output = runtime.complete(
-                    prompt=result["prompt"], max_tokens=max_tokens,
-                    temperature=config["temperature"],
-                    top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
-                )
-
-        prompt_info = result.get("messages", [{}])[-1].get("content", "") if result["mode"] == "chat" else result.get("prompt", "")
-        return {"result": output, "prompt": prompt_info}
-
     async def submit_subtitle_generate(
         self,
         file_id: str,

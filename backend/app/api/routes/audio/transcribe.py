@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.setup.language_service import LanguageService
+from app.services.llm.language_service import LanguageService
 
 if TYPE_CHECKING:
     from app.services.audio.transcribe_service import AudioTranscribeService

@@ -20,7 +20,7 @@ from app.engine.ai.model_manager import ModelManager
 # ── Setup Services (lightweight — needed for settings page) ──
 from app.services.setup.config_service import ConfigService
 from app.services.setup.device_service import DeviceService
-from app.services.setup.language_service import LanguageService
+from app.services.llm.language_service import LanguageService
 from app.services.setup.model_metadata_service import ModelMetadataService
 from app.services.setup.remote_service import RemoteService
 from app.services.setup.manager_service import SetupService
@@ -63,6 +63,11 @@ class AppContainer(containers.DeclarativeContainer):
     llama_runtime = providers.Singleton(
         _lazy("app.engine.ai.runtime.llama_server", "LlamaServerRuntime"),
         slot="llm",
+    )
+
+    # ── LLM Service ──
+    chat_service = providers.Singleton(
+        _lazy("app.services.llm.chat_service", "ChatService"),
     )
 
     # ── Setup Services ──

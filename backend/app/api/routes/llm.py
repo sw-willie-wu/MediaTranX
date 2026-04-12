@@ -2,12 +2,18 @@
 LLM shared API routes.
 Translate languages, styles, model status — shared across all domain workflows.
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.setup.language_service import LanguageService
+from app.services.llm.language_service import LanguageService
+
+if TYPE_CHECKING:
+    from app.services.llm.chat_service import ChatService
 
 router = APIRouter()
 
@@ -50,16 +56,13 @@ async def get_translate_model_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── Dev test ──
-
-# ── Chat (dev test) ──
+# ── Chat ──
 
 class ChatRequest(BaseModel):
-    """LLM chat request. Sends prompt directly to model for testing."""
+    """LLM chat request."""
     prompt: str = Field(..., description="Full prompt text (sent as-is to model)")
     model_family: str = Field(default="gemma4", description="Model family")
     model_size: str = Field(default="8b", description="Model size")
-    thinking: bool = Field(default=False, description="Enable thinking mode (Qwen3)")
     max_tokens: int = Field(default=4096, description="Max output tokens")
     temperature: float = Field(default=0.1, description="Sampling temperature")
 
@@ -71,21 +74,19 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 @inject
-async def llm_chat(request: ChatRequest):
-    """
-    Dev test endpoint — sends prompt directly to local LLM.
-    Uses per-model inference config for top_k/top_p but prompt is sent as-is.
-    """
+async def llm_chat(
+    request: ChatRequest,
+    service: ChatService = Depends(Provide[AppContainer.chat_service]),
+):
+    """Send a prompt directly to a local LLM."""
     try:
-        from app.init.container import get_container
-
-        runtime = get_container().llama_runtime()
-        with runtime.acquire(request.model_family, request.model_size):
-            output = runtime.chat(
-                messages=[{"role": "user", "content": request.prompt}],
-                max_tokens=request.max_tokens,
-                temperature=request.temperature,
-            )
+        output = service.chat(
+            prompt=request.prompt,
+            model_family=request.model_family,
+            model_size=request.model_size,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+        )
         return ChatResponse(result=output)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
