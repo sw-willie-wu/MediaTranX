@@ -95,8 +95,7 @@ class SubtitleService:
         """
         from app.utils.inference import get_inference_config, calc_max_tokens, estimate_tokens
         from app.utils.prompts import get_prompt_builder
-        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-        from app.engine.ai.registry import SLOT_LLM
+        from app.init.container import get_container
 
         variant = model_size
 
@@ -108,7 +107,7 @@ class SubtitleService:
         input_tokens = estimate_tokens(text)
         max_tokens = calc_max_tokens(config, config["n_ctx"], input_tokens)
 
-        runtime = LlamaServerRuntime(SLOT_LLM)
+        runtime = get_container().llama_runtime()
         with runtime.acquire(model_family, variant):
             if result["mode"] == "chat":
                 output = runtime.chat(
@@ -141,8 +140,8 @@ class SubtitleService:
         # Advanced segmentation parameters
         word_timestamps: bool = False,
         condition_on_previous_text: bool = True,
-        min_silence_duration_ms: int = 500,
-        vad_threshold: float = 0.5,
+        min_silence_duration_ms: int = 200,
+        vad_threshold: float = 0.3,
         # Translation options
         keep_names: bool = True,
         translate_style: str = "colloquial",
@@ -255,8 +254,8 @@ class SubtitleService:
         # Advanced segmentation parameters
         word_timestamps = params.get("word_timestamps", False)
         condition_on_previous_text = params.get("condition_on_previous_text", True)
-        min_silence_duration_ms = params.get("min_silence_duration_ms", 500)
-        vad_threshold = params.get("vad_threshold", 0.5)
+        min_silence_duration_ms = params.get("min_silence_duration_ms", 200)
+        vad_threshold = params.get("vad_threshold", 0.3)
 
         # Translation options
         keep_names = params.get("keep_names", True)
@@ -358,12 +357,10 @@ class SubtitleService:
                         translate_progress(1.0, "task.progress.translate_complete")
                     else:
                         # Local translation
-                        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-                        from app.engine.ai.registry import SLOT_LLM
                         from app.utils.translate import translate_srt_local
 
                         variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
-                        runtime = LlamaServerRuntime(SLOT_LLM)
+                        runtime = get_container().llama_runtime()
 
                         translate_progress(0.0, "task.progress.load_translate_model")
 

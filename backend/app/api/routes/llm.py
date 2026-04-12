@@ -77,10 +77,9 @@ async def llm_chat(request: ChatRequest):
     Uses per-model inference config for top_k/top_p but prompt is sent as-is.
     """
     try:
-        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-        from app.engine.ai.registry import SLOT_LLM
+        from app.init.container import get_container
 
-        runtime = LlamaServerRuntime(SLOT_LLM)
+        runtime = get_container().llama_runtime()
         with runtime.acquire(request.model_family, request.model_size):
             output = runtime.chat(
                 messages=[{"role": "user", "content": request.prompt}],

@@ -279,14 +279,12 @@ class TranslateService:
         else:
             # === Local translation ===
             from app.init.container import get_container
-            from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-            from app.engine.ai.registry import SLOT_LLM
             from app.utils.translate import translate_srt_local, translate_text_local
 
             variant = f"{model_size}:{quantization}" if quantization else model_size
 
             with get_container().model_manager().gpu_session():
-                runtime = LlamaServerRuntime(SLOT_LLM)
+                runtime = get_container().llama_runtime()
                 translate_progress(0.0, "task.progress.load_translate_model")
 
                 with runtime.acquire(model_family, variant, lambda p, m: translate_progress(p * 0.05, m)):

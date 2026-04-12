@@ -222,9 +222,6 @@ class AudioLyricsService:
                         ]
                     else:
                         # Local translation
-                        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-                        from app.engine.ai.registry import SLOT_LLM
-
                         translate_model_family = params.get("translate_model_family", "gemma4")
                         translate_model_size = params.get("translate_model_size", "4b")
                         translate_quantization = params.get("translate_quantization")
@@ -238,7 +235,7 @@ class AudioLyricsService:
 
                         variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
                         src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
-                        runtime = LlamaServerRuntime(SLOT_LLM)
+                        runtime = get_container().llama_runtime()
 
                         stage_progress("translate", 0.0, "task.progress.lyrics_load_translate")
 

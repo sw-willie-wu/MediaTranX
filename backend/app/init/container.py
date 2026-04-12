@@ -60,6 +60,10 @@ class AppContainer(containers.DeclarativeContainer):
     # ── Engine ──
     ffmpeg = providers.Singleton(FFmpegWrapper)
     model_manager = providers.Singleton(ModelManager)
+    llama_runtime = providers.Singleton(
+        _lazy("app.engine.ai.runtime.llama_server", "LlamaServerRuntime"),
+        slot="llm",
+    )
 
     # ── Setup Services ──
     config_service = providers.Singleton(ConfigService)

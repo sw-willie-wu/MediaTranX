@@ -263,8 +263,6 @@ class AudioTranscribeService:
                 ]
             else:
                 # Local translation
-                from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-                from app.engine.ai.registry import SLOT_LLM
                 from app.utils.translate import translate_srt_local
 
                 translate_model_family = params.get("translate_model_family", "gemma4")
@@ -278,7 +276,7 @@ class AudioTranscribeService:
 
                 variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
                 src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
-                runtime = LlamaServerRuntime(SLOT_LLM)
+                runtime = get_container().llama_runtime()
 
                 stage_progress("translate", 0.0, "task.progress.load_translate_model")
 
@@ -329,23 +327,26 @@ class AudioTranscribeService:
                     )
 
                 from app.utils.summarize import map_reduce_summarize
+                from app.utils.translate import _get_cloud_ctx
                 source_language = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
+                cloud_ctx = _get_cloud_ctx(prov, remote_model)
+                # Reserve half for output, 200 for prompt overhead
+                chunk_tokens = max(500, cloud_ctx // 2 - 200)
                 summary_text = map_reduce_summarize(
                     full_text, _cloud_chat,
                     source_lang=source_language,
                     on_progress=lambda p, m: stage_progress("summarize", p, m),
+                    max_tokens_per_chunk=chunk_tokens,
                 )
             else:
                 # Local map-reduce
-                from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-                from app.engine.ai.registry import SLOT_LLM
                 from app.utils.inference import get_inference_config
 
                 summary_model_family = params.get("summarize_model_family", "gemma4")
                 summary_model_size = params.get("summarize_model_size", "4b")
                 summary_quantization = params.get("summarize_quantization")
                 summary_variant = f"{summary_model_size}:{summary_quantization}" if summary_quantization else summary_model_size
-                runtime = LlamaServerRuntime(SLOT_LLM)
+                runtime = get_container().llama_runtime()
 
                 config = get_inference_config(summary_model_family, summary_model_size, "summarize")
 
@@ -361,10 +362,13 @@ class AudioTranscribeService:
 
                     from app.utils.summarize import map_reduce_summarize
                     source_language = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
+                    # Reserve half for output, 200 for prompt overhead
+                    chunk_tokens = max(500, config["n_ctx"] // 2 - 200)
                     summary_text = map_reduce_summarize(
                         full_text, _local_chat,
                         source_lang=source_language,
                         on_progress=lambda p, m: stage_progress("summarize", p, m),
+                        max_tokens_per_chunk=chunk_tokens,
                     )
 
             stage_progress("summarize", 1.0, "task.progress.summary_complete")

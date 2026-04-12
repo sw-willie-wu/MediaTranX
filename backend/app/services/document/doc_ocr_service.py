@@ -204,10 +204,9 @@ class DocumentOcrService:
 
     def _recognize(self, image_path: str, model_family: str, variant: str, fmt: str,
                    on_progress: Optional[Callable[[float, str], None]] = None) -> str:
-        """Recognize text in a single image using LlamaServerRuntime."""
-        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-        from app.engine.ai.registry import SLOT_LLM
-        from app.utils.inference import get_inference_config, calc_max_tokens
+        """Recognize text in a single image using local VLM."""
+        from app.init.container import get_container
+        from app.utils.inference import get_inference_config, calc_max_tokens, fake_progress
         from app.utils.prompts import get_prompt_builder
 
         variant_size = variant.split(":")[0] if ":" in variant else variant
@@ -216,14 +215,15 @@ class DocumentOcrService:
         result = builder(image_path, output_format=fmt, source_lang=None)
         max_tokens = calc_max_tokens(config, config["n_ctx"], 1000)  # ~1000 tokens for image
 
-        runtime = LlamaServerRuntime(SLOT_LLM)
+        runtime = get_container().llama_runtime()
 
         with runtime.acquire(model_family, variant, on_progress):
-            return runtime.chat(
-                messages=result["messages"], max_tokens=max_tokens,
-                temperature=config["temperature"],
-                top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
-            )
+            with fake_progress(on_progress, 0.0, 1.0, "task.progress.ocr_recognizing"):
+                return runtime.chat(
+                    messages=result["messages"], max_tokens=max_tokens,
+                    temperature=config["temperature"],
+                    top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+                )
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]

@@ -90,27 +90,27 @@ class ImageOcrService:
 
         with manager.gpu_session():
             # Execute VLM OCR
-            from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-            from app.engine.ai.registry import SLOT_LLM
-
             from app.utils.inference import get_inference_config, calc_max_tokens
             from app.utils.prompts import get_prompt_builder
 
             variant = f"{size}:{quantization}" if quantization else size
             variant_size = variant.split(":")[0] if ":" in variant else variant
-            runtime = LlamaServerRuntime(SLOT_LLM)
+            runtime = get_container().llama_runtime()
 
             config = get_inference_config(model_family, variant_size, "ocr")
             builder = get_prompt_builder("ocr", config["prompt_builder"], thinking=config.get("thinking", False))
             result = builder(str(file_info.file_path), output_format=fmt, source_lang=None)
             max_tokens = calc_max_tokens(config, config["n_ctx"], 1000)  # ~1000 tokens for image
 
+            from app.utils.inference import fake_progress
+
             with runtime.acquire(model_family, variant, lambda p, m: progress_callback(0.1 + p * 0.85, m)):
-                final_text = runtime.chat(
-                    messages=result["messages"], max_tokens=max_tokens,
-                    temperature=config["temperature"],
-                    top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
-                )
+                with fake_progress(progress_callback, 0.95, 1.0, "task.progress.ocr_recognizing"):
+                    final_text = runtime.chat(
+                        messages=result["messages"], max_tokens=max_tokens,
+                        temperature=config["temperature"],
+                        top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+                    )
 
         if not final_text.strip():
             final_text = "(No text detected)"
