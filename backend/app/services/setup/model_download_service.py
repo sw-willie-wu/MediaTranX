@@ -46,7 +46,7 @@ def handle_model_download(params: dict, progress_callback: Callable[[float, str]
         size = item_id[len("whisper-"):]
         _download_whisper(size, progress_callback, snapshot_download)
 
-    elif item_id.startswith(("translategemma-", "qwen3-", "qwen3vl-", "internvl2.5-", "gemma3-", "qwen3.5-")):
+    elif item_id.startswith(("translategemma-", "qwen3-", "qwen3vl-", "internvl2.5-", "gemma3-", "gemma4-", "qwen3.5-")):
         # Parse: {family}-{size}-{quant}
         parts = item_id.rsplit("-", 1)
         quant = parts[1]

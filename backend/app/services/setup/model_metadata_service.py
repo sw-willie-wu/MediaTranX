@@ -74,15 +74,6 @@ _QUANT_DESC = {
     "Q3_K_S": "models.quant.q3ks",
 }
 
-_GGUF_FAMILY_LABELS = {
-    "translategemma": "TranslateGemma",
-    "qwen3": "Qwen3",
-    "qwen3vl": "Qwen3-VL",
-    "internvl2.5": "InternVL2.5",
-    "gemma3": "Gemma 3",
-    "qwen3.5": "Qwen3.5",
-}
-
 
 _LANG_NAMES = {
     "en": "English", "zh": "中文", "ja": "日本語", "ko": "한국어",
@@ -115,6 +106,13 @@ class ModelMetadataService:
         all_models.extend(self._enumerate_rife_models())
         all_models.extend(self._enumerate_midi_models())
 
+        # Generate composite label from family_label + variant_label
+        for m in all_models:
+            fl = m.get("family_label", "")
+            vl = m.get("variant_label", "")
+            if not m.get("label"):
+                m["label"] = f"{fl} {vl}".strip() if vl else fl
+
         # Keep original category as subcategory (for frontend model filtering), map to parent category (for tab classification)
         for m in all_models:
             m["subcategory"] = m["category"]
@@ -142,14 +140,14 @@ class ModelMetadataService:
                 downloaded = model_path is not None and model_path.exists()
 
                 variant_label = variant_spec.get("label", variant_name)
-                label = f"{family_label} - {variant_label}" if len(variants) > 1 else family_label
 
                 items.append({
                     "id": f"{model_family}-{variant_name}",
                     "family": model_family,
+                    "family_label": family_label,
                     "variant": variant_name,
+                    "variant_label": variant_label,
                     "category": variant_spec.get("subcategory", family_category),
-                    "label": label,
                     "description": family_desc,
                     "downloaded": downloaded,
                     "size_mb": variant_spec.get("size_mb", 0),
@@ -177,14 +175,14 @@ class ModelMetadataService:
             downloaded = model_dir.exists() and (model_dir / "model.bin").exists() and has_vocab
 
             variant_label = spec.get("label", size)
-            label = f"{family_label} - {variant_label}" if len(whisper_variants) > 1 else family_label
 
             items.append({
                 "id": f"whisper-{size}",
                 "family": "whisper",
+                "family_label": family_label,
                 "variant": size,
+                "variant_label": variant_label,
                 "category": family_category,
-                "label": label,
                 "description": spec.get("description", family_desc),
                 "downloaded": downloaded,
                 "size_mb": spec.get("size_mb", 0),
@@ -206,7 +204,6 @@ class ModelMetadataService:
 
         for variant_name, variant_spec in demucs_variants.items():
             variant_label = variant_spec.get("label", variant_name)
-            label = f"{family_label} - {variant_label}" if len(demucs_variants) > 1 else family_label
 
             checkpoints_dir = SETTINGS.path.models / "demucs" / "checkpoints"
             downloaded = (
@@ -217,9 +214,10 @@ class ModelMetadataService:
             items.append({
                 "id": f"demucs-{variant_name}",
                 "family": "demucs",
+                "family_label": family_label,
                 "variant": variant_name,
+                "variant_label": variant_label,
                 "category": family_category,
-                "label": label,
                 "description": family_desc,
                 "downloaded": downloaded,
                 "size_mb": variant_spec.get("size_mb", 0),
@@ -236,7 +234,7 @@ class ModelMetadataService:
         gguf_models = MODELS_REGISTRY.get(FORMAT_GGUF, {})
 
         for model_family, config in gguf_models.items():
-            family_label = _GGUF_FAMILY_LABELS.get(model_family, model_family)
+            family_label = config.get("label", model_family)
             capabilities = config.get("capabilities", ["text"])
             target_dir = SETTINGS.path.models / model_family
             specs = config.get("specs", {})
@@ -261,8 +259,9 @@ class ModelMetadataService:
                     items.append({
                         "id": f"{model_family}-{size}-{quant}",
                         "family": model_family,
+                        "family_label": family_label,
                         "variant": f"{size}:{quant}",
-                        "label": f"{family_label} {size.upper()} {quant}",
+                        "variant_label": f"{size.upper()} {quant}",
                         "description": description,
                         "category": "gguf",
                         "capabilities": capabilities,
@@ -289,9 +288,10 @@ class ModelMetadataService:
             items.append({
                 "id": f"alignment-{lang_code}",
                 "family": "alignment",
+                "family_label": "Wav2Vec2",
                 "variant": lang_code,
+                "variant_label": lang_name,
                 "category": "alignment",
-                "label": f"Wav2Vec2 - {lang_name}",
                 "description": f"Forced Alignment ({lang_code})",
                 "downloaded": downloaded,
                 "size_mb": 1200,
@@ -314,7 +314,6 @@ class ModelMetadataService:
 
         for variant_name, variant_spec in rife_variants.items():
             variant_label = variant_spec.get("label", variant_name)
-            label = f"{family_label} - {variant_label}" if len(rife_variants) > 1 else family_label
 
             model_dir = SETTINGS.path.models / SLOT_RIFE
             filename = variant_spec.get("filename", "")
@@ -323,9 +322,10 @@ class ModelMetadataService:
             items.append({
                 "id": f"rife-{variant_name}",
                 "family": "rife",
+                "family_label": family_label,
                 "variant": variant_name,
+                "variant_label": variant_label,
                 "category": family_category,
-                "label": label,
                 "description": family_desc,
                 "downloaded": downloaded,
                 "size_mb": variant_spec.get("size_mb", 0),

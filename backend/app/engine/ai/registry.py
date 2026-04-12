@@ -101,7 +101,7 @@ MODELS_REGISTRY = {
             "description": "models.basic_pitch",
             "variants": {
                 "default": {
-                    "label": "default",
+                    "label": "ICASSP 2022",
                     "model_name": "basic_pitch",
                     "size_mb": 10,
                     "vram_mb": 0,
@@ -133,6 +133,7 @@ MODELS_REGISTRY = {
     FORMAT_GGUF: {
         "translategemma": {
             "slot": SLOT_LLM,
+            "label": "TranslateGemma",
             "capabilities": ["text"],
             "description": "TranslateGemma translation model",
             "specs": {
@@ -203,6 +204,7 @@ MODELS_REGISTRY = {
         
         "qwen3": {
             "slot": SLOT_LLM,
+            "label": "Qwen3",
             "capabilities": ["text"],
             "description": "Qwen3 translation model",
             "specs": {
@@ -282,6 +284,7 @@ MODELS_REGISTRY = {
         # ▸ Qwen3-VL
         "qwen3vl": {
             "slot": SLOT_LLM,
+            "label": "Qwen3-VL",
             "capabilities": ["text", "vision"],
             "description": "Qwen3-VL vision-language model (OCR)",
             "specs": {
@@ -359,6 +362,7 @@ MODELS_REGISTRY = {
         # ▸ InternVL2.5
         "internvl2.5": {
             "slot": SLOT_LLM,
+            "label": "InternVL2.5",
             "capabilities": ["text", "vision"],
             "description": "InternVL2.5 vision-language model (OCR)",
             "specs": {
@@ -411,6 +415,7 @@ MODELS_REGISTRY = {
         # ▸ Gemma 3
         "gemma3": {
             "slot": SLOT_LLM,
+            "label": "Gemma3",
             "capabilities": ["text", "vision"],
             "description": "Gemma 3 vision-language model (OCR)",
             "specs": {
@@ -451,9 +456,70 @@ MODELS_REGISTRY = {
             },
         },
 
+        # ▸ Gemma 4 (Expert MoE architecture: E2B, E4B, 26B-A4B)
+        "gemma4": {
+            "slot": SLOT_LLM,
+            "label": "Gemma4",
+            "capabilities": ["text", "vision"],
+            "description": "Gemma 4 multimodal model",
+            "specs": {
+                "e2b": {
+                    "layers": 26,
+                    "n_ctx": 8192,
+                    "vram_overhead_mb": 500,
+                    "variants": {
+                        "Q8_0": {
+                            "repo_id": "ggml-org/gemma-4-E2B-it-GGUF",
+                            "filename": "gemma-4-e2b-it-Q8_0.gguf",
+                            "mmproj_repo_id": "ggml-org/gemma-4-E2B-it-GGUF",
+                            "mmproj_filename": "mmproj-gemma-4-e2b-it-bf16.gguf",
+                            "size_mb": 5090,
+                            "mmproj_size_mb": 987,
+                        },
+                    },
+                },
+                "e4b": {
+                    "layers": 34,
+                    "n_ctx": 8192,
+                    "vram_overhead_mb": 600,
+                    "variants": {
+                        "Q4_K_M": {
+                            "repo_id": "ggml-org/gemma-4-E4B-it-GGUF",
+                            "filename": "gemma-4-e4b-it-Q4_K_M.gguf",
+                            "mmproj_repo_id": "ggml-org/gemma-4-E4B-it-GGUF",
+                            "mmproj_filename": "mmproj-gemma-4-e4b-it-bf16.gguf",
+                            "size_mb": 5470,
+                            "mmproj_size_mb": 992,
+                        },
+                    },
+                },
+                "26b": {
+                    "layers": 46,
+                    "n_ctx": 8192,
+                    "vram_overhead_mb": 1200,
+                    "variants": {
+                        "Q4_K_M": {
+                            "repo_id": "ggml-org/gemma-4-26B-A4B-it-GGUF",
+                            "filename": "gemma-4-26B-A4B-it-Q4_K_M.gguf",
+                            "mmproj_repo_id": "ggml-org/gemma-4-26B-A4B-it-GGUF",
+                            "mmproj_filename": "mmproj-gemma-4-26B-A4B-it-f16.gguf",
+                            "size_mb": 17203,
+                            "mmproj_size_mb": 1219,
+                        },
+                    },
+                },
+            },
+            "default_variant": {
+                "e2b": "Q8_0",
+                "e4b": "Q4_K_M",
+                "26b": "Q4_K_M",
+            },
+        },
+
         # ▸ Qwen3.5
         "qwen3.5": {
             "slot": SLOT_LLM,
+            "label": "Qwen3.5",
             "capabilities": ["text", "vision"],
             "description": "Qwen3.5 multimodal model",
             "specs": {
@@ -604,7 +670,7 @@ MODELS_REGISTRY = {
             "description": "models.bsrgan",
             "variants": {
                 "default": {
-                    "label": "default",
+                    "label": "4x",
                     "url": "https://github.com/cszn/KAIR/releases/download/v1.0/BSRGAN.pth",
                     "filename": "BSRGAN.pth",
                     "size_mb": 64,
@@ -710,7 +776,7 @@ MODELS_REGISTRY = {
             "description": "models.codeformer",
             "variants": {
                 "default": {
-                    "label": "default",
+                    "label": "v0.1.0",
                     "url": "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth",
                     "filename": "codeformer.pth",
                     "size_mb": 357,
@@ -744,7 +810,7 @@ MODELS_REGISTRY = {
             "description": "models.mobilesam",
             "variants": {
                 "default": {
-                    "label": "default",
+                    "label": "v1.0",
                     "url": "https://huggingface.co/dhkim2810/MobileSAM/resolve/main/mobile_sam.pt",
                     "filename": "mobile_sam.pt",
                     "size_mb": 39,
