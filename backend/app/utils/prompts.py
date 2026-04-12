@@ -22,7 +22,9 @@ logger = logging.getLogger(__name__)
 
 # Whisper language codes (ISO 639-1) -> BCP 47
 WHISPER_TO_BCP47 = {
-    "zh": "zh-CN",
+    "zh": "zh-TW",
+    "zh-TW": "zh-TW",
+    "zh-CN": "zh-CN",
     "en": "en",
     "ja": "ja",
     "ko": "ko",
@@ -91,8 +93,9 @@ LANG_NAMES_ZH = {
 
 # Whisper language options (for API response; label uses each language's own name)
 WHISPER_LANGUAGE_OPTIONS = [
-    {"value": "",   "label": ""},
-    {"value": "zh", "label": "中文"},
+    {"value": "",      "label": ""},
+    {"value": "zh-TW", "label": "繁體中文"},
+    {"value": "zh-CN", "label": "简体中文"},
     {"value": "en", "label": "English"},
     {"value": "ja", "label": "日本語"},
     {"value": "ko", "label": "한국어"},
@@ -365,10 +368,11 @@ def _summarize_lang_instruction(source_lang: Optional[str] = None) -> str:
 
 
 def build_summarize_prompt(text: str, source_lang: Optional[str] = None) -> str:
-    """Build a prompt for generating a bullet-point outline summary of a transcript."""
+    """Build a prompt for generating a Markdown outline summary of a transcript."""
     lang_inst = _summarize_lang_instruction(source_lang)
     return (
-        "Generate a bullet-point outline summary of the following transcript. "
+        "Generate an outline summary of the following transcript in Markdown format. "
+        "Use ## for section headings and - for bullet points. "
         f"{lang_inst}\n\n"
         f"{text}"
     )
@@ -378,8 +382,9 @@ def build_chunk_summarize_prompt(text: str, source_lang: Optional[str] = None) -
     """Build a prompt for summarizing a single chunk of a long transcript."""
     lang_inst = _summarize_lang_instruction(source_lang)
     return (
-        "Summarize the following transcript segment into key bullet points. "
-        f"Keep it concise. {lang_inst}\n\n"
+        "Summarize the following transcript segment in Markdown format. "
+        "Use - for bullet points. Keep it concise. "
+        f"{lang_inst}\n\n"
         f"{text}"
     )
 
@@ -389,7 +394,8 @@ def build_merge_summaries_prompt(summaries: str, source_lang: Optional[str] = No
     lang_inst = _summarize_lang_instruction(source_lang)
     return (
         "The following are summaries of consecutive parts of a transcript. "
-        "Merge them into a single coherent bullet-point outline. "
+        "Merge them into a single coherent outline in Markdown format. "
+        "Use ## for section headings and - for bullet points. "
         f"Remove duplicates and organize by topic. {lang_inst}\n\n"
         f"{summaries}"
     )
