@@ -1,24 +1,23 @@
 """
-模型 Metadata 服務
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-負責列舉所有模型的狀態（下載狀態、大小、分類等），提供給 Route 層使用。
-Route 不應直接 import engine.ai.registry / engine.ai.model_manager。
+Model metadata service.
+Enumerates all model statuses (download state, size, category, etc.) for the route layer.
+Routes should not import engine.ai.registry / engine.ai.model_manager directly.
 """
 import logging
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# ─── 分類定義（前端 tab 動態產生）────────────────────────────────────────────
+# --- Category definitions (dynamically generated for frontend tabs) ---
 
 MODEL_CATEGORIES = [
-    {"key": "image", "label": "圖像處理", "order": 0},
-    {"key": "video", "label": "影片處理", "order": 1},
-    {"key": "audio", "label": "語音處理", "order": 2},
-    {"key": "llm", "label": "大語言模型", "order": 3},
+    {"key": "image", "label": "models.category.image", "order": 0},
+    {"key": "video", "label": "models.category.video", "order": 1},
+    {"key": "audio", "label": "models.category.audio", "order": 2},
+    {"key": "llm", "label": "models.category.llm", "order": 3},
 ]
 
-# 舊分類 → 新分類的映射
+# Legacy category -> new category mapping
 _CATEGORY_MAP = {
     "upscale": "image",
     "face_restore": "image",
@@ -32,14 +31,9 @@ _CATEGORY_MAP = {
     "video_enhance": "video",
 }
 
-# ─── 顯示用常數 ──────────────────────────────────────────────────────────────
+# --- Display constants ---
 
 _SIZE_DESC = {
-    "translategemma": {
-        "4b": "models.size.light_fast",
-        "12b": "models.size.balanced",
-        "27b": "models.size.highest",
-    },
     "qwen3": {
         "1.7b": "models.size.ultra_light",
         "4b": "models.size.light_fast",
@@ -75,15 +69,6 @@ _QUANT_DESC = {
     "Q3_K_S": "models.quant.q3ks",
 }
 
-_GGUF_FAMILY_LABELS = {
-    "translategemma": "TranslateGemma",
-    "qwen3": "Qwen3",
-    "qwen3vl": "Qwen3-VL",
-    "internvl2.5": "InternVL2.5",
-    "gemma3": "Gemma 3",
-    "qwen3.5": "Qwen3.5",
-}
-
 
 _LANG_NAMES = {
     "en": "English", "zh": "中文", "ja": "日本語", "ko": "한국어",
@@ -94,14 +79,14 @@ _LANG_NAMES = {
 
 
 class ModelMetadataService:
-    """模型 Metadata 查詢服務"""
+    """Model metadata enumeration and download status query service."""
 
     def __init__(self):
         logger.info("ModelMetadataService initialized")
 
     def list_all(self) -> dict:
         """
-        列舉所有模型的狀態
+        Enumerate all model statuses.
 
         Returns:
             {"categories": [...], "models": [...]}
@@ -116,7 +101,14 @@ class ModelMetadataService:
         all_models.extend(self._enumerate_rife_models())
         all_models.extend(self._enumerate_midi_models())
 
-        # 保留原始分類作為 subcategory（前端模型篩選用），映射到大類作為 category（tab 分類用）
+        # Generate composite label from family_label + variant_label
+        for m in all_models:
+            fl = m.get("family_label", "")
+            vl = m.get("variant_label", "")
+            if not m.get("label"):
+                m["label"] = f"{fl} {vl}".strip() if vl else fl
+
+        # Keep original category as subcategory (for frontend model filtering), map to parent category (for tab classification)
         for m in all_models:
             m["subcategory"] = m["category"]
             m["category"] = _CATEGORY_MAP.get(m["category"], m["category"])
@@ -124,7 +116,7 @@ class ModelMetadataService:
         return {"categories": MODEL_CATEGORIES, "models": all_models}
 
     def _enumerate_pth_models(self) -> list[dict]:
-        """列舉 PyTorch 模型（超解析、人臉修復、分割）"""
+        """Enumerate PyTorch models (super-resolution, face restoration, segmentation)."""
         from app.init.container import get_container
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
 
@@ -143,14 +135,14 @@ class ModelMetadataService:
                 downloaded = model_path is not None and model_path.exists()
 
                 variant_label = variant_spec.get("label", variant_name)
-                label = f"{family_label} - {variant_label}" if len(variants) > 1 else family_label
 
                 items.append({
                     "id": f"{model_family}-{variant_name}",
                     "family": model_family,
+                    "family_label": family_label,
                     "variant": variant_name,
+                    "variant_label": variant_label,
                     "category": variant_spec.get("subcategory", family_category),
-                    "label": label,
                     "description": family_desc,
                     "downloaded": downloaded,
                     "size_mb": variant_spec.get("size_mb", 0),
@@ -160,7 +152,7 @@ class ModelMetadataService:
         return items
 
     def _enumerate_whisper_models(self) -> list[dict]:
-        """列舉 Whisper STT 模型"""
+        """Enumerate Whisper STT models."""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
         from app.init.configs import SETTINGS
 
@@ -178,14 +170,14 @@ class ModelMetadataService:
             downloaded = model_dir.exists() and (model_dir / "model.bin").exists() and has_vocab
 
             variant_label = spec.get("label", size)
-            label = f"{family_label} - {variant_label}" if len(whisper_variants) > 1 else family_label
 
             items.append({
                 "id": f"whisper-{size}",
                 "family": "whisper",
+                "family_label": family_label,
                 "variant": size,
+                "variant_label": variant_label,
                 "category": family_category,
-                "label": label,
                 "description": spec.get("description", family_desc),
                 "downloaded": downloaded,
                 "size_mb": spec.get("size_mb", 0),
@@ -194,7 +186,7 @@ class ModelMetadataService:
         return items
 
     def _enumerate_demucs_models(self) -> list[dict]:
-        """列舉 Demucs 音源分離模型"""
+        """Enumerate Demucs audio source separation models."""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
         from app.init.configs import SETTINGS
 
@@ -207,7 +199,6 @@ class ModelMetadataService:
 
         for variant_name, variant_spec in demucs_variants.items():
             variant_label = variant_spec.get("label", variant_name)
-            label = f"{family_label} - {variant_label}" if len(demucs_variants) > 1 else family_label
 
             checkpoints_dir = SETTINGS.path.models / "demucs" / "checkpoints"
             downloaded = (
@@ -218,9 +209,10 @@ class ModelMetadataService:
             items.append({
                 "id": f"demucs-{variant_name}",
                 "family": "demucs",
+                "family_label": family_label,
                 "variant": variant_name,
+                "variant_label": variant_label,
                 "category": family_category,
-                "label": label,
                 "description": family_desc,
                 "downloaded": downloaded,
                 "size_mb": variant_spec.get("size_mb", 0),
@@ -229,7 +221,7 @@ class ModelMetadataService:
         return items
 
     def _enumerate_gguf_models(self) -> list[dict]:
-        """從 registry 動態枚舉所有 GGUF 模型（文字 + 視覺）"""
+        """Dynamically enumerate all GGUF models (text + vision) from registry."""
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
         from app.init.configs import SETTINGS
 
@@ -237,7 +229,7 @@ class ModelMetadataService:
         gguf_models = MODELS_REGISTRY.get(FORMAT_GGUF, {})
 
         for model_family, config in gguf_models.items():
-            family_label = _GGUF_FAMILY_LABELS.get(model_family, model_family)
+            family_label = config.get("label", model_family)
             capabilities = config.get("capabilities", ["text"])
             target_dir = SETTINGS.path.models / model_family
             specs = config.get("specs", {})
@@ -262,19 +254,23 @@ class ModelMetadataService:
                     items.append({
                         "id": f"{model_family}-{size}-{quant}",
                         "family": model_family,
+                        "family_label": family_label,
                         "variant": f"{size}:{quant}",
-                        "label": f"{family_label} {size.upper()} {quant}",
+                        "variant_label": f"{size.upper()} {quant}",
                         "description": description,
                         "category": "gguf",
                         "capabilities": capabilities,
                         "downloaded": downloaded,
                         "size_mb": total_mb,
                         "vram_mb": total_mb + size_spec.get("vram_overhead_mb", 0),
+                        "n_ctx_default": size_spec.get("n_ctx_default", 4096),
+                        "n_ctx_min": size_spec.get("n_ctx_min", 2048),
+                        "n_ctx_max": size_spec.get("n_ctx_max", 8192),
                     })
         return items
 
     def _enumerate_alignment_models(self) -> list[dict]:
-        """列舉 Wav2Vec2 語音對齊模型"""
+        """Enumerate Wav2Vec2 speech alignment models."""
         from app.engine.ai.audio.wav2vec2 import LANG_MODELS
         from app.init.configs import SETTINGS
 
@@ -290,9 +286,10 @@ class ModelMetadataService:
             items.append({
                 "id": f"alignment-{lang_code}",
                 "family": "alignment",
+                "family_label": "Wav2Vec2",
                 "variant": lang_code,
+                "variant_label": lang_name,
                 "category": "alignment",
-                "label": f"Wav2Vec2 - {lang_name}",
                 "description": f"Forced Alignment ({lang_code})",
                 "downloaded": downloaded,
                 "size_mb": 1200,
@@ -315,7 +312,6 @@ class ModelMetadataService:
 
         for variant_name, variant_spec in rife_variants.items():
             variant_label = variant_spec.get("label", variant_name)
-            label = f"{family_label} - {variant_label}" if len(rife_variants) > 1 else family_label
 
             model_dir = SETTINGS.path.models / SLOT_RIFE
             filename = variant_spec.get("filename", "")
@@ -324,9 +320,10 @@ class ModelMetadataService:
             items.append({
                 "id": f"rife-{variant_name}",
                 "family": "rife",
+                "family_label": family_label,
                 "variant": variant_name,
+                "variant_label": variant_label,
                 "category": family_category,
-                "label": label,
                 "description": family_desc,
                 "downloaded": downloaded,
                 "size_mb": variant_spec.get("size_mb", 0),
@@ -335,7 +332,7 @@ class ModelMetadataService:
         return items
 
     def _enumerate_midi_models(self) -> list[dict]:
-        """列舉 MIDI 相關模型。
-        FluidSynth + SoundFont 已由 Electron 啟動時下載，不列入模型管理。
-        basic-pitch 模型內建於套件，不需管理。"""
+        """Enumerate MIDI-related models.
+        FluidSynth + SoundFont are downloaded at Electron startup; not included in model management.
+        basic-pitch model is built into the package; no management needed."""
         return []

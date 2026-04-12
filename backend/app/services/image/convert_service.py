@@ -1,7 +1,4 @@
-"""
-圖片轉檔服務
-"""
-import asyncio
+"""Image format conversion service."""
 import logging
 from pathlib import Path
 from typing import Callable, Optional
@@ -18,9 +15,7 @@ TASK_TYPE_IMAGE_CONVERT = "image.convert"
 
 
 class ImageConvertService:
-    """
-    圖片轉檔服務
-    """
+    """Image format conversion with resize and quality options."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
@@ -28,23 +23,23 @@ class ImageConvertService:
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_CONVERT,
-            self._handle_convert_task
+            self._handle_task
         )
 
         logger.info("ImageConvertService initialized")
 
     async def get_image_info(self, file_id: str) -> dict:
-        """取得圖片資訊"""
+        """Get image information."""
         from app.utils.gif_utils import is_animated
 
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        # 用 PIL 讀取圖片資訊
+        # Read image info with PIL
         with Image.open(file_info.file_path) as img:
             fmt = img.format or "UNKNOWN"
-            # PIL 對 APNG 只回傳 "PNG"，需用多幀偵測區分
+            # PIL returns "PNG" for APNG; use multi-frame detection to distinguish
             if fmt == "PNG" and is_animated(img):
                 fmt = "APNG"
 
@@ -67,7 +62,7 @@ class ImageConvertService:
         output_dir: Optional[str] = None,
         output_filename: Optional[str] = None,
     ) -> str:
-        """提交圖片轉檔任務"""
+        """Submit an image conversion task."""
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
@@ -88,20 +83,20 @@ class ImageConvertService:
 
         return task_id
 
-    def _handle_convert_task(
+    def _handle_task(
         self,
         params: dict,
         progress_callback: Callable[[float, str], None]
     ) -> dict:
-        """處理轉檔任務（同步）"""
-        return self._execute_convert(params, progress_callback)
+        """Handle conversion task (synchronous)."""
+        return self._execute(params, progress_callback)
 
-    def _execute_convert(
+    def _execute(
         self,
         params: dict,
         progress_callback: Callable[[float, str], None]
     ) -> dict:
-        """執行圖片轉檔"""
+        """Execute image format conversion."""
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
 
@@ -131,7 +126,7 @@ class ImageConvertService:
 
         with Image.open(file_info.file_path) as raw:
             src_anim_fmt = animation_format(raw)
-            # 保留動畫：輸出格式與來源動畫格式相符
+            # Keep animation: output format matches source animation format
             keep_anim_fmt = src_anim_fmt if (
                 src_anim_fmt and (
                     (src_anim_fmt == "GIF" and output_format == "GIF") or
@@ -147,7 +142,7 @@ class ImageConvertService:
                 img = raw.copy()
 
         if not keep_anim_fmt:
-            # 處理 RGBA 到 RGB 轉換（JPEG 不支援 alpha）
+            # Handle RGBA to RGB conversion (JPEG doesn't support alpha)
             if output_format in ["JPEG", "JPG"] and img.mode in ["RGBA", "P"]:
                 img = img.convert("RGB")
 
@@ -158,12 +153,12 @@ class ImageConvertService:
 
         progress_callback(0.6, "task.progress.converting_format")
 
-        # 建立輸出路徑
+        # Build output path
         custom_output_dir = params.get("output_dir")
         custom_output_filename = params.get("output_filename")
         output_file_id = str(uuid4())
 
-        # 格式對應副檔名
+        # Format to extension mapping
         ext_map = {
             "JPEG": "jpg",
             "JPG": "jpg",
@@ -183,17 +178,17 @@ class ImageConvertService:
             original_stem = Path(file_info.original_filename).stem
             final_filename = f"{original_stem}_converted_{output_file_id[:8]}.{ext}"
 
-        # 決定輸出目錄（優先自訂 > 預設 temp/results）
-        output_dir_path = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
+        # Determine output directory (custom dir takes priority over default)
+        output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
 
         progress_callback(0.8, "task.progress.saving_file")
 
         if keep_anim_fmt:
             save_animated(anim_frames, output_path, keep_anim_fmt)
         else:
-            # 儲存選項
+            # Save options
             save_kwargs = {}
             if output_format in ["JPEG", "JPG", "WEBP"]:
                 save_kwargs["quality"] = params.get("quality", 85)
@@ -207,7 +202,7 @@ class ImageConvertService:
             img.save(str(output_path), format=save_format, **save_kwargs)
             img.close()
 
-        # 註冊輸出檔案
+        # Register output file
         output_info = self._file_service.register_output(
             file_id=output_file_id,
             file_path=output_path,

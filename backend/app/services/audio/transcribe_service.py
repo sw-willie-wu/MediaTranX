@@ -1,8 +1,7 @@
 """
-音訊逐字稿轉譯服務
-使用 faster-whisper 將音訊轉為文字
+Audio transcription service.
+Uses faster-whisper to convert audio to text.
 """
-import asyncio
 import logging
 import tempfile
 from pathlib import Path
@@ -12,11 +11,7 @@ from uuid import uuid4
 import soundfile as sf
 
 from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
-from app.utils.prompts import (
-    WHISPER_TO_BCP47,
-    parse_srt_response,
-    SUMMARIZE_PARAMS,
-)
+from app.utils.prompts import WHISPER_TO_BCP47
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -48,6 +43,7 @@ def _write_srt(result: TranscribeResult, output_path: Path) -> None:
 
 
 class AudioTranscribeService:
+    """Audio transcription using faster-whisper with optional translation and summarization."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._whisper: WhisperWrapper = get_whisper()
@@ -69,7 +65,7 @@ class AudioTranscribeService:
         align: bool = False,
         translate: bool = False,
         target_lang: Optional[str] = None,
-        translate_model_type: str = "translategemma",
+        translate_model_family: str = "gemma4",
         translate_model_size: str = "4b",
         translate_quantization: Optional[str] = None,
         translate_remote: bool = False,
@@ -77,7 +73,7 @@ class AudioTranscribeService:
         translate_conn_id: Optional[int] = None,
         translate_remote_model: Optional[str] = None,
         summarize: bool = False,
-        summarize_model_type: str = "qwen3",
+        summarize_model_family: str = "gemma4",
         summarize_model_size: str = "4b",
         summarize_quantization: Optional[str] = None,
         summarize_remote: bool = False,
@@ -99,7 +95,7 @@ class AudioTranscribeService:
             "align": align,
             "translate": translate,
             "target_lang": target_lang,
-            "translate_model_type": translate_model_type,
+            "translate_model_family": translate_model_family,
             "translate_model_size": translate_model_size,
             "translate_quantization": translate_quantization,
             "translate_remote": translate_remote,
@@ -107,7 +103,7 @@ class AudioTranscribeService:
             "translate_conn_id": translate_conn_id,
             "translate_remote_model": translate_remote_model,
             "summarize": summarize,
-            "summarize_model_type": summarize_model_type,
+            "summarize_model_family": summarize_model_family,
             "summarize_model_size": summarize_model_size,
             "summarize_quantization": summarize_quantization,
             "summarize_remote": summarize_remote,
@@ -135,15 +131,11 @@ class AudioTranscribeService:
 
         original_stem = Path(file_info.original_filename).stem
 
-        # 決定輸出目錄
-        custom_output_dir = params.get("output_dir")
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
+        # Determine output directory
+        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 決定基礎檔名
+        # Determine base filename
         custom_output_filename = params.get("output_filename")
         if custom_output_filename:
             base_name = Path(custom_output_filename).stem
@@ -154,16 +146,16 @@ class AudioTranscribeService:
         audio_path = str(file_info.file_path)
         temp_vocals_path = None
 
-        # ── 動態進度分配 ──
-        # 根據啟用的功能分配權重，寫檔固定佔 5%
-        weights = {"whisper": 5}  # whisper 是必做的，權重最高
+        # -- Dynamic progress allocation --
+        # Allocate weights based on enabled features; file writing is fixed at 5%
+        weights = {"whisper": 5}  # whisper is always required, highest weight
         if do_vocal_sep:  weights["demucs"] = 3
         if do_align:      weights["align"] = 3
         if do_translate:  weights["translate"] = 2
         if do_summarize:  weights["summarize"] = 2
         total_weight = sum(weights.values())
 
-        # 計算每個階段的起止比例（最後 5% 留給寫檔）
+        # Calculate start/end ratio for each stage (last 5% reserved for file writing)
         stages: dict[str, tuple[float, float]] = {}
         cursor = 0.0
         for stage in ["demucs", "whisper", "align", "translate", "summarize"]:
@@ -174,16 +166,16 @@ class AudioTranscribeService:
         stages["write"] = (0.95, 1.0)
 
         def stage_progress(stage: str, p: float, msg: str):
-            """在指定階段內回報進度 (p: 0.0~1.0)"""
+            """Report progress within a given stage (p: 0.0~1.0)."""
             s, e = stages.get(stage, (0.0, 1.0))
             progress_callback(s + p * (e - s), msg)
 
-        # === GPU 排隊管線 ===
+        # === GPU queue pipeline ===
         from app.init.container import get_container
         manager = get_container().model_manager()
 
         with manager.gpu_session():
-            # === 人聲分離 ===
+            # === Vocal separation ===
             if do_vocal_sep:
                 stage_progress("demucs", 0.0, "task.progress.separating_vocals")
                 from app.engine.ai.audio.demucs import get_demucs
@@ -205,7 +197,7 @@ class AudioTranscribeService:
                 stage_progress("demucs", 1.0, "task.progress.separation_complete")
 
             try:
-                # === Whisper 轉譯 ===
+                # === Whisper transcription ===
                 stage_progress("whisper", 0.0, "task.progress.load_whisper")
 
                 result = self._whisper.transcribe(
@@ -226,7 +218,7 @@ class AudioTranscribeService:
                     except Exception:
                         pass
 
-            # === Wav2Vec2 精準對齊 ===
+            # === Wav2Vec2 forced alignment ===
             if do_align and detected_lang:
                 from app.engine.ai.audio.wav2vec2 import get_alignment_engine
                 aligner = get_alignment_engine()
@@ -240,7 +232,7 @@ class AudioTranscribeService:
                     )
                     stage_progress("align", 1.0, "task.progress.align_complete")
 
-        # === 翻譯 ===
+        # === Translation ===
         from app.engine.ai.audio.whisper import TranscribeSegment
 
         original_segments = list(result.segments)
@@ -251,7 +243,7 @@ class AudioTranscribeService:
             translate_remote = params.get("translate_remote", False)
 
             if translate_remote:
-                # 雲端翻譯（批次）
+                # Cloud translation (batch)
                 from app.utils.translate import get_cloud_provider, translate_srt_cloud
 
                 provider = params.get("translate_provider", "")
@@ -270,12 +262,10 @@ class AudioTranscribeService:
                     for s in translated_all
                 ]
             else:
-                # 本地翻譯
-                from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-                from app.engine.ai.registry import SLOT_LLM
+                # Local translation
                 from app.utils.translate import translate_srt_local
 
-                translate_model_type = params.get("translate_model_type", "translategemma")
+                translate_model_family = params.get("translate_model_family", "gemma4")
                 translate_model_size = params.get("translate_model_size", "4b")
                 translate_quantization = params.get("translate_quantization")
 
@@ -286,16 +276,17 @@ class AudioTranscribeService:
 
                 variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
                 src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
-                runtime = LlamaServerRuntime(SLOT_LLM)
+                runtime = get_container().llama_runtime()
 
                 stage_progress("translate", 0.0, "task.progress.load_translate_model")
 
-                with runtime.acquire(translate_model_type, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
+                with runtime.acquire(translate_model_family, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
                     stage_progress("translate", 0.05, "task.progress.start_translate")
                     translated_all = translate_srt_local(
                         seg_dicts, src, target_lang, runtime,
                         on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
-                        model_id=translate_model_type,
+                        model_family=translate_model_family,
+                        model_size=translate_model_size,
                     )
 
                 result.segments = [
@@ -303,12 +294,12 @@ class AudioTranscribeService:
                     for s in translated_all
                 ]
 
-        # === 大綱整理 ===
+        # === Summarization ===
         summary_text = None
         if do_summarize:
             stage_progress("summarize", 0.0, "task.progress.generating_summary")
 
-            # 摘要用的文本：有翻譯用翻譯後的，沒翻譯用原文
+            # Text for summarization: use translated text if available, otherwise original
             if do_translate:
                 full_text = "\n".join(s.text.strip() for s in result.segments)
             else:
@@ -317,60 +308,81 @@ class AudioTranscribeService:
             summarize_remote = params.get("summarize_remote", False)
 
             if summarize_remote:
-                # 雲端 map-reduce
+                # Cloud map-reduce
                 from app.utils.translate import get_cloud_provider
+                from app.utils.inference import get_remote_inference_config
+
                 provider = params.get("summarize_provider", "")
                 conn_id = params.get("summarize_conn_id")
                 remote_model = params.get("summarize_remote_model", "")
                 prov = get_cloud_provider(provider, conn_id, remote_model)
+                remote_config = get_remote_inference_config("summarize")
 
                 def _cloud_chat(prompt: str, max_tokens: int = 2048) -> str:
                     return prov.chat(
                         model=remote_model,
                         messages=[{"role": "user", "content": prompt}],
-                        max_tokens=max_tokens, temperature=0.3,
+                        max_tokens=max_tokens,
+                        temperature=remote_config["temperature"],
                     )
 
                 from app.utils.summarize import map_reduce_summarize
+                from app.utils.translate import _get_cloud_ctx
+                source_language = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
+                cloud_ctx = _get_cloud_ctx(prov, remote_model)
+                # Reserve half for output, 200 for prompt overhead
+                chunk_tokens = max(500, cloud_ctx // 2 - 200)
                 summary_text = map_reduce_summarize(
                     full_text, _cloud_chat,
+                    source_lang=source_language,
                     on_progress=lambda p, m: stage_progress("summarize", p, m),
+                    max_tokens_per_chunk=chunk_tokens,
                 )
             else:
-                # 本地 map-reduce
-                from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-                from app.engine.ai.registry import SLOT_LLM
-                summary_model_id = params.get("summarize_model_type", "qwen3")
+                # Local map-reduce
+                from app.utils.inference import get_inference_config
+
+                summary_model_family = params.get("summarize_model_family", "gemma4")
                 summary_model_size = params.get("summarize_model_size", "4b")
                 summary_quantization = params.get("summarize_quantization")
                 summary_variant = f"{summary_model_size}:{summary_quantization}" if summary_quantization else summary_model_size
-                runtime = LlamaServerRuntime(SLOT_LLM)
+                runtime = get_container().llama_runtime()
 
-                with runtime.acquire(summary_model_id, summary_variant):
+                config = get_inference_config(summary_model_family, summary_model_size, "summarize")
+
+                with runtime.acquire(summary_model_family, summary_variant):
                     def _local_chat(prompt: str, max_tokens: int = 2048) -> str:
                         return runtime.chat(
                             messages=[{"role": "user", "content": prompt}],
-                            max_tokens=max_tokens, temperature=0.3,
+                            max_tokens=max_tokens,
+                            temperature=config["temperature"],
+                            top_k=config.get("top_k", 40),
+                            top_p=config.get("top_p", 0.9),
                         )
 
                     from app.utils.summarize import map_reduce_summarize
+                    source_language = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
+                    # Reserve half for output, 200 for prompt overhead
+                    chunk_tokens = max(500, config["n_ctx"] // 2 - 200)
                     summary_text = map_reduce_summarize(
                         full_text, _local_chat,
+                        source_lang=source_language,
                         on_progress=lambda p, m: stage_progress("summarize", p, m),
+                        max_tokens_per_chunk=chunk_tokens,
                     )
 
             stage_progress("summarize", 1.0, "task.progress.summary_complete")
 
-        # === 寫入輸出檔案 ===
+        # === Write output files ===
         stage_progress("write", 0.0, "task.progress.writing_file")
 
         output_files = []
 
         if do_translate and target_lang:
-            # 有翻譯：輸出兩個檔案
-            # 1. 原始語言逐字稿
+            # With translation: output two files
+            # 1. Source language transcript
             source_filename = f"{base_name}.{detected_lang}.{output_format}"
-            source_path = output_dir_path / source_filename
+            source_path = output_dir / source_filename
             source_result = TranscribeResult(
                 segments=original_segments, language=detected_lang,
                 language_probability=result.language_probability, duration=result.duration,
@@ -393,9 +405,9 @@ class AudioTranscribeService:
                 "type": "source",
             })
 
-            # 2. 翻譯後逐字稿
+            # 2. Translated transcript
             target_filename = f"{base_name}.{target_lang}.{output_format}"
-            target_path = output_dir_path / target_filename
+            target_path = output_dir / target_filename
             target_result = TranscribeResult(
                 segments=result.segments, language=target_lang,
                 language_probability=result.language_probability, duration=result.duration,
@@ -421,9 +433,9 @@ class AudioTranscribeService:
             output_file_id = target_file_id
             output_filename_result = target_info.filename
         else:
-            # 無翻譯：輸出單一檔案
+            # No translation: output single file
             final_filename = f"{base_name}.{output_format}"
-            output_path = output_dir_path / final_filename
+            output_path = output_dir / final_filename
             if output_format == "srt":
                 _write_srt(result, output_path)
             else:
@@ -443,10 +455,10 @@ class AudioTranscribeService:
             })
             output_filename_result = output_info.filename
 
-        # 寫入摘要檔案
+        # Write summary file
         if summary_text:
-            summary_filename = f"{base_name}.draft.txt"
-            summary_path = output_dir_path / summary_filename
+            summary_filename = f"{base_name}.draft.md"
+            summary_path = output_dir / summary_filename
             with open(summary_path, "w", encoding="utf-8") as f:
                 f.write(summary_text)
 
@@ -470,7 +482,7 @@ class AudioTranscribeService:
         if output_files:
             try:
                 fid = output_files[0]["file_id"]
-                info = self._file_service.get_file_info(fid)
+                info = self._file_service.get_file(fid)
                 if info and info.file_path:
                     with open(info.file_path, "r", encoding="utf-8") as f:
                         text_content = f.read()
@@ -480,7 +492,7 @@ class AudioTranscribeService:
         return {
             "output_file_id": output_file_id,
             "output_filename": output_filename_result,
-            "output_dir": str(output_dir_path),
+            "output_dir": str(output_dir),
             "output_files": output_files,
             "text_file_id": output_file_id,
             "text_content": text_content,

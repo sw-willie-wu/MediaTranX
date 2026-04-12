@@ -1,6 +1,6 @@
 """
-文件 OCR 服務
-PDF：逐頁渲染後以 VLM 辨識；圖片：直接辨識
+Document OCR service.
+PDF: render each page then recognize with VLM; images: recognize directly.
 """
 import logging
 import os
@@ -9,36 +9,37 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.utils.prompts import DEFAULT_VLM_MODEL, build_ocr_messages
+from app.utils.prompts import DEFAULT_VLM_MODEL
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
-TASK_TYPE = "document.ocr"
-TASK_TYPE_REMOTE = "document.ocr.remote"
+TASK_TYPE_DOCUMENT_OCR = "document.ocr"
+TASK_TYPE_DOCUMENT_OCR_REMOTE = "document.ocr.remote"
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"}
 
 
 class DocumentOcrService:
+    """Document OCR service for PDF and images using VLM (local or remote)."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE, self._handle_task)
-        self._task_manager.register_handler(TASK_TYPE_REMOTE, self._handle_remote_task)
+        self._task_manager.register_handler(TASK_TYPE_DOCUMENT_OCR, self._handle_task)
+        self._task_manager.register_handler(TASK_TYPE_DOCUMENT_OCR_REMOTE, self._handle_remote_task)
         logger.info("DocumentOcrService initialized")
 
-    def get_status(self, model_id: str = DEFAULT_VLM_MODEL, size: str = "4b",
+    def get_status(self, model_family: str = DEFAULT_VLM_MODEL, size: str = "4b",
                    quantization: Optional[str] = None) -> dict:
         from app.init.container import get_container
-        return get_container().language_service().get_vlm_status(model_id=model_id, size=size, quantization=quantization)
+        return get_container().language_service().get_vlm_status(model_family=model_family, size=size, quantization=quantization)
 
     async def submit(
         self,
         file_id: str,
-        model_id: str = DEFAULT_VLM_MODEL,
+        model_family: str = DEFAULT_VLM_MODEL,
         size: str = "4b",
         quantization: Optional[str] = None,
         format: str = "md",
@@ -49,12 +50,14 @@ class DocumentOcrService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
         params = {
-            "file_id": file_id, "model_id": model_id,
+            "file_id": file_id, "model_family": model_family,
             "size": size, "quantization": quantization,
             "format": format, "output_dir": output_dir,
             "output_filename": output_filename,
         }
-        return await self._task_manager.submit(TASK_TYPE, params)
+        task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_OCR, params)
+        logger.info(f"Document OCR task submitted: {task_id}")
+        return task_id
 
     async def submit_remote(
         self,
@@ -66,7 +69,7 @@ class DocumentOcrService:
         output_dir: Optional[str] = None,
         output_filename: Optional[str] = None,
     ) -> str:
-        """提交雲端 OCR 任務"""
+        """Submit a remote OCR task."""
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
@@ -76,12 +79,12 @@ class DocumentOcrService:
             "format": format, "output_dir": output_dir,
             "output_filename": output_filename,
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_REMOTE, params)
+        task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_OCR_REMOTE, params)
         logger.info(f"Remote OCR task submitted: {task_id} (provider={provider}, model={remote_model})")
         return task_id
 
     def _handle_remote_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        """處理雲端 OCR 任務"""
+        """Handle remote OCR task."""
         import base64
 
         file_id = params["file_id"]
@@ -105,7 +108,7 @@ class DocumentOcrService:
             raise RuntimeError(f"Provider not available: {provider}")
 
         if src_ext == ".pdf":
-            # PDF：逐頁渲染為圖片再 OCR
+            # PDF: render each page to image then OCR
             final_text = self._ocr_pdf_remote(
                 file_info.file_path, prov, remote_model, fmt, progress_callback,
             )
@@ -116,20 +119,19 @@ class DocumentOcrService:
             )
             progress_callback(0.95, "task.progress.doc_ocr_recognition_complete")
         else:
-            raise ValueError("不支援的檔案格式，請上傳 PDF 或圖片")
+            raise ValueError("Unsupported file format; please upload a PDF or image")
 
         if not final_text.strip():
-            final_text = "(未偵測到文字)"
+            final_text = "(No text detected)"
 
         output_file_id = str(uuid4())
         stem = Path(file_info.original_filename).stem
         custom_filename = params.get("output_filename")
         final_filename = custom_filename if custom_filename else f"{stem}_ocr_{output_file_id[:8]}.{ext}"
 
-        custom_output_dir = params.get("output_dir")
-        output_dir_path = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
+        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(final_text)
@@ -148,9 +150,10 @@ class DocumentOcrService:
         }
 
     def _recognize_remote(self, image_path: str, prov, model: str, fmt: str) -> str:
-        """使用雲端 VLM 辨識單張圖片"""
+        """Recognize text in a single image using remote VLM."""
         import base64
         from app.utils.prompts import OCR_SYSTEM_MD, OCR_SYSTEM_TXT, OCR_USER_MD, OCR_USER_TXT
+        from app.utils.inference import get_remote_inference_config
 
         with open(image_path, "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode()
@@ -165,11 +168,16 @@ class DocumentOcrService:
                 {"type": "text", "text": user_prompt},
             ]},
         ]
-        return prov.chat(model=model, messages=messages, max_tokens=4096, temperature=0.0)
+        remote_config = get_remote_inference_config("ocr")
+        return prov.chat(
+            model=model, messages=messages,
+            max_tokens=remote_config["max_tokens"],
+            temperature=remote_config["temperature"],
+        )
 
     def _ocr_pdf_remote(self, pdf_path: str, prov, model: str, fmt: str,
-                        progress_callback: Callable) -> str:
-        """雲端 OCR：PDF 逐頁渲染 → 雲端 VLM"""
+                        progress_callback: Callable[[float, str], None]) -> str:
+        """Remote OCR: render PDF pages then send to remote VLM."""
         import pypdfium2 as pdfium
 
         pdf = pdfium.PdfDocument(pdf_path)
@@ -194,17 +202,28 @@ class DocumentOcrService:
         pdf.close()
         return "\n\n---\n\n".join(all_texts)
 
-    def _recognize(self, image_path: str, model_id: str, variant: str, fmt: str,
+    def _recognize(self, image_path: str, model_family: str, variant: str, fmt: str,
                    on_progress: Optional[Callable[[float, str], None]] = None) -> str:
-        """使用 LlamaServerRuntime 辨識單張圖片"""
-        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-        from app.engine.ai.registry import SLOT_LLM
+        """Recognize text in a single image using local VLM."""
+        from app.init.container import get_container
+        from app.utils.inference import get_inference_config, calc_max_tokens, fake_progress
+        from app.utils.prompts import get_prompt_builder
 
-        runtime = LlamaServerRuntime(SLOT_LLM)
-        messages = build_ocr_messages(image_path, format=fmt)
+        variant_size = variant.split(":")[0] if ":" in variant else variant
+        config = get_inference_config(model_family, variant_size, "ocr")
+        builder = get_prompt_builder("ocr", config["prompt_builder"], thinking=config.get("thinking", False))
+        result = builder(image_path, output_format=fmt, source_lang=None)
+        max_tokens = calc_max_tokens(config, config["n_ctx"], 1000)  # ~1000 tokens for image
 
-        with runtime.acquire(model_id, variant, on_progress):
-            return runtime.chat(messages=messages, max_tokens=4096, temperature=0.0)
+        runtime = get_container().llama_runtime()
+
+        with runtime.acquire(model_family, variant, on_progress):
+            with fake_progress(on_progress, 0.0, 1.0, "task.progress.ocr_recognizing", runtime=runtime):
+                return runtime.chat(
+                    messages=result["messages"], max_tokens=max_tokens,
+                    temperature=config["temperature"],
+                    top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+                )
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
@@ -214,9 +233,9 @@ class DocumentOcrService:
 
         from app.init.container import get_container
         if not get_container().model_manager().is_llama_ready():
-            raise RuntimeError("llama-server 未安裝，請先至設定頁面安裝 AI 核心環境")
+            raise RuntimeError("llama-server not installed; please install AI core environment in settings")
 
-        model_id = params.get("model_id", DEFAULT_VLM_MODEL)
+        model_family = params.get("model_family", DEFAULT_VLM_MODEL)
         size = params.get("size", "4b")
         quantization = params.get("quantization")
         fmt = params.get("format", "md")
@@ -227,38 +246,34 @@ class DocumentOcrService:
 
         progress_callback(0.05, "task.progress.ocr_prepare")
 
-        # === GPU 排隊管線 ===
+        # === GPU queue pipeline ===
         manager = get_container().model_manager()
 
         with manager.gpu_session():
             if src_ext == ".pdf":
                 final_text = self._ocr_pdf(
-                    file_info.file_path, model_id, variant, fmt, progress_callback,
+                    file_info.file_path, model_family, variant, fmt, progress_callback,
                 )
             elif src_ext in _IMAGE_EXTS:
                 final_text = self._recognize(
                     image_path=str(file_info.file_path),
-                    model_id=model_id, variant=variant, fmt=fmt,
+                    model_family=model_family, variant=variant, fmt=fmt,
                     on_progress=lambda p, m: progress_callback(0.1 + p * 0.85, m),
                 )
             else:
-                raise ValueError("不支援的檔案格式，請上傳 PDF 或圖片")
+                raise ValueError("Unsupported file format; please upload a PDF or image")
 
         if not final_text.strip():
-            final_text = "(未偵測到文字)"
+            final_text = "(No text detected)"
 
         output_file_id = str(uuid4())
         stem = Path(file_info.original_filename).stem
         custom_filename = params.get("output_filename")
         final_filename = custom_filename if custom_filename else f"{stem}_ocr_{output_file_id[:8]}.{ext}"
 
-        custom_output_dir = params.get("output_dir")
-        if custom_output_dir:
-            out_dir = Path(custom_output_dir)
-        else:
-            out_dir = self._file_service.output_dir
-        out_dir.mkdir(parents=True, exist_ok=True)
-        output_path = out_dir / final_filename
+        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
         output_path.write_text(final_text, encoding="utf-8")
 
         output_info = self._file_service.register_output(
@@ -272,7 +287,7 @@ class DocumentOcrService:
             "char_count": len(final_text),
         }
 
-    def _ocr_pdf(self, src_path: Path, model_id, variant, fmt, progress_callback) -> str:
+    def _ocr_pdf(self, src_path: Path, model_family, variant, fmt, progress_callback) -> str:
         import io as _io
         import pypdfium2
         doc = pypdfium2.PdfDocument(str(src_path))
@@ -293,7 +308,7 @@ class DocumentOcrService:
             try:
                 text = self._recognize(
                     image_path=tmp_path,
-                    model_id=model_id, variant=variant, fmt=fmt,
+                    model_family=model_family, variant=variant, fmt=fmt,
                     on_progress=lambda p, m: None,
                 )
                 page_results.append(text.strip())
@@ -305,7 +320,7 @@ class DocumentOcrService:
         if fmt == "md":
             parts = []
             for i, text in enumerate(page_results):
-                header = f"## 第 {i+1} 頁\n\n" if total > 1 else ""
+                header = f"## Page {i+1}\n\n" if total > 1 else ""
                 parts.append(f"{header}{text}")
             return "\n\n---\n\n".join(parts)
         return "\n\n".join(page_results)

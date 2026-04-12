@@ -1,7 +1,6 @@
 """
-Waifu2x 動漫風格超解析封裝 (Three-Layer Architecture V3)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-繼承 PTHRuntime + Spandrel，支援 CUNet art 模型
+Waifu2x anime-style super-resolution wrapper (Three-Layer Architecture V3).
+Inherits PTHRuntime + Spandrel, supports CUNet art models.
 """
 from __future__ import annotations
 
@@ -20,12 +19,12 @@ logger = logging.getLogger(__name__)
 
 class Waifu2xWrapper(PTHRuntime):
     """
-    Waifu2x 動漫風格超解析封裝
+    Waifu2x anime-style super-resolution wrapper.
 
-    特性：
-    1. 針對動漫/二次元影像優化
-    2. CUNet art 模型，固定 2x 放大
-    3. 透過 Spandrel 載入
+    Features:
+    1. Optimized for anime/2D images
+    2. CUNet art model, fixed 2x upscaling
+    3. Loaded via Spandrel
     """
 
     def __init__(self):
@@ -40,16 +39,16 @@ class Waifu2xWrapper(PTHRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Image.Image:
         """
-        執行 Waifu2x 超解析推理
+        Run Waifu2x super-resolution inference.
 
         Args:
-            image: 輸入影像
-            model_id: 模型變體（cunet）
-            scale: 放大倍數（固定 2）
-            on_progress: 進度回調
+            image: Input image.
+            model_id: Model variant (cunet).
+            scale: Scale factor (fixed at 2).
+            on_progress: Progress callback.
 
         Returns:
-            增強後的影像
+            Enhanced image.
         """
         variant_spec = MODELS_REGISTRY[FORMAT_PTH]["waifu2x"]["variants"].get(model_id)
         if not variant_spec:
@@ -81,13 +80,13 @@ class Waifu2xWrapper(PTHRuntime):
 
 
 # ═══════════════════════════════════════════════════════════
-# 單例工廠函數
+# Singleton factory
 # ═══════════════════════════════════════════════════════════
 _waifu2x: Optional[Waifu2xWrapper] = None
 
 
 def get_waifu2x() -> Waifu2xWrapper:
-    """取得 Waifu2xWrapper 單例"""
+    """Get the Waifu2xWrapper singleton."""
     global _waifu2x
     if _waifu2x is None:
         _waifu2x = Waifu2xWrapper()

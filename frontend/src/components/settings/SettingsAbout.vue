@@ -123,9 +123,9 @@ onMounted(() => {
       <span class="component-label">FFmpeg</span>
       <span class="component-value">{{ toolTag(components.ffmpeg) }}</span>
     </div>
-    <div class="component-row" v-if="components.fluidsynth">
-      <span class="component-label">FluidSynth</span>
-      <span class="component-value">{{ toolTag(components.fluidsynth) }}</span>
+    <div class="component-row" v-if="components.soundfonts">
+      <span class="component-label">Soundfonts</span>
+      <span class="component-value">MusyngKite GM</span>
     </div>
     <div class="component-row" v-if="components.llama">
       <span class="component-label">llama-server</span>

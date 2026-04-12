@@ -89,7 +89,7 @@ class FramePipe:
 
         Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
 
-        # 如果 target_fps 不同於 output_fps，加 fps filter 丟掉多餘幀
+        # If target_fps differs from output_fps, add fps filter to drop excess frames
         vf_args = []
         if self.target_fps > 0 and abs(float(self.target_fps) - float(self.output_fps)) > 0.5:
             vf_args = ["-vf", f"fps={self.target_fps.numerator}/{self.target_fps.denominator}"]

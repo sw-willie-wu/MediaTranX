@@ -1,40 +1,39 @@
 """
-裝置資訊服務
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-包裝 engine.device 的查詢功能，提供給 Route 層使用。
-Route 不應直接 import engine.device。
+Device information service.
+Wraps engine.device query functions for the route layer.
+Routes should not import engine.device directly.
 """
 import logging
 logger = logging.getLogger(__name__)
 
 
 class DeviceService:
-    """裝置資訊查詢服務"""
+    """Hardware device detection and compute capability query service."""
 
     def __init__(self):
         logger.info("DeviceService initialized")
 
     def get_device_info(self) -> dict:
-        """取得完整的裝置資訊"""
+        """Get complete device information."""
         from app.engine.device import get_device_info
         return get_device_info()
 
     def refresh_cache(self) -> None:
-        """清除裝置偵測快取，強制重新偵測"""
+        """Clear device detection cache and force re-detection."""
         from app.engine.device import refresh_device_cache
         refresh_device_cache()
 
     def get_device(self) -> str:
-        """取得目前使用的運算裝置（cuda/dml/cpu）"""
+        """Get the current compute device (cuda/dml/cpu)."""
         from app.engine.device import get_device
         return get_device()
 
     def get_compute_type(self) -> str:
-        """取得目前的計算精度（float16/int8/float32）"""
+        """Get the current compute type (float16/int8/float32)."""
         from app.engine.device import get_compute_type
         return get_compute_type()
 
     def select_torch_index(self) -> str:
-        """根據驅動版本選擇 PyTorch wheel 類型"""
+        """Select PyTorch wheel type based on driver version."""
         from app.engine.device import select_torch_index
         return select_torch_index()

@@ -1,9 +1,9 @@
 """
-歌詞提取服務
-使用 Demucs 人聲分離 + Whisper 語音辨識，從音樂中提取歌詞
+Lyrics extraction service.
+Uses Demucs vocal separation + Whisper speech recognition to extract lyrics from music.
 """
-import asyncio
 import logging
+import tempfile
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
@@ -26,13 +26,14 @@ TASK_TYPE_AUDIO_LYRICS = "audio.lyrics"
 
 
 def _format_lrc_time(seconds: float) -> str:
-    """將秒數格式化為 LRC 時間格式 [mm:ss.xx]"""
+    """Format seconds as LRC time format [mm:ss.xx]."""
     minutes = int(seconds // 60)
     secs = seconds % 60
     return f"{minutes:02d}:{secs:05.2f}"
 
 
 class AudioLyricsService:
+    """Lyrics extraction using Demucs vocal separation and Whisper transcription."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
@@ -48,7 +49,7 @@ class AudioLyricsService:
         align: bool = False,
         translate: bool = False,
         target_lang: Optional[str] = None,
-        translate_model_type: str = "translategemma",
+        translate_model_family: str = "gemma4",
         translate_model_size: str = "4b",
         translate_quantization: Optional[str] = None,
         translate_remote: bool = False,
@@ -69,7 +70,7 @@ class AudioLyricsService:
             "align": align,
             "translate": translate,
             "target_lang": target_lang,
-            "translate_model_type": translate_model_type,
+            "translate_model_family": translate_model_family,
             "translate_model_size": translate_model_size,
             "translate_quantization": translate_quantization,
             "translate_remote": translate_remote,
@@ -85,14 +86,9 @@ class AudioLyricsService:
         return task_id
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(self._execute(params, progress_callback))
-        finally:
-            loop.close()
+        return self._execute(params, progress_callback)
 
-    async def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+    def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -106,23 +102,19 @@ class AudioLyricsService:
 
         original_stem = Path(file_info.original_filename).stem
 
-        # 決定輸出目錄
-        custom_output_dir = params.get("output_dir")
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
+        # Determine output directory
+        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 決定基礎檔名
+        # Determine base filename
         custom_output_filename = params.get("output_filename")
         if custom_output_filename:
             base_name = Path(custom_output_filename).stem
         else:
             base_name = original_stem
 
-        # ── 動態進度分配 ──
-        weights = {"demucs": 3, "whisper": 5}  # demucs 和 whisper 必做
+        # -- Dynamic progress allocation --
+        weights = {"demucs": 3, "whisper": 5}  # demucs and whisper are required
         if align:         weights["align"] = 3
         if do_translate:  weights["translate"] = 2
         total_weight = sum(weights.values())
@@ -140,11 +132,12 @@ class AudioLyricsService:
             s, e = stages.get(stage, (0.0, 1.0))
             progress_callback(s + p * (e - s), msg)
 
-        # 暫存人聲檔案路徑
-        temp_vocals_path = self._file_service.upload_dir / f"_vocals_temp_{uuid4().hex[:8]}.wav"
+        # Temporary vocal file path
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            temp_vocals_path = Path(tmp.name)
 
         try:
-            # === Demucs 人聲分離 ===
+            # === Demucs vocal separation ===
             stage_progress("demucs", 0.0, "task.progress.lyrics_separating")
 
             from app.engine.ai.audio.demucs import get_demucs
@@ -156,7 +149,7 @@ class AudioLyricsService:
                 on_progress=lambda p, m: stage_progress("demucs", p, m),
             )
 
-            # 儲存人聲為暫存 WAV
+            # Save vocals as temporary WAV
             vocals_tensor = separated.get("vocals")
             if vocals_tensor is None:
                 raise RuntimeError("Demucs failed to separate vocals")
@@ -165,12 +158,12 @@ class AudioLyricsService:
 
             stage_progress("demucs", 1.0, "task.progress.lyrics_separation_complete")
 
-            # === GPU 排隊管線 ===
+            # === GPU queue pipeline ===
             from app.init.container import get_container
             manager = get_container().model_manager()
 
             with manager.gpu_session():
-                # === Whisper 語音辨識 ===
+                # === Whisper speech recognition ===
                 from app.engine.ai.audio.whisper import get_whisper
                 whisper = get_whisper()
 
@@ -184,7 +177,7 @@ class AudioLyricsService:
                 detected_lang = result.language
                 stage_progress("whisper", 1.0, "task.progress.lyrics_recognition_complete")
 
-                # === Wav2Vec2 精準對齊 ===
+                # === Wav2Vec2 forced alignment ===
                 if align and detected_lang:
                     from app.engine.ai.audio.wav2vec2 import get_alignment_engine
                     aligner = get_alignment_engine()
@@ -198,7 +191,7 @@ class AudioLyricsService:
                         )
                         stage_progress("align", 1.0, "task.progress.lyrics_align_complete")
 
-                # === 翻譯 ===
+                # === Translation ===
                 from app.engine.ai.audio.whisper import TranscribeSegment
 
                 original_segments = list(result.segments)
@@ -209,7 +202,7 @@ class AudioLyricsService:
                     translate_remote = params.get("translate_remote", False)
 
                     if translate_remote:
-                        # 雲端翻譯（批次）
+                        # Cloud translation (batch)
                         from app.utils.translate import get_cloud_provider, translate_srt_cloud
 
                         provider = params.get("translate_provider", "")
@@ -228,11 +221,8 @@ class AudioLyricsService:
                             for s in translated_all
                         ]
                     else:
-                        # 本地翻譯
-                        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-                        from app.engine.ai.registry import SLOT_LLM
-
-                        translate_model_type = params.get("translate_model_type", "translategemma")
+                        # Local translation
+                        translate_model_family = params.get("translate_model_family", "gemma4")
                         translate_model_size = params.get("translate_model_size", "4b")
                         translate_quantization = params.get("translate_quantization")
 
@@ -245,16 +235,17 @@ class AudioLyricsService:
 
                         variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
                         src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
-                        runtime = LlamaServerRuntime(SLOT_LLM)
+                        runtime = get_container().llama_runtime()
 
                         stage_progress("translate", 0.0, "task.progress.lyrics_load_translate")
 
-                        with runtime.acquire(translate_model_type, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
+                        with runtime.acquire(translate_model_family, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
                             stage_progress("translate", 0.05, "task.progress.lyrics_translating")
                             translated_all = translate_srt_local(
                                 seg_dicts, src, target_lang, runtime,
                                 on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
-                                model_id=translate_model_type,
+                                model_family=translate_model_family,
+                                model_size=translate_model_size,
                             )
 
                         stage_progress("translate", 1.0, "task.progress.lyrics_translate_complete")
@@ -264,16 +255,16 @@ class AudioLyricsService:
                             for s in translated_all
                         ]
 
-            # === 階段 4: 寫入輸出檔案 (0.95 ~ 1.0) ===
+            # === Stage 4: Write output files (0.95 ~ 1.0) ===
             stage_progress("write", 0.0, "task.progress.lyrics_writing")
 
             output_files = []
 
             if do_translate and target_lang:
-                # 有翻譯：輸出兩個檔案
-                # 1. 原始語言歌詞
+                # With translation: output two files
+                # 1. Source language lyrics
                 source_filename = f"{base_name}.{detected_lang}.{output_format}"
-                source_path = output_dir_path / source_filename
+                source_path = output_dir / source_filename
                 self._write_output(original_segments, source_path, output_format)
 
                 source_file_id = str(uuid4())
@@ -289,9 +280,9 @@ class AudioLyricsService:
                     "type": "source",
                 })
 
-                # 2. 翻譯後歌詞
+                # 2. Translated lyrics
                 target_filename = f"{base_name}.{target_lang}.{output_format}"
-                target_path = output_dir_path / target_filename
+                target_path = output_dir / target_filename
                 self._write_output(result.segments, target_path, output_format)
 
                 target_file_id = str(uuid4())
@@ -310,9 +301,9 @@ class AudioLyricsService:
                 output_file_id = target_file_id
                 output_filename_result = target_info.filename
             else:
-                # 無翻譯：輸出單一檔案
+                # No translation: output single file
                 final_filename = f"{base_name}.{output_format}"
-                output_path = output_dir_path / final_filename
+                output_path = output_dir / final_filename
                 self._write_output(result.segments, output_path, output_format)
 
                 output_file_id = str(uuid4())
@@ -336,7 +327,7 @@ class AudioLyricsService:
             if output_files:
                 try:
                     fid = output_files[0]["file_id"]
-                    info = self._file_service.get_file_info(fid)
+                    info = self._file_service.get_file(fid)
                     if info and info.file_path:
                         with open(info.file_path, "r", encoding="utf-8") as f:
                             text_content = f.read()
@@ -356,22 +347,18 @@ class AudioLyricsService:
             }
 
         finally:
-            # 清理暫存人聲檔案
-            if temp_vocals_path.exists():
-                try:
-                    temp_vocals_path.unlink()
-                except OSError:
-                    logger.warning(f"Failed to delete temp vocals: {temp_vocals_path}")
+            # Clean up temporary vocal file
+            temp_vocals_path.unlink(missing_ok=True)
 
     @staticmethod
     def _write_output(segments, output_path: Path, output_format: str) -> None:
-        """根據格式寫入歌詞檔"""
+        """Write lyrics file in the specified format."""
         with open(output_path, "w", encoding="utf-8") as f:
             if output_format == "lrc":
                 for seg in segments:
                     timestamp = _format_lrc_time(seg.start)
                     f.write(f"[{timestamp}]{seg.text.strip()}\n")
             else:
-                # txt: 純文字，一行一段
+                # txt: plain text, one line per segment
                 for seg in segments:
                     f.write(seg.text.strip() + "\n")

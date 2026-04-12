@@ -1,7 +1,6 @@
 """
-Real-CUGAN 動漫風格超解析封裝 (Three-Layer Architecture V3)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-重構：繼承 PTHRuntime，支援多種去噪等級與放大倍數
+Real-CUGAN anime-style super-resolution wrapper (Three-Layer Architecture V3).
+Refactored: inherits PTHRuntime, supports multiple denoise levels and scale factors.
 """
 from __future__ import annotations
 
@@ -20,12 +19,12 @@ logger = logging.getLogger(__name__)
 
 class RealCUGANWrapper(PTHRuntime):
     """
-    Real-CUGAN 動漫風格超解析封裝
-    
-    特性：
-    1. 針對動漫/二次元影像優化
-    2. 支援 2x/3x/4x 放大
-    3. 可選去噪等級（-1/0/3）
+    Real-CUGAN anime-style super-resolution wrapper.
+
+    Features:
+    1. Optimized for anime/2D images
+    2. Supports 2x/3x/4x upscaling
+    3. Configurable denoise levels (-1/0/3)
     """
     
     def __init__(self):
@@ -40,18 +39,18 @@ class RealCUGANWrapper(PTHRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Image.Image:
         """
-        執行 Real-CUGAN 超解析推理
-        
+        Run Real-CUGAN super-resolution inference.
+
         Args:
-            image: 輸入影像
-            model_id: 模型變體（up2x-*/up3x-*/up4x-*）
-            scale: 放大倍數（2/3/4）
-            on_progress: 進度回調
-            
+            image: Input image.
+            model_id: Model variant (up2x-*/up3x-*/up4x-*).
+            scale: Scale factor (2/3/4).
+            on_progress: Progress callback.
+
         Returns:
-            增強後的影像
+            Enhanced image.
         """
-        # 獲取 VRAM 需求
+        # Get VRAM requirement
         variant_spec = MODELS_REGISTRY[FORMAT_PTH]["real-cugan"]["variants"].get(model_id)
         if not variant_spec:
             raise ValueError(f"Unknown Real-CUGAN variant: {model_id}")
@@ -60,7 +59,7 @@ class RealCUGANWrapper(PTHRuntime):
         self._manager.acquire(SLOT_PTH, required_vram_mb=vram_needed)
         
         try:
-            # 使用 PTHRuntime 載入模型
+            # Load model using PTHRuntime
             with self.acquire(
                 model_id="real-cugan",
                 variant=model_id,
@@ -83,12 +82,12 @@ class RealCUGANWrapper(PTHRuntime):
 
 
 # ═══════════════════════════════════════════════════════════
-# 單例工廠函數
+# Singleton factory
 # ═══════════════════════════════════════════════════════════
 _real_cugan: Optional[RealCUGANWrapper] = None
 
 def get_real_cugan() -> RealCUGANWrapper:
-    """取得 RealCUGANWrapper 單例"""
+    """Get the RealCUGANWrapper singleton."""
     global _real_cugan
     if _real_cugan is None:
         _real_cugan = RealCUGANWrapper()

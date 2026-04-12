@@ -1,68 +1,40 @@
 """
-文件翻譯 API 路由
+Document translation API routes.
 """
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.document.translate_service import TranslateService
-from app.services.setup.language_service import LanguageService
+
+if TYPE_CHECKING:
+    from app.services.document.translate_service import TranslateService
 
 router = APIRouter()
 
 
 class DocumentTranslateRequest(BaseModel):
-    """文件翻譯請求"""
-    file_id: str = Field(..., description="輸入檔案 ID")
-    source_language: str = Field(..., description="來源語言 (BCP 47)")
-    target_language: str = Field(..., description="目標語言 (BCP 47)")
-    model_size: str = Field(default="4b", description="模型大小 (4b, 12b, 27b)")
-    model_type: str = Field(default="translategemma", description="翻譯模型類型 (translategemma, qwen3)")
-    quantization: Optional[str] = Field(default=None, description="模型量化精度 (Q4_K_M, Q3_K_M 等)")
-    translate_style: str = Field(default="colloquial", description="翻譯風格 (colloquial, formal, literal)")
-    glossary: Optional[dict[str, str]] = Field(default=None, description="專有名詞對照表 {原文: 譯文}")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
-    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
+    """Document translation request."""
+    file_id: str = Field(..., description="Input file ID")
+    source_language: str = Field(..., description="Source language (BCP 47)")
+    target_language: str = Field(..., description="Target language (BCP 47)")
+    model_size: str = Field(default="4b", description="Model size (4b, 12b, 27b)")
+    model_family: str = Field(default="gemma4", description="Translation model family (qwen3, gemma4, qwen3.5)")
+    quantization: Optional[str] = Field(default=None, description="Model quantization (Q4_K_M, Q3_K_M, etc.)")
+    translate_style: str = Field(default="colloquial", description="Translation style (colloquial, formal, literal)")
+    glossary: Optional[dict[str, str]] = Field(default=None, description="Glossary {source_term: translation}")
+    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
+    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class DocumentTranslateResponse(BaseModel):
-    """文件翻譯回應"""
+    """Document translation response."""
     task_id: str
-    message: str = "文件翻譯任務已提交"
+    message: str = "Document translation task submitted"
 
-
-class TranslateGemmaStatusResponse(BaseModel):
-    """TranslateGemma 模型狀態回應"""
-    available: bool
-    model_size: str
-    model_downloaded: bool
-
-
-@router.get("/translategemma/status", response_model=TranslateGemmaStatusResponse)
-@inject
-async def get_translategemma_status(
-    model_type: str = "translategemma",
-    model_size: str = "4b",
-    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
-):
-    """查詢翻譯模型狀態"""
-    try:
-        status = language_service.get_model_status(model_type, model_size)
-        return TranslateGemmaStatusResponse(**status)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/translategemma/languages")
-@inject
-async def get_translategemma_languages(
-    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
-):
-    """取得 TranslateGemma 支援的翻譯語言列表"""
-    return language_service.get_supported_languages()
 
 
 @router.post("/translate", response_model=DocumentTranslateResponse)
@@ -72,10 +44,10 @@ async def translate_document(
     service: TranslateService = Depends(Provide[AppContainer.doc_translate]),
 ):
     """
-    提交文件翻譯任務
+    Submit document translation task.
 
-    使用 TranslateGemma 翻譯上傳的文字檔。
-    首次使用時會自動下載指定大小的模型。
+    Translates uploaded text files using local LLM.
+    The specified model is automatically downloaded on first use.
     """
     try:
         task_id = await service.submit_translate(
@@ -83,7 +55,7 @@ async def translate_document(
             source_language=request.source_language,
             target_language=request.target_language,
             model_size=request.model_size,
-            model_type=request.model_type,
+            model_family=request.model_family,
             quantization=request.quantization,
             translate_style=request.translate_style,
             glossary=request.glossary,

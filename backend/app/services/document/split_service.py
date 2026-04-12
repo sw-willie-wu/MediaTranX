@@ -1,6 +1,4 @@
-"""
-PDF 分割服務：依頁碼範圍提取為新 PDF
-"""
+"""PDF split service: extract pages by range into a new PDF."""
 import logging
 from pathlib import Path
 from typing import Callable, Optional
@@ -11,7 +9,7 @@ from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
-TASK_TYPE = "document.split"
+TASK_TYPE_DOCUMENT_SPLIT = "document.split"
 
 
 def _parse_page_ranges(s: str, total: int) -> list[int]:
@@ -33,11 +31,12 @@ def _parse_page_ranges(s: str, total: int) -> list[int]:
 
 
 class DocumentSplitService:
+    """PDF page extraction and splitting service."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE, self._handle_task)
+        self._task_manager.register_handler(TASK_TYPE_DOCUMENT_SPLIT, self._handle_task)
         logger.info("DocumentSplitService initialized")
 
     async def submit(
@@ -54,7 +53,9 @@ class DocumentSplitService:
             "file_id": file_id, "pages": pages,
             "output_dir": output_dir, "output_filename": output_filename,
         }
-        return await self._task_manager.submit(TASK_TYPE, params)
+        task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_SPLIT, params)
+        logger.info(f"Document split task submitted: {task_id}")
+        return task_id
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         from pypdf import PdfReader, PdfWriter
@@ -71,7 +72,7 @@ class DocumentSplitService:
         pages_str = params.get("pages", "").strip()
         page_indices = _parse_page_ranges(pages_str, total) if pages_str else list(range(total))
         if not page_indices:
-            raise ValueError("頁碼範圍無效")
+            raise ValueError("Invalid page range")
 
         writer = PdfWriter()
         for idx in page_indices:
@@ -84,13 +85,9 @@ class DocumentSplitService:
         custom_filename = params.get("output_filename")
         final_filename = custom_filename if custom_filename else f"{stem}_p{label}.pdf"
 
-        custom_output_dir = params.get("output_dir")
-        if custom_output_dir:
-            out_dir = Path(custom_output_dir)
-        else:
-            out_dir = self._file_service.output_dir
-        out_dir.mkdir(parents=True, exist_ok=True)
-        output_path = out_dir / final_filename
+        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
 
         with open(output_path, "wb") as f:
             writer.write(f)

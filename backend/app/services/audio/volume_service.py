@@ -1,7 +1,4 @@
-"""
-音訊音量調整服務
-"""
-import asyncio
+"""Audio volume adjustment service."""
 import logging
 from pathlib import Path
 from typing import Callable
@@ -17,6 +14,7 @@ TASK_TYPE_AUDIO_VOLUME = "audio.volume"
 
 
 class AudioVolumeService:
+    """Audio volume adjustment and loudness normalization service."""
 
     def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager):
         self._ffmpeg = ffmpeg
@@ -40,14 +38,9 @@ class AudioVolumeService:
         return task_id
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(self._execute(params, progress_callback))
-        finally:
-            loop.close()
+        return self._execute(params, progress_callback)
 
-    async def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+    def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -59,9 +52,9 @@ class AudioVolumeService:
         suffix = "normalized" if params["normalize"] else f"vol{params['volume_db']:+.0f}dB"
         final_filename = f"{original_stem}_{suffix}_{output_file_id[:8]}{ext}"
 
-        output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
+        output_dir = self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
 
         if params["normalize"]:
             af_filter = "loudnorm"
@@ -70,7 +63,7 @@ class AudioVolumeService:
             af_filter = f"volume={db:+.1f}dB"
 
         progress_callback(0.0, "task.progress.volume_starting")
-        await self._ffmpeg.adjust_volume(
+        self._ffmpeg.adjust_volume_sync(
             input_path=file_info.file_path,
             output_path=output_path,
             af_filter=af_filter,

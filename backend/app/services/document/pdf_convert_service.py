@@ -1,7 +1,7 @@
 """
-PDF / 文件轉換服務
-支援：PDF → TXT / Markdown / Images(zip)
-      DOCX → TXT / Markdown
+PDF / document conversion service.
+Supports: PDF -> TXT / Markdown / Images(zip)
+           DOCX -> TXT / Markdown
 """
 import io
 import logging
@@ -15,15 +15,16 @@ from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
-TASK_TYPE = "document.pdf_convert"
+TASK_TYPE_DOCUMENT_PDF_CONVERT = "document.pdf_convert"
 
 
 class DocumentPdfConvertService:
+    """Document conversion service for PDF/DOCX to TXT, Markdown, or images."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE, self._handle_task)
+        self._task_manager.register_handler(TASK_TYPE_DOCUMENT_PDF_CONVERT, self._handle_task)
         logger.info("DocumentPdfConvertService initialized")
 
     async def submit(
@@ -42,7 +43,9 @@ class DocumentPdfConvertService:
             "output_dir": output_dir,
             "output_filename": output_filename,
         }
-        return await self._task_manager.submit(TASK_TYPE, params)
+        task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_PDF_CONVERT, params)
+        logger.info(f"Document PDF convert task submitted: {task_id}")
+        return task_id
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
@@ -62,19 +65,15 @@ class DocumentPdfConvertService:
         custom_filename = params.get("output_filename")
         final_filename = custom_filename if custom_filename else f"{stem}_converted.{ext}"
 
-        custom_output_dir = params.get("output_dir")
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
+        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
 
         progress_callback(0.05, "task.progress.reading_document")
 
         if output_format == "images":
             if src_ext != ".pdf":
-                raise ValueError("僅 PDF 格式支援轉換為圖片")
+                raise ValueError("Only PDF format supports conversion to images")
             self._pdf_to_images(src_path, output_path, progress_callback)
         elif src_ext == ".pdf":
             text = self._extract_pdf_text(src_path, progress_callback)
@@ -85,7 +84,7 @@ class DocumentPdfConvertService:
             content = self._maybe_to_md(text) if output_format == "md" else text
             output_path.write_text(content, encoding="utf-8")
         else:
-            # 純文字類檔案直接複製
+            # Plain text files: copy directly
             content = src_path.read_text(encoding="utf-8", errors="replace")
             output_path.write_text(content, encoding="utf-8")
 
@@ -119,7 +118,7 @@ class DocumentPdfConvertService:
         return "\n".join(lines)
 
     def _maybe_to_md(self, text: str) -> str:
-        return text  # 純文字已夠可讀，直接回傳
+        return text  # Plain text is readable enough; return as-is
 
     def _pdf_to_images(self, src_path: Path, output_path: Path, progress_callback):
         import pypdfium2

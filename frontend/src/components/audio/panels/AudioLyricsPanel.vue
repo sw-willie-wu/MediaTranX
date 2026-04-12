@@ -99,7 +99,7 @@ const translateLanguages = ref([
 
 async function loadTranslateLanguages() {
   try {
-    const res = await apiFetch('/video/translategemma/languages')
+    const res = await apiFetch('/llm/translate/languages')
     if (res.ok) {
       const data = await res.json()
       translateLanguages.value = data.map((l: { code: string; name: string }) => ({
@@ -183,7 +183,7 @@ async function execute() {
       body.translate_remote_model = parsed.modelId
     } else {
       const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
-      body.translate_model_type = tmType
+      body.translate_model_family = tmType
       body.translate_model_size = tmSize
       body.translate_quantization = tmQuant
     }
@@ -231,7 +231,7 @@ function getParams() {
       body.translate_remote_model = parsed.modelId
     } else {
       const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
-      body.translate_model_type = tmType
+      body.translate_model_family = tmType
       body.translate_model_size = tmSize
       body.translate_quantization = tmQuant
     }

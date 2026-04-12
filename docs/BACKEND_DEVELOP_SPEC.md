@@ -11,7 +11,7 @@ app/
 ├── init/                      ← 啟動初始化（DLL 注入、日誌、相容層）
 ├── api/
 │   ├── routes/                ← 路由層：參數驗證 → 呼叫 Service → 回傳 Response
-│   └── schemas/               ← Pydantic response models（API 專用）
+│   └── (Response models defined in route files directly)
 ├── db/                        ← 資料庫層（SQLModel）
 │   ├── database.py            ← Engine 建立、migration
 │   ├── models/                ← ORM models（api_connection、task_history）
@@ -27,11 +27,11 @@ app/
 │       ├── audio/             ← 語音模型（whisper、demucs、wav2vec2）
 │       ├── llama/             ← LLM（gemma、qwen3、vlm、translate prompt）
 │       ├── remote/            ← 遠端 API Provider（ollama、openai、gemini）
-│       ├── registry.py        ← 模型註冊表
+│       ├── registry.py        ← 模型註冊表（含推理參數 inference config）
 │       └── model_manager.py   ← VRAM / Slot 管理
 ├── workers/                   ← TaskManager、ProgressTracker
-├── models/                    ← 跨層共用 domain types（enum、dataclass）
-├── utils/                     ← 工具函數（gif_utils）
+├── schemas/                   ← 跨層共用 domain types（enum、dataclass）
+├── utils/                     ← 工具函數（inference、prompts、translate、summarize）
 └── exceptions.py              ← 自訂例外階層
 ```
 
@@ -47,15 +47,15 @@ app/
 
 ### 跨層共用型別
 
-跨層共用的 domain models 放在 `app/models/`（純 Python dataclass + enum），避免 workers/services 反向依賴 API 層：
+跨層共用的 domain types 放在 `app/schemas/`（純 Python dataclass + enum），避免 workers/services 反向依賴 API 層：
 
 ```
-app/models/
+app/schemas/
   task.py   ← TaskStatus (enum) + TaskData (dataclass)
   file.py   ← FileData (dataclass)
 ```
 
-API 層的 Pydantic models（`TaskResponse`、`FileInfo`）在 `api/schemas/common.py`，routes 透過 `from_task_data()` / `from_file_data()` 轉換。
+API 層的 Pydantic models（`TaskResponse`、`FileInfo`）直接定義在對應的 route 檔案中（`routes/tasks/active.py`、`routes/files.py`），透過 `from_task_data()` / `from_file_data()` 轉換。
 
 ### 資料庫層（app/db/）
 
@@ -124,14 +124,16 @@ remote/
 
 ---
 
-## 3. Import 規則
+## 3. Import 規則（Cold Start 優化）
 
-### 3.1 Top-Level Import（預設）
+為加速啟動（cold start 從 37 秒降至 ~8 秒），採用 **lazy container + TYPE_CHECKING** 模式，避免 module-level 觸發大量 import chain。
 
-所有套件（含 AI 套件如 PIL、numpy、torch）在 Electron 啟動時由 `uv sync` 安裝完成，可直接 top-level import。
+### 3.1 Service / Engine 檔案
+
+AI 套件（PIL、numpy、torch 等）在 Electron 啟動時由 `uv sync` 安裝完成，可直接 top-level import。這些檔案在容器首次 resolve 時才被載入，不影響啟動速度。
 
 ```python
-# ✓ 正確：直接 top-level import
+# ✓ 正確：Service / Engine 內直接 top-level import
 from PIL import Image
 import numpy as np
 import torch
@@ -141,9 +143,71 @@ class MyService:
         img = Image.open(...)
 ```
 
-### 3.2 例外：偵測性質的 Import
+### 3.2 Container（`container.py`）
 
-僅在偵測是否可用的場景中使用 lazy import（try/except 內）：
+Domain service 使用 `_lazy()` factory 延遲 import，避免在 container 模組載入時觸發所有 service 的 import chain：
+
+```python
+# ✓ 正確：_lazy() 延遲 import
+image_upscale = providers.Singleton(
+    _lazy("app.services.image.upscale_service", "ImageUpscaleService"),
+    file_service=file_service, task_manager=task_manager,
+)
+
+# ✗ 禁止：直接 import 會拖慢啟動
+from app.services.image.upscale_service import ImageUpscaleService
+image_upscale = providers.Singleton(ImageUpscaleService, ...)
+```
+
+### 3.3 Route 檔案
+
+Domain service 的 import 放在 `TYPE_CHECKING` guard 內，搭配 `from __future__ import annotations` 讓型別標注在 runtime 不求值。這樣 route 模組載入時不會觸發 service import chain：
+
+```python
+# ✓ 正確：Route 檔案的 service import
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+from dependency_injector.wiring import inject, Provide
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.init.container import AppContainer
+
+if TYPE_CHECKING:
+    from app.services.image.upscale_service import ImageUpscaleService
+
+router = APIRouter()
+
+@router.post("/upscale")
+@inject
+async def upscale_image(
+    request: UpscaleRequest,
+    service: ImageUpscaleService = Depends(Provide[AppContainer.image_upscale]),
+):
+    ...
+```
+
+### 3.4 Engine `__init__.py`
+
+Engine 的 `__init__.py` **不可**在 module level 直接 re-export wrapper class（會觸發整條 import chain）。消費者直接從具體模組 import。工廠函數內使用 lazy import：
+
+```python
+# ✗ 禁止：__init__.py 中 eagerly re-export
+from .realesrgan import RealESRGANWrapper   # 觸發 torch import chain
+
+# ✓ 正確：消費者直接 import 具體模組
+from app.engine.ai.image.realesrgan import RealESRGANWrapper
+
+# ✓ 正確：工廠函數使用 lazy import
+def get_upscaler(model_id: str):
+    if model_id == "realesrgan":
+        from app.engine.ai.image.realesrgan import RealESRGANWrapper
+        return RealESRGANWrapper(...)
+```
+
+### 3.5 偵測性質的 Import
+
+僅在偵測是否可用的場景中使用 try/except lazy import：
 
 ```python
 # ✓ 偵測用途，保留 lazy import
@@ -155,26 +219,13 @@ def _detect_cuda_via_torch():
         return False
 ```
 
-### 3.3 Type Hints
-
-直接使用外部套件型別，不需要 `from __future__ import annotations`：
-
-```python
-from PIL import Image
-
-class MyService:
-    @staticmethod
-    def _apply_filter(img: Image.Image) -> Image.Image:
-        ...
-```
-
 ---
 
 ## 4. Service 規範
 
 ### 4.1 結構模板
 
-Service 由 DI Container（`dependency-injector`）管理為 Singleton，不使用手動工廠函數。
+Service 由 DI Container（`dependency-injector`）管理為 Singleton，不使用手動 `__new__` 單例或工廠函數。
 
 ```python
 """
@@ -222,9 +273,11 @@ class XxxService:
     # --- 任務 Handler（ThreadPoolExecutor 內執行）---
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+        """薄 wrapper，由 TaskManager 呼叫。直接委派給 _execute。"""
         return self._execute(params, progress_callback)
 
     def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+        """實際業務邏輯。"""
         progress_callback(0.1, "task.progress.loading_image")
         # ... 業務邏輯 ...
 
@@ -241,13 +294,16 @@ class XxxService:
         }
 ```
 
+> **多任務型別的 Service**：若一個 Service 處理多種任務（如 `video.cut` + `video.transcode`），
+> 每種任務使用獨立的 handler/execute 對：`_handle_cut_task` + `_execute_cut`、
+> `_handle_transcode_task` + `_execute_transcode`。
+
 **DI Container 註冊**（`app/init/container.py`）：
 ```python
-from app.services.xxx import XxxService
-
+# ✓ 使用 _lazy() 延遲 import（參見 §3.2）
 class AppContainer(containers.DeclarativeContainer):
     xxx_service = providers.Singleton(
-        XxxService,
+        _lazy("app.services.xxx", "XxxService"),
         file_service=file_service,
         task_manager=task_manager,
     )
@@ -255,12 +311,12 @@ class AppContainer(containers.DeclarativeContainer):
 
 ### 4.2 規則
 
-- **DI Singleton**：由 AppContainer 管理生命週期，不使用手動 `__new__` 單例或工廠函數
+- **DI Singleton**：由 AppContainer 以 `_lazy()` 註冊管理生命週期，不使用手動 `__new__` 單例或工廠函數
 - **建構子注入**：依賴（FileService、TaskManager）透過 `__init__` 參數注入
 - **TASK_TYPE 常數**：格式為 `"domain.action"`（如 `"image.compress"`、`"audio.transcribe"`）
 - **submit 方法**：`async`，驗證 file_id 存在後提交給 TaskManager，回傳 `task_id`
-- **_handle_task**：同步方法，作為 TaskManager 的 handler callback，在 ThreadPoolExecutor 中執行
-- **_execute**：實際業務邏輯，接收 `params` dict 和 `progress_callback`
+- **_handle_task + _execute**：標準方法名。`_handle_task` 是 TaskManager 的 handler callback（同步，在 ThreadPoolExecutor 中執行），薄 wrapper 委派給 `_execute`
+- **多任務型別**：Service 有多種任務時，使用 `_handle_{variant}_task` + `_execute_{variant}`（如 `_handle_cut_task` + `_execute_cut`）
 - **progress_callback**：從 0.0 呼叫到 1.0，最終的結果由 TaskManager 自動 emit `stage="completed"`
 - **結果 dict**：必須包含 `output_file_id`，前端依此取得處理結果
 
@@ -285,12 +341,17 @@ output_dir = Path(custom_output_dir) if custom_output_dir else self._file_servic
 """
 功能說明 API 路由
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from dependency_injector.wiring import inject, Provide
 
 from app.init.container import AppContainer
-from app.services.xxx import XxxService
+
+if TYPE_CHECKING:
+    from app.services.xxx import XxxService
 
 router = APIRouter()
 
@@ -328,7 +389,7 @@ async def do_action(
 
 ### 4.2 規則
 
-- Request/Response 模型定義在 route 檔案內，不放到 `schemas/common.py`（除非多個 route 共用）
+- Request/Response 模型定義在 route 檔案內
 - `Field(...)` 表示必填，`Field(default=...)` 表示選填
 - 錯誤處理：`ValueError` → 404，其他 → 500
 - Route 內**不可**有業務邏輯，只做：驗證 → 呼叫 Service → 回傳
@@ -453,7 +514,107 @@ path = Path(settings.path.models) / "image"
 
 ---
 
-## 9. 錯誤處理規範
+## 9. LLM 推理參數化
+
+### 8.1 架構
+
+LLM 推理參數（temperature、top_k、top_p、max_tokens、prompt）不硬編碼在 service 中，統一由以下模組管理：
+
+```
+registry.py          → 每個模型 family 的 inference config（per-task 採樣參數 + prompt builder）
+utils/inference.py   → get_inference_config()、calc_max_tokens()、calc_batch_size()
+utils/prompts.py     → get_prompt_builder()（per-model prompt builder dispatch）
+```
+
+### 8.2 Registry inference config
+
+每個 GGUF model family 在 `registry.py` 定義 `inference` block（family level）和 n_ctx range（spec level）：
+
+```python
+"qwen3": {
+    "inference": {
+        "translate": {
+            "temperature": 0.1, "top_k": 40, "top_p": 0.9,
+            "prompt_builder": "qwen3", "thinking": False,
+            "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 4, "max_tokens_cap": 16384,
+        },
+        "summarize": { ... },
+    },
+    "specs": {
+        "8b": {
+            "n_ctx_min": 4096, "n_ctx_max": 32768, "n_ctx_default": 16384,
+            "vram_per_ctx_token": 0.04,
+            ...
+        },
+    },
+}
+```
+
+Remote providers 使用 `REMOTE_INFERENCE_DEFAULTS`（固定 temperature + max_tokens）。
+
+### 8.3 Service 呼叫流程
+
+```python
+from app.utils.inference import get_inference_config, calc_max_tokens, estimate_tokens
+from app.utils.prompts import get_prompt_builder
+
+config = get_inference_config(model_family, model_size, "translate")
+builder = get_prompt_builder("translate", config["prompt_builder"], thinking=config.get("thinking", False))
+result = builder(text, source_lang, target_lang, format, style, glossary)
+
+max_tokens = calc_max_tokens(config, config["n_ctx"], estimate_tokens(text))
+
+if result["mode"] == "chat":
+    output = runtime.chat(messages=result["messages"], max_tokens=max_tokens,
+                          temperature=config["temperature"], top_k=config["top_k"], top_p=config["top_p"])
+elif result["mode"] == "completion":
+    output = runtime.complete(prompt=result["prompt"], ...)
+```
+
+### 8.4 Prompt builder
+
+每個模型 family 有對應的 prompt builder，處理 chat template 差異：
+
+| Builder | 特徵 |
+|---------|------|
+| `default` | 標準 system + user role |
+| `qwen3` | 加 `/no_think` 後綴（thinking=False 時） |
+| `gemma` | 無 system role，合併到 user message |
+
+### 8.5 Thinking 控制
+
+- Registry 定義預設值（`"thinking": False`）
+- API 請求可覆蓋（`thinking` 參數）
+- `thinking=False`：Qwen3 builder 加 `/no_think`
+- `thinking=True`：使用 default builder（不加 `/no_think`）
+- `_strip_thinking()` 永遠套用在 `chat()` 和 `complete()` 輸出，確保 `<think>` 標籤不出現在結果中
+
+### 8.6 命名規範
+
+模型 family 參數統一命名 `model_family`（如 `"qwen3"`、`"gemma4"`），禁止使用 `model_type` 或 `model_id`（避免與 VRAM slot type、完整 model identifier 混淆）。複合參數使用前綴：`translate_model_family`、`summarize_model_family`。
+
+---
+
+## 10. API 路由結構
+
+### 9.1 路由分類
+
+| 前綴 | 用途 | 檔案位置 |
+|------|------|---------|
+| `/api/setup/` | 設定頁面（config、models、remote connections） | `routes/setup/` |
+| `/api/llm/` | LLM 共用查詢（translate languages/styles/status/test） | `routes/llm.py` |
+| `/api/video/` | 影片工具（subtitle、transcode、interpolate、enhance） | `routes/video/` |
+| `/api/audio/` | 音訊工具（transcribe、separate、lyrics、midi） | `routes/audio/` |
+| `/api/image/` | 圖片工具（upscale、ocr、remove-bg、filter） | `routes/image/` |
+| `/api/document/` | 文件工具（translate、ocr、pdf-convert、split） | `routes/document/` |
+| `/api/files/` | 檔案管理（upload、download） | `routes/files.py` |
+| `/api/tasks/` | 任務管理（active、history） | `routes/tasks/` |
+
+LLM 共用查詢（語言列表、翻譯風格、模型狀態）放在 `/api/llm/`，不重複掛在各 domain router 下。實際執行翻譯/OCR/摘要仍在各 domain service 的 submit endpoint。
+
+---
+
+## 11. 錯誤處理規範
 
 ### 8.1 Service 層
 
@@ -488,7 +649,7 @@ Engine 方法失敗時直接拋異常，由上層 Service/TaskManager 處理。�
 
 ---
 
-## 10. 命名規範
+## 12. 命名規範
 
 ### 9.1 檔案命名
 
@@ -522,7 +683,7 @@ def get_image_compress_service() -> ImageCompressService:
 
 ---
 
-## 11. 新增功能 Checklist
+## 13. 新增功能 Checklist
 
 新增一個處理功能時，按順序完成：
 
@@ -533,7 +694,7 @@ def get_image_compress_service() -> ImageCompressService:
 5. [ ] **Import**：外部套件直接 top-level import
 6. [ ] **日誌**：Service 初始化和任務提交/完成有 `logger.info`
 7. [ ] **路徑**：所有路徑透過 `get_settings().path` 取得
-8. [ ] **文件**：更新 `docs/ARCHITECTURE.md` 的相關段落
+8. [ ] **文件**：更新 `docs/ARCHITECTURE.md` 和本文件的相關段落
 
 ### 新增本地 AI 模型
 

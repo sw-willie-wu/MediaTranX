@@ -7,13 +7,18 @@ const { t, te } = useI18n()
 interface ModelItem {
   id: string
   family: string
+  family_label?: string
   variant: string
+  variant_label?: string
   label: string
   description?: string
   capabilities?: string[]
   downloaded: boolean
   size_mb: number
   vram_mb?: number
+  n_ctx_default?: number
+  n_ctx_min?: number
+  n_ctx_max?: number
 }
 
 interface FamilyGroup {
@@ -47,16 +52,7 @@ const groups = computed<FamilyGroup[]>(() => {
 
   return Array.from(familyMap.entries()).map(([family, items]) => {
     const first = items[0]
-    let familyLabel = first.label
-
-    // 從 label 中提取 family 名稱（去除 variant 部分）
-    if (familyLabel.includes(' - ')) {
-      familyLabel = familyLabel.split(' - ')[0]
-    } else {
-      familyLabel = familyLabel
-        .replace(/\s+(TINY|BASE|SMALL|MEDIUM|LARGE-V3|\d+\.?\d*B)\s+Q[0-9A-Z_]+$/i, '')
-        .replace(/\s+(TINY|BASE|SMALL|MEDIUM|LARGE-V3|\d+\.?\d*B)$/i, '')
-    }
+    const familyLabel = first.family_label || first.label
 
     return {
       family,
@@ -68,17 +64,9 @@ const groups = computed<FamilyGroup[]>(() => {
   })
 })
 
-/** 從完整 label 提取 variant 部分（去掉 family 前綴） */
-function variantLabel(item: ModelItem, group: FamilyGroup): string {
-  const label = item.label
-  if (label.includes(' - ')) return label.split(' - ').slice(1).join(' - ')
-  // GGUF/VLM: "TranslateGemma 4B Q4_K_M" → "4B Q4_K_M"
-  const prefix = group.familyLabel
-  if (label.startsWith(prefix)) {
-    const rest = label.slice(prefix.length).trim()
-    return rest || label
-  }
-  return label
+/** Get the variant display label from backend data. */
+function variantLabel(item: ModelItem): string {
+  return item.variant_label || item.variant || item.label
 }
 
 function formatSize(mb: number): string {
@@ -94,6 +82,12 @@ function tDesc(desc: string): string {
   }
   return te(desc) ? t(desc) : desc
 }
+
+/** Format context size as human-readable (e.g. 4096 -> "4K ctx") */
+function formatCtx(n: number): string {
+  if (n >= 1024) return `${(n / 1024).toFixed(0)}K ctx`
+  return `${n} ctx`
+}
 </script>
 
 <template>
@@ -108,45 +102,17 @@ function tDesc(desc: string): string {
         <span v-if="group.description" class="family-desc">{{ tDesc(group.description) }}</span>
       </div>
 
-      <!-- Single variant: action in header row -->
-      <template v-if="group.items.length === 1">
-        <div class="model-row">
-          <span class="row-label">{{ group.items[0].variant === 'default' ? group.familyLabel : variantLabel(group.items[0], group) }}</span>
-          <span class="row-size">{{ formatSize(group.items[0].size_mb) }}</span>
-          <span v-if="group.items[0].vram_mb" class="row-vram">{{ formatSize(group.items[0].vram_mb) }} VRAM</span>
-          <span v-else class="row-vram"></span>
-          <div class="row-action">
-            <template v-if="downloadingTaskId[group.items[0].id]">
-              <template v-if="(downloadProgress[group.items[0].id] ?? 0) === 0">
-                <span class="status-queued">{{ $t('tasks.active.pending') }}...</span>
-              </template>
-              <template v-else>
-                <div class="download-progress">
-                  <div class="progress-bar" :style="{ width: `${((downloadProgress[group.items[0].id] ?? 0) * 100).toFixed(0)}%` }"></div>
-                </div>
-                <span class="progress-label">{{ ((downloadProgress[group.items[0].id] ?? 0) * 100).toFixed(0) }}%</span>
-              </template>
-            </template>
-            <template v-else-if="group.items[0].downloaded">
-              <span class="status-installed"><i class="bi bi-check-circle-fill"></i> {{ $t('settings.ai.installed') }}</span>
-              <button class="remove-btn" :title="$t('settings.models.remove_model')" @click="emit('remove', group.items[0].id)"><i class="bi bi-trash3"></i></button>
-            </template>
-            <button v-else class="download-btn" @click="emit('download', group.items[0].id)"><i class="bi bi-download"></i> {{ $t('settings.models.install') }}</button>
-          </div>
-        </div>
-      </template>
-
-      <!-- Multiple variants: list rows -->
-      <template v-else>
-        <div
+      <!-- Variant rows -->
+      <div
           v-for="item in group.items"
           :key="item.id"
           class="model-row"
         >
-          <span class="row-label">{{ variantLabel(item, group) }}</span>
+          <span class="row-label">{{ variantLabel(item) }}</span>
           <span class="row-size">{{ formatSize(item.size_mb) }}</span>
           <span v-if="item.vram_mb" class="row-vram">{{ formatSize(item.vram_mb) }} VRAM</span>
           <span v-else class="row-vram"></span>
+          <span v-if="item.n_ctx_default" class="row-ctx">{{ formatCtx(item.n_ctx_default) }}</span>
           <div class="row-action">
             <template v-if="downloadingTaskId[item.id]">
               <template v-if="(downloadProgress[item.id] ?? 0) === 0">
@@ -166,7 +132,6 @@ function tDesc(desc: string): string {
             <button v-else class="download-btn" @click="emit('download', item.id)"><i class="bi bi-download"></i> {{ $t('settings.models.install') }}</button>
           </div>
         </div>
-      </template>
     </div>
   </div>
 </template>
@@ -263,6 +228,15 @@ function tDesc(desc: string): string {
 .row-vram {
   flex-shrink: 0;
   min-width: 80px;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.row-ctx {
+  flex-shrink: 0;
+  min-width: 48px;
   text-align: right;
   color: var(--text-muted);
   font-size: 0.72rem;

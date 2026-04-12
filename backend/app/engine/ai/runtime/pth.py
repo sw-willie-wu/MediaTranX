@@ -1,6 +1,6 @@
 """
-PTHRuntime - PyTorch 格式執行器
-負責影像處理模型的載入（如 Real-ESRGAN, SwinIR）
+PTHRuntime - PyTorch format executor.
+Handles image processing model loading (e.g. Real-ESRGAN, SwinIR).
 """
 import logging
 from pathlib import Path
@@ -16,20 +16,20 @@ logger = logging.getLogger(__name__)
 
 class PTHRuntime(BaseRuntime):
     """
-    PTH 執行器（基於 PyTorch / Spandrel）
-    
-    特性：
-    1. 單檔權重檔（.pth）
-    2. 支援 CUDA/CPU 自動切換
-    3. 預留 DirectML 支援介面
-    4. 可選 Spandrel 通用載入器
+    PTH executor (based on PyTorch / Spandrel).
+
+    Features:
+    1. Single weight file (.pth)
+    2. CUDA/CPU auto-switching
+    3. DirectML support interface reserved
+    4. Optional Spandrel universal loader
     """
-    
+
     def __init__(self, slot: str, use_spandrel: bool = True):
         """
         Args:
-            slot: 模型插槽
-            use_spandrel: 是否使用 Spandrel 通用架構載入器
+            slot: Model slot.
+            use_spandrel: Whether to use Spandrel universal architecture loader.
         """
         super().__init__(slot)
         self._use_spandrel = use_spandrel
@@ -42,19 +42,19 @@ class PTHRuntime(BaseRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None
     ) -> Any:
         """
-        載入 PTH 模型
-        
+        Load PTH model.
+
         Args:
-            model_path: .pth 檔案路徑
-            config: 配置字典（含 arch, device 等）
-        
+            model_path: .pth file path.
+            config: Config dict (contains arch, device, etc.).
+
         Returns:
-            PyTorch 模型實例
+            PyTorch model instance.
         """
         if on_progress:
             on_progress(0.2, "task.progress.init_pytorch")
         
-        # 設備選擇邏輯
+        # Device selection logic
         device = self._select_device(config.get("device"))
         self._device = device
         
@@ -70,7 +70,7 @@ class PTHRuntime(BaseRuntime):
         return model
     
     def _load_with_spandrel(self, model_path: Path, device: str, config: dict) -> Any:
-        """使用 Spandrel 通用載入器（自動識別架構）"""
+        """Load using Spandrel universal loader (automatic architecture detection)."""
         try:
             import spandrel
             model = spandrel.ModelLoader().load_from_file(str(model_path))
@@ -83,16 +83,16 @@ class PTHRuntime(BaseRuntime):
             return self._load_with_torch(model_path, device, config)
     
     def _load_with_torch(self, model_path: Path, device: str, config: dict) -> Any:
-        """使用原生 PyTorch 載入（需子類提供架構）"""
+        """Load using native PyTorch (subclass must provide architecture)."""
         state_dict = torch.load(str(model_path), map_location=device)
 
-        # 部分模型（如 Real-ESRGAN）weights 包在 params_ema / params 下
+        # Some models (e.g. Real-ESRGAN) wrap weights under params_ema / params
         if "params_ema" in state_dict:
             state_dict = state_dict["params_ema"]
         elif "params" in state_dict:
             state_dict = state_dict["params"]
 
-        # 子類需覆寫 _build_arch() 提供模型架構
+        # Subclass must override _build_arch() to provide model architecture
         if hasattr(self, '_build_arch'):
             model = self._build_arch(config)
             model.load_state_dict(state_dict, strict=True)
@@ -105,7 +105,7 @@ class PTHRuntime(BaseRuntime):
             )
     
     def _get_max_pixels(self) -> int:
-        """根據空閒 VRAM 動態決定不切 tile 的最大像素數"""
+        """Dynamically determine max pixels for non-tiled inference based on free VRAM."""
         try:
             if not torch.cuda.is_available():
                 return 256 * 256
@@ -120,7 +120,7 @@ class PTHRuntime(BaseRuntime):
             return 256 * 256
 
     def _get_tile_size(self) -> int:
-        """tile 分塊大小（用於實際切塊時的邊長）"""
+        """Tile chunk size (edge length used for actual chunking)."""
         max_px = self._get_max_pixels()
         return int(max_px ** 0.5)
 
@@ -133,7 +133,7 @@ class PTHRuntime(BaseRuntime):
         tile_pad: int = 32,
         on_progress: Optional[Callable[[float, str], None]] = None,
     ):
-        """分塊推理，避免大圖 OOM，支援進度回調"""
+        """Tiled inference to avoid OOM on large images, with progress callback support."""
         import math
 
         _, _, h, w = img_tensor.shape
@@ -142,7 +142,7 @@ class PTHRuntime(BaseRuntime):
         total = tiles_x * tiles_y
 
         output = None
-        actual_scale = scale  # 初始用請求的 scale，第一塊推理後以實際輸出修正
+        actual_scale = scale  # Initial: use requested scale; corrected after first tile output
 
         for iy in range(tiles_y):
             for ix in range(tiles_x):
@@ -157,7 +157,7 @@ class PTHRuntime(BaseRuntime):
                 with torch.no_grad():
                     tile_out = model(tile)
 
-                # 從第一塊的實際輸出偵測 scale（防止模型 scale 與請求不符）
+                # Detect actual scale from first tile output (guard against model/request scale mismatch)
                 if output is None:
                     actual_scale = tile_out.shape[3] // (x2p - x1p)
                     output = img_tensor.new_zeros(
@@ -185,10 +185,10 @@ class PTHRuntime(BaseRuntime):
         scale: int = 4,
         on_progress: Optional[Callable[[float, str], None]] = None,
     ):
-        """智能推理：大圖自動分塊，小圖整張處理"""
+        """Smart inference: auto-tile large images, process small images whole."""
         _, _, h, w = img_tensor.shape
 
-        # 部分模型（如 x2plus）用 pixel_unshuffle，要求 h/w 為 4 的倍數
+        # Some models (e.g. x2plus) use pixel_unshuffle, requiring h/w to be multiples of 4
         pad_h = (4 - h % 4) % 4
         pad_w = (4 - w % 4) % 4
         if pad_h or pad_w:
@@ -205,7 +205,7 @@ class PTHRuntime(BaseRuntime):
             with torch.no_grad():
                 result = model(img_padded)
 
-        # 裁掉 padding 還原原始尺寸
+        # Crop padding to restore original dimensions
         if pad_h or pad_w:
             out_scale = result.shape[2] // img_padded.shape[2]
             result = result[:, :, :h * out_scale, :w * out_scale]
@@ -214,41 +214,41 @@ class PTHRuntime(BaseRuntime):
 
     def _select_device(self, preferred_device: Optional[str] = None) -> str:
         """
-        選擇計算設備（預留 DirectML 擴展點）
-        
-        優先順序：
-        1. preferred_device（如果有效）
-        2. CUDA（如果可用）
-        3. DirectML（未來擴展）
-        4. CPU（回退）
+        Select compute device (DirectML extension point reserved).
+
+        Priority:
+        1. preferred_device (if valid)
+        2. CUDA (if available)
+        3. DirectML (future extension)
+        4. CPU (fallback)
         """
         if preferred_device:
             return preferred_device
         
-        # CUDA 檢測
+        # CUDA detection
         try:
             if torch.cuda.is_available():
                 return "cuda"
         except Exception:
             pass
         
-        # DirectML 檢測（預留）
+        # DirectML detection (reserved)
         # if has_directml():
-        #     return "dml"  # 需要 torch-directml 或 onnxruntime-directml
+        #     return "dml"  # requires torch-directml or onnxruntime-directml
         
         logger.info("No GPU acceleration available, using CPU")
         return "cpu"
     
     def _unload_model_impl(self) -> None:
         """
-        卸載 PTH 模型
-        
-        PyTorch 模型可以安全釋放，但需清空 CUDA cache
+        Unload PTH model.
+
+        PyTorch models can be safely released, but CUDA cache needs to be cleared.
         """
         if self._model is not None:
             logger.info("Unloading PTH model")
             
-            # 清空 CUDA cache
+            # Clear CUDA cache
             if self._device and "cuda" in self._device:
                 try:
                     torch.cuda.empty_cache()
@@ -258,11 +258,11 @@ class PTHRuntime(BaseRuntime):
     
     def _resolve_model_path(self, model_id: str, variant: Optional[str] = None):
         """
-        解析 PTH 格式的模型路徑
-        
-        PTH 格式特性：
-        - 單檔 .pth
-        - 可能有多個變體（如 x2plus, x4plus）
+        Resolve PTH format model path.
+
+        PTH format characteristics:
+        - Single .pth file
+        - May have multiple variants (e.g. x2plus, x4plus)
         """
         from app.engine.ai.registry import FORMAT_PTH, MODELS_REGISTRY
         
@@ -270,7 +270,7 @@ class PTHRuntime(BaseRuntime):
         if not family:
             raise ValueError(f"Unknown PTH model: {model_id}")
         
-        # 預設使用第一個變體
+        # Default to the first variant
         if not variant:
             variant = list(family["variants"].keys())[0]
         
@@ -278,10 +278,10 @@ class PTHRuntime(BaseRuntime):
         if not variant_spec:
             raise ValueError(f"Unknown variant '{variant}' for {model_id}")
         
-        # 透過 ModelManager 下載/驗證
+        # Download/validate via ModelManager
         model_path = self._manager.get_model_path(model_id, variant)
         if not model_path:
-            # PTH 格式可能是本地檔案（無 repo_id）
+            # PTH format may be a local file (no repo_id)
             from app.init.configs import SETTINGS
             local_path = SETTINGS.path.models / family["slot"] / variant_spec["filename"]
             if local_path.exists():

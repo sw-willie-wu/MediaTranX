@@ -1,6 +1,6 @@
 """
-音源分離服務
-使用 Demucs 將音訊分離為 6 軌（vocals, drums, bass, guitar, piano, other）
+Audio source separation service.
+Uses Demucs to separate audio into 6 stems (vocals, drums, bass, guitar, piano, other).
 """
 import logging
 from pathlib import Path
@@ -19,6 +19,7 @@ TASK_TYPE_AUDIO_SEPARATE = "audio.separate"
 
 
 class AudioSeparateService:
+    """Audio source separation using Demucs (vocals, drums, bass, guitar, piano, other)."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._demucs: DemucsWrapper = get_demucs()
@@ -69,25 +70,21 @@ class AudioSeparateService:
         output_format = params.get("output_format", "wav")
         custom_output_filename = params.get("output_filename")
 
-        # 決定輸出目錄
-        custom_output_dir = params.get("output_dir")
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
+        # Determine output directory
+        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         midi_mode = params.get("generate_midi", False)
         demucs_progress_scale = 0.5 if midi_mode else 0.9
 
         progress_callback(0.0, "task.progress.loading_model_generic")
 
-        # === GPU 排隊管線 ===
+        # === GPU queue pipeline ===
         from app.init.container import get_container
         manager = get_container().model_manager()
 
         with manager.gpu_session():
-            # 執行分離
+            # Execute separation
             separated, sample_rate = self._demucs.separate(
                 audio_path=str(file_info.file_path),
                 variant=model_name,
@@ -98,13 +95,13 @@ class AudioSeparateService:
         write_progress_base = 0.5 if midi_mode else 0.9
         progress_callback(write_progress_base, "task.progress.writing_file")
 
-        # 儲存各 stem 為獨立檔案
+        # Save each stem as an individual file
         output_files = []
         first_file_id = None
 
         for stem_name, tensor in separated.items():
             filename = f"{original_stem}.{stem_name}.{output_format}"
-            file_path = output_dir_path / filename
+            file_path = output_dir / filename
             audio_data = tensor.numpy().T
 
             if output_format == "mp3":
@@ -192,7 +189,7 @@ class AudioSeparateService:
             if midi_tracks:
                 progress_callback(0.9, "task.progress.merging_midi")
                 midi_filename = f"{original_stem}.mid"
-                midi_path = output_dir_path / midi_filename
+                midi_path = output_dir / midi_filename
                 merge_tracks_to_midi(midi_tracks, midi_path, tempo=120.0)
 
                 midi_file_id = str(uuid4())
@@ -205,7 +202,7 @@ class AudioSeparateService:
                 result["midi_filename"] = midi_filename
                 logger.info(f"Multi-track MIDI saved: {midi_path} ({len(midi_tracks)} tracks)")
             elif midi_errors:
-                result["midi_error"] = f"MIDI 轉換失敗: {'; '.join(midi_errors)}"
+                result["midi_error"] = f"MIDI conversion failed: {'; '.join(midi_errors)}"
                 logger.error(f"All MIDI conversions failed: {midi_errors}")
             else:
                 logger.warning("No MIDI tracks produced")

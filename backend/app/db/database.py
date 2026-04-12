@@ -1,8 +1,7 @@
 """
-SQLModel 資料庫連線管理
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-提供 SQLite 連線引擎和 session 工廠。
-所有 model 透過 SQLModel 定義，init_db() 自動建表。
+SQLModel database connection management.
+Provides SQLite connection engine and session factory.
+All models are defined via SQLModel; init_db() auto-creates tables.
 """
 import logging
 from pathlib import Path
@@ -22,7 +21,7 @@ def _get_db_path() -> Path:
 
 
 def get_engine():
-    """取得全域 SQLAlchemy Engine（lazy init）"""
+    """Get the global SQLAlchemy Engine (lazy init)."""
     global _engine
     if _engine is None:
         db_path = _get_db_path()
@@ -40,20 +39,20 @@ def get_engine():
 
 
 def get_session() -> Generator[Session, None, None]:
-    """取得 SQLModel Session（用於 with 語句或 FastAPI Depends）"""
+    """Get a SQLModel Session (for use with 'with' statement or FastAPI Depends)."""
     with Session(get_engine()) as session:
         yield session
 
 
 def init_db() -> None:
-    """建立所有 SQLModel 定義的表（CREATE IF NOT EXISTS）"""
-    # 確保所有 model 都被 import（觸發 SQLModel metadata 註冊）
+    """Create all SQLModel-defined tables (CREATE IF NOT EXISTS)."""
+    # Ensure all models are imported (triggers SQLModel metadata registration)
     import app.db.models.task_history  # noqa: F401
     import app.db.models.api_connection  # noqa: F401
 
     engine = get_engine()
 
-    # 啟用 WAL 模式
+    # Enable WAL mode
     from sqlalchemy import text
     with engine.connect() as conn:
         conn.execute(text("PRAGMA journal_mode=WAL"))
@@ -61,14 +60,14 @@ def init_db() -> None:
 
     SQLModel.metadata.create_all(engine)
 
-    # 簡易 migration：補齊舊 DB 缺少的欄位
+    # Simple migration: add missing columns in older DBs
     _run_migrations(engine)
 
     logger.info("Database tables initialized")
 
 
 def _run_migrations(engine):
-    """補齊舊版 DB 缺少的欄位（ALTER TABLE ADD COLUMN）"""
+    """Add missing columns in older DB versions (ALTER TABLE ADD COLUMN)."""
     from sqlalchemy import text, inspect as sa_inspect
     inspector = sa_inspect(engine)
 

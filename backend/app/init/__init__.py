@@ -5,7 +5,7 @@ Application initialization — single entry point for all startup tasks.
 from app.init.setup import inject_paths
 inject_paths()
 
-# 2. Settings (now pydantic is importable)
+# 2. Settings (pydantic is now importable)
 from app.init.configs import SETTINGS
 
 def bootstrap() -> None:

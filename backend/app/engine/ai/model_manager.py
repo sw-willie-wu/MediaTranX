@@ -1,10 +1,10 @@
 """
-模型與 VRAM 管理中心 (Three-Layer Architecture V6)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-負責：
-1. 模型註冊與下載協調
-2. VRAM 調度與插槽管理  
-3. 提供導航器 API 供 Runtime 使用
+Model and VRAM management center (Three-Layer Architecture V6).
+
+Responsibilities:
+1. Model registration and download coordination
+2. VRAM scheduling and slot management
+3. Provide navigator APIs for Runtime use
 """
 import logging
 import threading
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class ModelManager:
     """
-    模型管理器單例
+    Model manager singleton.
     """
     def __init__(self):
         self._lock = threading.RLock()
@@ -35,12 +35,12 @@ class ModelManager:
 
     @contextmanager
     def gpu_session(self):
-        """顯存鎖：確保影像處理與語言推理不會同時搶奪顯存"""
+        """VRAM lock: ensures image processing and language inference don't compete for VRAM simultaneously."""
         with self._gpu_lock:
             try:
                 yield
             finally:
-                # 卸載所有已載入的模型（含 llama-server subprocess）
+                # Unload all loaded models (including llama-server subprocesses)
                 for slot in list(self._loaded_slots):
                     unloader = self._unloaders.get(slot)
                     if unloader:
@@ -49,7 +49,7 @@ class ModelManager:
                         except Exception as e:
                             logger.warning(f"gpu_session cleanup: failed to unload {slot}: {e}")
                 self._loaded_slots.clear()
-                # 強制釋放 GPU 記憶體
+                # Force release GPU memory
                 import gc
                 gc.collect()
                 try:
@@ -60,11 +60,11 @@ class ModelManager:
                     pass
 
     def register_unloader(self, slot: str, callback: Callable[[], None]):
-        """註冊模型卸載函數"""
+        """Register a model unload callback."""
         self._unloaders[slot] = callback
 
     def acquire(self, slot: str, required_vram_mb: int = 0) -> None:
-        """申請加載 slot。驅逐其他已加載 slot 以釋放 VRAM。"""
+        """Request loading a slot. Evicts other loaded slots to free VRAM."""
         with self._lock:
             if slot in self._loaded_slots:
                 return
@@ -90,17 +90,17 @@ class ModelManager:
             logger.info(f"Acquired slot: {slot} (required VRAM: {required_vram_mb}MB)")
 
     def release(self, slot: str) -> None:
-        """標記 slot 為已卸載"""
+        """Mark a slot as unloaded."""
         with self._lock:
             self._loaded_slots.discard(slot)
 
     # ═══════════════════════════════════════════════════════
-    # 導航器 API（Navigator APIs）
+    # Navigator APIs
     # ═══════════════════════════════════════════════════════
     
     def get_model_format(self, model_id: str) -> Optional[str]:
         """
-        查詢模型所屬格式
+        Query the format a model belongs to.
 
         Returns:
             FORMAT_PKG / FORMAT_GGUF / FORMAT_PTH / None
@@ -112,10 +112,10 @@ class ModelManager:
     
     def get_model_config(self, model_id: str, variant: Optional[str] = None) -> Optional[Dict]:
         """
-        獲取模型完整配置
-        
+        Get full model configuration.
+
         Returns:
-            配置字典（含 repo_id, vram_mb, layers 等）
+            Config dict (contains repo_id, vram_mb, layers, etc.)
         """
         fmt = self.get_model_format(model_id)
         if not fmt:
@@ -145,11 +145,11 @@ class ModelManager:
             if not variant_spec:
                 return None
             
-            # 合併 spec 與 variant_spec
+            # Merge spec with variant_spec
             return {
                 **variant_spec,
                 "layers": spec["layers"],
-                "n_ctx": spec["n_ctx"],
+                "n_ctx": spec.get("n_ctx_default", spec.get("n_ctx", 4096)),
                 "vram_overhead_mb": spec["vram_overhead_mb"],
             }
         
@@ -161,20 +161,20 @@ class ModelManager:
     
     def get_vram_requirement(self, model_id: str, variant: Optional[str] = None) -> int:
         """
-        獲取模型 VRAM 需求（MB）
-        
+        Get model VRAM requirement (MB).
+
         Returns:
-            VRAM 需求（MB），失敗返回 0
+            VRAM requirement in MB, returns 0 on failure.
         """
         config = self.get_model_config(model_id, variant)
         if not config:
             return 0
         
-        # PKG/PTH 格式直接有 vram_mb
+        # PKG/PTH formats have vram_mb directly
         if "vram_mb" in config:
             return config["vram_mb"]
         
-        # GGUF 格式：size_mb + mmproj_size_mb + vram_overhead_mb
+        # GGUF format: size_mb + mmproj_size_mb + vram_overhead_mb
         if "size_mb" in config and "vram_overhead_mb" in config:
             return config["size_mb"] + config.get("mmproj_size_mb", 0) + config["vram_overhead_mb"]
 
@@ -182,14 +182,14 @@ class ModelManager:
     
     def get_model_path(self, model_id: str, variant: Optional[str] = None) -> Optional[Path]:
         """
-        取得模型本地路徑（適配新的格式優先註冊表）
-        
+        Get the local path of a model (adapted for format-first registry).
+
         Args:
-            model_id: 模型家族 ID（如 "whisper", "translategemma", "realesrgan"）
-            variant: 變體（如 "medium", "4b:Q4_K_M", "x4plus"）
-        
+            model_id: Model family ID (e.g. "whisper", "qwen3", "realesrgan").
+            variant: Variant (e.g. "medium", "4b:Q4_K_M", "x4plus").
+
         Returns:
-            模型路徑（目錄或檔案），不存在返回 None
+            Model path (directory or file), None if not found.
         """
         fmt = self.get_model_format(model_id)
         if not fmt:
@@ -201,14 +201,14 @@ class ModelManager:
         models_dir = SETTINGS.path.models
         base_dir = models_dir / slot
 
-        # PKG 格式（目錄型，如 Whisper）
+        # PKG format (directory-based, e.g. Whisper)
         if fmt == FORMAT_PKG:
             target = base_dir / variant if variant else base_dir
-            # 檢查關鍵檔案判斷完整性
+            # Check key file to verify completeness
             marker = target / "model.bin"
             return target if marker.exists() else None
 
-        # GGUF 格式（單檔型，存放於 models/{model_id}/）
+        # GGUF format (single-file, stored in models/{model_id}/)
         elif fmt == FORMAT_GGUF:
             config = self.get_model_config(model_id, variant)
             if not config or "filename" not in config:
@@ -216,10 +216,10 @@ class ModelManager:
             target = (models_dir / model_id) / config["filename"]
             return target if target.exists() else None
 
-        # PTH 格式（單檔型）
+        # PTH format (single-file)
         elif fmt == FORMAT_PTH:
             if not variant:
-                # 默認使用第一個變體
+                # Default to the first variant
                 variant = list(family["variants"].keys())[0]
             variant_spec = family["variants"].get(variant)
             if not variant_spec or "filename" not in variant_spec:
@@ -237,15 +237,15 @@ class ModelManager:
         on_progress: Optional[Callable[[float, str], None]] = None
     ) -> Path:
         """
-        統一的下載邏輯（適配新的格式優先註冊表）
-        
+        Unified download logic (adapted for format-first registry).
+
         Args:
-            model_id: 模型家族 ID
-            variant: 變體
-            on_progress: 進度回調
-            
+            model_id: Model family ID.
+            variant: Variant.
+            on_progress: Progress callback.
+
         Returns:
-            下載後的路徑
+            Downloaded path.
         """
         
         fmt = self.get_model_format(model_id)
@@ -261,7 +261,7 @@ class ModelManager:
         if on_progress:
             on_progress(0.1, f"task.progress.download_start|{model_id}")
         
-        # PKG 格式（目錄型快照，如 Whisper）
+        # PKG format (directory snapshot, e.g. Whisper)
         if fmt == FORMAT_PKG:
             config = self.get_model_config(model_id, variant)
             if not config or "repo_id" not in config:
@@ -275,7 +275,7 @@ class ModelManager:
             )
             return Path(path)
         
-        # GGUF 格式（單檔或雙檔：含 mmproj 的視覺模型）
+        # GGUF format (single or dual file: vision models with mmproj)
         elif fmt == FORMAT_GGUF:
             config = self.get_model_config(model_id, variant)
             if not config or "repo_id" not in config or "filename" not in config:
@@ -313,7 +313,7 @@ class ModelManager:
                 on_progress(1.0, "task.progress.download_complete")
             return Path(path)
 
-        # PTH 格式（單檔）
+        # PTH format (single file)
         else:
             config = self.get_model_config(model_id, variant)
             if not config or "repo_id" not in config or "filename" not in config:
@@ -333,7 +333,7 @@ class ModelManager:
         local_dir: str,
         on_progress: Optional[Callable[[float, str], None]] = None
     ) -> str:
-        """異步下載 HuggingFace snapshot"""
+        """Async download of a HuggingFace snapshot."""
         import asyncio
         from huggingface_hub import snapshot_download as _snapshot_download
         
@@ -354,7 +354,7 @@ class ModelManager:
         local_dir: str,
         on_progress: Optional[Callable[[float, str], None]] = None
     ) -> str:
-        """異步下載 HuggingFace 單檔"""
+        """Async download of a single HuggingFace file."""
         import asyncio
         from huggingface_hub import hf_hub_download as _hf_hub_download
         
@@ -373,13 +373,13 @@ class ModelManager:
         return path
 
     def is_llama_ready(self) -> bool:
-        """檢查 llama-server 二進位是否存在"""
+        """Check whether the llama-server binary exists."""
         import sys
         exe_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
         return (SETTINGS.path.llama / exe_name).exists()
 
     def unload_all(self):
-        """強制清空所有已註冊的模型顯存"""
+        """Force unload all registered models and free VRAM."""
         with self._lock:
             for slot, unloader in self._unloaders.items():
                 try:

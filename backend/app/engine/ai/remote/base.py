@@ -1,7 +1,6 @@
 """
-Remote Provider 抽象基底
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-所有外部 API provider（Ollama、OpenAI、Gemini）的共用介面。
+Remote Provider abstract base.
+Shared interface for all external API providers (Ollama, OpenAI, Gemini).
 """
 from __future__ import annotations
 
@@ -15,13 +14,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RemoteModel:
-    """遠端模型資訊"""
-    id: str              # 模型 ID（例如 "llama3.2:3b"）
-    name: str            # 顯示名稱
-    size: Optional[int] = None  # 模型大小（bytes）
-    family: Optional[str] = None  # 模型家族
-    parameter_size: Optional[str] = None  # 參數量（例如 "3B"）
-    quantization: Optional[str] = None  # 量化等級
+    """Remote model information."""
+    id: str              # Model ID (e.g. "llama3.2:3b")
+    name: str            # Display name
+    size: Optional[int] = None  # Model size (bytes)
+    family: Optional[str] = None  # Model family
+    parameter_size: Optional[str] = None  # Parameter count (e.g. "3B")
+    quantization: Optional[str] = None  # Quantization level
     capabilities: list[str] = None  # ["text", "vision", "embedding"]
 
     def __post_init__(self):
@@ -31,12 +30,12 @@ class RemoteModel:
 
 class RemoteProvider(ABC):
     """
-    Remote API Provider 抽象介面
+    Remote API Provider abstract interface.
 
-    子類需實作：
-    - connect(): 驗證連線
-    - list_models(): 列舉可用模型
-    - chat(): 文字對話
+    Subclasses must implement:
+    - connect(): Verify connection
+    - list_models(): List available models
+    - chat(): Text conversation
     """
 
     def __init__(self, endpoint: str, api_key: Optional[str] = None):
@@ -46,20 +45,20 @@ class RemoteProvider(ABC):
     @abstractmethod
     def connect(self) -> bool:
         """
-        驗證連線是否正常
+        Verify connection is working.
 
         Returns:
-            True 如果連線成功
+            True if connection succeeded.
         """
         ...
 
     @abstractmethod
     def list_models(self) -> list[RemoteModel]:
         """
-        列舉所有可用模型
+        List all available models.
 
         Returns:
-            RemoteModel 列表
+            List of RemoteModel.
         """
         ...
 
@@ -72,21 +71,21 @@ class RemoteProvider(ABC):
         temperature: float = 0.1,
     ) -> str:
         """
-        文字對話
+        Text conversation.
 
         Args:
-            model: 模型 ID
-            messages: [{"role": "user", "content": "..."}]
-            max_tokens: 最大回應 token 數
-            temperature: 溫度
+            model: Model ID.
+            messages: [{"role": "user", "content": "..."}].
+            max_tokens: Maximum response token count.
+            temperature: Temperature.
 
         Returns:
-            模型回應文字
+            Model response text.
         """
         ...
 
     def is_available(self) -> bool:
-        """檢查 provider 是否可用（預設呼叫 connect）"""
+        """Check if provider is available (defaults to calling connect)."""
         try:
             return self.connect()
         except Exception:

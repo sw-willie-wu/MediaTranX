@@ -1,36 +1,36 @@
 """
-AI 模型註冊表 (Three-Layer Architecture V2)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-採用「格式優先」樹狀結構：FORMAT -> FAMILY -> SPECS
-這是系統的單一數據來源 (Single Source of Truth)
+AI model registry (Three-Layer Architecture V2).
+
+Uses a "format-first" tree structure: FORMAT -> FAMILY -> SPECS.
+This is the Single Source of Truth for the system.
 """
 
 # ═══════════════════════════════════════════════════════════
-# 格式常數 (Format Constants)
+# Format Constants
 # ═══════════════════════════════════════════════════════════
-FORMAT_PKG = "PKG"     # 套件自管模型 (Whisper, Demucs)
-FORMAT_GGUF = "GGUF"   # llama-cpp-python 單檔 (LLM)
-FORMAT_PTH = "PTH"     # PyTorch 權重檔 (CV)
-FORMAT_ONNX = "ONNX"   # ONNX Runtime (預留 DirectML 擴展)
+FORMAT_PKG = "PKG"     # Package-managed models (Whisper, Demucs)
+FORMAT_GGUF = "GGUF"   # llama-cpp-python single-file (LLM)
+FORMAT_PTH = "PTH"     # PyTorch weight files (CV)
+FORMAT_ONNX = "ONNX"   # ONNX Runtime (reserved for DirectML extension)
 
 # ═══════════════════════════════════════════════════════════
-# 插槽常數 (Slot Constants)
+# Slot Constants
 # ═══════════════════════════════════════════════════════════
 SLOT_WHISPER = "whisper"
-SLOT_LLM = "llm"      # LLM 模型共用（一次只載入一個）
-SLOT_PTH = "pth"      # PTH 模型共用（一次只載入一個）
-SLOT_DEMUCS = "demucs"  # 音源分離（一次只載入一個）
-SLOT_BASIC_PITCH = "basic_pitch"  # 音訊轉 MIDI（basic-pitch）
+SLOT_LLM = "llm"      # Shared LLM slot (only one loaded at a time)
+SLOT_PTH = "pth"      # Shared PTH slot (only one loaded at a time)
+SLOT_DEMUCS = "demucs"  # Audio source separation (only one loaded at a time)
+SLOT_BASIC_PITCH = "basic_pitch"  # Audio-to-MIDI (basic-pitch)
 SLOT_RIFE = "rife"
-SLOT_SEGMENT = "segment"  # 物件分割（MobileSAM）
+SLOT_SEGMENT = "segment"  # Object segmentation (MobileSAM)
 
 # ═══════════════════════════════════════════════════════════
-# 格式優先註冊表 (Format-First Registry)
+# Format-First Registry
 # ═══════════════════════════════════════════════════════════
 
 MODELS_REGISTRY = {
     # ───────────────────────────────────────────────────────
-    # PKG 格式：套件自管模型（Whisper、Demucs）
+    # PKG format: Package-managed models (Whisper, Demucs)
     # ───────────────────────────────────────────────────────
     FORMAT_PKG: {
         "whisper": {
@@ -76,7 +76,7 @@ MODELS_REGISTRY = {
                 },
             },
         },
-        # ▸ Demucs（音源分離）
+        # ▸ Demucs (audio source separation)
         "demucs": {
             "slot": SLOT_DEMUCS,
             "label": "HTDemucs",
@@ -93,7 +93,7 @@ MODELS_REGISTRY = {
                 },
             },
         },
-        # ▸ Basic Pitch（音訊轉 MIDI）
+        # ▸ Basic Pitch (audio-to-MIDI)
         "basic_pitch": {
             "slot": SLOT_BASIC_PITCH,
             "label": "Basic Pitch",
@@ -101,14 +101,14 @@ MODELS_REGISTRY = {
             "description": "models.basic_pitch",
             "variants": {
                 "default": {
-                    "label": "default",
+                    "label": "ICASSP 2022",
                     "model_name": "basic_pitch",
                     "size_mb": 10,
                     "vram_mb": 0,
                 },
             },
         },
-        # ▸ RIFE（影片補幀）
+        # ▸ RIFE (video frame interpolation)
         "rife": {
             "slot": SLOT_RIFE,
             "label": "RIFE",
@@ -128,87 +128,30 @@ MODELS_REGISTRY = {
     },
 
     # ───────────────────────────────────────────────────────
-    # GGUF 格式：llama-server 模型（文字 + 視覺語言模型）
+    # GGUF format: llama-server models (text + vision-language models)
     # ───────────────────────────────────────────────────────
     FORMAT_GGUF: {
-        "translategemma": {
-            "slot": SLOT_LLM,
-            "capabilities": ["text"],
-            "description": "TranslateGemma 翻譯模型",
-            "specs": {
-                "4b": {
-                    "layers": 26,
-                    "n_ctx": 8192,
-                    "vram_overhead_mb": 400,
-                    "variants": {
-                        "Q4_K_M": {
-                            "repo_id": "mradermacher/translategemma-4b-it-GGUF",
-                            "filename": "translategemma-4b-it.Q4_K_M.gguf",
-                            "size_mb": 2500,
-                        },
-                    },
-                },
-                "12b": {
-                    "layers": 40,
-                    "n_ctx": 8192,
-                    "vram_overhead_mb": 800,
-                    "variants": {
-                        "Q4_K_M": {
-                            "repo_id": "mradermacher/translategemma-12b-it-GGUF",
-                            "filename": "translategemma-12b-it.Q4_K_M.gguf",
-                            "size_mb": 7300,
-                        },
-                        # --- 精簡：只保留 Q4_K_M，低量化品質差異大但 VRAM 省不多 ---
-                        # "Q4_K_S": {
-                        #     "repo_id": "mradermacher/translategemma-12b-it-GGUF",
-                        #     "filename": "translategemma-12b-it.Q4_K_S.gguf",
-                        #     "size_mb": 6940,
-                        # },
-                        # "Q3_K_L": {
-                        #     "repo_id": "mradermacher/translategemma-12b-it-GGUF",
-                        #     "filename": "translategemma-12b-it.Q3_K_L.gguf",
-                        #     "size_mb": 6480,
-                        # },
-                        # "Q3_K_M": {
-                        #     "repo_id": "mradermacher/translategemma-12b-it-GGUF",
-                        #     "filename": "translategemma-12b-it.Q3_K_M.gguf",
-                        #     "size_mb": 6010,
-                        # },
-                        # "Q3_K_S": {
-                        #     "repo_id": "mradermacher/translategemma-12b-it-GGUF",
-                        #     "filename": "translategemma-12b-it.Q3_K_S.gguf",
-                        #     "size_mb": 5460,
-                        # },
-                    },
-                },
-                "27b": {
-                    "layers": 64,
-                    "n_ctx": 2048,
-                    "vram_overhead_mb": 1200,
-                    "variants": {
-                        "Q4_K_M": {
-                            "repo_id": "bullerwins/translategemma-27b-it-GGUF",
-                            "filename": "translategemma-27b-it-Q4_K_M.gguf",
-                            "size_mb": 16500,
-                        },
-                    },
-                },
-            },
-            "default_variant": {
-                "4b": "Q4_K_M",
-                "12b": "Q4_K_M",
-                "27b": "Q4_K_M",
-            },
-        },
-        
         "qwen3": {
             "slot": SLOT_LLM,
+            "label": "Qwen3",
             "capabilities": ["text"],
-            "description": "Qwen3 翻譯模型",
+            "description": "Qwen3 translation model",
+            "inference": {
+                "translate": {
+                    "temperature": 0.1, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "qwen3", "thinking": False,
+                    "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 4, "max_tokens_cap": 16384,
+                },
+                "summarize": {
+                    "temperature": 0.3, "top_k": 50, "top_p": 0.95,
+                    "prompt_builder": "qwen3", "thinking": False,
+                    "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 0.5, "max_tokens_cap": 4096,
+                },
+            },
             "specs": {
                 "1.7b": {
                     "layers": 28,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 2048, "n_ctx_max": 32768, "n_ctx_default": 4096, "vram_per_ctx_token": 0.02, "max_srt_batch": 15,
                     "vram_overhead_mb": 300,
                     "variants": {
                         "Q8_0": {
@@ -220,7 +163,7 @@ MODELS_REGISTRY = {
                 },
                 "4b": {
                     "layers": 36,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 4096, "n_ctx_max": 32768, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03, "max_srt_batch": 15,
                     "vram_overhead_mb": 400,
                     "variants": {
                         "Q4_K_M": {
@@ -232,7 +175,7 @@ MODELS_REGISTRY = {
                 },
                 "8b": {
                     "layers": 36,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 4096, "n_ctx_max": 32768, "n_ctx_default": 16384, "vram_per_ctx_token": 0.04,
                     "vram_overhead_mb": 800,
                     "variants": {
                         "Q4_K_M": {
@@ -244,7 +187,7 @@ MODELS_REGISTRY = {
                 },
                 "14b": {
                     "layers": 40,
-                    "n_ctx": 2048,
+                    "n_ctx_min": 4096, "n_ctx_max": 32768, "n_ctx_default": 16384, "vram_per_ctx_token": 0.05,
                     "vram_overhead_mb": 1000,
                     "variants": {
                         "Q4_K_M": {
@@ -252,7 +195,7 @@ MODELS_REGISTRY = {
                             "filename": "Qwen3-14B-Q4_K_M.gguf",
                             "size_mb": 9000,
                         },
-                        # --- 精簡：只保留 Q4_K_M，低量化品質差異大但 VRAM 省不多 ---
+                        # --- Simplified: keep only Q4_K_M; lower quants save little VRAM but degrade quality ---
                         # "Q4_K_S": {
                         #     "repo_id": "unsloth/Qwen3-14B-GGUF",
                         #     "filename": "Qwen3-14B-Q4_K_S.gguf",
@@ -282,12 +225,20 @@ MODELS_REGISTRY = {
         # ▸ Qwen3-VL
         "qwen3vl": {
             "slot": SLOT_LLM,
-            "capabilities": ["text", "vision"],
-            "description": "Qwen3-VL 視覺語言模型（OCR）",
+            "label": "Qwen3-VL",
+            "capabilities": ["vision"],
+            "description": "Qwen3-VL vision-language model (OCR)",
+            "inference": {
+                "ocr": {
+                    "temperature": 0.0, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "default",
+                    "max_tokens_strategy": "context_ratio", "max_tokens_ratio": 0.5,
+                },
+            },
             "specs": {
                 "2b": {
                     "layers": 28,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 2048, "n_ctx_max": 32768, "n_ctx_default": 4096, "vram_per_ctx_token": 0.02,
                     "vram_overhead_mb": 500,
                     "variants": {
                         "Q4_K_M": {
@@ -298,7 +249,7 @@ MODELS_REGISTRY = {
                             "size_mb": 1110,
                             "mmproj_size_mb": 445,
                         },
-                        # --- 精簡：小模型 Q8_0 體積大但品質提升有限 ---
+                        # --- Simplified: small model Q8_0 is large with limited quality improvement ---
                         # "Q8_0": {
                         #     "repo_id": "Qwen/Qwen3-VL-2B-Instruct-GGUF",
                         #     "filename": "Qwen3VL-2B-Instruct-Q8_0.gguf",
@@ -311,7 +262,7 @@ MODELS_REGISTRY = {
                 },
                 "4b": {
                     "layers": 36,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 4096, "n_ctx_max": 32768, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03,
                     "vram_overhead_mb": 600,
                     "variants": {
                         "Q4_K_M": {
@@ -322,7 +273,7 @@ MODELS_REGISTRY = {
                             "size_mb": 2500,
                             "mmproj_size_mb": 454,
                         },
-                        # --- 精簡：小模型 Q8_0 體積大但品質提升有限 ---
+                        # --- Simplified: small model Q8_0 is large with limited quality improvement ---
                         # "Q8_0": {
                         #     "repo_id": "Qwen/Qwen3-VL-4B-Instruct-GGUF",
                         #     "filename": "Qwen3VL-4B-Instruct-Q8_0.gguf",
@@ -335,7 +286,7 @@ MODELS_REGISTRY = {
                 },
                 "8b": {
                     "layers": 36,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 4096, "n_ctx_max": 32768, "n_ctx_default": 16384, "vram_per_ctx_token": 0.04,
                     "vram_overhead_mb": 800,
                     "variants": {
                         "Q4_K_M": {
@@ -359,12 +310,30 @@ MODELS_REGISTRY = {
         # ▸ InternVL2.5
         "internvl2.5": {
             "slot": SLOT_LLM,
+            "label": "InternVL2.5",
             "capabilities": ["text", "vision"],
-            "description": "InternVL2.5 視覺語言模型（OCR）",
+            "description": "InternVL2.5 vision-language model (OCR)",
+            "inference": {
+                "translate": {
+                    "temperature": 0.1, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "default",
+                    "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 4, "max_tokens_cap": 16384,
+                },
+                "summarize": {
+                    "temperature": 0.3, "top_k": 50, "top_p": 0.95,
+                    "prompt_builder": "default",
+                    "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 0.5, "max_tokens_cap": 4096,
+                },
+                "ocr": {
+                    "temperature": 0.0, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "default",
+                    "max_tokens_strategy": "context_ratio", "max_tokens_ratio": 0.5,
+                },
+            },
             "specs": {
                 "1b": {
                     "layers": 24,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 2048, "n_ctx_max": 8192, "n_ctx_default": 4096, "vram_per_ctx_token": 0.02, "max_srt_batch": 15,
                     "vram_overhead_mb": 400,
                     "variants": {
                         "Q8_0": {
@@ -379,7 +348,7 @@ MODELS_REGISTRY = {
                 },
                 "4b": {
                     "layers": 36,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 4096, "n_ctx_max": 8192, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03, "max_srt_batch": 15,
                     "vram_overhead_mb": 600,
                     "variants": {
                         "Q4_K_M": {
@@ -390,7 +359,7 @@ MODELS_REGISTRY = {
                             "size_mb": 2100,
                             "mmproj_size_mb": 341,
                         },
-                        # --- 精簡：小模型 Q8_0 體積大但品質提升有限 ---
+                        # --- Simplified: small model Q8_0 is large with limited quality improvement ---
                         # "Q8_0": {
                         #     "repo_id": "ggml-org/InternVL2_5-4B-GGUF",
                         #     "filename": "InternVL2_5-4B-Q8_0.gguf",
@@ -411,19 +380,33 @@ MODELS_REGISTRY = {
         # ▸ Gemma 3
         "gemma3": {
             "slot": SLOT_LLM,
-            "capabilities": ["text", "vision"],
-            "description": "Gemma 3 視覺語言模型（OCR）",
+            "label": "Gemma3",
+            "capabilities": ["text"],
+            "description": "Gemma 3 text model",
+            "inference": {
+                "translate": {
+                    "temperature": 0.1, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "gemma",
+                    "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 4, "max_tokens_cap": 16384,
+                },
+                "summarize": {
+                    "temperature": 0.3, "top_k": 50, "top_p": 0.95,
+                    "prompt_builder": "gemma",
+                    "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 0.5, "max_tokens_cap": 4096,
+                },
+            },
             "specs": {
                 "4b": {
                     "layers": 34,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 2048, "n_ctx_max": 32768, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03, "max_srt_batch": 15,
                     "vram_overhead_mb": 600,
                     "variants": {
                         "Q4_K_M": {
                             "repo_id": "ggml-org/gemma-3-4b-it-GGUF",
                             "filename": "gemma-3-4b-it-Q4_K_M.gguf",
                             "mmproj_repo_id": "ggml-org/gemma-3-4b-it-GGUF",
-                            "mmproj_filename": "mmproj-model-f16.gguf",
+                            "mmproj_filename": "mmproj-gemma3-4b-f16.gguf",
+                            "mmproj_remote_filename": "mmproj-model-f16.gguf",
                             "size_mb": 2490,
                             "mmproj_size_mb": 851,
                         },
@@ -431,14 +414,15 @@ MODELS_REGISTRY = {
                 },
                 "12b": {
                     "layers": 46,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 4096, "n_ctx_max": 32768, "n_ctx_default": 16384, "vram_per_ctx_token": 0.05,
                     "vram_overhead_mb": 800,
                     "variants": {
                         "Q4_K_M": {
                             "repo_id": "ggml-org/gemma-3-12b-it-GGUF",
                             "filename": "gemma-3-12b-it-Q4_K_M.gguf",
                             "mmproj_repo_id": "ggml-org/gemma-3-12b-it-GGUF",
-                            "mmproj_filename": "mmproj-model-f16.gguf",
+                            "mmproj_filename": "mmproj-gemma3-12b-f16.gguf",
+                            "mmproj_remote_filename": "mmproj-model-f16.gguf",
                             "size_mb": 7300,
                             "mmproj_size_mb": 854,
                         },
@@ -451,15 +435,110 @@ MODELS_REGISTRY = {
             },
         },
 
+        # ▸ Gemma 4 (Expert MoE architecture: E2B, E4B, 26B-A4B)
+        "gemma4": {
+            "slot": SLOT_LLM,
+            "label": "Gemma4",
+            "capabilities": ["text", "vision"],
+            "description": "Gemma 4 multimodal model",
+            "inference": {
+                "translate": {
+                    "temperature": 0.1, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "gemma",
+                    "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 4, "max_tokens_cap": 16384,
+                },
+                "summarize": {
+                    "temperature": 0.3, "top_k": 50, "top_p": 0.95,
+                    "prompt_builder": "gemma",
+                    "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 0.5, "max_tokens_cap": 4096,
+                },
+                "ocr": {
+                    "temperature": 0.0, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "gemma",
+                    "max_tokens_strategy": "context_ratio", "max_tokens_ratio": 0.5,
+                },
+            },
+            "specs": {
+                "e2b": {
+                    "layers": 26,
+                    "n_ctx_min": 2048, "n_ctx_max": 131072, "n_ctx_default": 8192, "vram_per_ctx_token": 0.02, "max_srt_batch": 15,
+                    "vram_overhead_mb": 500,
+                    "variants": {
+                        "Q8_0": {
+                            "repo_id": "ggml-org/gemma-4-E2B-it-GGUF",
+                            "filename": "gemma-4-e2b-it-Q8_0.gguf",
+                            "mmproj_repo_id": "ggml-org/gemma-4-E2B-it-GGUF",
+                            "mmproj_filename": "mmproj-gemma-4-e2b-it-bf16.gguf",
+                            "size_mb": 5090,
+                            "mmproj_size_mb": 987,
+                        },
+                    },
+                },
+                "e4b": {
+                    "layers": 34,
+                    "n_ctx_min": 4096, "n_ctx_max": 131072, "n_ctx_default": 16384, "vram_per_ctx_token": 0.03, "max_srt_batch": 15,
+                    "vram_overhead_mb": 600,
+                    "variants": {
+                        "Q4_K_M": {
+                            "repo_id": "ggml-org/gemma-4-E4B-it-GGUF",
+                            "filename": "gemma-4-e4b-it-Q4_K_M.gguf",
+                            "mmproj_repo_id": "ggml-org/gemma-4-E4B-it-GGUF",
+                            "mmproj_filename": "mmproj-gemma-4-e4b-it-bf16.gguf",
+                            "size_mb": 5470,
+                            "mmproj_size_mb": 992,
+                        },
+                    },
+                },
+                "26b": {
+                    "layers": 46,
+                    "n_ctx_min": 8192, "n_ctx_max": 131072, "n_ctx_default": 32768, "vram_per_ctx_token": 0.06,
+                    "vram_overhead_mb": 1200,
+                    "variants": {
+                        "Q4_K_M": {
+                            "repo_id": "ggml-org/gemma-4-26B-A4B-it-GGUF",
+                            "filename": "gemma-4-26B-A4B-it-Q4_K_M.gguf",
+                            "mmproj_repo_id": "ggml-org/gemma-4-26B-A4B-it-GGUF",
+                            "mmproj_filename": "mmproj-gemma-4-26B-A4B-it-f16.gguf",
+                            "size_mb": 17203,
+                            "mmproj_size_mb": 1219,
+                        },
+                    },
+                },
+            },
+            "default_variant": {
+                "e2b": "Q8_0",
+                "e4b": "Q4_K_M",
+                "26b": "Q4_K_M",
+            },
+        },
+
         # ▸ Qwen3.5
         "qwen3.5": {
             "slot": SLOT_LLM,
+            "label": "Qwen3.5",
             "capabilities": ["text", "vision"],
-            "description": "Qwen3.5 多模態模型",
+            "description": "Qwen3.5 multimodal model",
+            "inference": {
+                "translate": {
+                    "temperature": 0.1, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "default",
+                    "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 4, "max_tokens_cap": 16384,
+                },
+                "summarize": {
+                    "temperature": 0.3, "top_k": 50, "top_p": 0.95,
+                    "prompt_builder": "default",
+                    "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 0.5, "max_tokens_cap": 4096,
+                },
+                "ocr": {
+                    "temperature": 0.0, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "default",
+                    "max_tokens_strategy": "context_ratio", "max_tokens_ratio": 0.5,
+                },
+            },
             "specs": {
                 "4b": {
                     "layers": 36,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 4096, "n_ctx_max": 131072, "n_ctx_default": 8192, "vram_per_ctx_token": 0.03, "max_srt_batch": 15,
                     "vram_overhead_mb": 500,
                     "variants": {
                         "Q4_K_M": {
@@ -474,7 +553,7 @@ MODELS_REGISTRY = {
                 },
                 "9b": {
                     "layers": 48,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 4096, "n_ctx_max": 131072, "n_ctx_default": 16384, "vram_per_ctx_token": 0.04,
                     "vram_overhead_mb": 600,
                     "variants": {
                         "Q4_K_M": {
@@ -489,7 +568,7 @@ MODELS_REGISTRY = {
                 },
                 "27b": {
                     "layers": 64,
-                    "n_ctx": 8192,
+                    "n_ctx_min": 8192, "n_ctx_max": 131072, "n_ctx_default": 32768, "vram_per_ctx_token": 0.06,
                     "vram_overhead_mb": 800,
                     "variants": {
                         "Q4_K_M": {
@@ -512,10 +591,10 @@ MODELS_REGISTRY = {
     },
 
     # ───────────────────────────────────────────────────────
-    # PTH 格式：PyTorch 影像處理模型
+    # PTH format: PyTorch image processing models
     # ───────────────────────────────────────────────────────
     FORMAT_PTH: {
-        # ▸ Real-ESRGAN 系列
+        # ▸ Real-ESRGAN series
         "realesrgan": {
             "slot": "realesrgan",
             "label": "Real-ESRGAN",
@@ -562,7 +641,7 @@ MODELS_REGISTRY = {
             },
         },
         
-        # ▸ SwinIR 系列
+        # ▸ SwinIR series
         "swinir": {
             "slot": "swinir",
             "label": "SwinIR",
@@ -604,7 +683,7 @@ MODELS_REGISTRY = {
             "description": "models.bsrgan",
             "variants": {
                 "default": {
-                    "label": "default",
+                    "label": "4x",
                     "url": "https://github.com/cszn/KAIR/releases/download/v1.0/BSRGAN.pth",
                     "filename": "BSRGAN.pth",
                     "size_mb": 64,
@@ -614,9 +693,9 @@ MODELS_REGISTRY = {
             },
         },
         
-        # ▸ Real-CUGAN 系列
-        # 注意：所有變體來自同一個壓縮檔，下載後自動解壓
-        # 壓縮檔結構：updated_weights/up{2,3,4}x-latest-{variant}.pth
+        # ▸ Real-CUGAN series
+        # Note: all variants come from the same archive and are auto-extracted after download
+        # Archive structure: updated_weights/up{2,3,4}x-latest-{variant}.pth
         "real-cugan": {
             "slot": "real-cugan",
             "label": "Real-CUGAN",
@@ -644,7 +723,7 @@ MODELS_REGISTRY = {
                 #     "scale": 2,
                 #     "denoise_level": 3,
                 # },
-                # --- 精簡：conservative 已涵蓋輕降噪，no-denoise 場景極少 ---
+                # --- Simplified: conservative covers light denoising; no-denoise use case is rare ---
                 # "up2x-no-denoise": {
                 #     "url": "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip",
                 #     "filename": "real-cugan-up2x-no-denoise.pth",
@@ -666,7 +745,7 @@ MODELS_REGISTRY = {
                     "scale": 3,
                     "denoise_level": 0,
                 },
-                # --- 精簡：conservative 已涵蓋輕降噪 ---
+                # --- Simplified: conservative covers light denoising ---
                 # "up3x-no-denoise": {
                 #     "url": "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip",
                 #     "filename": "real-cugan-up3x-no-denoise.pth",
@@ -688,7 +767,7 @@ MODELS_REGISTRY = {
                     "scale": 4,
                     "denoise_level": 0,
                 },
-                # --- 精簡：conservative 已涵蓋輕降噪 ---
+                # --- Simplified: conservative covers light denoising ---
                 # "up4x-no-denoise": {
                 #     "url": "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip",
                 #     "filename": "real-cugan-up4x-no-denoise.pth",
@@ -710,7 +789,7 @@ MODELS_REGISTRY = {
             "description": "models.codeformer",
             "variants": {
                 "default": {
-                    "label": "default",
+                    "label": "v0.1.0",
                     "url": "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth",
                     "filename": "codeformer.pth",
                     "size_mb": 357,
@@ -736,7 +815,7 @@ MODELS_REGISTRY = {
             },
         },
 
-        # ▸ MobileSAM（AI 物件移除用）
+        # ▸ MobileSAM (for AI object removal)
         "mobilesam": {
             "slot": "mobilesam",
             "label": "MobileSAM",
@@ -744,7 +823,7 @@ MODELS_REGISTRY = {
             "description": "models.mobilesam",
             "variants": {
                 "default": {
-                    "label": "default",
+                    "label": "v1.0",
                     "url": "https://huggingface.co/dhkim2810/MobileSAM/resolve/main/mobile_sam.pt",
                     "filename": "mobile_sam.pt",
                     "size_mb": 39,
@@ -753,7 +832,7 @@ MODELS_REGISTRY = {
             },
         },
 
-        # ▸ Waifu2x 系列
+        # ▸ Waifu2x series
         "waifu2x": {
             "slot": "waifu2x",
             "label": "Waifu2x",
@@ -766,44 +845,24 @@ MODELS_REGISTRY = {
                     "filename": "waifu2x_cunet_art_2x.pth",
                     "unzip": True,
                     "archive_path": "pretrained_models/cunet/art/scale2x.pth",
-                    "size_mb": 17,
+                    "size_mb": 440,
                     "vram_mb": 1200,
                     "scale": 2,
                 },
-                "cunet-art-4x": {
-                    "label": "4x - cunet",
-                    "url": "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20250502.zip",
-                    "filename": "waifu2x_cunet_art_4x.pth",
-                    "unzip": True,
-                    "archive_path": "pretrained_models/cunet/art/scale4x.pth",
-                    "size_mb": 17,
-                    "vram_mb": 1200,
-                    "scale": 4,
-                },
-                "swin-unet-art-2x": {
-                    "label": "2x - swin-unet",
-                    "url": "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20250502.zip",
-                    "filename": "waifu2x_swin_unet_art_2x.pth",
-                    "unzip": True,
-                    "archive_path": "pretrained_models/swin_unet/art/scale2x.pth",
-                    "size_mb": 52,
-                    "vram_mb": 1500,
-                    "scale": 2,
-                },
-                "swin-unet-art-4x": {
-                    "label": "4x - swin-unet",
-                    "url": "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20250502.zip",
-                    "filename": "waifu2x_swin_unet_art_4x.pth",
-                    "unzip": True,
-                    "archive_path": "pretrained_models/swin_unet/art/scale4x.pth",
-                    "size_mb": 52,
-                    "vram_mb": 1500,
-                    "scale": 4,
-                },
+                # cunet-art-4x and swin-unet variants removed:
+                # nunif's 4x models use SwinUNet architecture (not CUNet),
+                # which is not supported by Spandrel.
             },
         },
     },
 
 }
 
-# 模型註冊表結束
+# ═══════════════════════════════════════════════════════════
+# Remote Inference Defaults
+# ═══════════════════════════════════════════════════════════
+REMOTE_INFERENCE_DEFAULTS = {
+    "translate": {"temperature": 0.1, "max_tokens": 16384},
+    "summarize": {"temperature": 0.3, "max_tokens": 4096},
+    "ocr":       {"temperature": 0.0, "max_tokens": 32768},
+}

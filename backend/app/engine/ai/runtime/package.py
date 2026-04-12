@@ -1,6 +1,6 @@
 """
-PackageRuntime - 套件自管模型執行器
-負責由第三方套件自行管理載入的模型（如 Whisper、Demucs）
+PackageRuntime - package-managed model executor.
+Handles models whose loading is managed by third-party packages (e.g. Whisper, Demucs).
 """
 import logging
 from abc import abstractmethod
@@ -15,15 +15,15 @@ logger = logging.getLogger(__name__)
 
 class PackageRuntime(BaseRuntime):
     """
-    套件自管執行器
+    Package-managed executor.
 
-    適用於模型載入邏輯由第三方套件負責的情況（如 faster-whisper、demucs）。
-    子類只需實作 _create_model() 和 _cleanup_model()。
+    For cases where model loading logic is handled by third-party packages (e.g. faster-whisper, demucs).
+    Subclasses only need to implement _create_model() and _cleanup_model().
 
-    特性：
-    1. 設備自動選擇（CUDA/CPU）
-    2. 統一的卸載 + CUDA cache 清理
-    3. 可覆寫 _cleanup_model() 做自訂清理（如 Windows 崩潰防護）
+    Features:
+    1. Automatic device selection (CUDA/CPU)
+    2. Unified unload + CUDA cache cleanup
+    3. Overridable _cleanup_model() for custom cleanup (e.g. Windows crash protection)
     """
 
     def __init__(self, slot: str):
@@ -39,16 +39,16 @@ class PackageRuntime(BaseRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
         """
-        子類實作：建立模型物件
+        Subclass implementation: create model object.
 
         Args:
-            model_path: 模型路徑（目錄或檔案）
-            config: 模型配置字典
-            device: 計算設備（"cuda" / "cpu"）
-            on_progress: 進度回調
+            model_path: Model path (directory or file).
+            config: Model configuration dict.
+            device: Compute device ("cuda" / "cpu").
+            on_progress: Progress callback.
 
         Returns:
-            模型物件
+            Model object.
         """
         pass
 
@@ -58,7 +58,7 @@ class PackageRuntime(BaseRuntime):
         config: dict,
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
-        """載入模型（統一的設備選擇 + 委派給 _create_model）"""
+        """Load model (unified device selection + delegate to _create_model)."""
         device = self._select_device(config.get("device"))
         self._device = device
 
@@ -71,7 +71,7 @@ class PackageRuntime(BaseRuntime):
         return model
 
     def _unload_model_impl(self) -> None:
-        """卸載模型：先呼叫子類的清理邏輯，再清 CUDA cache"""
+        """Unload model: call subclass cleanup logic first, then clear CUDA cache."""
         if self._model is not None:
             logger.info(f"Unloading package model from slot: {self._slot}")
             self._cleanup_model()
@@ -85,21 +85,21 @@ class PackageRuntime(BaseRuntime):
 
     def _cleanup_model(self) -> None:
         """
-        子類可覆寫：自訂清理邏輯
+        Subclass override: custom cleanup logic.
 
-        例如 Whisper 需要 zombie 防護，Demucs 不需要。
-        預設不做任何事。
+        E.g. Whisper needs zombie protection, Demucs does not.
+        Default: no-op.
         """
         pass
 
     def _select_device(self, preferred: Optional[str] = None) -> str:
         """
-        選擇計算設備
+        Select compute device.
 
-        優先順序：
-        1. preferred（如果指定）
-        2. CUDA（如果可用）
-        3. CPU（回退）
+        Priority:
+        1. preferred (if specified)
+        2. CUDA (if available)
+        3. CPU (fallback)
         """
         if preferred:
             return preferred

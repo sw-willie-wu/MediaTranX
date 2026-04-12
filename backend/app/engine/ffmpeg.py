@@ -1,6 +1,6 @@
 """
-FFmpeg 封裝模組
-提供影片轉檔、進度解析等功能
+FFmpeg wrapper module.
+Provides video transcoding, progress parsing, and related utilities.
 """
 import asyncio
 import re
@@ -17,7 +17,7 @@ from app.init.configs import SETTINGS
 
 
 class VideoCodec(str, Enum):
-    """影片編碼器"""
+    """Video codec."""
     H264 = "libx264"
     H265 = "libx265"
     VP9 = "libvpx-vp9"
@@ -26,7 +26,7 @@ class VideoCodec(str, Enum):
 
 
 class AudioCodec(str, Enum):
-    """音訊編碼器"""
+    """Audio codec."""
     AAC = "aac"
     MP3 = "libmp3lame"
     OPUS = "libopus"
@@ -35,7 +35,7 @@ class AudioCodec(str, Enum):
 
 
 class QualityPreset(str, Enum):
-    """品質預設"""
+    """Quality preset."""
     ULTRAFAST = "ultrafast"
     FAST = "fast"
     MEDIUM = "medium"
@@ -45,12 +45,12 @@ class QualityPreset(str, Enum):
 
 @dataclass
 class MediaInfo:
-    """媒體資訊"""
-    duration: float  # 秒
+    """Media information."""
+    duration: float  # seconds
     width: int
     height: int
     fps: float
-    fps_fraction: Fraction  # 精確分數如 Fraction(30000, 1001)，避免浮點精度問題
+    fps_fraction: Fraction  # Exact fraction e.g. Fraction(30000, 1001) to avoid floating-point precision issues
     video_codec: str
     audio_codec: str
     bitrate: int  # kbps
@@ -59,22 +59,22 @@ class MediaInfo:
 
 @dataclass
 class TranscodeProgress:
-    """轉檔進度"""
+    """Transcode progress."""
     frame: int
     fps: float
-    time: float  # 已處理秒數
-    speed: float  # 處理速度倍率
-    percent: float  # 百分比 0-100
+    time: float  # processed seconds
+    speed: float  # processing speed multiplier
+    percent: float  # percentage 0-100
 
 
 @dataclass
 class TranscodeOptions:
-    """轉檔選項"""
+    """Transcode options."""
     output_format: str = "mp4"
     video_codec: VideoCodec = VideoCodec.H264
     audio_codec: AudioCodec = AudioCodec.AAC
     preset: QualityPreset = QualityPreset.MEDIUM
-    crf: int = 23  # 品質 (0-51, 越小越好)
+    crf: int = 23  # quality (0-51, lower is better)
     resolution: Optional[str] = None  # e.g., "1920x1080"
     scale_algorithm: Optional[str] = None  # e.g., "lanczos", "bicubic", "bilinear"
     fps: Optional[float] = None
@@ -95,9 +95,9 @@ def _parse_time(t: float | str) -> float:
 
 
 class FFmpegWrapper:
-    """FFmpeg 封裝類別"""
+    """FFmpeg wrapper class."""
 
-    # FFmpeg 路徑（dev: bin/ffmpeg, packaged: resources/ffmpeg）
+    # FFmpeg path (dev: bin/ffmpeg, packaged: resources/ffmpeg)
     _PROJECT_BIN_DIR: Path = None  # type: ignore  # resolved lazily
 
     @classmethod
@@ -112,62 +112,62 @@ class FFmpegWrapper:
 
     def _find_ffmpeg(self) -> str:
         """
-        尋找 FFmpeg 執行檔
-        優先使用專案內的 FFmpeg，若無則使用系統 PATH
+        Find the FFmpeg executable.
+        Prefer the project-bundled FFmpeg; fall back to system PATH.
         """
         bin_dir = self._get_bin_dir()
-        # 1. 優先使用專案內的 FFmpeg
+        # 1. Prefer project-bundled FFmpeg
         exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
         local_ffmpeg = bin_dir / exe
         if local_ffmpeg.exists():
             return str(local_ffmpeg)
 
-        # 2. 嘗試系統 PATH
+        # 2. Try system PATH
         system_path = shutil.which("ffmpeg")
         if system_path:
             return system_path
 
         raise FFmpegError(
-            f"找不到 FFmpeg。請將 FFmpeg 放置於 {bin_dir} 或加入系統 PATH"
+            f"FFmpeg not found. Place FFmpeg in {bin_dir} or add it to system PATH"
         )
 
     def _find_ffprobe(self) -> str:
         """
-        尋找 FFprobe 執行檔
-        優先使用專案內的 FFprobe，若無則使用系統 PATH
+        Find the FFprobe executable.
+        Prefer the project-bundled FFprobe; fall back to system PATH.
         """
         bin_dir = self._get_bin_dir()
-        # 1. 優先使用專案內的 FFprobe
+        # 1. Prefer project-bundled FFprobe
         exe = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
         local_ffprobe = bin_dir / exe
         if local_ffprobe.exists():
             return str(local_ffprobe)
 
-        # 2. 嘗試系統 PATH
+        # 2. Try system PATH
         system_path = shutil.which("ffprobe")
         if system_path:
             return system_path
 
         raise FFmpegError(
-            f"找不到 FFprobe。請將 FFprobe 放置於 {bin_dir} 或加入系統 PATH"
+            f"FFprobe not found. Place FFprobe in {bin_dir} or add it to system PATH"
         )
 
     @classmethod
     def get_bin_dir(cls) -> Path:
-        """取得 FFmpeg 二進位檔目錄"""
+        """Get the FFmpeg binary directory."""
         return cls._get_bin_dir()
 
     @classmethod
     def is_installed(cls) -> bool:
-        """檢查 FFmpeg 是否已安裝"""
+        """Check whether FFmpeg is installed."""
         exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
         return (cls._get_bin_dir() / exe).exists() or shutil.which("ffmpeg") is not None
 
     async def get_media_info(self, input_path: str | Path) -> MediaInfo:
-        """取得媒體資訊"""
+        """Get media information."""
         input_path = Path(input_path)
         if not input_path.exists():
-            raise FFmpegError(f"檔案不存在: {input_path}")
+            raise FFmpegError(f"File not found: {input_path}")
 
         cmd = [
             self.ffprobe_path,
@@ -186,12 +186,12 @@ class FFmpegWrapper:
         stdout, stderr = await proc.communicate()
 
         if proc.returncode != 0:
-            raise FFmpegError(f"FFprobe 錯誤: {stderr.decode()}")
+            raise FFmpegError(f"FFprobe error: {stderr.decode()}")
 
         import json
         data = json.loads(stdout.decode())
 
-        # 解析影片串流
+        # Parse video stream
         video_stream = next(
             (s for s in data.get("streams", []) if s["codec_type"] == "video"),
             None
@@ -202,7 +202,7 @@ class FFmpegWrapper:
         )
         format_info = data.get("format", {})
 
-        # 計算 FPS
+        # Calculate FPS
         fps = 0.0
         fps_fraction = Fraction(0)
         if video_stream and "r_frame_rate" in video_stream:
@@ -223,22 +223,32 @@ class FFmpegWrapper:
             file_size=int(format_info.get("size", 0))
         )
 
+    def get_media_info_sync(self, input_path: str | Path) -> MediaInfo:
+        """Sync version of get_media_info() for use in TaskManager handlers."""
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                self.get_media_info(input_path)
+            )
+        finally:
+            loop.close()
+
     def _build_transcode_args(
         self,
         input_path: Path,
         output_path: Path,
         options: TranscodeOptions
     ) -> list[str]:
-        """建構轉檔命令參數"""
+        """Build transcode command arguments."""
         args = [
             self.ffmpeg_path,
-            "-y",  # 覆蓋輸出檔案
+            "-y",  # overwrite output file
             "-i", str(input_path),
-            "-progress", "pipe:1",  # 輸出進度到 stdout
+            "-progress", "pipe:1",  # output progress to stdout
             "-nostats",
         ]
 
-        # 影片編碼
+        # Video codec
         if options.video_codec != VideoCodec.COPY:
             args.extend(["-c:v", options.video_codec.value])
             args.extend(["-preset", options.preset.value])
@@ -246,7 +256,7 @@ class FFmpegWrapper:
         else:
             args.extend(["-c:v", "copy"])
 
-        # 音訊編碼
+        # Audio codec
         if options.audio_codec != AudioCodec.COPY:
             args.extend(["-c:a", options.audio_codec.value])
             if options.audio_bitrate:
@@ -254,7 +264,7 @@ class FFmpegWrapper:
         else:
             args.extend(["-c:a", "copy"])
 
-        # 解析度
+        # Resolution
         if options.resolution:
             w, h = options.resolution.split("x")
             algo = options.scale_algorithm or "bicubic"
@@ -264,7 +274,7 @@ class FFmpegWrapper:
         if options.fps:
             args.extend(["-r", str(options.fps)])
 
-        # 額外參數
+        # Extra arguments
         if options.extra_args:
             args.extend(options.extra_args)
 
@@ -272,8 +282,8 @@ class FFmpegWrapper:
         return args
 
     def _parse_progress(self, line: str, duration: float) -> Optional[TranscodeProgress]:
-        """解析 FFmpeg 進度輸出"""
-        # FFmpeg progress 輸出格式:
+        """Parse FFmpeg progress output."""
+        # FFmpeg progress output format:
         # frame=123
         # fps=24.5
         # out_time_ms=5000000
@@ -282,7 +292,7 @@ class FFmpegWrapper:
         if "=" not in line:
             return None
 
-        # 累積進度資訊
+        # Accumulate progress data
         if not hasattr(self, "_progress_data"):
             self._progress_data = {}
 
@@ -308,7 +318,7 @@ class FFmpegWrapper:
             except ValueError:
                 self._progress_data["speed"] = 0.0
         elif key == "progress":
-            # progress=continue 或 progress=end 時回傳進度
+            # Return progress on progress=continue or progress=end
             time = self._progress_data.get("time", 0)
             percent = (time / duration * 100) if duration > 0 else 0
 
@@ -337,30 +347,30 @@ class FFmpegWrapper:
         on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
     ) -> Path:
         """
-        剪輯影片/音訊
+        Cut video/audio.
 
         Args:
-            input_path: 輸入檔案路徑
-            output_path: 輸出檔案路徑
-            start_time: 開始時間（秒數 float 或 "HH:MM:SS" 字串）
-            end_time: 結束時間（同上）
-            stream_copy: 是否使用 stream copy（快速但不精確）
-            on_progress: 進度回調函數
+            input_path: Input file path.
+            output_path: Output file path.
+            start_time: Start time (float seconds or "HH:MM:SS" string).
+            end_time: End time (same format as above).
+            stream_copy: Whether to use stream copy (fast but less precise).
+            on_progress: Progress callback function.
 
         Returns:
-            輸出檔案路徑
+            Output file path.
         """
         input_path = Path(input_path)
         output_path = Path(output_path)
 
         if not input_path.exists():
-            raise FFmpegError(f"輸入檔案不存在: {input_path}")
+            raise FFmpegError(f"Input file not found: {input_path}")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         duration = _parse_time(end_time) - _parse_time(start_time)
         if duration <= 0:
-            raise FFmpegError("結束時間必須大於開始時間")
+            raise FFmpegError("End time must be greater than start time")
 
         args = [
             self.ffmpeg_path,
@@ -402,9 +412,28 @@ class FFmpegWrapper:
 
         if proc.returncode != 0:
             stderr = await proc.stderr.read()
-            raise FFmpegError(f"剪輯失敗: {stderr.decode()}")
+            raise FFmpegError(f"Cut failed: {stderr.decode()}")
 
         return output_path
+
+    def cut_sync(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        start_time: float | str,
+        end_time: float | str,
+        stream_copy: bool = True,
+        on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
+    ) -> Path:
+        """Sync version of cut() for use in TaskManager handlers."""
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                self.cut(input_path, output_path, start_time, end_time,
+                         stream_copy, on_progress)
+            )
+        finally:
+            loop.close()
 
     async def extract_audio(
         self,
@@ -417,25 +446,25 @@ class FFmpegWrapper:
         on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
     ) -> Path:
         """
-        提取音訊
+        Extract audio from media file.
 
         Args:
-            input_path: 輸入檔案路徑
-            output_path: 輸出檔案路徑
-            audio_format: 音訊格式 (mp3, wav, flac, aac)
-            audio_bitrate: 音訊位元率 (e.g. "320k")
-            sample_rate: 取樣率 (e.g. 16000)
-            channels: 聲道數 (1=mono, 2=stereo)
-            on_progress: 進度回調函數
+            input_path: Input file path.
+            output_path: Output file path.
+            audio_format: Audio format (mp3, wav, flac, aac).
+            audio_bitrate: Audio bitrate (e.g. "320k").
+            sample_rate: Sample rate (e.g. 16000).
+            channels: Number of channels (1=mono, 2=stereo).
+            on_progress: Progress callback function.
 
         Returns:
-            輸出檔案路徑
+            Output file path.
         """
         input_path = Path(input_path)
         output_path = Path(output_path)
 
         if not input_path.exists():
-            raise FFmpegError(f"輸入檔案不存在: {input_path}")
+            raise FFmpegError(f"Input file not found: {input_path}")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -493,9 +522,30 @@ class FFmpegWrapper:
 
         if proc.returncode != 0:
             stderr = await proc.stderr.read()
-            raise FFmpegError(f"提取音訊失敗: {stderr.decode()}")
+            raise FFmpegError(f"Audio extraction failed: {stderr.decode()}")
 
         return output_path
+
+    def extract_audio_sync(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        audio_format: str = "mp3",
+        audio_bitrate: Optional[str] = None,
+        sample_rate: Optional[int] = None,
+        channels: Optional[int] = None,
+        on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
+    ) -> Path:
+        """Sync version of extract_audio() for use in TaskManager handlers."""
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                self.extract_audio(input_path, output_path, audio_format,
+                                   audio_bitrate, sample_rate, channels,
+                                   on_progress)
+            )
+        finally:
+            loop.close()
 
     async def adjust_volume(
         self,
@@ -504,18 +554,18 @@ class FFmpegWrapper:
         af_filter: str,
     ) -> Path:
         """
-        套用音訊濾鏡（如音量調整）
+        Apply an audio filter (e.g. volume adjustment).
 
         Args:
-            input_path: 輸入檔案路徑
-            output_path: 輸出檔案路徑
-            af_filter: FFmpeg audio filter 字串 (e.g. "volume=3dB")
+            input_path: Input file path.
+            output_path: Output file path.
+            af_filter: FFmpeg audio filter string (e.g. "volume=3dB").
         """
         input_path = Path(input_path)
         output_path = Path(output_path)
 
         if not input_path.exists():
-            raise FFmpegError(f"輸入檔案不存在: {input_path}")
+            raise FFmpegError(f"Input file not found: {input_path}")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -533,6 +583,21 @@ class FFmpegWrapper:
 
         return output_path
 
+    def adjust_volume_sync(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        af_filter: str,
+    ) -> Path:
+        """Sync version of adjust_volume() for use in TaskManager handlers."""
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                self.adjust_volume(input_path, output_path, af_filter)
+            )
+        finally:
+            loop.close()
+
     async def audio_convert(
         self,
         input_path: str | Path,
@@ -544,22 +609,22 @@ class FFmpegWrapper:
         extra_args: Optional[list[str]] = None,
     ) -> Path:
         """
-        音訊格式轉換
+        Convert audio format.
 
         Args:
-            input_path: 輸入檔案路徑
-            output_path: 輸出檔案路徑
-            audio_codec: 音訊編碼 (libmp3lame, flac, pcm_s16le, aac, libvorbis...)
-            audio_bitrate: 位元率 (e.g. "320k")
-            sample_rate: 取樣率 (e.g. 44100)
-            channels: 聲道數 (1=mono, 2=stereo)
-            extra_args: 額外 FFmpeg 參數
+            input_path: Input file path.
+            output_path: Output file path.
+            audio_codec: Audio codec (libmp3lame, flac, pcm_s16le, aac, libvorbis...).
+            audio_bitrate: Bitrate (e.g. "320k").
+            sample_rate: Sample rate (e.g. 44100).
+            channels: Number of channels (1=mono, 2=stereo).
+            extra_args: Additional FFmpeg arguments.
         """
         input_path = Path(input_path)
         output_path = Path(output_path)
 
         if not input_path.exists():
-            raise FFmpegError(f"輸入檔案不存在: {input_path}")
+            raise FFmpegError(f"Input file not found: {input_path}")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -590,6 +655,27 @@ class FFmpegWrapper:
 
         return output_path
 
+    def audio_convert_sync(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        audio_codec: str,
+        audio_bitrate: Optional[str] = None,
+        sample_rate: Optional[int] = None,
+        channels: Optional[int] = None,
+        extra_args: Optional[list[str]] = None,
+    ) -> Path:
+        """Sync version of audio_convert() for use in TaskManager handlers."""
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                self.audio_convert(input_path, output_path, audio_codec,
+                                   audio_bitrate, sample_rate, channels,
+                                   extra_args)
+            )
+        finally:
+            loop.close()
+
     async def transcode(
         self,
         input_path: str | Path,
@@ -598,44 +684,44 @@ class FFmpegWrapper:
         on_progress: Optional[Callable[[TranscodeProgress], None]] = None
     ) -> Path:
         """
-        執行轉檔
+        Execute transcoding.
 
         Args:
-            input_path: 輸入檔案路徑
-            output_path: 輸出檔案路徑
-            options: 轉檔選項
-            on_progress: 進度回調函數
+            input_path: Input file path.
+            output_path: Output file path.
+            options: Transcode options.
+            on_progress: Progress callback function.
 
         Returns:
-            輸出檔案路徑
+            Output file path.
         """
         input_path = Path(input_path)
         output_path = Path(output_path)
 
         if not input_path.exists():
-            raise FFmpegError(f"輸入檔案不存在: {input_path}")
+            raise FFmpegError(f"Input file not found: {input_path}")
 
-        # 確保輸出目錄存在
+        # Ensure output directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 取得媒體資訊（用於計算進度百分比）
+        # Get media info (for calculating progress percentage)
         media_info = await self.get_media_info(input_path)
         duration = media_info.duration
 
-        # 建構命令
+        # Build command
         args = self._build_transcode_args(input_path, output_path, options)
 
-        # 重置進度資料
+        # Reset progress data
         self._progress_data = {}
 
-        # 執行 FFmpeg
+        # Execute FFmpeg
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
 
-        # 讀取進度
+        # Read progress
         async def read_progress():
             while True:
                 line = await proc.stdout.readline()
@@ -651,6 +737,22 @@ class FFmpegWrapper:
 
         if proc.returncode != 0:
             stderr = await proc.stderr.read()
-            raise FFmpegError(f"轉檔失敗: {stderr.decode()}")
+            raise FFmpegError(f"Transcode failed: {stderr.decode()}")
 
         return output_path
+
+    def transcode_sync(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        options: TranscodeOptions,
+        on_progress: Optional[Callable[[TranscodeProgress], None]] = None
+    ) -> Path:
+        """Sync version of transcode() for use in TaskManager handlers."""
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                self.transcode(input_path, output_path, options, on_progress)
+            )
+        finally:
+            loop.close()

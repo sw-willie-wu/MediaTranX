@@ -1,32 +1,35 @@
 """
-圖片裁切 API 路由
+Image crop API routes.
 """
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.image.crop_service import ImageCropService
+
+if TYPE_CHECKING:
+    from app.services.image.crop_service import ImageCropService
 
 router = APIRouter()
 
 
 class ImageCropRequest(BaseModel):
-    """圖片裁切請求"""
-    file_id: str = Field(..., description="輸入檔案 ID")
-    x: int = Field(default=0, description="裁切起始 X 座標")
-    y: int = Field(default=0, description="裁切起始 Y 座標")
-    width: int = Field(..., gt=0, description="裁切寬度")
-    height: int = Field(..., gt=0, description="裁切高度")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
+    """Image crop request."""
+    file_id: str = Field(..., description="Input file ID")
+    x: int = Field(default=0, description="Crop start X coordinate")
+    y: int = Field(default=0, description="Crop start Y coordinate")
+    width: int = Field(..., gt=0, description="Crop width")
+    height: int = Field(..., gt=0, description="Crop height")
+    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
 
 
 class ImageCropResponse(BaseModel):
-    """圖片裁切回應"""
+    """Image crop response."""
     task_id: str
-    message: str = "圖片裁切任務已提交"
+    message: str = "Image crop task submitted"
 
 
 @router.post("/crop", response_model=ImageCropResponse)
@@ -35,7 +38,7 @@ async def crop_image(
     request: ImageCropRequest,
     service: ImageCropService = Depends(Provide[AppContainer.image_crop]),
 ):
-    """提交圖片裁切任務"""
+    """Submit image crop task."""
     try:
         task_id = await service.submit_crop(
             file_id=request.file_id,

@@ -1,58 +1,49 @@
 """
 DI Container — single source of truth for all singleton lifecycles.
+
+Domain services (audio/image/video/document) use lazy factories so they are
+not imported at startup.  A background thread in lifespan.py triggers the
+actual import after the server is already accepting connections, making cold
+start feel instant.
 """
 from dependency_injector import containers, providers
 
-# ── Infrastructure ──
+# ── Infrastructure (lightweight — always eager) ──
 from app.services.files.file_service import FileService
 from app.workers.progress_tracker import ProgressTracker
 from app.workers.task_manager import TaskManager
 
-# ── Engine ──
+# ── Engine (lightweight) ──
 from app.engine.ffmpeg import FFmpegWrapper
-from app.engine.fluidsynth import FluidSynthWrapper
 from app.engine.ai.model_manager import ModelManager
 
-# ── Setup Services ──
+# ── Setup Services (lightweight — needed for settings page) ──
 from app.services.setup.config_service import ConfigService
 from app.services.setup.device_service import DeviceService
-from app.services.setup.language_service import LanguageService
+from app.services.llm.language_service import LanguageService
 from app.services.setup.model_metadata_service import ModelMetadataService
 from app.services.setup.remote_service import RemoteService
 from app.services.setup.manager_service import SetupService
 
-# ── Task History ──
+# ── Task History (lightweight) ──
 from app.services.tasks.history_service import TaskHistoryService
 
-# ── Audio Services ──
-from app.services.audio.transcode_service import AudioTranscodeService
-from app.services.audio.cut_service import AudioCutService
-from app.services.audio.volume_service import AudioVolumeService
-from app.services.audio.transcribe_service import AudioTranscribeService
-from app.services.audio.separate_service import AudioSeparateService
-from app.services.audio.lyrics_service import AudioLyricsService
-from app.services.audio.audio_midi_service import AudioMidiService
 
-# ── Image Services ──
-from app.services.image.upscale_service import ImageUpscaleService
-from app.services.image.crop_service import ImageCropService
-from app.services.image.convert_service import ImageConvertService
-from app.services.image.filter_service import ImageFilterService
-from app.services.image.ocr_service import ImageOcrService
-from app.services.image.remove_bg_service import ImageRemoveBgService
-from app.services.image.remove_object_service import ImageRemoveObjectService
+# ── Lazy factory helper ─────────────────────────────────────────────────────
+# Defers `import module; cls(...)` until the Singleton is first accessed.
 
-# ── Video Services ──
-from app.services.video.transcode_service import TranscodeService
-from app.services.video.subtitle_service import SubtitleService
-from app.services.video.interpolate_service import InterpolateService
-from app.services.video.enhance_service import EnhanceService
+def _lazy(module_path: str, class_name: str):
+    """Return a callable that lazily imports *class_name* from *module_path*."""
+    _cls = None
 
-# ── Document Services ──
-from app.services.document.doc_ocr_service import DocumentOcrService
-from app.services.document.pdf_convert_service import DocumentPdfConvertService
-from app.services.document.split_service import DocumentSplitService
-from app.services.document.translate_service import TranslateService
+    def factory(*args, **kwargs):
+        nonlocal _cls
+        if _cls is None:
+            mod = __import__(module_path, fromlist=[class_name])
+            _cls = getattr(mod, class_name)
+        return _cls(*args, **kwargs)
+
+    return factory
 
 
 class AppContainer(containers.DeclarativeContainer):
@@ -68,8 +59,16 @@ class AppContainer(containers.DeclarativeContainer):
 
     # ── Engine ──
     ffmpeg = providers.Singleton(FFmpegWrapper)
-    fluidsynth = providers.Singleton(FluidSynthWrapper)
     model_manager = providers.Singleton(ModelManager)
+    llama_runtime = providers.Singleton(
+        _lazy("app.engine.ai.runtime.llama_server", "LlamaServerRuntime"),
+        slot="llm",
+    )
+
+    # ── LLM Service ──
+    chat_service = providers.Singleton(
+        _lazy("app.services.llm.chat_service", "ChatService"),
+    )
 
     # ── Setup Services ──
     config_service = providers.Singleton(ConfigService)
@@ -85,99 +84,107 @@ class AppContainer(containers.DeclarativeContainer):
     # ── Task History ──
     task_history = providers.Singleton(TaskHistoryService)
 
-    # ── Audio Services ──
+    # ── Audio Services (lazy) ──
     audio_transcode = providers.Singleton(
-        AudioTranscodeService,
+        _lazy("app.services.audio.transcode_service", "AudioTranscodeService"),
         ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
     )
     audio_cut = providers.Singleton(
-        AudioCutService,
+        _lazy("app.services.audio.cut_service", "AudioCutService"),
         ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
     )
     audio_volume = providers.Singleton(
-        AudioVolumeService,
+        _lazy("app.services.audio.volume_service", "AudioVolumeService"),
         ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
     )
     audio_transcribe = providers.Singleton(
-        AudioTranscribeService,
+        _lazy("app.services.audio.transcribe_service", "AudioTranscribeService"),
         file_service=file_service, task_manager=task_manager,
     )
     audio_separate = providers.Singleton(
-        AudioSeparateService,
+        _lazy("app.services.audio.separate_service", "AudioSeparateService"),
         file_service=file_service, task_manager=task_manager,
     )
     audio_lyrics = providers.Singleton(
-        AudioLyricsService,
+        _lazy("app.services.audio.lyrics_service", "AudioLyricsService"),
         file_service=file_service, task_manager=task_manager,
     )
     audio_midi = providers.Singleton(
-        AudioMidiService,
+        _lazy("app.services.audio.audio_midi_service", "AudioMidiService"),
         file_service=file_service, task_manager=task_manager,
     )
 
-    # ── Image Services ──
+    # ── Image Services (lazy) ──
     image_upscale = providers.Singleton(
-        ImageUpscaleService,
+        _lazy("app.services.image.upscale_service", "ImageUpscaleService"),
         file_service=file_service, task_manager=task_manager,
     )
     image_crop = providers.Singleton(
-        ImageCropService,
+        _lazy("app.services.image.crop_service", "ImageCropService"),
         file_service=file_service, task_manager=task_manager,
     )
     image_convert = providers.Singleton(
-        ImageConvertService,
+        _lazy("app.services.image.convert_service", "ImageConvertService"),
         file_service=file_service, task_manager=task_manager,
     )
     image_filter = providers.Singleton(
-        ImageFilterService,
+        _lazy("app.services.image.filter_service", "ImageFilterService"),
         file_service=file_service, task_manager=task_manager,
     )
     image_ocr = providers.Singleton(
-        ImageOcrService,
+        _lazy("app.services.image.ocr_service", "ImageOcrService"),
         file_service=file_service, task_manager=task_manager,
     )
     image_remove_bg = providers.Singleton(
-        ImageRemoveBgService,
+        _lazy("app.services.image.remove_bg_service", "ImageRemoveBgService"),
         file_service=file_service, task_manager=task_manager,
     )
     image_remove_object = providers.Singleton(
-        ImageRemoveObjectService,
+        _lazy("app.services.image.remove_object_service", "ImageRemoveObjectService"),
         file_service=file_service, task_manager=task_manager,
     )
 
-    # ── Video Services ──
+    # ── Video Services (lazy) ──
     video_transcode = providers.Singleton(
-        TranscodeService,
+        _lazy("app.services.video.transcode_service", "VideoTranscodeService"),
+        ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
+    )
+    video_cut = providers.Singleton(
+        _lazy("app.services.video.cut_service", "VideoCutService"),
+        ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
+    )
+    video_extract_audio = providers.Singleton(
+        _lazy("app.services.video.extract_audio_service", "VideoExtractAudioService"),
         ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
     )
     video_subtitle = providers.Singleton(
-        SubtitleService,
+        _lazy("app.services.video.subtitle_service", "SubtitleService"),
         ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
     )
     video_interpolate = providers.Singleton(
-        InterpolateService,
+        _lazy("app.services.video.interpolate_service", "InterpolateService"),
         file_service=file_service, task_manager=task_manager,
     )
     video_enhance = providers.Singleton(
-        EnhanceService,
+        _lazy("app.services.video.enhance_service", "EnhanceService"),
         file_service=file_service, task_manager=task_manager,
     )
 
-    # ── Document Services ──
+    # ── Document Services (lazy) ──
     doc_ocr = providers.Singleton(
-        DocumentOcrService,
+        _lazy("app.services.document.doc_ocr_service", "DocumentOcrService"),
         file_service=file_service, task_manager=task_manager,
     )
     doc_pdf_convert = providers.Singleton(
-        DocumentPdfConvertService,
+        _lazy("app.services.document.pdf_convert_service", "DocumentPdfConvertService"),
         file_service=file_service, task_manager=task_manager,
     )
     doc_split = providers.Singleton(
-        DocumentSplitService,
+        _lazy("app.services.document.split_service", "DocumentSplitService"),
         file_service=file_service, task_manager=task_manager,
     )
     doc_translate = providers.Singleton(
-        TranslateService,
+        _lazy("app.services.document.translate_service", "TranslateService"),
         file_service=file_service, task_manager=task_manager,
     )
 

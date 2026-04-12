@@ -1,7 +1,4 @@
-"""
-音訊轉檔服務
-"""
-import asyncio
+"""Audio transcoding service."""
 import logging
 from pathlib import Path
 from typing import Callable, Optional
@@ -14,12 +11,11 @@ from app.workers.task_manager import TaskManager
 logger = logging.getLogger(__name__)
 
 TASK_TYPE_AUDIO_TRANSCODE = "audio.transcode"
+DEFAULT_SAMPLE_RATE = 44100
 
 
 class AudioTranscodeService:
-    """
-    音訊轉檔服務
-    """
+    """Audio format conversion service with codec, bitrate, and sample rate options."""
 
     def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager):
         self._ffmpeg = ffmpeg
@@ -28,13 +24,13 @@ class AudioTranscodeService:
 
         self._task_manager.register_handler(
             TASK_TYPE_AUDIO_TRANSCODE,
-            self._handle_transcode_task
+            self._handle_task
         )
 
         logger.info("AudioTranscodeService initialized")
 
     async def get_audio_info(self, file_id: str) -> dict:
-        """取得音訊資訊"""
+        """Get audio file information."""
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
@@ -42,7 +38,7 @@ class AudioTranscodeService:
         media_info = await self._ffmpeg.get_media_info(file_info.file_path)
         return {
             "duration": media_info.duration,
-            "sample_rate": 44100,  # TODO: 從 ffprobe 取得
+            "sample_rate": DEFAULT_SAMPLE_RATE,  # TODO: get from ffprobe
             "channels": 2,
             "codec": media_info.audio_codec,
             "bitrate": media_info.bitrate,
@@ -60,7 +56,7 @@ class AudioTranscodeService:
         output_dir: Optional[str] = None,
         output_filename: Optional[str] = None,
     ) -> str:
-        """提交音訊轉檔任務"""
+        """Submit an audio transcoding task."""
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
@@ -81,35 +77,27 @@ class AudioTranscodeService:
 
         return task_id
 
-    def _handle_transcode_task(
+    def _handle_task(
         self,
         params: dict,
         progress_callback: Callable[[float, str], None]
     ) -> dict:
-        """處理轉檔任務"""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(
-                self._execute_transcode(params, progress_callback)
-            )
-        finally:
-            loop.close()
+        """Handle transcoding task."""
+        return self._execute(params, progress_callback)
 
-    async def _execute_transcode(
+    def _execute(
         self,
         params: dict,
         progress_callback: Callable[[float, str], None]
     ) -> dict:
-        """執行音訊轉檔"""
+        """Execute audio transcoding."""
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
 
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        # 建立輸出路徑
-        custom_output_dir = params.get("output_dir")
+        # Build output path
         custom_output_filename = params.get("output_filename")
         output_file_id = str(uuid4())
 
@@ -120,15 +108,12 @@ class AudioTranscodeService:
             original_stem = Path(file_info.original_filename).stem
             final_filename = f"{original_stem}_converted_{output_file_id[:8]}.{params['output_format']}"
 
-        # 決定輸出目錄（優先自訂 > 預設 output）
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
+        # Determine output directory (custom dir takes priority over default)
+        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
 
-        # 建立 extra_args（codec-specific 參數）
+        # Build extra_args (codec-specific parameters)
         codec = params["audio_codec"]
         lossless = codec in ("flac", "alac", "pcm_s16le", "pcm_s24le", "pcm_s32le")
 
@@ -149,7 +134,7 @@ class AudioTranscodeService:
 
         progress_callback(0.0, "task.progress.transcode_starting")
 
-        await self._ffmpeg.audio_convert(
+        self._ffmpeg.audio_convert_sync(
             input_path=file_info.file_path,
             output_path=output_path,
             audio_codec=codec,

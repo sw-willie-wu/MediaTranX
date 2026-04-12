@@ -1,6 +1,6 @@
 """
-模型下載服務
-負責各種格式模型的下載：Whisper (BIN)、GGUF、PTH。
+Model download service.
+Handles downloading models in various formats: Whisper (BIN), GGUF, PTH.
 """
 import logging
 import shutil
@@ -26,12 +26,12 @@ def _models_dir(category: str = "") -> Path:
     return d
 
 
-# ─── 公開介面 ────────────────────────────────────────────────────────────────
+# --- Public interface ---
 
-def handle_model_download(params: dict, progress_callback: Callable) -> dict:
+def handle_model_download(params: dict, progress_callback: Callable[[float, str], None]) -> dict:
     """
-    模型/工具下載任務處理器（同步）
-    由 TaskManager 的 Executor 呼叫。
+    Model/tool download task handler (synchronous).
+    Called by TaskManager's Executor.
     """
     item_id = params.get("id", "")
     logger.info(f"Starting model download: {item_id}")
@@ -40,13 +40,13 @@ def handle_model_download(params: dict, progress_callback: Callable) -> dict:
     try:
         from huggingface_hub import hf_hub_download, snapshot_download
     except ImportError:
-        raise RuntimeError("huggingface_hub 未安裝，請先安裝基礎環境")
+        raise RuntimeError("huggingface_hub not installed; please install the base environment first")
 
     if item_id.startswith("whisper-"):
         size = item_id[len("whisper-"):]
         _download_whisper(size, progress_callback, snapshot_download)
 
-    elif item_id.startswith(("translategemma-", "qwen3-", "qwen3vl-", "internvl2.5-", "gemma3-", "qwen3.5-")):
+    elif item_id.startswith(("qwen3-", "qwen3vl-", "internvl2.5-", "gemma3-", "gemma4-", "qwen3.5-")):
         # Parse: {family}-{size}-{quant}
         parts = item_id.rsplit("-", 1)
         quant = parts[1]
@@ -77,16 +77,16 @@ def handle_model_download(params: dict, progress_callback: Callable) -> dict:
     return {"status": "ok", "id": item_id}
 
 
-# ─── 通用下載工具 ─────────────────────────────────────────────────────────────
+# --- Common download utilities ---
 
 def _download_from_url(
     url: str,
     target_path: Path,
-    progress_callback: Callable,
+    progress_callback: Callable[[float, str], None],
     base_progress: float = 0.1,
     end_progress: float = 0.95,
 ) -> None:
-    """從直接 URL 下載檔案（支援 GitHub releases 等）"""
+    """Download file from direct URL (supports GitHub releases, etc.)."""
     import requests
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -119,11 +119,11 @@ def _stream_download(
     repo_id: str,
     filename: str,
     target_path: Path,
-    progress_callback: Callable,
+    progress_callback: Callable[[float, str], None],
     base_progress: float = 0.1,
     end_progress: float = 0.95,
 ) -> None:
-    """透過 HuggingFace Hub 下載單一檔案，支援即時進度回報"""
+    """Download a single file via HuggingFace Hub with real-time progress reporting."""
     from huggingface_hub import hf_hub_url
 
     try:
@@ -138,12 +138,12 @@ def _stream_download(
         )
     except Exception as e:
         logger.error(f"Streaming download failed for {filename}: {e}")
-        raise RuntimeError(f"下載失敗 ({filename}): {str(e)}")
+        raise RuntimeError(f"Download failed ({filename}): {str(e)}")
 
 
-# ─── 各格式下載器 ─────────────────────────────────────────────────────────────
+# --- Format-specific downloaders ---
 
-def _download_whisper(size: str, progress_callback: Callable, snapshot_download) -> None:
+def _download_whisper(size: str, progress_callback: Callable[[float, str], None], snapshot_download) -> None:
     from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
 
     whisper_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("whisper", {})
@@ -151,7 +151,7 @@ def _download_whisper(size: str, progress_callback: Callable, snapshot_download)
     variant_spec = variants.get(size)
 
     if not variant_spec:
-        raise ValueError(f"未知的 Whisper 模型大小: {size}")
+        raise ValueError(f"Unknown Whisper model size: {size}")
 
     repo_id = variant_spec["repo_id"]
     local_dir = _models_dir("whisper") / size
@@ -171,8 +171,8 @@ def _download_whisper(size: str, progress_callback: Callable, snapshot_download)
     progress_callback(0.98, "task.progress.model_verified")
 
 
-def _download_gguf(model_family: str, size: str, quant: str, progress_callback: Callable) -> None:
-    """下載 GGUF 模型（含 mmproj 的視覺模型）"""
+def _download_gguf(model_family: str, size: str, quant: str, progress_callback: Callable[[float, str], None]) -> None:
+    """Download GGUF model (including mmproj for vision models)."""
     from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
 
     config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get(model_family, {})
@@ -180,7 +180,7 @@ def _download_gguf(model_family: str, size: str, quant: str, progress_callback: 
     variant = specs.get(size, {}).get("variants", {}).get(quant)
 
     if not variant:
-        raise ValueError(f"未知的模型變體: {model_family}-{size}-{quant}")
+        raise ValueError(f"Unknown model variant: {model_family}-{size}-{quant}")
 
     target_dir = _models_dir(model_family)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -199,9 +199,11 @@ def _download_gguf(model_family: str, size: str, quant: str, progress_callback: 
 
     if has_mmproj:
         progress_callback(0.65, "task.progress.downloading_mmproj")
+        # mmproj_remote_filename: actual filename on HuggingFace (may differ from local name)
+        remote_mmproj = variant.get("mmproj_remote_filename", variant["mmproj_filename"])
         _stream_download(
             repo_id=variant.get("mmproj_repo_id", variant["repo_id"]),
-            filename=variant["mmproj_filename"],
+            filename=remote_mmproj,
             target_path=target_dir / variant["mmproj_filename"],
             progress_callback=progress_callback,
             base_progress=0.65,
@@ -211,29 +213,29 @@ def _download_gguf(model_family: str, size: str, quant: str, progress_callback: 
     progress_callback(0.95, "task.progress.model_download_complete")
 
 
-def _download_demucs(variant: str, progress_callback: Callable) -> None:
-    """下載 Demucs 模型 checkpoint（直接從 Facebook 下載，避免 demucs 套件路徑問題）"""
+def _download_demucs(variant: str, progress_callback: Callable[[float, str], None]) -> None:
+    """Download Demucs model checkpoint (direct from Facebook, avoids demucs package path issues)."""
     from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_DEMUCS
 
     family = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("demucs")
     if not family:
-        raise ValueError("demucs 未在 registry 中註冊")
+        raise ValueError("demucs not registered in registry")
 
     variant_spec = family["variants"].get(variant)
     if not variant_spec:
-        raise ValueError(f"未知的 demucs 變體: {variant}")
+        raise ValueError(f"Unknown demucs variant: {variant}")
 
     model_name = variant_spec.get("model_name", variant)
     progress_callback(0.1, f"task.progress.downloading_named|{model_name}")
 
-    # 模型 hash → checkpoint 檔名對照（從 demucs/remote/*.yaml + files.txt）
+    # Model hash -> checkpoint filename mapping (from demucs/remote/*.yaml + files.txt)
     DEMUCS_MODELS = {
         "htdemucs": ("hybrid_transformer", "955717e8-8726e21a.th"),
         "htdemucs_6s": ("hybrid_transformer", "5c90dfd2-34c22ccb.th"),
     }
 
     if model_name not in DEMUCS_MODELS:
-        raise ValueError(f"不支援的 demucs 模型: {model_name}")
+        raise ValueError(f"Unsupported demucs model: {model_name}")
 
     folder, filename = DEMUCS_MODELS[model_name]
     url = f"https://dl.fbaipublicfiles.com/demucs/{folder}/{filename}"
@@ -250,7 +252,7 @@ def _download_demucs(variant: str, progress_callback: Callable) -> None:
     progress_callback(0.95, "task.progress.model_download_complete")
 
 
-def _download_rife(variant: str, progress_callback: Callable) -> None:
+def _download_rife(variant: str, progress_callback: Callable[[float, str], None]) -> None:
     """Download RIFE model checkpoint (extracts flownet.pkl from zip)"""
     import io
     import zipfile
@@ -301,12 +303,12 @@ def _download_rife(variant: str, progress_callback: Callable) -> None:
     progress_callback(0.95, "task.progress.model_download_complete")
 
 
-def _download_alignment(lang_code: str, progress_callback: Callable) -> None:
-    """下載 Wav2Vec2 alignment 模型（透過 transformers 從 HuggingFace 下載）"""
+def _download_alignment(lang_code: str, progress_callback: Callable[[float, str], None]) -> None:
+    """Download Wav2Vec2 alignment model (via transformers from HuggingFace)."""
     from app.engine.ai.audio.wav2vec2 import LANG_MODELS
 
     if lang_code not in LANG_MODELS:
-        raise ValueError(f"不支援的語言: {lang_code}")
+        raise ValueError(f"Unsupported language: {lang_code}")
 
     repo_id = LANG_MODELS[lang_code]
     cache_dir = str(_models_dir("alignment"))
@@ -315,7 +317,7 @@ def _download_alignment(lang_code: str, progress_callback: Callable) -> None:
     try:
         from huggingface_hub import list_repo_files, hf_hub_download
 
-        # 列出 repo 中的檔案
+        # List files in the repo
         all_files = list_repo_files(repo_id)
         download_files = [
             f for f in all_files
@@ -323,7 +325,7 @@ def _download_alignment(lang_code: str, progress_callback: Callable) -> None:
         ]
 
         if not download_files:
-            raise RuntimeError(f"Repo {repo_id} 中沒有可下載的檔案")
+            raise RuntimeError(f"No downloadable files in repo {repo_id}")
 
         total = len(download_files)
         for i, filename in enumerate(download_files):
@@ -336,18 +338,18 @@ def _download_alignment(lang_code: str, progress_callback: Callable) -> None:
             )
 
     except Exception as e:
-        raise RuntimeError(f"Alignment 模型下載失敗: {e}")
+        raise RuntimeError(f"Alignment model download failed: {e}")
 
     progress_callback(0.95, "task.progress.model_download_complete")
 
 
-def _download_pth_model(model_id: str, progress_callback: Callable) -> None:
-    """下載 PTH 模型（upscale / face_restore）"""
+def _download_pth_model(model_id: str, progress_callback: Callable[[float, str], None]) -> None:
+    """Download PTH model (upscale / face_restore)."""
     from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
 
     pth_models = MODELS_REGISTRY.get(FORMAT_PTH, {})
 
-    # 智能分解 ID: 嘗試匹配所有 family（處理 real-cugan 這種多連字符的情況）
+    # Smart ID decomposition: try matching all families (handles multi-hyphen cases like real-cugan)
     family = None
     variant = None
 
@@ -361,20 +363,20 @@ def _download_pth_model(model_id: str, progress_callback: Callable) -> None:
         family, variant = max(matched_families, key=lambda x: len(x[0]))
 
     if not family or not variant:
-        raise ValueError(f"無效的模型 ID 格式: {model_id}，無法匹配任何已知模型家族")
+        raise ValueError(f"Invalid model ID format: {model_id}, cannot match any known model family")
 
     model_config = pth_models.get(family)
 
     if not model_config:
-        raise ValueError(f"未知的模型家族: {family}")
+        raise ValueError(f"Unknown model family: {family}")
 
     variant_spec = model_config.get("variants", {}).get(variant)
     if not variant_spec:
-        raise ValueError(f"未知的模型變體: {family}-{variant}")
+        raise ValueError(f"Unknown model variant: {family}-{variant}")
 
     slot = model_config.get("slot", "")
     if not slot:
-        raise ValueError(f"模型 {family} 缺少 slot 配置")
+        raise ValueError(f"Model {family} missing slot configuration")
 
     target_dir = _models_dir() / slot
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -418,8 +420,8 @@ def _download_pth_model(model_id: str, progress_callback: Callable) -> None:
                         if not matching_files:
                             files_list = "\n  ".join(all_files[:10])
                             raise ValueError(
-                                f"壓縮檔中找不到 {archive_path}\n"
-                                f"壓縮檔包含 {len(all_files)} 個文件，前幾個：\n  {files_list}"
+                                f"File not found in archive: {archive_path}\n"
+                                f"Archive contains {len(all_files)} files, first few:\n  {files_list}"
                             )
 
                         source_file = matching_files[0]
@@ -445,12 +447,12 @@ def _download_pth_model(model_id: str, progress_callback: Callable) -> None:
             end_progress=0.95,
         )
     else:
-        raise ValueError(f"模型 {family}-{variant} 缺少 url 或 repo_id 配置")
+        raise ValueError(f"Model {family}-{variant} missing url or repo_id configuration")
 
     progress_callback(0.95, "task.progress.model_download_complete")
 
 
-def _download_basic_pitch(progress_callback: Callable) -> None:
+def _download_basic_pitch(progress_callback: Callable[[float, str], None]) -> None:
     """Trigger basic-pitch model download by running a dummy inference."""
     progress_callback(0.1, "task.progress.downloading_basic_pitch")
 

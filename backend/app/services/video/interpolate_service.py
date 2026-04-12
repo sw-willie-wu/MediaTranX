@@ -5,7 +5,7 @@ Uses RIFE to increase video frame rate.
 import logging
 from fractions import Fraction
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 from uuid import uuid4
 
 from app.services.files.file_service import FileService
@@ -13,22 +13,35 @@ from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
-TASK_TYPE_INTERPOLATE = "video.interpolate"
+TASK_TYPE_VIDEO_INTERPOLATE = "video.interpolate"
 
 
 class InterpolateService:
+    """Video frame interpolation using RIFE to increase frame rate."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_INTERPOLATE, self._handle_task)
+        self._task_manager.register_handler(TASK_TYPE_VIDEO_INTERPOLATE, self._handle_task)
         logger.info("InterpolateService initialized")
+
+    def get_rife_status(self) -> dict:
+        """Query RIFE model download status for each variant."""
+        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
+        from app.init.configs import SETTINGS
+
+        rife = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})
+        variants = {}
+        for name, spec in rife.get("variants", {}).items():
+            model_path = SETTINGS.path.models / "rife" / spec["filename"]
+            variants[name] = {"downloaded": model_path.exists()}
+        return {"variants": variants}
 
     async def submit(self, file_id: str, model: str = "v4.26", mode: str = "2x",
                      target_fps: Optional[float] = None, output_format: str = "mp4",
                      video_codec: str = "h264", output_dir: Optional[str] = None,
                      output_filename: Optional[str] = None) -> str:
-        task_id = await self._task_manager.submit(TASK_TYPE_INTERPOLATE, {
+        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_INTERPOLATE, {
             "file_id": file_id, "model": model, "mode": mode,
             "target_fps": target_fps, "output_format": output_format,
             "video_codec": video_codec, "output_dir": output_dir,
@@ -37,15 +50,10 @@ class InterpolateService:
         logger.info(f"Interpolation task submitted: {task_id}")
         return task_id
 
-    def _handle_task(self, params: dict, progress_callback) -> dict:
-        import asyncio
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(self._execute(params, progress_callback))
-        finally:
-            loop.close()
+    def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+        return self._execute(params, progress_callback)
 
-    async def _execute(self, params: dict, progress_callback) -> dict:
+    def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         from app.init.container import get_container
         from app.engine.ai.video.rife import get_rife
 
@@ -62,7 +70,7 @@ class InterpolateService:
             raise ValueError(f"File not found: {file_id}")
 
         ffmpeg = get_container().ffmpeg()
-        media_info = await ffmpeg.get_media_info(file_info.file_path)
+        media_info = ffmpeg.get_media_info_sync(file_info.file_path)
         source_fps = media_info.fps or 30.0
         source_fps_frac = media_info.fps_fraction or Fraction(30)
         width = media_info.width
@@ -70,7 +78,7 @@ class InterpolateService:
 
         if mode == "custom" and target_fps:
             if target_fps <= source_fps:
-                raise ValueError(f"目標 FPS ({target_fps}) 必須大於原始 FPS ({source_fps})")
+                raise ValueError(f"Target FPS ({target_fps}) must be greater than source FPS ({source_fps})")
             ratio = target_fps / source_fps
             multiplier = 2
             while multiplier < ratio:
@@ -87,12 +95,9 @@ class InterpolateService:
         original_stem = Path(file_info.original_filename).stem
         custom_output_filename = params.get("output_filename")
         output_filename = custom_output_filename if custom_output_filename else f"{original_stem}.interpolated_{mode}.{output_format}"
-        if output_dir:
-            output_dir_path = Path(output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / output_filename
+        output_dir = Path(output_dir) if output_dir else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / output_filename
 
         # Pipe mode: FFmpeg decode → RIFE → FFmpeg encode (zero disk I/O)
         progress_callback(0.0, "task.progress.interpolating")

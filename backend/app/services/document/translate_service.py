@@ -1,9 +1,8 @@
 """
-文件翻譯服務
-使用 TranslateGemma 翻譯上傳的文字檔
-支援純文字檔及字幕檔（SRT、VTT）
+Document translation service.
+Translates uploaded text files using local LLM.
+Supports plain text files and subtitle files (SRT, VTT).
 """
-import asyncio
 import logging
 import re
 from pathlib import Path
@@ -25,16 +24,16 @@ from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
-# 任務類型常數
+# Task type constant
 TASK_TYPE_DOCUMENT_TRANSLATE = "document.translate"
 
-# 字幕檔副檔名
+# Subtitle file extensions
 SUBTITLE_EXTENSIONS = {".srt", ".vtt", ".lrc", ".ass"}
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".log", ".srt", ".vtt", ".lrc", ".ass"}
 
 
 def _parse_srt_time(time_str: str) -> float:
-    """解析 SRT 時間格式 (HH:MM:SS,mmm) 為秒數"""
+    """Parse SRT time format (HH:MM:SS,mmm) to seconds."""
     m = re.match(r"(\d+):(\d+):(\d+)[,.](\d+)", time_str.strip())
     if not m:
         return 0.0
@@ -43,7 +42,7 @@ def _parse_srt_time(time_str: str) -> float:
 
 
 def _format_srt_time(seconds: float) -> str:
-    """將秒數格式化為 SRT 時間格式 (HH:MM:SS,mmm)"""
+    """Format seconds as SRT time format (HH:MM:SS,mmm)."""
     h = int(seconds // 3600)
     mi = int((seconds % 3600) // 60)
     s = int(seconds % 60)
@@ -52,7 +51,7 @@ def _format_srt_time(seconds: float) -> str:
 
 
 def _format_vtt_time(seconds: float) -> str:
-    """將秒數格式化為 VTT 時間格式 (HH:MM:SS.mmm)"""
+    """Format seconds as VTT time format (HH:MM:SS.mmm)."""
     h = int(seconds // 3600)
     mi = int((seconds % 3600) // 60)
     s = int(seconds % 60)
@@ -62,7 +61,7 @@ def _format_vtt_time(seconds: float) -> str:
 
 def _parse_srt(text: str) -> list[dict]:
     """
-    解析 SRT 字幕檔為 segments
+    Parse SRT subtitle file into segments.
 
     Returns:
         [{"start": float, "end": float, "text": str}, ...]
@@ -73,7 +72,7 @@ def _parse_srt(text: str) -> list[dict]:
         lines = block.strip().split("\n")
         if len(lines) < 2:
             continue
-        # 找到時間軸行（包含 -->）
+        # Find the timeline row (contains -->)
         time_line_idx = None
         for i, line in enumerate(lines):
             if "-->" in line:
@@ -94,19 +93,19 @@ def _parse_srt(text: str) -> list[dict]:
 
 def _parse_vtt(text: str) -> list[dict]:
     """
-    解析 VTT 字幕檔為 segments
+    Parse VTT subtitle file into segments.
 
     Returns:
         [{"start": float, "end": float, "text": str}, ...]
     """
-    # 移除 WEBVTT 標頭及可能的 metadata
+    # Remove WEBVTT header and possible metadata
     body = re.sub(r"^WEBVTT[^\n]*\n", "", text.strip(), count=1).strip()
-    # VTT 的時間格式用 . 而非 ,，但 _parse_srt_time 已經支援兩者
+    # VTT uses . instead of , for time format, but _parse_srt_time supports both
     return _parse_srt(body)
 
 
 def _write_srt(segments: list[dict], output_path: Path) -> None:
-    """將 segments 寫入 SRT 格式"""
+    """Write segments in SRT format."""
     with open(output_path, "w", encoding="utf-8") as f:
         for i, seg in enumerate(segments, 1):
             f.write(f"{i}\n")
@@ -115,7 +114,7 @@ def _write_srt(segments: list[dict], output_path: Path) -> None:
 
 
 def _write_vtt(segments: list[dict], output_path: Path) -> None:
-    """將 segments 寫入 VTT 格式"""
+    """Write segments in VTT format."""
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("WEBVTT\n\n")
         for i, seg in enumerate(segments, 1):
@@ -125,19 +124,16 @@ def _write_vtt(segments: list[dict], output_path: Path) -> None:
 
 
 class TranslateService:
-    """
-    文件翻譯服務
-    整合 TranslateGemma 和檔案管理
-    """
+    """Document translation service for text and subtitle files (local and remote)."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
 
-        # 註冊任務處理器
+        # Register task handler
         self._task_manager.register_handler(
             TASK_TYPE_DOCUMENT_TRANSLATE,
-            self._handle_translate_task,
+            self._handle_task,
         )
 
         logger.info("TranslateService initialized")
@@ -148,7 +144,7 @@ class TranslateService:
         source_language: str,
         target_language: str,
         model_size: str = "4b",
-        model_type: str = "translategemma",
+        model_family: str = "gemma4",
         quantization: Optional[str] = None,
         translate_style: str = "colloquial",
         glossary: Optional[dict[str, str]] = None,
@@ -156,15 +152,15 @@ class TranslateService:
         output_filename: Optional[str] = None,
     ) -> str:
         """
-        提交文件翻譯任務
+        Submit a document translation task.
 
         Args:
-            file_id: 輸入檔案 ID
-            source_language: 來源語言
-            target_language: 目標語言
-            model_size: 模型大小 (4b, 12b, 27b)
-            output_dir: 自訂輸出目錄
-            output_filename: 自訂輸出檔名
+            file_id: Input file ID
+            source_language: Source language
+            target_language: Target language
+            model_size: Model size (4b, 12b, 27b)
+            output_dir: Custom output directory
+            output_filename: Custom output filename
 
         Returns:
             task_id
@@ -178,7 +174,7 @@ class TranslateService:
             "source_language": source_language,
             "target_language": target_language,
             "model_size": model_size,
-            "model_type": model_type,
+            "model_family": model_family,
             "quantization": quantization,
             "translate_style": translate_style,
             "glossary": glossary,
@@ -191,33 +187,26 @@ class TranslateService:
 
         return task_id
 
-    def _handle_translate_task(
+    def _handle_task(
         self,
         params: dict,
         progress_callback: Callable[[float, str], None]
     ) -> dict:
-        """處理翻譯任務（在 executor 中執行）"""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(
-                self._execute_translate(params, progress_callback)
-            )
-        finally:
-            loop.close()
+        """Handle translation task (runs in executor)."""
+        return self._execute(params, progress_callback)
 
-    async def _execute_translate(
+    def _execute(
         self,
         params: dict,
         progress_callback: Callable[[float, str], None]
     ) -> dict:
         """
-        執行文件翻譯
+        Execute document translation.
 
-        流程:
-        1. 讀取檔案 (0~5%)
-        2. 翻譯 (5~95%)
-        3. 寫入輸出檔 (95~100%)
+        Pipeline:
+        1. Read file (0~5%)
+        2. Translate (5~95%)
+        3. Write output file (95~100%)
         """
         file_id = params["file_id"]
         file_info = self._file_service.get_file(file_id)
@@ -228,12 +217,12 @@ class TranslateService:
         source_language = params["source_language"]
         target_language = params["target_language"]
         model_size = params.get("model_size", "4b")
-        model_type = params.get("model_type", "translategemma")
+        model_family = params.get("model_family", "gemma4")
         quantization = params.get("quantization")
         translate_style = params.get("translate_style", "colloquial")
         glossary = params.get("glossary")
 
-        # === 階段 1: 讀取檔案 (0~5%) ===
+        # === Stage 1: Read file (0~5%) ===
         progress_callback(0.0, "task.progress.reading_file")
 
         file_path = Path(file_info.file_path)
@@ -250,7 +239,7 @@ class TranslateService:
 
         progress_callback(0.05, f"task.progress.file_read_complete|{len(text)}")
 
-        # === 階段 2: 翻譯 (5~95%) ===
+        # === Stage 2: Translate (5~95%) ===
         def translate_progress(percent: float, msg: str):
             overall = 0.05 + percent * 0.90
             progress_callback(overall, msg)
@@ -258,7 +247,7 @@ class TranslateService:
         is_remote = params.get("remote", False)
 
         if is_remote:
-            # === 雲端翻譯 ===
+            # === Cloud translation ===
             from app.utils.translate import get_cloud_provider, translate_srt_cloud, translate_text_cloud
 
             provider = params.get("provider", "")
@@ -288,19 +277,17 @@ class TranslateService:
                 )
                 translated_segments = None
         else:
-            # === 本地翻譯 ===
+            # === Local translation ===
             from app.init.container import get_container
-            from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-            from app.engine.ai.registry import SLOT_LLM
             from app.utils.translate import translate_srt_local, translate_text_local
 
             variant = f"{model_size}:{quantization}" if quantization else model_size
 
             with get_container().model_manager().gpu_session():
-                runtime = LlamaServerRuntime(SLOT_LLM)
-                translate_progress(0.0, "載入翻譯模型...")
+                runtime = get_container().llama_runtime()
+                translate_progress(0.0, "task.progress.load_translate_model")
 
-                with runtime.acquire(model_type, variant, lambda p, m: translate_progress(p * 0.05, m)):
+                with runtime.acquire(model_family, variant, lambda p, m: translate_progress(p * 0.05, m)):
                     if is_subtitle:
                         if ext == ".vtt":
                             segments = _parse_vtt(text)
@@ -310,28 +297,30 @@ class TranslateService:
                         logger.info(f"Parsed {len(segments)} subtitle segments from {ext} file")
                         src = WHISPER_TO_BCP47.get(source_language, source_language)
 
-                        translate_progress(0.05, "開始翻譯字幕...")
+                        translate_progress(0.05, "task.progress.start_translate")
                         translated_segments = translate_srt_local(
                             segments, src, target_language, runtime,
                             on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
-                            style=translate_style, glossary=glossary, model_id=model_type,
+                            style=translate_style, glossary=glossary,
+                            model_family=model_family, model_size=model_size,
                         )
                         translated_text = None
                     else:
-                        translate_progress(0.05, "開始翻譯...")
+                        translate_progress(0.05, "task.progress.start_translate")
                         translated_text = translate_text_local(
                             text, source_language, target_language, runtime,
                             on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
-                            glossary=glossary, model_id=model_type,
+                            glossary=glossary, model_family=model_family,
+                            model_size=model_size,
                         )
                         translated_segments = None
 
-        # === 階段 3: 寫入輸出檔 (95~100%) ===
+        # === Stage 3: Write output file (95~100%) ===
         progress_callback(0.95, "task.progress.writing_output_file")
 
         output_file_id = str(uuid4())
 
-        # 決定檔名
+        # Determine filename
         custom_output_filename = params.get("output_filename")
         if custom_output_filename:
             final_filename = custom_output_filename
@@ -340,16 +329,12 @@ class TranslateService:
             original_ext = Path(file_info.original_filename).suffix or ".txt"
             final_filename = f"{original_stem}_{target_language}{original_ext}"
 
-        # 決定輸出目錄
-        custom_output_dir = params.get("output_dir")
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
+        # Determine output directory
+        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
 
-        # 寫入
+        # Write output
         if is_subtitle and translated_segments is not None:
             if ext == ".vtt":
                 _write_vtt(translated_segments, output_path)
@@ -358,7 +343,7 @@ class TranslateService:
         else:
             output_path.write_text(translated_text, encoding="utf-8")
 
-        # 註冊輸出檔案
+        # Register output file
         output_info = self._file_service.register_output(
             file_id=output_file_id,
             file_path=output_path,

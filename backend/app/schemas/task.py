@@ -1,8 +1,8 @@
 """
-跨層共用的任務 domain models
+Cross-layer shared task domain models.
 
-TaskStatus 和 TaskData 供 workers、services、api 層共用，
-避免 workers 反向依賴 api.schemas。
+TaskStatus and TaskData are shared by workers, services, and api layers
+to avoid workers depending on the API layer.
 """
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -13,7 +13,7 @@ from app.handler.exceptions import TaskCancelledError  # noqa: F401 — re-expor
 
 
 class TaskStatus(str, Enum):
-    """任務狀態"""
+    """Task status."""
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -23,7 +23,7 @@ class TaskStatus(str, Enum):
 
 @dataclass
 class TaskData:
-    """任務內部狀態（mutable dataclass，供 TaskManager 使用）"""
+    """Task internal state (mutable dataclass, used by TaskManager)."""
     task_id: str
     task_type: str
     status: TaskStatus = TaskStatus.PENDING

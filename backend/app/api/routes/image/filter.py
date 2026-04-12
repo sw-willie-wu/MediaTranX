@@ -1,43 +1,47 @@
 """
-圖片調整 API 路由
+Image filter/adjustment API routes.
 """
+from __future__ import annotations
 import asyncio
+from typing import TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.image.filter_service import ImageFilterService
+
+if TYPE_CHECKING:
+    from app.services.image.filter_service import ImageFilterService
 
 router = APIRouter()
 
 
 class ImageFilterRequest(BaseModel):
-    """圖片調整請求"""
-    file_id:    str   = Field(...,         description="輸入檔案 ID")
-    brightness: float = Field(default=1.0, description="亮度 (1.0 = 不變)")
-    contrast:   float = Field(default=1.0, description="對比度 (1.0 = 不變)")
-    saturation: float = Field(default=1.0, description="飽和度 (1.0 = 不變)")
-    hue:        float = Field(default=0.0, description="色相旋轉角度 (-180 ~ 180)")
-    sharpness:  float = Field(default=1.0, description="銳利度 (1.0 = 不變)")
-    warmth:     float = Field(default=0.0, description="色溫 (-1.0 冷 ~ 1.0 暖)")
-    grayscale:  float = Field(default=0.0,   description="灰階強度 (0.0 = 不變，1.0 = 完全灰階)")
-    sepia:      float = Field(default=0.0, description="復古色調強度 (0.0 ~ 1.0)")
-    invert:     float = Field(default=0.0, description="負片強度 (0.0 ~ 1.0)")
-    blur:       float = Field(default=0.0, description="模糊半徑 (px)")
-    vignette:   float = Field(default=0.0, description="暈影強度 (0.0 ~ 1.0)")
+    """Image filter/adjustment request."""
+    file_id:    str   = Field(...,         description="Input file ID")
+    brightness: float = Field(default=1.0, description="Brightness (1.0 = unchanged)")
+    contrast:   float = Field(default=1.0, description="Contrast (1.0 = unchanged)")
+    saturation: float = Field(default=1.0, description="Saturation (1.0 = unchanged)")
+    hue:        float = Field(default=0.0, description="Hue rotation angle (-180 ~ 180)")
+    sharpness:  float = Field(default=1.0, description="Sharpness (1.0 = unchanged)")
+    warmth:     float = Field(default=0.0, description="Color temperature (-1.0 cool ~ 1.0 warm)")
+    grayscale:  float = Field(default=0.0,   description="Grayscale intensity (0.0 = unchanged, 1.0 = full grayscale)")
+    sepia:      float = Field(default=0.0, description="Sepia tone intensity (0.0 ~ 1.0)")
+    invert:     float = Field(default=0.0, description="Invert intensity (0.0 ~ 1.0)")
+    blur:       float = Field(default=0.0, description="Blur radius (px)")
+    vignette:   float = Field(default=0.0, description="Vignette intensity (0.0 ~ 1.0)")
 
 
 class ImageFilterResponse(BaseModel):
-    """圖片調整回應"""
+    """Image filter response."""
     task_id: str
-    message: str = "圖片調整任務已提交"
+    message: str = "Image filter task submitted"
 
 
 class ImageFilterPreviewRequest(BaseModel):
-    """圖片調整快速預覽請求（同步，降解析度）"""
-    file_id:    str   = Field(...,         description="輸入檔案 ID")
+    """Image filter quick preview request (synchronous, reduced resolution)."""
+    file_id:    str   = Field(...,         description="Input file ID")
     brightness: float = Field(default=1.0)
     contrast:   float = Field(default=1.0)
     saturation: float = Field(default=1.0)
@@ -52,7 +56,7 @@ class ImageFilterPreviewRequest(BaseModel):
 
 
 class ImageFilterPreviewResponse(BaseModel):
-    """預覽回應，回傳 base64 JPEG"""
+    """Preview response, returns base64 JPEG."""
     preview: str  # data:image/jpeg;base64,...
 
 
@@ -62,7 +66,7 @@ async def filter_image(
     request: ImageFilterRequest,
     service: ImageFilterService = Depends(Provide[AppContainer.image_filter]),
 ):
-    """提交圖片調整任務"""
+    """Submit image filter task."""
     try:
         task_id = await service.submit_filter(
             file_id=request.file_id,
@@ -91,7 +95,7 @@ async def preview_filter(
     request: ImageFilterPreviewRequest,
     service: ImageFilterService = Depends(Provide[AppContainer.image_filter]),
 ):
-    """同步生成預覽圖（降解析度，回傳 base64 data URI）"""
+    """Synchronously generate a preview image (reduced resolution, returns base64 data URI)."""
     try:
         params = request.model_dump(exclude={"file_id"})
         data_uri = await asyncio.to_thread(

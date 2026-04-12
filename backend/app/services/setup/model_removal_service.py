@@ -1,6 +1,6 @@
 """
-模型移除服務
-負責刪除已下載的模型/工具檔案。
+Model removal service.
+Handles deletion of downloaded model/tool files.
 """
 import logging
 import shutil
@@ -17,28 +17,13 @@ def _models_dir(category: str = "") -> Path:
 
 
 def remove_model(item_id: str) -> None:
-    """刪除已下載的模型/工具檔案"""
+    """Delete downloaded model/tool files."""
     if item_id.startswith("whisper-"):
         size = item_id[len("whisper-"):]
         model_dir = _models_dir("whisper") / size
         if model_dir.exists():
             shutil.rmtree(model_dir)
             logger.info(f"Removed whisper model: {size}")
-
-    elif item_id.startswith("translategemma-"):
-        parts = item_id.split("-", 2)
-        size, quant = parts[1], parts[2]
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
-
-        translategemma_config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get("translategemma", {})
-        specs = translategemma_config.get("specs", {})
-        variant = specs.get(size, {}).get("variants", {}).get(quant)
-
-        if variant:
-            p = _models_dir("translategemma") / variant["filename"]
-            if p.exists():
-                p.unlink()
-                logger.info(f"Removed translategemma model: {item_id}")
 
     elif item_id.startswith("qwen3-"):
         parts = item_id.split("-", 2)
@@ -56,7 +41,7 @@ def remove_model(item_id: str) -> None:
                 logger.info(f"Removed qwen3 model: {item_id}")
 
     elif item_id.startswith(("qwen3vl-", "internvl2.5-", "gemma3-", "qwen3.5-")):
-        # GGUF 視覺模型：qwen3vl-4b-Q4_K_M
+        # GGUF vision models: qwen3vl-4b-Q4_K_M
         parts = item_id.rsplit("-", 1)
         quant = parts[1]
         family_size = parts[0]
@@ -96,10 +81,10 @@ def remove_model(item_id: str) -> None:
                 logger.info(f"Removed rife model: {item_id}")
 
     else:
-        # PTH 模型（upscale / face_restore）: {family}-{variant}
+        # PTH models (upscale / face_restore): {family}-{variant}
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
 
-        # 分解 ID: family-variant
+        # Decompose ID: family-variant
         if '-' in item_id:
             family, variant = item_id.split('-', 1)
         else:

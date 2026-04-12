@@ -1,7 +1,7 @@
 """
-GPU/CPU 自動偵測模組
-自動選擇最佳運算裝置和精度設定
-支援透過 PyTorch 或 CTranslate2 偵測 CUDA
+GPU/CPU auto-detection module.
+Automatically selects the optimal compute device and precision settings.
+Supports CUDA detection via PyTorch or CTranslate2.
 """
 import sys
 import logging
@@ -13,23 +13,25 @@ logger = logging.getLogger(__name__)
 @lru_cache(maxsize=1)
 def is_cuda_runtime_available() -> bool:
     """
-    檢查 CUDA 運算庫（cublas 等）是否可用
+    Check whether CUDA runtime libraries (cublas, etc.) are available.
 
-    有 NVIDIA GPU 不代表能跑 CUDA 運算，還需要 CUDA Toolkit 或對應 DLLs。
-    PyInstaller 打包後 DLL 在 exe 同目錄，需要額外搜尋。
+    Having an NVIDIA GPU does not guarantee CUDA compute capability;
+    the CUDA Toolkit or corresponding DLLs must also be present.
+    In PyInstaller-packaged builds the DLLs reside next to the exe
+    and require additional search paths.
     """
     import ctypes
     import sys
     from pathlib import Path
 
-    # 1. 標準搜尋（系統 PATH、目前目錄等）
+    # 1. Standard search (system PATH, current directory, etc.)
     try:
         ctypes.CDLL("cublas64_12.dll")
         return True
     except (OSError, Exception):
         pass
 
-    # 2. PyInstaller 打包環境：在 exe 目錄搜尋
+    # 2. PyInstaller packaged environment: search in exe directory
     if getattr(sys, 'frozen', False):
         exe_dir = Path(sys.executable).parent
         for search_dir in [exe_dir, exe_dir / '_internal']:
@@ -41,15 +43,15 @@ def is_cuda_runtime_available() -> bool:
                 except (OSError, Exception):
                     pass
 
-    # 3. 使用者下載的 CUDA DLL（%APPDATA%/MediaTranX/cuda/）
-    # 用絕對路徑載入，避免 frozen 環境 PATH 搜尋不可靠的問題
+    # 3. User-downloaded CUDA DLLs (%APPDATA%/MediaTranX/cuda/)
+    # Load by absolute path to avoid unreliable PATH search in frozen environments
     try:
         import os
         appdata = os.environ.get('APPDATA', '')
         if appdata:
             cuda_dll = Path(appdata) / 'MediaTranX' / 'cuda' / 'cublas64_12.dll'
             if cuda_dll.exists():
-                # 先把目錄加入 AddDllDirectory，讓依賴 DLL（cudart 等）也能被找到
+                # Add directory via AddDllDirectory so dependent DLLs (cudart, etc.) can also be found
                 try:
                     os.add_dll_directory(str(cuda_dll.parent))
                 except (AttributeError, OSError):
@@ -63,7 +65,7 @@ def is_cuda_runtime_available() -> bool:
 
 
 def _detect_cuda_via_torch() -> str | None:
-    """嘗試透過 PyTorch 偵測 CUDA"""
+    """Attempt to detect CUDA via PyTorch."""
     try:
         import torch
 
@@ -80,7 +82,7 @@ def _detect_cuda_via_torch() -> str | None:
 
 
 def _detect_cuda_via_ctranslate2() -> str | None:
-    """嘗試透過 CTranslate2 偵測 CUDA"""
+    """Attempt to detect CUDA via CTranslate2."""
     try:
         import ctranslate2
 
@@ -95,7 +97,7 @@ def _detect_cuda_via_ctranslate2() -> str | None:
 
 def has_directml() -> bool:
     """
-    偵測是否支援 DirectML (Windows AMD/Intel GPU 加速)
+    Detect whether DirectML is supported (Windows AMD/Intel GPU acceleration).
     """
     if sys.platform != "win32":
         return False
@@ -108,20 +110,20 @@ def has_directml() -> bool:
 @lru_cache(maxsize=1)
 def get_device() -> str:
     """
-    自動偵測最佳運算裝置
-    優先級: CUDA -> DirectML -> CPU
+    Auto-detect the optimal compute device.
+    Priority: CUDA -> DirectML -> CPU
     """
-    # 1. 嘗試 CUDA
+    # 1. Try CUDA
     cuda = _detect_cuda_via_torch() or _detect_cuda_via_ctranslate2()
     if cuda == "cuda" and is_cuda_runtime_available():
         return "cuda"
     
-    # 2. 嘗試 DirectML (AMD/Intel)
+    # 2. Try DirectML (AMD/Intel)
     if has_directml():
         logger.info("Using DirectML for hardware acceleration")
         return "dml"
 
-    # 3. Fallback CPU
+    # 3. Fallback to CPU
     if has_nvidia_gpu():
         logger.info("NVIDIA GPU detected but CUDA Toolkit not installed, falling back to CPU")
     else:
@@ -132,17 +134,17 @@ def get_device() -> str:
 @lru_cache(maxsize=1)
 def get_compute_type() -> str:
     """
-    根據裝置選擇最佳精度
+    Select the optimal precision based on the device.
 
     Returns:
         str: "float16" for GPU, "int8" for CPU
     """
     device = get_device()
     if device == "cuda":
-        return "float16"  # GPU 用半精度加速
+        return "float16"  # GPU uses half-precision for acceleration
     elif device == "mps":
-        return "float32"  # MPS 目前較適合 float32
-    return "int8"  # CPU 用 int8 量化節省記憶體
+        return "float32"  # MPS currently works best with float32
+    return "int8"  # CPU uses int8 quantization to save memory
 
 
 _device_info_cache: dict | None = None
@@ -150,10 +152,10 @@ _device_info_cache: dict | None = None
 
 def get_device_info() -> dict:
     """
-    取得完整的裝置資訊（結果會快取）
+    Get complete device information (result is cached).
 
     Returns:
-        dict: 包含裝置類型、名稱、記憶體等資訊
+        dict: Contains device type, name, memory, and other info.
     """
     global _device_info_cache
     if _device_info_cache is not None:
@@ -161,8 +163,8 @@ def get_device_info() -> dict:
 
     gpu_detected = has_nvidia_gpu()
 
-    # 必須先呼叫 get_device()（內部 import torch 會載入 CUDA DLL），
-    # 再呼叫 is_cuda_runtime_available()，否則 @lru_cache 會快取錯誤結果
+    # Must call get_device() first (its internal torch import loads CUDA DLLs),
+    # then call is_cuda_runtime_available(), otherwise @lru_cache caches wrong results
     device = get_device()
     compute_type = get_compute_type()
     cuda_runtime = is_cuda_runtime_available()
@@ -187,7 +189,7 @@ def get_device_info() -> dict:
         "cpu_count": cpu_count,
     }
 
-    # 嘗試透過 PyTorch 取得詳細 GPU 資訊
+    # Attempt to get detailed GPU info via PyTorch
     got_gpu_info = False
     try:
         import torch
@@ -203,11 +205,11 @@ def get_device_info() -> dict:
     except Exception:
         pass
 
-    # PyTorch 無法取得 GPU 資訊時（未安裝或 CPU 版），改用 nvidia-smi
+    # Fall back to nvidia-smi when PyTorch cannot get GPU info (not installed or CPU-only build)
     if gpu_detected and not got_gpu_info:
         info["device_name"] = _get_gpu_name_via_smi() or "NVIDIA GPU"
 
-    # nvidia-smi fallback: 當 memory_total 仍為 None 且有 NVIDIA GPU 時
+    # nvidia-smi fallback: when memory_total is still None and an NVIDIA GPU is present
     if info["memory_total"] is None and gpu_detected:
         try:
             import subprocess
@@ -217,7 +219,7 @@ def get_device_info() -> dict:
             )
             if result.returncode == 0:
                 parts = result.stdout.strip().split(",")
-                info["memory_total"] = int(parts[0].strip()) * 1024 * 1024  # MB→bytes
+                info["memory_total"] = int(parts[0].strip()) * 1024 * 1024  # MB -> bytes
                 info["memory_free"] = int(parts[1].strip()) * 1024 * 1024
         except Exception:
             pass
@@ -227,7 +229,7 @@ def get_device_info() -> dict:
 
 
 def _get_os_name() -> tuple[str, str]:
-    """取得 OS 名稱與版本號（Windows 區分 10/11）"""
+    """Get OS name and version (distinguishes Windows 10/11)."""
     import platform
     system = platform.system()
     if system == "Windows":
@@ -244,7 +246,7 @@ def _get_os_name() -> tuple[str, str]:
 
 
 def _get_cpu_info() -> tuple[str, int | None]:
-    """取得 CPU 名稱與邏輯核心數"""
+    """Get CPU name and logical core count."""
     import platform
     import os as _os
 
@@ -290,7 +292,7 @@ def _get_cpu_info() -> tuple[str, int | None]:
 
 
 def _get_ram_info() -> tuple[int | None, int | None]:
-    """取得系統 RAM 資訊（bytes）"""
+    """Get system RAM info (in bytes)."""
     try:
         import ctypes
         class MEMORYSTATUSEX(ctypes.Structure):
@@ -325,7 +327,7 @@ def _get_ram_info() -> tuple[int | None, int | None]:
 
 
 def refresh_device_cache() -> None:
-    """清除所有裝置偵測快取，強制重新偵測（CUDA DLL 下載後呼叫）"""
+    """Clear all device detection caches to force re-detection (call after CUDA DLL download)."""
     global _device_info_cache
     _device_info_cache = None
     is_cuda_runtime_available.cache_clear()
@@ -340,9 +342,9 @@ def refresh_device_cache() -> None:
 @lru_cache(maxsize=1)
 def has_nvidia_gpu() -> bool:
     """
-    透過 nvidia-smi 偵測是否有 NVIDIA GPU（不依賴 torch）
+    Detect whether an NVIDIA GPU is present via nvidia-smi (no torch dependency).
 
-    即使 torch 未安裝或只有 CPU 版，仍可偵測到 GPU 硬體。
+    Can detect GPU hardware even when torch is not installed or is CPU-only.
     """
     try:
         import subprocess
@@ -358,7 +360,7 @@ def has_nvidia_gpu() -> bool:
 
 @lru_cache(maxsize=1)
 def _get_gpu_name_via_smi() -> str | None:
-    """透過 nvidia-smi 取得 GPU 名稱（結果會快取）"""
+    """Get GPU name via nvidia-smi (result is cached)."""
     try:
         import subprocess
         result = subprocess.run(
@@ -376,7 +378,7 @@ def _get_gpu_name_via_smi() -> str | None:
 
 @lru_cache(maxsize=1)
 def get_driver_version() -> str | None:
-    """透過 nvidia-smi 取得 NVIDIA 驅動版本號，例如 '560.94'"""
+    """Get NVIDIA driver version via nvidia-smi, e.g. '560.94'."""
     try:
         import subprocess
         result = subprocess.run(
@@ -394,20 +396,20 @@ def get_driver_version() -> str | None:
 
 def select_torch_index() -> str:
     """
-    根據 NVIDIA 驅動版本選擇對應的 PyTorch wheel 類型。
+    Select the PyTorch wheel variant based on NVIDIA driver version.
 
-    對應規則（參見 BUILD_STRATEGY.md）：
-      驅動 ≥ 560 → cu124
-      驅動 ≥ 527 → cu121
-      驅動 ≥ 452 → cu118
-      無 GPU / 太舊 → cpu
+    Mapping rules (see BUILD_STRATEGY.md):
+      Driver >= 560 -> cu124
+      Driver >= 527 -> cu121
+      Driver >= 452 -> cu118
+      No GPU / too old -> cpu
     """
     if not has_nvidia_gpu():
         return "cpu"
 
     version_str = get_driver_version()
     if not version_str:
-        return "cu124"  # fallback：有 GPU 但無法讀版本，用最新
+        return "cu124"  # fallback: GPU present but version unreadable, use latest
 
     try:
         major = int(version_str.split(".")[0])
@@ -418,6 +420,6 @@ def select_torch_index() -> str:
         elif major >= 452:
             return "cu118"
         else:
-            return "cpu"  # 驅動太舊，建議升級
+            return "cpu"  # driver too old, upgrade recommended
     except (ValueError, IndexError):
         return "cu124"

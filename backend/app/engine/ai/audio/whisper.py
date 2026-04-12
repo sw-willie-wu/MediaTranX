@@ -1,8 +1,7 @@
 """
-Whisper 語音辨識模組
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-繼承 PackageRuntime，使用 faster-whisper 進行語音辨識
-⚠️ Windows 崩潰防護：CTranslate2 解構子會觸發崩潰，需 zombie 機制
+Whisper speech recognition module.
+Inherits PackageRuntime, uses faster-whisper for speech recognition.
+Warning: Windows crash protection -- CTranslate2 destructor triggers crashes; zombie mechanism required.
 """
 import logging
 from dataclasses import dataclass
@@ -16,66 +15,66 @@ from app.engine.ai.registry import SLOT_WHISPER, FORMAT_PKG, MODELS_REGISTRY
 
 logger = logging.getLogger(__name__)
 
-# ⚠️ 關鍵防護機制：Windows 穩定性保障
-# CTranslate2 的 C++ 解構子在 Windows 上會觸發 STATUS_STACK_BUFFER_OVERRUN 崩潰
-# 必須保持已卸載模型的 Python 引用，防止解構子執行
+# Critical protection mechanism: Windows stability safeguard
+# CTranslate2's C++ destructor triggers STATUS_STACK_BUFFER_OVERRUN crashes on Windows
+# Must keep Python references to unloaded models to prevent destructor execution
 _zombie_models: list = []
 
 
 @dataclass
 class TranscribeWord:
-    """對齊後的單字（alignment 後才有）"""
+    """An aligned word (only available after alignment)."""
     word: str
     start: float
     end: float
-    score: float  # alignment 信心分數
+    score: float  # alignment confidence score
 
 @dataclass
 class TranscribeSegment:
-    """轉錄片段"""
-    start: float   # 開始時間（秒）
-    end: float     # 結束時間（秒）
-    text: str      # 辨識文字
-    words: list[TranscribeWord] | None = None  # alignment 後才有
+    """A transcription segment."""
+    start: float   # start time (seconds)
+    end: float     # end time (seconds)
+    text: str      # recognized text
+    words: list[TranscribeWord] | None = None  # only available after alignment
 
 @dataclass
 class TranscribeResult:
-    """轉錄結果"""
-    language: str                    # 偵測到的語言
-    language_probability: float      # 語言機率
+    """Transcription result."""
+    language: str                    # detected language
+    language_probability: float      # language probability
     segments: list[TranscribeSegment]
-    duration: float                  # 音訊總長（秒）
+    duration: float                  # total audio duration (seconds)
 
 
 # ═══════════════════════════════════════════════════════════
-# 詞級時間戳 → 智慧分句
+# Word-level timestamps -> smart sentence splitting
 # ═══════════════════════════════════════════════════════════
-# 停頓間隔閾值（秒）：連續兩個 word 間隔超過此值視為可拆點
+# Pause interval threshold (seconds): gap between consecutive words exceeding this is a split candidate
 _PAUSE_THRESHOLD_S = 0.3
-# 單行字數上限：超過此字數且有停頓點時，優先拆行
+# Max characters per line: when exceeded and pause points exist, prefer splitting
 _MAX_CHARS_PER_LINE = 42
 
 
 def _split_by_words(words: list) -> list[TranscribeSegment]:
     """
-    用 word-level 時間戳做智慧分句。
+    Smart sentence splitting using word-level timestamps.
 
-    策略：
-    1. 修正時間戳 — start/end 取自首尾 word（去掉 VAD padding）
-    2. 長句拆行 — 在最大停頓處切開，確保每行不會太長
-    3. 保持句意完整 — 不逐詞拆，翻譯仍拿到完整片語
+    Strategy:
+    1. Correct timestamps -- start/end taken from first/last word (removing VAD padding)
+    2. Long sentence splitting -- cut at largest pause to keep each line reasonable
+    3. Maintain semantic integrity -- no per-word splitting; translation gets complete phrases
     """
     if not words:
         return []
 
-    # 找所有候選切點：word 間的停頓間隔
+    # Find all candidate split points: pause gaps between words
     pause_points: list[tuple[int, float]] = []  # (index, gap_seconds)
     for i in range(1, len(words)):
         gap = words[i].start - words[i - 1].end
         if gap >= _PAUSE_THRESHOLD_S:
             pause_points.append((i, gap))
 
-    # 如果整句夠短或沒有停頓點，直接修正時間戳輸出一句
+    # If sentence is short enough or no pause points, output as single segment with corrected timestamps
     total_text = "".join(w.word for w in words).strip()
     if not pause_points or len(total_text) <= _MAX_CHARS_PER_LINE:
         return [TranscribeSegment(
@@ -84,7 +83,7 @@ def _split_by_words(words: list) -> list[TranscribeSegment]:
             text=total_text,
         )]
 
-    # 遞迴式拆行：每次在最大停頓處切一刀
+    # Recursive splitting: cut at the largest pause each time
     result: list[TranscribeSegment] = []
     _recursive_split(words, pause_points, result)
     return result
@@ -95,10 +94,10 @@ def _recursive_split(
     pause_points: list[tuple[int, float]],
     result: list[TranscribeSegment],
 ) -> None:
-    """在最大停頓處切開，子片段超長則繼續遞迴拆。"""
+    """Split at the largest pause; recursively split if sub-segments are too long."""
     text = "".join(w.word for w in words).strip()
 
-    # 篩選出屬於當前 words 範圍的 pause_points
+    # Filter pause_points belonging to the current words range
     if not pause_points or len(text) <= _MAX_CHARS_PER_LINE:
         result.append(TranscribeSegment(
             start=words[0].start,
@@ -107,7 +106,7 @@ def _recursive_split(
         ))
         return
 
-    # 找最大停頓
+    # Find largest pause
     best = max(pause_points, key=lambda p: p[1])
     split_idx = best[0]
 
@@ -122,12 +121,12 @@ def _recursive_split(
 
 class WhisperWrapper(PackageRuntime):
     """
-    Whisper 語音辨識封裝（繼承 PackageRuntime）
+    Whisper speech recognition wrapper (inherits PackageRuntime).
 
-    職責：
-    1. 轉錄邏輯（語音 → 文字）
-    2. 進度計算與分句處理
-    3. ⚠️ Windows 崩潰防護透過 _cleanup_model() 處理
+    Responsibilities:
+    1. Transcription logic (speech -> text)
+    2. Progress calculation and sentence splitting
+    3. Windows crash protection handled via _cleanup_model()
     """
 
     def __init__(self):
@@ -141,7 +140,7 @@ class WhisperWrapper(PackageRuntime):
         device: str,
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
-        """使用 faster-whisper 載入 CTranslate2 模型"""
+        """Load CTranslate2 model using faster-whisper."""
         if on_progress:
             on_progress(0.2, "task.progress.init_ctranslate2")
 
@@ -163,16 +162,16 @@ class WhisperWrapper(PackageRuntime):
 
     def _cleanup_model(self) -> None:
         """
-        ⚠️ Windows 崩潰防護
+        Windows crash protection.
 
-        步驟：
-        1. 呼叫 unload_model() 釋放 CUDA 記憶體
-        2. 將物件加入 _zombie_models 防止 C++ 解構子執行
+        Steps:
+        1. Call unload_model() to release CUDA memory
+        2. Add object to _zombie_models to prevent C++ destructor execution
         """
         if self._model is None:
             return
 
-        # Step 1: 釋放 CUDA 記憶體
+        # Step 1: Release CUDA memory
         try:
             if hasattr(self._model, 'model') and hasattr(self._model.model, 'unload_model'):
                 self._model.model.unload_model()
@@ -180,17 +179,17 @@ class WhisperWrapper(PackageRuntime):
         except Exception as e:
             logger.warning(f"CTranslate2 unload_model() failed: {e}")
 
-        # Step 2: ⚠️ 殭屍化物件（Windows 崩潰防護）
+        # Step 2: Zombify object (Windows crash protection)
         _zombie_models.append(self._model)
         logger.debug(f"Model zombified (total zombies: {len(_zombie_models)})")
 
     def _resolve_model_path(self, model_id: str, variant: Optional[str] = None):
         """
-        解析 Whisper 模型路徑
+        Resolve Whisper model path.
 
-        BIN/PKG 格式特性：
-        - 是目錄（非單檔）
-        - 從 HuggingFace 下載完整 snapshot
+        BIN/PKG format characteristics:
+        - Is a directory (not a single file)
+        - Downloaded as a complete snapshot from HuggingFace
         """
         family = MODELS_REGISTRY[FORMAT_PKG].get(model_id)
         if not family:
@@ -200,7 +199,7 @@ class WhisperWrapper(PackageRuntime):
         if not size_config:
             raise ValueError(f"Unknown variant '{variant}' for {model_id}")
 
-        # 透過 ModelManager 驗證
+        # Validate via ModelManager
         model_path = self._manager.get_model_path(model_id, variant)
         if not model_path:
             raise FileNotFoundError(
@@ -218,7 +217,7 @@ class WhisperWrapper(PackageRuntime):
         return model_path, config
 
     def get_model_status(self, model_size: str = "medium") -> dict:
-        """查詢模型狀態"""
+        """Query model status."""
         model_path = self._manager.get_model_path("whisper", model_size)
 
         from app.init.configs import SETTINGS
@@ -232,7 +231,7 @@ class WhisperWrapper(PackageRuntime):
         }
 
     async def download_only(self, model_size: str, on_progress=None) -> None:
-        """只下載模型，不載入記憶體"""
+        """Download model only, without loading into memory."""
         await self._manager.download_model("whisper", model_size, on_progress=on_progress)
 
     def transcribe(
@@ -243,28 +242,28 @@ class WhisperWrapper(PackageRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
         word_timestamps: bool = False,
         condition_on_previous_text: bool = True,
-        min_silence_duration_ms: int = 500,
-        vad_threshold: float = 0.5,
+        min_silence_duration_ms: int = 200,
+        vad_threshold: float = 0.3,
     ) -> TranscribeResult:
         """
-        轉錄音訊
+        Transcribe audio.
 
         Args:
-            audio_path: 音訊檔案路徑
-            language: 指定語言（None 為自動偵測）
-            model_size: 模型大小（tiny/base/small/medium/large-v3）
-            on_progress: 進度回調
-            word_timestamps: 是否生成單字級時間戳
-            condition_on_previous_text: 是否使用前文條件
-            min_silence_duration_ms: VAD 最小靜音時長
-            vad_threshold: VAD 閾值
+            audio_path: Audio file path.
+            language: Specify language (None for auto-detection).
+            model_size: Model size (tiny/base/small/medium/large-v3).
+            on_progress: Progress callback.
+            word_timestamps: Whether to generate word-level timestamps.
+            condition_on_previous_text: Whether to use previous text conditioning.
+            min_silence_duration_ms: VAD minimum silence duration.
+            vad_threshold: VAD threshold.
 
         Returns:
             TranscribeResult
         """
         audio_path = Path(audio_path)
 
-        # 獲取 VRAM 需求
+        # Get VRAM requirement
         size_config = MODELS_REGISTRY[FORMAT_PKG]["whisper"]["variants"].get(model_size)
         if not size_config:
             raise ValueError(f"Unknown Whisper model size: {model_size}")
@@ -273,7 +272,7 @@ class WhisperWrapper(PackageRuntime):
         self._manager.acquire(SLOT_WHISPER, required_vram_mb=vram_needed)
 
         try:
-            # 使用 PackageRuntime 的 acquire() 載入模型
+            # Load model using PackageRuntime's acquire()
             if on_progress:
                 on_progress(0.0, "task.progress.loading_whisper")
 
@@ -285,13 +284,28 @@ class WhisperWrapper(PackageRuntime):
                 if on_progress:
                     on_progress(0.05, "task.progress.start_recognition")
 
-                # 執行轉錄
+                # Chinese variant handling: zh-TW/zh-CN → zh + initial_prompt
+                whisper_lang = language
+                initial_prompt = None
+                if language == "zh-TW":
+                    whisper_lang = "zh"
+                    initial_prompt = "以下是繁體中文的逐字稿。"
+                elif language == "zh-CN":
+                    whisper_lang = "zh"
+                    initial_prompt = "以下是简体中文的逐字稿。"
+                elif language == "zh" or language is None:
+                    # Explicit "zh" or auto-detect: default to Traditional Chinese
+                    # (for auto-detect, prompt is ignored if language is not Chinese)
+                    initial_prompt = "以下是繁體中文的逐字稿。"
+
+                # Execute transcription
                 segments_gen, info = model.transcribe(
                     str(audio_path),
-                    language=language,
+                    language=whisper_lang,
                     beam_size=5,
                     word_timestamps=word_timestamps,
                     condition_on_previous_text=condition_on_previous_text,
+                    initial_prompt=initial_prompt,
                     vad_filter=True,
                     vad_parameters=dict(
                         min_silence_duration_ms=min_silence_duration_ms,
@@ -299,12 +313,12 @@ class WhisperWrapper(PackageRuntime):
                     ),
                 )
 
-                # 收集分句結果
+                # Collect segment results
                 duration = info.duration
                 segments: list[TranscribeSegment] = []
                 for segment in segments_gen:
                     if word_timestamps and segment.words:
-                        # 詞級時間戳：用 word 時間修正句子邊界 + 長句智慧拆行
+                        # Word-level timestamps: correct sentence boundaries with word times + smart long sentence splitting
                         sub_segs = _split_by_words(segment.words)
                         segments.extend(sub_segs)
                     else:
@@ -320,11 +334,19 @@ class WhisperWrapper(PackageRuntime):
                 if on_progress:
                     on_progress(0.95, "task.progress.recognition_complete")
 
-                # 中文輸出轉繁體
+                # Convert Chinese output: s2t for Traditional, t2s for Simplified
                 detected_lang = info.language
-                if detected_lang == "zh" or (language and language.startswith("zh")):
+                is_chinese = detected_lang == "zh" or (language and language.startswith("zh"))
+                if is_chinese and language != "zh-CN":
+                    # Traditional Chinese (default): ensure no leftover simplified chars
                     import opencc
                     converter = opencc.OpenCC('s2t')
+                    for seg in segments:
+                        seg.text = converter.convert(seg.text)
+                elif is_chinese and language == "zh-CN":
+                    # Simplified Chinese: ensure no leftover traditional chars
+                    import opencc
+                    converter = opencc.OpenCC('t2s')
                     for seg in segments:
                         seg.text = converter.convert(seg.text)
 
@@ -340,17 +362,17 @@ class WhisperWrapper(PackageRuntime):
 
             return result
         finally:
-            # 卸載模型釋放 VRAM
+            # Unload model to release VRAM
             self._unload_model()
 
 
 # ═══════════════════════════════════════════════════════════
-# 單例工廠函數
+# Singleton factory
 # ═══════════════════════════════════════════════════════════
 _whisper: Optional[WhisperWrapper] = None
 
 def get_whisper() -> WhisperWrapper:
-    """取得 WhisperWrapper 單例"""
+    """Get the WhisperWrapper singleton."""
     global _whisper
     if _whisper is None:
         _whisper = WhisperWrapper()

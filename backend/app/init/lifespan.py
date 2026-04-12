@@ -2,6 +2,8 @@
 Application lifespan — startup and shutdown hooks.
 """
 import logging
+import threading
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -12,7 +14,7 @@ from app.init.container import get_container
 LOGGER = logging.getLogger(__name__)
 
 
-def _warmup_services(container) -> None:
+def _warmup_setup_services(container) -> None:
     """Pre-initialize setup-critical services so settings page loads instantly."""
     container.config_service()
     container.language_service()
@@ -21,6 +23,53 @@ def _warmup_services(container) -> None:
     container.model_metadata()
     container.device_service()
     LOGGER.info("Setup services pre-warmed")
+
+
+def _warmup_domain_services(container) -> None:
+    """Background-import all domain services (heavy AI dependencies).
+
+    Called in a daemon thread after the server is already accepting
+    connections, so the user sees the UI immediately while torch/numpy/PIL
+    etc. load silently in the background.
+    """
+    start = time.monotonic()
+    providers = [
+        # Audio
+        container.audio_transcode,
+        container.audio_cut,
+        container.audio_volume,
+        container.audio_transcribe,
+        container.audio_separate,
+        container.audio_lyrics,
+        container.audio_midi,
+        # Image
+        container.image_upscale,
+        container.image_crop,
+        container.image_convert,
+        container.image_filter,
+        container.image_ocr,
+        container.image_remove_bg,
+        container.image_remove_object,
+        # Video
+        container.video_transcode,
+        container.video_cut,
+        container.video_extract_audio,
+        container.video_subtitle,
+        container.video_interpolate,
+        container.video_enhance,
+        # Document
+        container.doc_ocr,
+        container.doc_pdf_convert,
+        container.doc_split,
+        container.doc_translate,
+    ]
+    for provider in providers:
+        try:
+            provider()
+        except Exception as e:
+            LOGGER.warning(f"Background warmup failed for {provider}: {e}")
+    elapsed = time.monotonic() - start
+    LOGGER.info(f"Domain services warmed up in background ({elapsed:.1f}s)")
 
 
 def build_lifespan():
@@ -56,7 +105,16 @@ def build_lifespan():
         tm.on_terminal(_on_terminal)
         LOGGER.info("Task history hook registered")
 
-        _warmup_services(container)
+        _warmup_setup_services(container)
+
+        # Import heavy domain services in the background so the server
+        # starts accepting connections immediately (cold-start optimization).
+        threading.Thread(
+            target=_warmup_domain_services,
+            args=(container,),
+            daemon=True,
+            name="domain-warmup",
+        ).start()
 
         yield
 

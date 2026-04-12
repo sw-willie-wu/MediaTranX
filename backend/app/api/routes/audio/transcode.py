@@ -1,15 +1,18 @@
 """
-音訊轉檔 API 路由
+Audio transcoding API routes.
 """
+from __future__ import annotations
 import logging
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.audio.transcode_service import AudioTranscodeService
+
+if TYPE_CHECKING:
+    from app.services.audio.transcode_service import AudioTranscodeService
 
 logger = logging.getLogger(__name__)
 
@@ -31,24 +34,24 @@ _FORMAT_CODEC_MAP: dict[str, str] = {
 
 
 class AudioTranscodeRequest(BaseModel):
-    """音訊轉檔請求"""
-    file_id: str = Field(..., description="輸入檔案 ID")
-    output_format: str = Field(default="mp3", description="輸出格式")
-    audio_bitrate: str = Field(default="192k", description="位元率")
-    sample_rate: Optional[int] = Field(default=None, description="取樣率")
-    channels: Optional[int] = Field(default=None, ge=1, le=2, description="聲道數")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
-    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
+    """Audio transcode request."""
+    file_id: str = Field(..., description="Input file ID")
+    output_format: str = Field(default="mp3", description="Output format")
+    audio_bitrate: str = Field(default="192k", description="Bitrate")
+    sample_rate: Optional[int] = Field(default=None, description="Sample rate")
+    channels: Optional[int] = Field(default=None, ge=1, le=2, description="Number of channels")
+    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
+    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class AudioTranscodeResponse(BaseModel):
-    """音訊轉檔回應"""
+    """Audio transcode response."""
     task_id: str
-    message: str = "音訊轉檔任務已提交"
+    message: str = "Audio transcode task submitted"
 
 
 class AudioInfoResponse(BaseModel):
-    """音訊資訊回應"""
+    """Audio info response."""
     duration: float
     sample_rate: int
     channels: int
@@ -63,7 +66,7 @@ async def get_audio_info(
     file_id: str,
     service: AudioTranscodeService = Depends(Provide[AppContainer.audio_transcode]),
 ):
-    """取得音訊檔案資訊"""
+    """Get audio file info."""
     try:
         info = await service.get_audio_info(file_id)
         return AudioInfoResponse(**info)
@@ -79,7 +82,7 @@ async def transcode_audio(
     request: AudioTranscodeRequest,
     service: AudioTranscodeService = Depends(Provide[AppContainer.audio_transcode]),
 ):
-    """提交音訊轉檔任務"""
+    """Submit audio transcode task."""
     try:
         codec = _FORMAT_CODEC_MAP.get(request.output_format)
         if not codec:

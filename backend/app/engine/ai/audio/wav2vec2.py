@@ -1,10 +1,9 @@
 """
-Wav2Vec2 Forced Alignment 引擎
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-用 Wav2Vec2 phoneme 模型對 Whisper 的轉錄結果做 forced alignment，
-產生精確的 word-level timestamps。
+Wav2Vec2 Forced Alignment engine.
+Uses Wav2Vec2 phoneme models to perform forced alignment on Whisper
+transcription results, producing precise word-level timestamps.
 
-不繼承 Runtime — 這是後處理工具，用完即釋放。
+Does not inherit Runtime -- this is a post-processing tool, released after use.
 """
 from __future__ import annotations
 
@@ -26,14 +25,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AlignedWord:
-    """對齊後的單字"""
+    """An aligned word with timing information."""
     word: str
     start: float
     end: float
-    score: float  # alignment 信心分數
+    score: float  # alignment confidence score
 
 
-# 每個語言對應的 HuggingFace Wav2Vec2 model ID
+# HuggingFace Wav2Vec2 model ID for each language
 LANG_MODELS: dict[str, str] = {
     "en": "jonatasgrosman/wav2vec2-large-xlsr-53-english",
     "zh": "jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn",
@@ -53,18 +52,18 @@ LANG_MODELS: dict[str, str] = {
     "el": "jonatasgrosman/wav2vec2-large-xlsr-53-greek",
 }
 
-# Wav2Vec2 模型的取樣率
+# Wav2Vec2 model sample rate
 _WAV2VEC2_SR = 16000
 
 
 class AlignmentEngine:
     """
-    Wav2Vec2 Forced Alignment 引擎
+    Wav2Vec2 Forced Alignment engine.
 
-    職責：
-    1. 載入語言對應的 Wav2Vec2 模型
-    2. 對 Whisper segments 做 CTC forced alignment
-    3. 回傳精確的 word-level timestamps
+    Responsibilities:
+    1. Load language-specific Wav2Vec2 models
+    2. Perform CTC forced alignment on Whisper segments
+    3. Return precise word-level timestamps
     """
 
     def __init__(self):
@@ -74,11 +73,11 @@ class AlignmentEngine:
         self._device: str = "cpu"
 
     def is_language_supported(self, language: str) -> bool:
-        """檢查語言是否有對應的 alignment 模型"""
+        """Check if the language has a corresponding alignment model."""
         return language in LANG_MODELS
 
     def get_supported_languages(self) -> list[str]:
-        """取得支援的語言列表"""
+        """Get the list of supported languages."""
         return list(LANG_MODELS.keys())
 
     def align(
@@ -89,16 +88,16 @@ class AlignmentEngine:
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> list:
         """
-        對 Whisper 的 segments 做 forced alignment
+        Perform forced alignment on Whisper segments.
 
         Args:
-            audio_path: 音訊檔案路徑
-            segments: Whisper TranscribeSegment 列表
-            language: 語言代碼（en, zh, ja...）
-            on_progress: 進度回調
+            audio_path: Audio file path.
+            segments: List of Whisper TranscribeSegment.
+            language: Language code (en, zh, ja...).
+            on_progress: Progress callback.
 
         Returns:
-            校正後的 TranscribeSegment 列表（帶 words 屬性）
+            Corrected TranscribeSegment list (with words attribute).
         """
         if not self.is_language_supported(language):
             logger.warning(f"Language '{language}' not supported for alignment, returning original segments")
@@ -107,49 +106,49 @@ class AlignmentEngine:
         if not segments:
             return segments
 
-        # 選擇 device
+        # Select device
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
         try:
-            # 載入模型
+            # Load model
             if on_progress:
                 on_progress(0.0, "task.progress.loading_alignment")
             self._ensure_model(language)
 
-            # 讀取完整音訊
+            # Read full audio
             if on_progress:
                 on_progress(0.1, "task.progress.reading_audio")
             full_waveform = self._load_audio(audio_path)
 
-            # 逐 segment 分段推論（避免一次送入整段長音訊導致 OOM/卡頓）
+            # Per-segment inference (avoid sending entire long audio at once to prevent OOM/stalls)
             from app.engine.ai.audio.whisper import TranscribeSegment
 
             aligned_segments: list[TranscribeSegment] = []
             total = len(segments)
-            pad_sec = 0.5  # 前後各多取 0.5 秒做 context
+            pad_sec = 0.5  # extra 0.5s context on each side
 
             for i, seg in enumerate(segments):
                 if on_progress:
                     progress = 0.15 + 0.8 * (i / total)
                     on_progress(progress, f"task.progress.aligning_segment|{i+1}|{total}")
 
-                # 擷取 segment 對應的音訊片段（含前後 padding）
+                # Extract segment audio clip (with padding on both sides)
                 start_sample = max(0, int((seg.start - pad_sec) * _WAV2VEC2_SR))
                 end_sample = min(len(full_waveform), int((seg.end + pad_sec) * _WAV2VEC2_SR))
                 seg_waveform = full_waveform[start_sample:end_sample]
 
-                if len(seg_waveform) < 160:  # 太短跳過
+                if len(seg_waveform) < 160:  # too short, skip
                     aligned_segments.append(seg)
                     continue
 
-                # 限制單次推論長度（超過 15 秒的 segment 跳過對齊，避免卡住）
+                # Limit single inference length (skip alignment for segments >15s to avoid stalling)
                 max_samples = int(15 * _WAV2VEC2_SR)
                 if len(seg_waveform) > max_samples:
                     logger.info(f"Segment {i+1} too long ({len(seg_waveform) / _WAV2VEC2_SR:.1f}s), skipping alignment")
                     aligned_segments.append(seg)
                     continue
 
-                # 對這段音訊做推論
+                # Run inference on this audio segment
                 with torch.no_grad():
                     inputs = self._processor(
                         seg_waveform,
@@ -161,15 +160,15 @@ class AlignmentEngine:
                     logits = self._model(input_values).logits[0]
                     seg_log_probs = torch.log_softmax(logits, dim=-1).cpu()
 
-                # frame duration 基於這段音訊
+                # frame duration based on this audio segment
                 seg_samples = len(seg_waveform)
                 seg_frames = seg_log_probs.shape[0]
                 frame_duration = seg_samples / (_WAV2VEC2_SR * seg_frames)
 
-                # 計算 padding 偏移（alignment 結果時間需加回去）
+                # Calculate padding offset (alignment result times need to be adjusted)
                 actual_start = start_sample / _WAV2VEC2_SR
 
-                # 嘗試 forced alignment
+                # Attempt forced alignment
                 words = self._align_segment(
                     seg_log_probs, seg.text, actual_start, frame_duration
                 )
@@ -194,7 +193,7 @@ class AlignmentEngine:
             self._unload_model()
 
     def _ensure_model(self, language: str) -> None:
-        """載入或切換語言模型"""
+        """Load or switch language model."""
         if self._loaded_lang == language and self._model is not None:
             return
 
@@ -215,7 +214,7 @@ class AlignmentEngine:
         self._loaded_lang = language
 
     def _unload_model(self) -> None:
-        """釋放模型"""
+        """Unload model."""
         if self._model is not None:
             del self._model
             del self._processor
@@ -230,11 +229,11 @@ class AlignmentEngine:
             logger.info("Alignment model unloaded")
 
     def _load_audio(self, audio_path: str) -> list[float]:
-        """讀取音訊並 resample 到 16kHz mono"""
+        """Read audio and resample to 16kHz mono."""
         from app.init.container import get_container
         ffmpeg_path = get_container().ffmpeg().ffmpeg_path
 
-        # 用 ffmpeg 轉成 16kHz mono PCM
+        # Use ffmpeg to convert to 16kHz mono PCM
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp.close()
         try:
@@ -257,10 +256,10 @@ class AlignmentEngine:
         frame_duration: float,
     ) -> list[AlignedWord]:
         """
-        對單一 segment 做 CTC forced alignment
+        Perform CTC forced alignment on a single segment.
 
-        使用 Viterbi algorithm 找最佳路徑，
-        將文字 token 對齊到 frame-level phoneme probabilities。
+        Uses the Viterbi algorithm to find the optimal path,
+        aligning text tokens to frame-level phoneme probabilities.
         """
         if not text.strip():
             return []
@@ -269,31 +268,31 @@ class AlignmentEngine:
         vocab = self._processor.tokenizer.get_vocab()
         inv_vocab = {v: k for k, v in vocab.items()}
 
-        # 取得 CTC blank token
+        # Get CTC blank token
         blank_id = self._processor.tokenizer.pad_token_id
         if blank_id is None:
             blank_id = 0
 
-        # 將文字轉成 token IDs
+        # Convert text to token IDs
         text_clean = text.strip().upper()
         tokens = self._processor.tokenizer.encode(text_clean)
         if not tokens:
             return []
 
-        # 簡化的 CTC forced alignment：
-        # 用 greedy decode 找每個 token 的最佳位置
+        # Simplified CTC forced alignment:
+        # Use greedy decode to find the best position for each token
         num_frames = log_probs.shape[0]
         if num_frames == 0:
             return []
 
-        # 建構 token-to-frame mapping
-        # 策略：用 log_probs 找每個 token 最高機率的 frame 區間
+        # Build token-to-frame mapping
+        # Strategy: find the frame range with highest probability for each token
         token_frames = self._ctc_align(log_probs, tokens, blank_id)
 
         if not token_frames:
             return []
 
-        # 將 token 合併回 words
+        # Merge tokens back into words
         words = self._tokens_to_words(
             token_frames, tokens, segment_start, frame_duration, inv_vocab
         )
@@ -307,10 +306,10 @@ class AlignmentEngine:
         blank_id: int,
     ) -> list[tuple[int, int, int, float]]:
         """
-        CTC forced alignment 核心
+        CTC forced alignment core.
 
-        用動態規劃找 tokens 在 frames 中的最佳位置。
-        回傳 [(token_id, start_frame, end_frame, score), ...]
+        Uses dynamic programming to find the optimal position of tokens in frames.
+        Returns [(token_id, start_frame, end_frame, score), ...]
         """
         num_frames = log_probs.shape[0]
         num_tokens = len(tokens)
@@ -318,7 +317,7 @@ class AlignmentEngine:
         if num_frames < num_tokens:
             return []
 
-        # 建構擴展序列：blank, t1, blank, t2, blank, ...
+        # Build expanded sequence: blank, t1, blank, t2, blank, ...
         expanded = [blank_id]
         for t in tokens:
             expanded.append(t)
@@ -326,12 +325,12 @@ class AlignmentEngine:
         num_labels = len(expanded)
 
         # Viterbi forward pass
-        # dp[t][s] = 到 frame t、label s 的最大 log probability
+        # dp[t][s] = max log probability reaching frame t, label s
         NEG_INF = float('-inf')
         dp = [[NEG_INF] * num_labels for _ in range(num_frames)]
         bp = [[0] * num_labels for _ in range(num_frames)]  # backpointer
 
-        # 初始化第一幀
+        # Initialize the first frame
         dp[0][0] = log_probs[0][expanded[0]].item()
         if num_labels > 1:
             dp[0][1] = log_probs[0][expanded[1]].item()
@@ -339,11 +338,11 @@ class AlignmentEngine:
         # Forward
         for t in range(1, num_frames):
             for s in range(num_labels):
-                # 可以從 s（自環）或 s-1（前進一步）轉移
+                # Can transition from s (self-loop) or s-1 (advance one step)
                 candidates = [(dp[t-1][s], s)]
                 if s > 0:
                     candidates.append((dp[t-1][s-1], s-1))
-                # 如果當前不是 blank 且前前個也不是同一個 token，可以跳 blank
+                # If current is not blank and two positions back is not the same token, can skip blank
                 if s > 1 and expanded[s] != expanded[s-2]:
                     candidates.append((dp[t-1][s-2], s-2))
 
@@ -352,7 +351,7 @@ class AlignmentEngine:
                 bp[t][s] = best_src
 
         # Backtrack
-        # 結束時必須在最後一個或倒數第二個 label
+        # Must end at the last or second-to-last label
         if dp[num_frames-1][num_labels-1] >= dp[num_frames-1][num_labels-2]:
             s = num_labels - 1
         else:
@@ -364,7 +363,7 @@ class AlignmentEngine:
             s = bp[t+1][path[t+1]]
             path[t] = s
 
-        # 從 path 提取每個 non-blank token 的 frame 範圍
+        # Extract frame range for each non-blank token from path
         result: list[tuple[int, int, int, float]] = []
         token_idx = 0
         in_token = False
@@ -378,8 +377,8 @@ class AlignmentEngine:
                     in_token = True
             else:
                 if in_token:
-                    # token 結束
-                    # 計算 score（該區間的平均 log prob）
+                    # Token ended
+                    # Calculate score (average log prob over the interval)
                     token_id = expanded[path[start_frame]]
                     score_sum = sum(
                         log_probs[f][token_id].item()
@@ -389,7 +388,7 @@ class AlignmentEngine:
                     result.append((token_id, start_frame, t - 1, score))
                     in_token = False
 
-        # 處理最後一個 token（如果 path 結尾不是 blank）
+        # Handle the last token (if path does not end with blank)
         if in_token:
             token_id = expanded[path[start_frame]]
             score_sum = sum(
@@ -409,7 +408,7 @@ class AlignmentEngine:
         frame_duration: float,
         inv_vocab: dict,
     ) -> list[AlignedWord]:
-        """將 token-frame mapping 合併為 words"""
+        """Merge token-frame mapping into words."""
         if not token_frames:
             return []
 
@@ -421,14 +420,14 @@ class AlignmentEngine:
 
         for token_id, sf, ef, score in token_frames:
             char = inv_vocab.get(token_id, "")
-            # 清理特殊 token 前綴
+            # Clean special token prefixes
             char = char.replace("▁", " ").replace("|", " ")
 
             t_start = segment_start + sf * frame_duration
             t_end = segment_start + (ef + 1) * frame_duration
 
             if char.startswith(" ") and current_word:
-                # 新 word 開始，保存上一個
+                # New word starts, save the previous one
                 words.append(AlignedWord(
                     word=current_word.strip(),
                     start=round(word_start, 3),
@@ -446,7 +445,7 @@ class AlignmentEngine:
                 word_end = t_end
                 word_scores.append(score)
 
-        # 保存最後一個 word
+        # Save the last word
         if current_word.strip():
             words.append(AlignedWord(
                 word=current_word.strip(),
@@ -459,13 +458,13 @@ class AlignmentEngine:
 
 
 # ═══════════════════════════════════════════════════════════
-# 單例工廠函數
+# Singleton factory
 # ═══════════════════════════════════════════════════════════
 _engine: Optional[AlignmentEngine] = None
 
 
 def get_alignment_engine() -> AlignmentEngine:
-    """取得 AlignmentEngine 單例"""
+    """Get the AlignmentEngine singleton."""
     global _engine
     if _engine is None:
         _engine = AlignmentEngine()

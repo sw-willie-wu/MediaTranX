@@ -4,9 +4,10 @@ import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 import AppRange from '@/components/common/AppRange.vue'
-import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useMidiEditor } from '@/composables/useMidiEditor'
 import { apiFetch } from '@/composables/useApi'
+import { useToneSynth, effectsState } from '@/composables/useToneSynth'
+import { useMidiExport } from '@/composables/useMidiExport'
 
 const props = defineProps<{
   fileId: string | null
@@ -20,14 +21,12 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const { submitTask, isProcessing } = useSubmitTask()
 const editor = useMidiEditor()
+const synth = useToneSynth()
+const midiExport = useMidiExport()
 
-// ── FluidSynth status ──
-const sfReady = ref(false)
-apiFetch('/audio/soundfont/info').then(async r => {
-  if (r.ok) { sfReady.value = (await r.json()).exists }
-})
+// ── Tab state ──
+const activeTab = ref<'edit' | 'effects' | 'export'>('edit')
 
 // ── MIDI file detection ──
 
@@ -67,40 +66,32 @@ const exportFormat = ref('wav')
 const exportFormatOptions = [
   { value: 'wav', label: 'WAV' },
   { value: 'mp3', label: 'MP3' },
+  { value: 'flac', label: 'FLAC' },
+  { value: 'ogg', label: 'OGG' },
+  { value: 'aac', label: 'AAC' },
 ]
 
 const outputPath = ref('')
 
-const defaultOutputName = computed(() => {
-  const stem = props.currentFileName.replace(/\.[^.]+$/, '')
+const defaultOutputPath = computed(() => {
+  const stem = props.currentFileName?.replace(/\.[^.]+$/, '') || 'Untitled'
   const ext = exportFormat.value
-  return props.sourceDir ? `${props.sourceDir}/${stem}.${ext}` : `${stem}.${ext}`
+  const dir = props.sourceDir || ''
+  return dir ? `${dir}/${stem}.${ext}` : `${stem}.${ext}`
 })
 
-function resetOutputPath() {
-  outputPath.value = defaultOutputName.value
-}
-watch(() => props.fileId, resetOutputPath)
-watch(() => props.sourceDir, resetOutputPath, { immediate: true })
-watch(exportFormat, resetOutputPath)
+// Update default path when format changes
+watch(exportFormat, () => { outputPath.value = '' })
 
 async function selectOutputFile() {
-  if (window.electron?.saveFileDialog) {
-    const ext = exportFormat.value
-    const result = await window.electron.saveFileDialog({
-      title: t('audio.midi.select_output'),
-      defaultPath: outputPath.value || defaultOutputName.value,
-      filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
-    })
-    if (result) outputPath.value = result
-  }
+  if (!window.electron?.saveFileDialog) return
+  const ext = exportFormat.value
+  const result = await window.electron.saveFileDialog({
+    defaultPath: outputPath.value || defaultOutputPath.value,
+    filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+  })
+  if (result) outputPath.value = result
 }
-
-const displayOutputPath = computed(() => {
-  if (!outputPath.value) return defaultOutputName.value
-  const p = outputPath.value
-  return p.length > 40 ? '...' + p.slice(-37) : p
-})
 
 // ── Time signature options ──
 
@@ -183,21 +174,6 @@ function onTransposeChange(val: number) {
 // ── Execute ──
 
 async function execute() {
-  // 彈出儲存對話框讓使用者選路徑
-  const ext = exportFormat.value
-  const defaultName = (props.currentFileName?.replace(/\.(mid|midi)$/i, '') ?? 'Untitled') + `.${ext}`
-  if (window.electron?.saveFileDialog) {
-    const filters = ext === 'wav'
-      ? [{ name: 'WAV Audio', extensions: ['wav'] }]
-      : [{ name: 'MP3 Audio', extensions: ['mp3'] }]
-    const savePath = await window.electron.saveFileDialog({
-      defaultPath: defaultName,
-      filters,
-    })
-    if (!savePath) return // 使用者取消
-    outputPath.value = savePath
-  }
-
   let fileId = props.fileId
 
   // 空白 MIDI → 先 create 拿 fileId
@@ -227,21 +203,29 @@ async function execute() {
     await editor.saveToApi(fileId)
   }
 
-  const body: Record<string, string> = {
-    file_id: fileId,
-    output_format: exportFormat.value,
+  let finalPath = outputPath.value || defaultOutputPath.value
+  if (!finalPath) return
+
+  // If no directory in path (e.g. sourceDir is empty), prompt user to pick
+  if (!finalPath.includes('/') && !finalPath.includes('\\')) {
+    if (!window.electron?.saveFileDialog) return
+    const ext = exportFormat.value
+    const result = await window.electron.saveFileDialog({
+      defaultPath: finalPath,
+      filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+    })
+    if (!result) return
+    finalPath = result
+    outputPath.value = result
   }
-  if (outputPath.value) {
-    body.output_path = outputPath.value.replace(/\\/g, '/')
-  }
-  const taskId = await submitTask(
-    '/audio/midi/export',
-    body,
-    t('audio.midi.task_label'),
-    'audio.midi_export',
-    props.currentFileName,
+
+  const taskId = midiExport.exportMidi(
+    editor.tracks.value,
+    editor.tempo.value,
+    exportFormat.value,
+    finalPath,
   )
-  if (taskId) emit('submit', taskId)
+  emit('submit', taskId)
 }
 
 // ── Expose ──
@@ -249,12 +233,12 @@ async function execute() {
 defineExpose({
   execute,
   isDisabled: computed(() => {
-    if (!isMidiFile.value || editor.isLoading.value) return true
+    if (!isMidiFile.value || editor.isLoading.value || midiExport.isExporting.value) return true
     // 有 fileId（已存檔的 MIDI）或有音符（空白 MIDI 已編輯）
     if (props.fileId) return false
     return editor.tracks.value.every(t => t.notes.length === 0)
   }),
-  isLoading: computed(() => editor.isLoading.value),
+  isLoading: computed(() => editor.isLoading.value || midiExport.isExporting.value),
   getParams: () => ({ output_format: exportFormat.value }),
   editor,
 })
@@ -297,7 +281,25 @@ defineExpose({
         </div>
       </div>
 
-      <!-- Settings -->
+      <!-- Tab navigation -->
+      <div class="settings-tabs">
+        <button
+          v-for="tab in [
+            { id: 'edit', label: t('audio.midi.tab_edit') },
+            { id: 'effects', label: t('audio.midi.tab_effects') },
+            { id: 'export', label: t('audio.midi.tab_export') },
+          ]"
+          :key="tab.id"
+          class="settings-tab"
+          :class="{ 'is-active': activeTab === tab.id }"
+          @click="activeTab = tab.id"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+
+      <!-- Edit tab -->
+      <div v-show="activeTab === 'edit'" class="function-settings">
         <!-- Global Settings -->
         <h6 class="settings-title"><i class="bi bi-sliders me-2"></i>{{ $t('audio.midi.global_settings') }}</h6>
 
@@ -319,9 +321,9 @@ defineExpose({
         <div class="form-group">
           <label>{{ $t('audio.midi.time_signature') }}</label>
           <div class="midi-time-sig">
-            <AppSelect v-model="tsNumerator" :options="tsNumeratorOptions" size="sm" />
+            <AppSelect v-model="tsNumerator" :options="tsNumeratorOptions" />
             <span class="midi-time-sig-sep">/</span>
-            <AppSelect v-model="tsDenominator" :options="tsDenominatorOptions" size="sm" />
+            <AppSelect v-model="tsDenominator" :options="tsDenominatorOptions" />
           </div>
         </div>
 
@@ -359,26 +361,82 @@ defineExpose({
             @change="onTransposeChange"
           />
         </div>
-
-      <!-- Export -->
-      <h6 class="settings-title"><i class="bi bi-download me-2"></i>{{ $t('audio.midi.export') }}</h6>
-
-      <div class="form-group">
-        <label>{{ $t('audio.midi.export_format') }}</label>
-        <AppSelect v-model="exportFormat" :options="exportFormatOptions" />
       </div>
 
-      <div class="form-group">
-        <label>{{ $t('audio.midi.output_path') }}</label>
-        <div class="file-select" @click="selectOutputFile">
-          <span class="file-select-path">{{ displayOutputPath }}</span>
-          <i class="bi bi-folder2-open"></i>
+      <!-- Effects tab -->
+      <div v-show="activeTab === 'effects'" class="function-settings">
+        <div class="settings-title">EQ</div>
+        <div class="form-group">
+          <label>{{ t('audio.midi.effects_eq_low') }}</label>
+          <AppRange :model-value="effectsState.eq.low" @update:model-value="synth.updateEffects({ eq: { low: $event } })" :min="-12" :max="12" :step="0.5" />
+          <span class="form-hint">{{ effectsState.eq.low.toFixed(1) }} dB</span>
+        </div>
+        <div class="form-group">
+          <label>{{ t('audio.midi.effects_eq_mid') }}</label>
+          <AppRange :model-value="effectsState.eq.mid" @update:model-value="synth.updateEffects({ eq: { mid: $event } })" :min="-12" :max="12" :step="0.5" />
+          <span class="form-hint">{{ effectsState.eq.mid.toFixed(1) }} dB</span>
+        </div>
+        <div class="form-group">
+          <label>{{ t('audio.midi.effects_eq_high') }}</label>
+          <AppRange :model-value="effectsState.eq.high" @update:model-value="synth.updateEffects({ eq: { high: $event } })" :min="-12" :max="12" :step="0.5" />
+          <span class="form-hint">{{ effectsState.eq.high.toFixed(1) }} dB</span>
+        </div>
+
+        <div class="settings-title">{{ t('audio.midi.effects_compressor') }}</div>
+        <div class="form-group">
+          <label>{{ t('audio.midi.effects_threshold') }}</label>
+          <AppRange :model-value="effectsState.compressor.threshold" @update:model-value="synth.updateEffects({ compressor: { threshold: $event } })" :min="-60" :max="0" :step="1" />
+          <span class="form-hint">{{ effectsState.compressor.threshold }} dB</span>
+        </div>
+        <div class="form-group">
+          <label>{{ t('audio.midi.effects_ratio') }}</label>
+          <AppRange :model-value="effectsState.compressor.ratio" @update:model-value="synth.updateEffects({ compressor: { ratio: $event } })" :min="1" :max="20" :step="0.5" />
+          <span class="form-hint">{{ effectsState.compressor.ratio.toFixed(1) }}:1</span>
+        </div>
+
+        <div class="settings-title">{{ t('audio.midi.effects_delay') }}</div>
+        <div class="form-group">
+          <label>{{ t('audio.midi.effects_delay_time') }}</label>
+          <AppRange :model-value="effectsState.delay.time" @update:model-value="synth.updateEffects({ delay: { time: $event } })" :min="0" :max="1" :step="0.01" />
+          <span class="form-hint">{{ (effectsState.delay.time * 1000).toFixed(0) }} ms</span>
+        </div>
+        <div class="form-group">
+          <label>{{ t('audio.midi.effects_delay_feedback') }}</label>
+          <AppRange :model-value="effectsState.delay.feedback" @update:model-value="synth.updateEffects({ delay: { feedback: $event } })" :min="0" :max="0.9" :step="0.01" />
+          <span class="form-hint">{{ (effectsState.delay.feedback * 100).toFixed(0) }}%</span>
+        </div>
+        <div class="form-group">
+          <label>{{ t('audio.midi.effects_delay_wet') }}</label>
+          <AppRange :model-value="effectsState.delay.wet" @update:model-value="synth.updateEffects({ delay: { wet: $event } })" :min="0" :max="1" :step="0.01" />
+          <span class="form-hint">{{ (effectsState.delay.wet * 100).toFixed(0) }}%</span>
+        </div>
+
+        <div class="settings-title">{{ t('audio.midi.effects_reverb') }}</div>
+        <div class="form-group">
+          <label>{{ t('audio.midi.effects_reverb_decay') }}</label>
+          <AppRange :model-value="effectsState.reverb.decay" @update:model-value="synth.updateEffects({ reverb: { decay: $event } })" :min="0.1" :max="10" :step="0.1" />
+          <span class="form-hint">{{ effectsState.reverb.decay.toFixed(1) }} s</span>
+        </div>
+        <div class="form-group">
+          <label>{{ t('audio.midi.effects_reverb_wet') }}</label>
+          <AppRange :model-value="effectsState.reverb.wet" @update:model-value="synth.updateEffects({ reverb: { wet: $event } })" :min="0" :max="1" :step="0.01" />
+          <span class="form-hint">{{ (effectsState.reverb.wet * 100).toFixed(0) }}%</span>
         </div>
       </div>
 
-      <div v-if="exportFormat !== 'mid' && !sfReady" class="info-box info-box--info">
-        <i class="bi bi-info-circle"></i>
-        {{ $t('audio.midi.soundfont_missing') }}
+      <!-- Export tab -->
+      <div v-show="activeTab === 'export'" class="function-settings">
+        <div class="form-group">
+          <label>{{ t('audio.midi.export_format') }}</label>
+          <AppSelect v-model="exportFormat" :options="exportFormatOptions" />
+        </div>
+        <div class="form-group">
+          <label>{{ t('audio.midi.export_path') }}</label>
+          <div class="file-select" @click="selectOutputFile">
+            <span class="file-select-path">{{ outputPath || defaultOutputPath || '—' }}</span>
+            <i class="bi bi-folder2-open"></i>
+          </div>
+        </div>
       </div>
   </div>
 </template>
@@ -420,7 +478,7 @@ defineExpose({
   }
 
   &.is-active {
-    background: rgba(168, 156, 200, 0.15);
+    background: color-mix(in srgb, var(--color-accent) 15%, transparent);
     border-color: var(--color-accent);
     color: var(--color-accent);
   }
@@ -460,5 +518,34 @@ defineExpose({
   color: var(--text-muted);
   font-weight: 600;
 }
+
+.settings-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 8px;
+}
+
+.settings-tab {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  font-size: 13px;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+
+  &.is-active {
+    color: var(--color-accent);
+    border-bottom-color: var(--color-accent);
+  }
+}
+
 
 </style>

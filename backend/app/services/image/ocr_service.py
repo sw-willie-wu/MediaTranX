@@ -1,6 +1,6 @@
 """
-圖片 OCR 服務
-使用視覺語言模型（Qwen3-VL / InternVL2.5 / Gemma3）辨識圖片中的文字。
+Image OCR service.
+Uses vision-language models (Qwen3-VL / InternVL2.5 / Gemma3) to recognize text in images.
 """
 import logging
 from pathlib import Path
@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from PIL import Image as PILImage
 
-from app.utils.prompts import DEFAULT_VLM_MODEL, build_ocr_messages, OCR_PARAMS
+from app.utils.prompts import DEFAULT_VLM_MODEL
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -20,6 +20,7 @@ TASK_TYPE_IMAGE_OCR_REMOTE = "image.ocr.remote"
 
 
 class ImageOcrService:
+    """Image OCR using vision-language models (local or remote)."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
@@ -30,32 +31,32 @@ class ImageOcrService:
 
     def get_status(
         self,
-        model_id: str = DEFAULT_VLM_MODEL,
+        model_family: str = DEFAULT_VLM_MODEL,
         size: str = "4b",
         quantization: Optional[str] = None,
     ) -> dict:
-        """查詢 VLM OCR 狀態"""
+        """Query VLM OCR status."""
         from app.init.container import get_container
-        return get_container().language_service().get_vlm_status(model_id=model_id, size=size, quantization=quantization)
+        return get_container().language_service().get_vlm_status(model_family=model_family, size=size, quantization=quantization)
 
     async def submit_ocr(
         self,
         file_id: str,
-        model_id: str = DEFAULT_VLM_MODEL,
+        model_family: str = DEFAULT_VLM_MODEL,
         size: str = "4b",
         quantization: Optional[str] = None,
         format: str = "md",
         output_dir: Optional[str] = None,
         output_filename: Optional[str] = None,
     ) -> str:
-        """提交 OCR 任務"""
+        """Submit an OCR task."""
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
         params = {
             "file_id": file_id,
-            "model_id": model_id,
+            "model_family": model_family,
             "size": size,
             "quantization": quantization,
             "format": format,
@@ -72,7 +73,7 @@ class ImageOcrService:
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
 
-        model_id = params.get("model_id", DEFAULT_VLM_MODEL)
+        model_family = params.get("model_family", DEFAULT_VLM_MODEL)
         size = params.get("size", "4b")
         quantization = params.get("quantization")
         fmt = params.get("format", "md")
@@ -82,40 +83,48 @@ class ImageOcrService:
 
         from app.init.container import get_container
         if not get_container().model_manager().is_llama_ready():
-            raise RuntimeError("llama-server 未安裝，請先至設定頁面安裝 AI 核心環境")
+            raise RuntimeError("llama-server not installed; please install AI core environment in settings")
 
-        # === GPU 排隊管線 ===
+        # === GPU queue pipeline ===
         manager = get_container().model_manager()
 
         with manager.gpu_session():
-            # 執行 VLM OCR
-            from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-            from app.engine.ai.registry import SLOT_LLM
+            # Execute VLM OCR
+            from app.utils.inference import get_inference_config, calc_max_tokens
+            from app.utils.prompts import get_prompt_builder
 
             variant = f"{size}:{quantization}" if quantization else size
-            runtime = LlamaServerRuntime(SLOT_LLM)
-            messages = build_ocr_messages(str(file_info.file_path), format=fmt)
+            variant_size = variant.split(":")[0] if ":" in variant else variant
+            runtime = get_container().llama_runtime()
 
-            with runtime.acquire(model_id, variant, lambda p, m: progress_callback(0.1 + p * 0.85, m)):
-                final_text = runtime.chat(messages=messages, max_tokens=4096, temperature=0.0)
+            config = get_inference_config(model_family, variant_size, "ocr")
+            builder = get_prompt_builder("ocr", config["prompt_builder"], thinking=config.get("thinking", False))
+            result = builder(str(file_info.file_path), output_format=fmt, source_lang=None)
+            max_tokens = calc_max_tokens(config, config["n_ctx"], 1000)  # ~1000 tokens for image
+
+            from app.utils.inference import fake_progress
+
+            with runtime.acquire(model_family, variant, lambda p, m: progress_callback(0.1 + p * 0.85, m)):
+                with fake_progress(progress_callback, 0.95, 1.0, "task.progress.ocr_recognizing", runtime=runtime):
+                    final_text = runtime.chat(
+                        messages=result["messages"], max_tokens=max_tokens,
+                        temperature=config["temperature"],
+                        top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
+                    )
 
         if not final_text.strip():
-            final_text = "(未偵測到文字)"
+            final_text = "(No text detected)"
 
-        # 儲存輸出檔案
+        # Save output file
         progress_callback(0.97, "task.progress.ocr_saving")
         output_file_id = str(uuid4())
         original_stem = Path(file_info.original_filename).stem
         custom_filename = params.get("output_filename")
         final_filename = custom_filename if custom_filename else f"{original_stem}_ocr_{output_file_id[:8]}.{ext}"
 
-        custom_output_dir = params.get("output_dir")
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
+        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(final_text)
@@ -144,7 +153,7 @@ class ImageOcrService:
         output_dir: Optional[str] = None,
         output_filename: Optional[str] = None,
     ) -> str:
-        """提交雲端 OCR 任務"""
+        """Submit a remote OCR task."""
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
@@ -163,7 +172,7 @@ class ImageOcrService:
         return task_id
 
     def _handle_remote_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        """處理雲端 OCR 任務"""
+        """Handle remote OCR task."""
         import base64
 
         file_id = params["file_id"]
@@ -179,18 +188,18 @@ class ImageOcrService:
 
         progress_callback(0.05, f"task.progress.connecting_provider|{provider}")
 
-        # 取得連線資訊
+        # Get connection info
         from app.init.container import get_container
         remote_svc = get_container().remote_service()
         p = remote_svc.get_provider_for_connection(conn_id, provider)
         if p is None:
             raise RuntimeError(f"Provider not available: {provider}")
 
-        # 讀取圖片，必要時壓縮（API 通常有 ~20MB payload 限制）
+        # Read image, compress if needed (APIs typically have ~20MB payload limit)
         progress_callback(0.1, "task.progress.prepare_image")
         image_path = Path(file_info.file_path)
 
-        MAX_SIZE_BYTES = 4 * 1024 * 1024  # 4MB（base64 後約 5.3MB）
+        MAX_SIZE_BYTES = 4 * 1024 * 1024  # 4MB (approx 5.3MB after base64 encoding)
         MAX_DIMENSION = 2048
 
         import io
@@ -198,12 +207,12 @@ class ImageOcrService:
         img = PILImage.open(image_path)
         original_size = image_path.stat().st_size
 
-        # 縮放大圖
+        # Resize large images
         if max(img.size) > MAX_DIMENSION:
             img.thumbnail((MAX_DIMENSION, MAX_DIMENSION), PILImage.LANCZOS)
             logger.info(f"Image resized to {img.size} for remote OCR")
 
-        # 轉 JPEG 壓縮（如果原圖太大或是 PNG/BMP）
+        # Convert to JPEG compression (if original is too large or is PNG/BMP)
         buf = io.BytesIO()
         if original_size > MAX_SIZE_BYTES or image_path.suffix.lower() in ('.png', '.bmp', '.tiff'):
             img_rgb = img.convert('RGB') if img.mode != 'RGB' else img
@@ -218,7 +227,7 @@ class ImageOcrService:
         image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
         logger.info(f"Image prepared: {len(buf.getvalue()) / 1024:.0f}KB (base64: {len(image_b64) / 1024:.0f}KB)")
 
-        # 組裝 prompt
+        # Build prompt
         if fmt == "md":
             prompt = "Please perform OCR on this image. Extract all text content and format it as clean Markdown. Preserve the document structure (headings, lists, tables, etc.) as much as possible. Output only the extracted text in Markdown format, no explanations."
         else:
@@ -226,12 +235,12 @@ class ImageOcrService:
 
         progress_callback(0.2, "task.progress.recognizing")
 
-        # 依 provider 組裝 vision messages（格式不同）
+        # Build vision messages per provider (different formats)
         if provider == "ollama":
-            # Ollama: images 欄位放 base64（不含 data: prefix）
+            # Ollama: images field with base64 (no data: prefix)
             messages = [{"role": "user", "content": prompt, "images": [image_b64]}]
         elif provider == "gemini":
-            # Gemini: inline_data 格式
+            # Gemini: inline_data format
             messages = [{"role": "user", "content": [
                 {"type": "text", "text": prompt},
                 {"type": "image", "mime_type": mime_type, "data": image_b64},
@@ -243,25 +252,27 @@ class ImageOcrService:
                 {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_b64}"}},
             ]}]
 
-        final_text = p.chat(model=remote_model, messages=messages, max_tokens=4096, temperature=0.1)
+        from app.utils.inference import get_remote_inference_config
+        remote_config = get_remote_inference_config("ocr")
+        final_text = p.chat(
+            model=remote_model, messages=messages,
+            max_tokens=remote_config["max_tokens"],
+            temperature=remote_config["temperature"],
+        )
 
         if not final_text.strip():
-            final_text = "(未偵測到文字)"
+            final_text = "(No text detected)"
 
-        # 儲存結果
+        # Save result
         progress_callback(0.95, "task.progress.ocr_saving")
         output_file_id = str(uuid4())
         original_stem = Path(file_info.original_filename).stem
         custom_filename = params.get("output_filename")
         final_filename = custom_filename if custom_filename else f"{original_stem}_ocr_{output_file_id[:8]}.{ext}"
 
-        custom_output_dir = params.get("output_dir")
-        if custom_output_dir:
-            output_dir_path = Path(custom_output_dir)
-        else:
-            output_dir_path = self._file_service.output_dir
-        output_dir_path.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_path / final_filename
+        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / final_filename
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(final_text)

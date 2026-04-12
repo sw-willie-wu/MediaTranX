@@ -1,6 +1,6 @@
 """
-任務管理模組
-管理背景任務的提交、執行和狀態追蹤
+Task management module.
+Manages background task submission, execution, and status tracking.
 """
 import asyncio
 import logging
@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
 from app.handler.exceptions import TaskCancelledError
-from app.models.task import TaskData, TaskStatus
+from app.schemas.task import TaskData, TaskStatus
 from .progress_tracker import ProgressTracker
 
 logger = logging.getLogger(__name__)
@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 
 class TaskManager:
     """
-    任務管理器
-    負責管理背景任務的生命週期
+    Task manager.
+    Manages the lifecycle of background tasks.
     """
 
     def __init__(self, progress_tracker: ProgressTracker, max_workers: int = 4):
@@ -40,7 +40,7 @@ class TaskManager:
         return self._progress_tracker
 
     def on_terminal(self, callback: Callable[[TaskData], None]) -> None:
-        """註冊任務進入終態時的回調"""
+        """Register a callback for when a task enters a terminal state."""
         self._on_terminal_callbacks.append(callback)
 
     def _notify_terminal(self, task: TaskData) -> None:
@@ -52,7 +52,7 @@ class TaskManager:
 
     def register_task(self, task_id: str, task_type: str) -> None:
         """
-        手動登記外部管理的任務（適用於 asyncio-based 長任務）
+        Manually register an externally managed task (for asyncio-based long tasks).
         """
         task = TaskData(
             task_id=task_id,
@@ -65,13 +65,13 @@ class TaskManager:
         logger.info(f"Task registered (external): {task_id} ({task_type})")
 
     def is_cancelled(self, task_id: str) -> bool:
-        """檢查任務是否已被請求取消"""
+        """Check whether a task has been requested to cancel."""
         with self._lock:
             return task_id in self._cancelled_ids
 
     def register_handler(self, task_type: str, handler: Callable) -> None:
         """
-        註冊任務處理器
+        Register a task handler.
         """
         self._handlers[task_type] = handler
         logger.info(f"Registered handler for task type: {task_type}")
@@ -82,7 +82,7 @@ class TaskManager:
         params: dict,
         priority: int = 0
     ) -> str:
-        """提交新任務"""
+        """Submit a new task."""
         task_id = str(uuid4())
 
         task = TaskData(
@@ -101,7 +101,7 @@ class TaskManager:
         return task_id
 
     def _create_cancellable_callback(self, task_id: str) -> Callable[[float, str], None]:
-        """建立可取消的進度回調，handler 每次回報進度時檢查取消旗標"""
+        """Create a cancellable progress callback that checks the cancel flag on each progress report."""
         base_callback = self._progress_tracker.create_callback(task_id)
         lock = self._lock
 
@@ -120,7 +120,7 @@ class TaskManager:
         task_type: str,
         params: dict
     ) -> None:
-        """在背景執行任務"""
+        """Execute a task in the background."""
         with self._lock:
             task = self._tasks[task_id]
 
@@ -179,7 +179,7 @@ class TaskManager:
             self._notify_terminal(task)
 
     def get_task(self, task_id: str) -> Optional[TaskData]:
-        """取得任務狀態（進行中的任務會從 progress_tracker 同步最新進度）"""
+        """Get task status (in-progress tasks sync latest progress from progress_tracker)."""
         with self._lock:
             task = self._tasks.get(task_id)
         if task is None:
@@ -203,13 +203,13 @@ class TaskManager:
         return task
 
     def get_all_tasks(self) -> List[TaskData]:
-        """取得所有任務（進行中的任務會從 progress_tracker 同步最新進度）"""
+        """Get all tasks (in-progress tasks sync latest progress from progress_tracker)."""
         with self._lock:
             task_ids = list(self._tasks)
         return [self.get_task(task_id) for task_id in task_ids]
 
     def get_active_tasks(self) -> List[TaskData]:
-        """取得進行中的任務"""
+        """Get in-progress tasks."""
         with self._lock:
             active_ids = [
                 task_id for task_id, task in self._tasks.items()
@@ -218,7 +218,7 @@ class TaskManager:
         return [self.get_task(task_id) for task_id in active_ids]
 
     async def cancel(self, task_id: str) -> bool:
-        """取消任務"""
+        """Cancel a task."""
         with self._lock:
             task = self._tasks.get(task_id)
         if task is None:
@@ -241,7 +241,7 @@ class TaskManager:
         return False
 
     def remove(self, task_id: str) -> bool:
-        """移除已完成的任務"""
+        """Remove a completed task."""
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
@@ -258,7 +258,7 @@ class TaskManager:
         return True
 
     def cleanup_completed(self, max_age_hours: int = 24) -> int:
-        """清理過期的已完成任務"""
+        """Clean up expired completed tasks."""
         now = datetime.now(timezone.utc)
         with self._lock:
             to_remove = [

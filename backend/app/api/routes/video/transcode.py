@@ -1,73 +1,78 @@
 """
-影片轉檔 API 路由
+Video transcoding API routes.
 """
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.video.transcode_service import TranscodeService
+
+if TYPE_CHECKING:
+    from app.services.video.transcode_service import VideoTranscodeService
+    from app.services.video.cut_service import VideoCutService
+    from app.services.video.extract_audio_service import VideoExtractAudioService
 
 router = APIRouter()
 
 
 class TranscodeRequest(BaseModel):
-    """轉檔請求"""
-    file_id: str = Field(..., description="輸入檔案 ID")
-    output_format: str = Field(default="mp4", description="輸出格式 (mp4, mkv, webm, avi)")
-    video_codec: str = Field(default="h264", description="影片編碼 (h264, h265, vp9, av1, copy)")
-    audio_codec: str = Field(default="aac", description="音訊編碼 (aac, mp3, opus, flac, copy)")
-    preset: str = Field(default="medium", description="編碼速度 (ultrafast, fast, medium, slow, veryslow)")
-    crf: int = Field(default=23, ge=0, le=51, description="品質值 (0-51, 越小越好)")
-    resolution: Optional[str] = Field(default=None, description="解析度 (e.g., 1920x1080)")
-    scale_algorithm: Optional[str] = Field(default=None, description="縮放演算法 (bicubic, lanczos, bilinear, spline, neighbor)")
-    fps: Optional[float] = Field(default=None, gt=0, description="幀率")
-    audio_bitrate: Optional[str] = Field(default=None, description="音訊位元率 (e.g., 128k)")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
-    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
+    """Transcode request."""
+    file_id: str = Field(..., description="Input file ID")
+    output_format: str = Field(default="mp4", description="Output format (mp4, mkv, webm, avi)")
+    video_codec: str = Field(default="h264", description="Video codec (h264, h265, vp9, av1, copy)")
+    audio_codec: str = Field(default="aac", description="Audio codec (aac, mp3, opus, flac, copy)")
+    preset: str = Field(default="medium", description="Encoding speed (ultrafast, fast, medium, slow, veryslow)")
+    crf: int = Field(default=23, ge=0, le=51, description="Quality value (0-51, lower is better)")
+    resolution: Optional[str] = Field(default=None, description="Resolution (e.g., 1920x1080)")
+    scale_algorithm: Optional[str] = Field(default=None, description="Scaling algorithm (bicubic, lanczos, bilinear, spline, neighbor)")
+    fps: Optional[float] = Field(default=None, gt=0, description="Frame rate")
+    audio_bitrate: Optional[str] = Field(default=None, description="Audio bitrate (e.g., 128k)")
+    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
+    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class CutRequest(BaseModel):
-    """剪輯請求"""
-    file_id: str = Field(..., description="輸入檔案 ID")
-    start_time: float = Field(..., ge=0, description="開始時間（秒）")
-    end_time: float = Field(..., gt=0, description="結束時間（秒）")
-    stream_copy: bool = Field(default=True, description="是否使用 stream copy（快速但不精確）")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
-    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
+    """Cut request."""
+    file_id: str = Field(..., description="Input file ID")
+    start_time: float = Field(..., ge=0, description="Start time (seconds)")
+    end_time: float = Field(..., gt=0, description="End time (seconds)")
+    stream_copy: bool = Field(default=True, description="Use stream copy (fast but less precise)")
+    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
+    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class ExtractAudioRequest(BaseModel):
-    """提取音訊請求"""
-    file_id: str = Field(..., description="輸入檔案 ID")
-    audio_format: str = Field(default="mp3", description="音訊格式 (mp3, wav, flac, aac)")
-    audio_bitrate: Optional[str] = Field(default=None, description="音訊位元率 (e.g., 320k)")
-    output_dir: Optional[str] = Field(default=None, description="自訂輸出目錄")
-    output_filename: Optional[str] = Field(default=None, description="自訂輸出檔名")
+    """Extract audio request."""
+    file_id: str = Field(..., description="Input file ID")
+    audio_format: str = Field(default="mp3", description="Audio format (mp3, wav, flac, aac)")
+    audio_bitrate: Optional[str] = Field(default=None, description="Audio bitrate (e.g., 320k)")
+    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
+    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class TranscodeResponse(BaseModel):
-    """轉檔回應"""
+    """Transcode response."""
     task_id: str
-    message: str = "轉檔任務已提交"
+    message: str = "Transcode task submitted"
 
 
 class CutResponse(BaseModel):
-    """剪輯回應"""
+    """Cut response."""
     task_id: str
-    message: str = "剪輯任務已提交"
+    message: str = "Cut task submitted"
 
 
 class ExtractAudioResponse(BaseModel):
-    """提取音訊回應"""
+    """Extract audio response."""
     task_id: str
-    message: str = "提取音訊任務已提交"
+    message: str = "Extract audio task submitted"
 
 
 class MediaInfoResponse(BaseModel):
-    """媒體資訊回應"""
+    """Media info response."""
     duration: float
     width: int
     height: int
@@ -79,7 +84,7 @@ class MediaInfoResponse(BaseModel):
 
 
 class FFmpegStatusResponse(BaseModel):
-    """FFmpeg 狀態回應"""
+    """FFmpeg status response."""
     installed: bool
     ffmpeg_path: Optional[str] = None
     ffprobe_path: Optional[str] = None
@@ -89,9 +94,9 @@ class FFmpegStatusResponse(BaseModel):
 @router.get("/ffmpeg/status", response_model=FFmpegStatusResponse)
 @inject
 async def get_ffmpeg_status(
-    service: TranscodeService = Depends(Provide[AppContainer.video_transcode]),
+    service: VideoTranscodeService = Depends(Provide[AppContainer.video_transcode]),
 ):
-    """檢查 FFmpeg 安裝狀態"""
+    """Check FFmpeg installation status."""
     status = service.get_ffmpeg_status()
     return FFmpegStatusResponse(**status)
 
@@ -100,12 +105,12 @@ async def get_ffmpeg_status(
 @inject
 async def get_media_info(
     file_id: str,
-    service: TranscodeService = Depends(Provide[AppContainer.video_transcode]),
+    service: VideoTranscodeService = Depends(Provide[AppContainer.video_transcode]),
 ):
     """
-    取得媒體檔案資訊
+    Get media file information.
 
-    - **file_id**: 已上傳的檔案 ID
+    - **file_id**: Uploaded file ID
     """
     try:
         info = await service.get_media_info(file_id)
@@ -120,17 +125,17 @@ async def get_media_info(
 @inject
 async def transcode_video(
     request: TranscodeRequest,
-    service: TranscodeService = Depends(Provide[AppContainer.video_transcode]),
+    service: VideoTranscodeService = Depends(Provide[AppContainer.video_transcode]),
 ):
     """
-    提交影片轉檔任務
+    Submit video transcode task.
 
-    支援的格式：
+    Supported formats:
     - **output_format**: mp4, mkv, webm, avi, mov
-    - **video_codec**: h264, h265, vp9, av1, copy (不重新編碼)
-    - **audio_codec**: aac, mp3, opus, flac, copy (不重新編碼)
-    - **preset**: ultrafast (最快), fast, medium (預設), slow, veryslow (最佳品質)
-    - **crf**: 0-51，建議 18-28，越小品質越好但檔案越大
+    - **video_codec**: h264, h265, vp9, av1, copy (no re-encoding)
+    - **audio_codec**: aac, mp3, opus, flac, copy (no re-encoding)
+    - **preset**: ultrafast (fastest), fast, medium (default), slow, veryslow (best quality)
+    - **crf**: 0-51, recommended 18-28; lower = better quality but larger file
     """
     try:
         task_id = await service.submit_transcode(
@@ -158,14 +163,14 @@ async def transcode_video(
 @inject
 async def cut_video(
     request: CutRequest,
-    service: TranscodeService = Depends(Provide[AppContainer.video_transcode]),
+    service: VideoCutService = Depends(Provide[AppContainer.video_cut]),
 ):
     """
-    提交影片剪輯任務
+    Submit video cut task.
 
-    - **start_time**: 開始時間（秒）
-    - **end_time**: 結束時間（秒）
-    - **stream_copy**: 是否使用 stream copy（預設 True，快速但可能不精確）
+    - **start_time**: Start time (seconds)
+    - **end_time**: End time (seconds)
+    - **stream_copy**: Use stream copy (default True, fast but may be imprecise)
     """
     try:
         task_id = await service.submit_cut(
@@ -187,13 +192,13 @@ async def cut_video(
 @inject
 async def extract_audio(
     request: ExtractAudioRequest,
-    service: TranscodeService = Depends(Provide[AppContainer.video_transcode]),
+    service: VideoExtractAudioService = Depends(Provide[AppContainer.video_extract_audio]),
 ):
     """
-    提交提取音訊任務
+    Submit extract audio task.
 
-    - **audio_format**: 音訊格式 (mp3, wav, flac, aac)
-    - **audio_bitrate**: 音訊位元率 (e.g., 128k, 192k, 256k, 320k)
+    - **audio_format**: Audio format (mp3, wav, flac, aac)
+    - **audio_bitrate**: Audio bitrate (e.g., 128k, 192k, 256k, 320k)
     """
     try:
         task_id = await service.submit_extract_audio(

@@ -1,17 +1,59 @@
 """
-檔案處理端點
+File handling endpoints.
 """
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pathlib import Path
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_serializer
 
 from app.init.container import AppContainer
 from app.services.files.file_service import FileService
-from app.api.schemas.common import FileInfo, FileUploadResponse
+from app.schemas.file import FileData
+
+
+def _serialize_dt(v: datetime) -> str:
+    return v.isoformat()
+
+
+class FileInfo(BaseModel):
+    """File API response model."""
+    file_id: str
+    filename: str
+    original_filename: str
+    file_path: str
+    file_size: int
+    mime_type: str
+    source_dir: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    metadata: Optional[dict] = None
+
+    _serialize_created_at = field_serializer("created_at")(_serialize_dt)
+
+    @classmethod
+    def from_file_data(cls, f: FileData) -> "FileInfo":
+        return cls(
+            file_id=f.file_id,
+            filename=f.filename,
+            original_filename=f.original_filename,
+            file_path=f.file_path,
+            file_size=f.file_size,
+            mime_type=f.mime_type,
+            source_dir=f.source_dir,
+            created_at=f.created_at,
+            metadata=f.metadata,
+        )
+
+
+class FileUploadResponse(BaseModel):
+    """File upload response."""
+    file_id: str
+    filename: str
+    file_size: int
+    mime_type: str
 
 router = APIRouter()
 
@@ -24,14 +66,14 @@ async def upload_file(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    上傳檔案
+    Upload a file.
 
     Args:
-        file: 上傳的檔案
-        source_dir: 檔案在使用者電腦上的原始目錄（由 Electron 提供）
+        file: The uploaded file
+        source_dir: Original directory on the user's machine (provided by Electron)
 
     Returns:
-        FileUploadResponse: 包含 file_id 的回應
+        FileUploadResponse containing the file_id.
     """
     content = await file.read()
     file_data = await file_service.save_upload(
@@ -60,8 +102,8 @@ async def register_local_file(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    註冊本機檔案（不複製），直接用原始路徑。
-    適用於 Electron 桌面環境，避免大檔案複製。
+    Register a local file (without copying); uses the original path directly.
+    Designed for the Electron desktop environment to avoid copying large files.
     """
     try:
         file_data = file_service.register_local_file(req.file_path)
@@ -83,10 +125,10 @@ async def get_file_info(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    取得檔案資訊
+    Get file information.
 
     Args:
-        file_id: 檔案 ID
+        file_id: File ID
     """
     file_data = file_service.get_file(file_id)
 
@@ -103,10 +145,10 @@ async def download_file(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    下載檔案
+    Download a file.
 
     Args:
-        file_id: 檔案 ID
+        file_id: File ID
     """
     file_data = file_service.get_file(file_id)
 
@@ -130,8 +172,8 @@ async def cleanup_all_files(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    清除本次 session 所有暫存與輸出檔案。
-    由 Electron 在應用程式關閉前呼叫（autoCleanTemp 設定啟用時）。
+    Clean up all temporary and output files for this session.
+    Called by Electron before the application closes (when autoCleanTemp is enabled).
     """
     count = file_service.cleanup_all()
     return {"status": "ok", "deleted": count}
@@ -144,10 +186,10 @@ async def delete_file(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    刪除檔案
+    Delete a file.
 
     Args:
-        file_id: 檔案 ID
+        file_id: File ID
     """
     if not file_service.delete_file(file_id):
         raise HTTPException(status_code=404, detail="File not found")

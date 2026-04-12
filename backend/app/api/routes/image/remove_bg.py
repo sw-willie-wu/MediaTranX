@@ -1,27 +1,30 @@
 """
-去背 API 路由
+Background removal API routes.
 """
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.image.remove_bg_service import ImageRemoveBgService
+
+if TYPE_CHECKING:
+    from app.services.image.remove_bg_service import ImageRemoveBgService
 
 router = APIRouter()
 
 
 class ImageRemoveBgRequest(BaseModel):
-    file_id: str = Field(..., description="輸入檔案 ID")
-    mode: str = Field(default="auto", description="去背模式 (auto/person/product/animal/anime)")
+    file_id: str = Field(..., description="Input file ID")
+    mode: str = Field(default="auto", description="Removal mode (auto/person/product/animal/anime)")
     output_dir: Optional[str] = Field(default=None)
 
 
 class ImageRemoveBgResponse(BaseModel):
     task_id: str
-    message: str = "去背任務已提交"
+    message: str = "Background removal task submitted"
 
 
 @router.post("/remove-bg", response_model=ImageRemoveBgResponse)
@@ -30,7 +33,7 @@ async def remove_bg(
     request: ImageRemoveBgRequest,
     service: ImageRemoveBgService = Depends(Provide[AppContainer.image_remove_bg]),
 ):
-    """提交去背任務"""
+    """Submit background removal task."""
     try:
         task_id = await service.submit_remove_bg(
             file_id=request.file_id,
