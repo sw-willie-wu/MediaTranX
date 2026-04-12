@@ -131,6 +131,36 @@ class OllamaProvider(RemoteProvider):
         self._caps_cache[model_name] = caps
         return caps
 
+    def get_model_ctx(self, model_name: str) -> int:
+        """Query Ollama for model's context window size via /api/show."""
+        try:
+            payload = json.dumps({"name": model_name}).encode("utf-8")
+            req = urllib.request.Request(
+                f"{self.endpoint}/api/show",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                info = json.loads(resp.read())
+                # num_ctx is in model parameters
+                params = info.get("parameters", "")
+                for line in params.split("\n"):
+                    if "num_ctx" in line:
+                        parts = line.strip().split()
+                        if len(parts) >= 2:
+                            return int(parts[-1])
+                # Fallback: check modelfile
+                modelfile = info.get("modelfile", "")
+                for line in modelfile.split("\n"):
+                    if "num_ctx" in line.lower():
+                        parts = line.strip().split()
+                        if len(parts) >= 2:
+                            return int(parts[-1])
+        except Exception as e:
+            logger.warning(f"Failed to query model ctx for {model_name}: {e}")
+        return 8192  # Conservative fallback
+
     def chat(
         self,
         model: str,

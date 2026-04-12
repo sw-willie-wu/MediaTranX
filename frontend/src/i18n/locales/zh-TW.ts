@@ -129,6 +129,7 @@ export default {
       registering: '正在註冊結果...',
       // ocr (image)
       ocr_prepare: '準備辨識...',
+      ocr_recognizing: '辨識文字中...',
       ocr_saving: '儲存結果...',
       ocr_complete: 'OCR 完成',
       connecting_provider: '連接 {0}...',
@@ -679,7 +680,7 @@ export default {
       summarize: '大綱整理',
       summarize_hint: '使用 LLM 生成逐字稿摘要大綱',
       generate_outline: '生成大綱',
-      generate_outline_hint: '使用 LLM 生成大綱，額外輸出一份 .draft.txt 檔案',
+      generate_outline_hint: '使用 LLM 生成 Markdown 大綱，額外輸出一份 .draft.md 檔案',
       outline_model: '大綱模型',
       output_file: '輸出路徑',
       select_output: '選擇輸出路徑',
@@ -915,7 +916,7 @@ export default {
       website: '官方網站',
       credits: '技術致謝',
       credits_intro: 'MediaTranX 建立在眾多卓越的開源技術之上：',
-      credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, TranslateGemma, Llama-cpp-python 等。',
+      credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, Llama-cpp-python 等。',
       copyright: '© 2026 MediaTranX Project. All rights reserved.',
     },
 

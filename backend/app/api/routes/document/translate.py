@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.setup.language_service import LanguageService
 
 if TYPE_CHECKING:
     from app.services.document.translate_service import TranslateService
@@ -23,7 +22,7 @@ class DocumentTranslateRequest(BaseModel):
     source_language: str = Field(..., description="Source language (BCP 47)")
     target_language: str = Field(..., description="Target language (BCP 47)")
     model_size: str = Field(default="4b", description="Model size (4b, 12b, 27b)")
-    model_type: str = Field(default="translategemma", description="Translation model type (translategemma, qwen3)")
+    model_family: str = Field(default="gemma4", description="Translation model family (qwen3, gemma4, qwen3.5)")
     quantization: Optional[str] = Field(default=None, description="Model quantization (Q4_K_M, Q3_K_M, etc.)")
     translate_style: str = Field(default="colloquial", description="Translation style (colloquial, formal, literal)")
     glossary: Optional[dict[str, str]] = Field(default=None, description="Glossary {source_term: translation}")
@@ -37,36 +36,6 @@ class DocumentTranslateResponse(BaseModel):
     message: str = "Document translation task submitted"
 
 
-class TranslateGemmaStatusResponse(BaseModel):
-    """TranslateGemma model status response."""
-    available: bool
-    model_size: str
-    model_downloaded: bool
-
-
-@router.get("/translategemma/status", response_model=TranslateGemmaStatusResponse)
-@inject
-async def get_translategemma_status(
-    model_type: str = "translategemma",
-    model_size: str = "4b",
-    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
-):
-    """Query translation model status."""
-    try:
-        status = language_service.get_model_status(model_type, model_size)
-        return TranslateGemmaStatusResponse(**status)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/translategemma/languages")
-@inject
-async def get_translategemma_languages(
-    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
-):
-    """Get the list of languages supported by TranslateGemma."""
-    return language_service.get_supported_languages()
-
 
 @router.post("/translate", response_model=DocumentTranslateResponse)
 @inject
@@ -77,7 +46,7 @@ async def translate_document(
     """
     Submit document translation task.
 
-    Translates uploaded text files using TranslateGemma.
+    Translates uploaded text files using local LLM.
     The specified model is automatically downloaded on first use.
     """
     try:
@@ -86,7 +55,7 @@ async def translate_document(
             source_language=request.source_language,
             target_language=request.target_language,
             model_size=request.model_size,
-            model_type=request.model_type,
+            model_family=request.model_family,
             quantization=request.quantization,
             translate_style=request.translate_style,
             glossary=request.glossary,

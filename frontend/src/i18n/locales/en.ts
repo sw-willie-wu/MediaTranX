@@ -129,6 +129,7 @@ export default {
       registering: 'Registering result...',
       // ocr (image)
       ocr_prepare: 'Preparing recognition...',
+      ocr_recognizing: 'Recognizing text...',
       ocr_saving: 'Saving result...',
       ocr_complete: 'OCR complete',
       connecting_provider: 'Connecting to {0}...',
@@ -679,7 +680,7 @@ export default {
       summarize: 'Outline Summary',
       summarize_hint: 'Use LLM to generate a summary of the transcript',
       generate_outline: 'Generate Outline',
-      generate_outline_hint: 'Use LLM to generate an outline, outputs an additional .draft.txt file',
+      generate_outline_hint: 'Use LLM to generate a Markdown outline, outputs an additional .draft.md file',
       outline_model: 'Outline Model',
       output_file: 'Output Path',
       select_output: 'Select output path',
@@ -915,7 +916,7 @@ export default {
       website: 'Website',
       credits: 'Credits',
       credits_intro: 'MediaTranX is built on many excellent open-source technologies:',
-      credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, TranslateGemma, Llama-cpp-python, etc.',
+      credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, Llama-cpp-python, etc.',
       copyright: '© 2026 MediaTranX Project. All rights reserved.',
     },
 

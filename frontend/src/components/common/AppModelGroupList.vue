@@ -16,6 +16,9 @@ interface ModelItem {
   downloaded: boolean
   size_mb: number
   vram_mb?: number
+  n_ctx_default?: number
+  n_ctx_min?: number
+  n_ctx_max?: number
 }
 
 interface FamilyGroup {
@@ -79,6 +82,12 @@ function tDesc(desc: string): string {
   }
   return te(desc) ? t(desc) : desc
 }
+
+/** Format context size as human-readable (e.g. 4096 -> "4K ctx") */
+function formatCtx(n: number): string {
+  if (n >= 1024) return `${(n / 1024).toFixed(0)}K ctx`
+  return `${n} ctx`
+}
 </script>
 
 <template>
@@ -103,6 +112,7 @@ function tDesc(desc: string): string {
           <span class="row-size">{{ formatSize(item.size_mb) }}</span>
           <span v-if="item.vram_mb" class="row-vram">{{ formatSize(item.vram_mb) }} VRAM</span>
           <span v-else class="row-vram"></span>
+          <span v-if="item.n_ctx_default" class="row-ctx">{{ formatCtx(item.n_ctx_default) }}</span>
           <div class="row-action">
             <template v-if="downloadingTaskId[item.id]">
               <template v-if="(downloadProgress[item.id] ?? 0) === 0">
@@ -218,6 +228,15 @@ function tDesc(desc: string): string {
 .row-vram {
   flex-shrink: 0;
   min-width: 80px;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.row-ctx {
+  flex-shrink: 0;
+  min-width: 48px;
   text-align: right;
   color: var(--text-muted);
   font-size: 0.72rem;

@@ -16,6 +16,9 @@ export interface ModelItem {
   description?: string
   vram_mb?: number
   max_scale?: number
+  n_ctx_default?: number
+  n_ctx_min?: number
+  n_ctx_max?: number
 }
 
 export interface ModelCategory {

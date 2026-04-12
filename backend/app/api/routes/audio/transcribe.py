@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.setup.language_service import LanguageService
+from app.services.llm.language_service import LanguageService
 
 if TYPE_CHECKING:
     from app.services.audio.transcribe_service import AudioTranscribeService
@@ -25,7 +25,7 @@ class AudioTranscribeRequest(BaseModel):
     align: bool = Field(default=False, description="Precise alignment")
     translate: bool = Field(default=False, description="Translation")
     target_lang: Optional[str] = Field(default=None, description="Translation target language")
-    translate_model_type: str = Field(default="translategemma", description="Translation model type")
+    translate_model_family: str = Field(default="gemma4", description="Translation model family")
     translate_model_size: str = Field(default="4b", description="Translation model size")
     translate_quantization: Optional[str] = Field(default=None, description="Translation model quantization")
     translate_remote: bool = Field(default=False, description="Use cloud translation")
@@ -33,7 +33,7 @@ class AudioTranscribeRequest(BaseModel):
     translate_conn_id: Optional[int] = Field(default=None, description="Cloud connection ID")
     translate_remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
     summarize: bool = Field(default=False, description="Outline summarization")
-    summarize_model_type: str = Field(default="qwen3", description="Summarization model type")
+    summarize_model_family: str = Field(default="gemma4", description="Summarization model family")
     summarize_model_size: str = Field(default="4b", description="Summarization model size")
     summarize_quantization: Optional[str] = Field(default=None, description="Summarization model quantization")
     summarize_remote: bool = Field(default=False, description="Use cloud summarization model")
@@ -83,7 +83,7 @@ async def transcribe_audio(
             align=request.align,
             translate=request.translate,
             target_lang=request.target_lang,
-            translate_model_type=request.translate_model_type,
+            translate_model_family=request.translate_model_family,
             translate_model_size=request.translate_model_size,
             translate_quantization=request.translate_quantization,
             translate_remote=request.translate_remote,
@@ -91,7 +91,7 @@ async def transcribe_audio(
             translate_conn_id=request.translate_conn_id,
             translate_remote_model=request.translate_remote_model,
             summarize=request.summarize,
-            summarize_model_type=request.summarize_model_type,
+            summarize_model_family=request.summarize_model_family,
             summarize_model_size=request.summarize_model_size,
             summarize_quantization=request.summarize_quantization,
             summarize_remote=request.summarize_remote,

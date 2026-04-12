@@ -27,11 +27,11 @@ app/
 │       ├── audio/             ← 語音模型（whisper、demucs、wav2vec2）
 │       ├── llama/             ← LLM（gemma、qwen3、vlm、translate prompt）
 │       ├── remote/            ← 遠端 API Provider（ollama、openai、gemini）
-│       ├── registry.py        ← 模型註冊表
+│       ├── registry.py        ← 模型註冊表（含推理參數 inference config）
 │       └── model_manager.py   ← VRAM / Slot 管理
 ├── workers/                   ← TaskManager、ProgressTracker
 ├── types/                     ← 跨層共用 domain types（enum、dataclass）
-├── utils/                     ← 工具函數（gif_utils）
+├── utils/                     ← 工具函數（inference、prompts、translate、summarize）
 └── exceptions.py              ← 自訂例外階層
 ```
 
@@ -514,7 +514,107 @@ path = Path(settings.path.models) / "image"
 
 ---
 
-## 9. 錯誤處理規範
+## 9. LLM 推理參數化
+
+### 8.1 架構
+
+LLM 推理參數（temperature、top_k、top_p、max_tokens、prompt）不硬編碼在 service 中，統一由以下模組管理：
+
+```
+registry.py          → 每個模型 family 的 inference config（per-task 採樣參數 + prompt builder）
+utils/inference.py   → get_inference_config()、calc_max_tokens()、calc_batch_size()
+utils/prompts.py     → get_prompt_builder()（per-model prompt builder dispatch）
+```
+
+### 8.2 Registry inference config
+
+每個 GGUF model family 在 `registry.py` 定義 `inference` block（family level）和 n_ctx range（spec level）：
+
+```python
+"qwen3": {
+    "inference": {
+        "translate": {
+            "temperature": 0.1, "top_k": 40, "top_p": 0.9,
+            "prompt_builder": "qwen3", "thinking": False,
+            "max_tokens_strategy": "input_ratio", "max_tokens_ratio": 4, "max_tokens_cap": 16384,
+        },
+        "summarize": { ... },
+    },
+    "specs": {
+        "8b": {
+            "n_ctx_min": 4096, "n_ctx_max": 32768, "n_ctx_default": 16384,
+            "vram_per_ctx_token": 0.04,
+            ...
+        },
+    },
+}
+```
+
+Remote providers 使用 `REMOTE_INFERENCE_DEFAULTS`（固定 temperature + max_tokens）。
+
+### 8.3 Service 呼叫流程
+
+```python
+from app.utils.inference import get_inference_config, calc_max_tokens, estimate_tokens
+from app.utils.prompts import get_prompt_builder
+
+config = get_inference_config(model_family, model_size, "translate")
+builder = get_prompt_builder("translate", config["prompt_builder"], thinking=config.get("thinking", False))
+result = builder(text, source_lang, target_lang, format, style, glossary)
+
+max_tokens = calc_max_tokens(config, config["n_ctx"], estimate_tokens(text))
+
+if result["mode"] == "chat":
+    output = runtime.chat(messages=result["messages"], max_tokens=max_tokens,
+                          temperature=config["temperature"], top_k=config["top_k"], top_p=config["top_p"])
+elif result["mode"] == "completion":
+    output = runtime.complete(prompt=result["prompt"], ...)
+```
+
+### 8.4 Prompt builder
+
+每個模型 family 有對應的 prompt builder，處理 chat template 差異：
+
+| Builder | 特徵 |
+|---------|------|
+| `default` | 標準 system + user role |
+| `qwen3` | 加 `/no_think` 後綴（thinking=False 時） |
+| `gemma` | 無 system role，合併到 user message |
+
+### 8.5 Thinking 控制
+
+- Registry 定義預設值（`"thinking": False`）
+- API 請求可覆蓋（`thinking` 參數）
+- `thinking=False`：Qwen3 builder 加 `/no_think`
+- `thinking=True`：使用 default builder（不加 `/no_think`）
+- `_strip_thinking()` 永遠套用在 `chat()` 和 `complete()` 輸出，確保 `<think>` 標籤不出現在結果中
+
+### 8.6 命名規範
+
+模型 family 參數統一命名 `model_family`（如 `"qwen3"`、`"gemma4"`），禁止使用 `model_type` 或 `model_id`（避免與 VRAM slot type、完整 model identifier 混淆）。複合參數使用前綴：`translate_model_family`、`summarize_model_family`。
+
+---
+
+## 10. API 路由結構
+
+### 9.1 路由分類
+
+| 前綴 | 用途 | 檔案位置 |
+|------|------|---------|
+| `/api/setup/` | 設定頁面（config、models、remote connections） | `routes/setup/` |
+| `/api/llm/` | LLM 共用查詢（translate languages/styles/status/test） | `routes/llm.py` |
+| `/api/video/` | 影片工具（subtitle、transcode、interpolate、enhance） | `routes/video/` |
+| `/api/audio/` | 音訊工具（transcribe、separate、lyrics、midi） | `routes/audio/` |
+| `/api/image/` | 圖片工具（upscale、ocr、remove-bg、filter） | `routes/image/` |
+| `/api/document/` | 文件工具（translate、ocr、pdf-convert、split） | `routes/document/` |
+| `/api/files/` | 檔案管理（upload、download） | `routes/files.py` |
+| `/api/tasks/` | 任務管理（active、history） | `routes/tasks/` |
+
+LLM 共用查詢（語言列表、翻譯風格、模型狀態）放在 `/api/llm/`，不重複掛在各 domain router 下。實際執行翻譯/OCR/摘要仍在各 domain service 的 submit endpoint。
+
+---
+
+## 11. 錯誤處理規範
 
 ### 8.1 Service 層
 
@@ -549,7 +649,7 @@ Engine 方法失敗時直接拋異常，由上層 Service/TaskManager 處理。�
 
 ---
 
-## 10. 命名規範
+## 12. 命名規範
 
 ### 9.1 檔案命名
 
@@ -583,7 +683,7 @@ def get_image_compress_service() -> ImageCompressService:
 
 ---
 
-## 11. 新增功能 Checklist
+## 13. 新增功能 Checklist
 
 新增一個處理功能時，按順序完成：
 

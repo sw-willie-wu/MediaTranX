@@ -33,7 +33,7 @@ Free, open-source desktop app for **AI speech-to-text, AI translation, AI image 
 - **AI Speech-to-Text** — transcribe audio with Faster-Whisper (tiny to large-v3) + auto-summarization
 - **AI Source Separation** — isolate vocals, drums, bass, guitar, piano, other with Demucs 6-stem
 - **AI Lyrics Extraction** — extract and align lyrics with Wav2Vec2 forced alignment (16 languages)
-- **AI Translation** — translate transcriptions via local LLM (Qwen3, TranslateGemma) or cloud API (OpenAI, Gemini)
+- **AI Translation** — translate transcriptions via local LLM (Qwen3, Gemma 4) or cloud API (OpenAI, Gemini)
 - **MIDI Editor** — piano roll editor with Tone.js playback, GM soundfont, effects, and audio export
 - **Format Transcoding** — MP3, WAV, FLAC, OGG, AAC, M4A, WMA, OPUS
 - **Audio Editing** — cut, volume adjustment
@@ -66,7 +66,7 @@ Free, open-source desktop app for **AI speech-to-text, AI translation, AI image 
 | Category | Models |
 |----------|--------|
 | **Speech-to-Text** | Faster-Whisper (tiny / base / small / medium / large-v3) |
-| **Translation LLM** | TranslateGemma (4B/12B/27B), Qwen3 (1.7B/4B/8B/14B) |
+| **Translation LLM** | Qwen3 (1.7B/4B/8B/14B), Gemma 4 (4B/12B/27B) |
 | **Image Super-Resolution** | Real-ESRGAN, SwinIR, BSRGAN, Real-CUGAN, Waifu2x |
 | **Face Restoration** | CodeFormer, GFPGAN v1.4 |
 | **Vision LLM (OCR)** | Qwen3-VL (2B/4B/8B), InternVL2.5 (1B/4B), Gemma 3 (4B/12B) |

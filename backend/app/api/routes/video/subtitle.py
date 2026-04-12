@@ -12,7 +12,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.setup.language_service import LanguageService
 
 if TYPE_CHECKING:
     from app.services.video.subtitle_service import SubtitleService
@@ -45,9 +44,9 @@ class SubtitleGenerateRequest(BaseModel):
         default="4b",
         description="Translation model size (4b, 12b, 27b)"
     )
-    translate_model_type: str = Field(
-        default="translategemma",
-        description="Translation model type (translategemma, qwen3)"
+    translate_model_family: str = Field(
+        default="gemma4",
+        description="Translation model family (qwen3, gemma4, qwen3.5)"
     )
     translate_quantization: Optional[str] = Field(
         default=None,
@@ -63,13 +62,13 @@ class SubtitleGenerateRequest(BaseModel):
         description="Condition on previous text (disable to avoid sentence merging, suited for multi-speaker)"
     )
     min_silence_duration_ms: int = Field(
-        default=500,
+        default=200,
         ge=100,
         le=2000,
         description="Minimum silence duration (ms); pauses shorter than this won't trigger a split"
     )
     vad_threshold: float = Field(
-        default=0.5,
+        default=0.3,
         ge=0.1,
         le=0.9,
         description="VAD threshold; lower = more sensitive (more splits)"
@@ -125,78 +124,6 @@ async def get_whisper_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/translategemma/status", response_model=ModelStatusResponse)
-@inject
-async def get_translategemma_status(
-    model_size: str = "4b",
-    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
-):
-    """Query TranslateGemma model status."""
-    try:
-        status = language_service.get_model_status("translategemma", model_size)
-        return ModelStatusResponse(**status)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/translate/status")
-@inject
-async def get_translate_model_status(
-    model_type: str = "translategemma",
-    model_size: str = "4b",
-    quantization: str | None = None,
-    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
-):
-    """Query translation model status (generic, supports translategemma and qwen3)."""
-    try:
-        status = language_service.get_model_status(model_type, model_size, quantization)
-        return status
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/translategemma/languages")
-@inject
-async def get_translategemma_languages(
-    language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
-):
-    """Get the list of languages supported by the translation model."""
-    return language_service.get_supported_languages()
-
-
-class TranslateTestResponse(BaseModel):
-    """Translation test response."""
-    result: str
-    prompt: str
-
-
-class TranslateTestRequest(BaseModel):
-    """Translation test request."""
-    text: str = Field(..., description="Text to translate (can be SRT format)")
-    target_language: str = Field(default="zh-TW", description="Target language")
-    source_language: str = Field(default="ja", description="Source language")
-    model_size: str = Field(default="4b", description="Model size: 4b, 12b")
-
-
-@router.post("/translategemma/test", response_model=TranslateTestResponse)
-@inject
-async def test_translate(
-    request: TranslateTestRequest,
-    service: SubtitleService = Depends(Provide[AppContainer.video_subtitle]),
-):
-    """
-    Test translation (for development) -- uses llama-server messages API.
-    """
-    try:
-        data = service.test_translate(
-            text=request.text,
-            target_language=request.target_language,
-            source_language=request.source_language,
-            model_size=request.model_size,
-        )
-        return TranslateTestResponse(result=data["result"], prompt=data["prompt"])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/subtitle/generate", response_model=SubtitleGenerateResponse)
@@ -235,7 +162,7 @@ async def generate_subtitle(
             output_filename=request.output_filename,
             target_language=request.target_language,
             translate_model_size=request.translate_model_size,
-            translate_model_type=request.translate_model_type,
+            translate_model_family=request.translate_model_family,
             translate_quantization=request.translate_quantization,
             word_timestamps=request.word_timestamps,
             condition_on_previous_text=request.condition_on_previous_text,

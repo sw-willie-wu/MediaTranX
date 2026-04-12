@@ -10,13 +10,7 @@ from uuid import uuid4
 from app.engine.ffmpeg import FFmpegWrapper
 from app.handler.exceptions import FFmpegError
 from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
-from app.utils.prompts import (
-    WHISPER_TO_BCP47,
-    build_srt_translate_prompt,
-    build_translate_messages,
-    segments_to_srt,
-    parse_srt_response,
-)
+from app.utils.prompts import WHISPER_TO_BCP47
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -84,44 +78,6 @@ class SubtitleService:
         """Query Whisper model status."""
         return self._whisper.get_model_status(model_size)
 
-    def test_translate(
-        self,
-        text: str,
-        target_language: str = "zh-TW",
-        source_language: str = "ja",
-        model_size: str = "4b",
-    ) -> dict:
-        """
-        Test translation (dev use) -- using llama-server messages API.
-
-        Returns:
-            dict with keys 'result' and 'prompt'
-        """
-        from app.utils.prompts import LANG_NAMES_EN
-        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-        from app.engine.ai.registry import SLOT_LLM
-
-        source_name = LANG_NAMES_EN.get(source_language, source_language)
-        target_name = LANG_NAMES_EN.get(target_language, target_language)
-        variant = model_size
-
-        user_msg = (
-            f"Translate the following {source_name} subtitles to {target_name}. "
-            f"Keep SRT format and timestamps unchanged. Output only the translation.\n\n"
-            f"{text}"
-        )
-        messages = [{"role": "user", "content": user_msg}]
-
-        runtime = LlamaServerRuntime(SLOT_LLM)
-        with runtime.acquire("translategemma", variant):
-            result = runtime.chat(
-                messages=messages,
-                max_tokens=len(text) * 3,
-                temperature=0.1,
-            )
-
-        return {"result": result, "prompt": user_msg}
-
     async def submit_subtitle_generate(
         self,
         file_id: str,
@@ -132,13 +88,13 @@ class SubtitleService:
         output_filename: Optional[str] = None,
         target_language: Optional[str] = None,
         translate_model_size: str = "4b",
-        translate_model_type: str = "translategemma",
+        translate_model_family: str = "gemma4",
         translate_quantization: Optional[str] = None,
         # Advanced segmentation parameters
         word_timestamps: bool = False,
         condition_on_previous_text: bool = True,
-        min_silence_duration_ms: int = 500,
-        vad_threshold: float = 0.5,
+        min_silence_duration_ms: int = 200,
+        vad_threshold: float = 0.3,
         # Translation options
         keep_names: bool = True,
         translate_style: str = "colloquial",
@@ -186,7 +142,7 @@ class SubtitleService:
             "output_filename": output_filename,
             "target_language": target_language,
             "translate_model_size": translate_model_size,
-            "translate_model_type": translate_model_type,
+            "translate_model_family": translate_model_family,
             "translate_quantization": translate_quantization,
             "word_timestamps": word_timestamps,
             "condition_on_previous_text": condition_on_previous_text,
@@ -231,7 +187,7 @@ class SubtitleService:
         With translation:
         1. Extract audio from video via FFmpeg -- progress 0~10%
         2. Transcribe audio via faster-whisper -- progress 10~70%
-        3. Translate via TranslateGemma -- progress 70~95%
+        3. Translate via LLM -- progress 70~95%
         4. Write segments to SRT/VTT subtitle file -- progress 95~100%
         """
         file_id = params["file_id"]
@@ -245,14 +201,14 @@ class SubtitleService:
         output_format = params.get("output_format", "srt")
         target_language = params.get("target_language")  # None = no translation
         translate_model_size = params.get("translate_model_size", "4b")
-        translate_model_type = params.get("translate_model_type", "translategemma")
+        translate_model_family = params.get("translate_model_family", "gemma4")
         translate_quantization = params.get("translate_quantization")
 
         # Advanced segmentation parameters
         word_timestamps = params.get("word_timestamps", False)
         condition_on_previous_text = params.get("condition_on_previous_text", True)
-        min_silence_duration_ms = params.get("min_silence_duration_ms", 500)
-        vad_threshold = params.get("vad_threshold", 0.5)
+        min_silence_duration_ms = params.get("min_silence_duration_ms", 200)
+        vad_threshold = params.get("vad_threshold", 0.3)
 
         # Translation options
         keep_names = params.get("keep_names", True)
@@ -354,22 +310,21 @@ class SubtitleService:
                         translate_progress(1.0, "task.progress.translate_complete")
                     else:
                         # Local translation
-                        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-                        from app.engine.ai.registry import SLOT_LLM
                         from app.utils.translate import translate_srt_local
 
                         variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
-                        runtime = LlamaServerRuntime(SLOT_LLM)
+                        runtime = get_container().llama_runtime()
 
                         translate_progress(0.0, "task.progress.load_translate_model")
 
-                        with runtime.acquire(translate_model_type, variant, lambda p, m: translate_progress(p * 0.05, m)):
+                        with runtime.acquire(translate_model_family, variant, lambda p, m: translate_progress(p * 0.05, m)):
                             translate_progress(0.05, "task.progress.start_translate")
                             translated_all = translate_srt_local(
                                 seg_dicts, src, target_language, runtime,
                                 on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
                                 keep_names=keep_names, style=translate_style, glossary=glossary,
-                                model_id=translate_model_type,
+                                model_family=translate_model_family,
+                                model_size=translate_model_size,
                             )
 
                         translate_progress(1.0, "task.progress.translate_complete")

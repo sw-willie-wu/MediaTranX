@@ -154,6 +154,8 @@ class LlamaServerRuntime(BaseRuntime):
         messages: list[dict],
         max_tokens: int = 2048,
         temperature: float = 0.1,
+        top_k: int = 40,
+        top_p: float = 0.9,
         stop: Optional[list[str]] = None,
     ) -> str:
         """
@@ -173,6 +175,8 @@ class LlamaServerRuntime(BaseRuntime):
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "top_k": top_k,
+            "top_p": top_p,
             "repeat_penalty": 1.1,
         }
         if stop:
@@ -202,6 +206,51 @@ class LlamaServerRuntime(BaseRuntime):
         """Remove <think>...</think> blocks from Qwen3 thinking mode output."""
         import re
         return re.sub(r'<think>[\s\S]*?</think>\s*', '', text).strip()
+
+    def complete(
+        self,
+        prompt: str,
+        max_tokens: int = 2048,
+        temperature: float = 0.1,
+        top_k: int = 40,
+        top_p: float = 0.9,
+        stop: list[str] | None = None,
+    ) -> str:
+        """
+        Raw text completion (no chat template).
+        Uses /completion endpoint instead of /v1/chat/completions.
+        """
+        import urllib.error
+        import urllib.request
+
+        if not self._port:
+            raise RuntimeError("llama-server not started; call acquire() first")
+
+        payload: dict = {
+            "prompt": prompt,
+            "n_predict": max_tokens,
+            "temperature": temperature,
+            "top_k": top_k,
+            "top_p": top_p,
+            "repeat_penalty": 1.1,
+        }
+        if stop:
+            payload["stop"] = stop
+
+        url = f"http://127.0.0.1:{self._port}/completion"
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=data, headers={"Content-Type": "application/json"}
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                result = json.loads(resp.read())
+            content = result.get("content", "").strip()
+            return self._strip_thinking(content)
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"llama-server API error {e.code}: {body}")
 
     # ─────────────────────────────────────────────
     # Internal path resolution
@@ -240,7 +289,7 @@ class LlamaServerRuntime(BaseRuntime):
             "size": size,
             "quantization": quant,
             "layers": specs["layers"],
-            "n_ctx": specs["n_ctx"],
+            "n_ctx": specs.get("n_ctx_default", specs.get("n_ctx", 4096)),
         }
 
         # Handle mmproj for vision models

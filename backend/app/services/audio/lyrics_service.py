@@ -49,7 +49,7 @@ class AudioLyricsService:
         align: bool = False,
         translate: bool = False,
         target_lang: Optional[str] = None,
-        translate_model_type: str = "translategemma",
+        translate_model_family: str = "gemma4",
         translate_model_size: str = "4b",
         translate_quantization: Optional[str] = None,
         translate_remote: bool = False,
@@ -70,7 +70,7 @@ class AudioLyricsService:
             "align": align,
             "translate": translate,
             "target_lang": target_lang,
-            "translate_model_type": translate_model_type,
+            "translate_model_family": translate_model_family,
             "translate_model_size": translate_model_size,
             "translate_quantization": translate_quantization,
             "translate_remote": translate_remote,
@@ -222,10 +222,7 @@ class AudioLyricsService:
                         ]
                     else:
                         # Local translation
-                        from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-                        from app.engine.ai.registry import SLOT_LLM
-
-                        translate_model_type = params.get("translate_model_type", "translategemma")
+                        translate_model_family = params.get("translate_model_family", "gemma4")
                         translate_model_size = params.get("translate_model_size", "4b")
                         translate_quantization = params.get("translate_quantization")
 
@@ -238,16 +235,17 @@ class AudioLyricsService:
 
                         variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
                         src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
-                        runtime = LlamaServerRuntime(SLOT_LLM)
+                        runtime = get_container().llama_runtime()
 
                         stage_progress("translate", 0.0, "task.progress.lyrics_load_translate")
 
-                        with runtime.acquire(translate_model_type, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
+                        with runtime.acquire(translate_model_family, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
                             stage_progress("translate", 0.05, "task.progress.lyrics_translating")
                             translated_all = translate_srt_local(
                                 seg_dicts, src, target_lang, runtime,
                                 on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
-                                model_id=translate_model_type,
+                                model_family=translate_model_family,
+                                model_size=translate_model_size,
                             )
 
                         stage_progress("translate", 1.0, "task.progress.lyrics_translate_complete")

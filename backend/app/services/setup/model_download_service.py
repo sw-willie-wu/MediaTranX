@@ -46,7 +46,7 @@ def handle_model_download(params: dict, progress_callback: Callable[[float, str]
         size = item_id[len("whisper-"):]
         _download_whisper(size, progress_callback, snapshot_download)
 
-    elif item_id.startswith(("translategemma-", "qwen3-", "qwen3vl-", "internvl2.5-", "gemma3-", "gemma4-", "qwen3.5-")):
+    elif item_id.startswith(("qwen3-", "qwen3vl-", "internvl2.5-", "gemma3-", "gemma4-", "qwen3.5-")):
         # Parse: {family}-{size}-{quant}
         parts = item_id.rsplit("-", 1)
         quant = parts[1]
@@ -199,9 +199,11 @@ def _download_gguf(model_family: str, size: str, quant: str, progress_callback: 
 
     if has_mmproj:
         progress_callback(0.65, "task.progress.downloading_mmproj")
+        # mmproj_remote_filename: actual filename on HuggingFace (may differ from local name)
+        remote_mmproj = variant.get("mmproj_remote_filename", variant["mmproj_filename"])
         _stream_download(
             repo_id=variant.get("mmproj_repo_id", variant["repo_id"]),
-            filename=variant["mmproj_filename"],
+            filename=remote_mmproj,
             target_path=target_dir / variant["mmproj_filename"],
             progress_callback=progress_callback,
             base_progress=0.65,

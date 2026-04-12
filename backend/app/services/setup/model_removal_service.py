@@ -25,21 +25,6 @@ def remove_model(item_id: str) -> None:
             shutil.rmtree(model_dir)
             logger.info(f"Removed whisper model: {size}")
 
-    elif item_id.startswith("translategemma-"):
-        parts = item_id.split("-", 2)
-        size, quant = parts[1], parts[2]
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
-
-        translategemma_config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get("translategemma", {})
-        specs = translategemma_config.get("specs", {})
-        variant = specs.get(size, {}).get("variants", {}).get(quant)
-
-        if variant:
-            p = _models_dir("translategemma") / variant["filename"]
-            if p.exists():
-                p.unlink()
-                logger.info(f"Removed translategemma model: {item_id}")
-
     elif item_id.startswith("qwen3-"):
         parts = item_id.split("-", 2)
         size, quant = parts[1], parts[2]

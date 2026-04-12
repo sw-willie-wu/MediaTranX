@@ -8,6 +8,7 @@ from .audio import router as audio_router
 from .image import router as image_router
 from .document import router as document_router
 from .setup import router as setup_router
+from .llm import router as llm_router
 
 api_router = APIRouter()
 
@@ -15,6 +16,7 @@ api_router.include_router(health_router, tags=["health"])
 api_router.include_router(files_router, prefix="/files", tags=["files"])
 api_router.include_router(tasks_router)
 api_router.include_router(setup_router, prefix="/setup", tags=["setup"])
+api_router.include_router(llm_router, prefix="/llm", tags=["llm"])
 api_router.include_router(video_router)
 api_router.include_router(audio_router)
 api_router.include_router(image_router)

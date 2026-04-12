@@ -25,7 +25,7 @@ class LyricsRequest(BaseModel):
     align: bool = Field(default=False, description="Enable Wav2Vec2 precise alignment")
     translate: bool = Field(default=False, description="Whether to translate lyrics")
     target_lang: Optional[str] = Field(default=None, description="Translation target language")
-    translate_model_type: str = Field(default="translategemma", description="Translation model type")
+    translate_model_family: str = Field(default="gemma4", description="Translation model family")
     translate_model_size: str = Field(default="4b", description="Translation model size")
     translate_quantization: Optional[str] = Field(default=None, description="Translation model quantization")
     translate_remote: bool = Field(default=False, description="Use cloud translation")
@@ -55,7 +55,7 @@ async def extract_lyrics(
             align=request.align,
             translate=request.translate,
             target_lang=request.target_lang,
-            translate_model_type=request.translate_model_type,
+            translate_model_family=request.translate_model_family,
             translate_model_size=request.translate_model_size,
             translate_quantization=request.translate_quantization,
             translate_remote=request.translate_remote,

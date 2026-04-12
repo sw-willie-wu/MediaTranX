@@ -176,7 +176,7 @@ async function submitGenerate() {
         body.translate_remote_model = parsed.modelId
       } else {
         const [tmType, tmSize, tmQuant] = translationOptions.value.selectedTranslateModel.split(':')
-        body.translate_model_type = tmType
+        body.translate_model_family = tmType
         body.translate_model_size = tmSize
         body.translate_quantization = tmQuant
       }

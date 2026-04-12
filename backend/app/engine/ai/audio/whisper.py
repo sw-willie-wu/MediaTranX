@@ -242,8 +242,8 @@ class WhisperWrapper(PackageRuntime):
         on_progress: Optional[Callable[[float, str], None]] = None,
         word_timestamps: bool = False,
         condition_on_previous_text: bool = True,
-        min_silence_duration_ms: int = 500,
-        vad_threshold: float = 0.5,
+        min_silence_duration_ms: int = 200,
+        vad_threshold: float = 0.3,
     ) -> TranscribeResult:
         """
         Transcribe audio.
@@ -284,13 +284,28 @@ class WhisperWrapper(PackageRuntime):
                 if on_progress:
                     on_progress(0.05, "task.progress.start_recognition")
 
+                # Chinese variant handling: zh-TW/zh-CN → zh + initial_prompt
+                whisper_lang = language
+                initial_prompt = None
+                if language == "zh-TW":
+                    whisper_lang = "zh"
+                    initial_prompt = "以下是繁體中文的逐字稿。"
+                elif language == "zh-CN":
+                    whisper_lang = "zh"
+                    initial_prompt = "以下是简体中文的逐字稿。"
+                elif language == "zh" or language is None:
+                    # Explicit "zh" or auto-detect: default to Traditional Chinese
+                    # (for auto-detect, prompt is ignored if language is not Chinese)
+                    initial_prompt = "以下是繁體中文的逐字稿。"
+
                 # Execute transcription
                 segments_gen, info = model.transcribe(
                     str(audio_path),
-                    language=language,
+                    language=whisper_lang,
                     beam_size=5,
                     word_timestamps=word_timestamps,
                     condition_on_previous_text=condition_on_previous_text,
+                    initial_prompt=initial_prompt,
                     vad_filter=True,
                     vad_parameters=dict(
                         min_silence_duration_ms=min_silence_duration_ms,
@@ -319,11 +334,19 @@ class WhisperWrapper(PackageRuntime):
                 if on_progress:
                     on_progress(0.95, "task.progress.recognition_complete")
 
-                # Convert Chinese output to Traditional Chinese
+                # Convert Chinese output: s2t for Traditional, t2s for Simplified
                 detected_lang = info.language
-                if detected_lang == "zh" or (language and language.startswith("zh")):
+                is_chinese = detected_lang == "zh" or (language and language.startswith("zh"))
+                if is_chinese and language != "zh-CN":
+                    # Traditional Chinese (default): ensure no leftover simplified chars
                     import opencc
                     converter = opencc.OpenCC('s2t')
+                    for seg in segments:
+                        seg.text = converter.convert(seg.text)
+                elif is_chinese and language == "zh-CN":
+                    # Simplified Chinese: ensure no leftover traditional chars
+                    import opencc
+                    converter = opencc.OpenCC('t2s')
                     for seg in segments:
                         seg.text = converter.convert(seg.text)
 

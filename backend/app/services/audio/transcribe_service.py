@@ -11,11 +11,7 @@ from uuid import uuid4
 import soundfile as sf
 
 from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
-from app.utils.prompts import (
-    WHISPER_TO_BCP47,
-    parse_srt_response,
-    SUMMARIZE_PARAMS,
-)
+from app.utils.prompts import WHISPER_TO_BCP47
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -69,7 +65,7 @@ class AudioTranscribeService:
         align: bool = False,
         translate: bool = False,
         target_lang: Optional[str] = None,
-        translate_model_type: str = "translategemma",
+        translate_model_family: str = "gemma4",
         translate_model_size: str = "4b",
         translate_quantization: Optional[str] = None,
         translate_remote: bool = False,
@@ -77,7 +73,7 @@ class AudioTranscribeService:
         translate_conn_id: Optional[int] = None,
         translate_remote_model: Optional[str] = None,
         summarize: bool = False,
-        summarize_model_type: str = "qwen3",
+        summarize_model_family: str = "gemma4",
         summarize_model_size: str = "4b",
         summarize_quantization: Optional[str] = None,
         summarize_remote: bool = False,
@@ -99,7 +95,7 @@ class AudioTranscribeService:
             "align": align,
             "translate": translate,
             "target_lang": target_lang,
-            "translate_model_type": translate_model_type,
+            "translate_model_family": translate_model_family,
             "translate_model_size": translate_model_size,
             "translate_quantization": translate_quantization,
             "translate_remote": translate_remote,
@@ -107,7 +103,7 @@ class AudioTranscribeService:
             "translate_conn_id": translate_conn_id,
             "translate_remote_model": translate_remote_model,
             "summarize": summarize,
-            "summarize_model_type": summarize_model_type,
+            "summarize_model_family": summarize_model_family,
             "summarize_model_size": summarize_model_size,
             "summarize_quantization": summarize_quantization,
             "summarize_remote": summarize_remote,
@@ -267,11 +263,9 @@ class AudioTranscribeService:
                 ]
             else:
                 # Local translation
-                from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-                from app.engine.ai.registry import SLOT_LLM
                 from app.utils.translate import translate_srt_local
 
-                translate_model_type = params.get("translate_model_type", "translategemma")
+                translate_model_family = params.get("translate_model_family", "gemma4")
                 translate_model_size = params.get("translate_model_size", "4b")
                 translate_quantization = params.get("translate_quantization")
 
@@ -282,16 +276,17 @@ class AudioTranscribeService:
 
                 variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
                 src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
-                runtime = LlamaServerRuntime(SLOT_LLM)
+                runtime = get_container().llama_runtime()
 
                 stage_progress("translate", 0.0, "task.progress.load_translate_model")
 
-                with runtime.acquire(translate_model_type, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
+                with runtime.acquire(translate_model_family, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
                     stage_progress("translate", 0.05, "task.progress.start_translate")
                     translated_all = translate_srt_local(
                         seg_dicts, src, target_lang, runtime,
                         on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
-                        model_id=translate_model_type,
+                        model_family=translate_model_family,
+                        model_size=translate_model_size,
                     )
 
                 result.segments = [
@@ -315,44 +310,65 @@ class AudioTranscribeService:
             if summarize_remote:
                 # Cloud map-reduce
                 from app.utils.translate import get_cloud_provider
+                from app.utils.inference import get_remote_inference_config
+
                 provider = params.get("summarize_provider", "")
                 conn_id = params.get("summarize_conn_id")
                 remote_model = params.get("summarize_remote_model", "")
                 prov = get_cloud_provider(provider, conn_id, remote_model)
+                remote_config = get_remote_inference_config("summarize")
 
                 def _cloud_chat(prompt: str, max_tokens: int = 2048) -> str:
                     return prov.chat(
                         model=remote_model,
                         messages=[{"role": "user", "content": prompt}],
-                        max_tokens=max_tokens, temperature=0.3,
+                        max_tokens=max_tokens,
+                        temperature=remote_config["temperature"],
                     )
 
                 from app.utils.summarize import map_reduce_summarize
+                from app.utils.translate import _get_cloud_ctx
+                source_language = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
+                cloud_ctx = _get_cloud_ctx(prov, remote_model)
+                # Reserve half for output, 200 for prompt overhead
+                chunk_tokens = max(500, cloud_ctx // 2 - 200)
                 summary_text = map_reduce_summarize(
                     full_text, _cloud_chat,
+                    source_lang=source_language,
                     on_progress=lambda p, m: stage_progress("summarize", p, m),
+                    max_tokens_per_chunk=chunk_tokens,
                 )
             else:
                 # Local map-reduce
-                from app.engine.ai.runtime.llama_server import LlamaServerRuntime
-                from app.engine.ai.registry import SLOT_LLM
-                summary_model_id = params.get("summarize_model_type", "qwen3")
+                from app.utils.inference import get_inference_config
+
+                summary_model_family = params.get("summarize_model_family", "gemma4")
                 summary_model_size = params.get("summarize_model_size", "4b")
                 summary_quantization = params.get("summarize_quantization")
                 summary_variant = f"{summary_model_size}:{summary_quantization}" if summary_quantization else summary_model_size
-                runtime = LlamaServerRuntime(SLOT_LLM)
+                runtime = get_container().llama_runtime()
 
-                with runtime.acquire(summary_model_id, summary_variant):
+                config = get_inference_config(summary_model_family, summary_model_size, "summarize")
+
+                with runtime.acquire(summary_model_family, summary_variant):
                     def _local_chat(prompt: str, max_tokens: int = 2048) -> str:
                         return runtime.chat(
                             messages=[{"role": "user", "content": prompt}],
-                            max_tokens=max_tokens, temperature=0.3,
+                            max_tokens=max_tokens,
+                            temperature=config["temperature"],
+                            top_k=config.get("top_k", 40),
+                            top_p=config.get("top_p", 0.9),
                         )
 
                     from app.utils.summarize import map_reduce_summarize
+                    source_language = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
+                    # Reserve half for output, 200 for prompt overhead
+                    chunk_tokens = max(500, config["n_ctx"] // 2 - 200)
                     summary_text = map_reduce_summarize(
                         full_text, _local_chat,
+                        source_lang=source_language,
                         on_progress=lambda p, m: stage_progress("summarize", p, m),
+                        max_tokens_per_chunk=chunk_tokens,
                     )
 
             stage_progress("summarize", 1.0, "task.progress.summary_complete")
@@ -441,7 +457,7 @@ class AudioTranscribeService:
 
         # Write summary file
         if summary_text:
-            summary_filename = f"{base_name}.draft.txt"
+            summary_filename = f"{base_name}.draft.md"
             summary_path = output_dir / summary_filename
             with open(summary_path, "w", encoding="utf-8") as f:
                 f.write(summary_text)
