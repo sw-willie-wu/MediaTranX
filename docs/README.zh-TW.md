@@ -33,7 +33,7 @@
 - **AI 語音轉文字** — 使用 Faster-Whisper（tiny 到 large-v3）轉錄語音 + 自動摘要
 - **AI 音源分離** — 使用 Demucs 6 軌分離人聲、鼓、貝斯、吉他、鋼琴、其他
 - **AI 歌詞提取** — 使用 Wav2Vec2 精準對齊歌詞（支援 16 種語言）
-- **AI 翻譯** — 透過本地 LLM（Qwen3、TranslateGemma）或雲端 API（OpenAI、Gemini）翻譯
+- **AI 翻譯** — 透過本地 LLM（Qwen3、Gemma 4）或雲端 API（OpenAI、Gemini）翻譯
 - **MIDI 編輯器** — 鋼琴捲軸編輯器，支援 Tone.js 即時播放、GM 音色、效果器、音訊匯出
 - **格式轉碼** — MP3、WAV、FLAC、OGG、AAC、M4A、WMA、OPUS
 - **音訊編輯** — 剪切、音量調整
@@ -66,7 +66,7 @@
 | 類別 | 模型 |
 |------|------|
 | **語音辨識** | Faster-Whisper（tiny / base / small / medium / large-v3） |
-| **翻譯 LLM** | TranslateGemma（4B/12B/27B）、Qwen3（1.7B/4B/8B/14B） |
+| **翻譯 LLM** | Qwen3（1.7B/4B/8B/14B）、Gemma 4（4B/12B/27B） |
 | **圖片超解析** | Real-ESRGAN、SwinIR、BSRGAN、Real-CUGAN、Waifu2x |
 | **人臉修復** | CodeFormer、GFPGAN v1.4 |
 | **視覺語言模型（OCR）** | Qwen3-VL（2B/4B/8B）、InternVL2.5（1B/4B）、Gemma 3（4B/12B） |

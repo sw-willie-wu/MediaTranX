@@ -75,6 +75,7 @@ backend/app/
 │   ├── image/                       # convert, upscale, remove-bg, remove-object, filter, crop, ocr
 │   ├── document/                    # ocr, translate, split, pdf-convert
 │   ├── setup/                       # status, config, models, remote
+│   ├── llm.py                       # LLM shared queries (translate languages/styles/status)
 │   └── tasks/                       # active, history
 ├── services/                        # Business layer (one service per task type)
 │   ├── audio/                       # cut, lyrics, separate, transcode, transcribe, volume, midi
@@ -88,7 +89,7 @@ backend/app/
 │   ├── device.py                    # GPU/CPU detection
 │   ├── ffmpeg.py                    # FFmpegWrapper (async + sync methods)
 │   └── ai/                          # AI models
-│       ├── registry.py              # Model registry (FORMAT × model_id × variant)
+│       ├── registry.py              # Model registry (FORMAT × family × variant + inference config)
 │       ├── model_manager.py         # VRAM slot scheduling
 │       ├── runtime/                 # BaseRuntime, PackageRuntime, PTHRuntime, LlamaServerRuntime
 │       ├── audio/                   # whisper, demucs, wav2vec2, basic_pitch
@@ -99,7 +100,7 @@ backend/app/
 ├── workers/                         # TaskManager + ProgressTracker
 ├── db/                              # SQLModel (api_connection, task_history)
 ├── types/                           # Cross-layer domain types (TaskData, FileData)
-└── utils/                           # prompts, translate, summarize, video_frames, gif_utils
+└── utils/                           # inference, prompts, translate, summarize, video_frames, gif_utils
 ```
 
 Development specs: [BACKEND_DEVELOP_SPEC.md](BACKEND_DEVELOP_SPEC.md)
@@ -110,7 +111,7 @@ Development specs: [BACKEND_DEVELOP_SPEC.md](BACKEND_DEVELOP_SPEC.md)
 graph TB
     subgraph Registry["Registry (registry.py)"]
         FORMAT_PKG["FORMAT_PKG<br/>Whisper, Demucs"]
-        FORMAT_GGUF["FORMAT_GGUF<br/>Qwen3, TranslateGemma"]
+        FORMAT_GGUF["FORMAT_GGUF<br/>Qwen3, Gemma 4"]
         FORMAT_PTH["FORMAT_PTH<br/>Real-ESRGAN, GFPGAN, ..."]
         FORMAT_VLM["FORMAT_VLM<br/>Qwen3-VL, InternVL, Gemma 3"]
     end
