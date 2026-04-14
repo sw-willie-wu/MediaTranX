@@ -435,6 +435,91 @@ class FFmpegWrapper:
         finally:
             loop.close()
 
+    async def crop(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
+    ) -> Path:
+        """Crop video spatially using ffmpeg -vf crop=w:h:x:y.
+
+        Video is re-encoded (H.264 default); audio stream-copied.
+        """
+        input_path = Path(input_path)
+        output_path = Path(output_path)
+
+        if not input_path.exists():
+            raise FFmpegError(f"Input file not found: {input_path}")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        media_info = await self.get_media_info(input_path)
+        duration = media_info.duration
+
+        args = [
+            self.ffmpeg_path,
+            "-y",
+            "-i", str(input_path),
+            "-vf", f"crop={width}:{height}:{x}:{y}",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "18",
+            "-c:a", "copy",
+            "-progress", "pipe:1",
+            "-nostats",
+            str(output_path),
+        ]
+
+        self._progress_data = {}
+
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        async def read_progress():
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                line_str = line.decode().strip()
+                progress = self._parse_progress(line_str, duration)
+                if progress and on_progress:
+                    on_progress(progress)
+
+        await read_progress()
+        await proc.wait()
+
+        if proc.returncode != 0:
+            stderr = await proc.stderr.read()
+            raise FFmpegError(f"Crop failed: {stderr.decode()}")
+
+        return output_path
+
+    def crop_sync(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
+    ) -> Path:
+        """Sync version of crop() for use in TaskManager handlers."""
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                self.crop(input_path, output_path, x, y, width, height, on_progress)
+            )
+        finally:
+            loop.close()
+
     async def extract_audio(
         self,
         input_path: str | Path,
