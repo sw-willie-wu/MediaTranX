@@ -17,7 +17,7 @@ _engine = None
 
 def _get_db_path() -> Path:
     from app.init.configs import SETTINGS
-    return SETTINGS.path.data / _DB_FILENAME
+    return SETTINGS.path.root / _DB_FILENAME
 
 
 def get_engine():

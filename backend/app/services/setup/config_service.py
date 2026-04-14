@@ -15,7 +15,7 @@ class ConfigService:
     def get_config(self) -> dict:
         """Get current configuration with effective and user-saved paths."""
         from app.init.configs import SETTINGS
-        env_path = SETTINGS.path.data / ".env"
+        env_path = SETTINGS.path.root / ".env"
 
         # Read user-saved overrides from .env
         user_models_dir = ""
@@ -38,7 +38,7 @@ class ConfigService:
     def update_config(self, models_dir: str = "", temp_dir: str = "") -> dict:
         """Write path overrides to .env file. Requires restart to take effect."""
         from app.init.configs import SETTINGS
-        env_path = SETTINGS.path.data / ".env"
+        env_path = SETTINGS.path.root / ".env"
 
         lines: list[str] = []
         if env_path.exists():

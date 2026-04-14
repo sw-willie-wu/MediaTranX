@@ -13,7 +13,7 @@ def configure_logging(settings) -> None:
     handlers: list[logging.Handler] = [logging.StreamHandler()]
 
     if settings.is_frozen:
-        error_log = str(settings.path.data / 'logs' / 'core_error.log')
+        error_log = str(settings.path.log / 'core_error.log')
         Path(error_log).parent.mkdir(parents=True, exist_ok=True)
 
         error_handler = logging.FileHandler(error_log, encoding='utf-8')

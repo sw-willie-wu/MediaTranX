@@ -19,7 +19,10 @@ class SetupService:
 
     def __init__(self, task_manager: TaskManager):
         # Register model download handler with TaskManager
-        task_manager.register_handler("setup.model_download", self._handle_model_download)
+        task_manager.register_handler(
+            "setup.model_download", self._handle_model_download,
+            output_policy="history",
+        )
         logger.info("SetupService initialized, registered setup.model_download handler")
 
     async def get_system_status(self) -> dict:
@@ -34,7 +37,7 @@ class SetupService:
         return {
             "device": device,
             "llama_ready": manager.is_llama_ready(),
-            "base_dir": SETTINGS.path.data,
+            "base_dir": SETTINGS.path.root,
             "python_version": sys.version.split()[0],
             "torch_index": torch_idx,
             "components": self._get_component_versions(SETTINGS),
@@ -45,20 +48,18 @@ class SetupService:
         """Get binary tool versions (.version JSON or plain text)."""
         import json
         versions = {}
-        for tool in ("ffmpeg", "llama"):
-            vfile = settings.path.bin / tool / ".version"
+        tool_dirs = {
+            "ffmpeg": settings.path.ffmpeg,
+            "llama": settings.path.llama,
+            "soundfonts": settings.path.soundfonts,
+        }
+        for tool, tool_dir in tool_dirs.items():
+            vfile = tool_dir / ".version"
             if vfile.exists():
                 try:
                     versions[tool] = json.loads(vfile.read_text("utf-8").strip())
                 except (json.JSONDecodeError, ValueError):
                     pass
-        # Soundfonts
-        sf_vfile = settings.path.bin / "soundfonts" / "musyngkite" / ".version"
-        if sf_vfile.exists():
-            try:
-                versions["soundfonts"] = json.loads(sf_vfile.read_text("utf-8").strip())
-            except (json.JSONDecodeError, ValueError):
-                pass
         # PyTorch
         try:
             import torch
