@@ -3,6 +3,7 @@ File service module.
 Handles file upload, download, and management.
 """
 import aiofiles
+import json
 import logging
 import mimetypes
 import os
@@ -28,8 +29,11 @@ class FileService:
         else:
             base_temp = SETTINGS.path.temp
             base_temp.mkdir(parents=True, exist_ok=True)
-        self._upload_dir = base_temp / "uploads"
-        self._output_dir = base_temp / "results"
+        # Resolve to absolute at startup so all downstream file paths are
+        # absolute — frontend/Electron reads them directly without re-resolving
+        # against their own cwd (which differs from backend's).
+        self._upload_dir = (base_temp / "uploads").resolve()
+        self._output_dir = (base_temp / "results").resolve()
 
         # Ensure directories exist
         self._upload_dir.mkdir(parents=True, exist_ok=True)
@@ -258,6 +262,122 @@ class FileService:
 
         return file_info
 
+    # ── Sidecar metadata (Results drawer) ──────────────────────────
+
+    def _sidecar_path(self, file_id: str) -> Path:
+        return self._output_dir / f"{file_id}.meta.json"
+
+    def write_sidecar(self, file_id: str) -> None:
+        """Serialize a registered output's FileData to a sidecar .meta.json.
+
+        Called after metadata is filled in (tool_id, source_file_id, show_in_results).
+        """
+        fd = self._files.get(file_id)
+        if fd is None:
+            return
+        payload = {
+            "file_id": fd.file_id,
+            "filename": fd.filename,
+            "original_filename": fd.original_filename,
+            "file_path": fd.file_path,
+            "file_size": fd.file_size,
+            "mime_type": fd.mime_type,
+            "source_dir": fd.source_dir,
+            "created_at": fd.created_at.isoformat(),
+            "metadata": fd.metadata or {},
+        }
+        try:
+            self._sidecar_path(file_id).write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as e:
+            # In-memory registration is still usable; just log and continue so
+            # the caller's task doesn't crash post-success.
+            logger.warning(f"write_sidecar failed for {file_id}: {e}")
+
+    def tag_as_result(
+        self,
+        file_id: str,
+        tool_id: str,
+        source_file_id: Optional[str] = None,
+    ) -> None:
+        """Mark a registered output as Results-visible and persist sidecar.
+
+        Single entry point for both TaskManager's auto-tag and one-off
+        endpoints (e.g. audio.midi.render which bypasses TaskManager).
+        """
+        fd = self._files.get(file_id)
+        if fd is None:
+            return
+        fd.metadata = {
+            **(fd.metadata or {}),
+            "tool_id": tool_id,
+            "source_file_id": source_file_id,
+            "show_in_results": True,
+        }
+        self.write_sidecar(file_id)
+
+    def scan_output_dir(self) -> None:
+        """On startup, rebuild _files from sidecars in output_dir.
+
+        Only files that have a matching `<file_id>.meta.json` are loaded.
+        Orphan files (history-policy leftovers from previous sessions) are
+        skipped — they remain on disk until the user clears temp manually.
+        """
+        for sidecar in self._output_dir.glob("*.meta.json"):
+            try:
+                data = json.loads(sidecar.read_text(encoding="utf-8"))
+                file_path = Path(data["file_path"])
+                if not file_path.exists():
+                    # File gone but sidecar remains — clean up orphan sidecar
+                    sidecar.unlink(missing_ok=True)
+                    continue
+                fd = FileData(
+                    file_id=data["file_id"],
+                    filename=data["filename"],
+                    original_filename=data["original_filename"],
+                    file_path=data["file_path"],
+                    file_size=data["file_size"],
+                    mime_type=data["mime_type"],
+                    source_dir=data.get("source_dir"),
+                    created_at=datetime.fromisoformat(data["created_at"]),
+                    metadata=data.get("metadata") or {},
+                )
+                if fd.file_id in self._files:
+                    logger.warning(
+                        f"Duplicate sidecar for file_id {fd.file_id} (keeping later)"
+                    )
+                self._files[fd.file_id] = fd
+                logger.info(f"Restored output from sidecar: {fd.file_id} ({fd.filename})")
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                # Unparseable sidecar — quarantine rather than spam the log
+                # on every restart.
+                logger.warning(f"Removing unparseable sidecar {sidecar.name}: {e}")
+                sidecar.unlink(missing_ok=True)
+
+    def get_output_files(self) -> list[FileData]:
+        """Return Results outputs sorted newest-first (stable across restart,
+        since dict insertion order depends on sidecar glob order)."""
+        files = [
+            fd for fd in self._files.values()
+            if (fd.metadata or {}).get("show_in_results") is True
+        ]
+        files.sort(key=lambda f: f.created_at, reverse=True)
+        return files
+
+    def get_temp_stats(self) -> dict:
+        """Return byte size of upload/output directories."""
+        def _dir_size(d: Path) -> int:
+            return sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+        upload_bytes = _dir_size(self._upload_dir)
+        output_bytes = _dir_size(self._output_dir)
+        return {
+            "upload_bytes": upload_bytes,
+            "output_bytes": output_bytes,
+            "total_bytes": upload_bytes + output_bytes,
+        }
+
     def delete_file(self, file_id: str) -> bool:
         """
         Delete a file.
@@ -281,6 +401,9 @@ class FileService:
             )
             if is_managed and file_path.exists():
                 file_path.unlink()
+
+            # Also remove sidecar (silent if not present)
+            self._sidecar_path(file_id).unlink(missing_ok=True)
 
             del self._files[file_id]
             logger.info(f"File deleted: {file_id}")
