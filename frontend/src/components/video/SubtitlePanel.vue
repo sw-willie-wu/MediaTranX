@@ -28,7 +28,6 @@ const props = defineProps<{
     bitrate: number
     file_size: number
   } | null
-  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -69,7 +68,6 @@ watch(modelSizesWithBadge, (sizes) => {
 const language = ref('')
 const modelSize = usePersistedModel('subtitle_whisper_model', 'medium')
 const outputFormat = ref('srt')
-const outputPath = ref('')
 
 const rawLanguages = ref<{ value: string; label: string }[]>([])
 
@@ -93,48 +91,6 @@ const outputFormats = computed(() => [
   { value: 'srt', label: t('video.subtitle.srt') },
   { value: 'vtt', label: t('video.subtitle.vtt') },
 ])
-
-// ── 輸出路徑 ────────────────────────────────────────────────────
-const sourceBaseName = computed(() => {
-  const file = filesStore.currentFile
-  if (!file?.originalName) return 'output'
-  const name = file.originalName
-  const lastDot = name.lastIndexOf('.')
-  return lastDot > 0 ? name.substring(0, lastDot) : name
-})
-
-const defaultOutputName = computed(() => `${sourceBaseName.value}.${outputFormat.value}`)
-
-const displayOutputPath = computed(() => {
-  if (outputPath.value) {
-    const parts = outputPath.value.replace(/\\/g, '/').split('/')
-    return parts[parts.length - 1]
-  }
-  return defaultOutputName.value
-})
-
-async function selectOutputFile() {
-  if (window.electron?.saveFileDialog) {
-    const result = await window.electron.saveFileDialog({
-      title: t('video.subtitle.select_output'),
-      defaultPath: defaultOutputName.value,
-      filters: [{ name: t('video.subtitle.file_type'), extensions: [outputFormat.value] }],
-    })
-    if (result) outputPath.value = result
-  }
-}
-
-function resetOutputPath() {
-  if (props.sourceDir) {
-    const stem = sourceBaseName.value
-    outputPath.value = `${props.sourceDir}/${stem}.${outputFormat.value}`
-  } else {
-    outputPath.value = ''
-  }
-}
-watch(() => props.fileId, resetOutputPath)
-watch(outputFormat, resetOutputPath)
-watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 // ── 子元件 refs ─────────────────────────────────────────────────
 const whisperAdvanced = ref<InstanceType<typeof WhisperAdvancedSettings> | null>(null)
@@ -192,17 +148,6 @@ async function submitGenerate() {
       body.condition_on_previous_text = whisperAdvanced.value.conditionOnPreviousText
       body.min_silence_duration_ms = whisperAdvanced.value.minSilenceDurationMs
       body.vad_threshold = whisperAdvanced.value.vadThreshold
-    }
-
-    if (outputPath.value) {
-      const path = outputPath.value.replace(/\\/g, '/')
-      const lastSlash = path.lastIndexOf('/')
-      if (lastSlash > 0) {
-        body.output_dir = path.substring(0, lastSlash)
-        body.output_filename = path.substring(lastSlash + 1)
-      } else {
-        body.output_filename = path
-      }
     }
 
     const response = await apiFetch('/video/subtitle/generate', {
@@ -272,14 +217,6 @@ onMounted(() => { loadLanguages(); modelStore.ensureLoaded() })
     <div class="form-group">
       <label>{{ $t('video.subtitle.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
-    </div>
-
-    <div class="form-group">
-      <label>{{ $t('video.subtitle.file_type') }}</label>
-      <div class="file-select" @click="selectOutputFile">
-        <span class="file-select-path">{{ displayOutputPath }}</span>
-        <i class="bi bi-folder2-open"></i>
-      </div>
     </div>
 
     <!-- Advanced options (collapsible) -->

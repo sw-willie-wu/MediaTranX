@@ -13,7 +13,6 @@ import { usePersistedModel } from '@/composables/usePersistedModel'
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
-  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -30,45 +29,12 @@ const modelStore = useModelStore()
 const modelName = usePersistedModel('separate_model', 'htdemucs_6s')
 const modelDownloaded = ref<boolean | null>(null)
 const outputFormat = ref('wav')
-const outputPath = ref('')
 
 const outputFormats = computed(() => [
   { value: 'wav', label: 'WAV' },
   { value: 'flac', label: 'FLAC' },
   { value: 'mp3', label: 'MP3' },
 ])
-
-// Output path
-const defaultOutputName = computed(() => {
-  const stem = props.currentFileName.replace(/\.[^.]+$/, '')
-  return `${stem}.vocals.${outputFormat.value}`
-})
-
-const displayOutputPath = computed(() => {
-  if (outputPath.value) {
-    const parts = outputPath.value.replace(/\\/g, '/').split('/').filter(Boolean)
-    const dir = parts.length > 2 ? `.../${parts.slice(-2).join('/')}` : outputPath.value
-    return `${dir}/${defaultOutputName.value}`
-  }
-  return defaultOutputName.value
-})
-
-async function selectOutputFile() {
-  if (window.electron?.selectFolder) {
-    const result = await window.electron.selectFolder()
-    if (result) outputPath.value = result
-  }
-}
-
-function resetOutputPath() {
-  if (props.sourceDir) {
-    outputPath.value = props.sourceDir
-  } else {
-    outputPath.value = ''
-  }
-}
-watch(() => props.fileId, resetOutputPath)
-watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 // MIDI output
 const generateMidi = ref(false)
@@ -118,9 +84,6 @@ async function execute() {
     output_format: outputFormat.value,
     generate_midi: generateMidi.value,
   }
-  if (outputPath.value) {
-    body.output_dir = outputPath.value.replace(/\\/g, '/')
-  }
   const taskId = await submitTask(
     '/audio/separate',
     body,
@@ -137,9 +100,6 @@ function getParams() {
     stems: selectedStems.value,
     output_format: outputFormat.value,
     generate_midi: generateMidi.value,
-  }
-  if (outputPath.value) {
-    body.output_dir = outputPath.value.replace(/\\/g, '/')
   }
   return body
 }
@@ -180,14 +140,6 @@ defineExpose({ execute, isDisabled, isLoading, getParams, onTaskComplete })
     <div class="form-group">
       <label>{{ $t('audio.separate.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
-    </div>
-
-    <div class="form-group">
-      <label>{{ $t('audio.separate.output_file') }}</label>
-      <div class="file-select" @click="selectOutputFile">
-        <span class="file-select-path">{{ displayOutputPath }}</span>
-        <i class="bi bi-folder2-open"></i>
-      </div>
     </div>
 
     <div class="form-group">

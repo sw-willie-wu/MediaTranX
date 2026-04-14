@@ -194,7 +194,6 @@ onUnmounted(() => { clearActions() })
     :upload-label="$t('video.upload_label')"
     :upload-hint="$t('video.upload_hint')"
     upload-accept="video/*"
-    hide-preview-tabs
     show-filmstrip
     :collection-size="filmstripItems.length"
     :active-file-name="currentFileName"
@@ -269,7 +268,6 @@ onUnmounted(() => { clearActions() })
             ref="subtitlePanelRef"
             :fileId="activeFileId"
             :mediaInfo="mediaInfo"
-            :source-dir="sourceDir"
             @submit="handlePanelSubmit"
           />
         </div>
