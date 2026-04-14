@@ -8,7 +8,6 @@ from uuid import uuid4
 
 from app.engine.ffmpeg import (
     FFmpegWrapper,
-    FFmpegError,
     TranscodeProgress,
 )
 from app.services.files.file_service import FileService
@@ -96,35 +95,30 @@ class VideoCutService:
         def on_ffmpeg_progress(progress: TranscodeProgress):
             progress_callback(
                 progress.percent / 100,
-                f"Cutting... {progress.percent:.1f}% (speed: {progress.speed:.1f}x)"
+                f"task.progress.cutting_video|{progress.percent:.1f}|{progress.speed:.1f}"
             )
 
         progress_callback(0.0, "task.progress.cut_starting")
 
-        try:
-            self._ffmpeg.cut_sync(
-                input_path=file_info.file_path,
-                output_path=output_path,
-                start_time=start_time,
-                end_time=end_time,
-                stream_copy=stream_copy,
-                on_progress=on_ffmpeg_progress,
-            )
+        self._ffmpeg.cut_sync(
+            input_path=file_info.file_path,
+            output_path=output_path,
+            start_time=start_time,
+            end_time=end_time,
+            stream_copy=stream_copy,
+            on_progress=on_ffmpeg_progress,
+        )
 
-            output_info = self._file_service.register_output(
-                file_id=output_file_id,
-                file_path=output_path,
-                original_filename=file_info.original_filename,
-            )
+        output_info = self._file_service.register_output(
+            file_id=output_file_id,
+            file_path=output_path,
+            original_filename=file_info.original_filename,
+        )
 
-            progress_callback(1.0, "task.progress.cut_complete")
+        progress_callback(1.0, "task.progress.cut_complete")
 
-            return {
-                "output_file_id": output_file_id,
-                "output_filename": output_info.filename,
-                "output_size": output_info.file_size,
-            }
-
-        except FFmpegError as e:
-            logger.error(f"Cut failed: {e}")
-            raise
+        return {
+            "output_file_id": output_file_id,
+            "output_filename": output_info.filename,
+            "output_size": output_info.file_size,
+        }

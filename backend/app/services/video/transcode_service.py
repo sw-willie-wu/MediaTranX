@@ -7,7 +7,6 @@ from uuid import uuid4
 
 from app.engine.ffmpeg import (
     FFmpegWrapper,
-    FFmpegError,
     TranscodeOptions,
     TranscodeProgress,
     VideoCodec,
@@ -211,35 +210,30 @@ class VideoTranscodeService:
         def on_ffmpeg_progress(progress: TranscodeProgress):
             progress_callback(
                 progress.percent / 100,
-                f"Transcoding... {progress.percent:.1f}% (speed: {progress.speed:.1f}x)"
+                f"task.progress.transcoding_video|{progress.percent:.1f}|{progress.speed:.1f}"
             )
 
         progress_callback(0.0, "task.progress.transcode_starting")
 
-        try:
-            # Execute transcode
-            self._ffmpeg.transcode_sync(
-                input_path=file_info.file_path,
-                output_path=output_path,
-                options=options,
-                on_progress=on_ffmpeg_progress
-            )
+        # Execute transcode
+        self._ffmpeg.transcode_sync(
+            input_path=file_info.file_path,
+            output_path=output_path,
+            options=options,
+            on_progress=on_ffmpeg_progress
+        )
 
-            # Register output file
-            output_info = self._file_service.register_output(
-                file_id=output_file_id,
-                file_path=output_path,
-                original_filename=file_info.original_filename,
-            )
+        # Register output file
+        output_info = self._file_service.register_output(
+            file_id=output_file_id,
+            file_path=output_path,
+            original_filename=file_info.original_filename,
+        )
 
-            progress_callback(1.0, "task.progress.transcode_complete")
+        progress_callback(1.0, "task.progress.transcode_complete")
 
-            return {
-                "output_file_id": output_file_id,
-                "output_filename": output_info.filename,
-                "output_size": output_info.file_size,
-            }
-
-        except FFmpegError as e:
-            logger.error(f"Transcode failed: {e}")
-            raise
+        return {
+            "output_file_id": output_file_id,
+            "output_filename": output_info.filename,
+            "output_size": output_info.file_size,
+        }
