@@ -2,7 +2,7 @@ import { ref, computed, watch } from 'vue'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
-import { useFileDownload } from '@/composables/useFileDownload'
+import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
 import { apiFetch } from '@/composables/useApi'
@@ -53,7 +53,7 @@ export function useDocumentWorkspace() {
   const filesStore = useFilesStore()
   const taskStore = useTaskStore()
   const toast = useToast()
-  const { downloadFile } = useFileDownload()
+  const { downloadFile, downloadBatch } = useFileDownload()
   const { t } = useI18n()
 
   // ── Collection (multi-document state) ──
@@ -146,6 +146,18 @@ export function useDocumentWorkspace() {
     }
   }
 
+  async function handleDownloadBatch() {
+    const entries = await collectLatestOutputs(
+      [...collection.selectedIds.value],
+      collection.entries.value,
+    )
+    if (entries.length === 0) {
+      toast.show(t('common.no_exportable'), { type: 'info', icon: 'bi-info-circle' })
+      return
+    }
+    await downloadBatch(entries)
+  }
+
   function handleTextDownload() {
     if (!textResultFileId.value || !textResultFilename.value) return
     downloadFile(textResultFileId.value, textResultFilename.value, sourceDir.value)
@@ -210,6 +222,7 @@ export function useDocumentWorkspace() {
     handleRemoveFile,
     handlePanelSubmit,
     handleDownload,
+    handleDownloadBatch,
     handleTextDownload,
   }
 }

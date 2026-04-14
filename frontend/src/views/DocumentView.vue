@@ -20,7 +20,7 @@ const {
   hasFile, fileId, activeFileId, isUploading, currentFileName, hasResult,
   textResultContent, textResultFilename,
   collection,
-  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, handleTextDownload,
+  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, handleDownloadBatch, handleTextDownload,
   sourceDir,
 } = useDocumentWorkspace()
 
@@ -229,6 +229,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
         @remove-selected="ids => collection.removeEntries(ids)"
         @clear-selection="collection.clearSelection()"
         @select-all="collection.selectAll()"
+        @batch-save="handleDownloadBatch"
       />
     </template>
 
