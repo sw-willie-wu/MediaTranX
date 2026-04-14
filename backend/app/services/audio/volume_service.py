@@ -20,7 +20,10 @@ class AudioVolumeService:
         self._ffmpeg = ffmpeg
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_AUDIO_VOLUME, self._handle_task)
+        self._task_manager.register_handler(
+            TASK_TYPE_AUDIO_VOLUME, self._handle_task,
+            output_policy="history",
+        )
         logger.info("AudioVolumeService initialized")
 
     async def submit_volume(

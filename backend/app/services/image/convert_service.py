@@ -23,7 +23,8 @@ class ImageConvertService:
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_CONVERT,
-            self._handle_task
+            self._handle_task,
+            output_policy="history",
         )
 
         logger.info("ImageConvertService initialized")
@@ -59,8 +60,6 @@ class ImageConvertService:
         width: Optional[int] = None,
         height: Optional[int] = None,
         scale: Optional[float] = None,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         """Submit an image conversion task."""
         file_info = self._file_service.get_file(file_id)
@@ -74,8 +73,6 @@ class ImageConvertService:
             "width": width,
             "height": height,
             "scale": scale,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_CONVERT, params)
@@ -154,8 +151,6 @@ class ImageConvertService:
         progress_callback(0.6, "task.progress.converting_format")
 
         # Build output path
-        custom_output_dir = params.get("output_dir")
-        custom_output_filename = params.get("output_filename")
         output_file_id = str(uuid4())
 
         # Format to extension mapping
@@ -171,16 +166,10 @@ class ImageConvertService:
         }
         ext = ext_map.get(output_format, params["output_format"])
 
-        if custom_output_filename:
-            base_name = Path(custom_output_filename).stem
-            final_filename = f"{base_name}.{ext}"
-        else:
-            original_stem = Path(file_info.original_filename).stem
-            final_filename = f"{original_stem}_converted_{output_file_id[:8]}.{ext}"
+        original_stem = Path(file_info.original_filename).stem
+        final_filename = f"{original_stem}_converted_{output_file_id[:8]}.{ext}"
 
-        # Determine output directory (custom dir takes priority over default)
-        output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = self._file_service.output_dir
         output_path = output_dir / final_filename
 
         progress_callback(0.8, "task.progress.saving_file")

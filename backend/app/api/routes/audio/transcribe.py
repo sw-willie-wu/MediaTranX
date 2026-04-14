@@ -40,8 +40,6 @@ class AudioTranscribeRequest(BaseModel):
     summarize_provider: Optional[str] = Field(default=None, description="Cloud service provider")
     summarize_conn_id: Optional[int] = Field(default=None, description="Cloud connection ID")
     summarize_remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
-    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 class AudioTranscribeResponse(BaseModel):
     task_id: str
@@ -98,8 +96,6 @@ async def transcribe_audio(
             summarize_provider=request.summarize_provider,
             summarize_conn_id=request.summarize_conn_id,
             summarize_remote_model=request.summarize_remote_model,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
         )
         return AudioTranscribeResponse(task_id=task_id)
     except ValueError as e:

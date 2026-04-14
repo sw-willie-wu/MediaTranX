@@ -23,7 +23,8 @@ class ImageCropService:
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_CROP,
-            self._handle_task
+            self._handle_task,
+            output_policy="history",
         )
 
         logger.info("ImageCropService initialized")
@@ -35,7 +36,6 @@ class ImageCropService:
         y: int = 0,
         width: int = 0,
         height: int = 0,
-        output_dir: Optional[str] = None,
     ) -> str:
         """Submit an image crop task."""
         file_info = self._file_service.get_file(file_id)
@@ -48,7 +48,6 @@ class ImageCropService:
             "y": y,
             "width": width,
             "height": height,
-            "output_dir": output_dir,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_CROP, params)
@@ -102,13 +101,12 @@ class ImageCropService:
         progress_callback(0.7, "task.progress.saving_file")
 
         # Build output path
-        custom_output_dir = params.get("output_dir")
         output_file_id = str(uuid4())
         original_stem = Path(file_info.original_filename).stem
         ext = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
         final_filename = f"{original_stem}_cropped_{output_file_id[:8]}.{ext}"
 
-        output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
+        output_dir = self._file_service.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / final_filename
 

@@ -23,7 +23,6 @@ class ImageCropRequest(BaseModel):
     y: int = Field(default=0, description="Crop start Y coordinate")
     width: int = Field(..., gt=0, description="Crop width")
     height: int = Field(..., gt=0, description="Crop height")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
 
 
 class ImageCropResponse(BaseModel):
@@ -46,7 +45,6 @@ async def crop_image(
             y=request.y,
             width=request.width,
             height=request.height,
-            output_dir=request.output_dir,
         )
         return ImageCropResponse(task_id=task_id)
     except ValueError as e:

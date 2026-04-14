@@ -18,8 +18,6 @@ class AudioSeparateRequest(BaseModel):
     model_name: str = Field(default="htdemucs_6s", description="Demucs model name")
     stems: Optional[List[str]] = Field(default=None, description="Stems to separate (None=all)")
     output_format: str = Field(default="wav", description="Output format (wav, flac, mp3)")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
-    output_filename: Optional[str] = Field(default=None, description="Custom output filename (for the primary stem file)")
     generate_midi: bool = Field(default=False, description="Also generate multi-track MIDI file")
 
 
@@ -52,8 +50,6 @@ async def separate_audio(
             model_name=request.model_name,
             stems=request.stems,
             output_format=request.output_format,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
             generate_midi=request.generate_midi,
         )
         return AudioSeparateResponse(task_id=task_id)

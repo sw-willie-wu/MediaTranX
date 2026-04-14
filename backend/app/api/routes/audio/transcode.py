@@ -40,8 +40,6 @@ class AudioTranscodeRequest(BaseModel):
     audio_bitrate: str = Field(default="192k", description="Bitrate")
     sample_rate: Optional[int] = Field(default=None, description="Sample rate")
     channels: Optional[int] = Field(default=None, ge=1, le=2, description="Number of channels")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
-    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class AudioTranscodeResponse(BaseModel):
@@ -95,8 +93,6 @@ async def transcode_audio(
             audio_bitrate=request.audio_bitrate,
             sample_rate=request.sample_rate,
             channels=request.channels,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
         )
         return AudioTranscodeResponse(task_id=task_id)
     except ValueError as e:

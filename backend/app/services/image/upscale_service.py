@@ -36,6 +36,7 @@ class ImageUpscaleService:
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_UPSCALE,
             self._handle_task,
+            output_policy="history",
         )
 
         logger.info("ImageUpscaleService initialized")
@@ -50,7 +51,6 @@ class ImageUpscaleService:
         face_restore_model_id: Optional[str] = None,
         face_restore_fidelity: float = 0.7,
         face_restore_upscale: int = 2,
-        output_dir: Optional[str] = None,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
         if not file_info:
@@ -65,7 +65,6 @@ class ImageUpscaleService:
             "face_restore_model_id": face_restore_model_id,
             "face_restore_fidelity": face_restore_fidelity,
             "face_restore_upscale": face_restore_upscale,
-            "output_dir": output_dir,
         })
         logger.info(f"Image upscale task submitted: {task_id}")
         return task_id
@@ -169,7 +168,7 @@ class ImageUpscaleService:
                     logger.warning(f"Face restore failed, returning upscaled image only: {e}")
 
         output_file_id = str(uuid4())
-        output_path = self._generate_output_path(file_info, scale, params.get("output_dir"))
+        output_path = self._generate_output_path(file_info, scale)
         if anim_fmt:
             output_path = output_path.with_suffix(animation_ext(anim_fmt))
             save_animated(result_frames, output_path, anim_fmt)
@@ -190,7 +189,7 @@ class ImageUpscaleService:
             "scale": scale,
         }
 
-    def _generate_output_path(self, file_info, scale, custom_dir) -> Path:
-        output_dir = Path(custom_dir) if custom_dir else self._file_service.output_dir
+    def _generate_output_path(self, file_info, scale) -> Path:
+        output_dir = self._file_service.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir / f"{Path(file_info.original_filename).stem}_x{scale}_{uuid4().hex[:8]}.png"

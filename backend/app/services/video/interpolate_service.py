@@ -22,7 +22,10 @@ class InterpolateService:
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_VIDEO_INTERPOLATE, self._handle_task)
+        self._task_manager.register_handler(
+            TASK_TYPE_VIDEO_INTERPOLATE, self._handle_task,
+            output_policy="history",
+        )
         logger.info("InterpolateService initialized")
 
     def get_rife_status(self) -> dict:
@@ -39,13 +42,11 @@ class InterpolateService:
 
     async def submit(self, file_id: str, model: str = "v4.26", mode: str = "2x",
                      target_fps: Optional[float] = None, output_format: str = "mp4",
-                     video_codec: str = "h264", output_dir: Optional[str] = None,
-                     output_filename: Optional[str] = None) -> str:
+                     video_codec: str = "h264") -> str:
         task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_INTERPOLATE, {
             "file_id": file_id, "model": model, "mode": mode,
             "target_fps": target_fps, "output_format": output_format,
-            "video_codec": video_codec, "output_dir": output_dir,
-            "output_filename": output_filename,
+            "video_codec": video_codec,
         })
         logger.info(f"Interpolation task submitted: {task_id}")
         return task_id
@@ -63,7 +64,6 @@ class InterpolateService:
         target_fps = params.get("target_fps")
         output_format = params.get("output_format", "mp4")
         video_codec = params.get("video_codec", "h264")
-        output_dir = params.get("output_dir")
 
         file_info = self._file_service.get_file(file_id)
         if not file_info:
@@ -93,9 +93,8 @@ class InterpolateService:
 
         # Output path
         original_stem = Path(file_info.original_filename).stem
-        custom_output_filename = params.get("output_filename")
-        output_filename = custom_output_filename if custom_output_filename else f"{original_stem}.interpolated_{mode}.{output_format}"
-        output_dir = Path(output_dir) if output_dir else self._file_service.output_dir
+        output_filename = f"{original_stem}.interpolated_{mode}.{output_format}"
+        output_dir = self._file_service.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / output_filename
 

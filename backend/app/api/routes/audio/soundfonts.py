@@ -12,15 +12,14 @@ router = APIRouter(prefix="/soundfonts", tags=["audio"])
 @router.get("/info")
 async def soundfonts_info():
     """Return soundfonts directory path and existence check."""
-    sf_path = (SETTINGS.path.bin / "soundfonts" / "musyngkite").resolve()
+    sf_path = SETTINGS.path.soundfonts.resolve()
     return {"path": str(sf_path), "exists": sf_path.exists()}
 
 
 @router.get("/sample/{instrument}/{note}")
 async def get_sample(instrument: str, note: str):
     """Serve individual instrument sample file (web fallback)."""
-    sf_dir = SETTINGS.path.bin / "soundfonts" / "musyngkite" / instrument
-    sample_path = sf_dir / note
+    sample_path = SETTINGS.path.soundfonts / instrument / note
     if not sample_path.exists():
         raise HTTPException(status_code=404, detail="Sample not found")
     return FileResponse(path=sample_path, media_type="audio/mpeg")

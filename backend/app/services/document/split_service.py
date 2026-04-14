@@ -1,7 +1,7 @@
 """PDF split service: extract pages by range into a new PDF."""
 import logging
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 from uuid import uuid4
 
 from app.services.files.file_service import FileService
@@ -36,22 +36,22 @@ class DocumentSplitService:
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_DOCUMENT_SPLIT, self._handle_task)
+        self._task_manager.register_handler(
+            TASK_TYPE_DOCUMENT_SPLIT, self._handle_task,
+            output_policy="results",
+        )
         logger.info("DocumentSplitService initialized")
 
     async def submit(
         self,
         file_id: str,
         pages: str,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
             raise ValueError(f"File not found: {file_id}")
         params = {
             "file_id": file_id, "pages": pages,
-            "output_dir": output_dir, "output_filename": output_filename,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_SPLIT, params)
         logger.info(f"Document split task submitted: {task_id}")
@@ -82,11 +82,9 @@ class DocumentSplitService:
         output_file_id = str(uuid4())
         stem = Path(file_info.original_filename).stem
         label = pages_str.replace(" ", "").replace(",", "_") if pages_str else "all"
-        custom_filename = params.get("output_filename")
-        final_filename = custom_filename if custom_filename else f"{stem}_p{label}.pdf"
+        final_filename = f"{stem}_p{label}.pdf"
 
-        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = self._file_service.output_dir
         output_path = output_dir / final_filename
 
         with open(output_path, "wb") as f:

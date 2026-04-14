@@ -25,7 +25,10 @@ class AudioSeparateService:
         self._demucs: DemucsWrapper = get_demucs()
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_AUDIO_SEPARATE, self._handle_task)
+        self._task_manager.register_handler(
+            TASK_TYPE_AUDIO_SEPARATE, self._handle_task,
+            output_policy="results",
+        )
         logger.info("AudioSeparateService initialized")
 
     def get_model_status(self, model_name: str = "htdemucs_6s") -> dict:
@@ -37,8 +40,6 @@ class AudioSeparateService:
         model_name: str = "htdemucs_6s",
         stems: Optional[list[str]] = None,
         output_format: str = "wav",
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
         generate_midi: bool = False,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
@@ -49,8 +50,6 @@ class AudioSeparateService:
             "model_name": model_name,
             "stems": stems,
             "output_format": output_format,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
             "generate_midi": generate_midi,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_SEPARATE, params)
@@ -68,11 +67,8 @@ class AudioSeparateService:
 
         original_stem = Path(file_info.original_filename).stem
         output_format = params.get("output_format", "wav")
-        custom_output_filename = params.get("output_filename")
 
-        # Determine output directory
-        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = self._file_service.output_dir
 
         midi_mode = params.get("generate_midi", False)
         demucs_progress_scale = 0.5 if midi_mode else 0.9
@@ -136,7 +132,7 @@ class AudioSeparateService:
 
         result = {
             "output_file_id": first_file_id,
-            "output_filename": custom_output_filename if custom_output_filename else f"{original_stem}.vocals.{output_format}",
+            "output_filename": f"{original_stem}.vocals.{output_format}",
             "output_files": output_files,
         }
 

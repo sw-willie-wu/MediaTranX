@@ -29,7 +29,8 @@ class VideoCutService:
 
         self._task_manager.register_handler(
             TASK_TYPE_VIDEO_CUT,
-            self._handle_task
+            self._handle_task,
+            output_policy="history",
         )
 
         logger.info("VideoCutService initialized")
@@ -40,8 +41,6 @@ class VideoCutService:
         start_time: float,
         end_time: float,
         stream_copy: bool = True,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         """Submit a video cut task."""
         file_info = self._file_service.get_file(file_id)
@@ -53,8 +52,6 @@ class VideoCutService:
             "start_time": start_time,
             "end_time": end_time,
             "stream_copy": stream_copy,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_CUT, params)
@@ -86,19 +83,13 @@ class VideoCutService:
         stream_copy = params.get("stream_copy", True)
 
         # Build output path
-        custom_output_dir = params.get("output_dir")
-        custom_output_filename = params.get("output_filename")
         output_file_id = str(uuid4())
 
         original_ext = Path(file_info.original_filename).suffix
-        if custom_output_filename:
-            base_name = Path(custom_output_filename).stem
-            final_filename = f"{base_name}{original_ext}"
-        else:
-            original_stem = Path(file_info.original_filename).stem
-            final_filename = f"{original_stem}_cut_{output_file_id[:8]}{original_ext}"
+        original_stem = Path(file_info.original_filename).stem
+        final_filename = f"{original_stem}_cut_{output_file_id[:8]}{original_ext}"
 
-        output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
+        output_dir = self._file_service.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / final_filename
 

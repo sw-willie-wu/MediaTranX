@@ -29,7 +29,8 @@ class VideoExtractAudioService:
 
         self._task_manager.register_handler(
             TASK_TYPE_VIDEO_EXTRACT_AUDIO,
-            self._handle_task
+            self._handle_task,
+            output_policy="results",
         )
 
         logger.info("VideoExtractAudioService initialized")
@@ -39,8 +40,6 @@ class VideoExtractAudioService:
         file_id: str,
         audio_format: str = "mp3",
         audio_bitrate: Optional[str] = None,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         """Submit an audio extraction task."""
         file_info = self._file_service.get_file(file_id)
@@ -51,8 +50,6 @@ class VideoExtractAudioService:
             "file_id": file_id,
             "audio_format": audio_format,
             "audio_bitrate": audio_bitrate,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_EXTRACT_AUDIO, params)
@@ -83,18 +80,11 @@ class VideoExtractAudioService:
         audio_bitrate = params.get("audio_bitrate")
 
         # Build output path
-        custom_output_dir = params.get("output_dir")
-        custom_output_filename = params.get("output_filename")
         output_file_id = str(uuid4())
+        original_stem = Path(file_info.original_filename).stem
+        final_filename = f"{original_stem}_audio_{output_file_id[:8]}.{audio_format}"
 
-        if custom_output_filename:
-            base_name = Path(custom_output_filename).stem
-            final_filename = f"{base_name}.{audio_format}"
-        else:
-            original_stem = Path(file_info.original_filename).stem
-            final_filename = f"{original_stem}_audio_{output_file_id[:8]}.{audio_format}"
-
-        output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
+        output_dir = self._file_service.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / final_filename
 

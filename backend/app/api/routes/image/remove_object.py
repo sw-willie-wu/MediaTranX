@@ -19,7 +19,6 @@ router = APIRouter()
 class ImageRemoveObjectRequest(BaseModel):
     file_id: str = Field(..., description="Input file ID")
     mask_data: str = Field(..., description="Mask image (base64 PNG)")
-    output_dir: Optional[str] = Field(default=None)
 
 
 class ImageRemoveObjectResponse(BaseModel):
@@ -38,7 +37,6 @@ async def remove_object(
         task_id = await service.submit_remove_object(
             file_id=request.file_id,
             mask_data=request.mask_data,
-            output_dir=request.output_dir,
         )
         return ImageRemoveObjectResponse(task_id=task_id)
     except ValueError as e:

@@ -49,7 +49,10 @@ class AudioTranscribeService:
         self._whisper: WhisperWrapper = get_whisper()
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_AUDIO_TRANSCRIBE, self._handle_task)
+        self._task_manager.register_handler(
+            TASK_TYPE_AUDIO_TRANSCRIBE, self._handle_task,
+            output_policy="results",
+        )
         logger.info("AudioTranscribeService initialized")
 
     def get_model_status(self, model_size: str = "medium") -> dict:
@@ -80,8 +83,6 @@ class AudioTranscribeService:
         summarize_provider: Optional[str] = None,
         summarize_conn_id: Optional[int] = None,
         summarize_remote_model: Optional[str] = None,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -110,8 +111,6 @@ class AudioTranscribeService:
             "summarize_provider": summarize_provider,
             "summarize_conn_id": summarize_conn_id,
             "summarize_remote_model": summarize_remote_model,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_TRANSCRIBE, params)
         logger.info(f"Audio transcribe task submitted: {task_id}")
@@ -131,16 +130,8 @@ class AudioTranscribeService:
 
         original_stem = Path(file_info.original_filename).stem
 
-        # Determine output directory
-        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Determine base filename
-        custom_output_filename = params.get("output_filename")
-        if custom_output_filename:
-            base_name = Path(custom_output_filename).stem
-        else:
-            base_name = original_stem
+        output_dir = self._file_service.output_dir
+        base_name = original_stem
 
         do_vocal_sep = params.get("vocal_separation", False)
         audio_path = str(file_info.file_path)

@@ -28,7 +28,8 @@ class ImageFilterService:
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_FILTER,
-            self._handle_task
+            self._handle_task,
+            output_policy="history",
         )
 
         logger.info("ImageFilterService initialized")
