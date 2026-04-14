@@ -6,7 +6,8 @@ import { useResizableLayout } from '@/composables/useResizableLayout'
 import { apiFetch } from '@/composables/useApi'
 import { LOCALE_OPTIONS, resolveLocale, saveLocalePreference, getSavedPreference } from '@/i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
-import AppToggle from '@/components/common/AppToggle.vue'
+import { useConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/composables/useToast'
 
 const { locale, t } = useI18n()
 const { themeMode, setTheme } = useTheme()
@@ -15,8 +16,6 @@ const { resetLayout } = useResizableLayout()
 const settings = ref({
   theme: 'system' as ThemeMode,
   language: getSavedPreference(),
-  autoCleanTemp: true,
-
 })
 
 const themes = computed(() => [
@@ -35,8 +34,8 @@ onMounted(() => {
     } catch { /* ignore */ }
   }
   settings.value.theme = themeMode.value
-  window.electron?.setAutoClean(settings.value.autoCleanTemp)
   loadDirConfig()
+  loadTempStats()
 })
 
 watch(() => settings.value.theme, (newTheme) => {
@@ -46,10 +45,6 @@ watch(() => settings.value.theme, (newTheme) => {
 watch(() => settings.value.language, (val) => {
   saveLocalePreference(val as any)
   locale.value = val
-})
-
-watch(() => settings.value.autoCleanTemp, (val) => {
-  window.electron?.setAutoClean(val)
 })
 
 watch(settings, () => {
@@ -105,6 +100,53 @@ async function selectTempDir() {
 function restartApp() {
   ;(window as any).electron?.restart()
 }
+
+// ── 暫存狀態 ──────────────────────────────────────────────────
+
+const tempStats = ref<{ total_bytes: number; upload_bytes: number; output_bytes: number } | null>(null)
+const clearing = ref(false)
+
+async function loadTempStats() {
+  try {
+    const res = await apiFetch('/files/stats')
+    if (res.ok) tempStats.value = await res.json()
+  } catch (e) {
+    console.error('loadTempStats failed', e)
+  }
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+const { confirm: showConfirm } = useConfirm()
+const toast = useToast()
+
+async function clearTemp() {
+  const ok = await showConfirm({
+    message: t('settings.general.confirm_clear_temp'),
+    type: 'danger',
+    confirmLabel: t('settings.general.clear_temp'),
+  })
+  if (!ok) return
+  clearing.value = true
+  try {
+    const res = await apiFetch('/files/cleanup', { method: 'POST' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const { useResultsStore } = await import('@/stores/results')
+    useResultsStore().resetLocal()
+    await loadTempStats()
+  } catch (e) {
+    console.error('clearTemp failed', e)
+    toast.show(t('toast.clear_temp_failed'), { type: 'error', icon: 'bi-x-circle' })
+    await loadTempStats()
+  } finally {
+    clearing.value = false
+  }
+}
 </script>
 
 <template>
@@ -149,8 +191,19 @@ function restartApp() {
     </p>
   </div>
 
-  <div class="setting-item">
-    <AppToggle v-model="settings.autoCleanTemp">{{ $t('settings.general.auto_clean_temp') }}</AppToggle>
+  <div class="setting-item temp-stats-row">
+    <div class="temp-stats-info">
+      <span class="section-subtitle">{{ $t('settings.general.temp_usage') }}</span>
+      <span class="temp-stats-value">{{ tempStats ? formatBytes(tempStats.total_bytes) : '—' }}</span>
+    </div>
+    <button
+      class="btn-secondary"
+      :disabled="clearing || !tempStats || tempStats.total_bytes === 0"
+      @click="clearTemp"
+    >
+      <i class="bi bi-trash"></i>
+      {{ clearing ? $t('settings.general.clearing') : $t('settings.general.clear_temp') }}
+    </button>
   </div>
 
   <h6 class="section-title mt">{{ $t('settings.general.restart_section') }}</h6>
@@ -189,5 +242,22 @@ function restartApp() {
   color: var(--text-muted);
   margin: 0.15rem 0 0 0;
   &.setting-hint-warn { color: var(--color-warning); }
+}
+
+.temp-stats-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  .temp-stats-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .temp-stats-value {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    font-weight: 500;
+  }
 }
 </style>
