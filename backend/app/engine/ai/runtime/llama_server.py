@@ -96,8 +96,7 @@ class LlamaServerRuntime(BaseRuntime):
         if on_progress:
             on_progress(0.2, f"task.progress.starting_llama|{self._port}")
 
-        base = SETTINGS.path.data
-        log_dir = base / "logs" if SETTINGS.is_frozen else base
+        log_dir = SETTINGS.path.log
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "llama_server.log"
         self._log_file = open(str(log_path), "a", encoding="utf-8")  # noqa: SIM115
