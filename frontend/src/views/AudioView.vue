@@ -38,7 +38,7 @@ const {
   canGoBack, canGoForward,
   textResultContent, textResultFileId,
   collection,
-  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, downloadFile, addMidiEntry,
+  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, handleDownloadBatch, downloadFile, addMidiEntry,
   goBack, goForward,
 } = useAudioWorkspace()
 
@@ -726,6 +726,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
         @remove-selected="ids => collection.removeEntries(ids)"
         @clear-selection="collection.clearSelection()"
         @select-all="collection.selectAll()"
+        @batch-save="handleDownloadBatch"
       />
     </template>
 
