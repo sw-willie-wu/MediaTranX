@@ -7,14 +7,39 @@ import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional
 from uuid import uuid4
 
 from app.handler.exceptions import TaskCancelledError
 from app.schemas.task import TaskData, TaskStatus
 from .progress_tracker import ProgressTracker
 
+if TYPE_CHECKING:
+    from app.services.files.file_service import FileService
+
 logger = logging.getLogger(__name__)
+
+
+def _collect_output_ids(result: dict) -> list[str]:
+    """Collect all file_id strings from a handler result dict.
+
+    Conventions:
+      - any string key ending with '_file_id' with string value
+      - 'output_files': list of dicts each containing 'file_id'
+    Returns deduplicated list preserving insertion order.
+    """
+    seen: list[str] = []
+    for key, value in result.items():
+        if isinstance(value, str) and key.endswith("_file_id"):
+            if value not in seen:
+                seen.append(value)
+        elif key == "output_files" and isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    fid = item.get("file_id")
+                    if isinstance(fid, str) and fid not in seen:
+                        seen.append(fid)
+    return seen
 
 
 class TaskManager:
@@ -23,7 +48,12 @@ class TaskManager:
     Manages the lifecycle of background tasks.
     """
 
-    def __init__(self, progress_tracker: ProgressTracker, max_workers: int = 4):
+    def __init__(
+        self,
+        progress_tracker: ProgressTracker,
+        max_workers: int = 4,
+        file_service: Optional["FileService"] = None,
+    ):
         self._tasks: Dict[str, TaskData] = {}
         self._futures: Dict[str, asyncio.Future] = {}
         self._cancelled_ids: set[str] = set()
@@ -31,6 +61,8 @@ class TaskManager:
         self._progress_tracker = progress_tracker
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._handlers: Dict[str, Callable] = {}
+        self._handler_policies: Dict[str, str] = {}
+        self._file_service = file_service
         self._on_terminal_callbacks: List[Callable[[TaskData], None]] = []
 
         logger.info(f"TaskManager initialized with {max_workers} workers")
@@ -69,12 +101,27 @@ class TaskManager:
         with self._lock:
             return task_id in self._cancelled_ids
 
-    def register_handler(self, task_type: str, handler: Callable) -> None:
-        """
-        Register a task handler.
+    def register_handler(
+        self,
+        task_type: str,
+        handler: Callable,
+        output_policy: Literal["history", "results"] = "history",
+    ) -> None:
+        """Register a task handler.
+
+        Args:
+            task_type: Unique task type key (e.g. "audio.transcribe")
+            handler: Callable(params, progress_callback) -> dict
+            output_policy:
+              - "history": single same-type output (filmstrip / historyStack).
+              - "results": enter Results drawer (cross-type, multi-output, or
+                semantically new artefact).
+              Runtime: "history" is downgraded to "results" when the handler
+              actually produces multi-output or cross-type output.
         """
         self._handlers[task_type] = handler
-        logger.info(f"Registered handler for task type: {task_type}")
+        self._handler_policies[task_type] = output_policy
+        logger.info(f"Registered handler for task type: {task_type} (policy={output_policy})")
 
     async def submit(
         self,
@@ -144,6 +191,11 @@ class TaskManager:
             task.progress = 1.0
             task.result = result
             task.updated_at = datetime.now(timezone.utc)
+
+            # ── Metadata tagging for Results drawer ─────────────────
+            if self._file_service is not None and isinstance(result, dict):
+                self._apply_output_metadata(task_type, params, result)
+
             await self._progress_tracker.emit(
                 task_id, 1.0, "Task completed",
                 stage="completed",
@@ -177,6 +229,56 @@ class TaskManager:
 
             logger.error(f"Task failed: {task_id} - {e}\n{traceback.format_exc()}")
             self._notify_terminal(task)
+
+    def _apply_output_metadata(self, task_type: str, params: dict, result: dict) -> None:
+        """Tag registered outputs with tool_id / source_file_id / show_in_results.
+
+        Writes sidecar for results-policy outputs so they survive restart.
+        """
+        from app.utils.media_kind import infer_kind  # local: cold-start friendly
+
+        fs = self._file_service
+        source_file_id = params.get("file_id")
+        policy = self._handler_policies.get(task_type, "history")
+        output_ids = _collect_output_ids(result)
+        if not output_ids:
+            return
+
+        source_fd = fs.get_file(source_file_id) if source_file_id else None
+        source_kind = infer_kind(source_fd.filename) if source_fd else None
+        output_kinds = set()
+        for fid in output_ids:
+            fd = fs.get_file(fid)
+            if fd:
+                k = infer_kind(fd.filename)
+                if k is not None:
+                    output_kinds.add(k)
+
+        effective = policy
+        if policy == "history":
+            cross_type = source_kind is not None and output_kinds and output_kinds != {source_kind}
+            if len(output_ids) > 1 or cross_type:
+                logger.warning(
+                    f"Policy downgrade: {task_type} declared output_policy='history' "
+                    f"but produced {len(output_ids)} output(s), kinds={output_kinds} "
+                    f"(source kind={source_kind}). Change register_handler(..., "
+                    f"output_policy='results') to silence this warning."
+                )
+                effective = "results"
+
+        show_in_results = effective == "results"
+        for fid in output_ids:
+            fd = fs.get_file(fid)
+            if fd is None:
+                continue
+            fd.metadata = {
+                **(fd.metadata or {}),
+                "tool_id": task_type,
+                "source_file_id": source_file_id,
+                "show_in_results": show_in_results,
+            }
+            if show_in_results:
+                fs.write_sidecar(fid)
 
     def get_task(self, task_id: str) -> Optional[TaskData]:
         """Get task status (in-progress tasks sync latest progress from progress_tracker)."""
