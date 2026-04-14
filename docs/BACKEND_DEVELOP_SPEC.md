@@ -320,22 +320,21 @@ class AppContainer(containers.DeclarativeContainer):
 - **progress_callback**：從 0.0 呼叫到 1.0，最終的結果由 TaskManager 自動 emit `stage="completed"`
 - **結果 dict**：必須包含 `output_file_id`，前端依此取得處理結果
 
-### 3.3 輸出路徑決定順序
+### 4.3 輸出路徑（temp-first policy）
 
-處理結果一律先存到暫存目錄，使用者確認後透過下載按鈕自行儲存到目標位置。
+Service **只**寫到 `FileService.output_dir`（預設 `temp/results/`），不接受 `output_dir` / `output_filename` 參數。使用者要把成果存出去時在前端透過 `useFileDownload.downloadFile`（單檔）或 `downloadBatch`（批次）自己選目的地。
 
 ```python
-# 1. 使用者指定的 output_dir（如有）
-# 2. FileService.output_dir（預設 temp/results）
-
-output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
+output_path = self._file_service.output_dir / new_filename
 ```
+
+Results drawer 會讀取 `FileService.get_output_files()`（sidecar 持久化，見 §6.5–6.6），Settings 的「清除暫存」呼叫 `POST /files/cleanup` 一次清光。
 
 ---
 
 ## 5. Route 規範
 
-### 4.1 結構模板
+### 5.1 結構模板
 
 ```python
 """
@@ -387,7 +386,7 @@ async def do_action(
         raise HTTPException(status_code=500, detail=str(e))
 ```
 
-### 4.2 規則
+### 5.2 規則
 
 - Request/Response 模型定義在 route 檔案內
 - `Field(...)` 表示必填，`Field(default=...)` 表示選填
@@ -395,7 +394,7 @@ async def do_action(
 - Route 內**不可**有業務邏輯，只做：驗證 → 呼叫 Service → 回傳
 - 新 route 必須在對應的 `routes/{domain}/__init__.py` 中 include
 
-### 4.3 路由註冊
+### 5.3 路由註冊
 
 ```python
 # routes/image/__init__.py
@@ -409,7 +408,7 @@ router.include_router(compress_router)
 
 ## 6. 任務系統規範
 
-### 5.1 任務狀態
+### 6.1 任務狀態
 
 ```
 PENDING → PROCESSING → COMPLETED
@@ -417,7 +416,7 @@ PENDING → PROCESSING → COMPLETED
                      → CANCELLED
 ```
 
-### 5.2 Progress Callback 使用
+### 6.2 Progress Callback 使用
 
 ```python
 def _execute(self, params, progress_callback):
@@ -435,7 +434,7 @@ def _execute(self, params, progress_callback):
 - 新增 key 時必須同步更新 `en.ts` 和 `zh-TW.ts` 的 `task.progress` 區塊
 - TaskManager 在 handler return 後自動 emit `stage="completed"` + `result`
 
-### 5.3 Progress i18n Key 命名慣例
+### 6.3 Progress i18n Key 命名慣例
 
 | 格式 | 範例 |
 |------|------|
@@ -443,15 +442,38 @@ def _execute(self, params, progress_callback):
 | 帶動態參數 | `f"task.progress.cropping\|{idx}\|{total}"` |
 | 分類前綴 | `loading_*`（載入模型）、`*_complete`（完成）、`*_starting`（開始） |
 
-### 5.4 前端 Polling
+### 6.4 前端 Polling
 
 前端透過 `GET /api/tasks/active` 每秒輪詢進行中的任務，ProgressTracker 儲存最新的 ProgressEvent 供查詢。
+
+### 6.5 Output Policy（Results Drawer 分流）
+
+`TaskManager.register_handler` 必須宣告產出歸屬：
+
+```python
+task_manager.register_handler("image.upscale", handler, output_policy="history")
+task_manager.register_handler("audio.transcribe", handler, output_policy="results")
+```
+
+| 值 | 語意 | 前端行為 |
+|----|------|---------|
+| `"history"` | 同類型單檔產出（in-place 迭代） | 進 filmstrip / historyStack |
+| `"results"` | 跨類型 or 多檔 or 新產物 | 進 Results Drawer（右上產出抽屜） |
+
+規則：
+- **輸出類型 ≠ 輸入類型** ⋁ **多檔產出** → 必須宣告 `"results"`
+- 若宣告 `"history"` 但 runtime 產出多檔 / 跨類型 → TaskManager 自動 downgrade 為 `"results"` + 發出 warning（提示開發者修正 register_handler）
+- MIDI 渲染這類「同類型但語意上是新產物」要顯式宣告 `"results"`
+
+### 6.6 Sidecar 持久化
+
+Results-policy 的產出會由 `FileService.tag_as_result` 寫入 sidecar `<file_id>.meta.json`，後端啟動時 `scan_output_dir()` 從 sidecar 還原 `_files`，讓 Drawer 跨 session 保留。`saved_path`（使用者另存位置）透過 `PATCH /files/{id}/saved-path` 寫入同一份 sidecar。
 
 ---
 
 ## 7. 日誌規範
 
-### 6.1 Logger 建立
+### 7.1 Logger 建立
 
 每個模組使用 `logging.getLogger(__name__)`：
 
@@ -459,7 +481,7 @@ def _execute(self, params, progress_callback):
 logger = logging.getLogger(__name__)
 ```
 
-### 6.2 日誌等級
+### 7.2 日誌等級
 
 | 等級 | 用途 |
 |------|------|
@@ -468,7 +490,7 @@ logger = logging.getLogger(__name__)
 | `WARNING` | 非致命異常（如模型未找到、fallback 行為） |
 | `ERROR` | 任務失敗、啟動失敗、不可恢復的錯誤 |
 
-### 6.3 日誌輸出
+### 7.3 日誌輸出
 
 | 環境 | 輸出位置 |
 |------|---------|
@@ -479,7 +501,7 @@ logger = logging.getLogger(__name__)
 
 ## 8. 路徑規範
 
-### 7.1 所有路徑透過 `PathSettings`（pydantic-settings）
+### 8.1 所有路徑透過 `PathSettings`（pydantic-settings）
 
 路徑由 Electron 透過 `MEDIATRANX_*` 環境變數注入，Python 的 `PathSettings` 讀取。Dev 模式下使用預設值（`core/backend/` 子目錄）。
 
@@ -493,30 +515,37 @@ settings = get_settings()
 path = Path(settings.path.models) / "image"
 ```
 
-### 7.2 路徑欄位
+### 8.2 路徑欄位
 
-| 欄位 | Dev 預設值 | Electron 覆蓋（env var） |
-|------|-----------|------------------------|
-| `path.data` | `core/backend/` | `MEDIATRANX_DATA` → `%APPDATA%/MediaTranX/` |
-| `path.venv` | `core/backend/.venv` | `MEDIATRANX_VENV` |
-| `path.bin` | `core/backend/bin` | `MEDIATRANX_BIN` |
-| `path.models` | `core/backend/models` | `MEDIATRANX_MODELS` |
-| `path.temp` | `core/backend/data/temp` | `MEDIATRANX_TEMP` |
-| `path.ffmpeg` | 衍生自 `bin/ffmpeg` | — |
-| `path.fluidsynth` | 衍生自 `bin/fluidsynth` | — |
-| `path.llama_bin` | 衍生自 `bin/llama` | — |
+Top-level（可 env override）：
 
-### 7.3 新增外部工具
+| 欄位 | Dev 預設值 | env var |
+|------|-----------|---------|
+| `path.root` | `.` (cwd) | `MEDIATRANX_PATH__ROOT` → `%APPDATA%/MediaTranX/` |
+| `path.models` | `models` | `MEDIATRANX_PATH__MODELS` |
+| `path.temp` | `temp` | `MEDIATRANX_PATH__TEMP` |
 
-1. 在 `PathSettings` 新增衍生 property（從 `bin` 計算）
+Computed fields（從 `root` 衍生，無 env override）：
+
+| 欄位 | 衍生 |
+|------|------|
+| `path.venv` | `root/.venv` |
+| `path.log` | `root/logs` |
+| `path.ffmpeg` | `root/bin/ffmpeg`（Win）/ `ffmpeg`（其他） |
+| `path.llama` | `root/bin/llama` |
+| `path.soundfonts` | `root/bin/soundfonts/musyngkite` |
+
+### 8.3 新增外部工具
+
+1. 在 `PathSettings` 新增 `@computed_field`（從 `root/bin` 計算）
 2. Dev 模式放 `bin/<tool>/`
-3. Electron 首次啟動時下載到 `{MEDIATRANX_BIN}/<tool>/`
+3. Electron 首次啟動時下載到 `<root>/bin/<tool>/`
 
 ---
 
 ## 9. LLM 推理參數化
 
-### 8.1 架構
+### 9.1 架構
 
 LLM 推理參數（temperature、top_k、top_p、max_tokens、prompt）不硬編碼在 service 中，統一由以下模組管理：
 
@@ -526,7 +555,7 @@ utils/inference.py   → get_inference_config()、calc_max_tokens()、calc_batch
 utils/prompts.py     → get_prompt_builder()（per-model prompt builder dispatch）
 ```
 
-### 8.2 Registry inference config
+### 9.2 Registry inference config
 
 每個 GGUF model family 在 `registry.py` 定義 `inference` block（family level）和 n_ctx range（spec level）：
 
@@ -552,7 +581,7 @@ utils/prompts.py     → get_prompt_builder()（per-model prompt builder dispatc
 
 Remote providers 使用 `REMOTE_INFERENCE_DEFAULTS`（固定 temperature + max_tokens）。
 
-### 8.3 Service 呼叫流程
+### 9.3 Service 呼叫流程
 
 ```python
 from app.utils.inference import get_inference_config, calc_max_tokens, estimate_tokens
@@ -571,7 +600,7 @@ elif result["mode"] == "completion":
     output = runtime.complete(prompt=result["prompt"], ...)
 ```
 
-### 8.4 Prompt builder
+### 9.4 Prompt builder
 
 每個模型 family 有對應的 prompt builder，處理 chat template 差異：
 
@@ -581,7 +610,7 @@ elif result["mode"] == "completion":
 | `qwen3` | 加 `/no_think` 後綴（thinking=False 時） |
 | `gemma` | 無 system role，合併到 user message |
 
-### 8.5 Thinking 控制
+### 9.5 Thinking 控制
 
 - Registry 定義預設值（`"thinking": False`）
 - API 請求可覆蓋（`thinking` 參數）
@@ -589,7 +618,7 @@ elif result["mode"] == "completion":
 - `thinking=True`：使用 default builder（不加 `/no_think`）
 - `_strip_thinking()` 永遠套用在 `chat()` 和 `complete()` 輸出，確保 `<think>` 標籤不出現在結果中
 
-### 8.6 命名規範
+### 9.6 命名規範
 
 模型 family 參數統一命名 `model_family`（如 `"qwen3"`、`"gemma4"`），禁止使用 `model_type` 或 `model_id`（避免與 VRAM slot type、完整 model identifier 混淆）。複合參數使用前綴：`translate_model_family`、`summarize_model_family`。
 
@@ -597,7 +626,7 @@ elif result["mode"] == "completion":
 
 ## 10. API 路由結構
 
-### 9.1 路由分類
+### 10.1 路由分類
 
 | 前綴 | 用途 | 檔案位置 |
 |------|------|---------|
@@ -616,7 +645,7 @@ LLM 共用查詢（語言列表、翻譯風格、模型狀態）放在 `/api/llm
 
 ## 11. 錯誤處理規範
 
-### 8.1 Service 層
+### 11.1 Service 層
 
 ```python
 # submit 方法：驗證失敗拋 ValueError
@@ -631,7 +660,7 @@ def _execute(self, params, progress_callback):
     ...
 ```
 
-### 8.2 Route 層
+### 11.2 Route 層
 
 ```python
 try:
@@ -643,7 +672,7 @@ except Exception as e:
     raise HTTPException(status_code=500, detail=str(e))
 ```
 
-### 8.3 Engine 層
+### 11.3 Engine 層
 
 Engine 方法失敗時直接拋異常，由上層 Service/TaskManager 處理。不吞異常。
 
@@ -651,7 +680,7 @@ Engine 方法失敗時直接拋異常，由上層 Service/TaskManager 處理。�
 
 ## 12. 命名規範
 
-### 9.1 檔案命名
+### 12.1 檔案命名
 
 | 位置 | 格式 | 範例 |
 |------|------|------|
@@ -659,7 +688,7 @@ Engine 方法失敗時直接拋異常，由上層 Service/TaskManager 處理。�
 | Route | `{action}.py` | `compress.py` |
 | Engine AI | `{model_name}.py` | `realesrgan.py` |
 
-### 9.2 Class 命名
+### 12.2 Class 命名
 
 | 位置 | 格式 | 範例 |
 |------|------|------|
@@ -667,14 +696,14 @@ Engine 方法失敗時直接拋異常，由上層 Service/TaskManager 處理。�
 | Route Request | `{Action}Request` | `ImageCompressRequest` |
 | Route Response | `{Action}Response` | `ImageCompressResponse` |
 
-### 9.3 常數命名
+### 12.3 常數命名
 
 ```python
 TASK_TYPE_IMAGE_COMPRESS = "image.compress"
 TASK_TYPE_VIDEO_TRANSCODE = "video.transcode"
 ```
 
-### 9.4 工廠函數
+### 12.4 工廠函數
 
 ```python
 def get_image_compress_service() -> ImageCompressService:
