@@ -206,19 +206,22 @@ export function useMidiExport() {
    * Start MIDI export. Returns taskId immediately so the caller can
    * register it with the filmstrip for progress display and file locking.
    * The actual rendering runs asynchronously in the background.
+   *
+   * Result lands in the Results drawer (the caller can save/open from there).
    */
   function exportMidi(
     tracks: MidiTrack[],
     tempo: number,
     format: string,
-    outputPath: string,
+    baseName: string,
+    sourceFileId?: string,
   ): string {
     isExporting.value = true
     exportStatus.value = t('audio.midi.export_loading_samples')
 
     const taskStore = useTaskStore()
     const taskId = `midi-export-${Date.now()}`
-    const fileName = outputPath.replace(/\\/g, '/').split('/').pop() || 'export'
+    const fileName = `${baseName}.${format}`
 
     // ── Task helpers ──
 
@@ -547,36 +550,52 @@ export function useMidiExport() {
           URL.revokeObjectURL(url)
         }
 
-        // ── 6. Save ────────────────────────────────────────────────────────
-
-        const showInFolder = () => {
-          ;(window as any).electron?.showItemInFolder(outputPath)
-        }
+        // ── 6. Upload → Results drawer ─────────────────────────────────────
 
         aimAt(0.99, t('audio.midi.export_saving'))
 
-        if (format === 'wav') {
-          const arrayBuf = await wavBlob.arrayBuffer()
-          await (window as any).electron.writeLocalFile(outputPath, new Uint8Array(arrayBuf))
-        } else {
-          const formData = new FormData()
-          formData.append('file', wavBlob, 'export.wav')
-          formData.append('format', format)
-          formData.append('output_path', outputPath.replace(/\\/g, '/'))
+        // Always POST the WAV blob to /audio/midi/convert. The backend transcodes
+        // (or keeps WAV) and registers the output as a Results file. Result lands
+        // in the Results drawer via the store auto-collect.
+        const formData = new FormData()
+        formData.append('file', wavBlob, `${baseName}.wav`)
+        formData.append('format', format)
+        if (sourceFileId) formData.append('source_file_id', sourceFileId)
 
-          const res = await apiFetch('/audio/midi/convert', {
-            method: 'POST',
-            body: formData,
-          })
+        const res = await apiFetch('/audio/midi/convert', {
+          method: 'POST',
+          body: formData,
+        })
 
-          if (!res.ok) {
-            const errText = await res.text().catch(() => res.statusText)
-            throw new Error(`Conversion failed: ${errText}`)
+        if (!res.ok) {
+          const errText = await res.text().catch(() => res.statusText)
+          throw new Error(`Conversion failed: ${errText}`)
+        }
+
+        const data = await res.json().catch(() => ({})) as {
+          output_file_id?: string
+          output_filename?: string
+        }
+
+        // Push to Results drawer via the store's public API.
+        // MIDI render is a one-off endpoint outside TaskManager so the
+        // taskStore-watch auto-collect path doesn't fire — we feed the result
+        // dict shape that addFromTask understands.
+        if (data.output_file_id) {
+          try {
+            const { useResultsStore } = await import('@/stores/results')
+            const resultsStore = useResultsStore()
+            await resultsStore.addFromTask(
+              { output_file_id: data.output_file_id },
+              'audio.midi.render',
+            )
+          } catch (err) {
+            console.warn('[MidiExport] push to Results drawer failed:', err)
           }
         }
 
         clearInterval(animTimer)
-        setTask(1.0, t('toast.saved'), 'completed')
+        setTask(1.0, t('audio.midi.render_done'), 'completed')
 
         // Save to task history DB
         apiFetch('/tasks/history', {
@@ -587,14 +606,13 @@ export function useMidiExport() {
             task_type: 'audio.midi_export',
             status: 'completed',
             label: t('audio.midi.task_label'),
-            file_name: fileName,
+            file_name: data.output_filename ?? fileName,
           }),
         }).catch(() => {})
 
-        toast.show(t('toast.saved'), {
+        toast.show(t('audio.midi.render_done'), {
           type: 'success',
           icon: 'bi-check-circle',
-          action: { label: t('toast.open_folder'), callback: showInFolder },
         })
       } catch (err) {
         clearInterval(animTimer)
