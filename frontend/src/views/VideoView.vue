@@ -21,6 +21,7 @@ const {
   canGoBack, canGoForward,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload,
+  handleDownloadBatch,
   goBack, goForward,
 } = useVideoWorkspace()
 
@@ -238,6 +239,7 @@ onUnmounted(() => { clearActions() })
         @remove-selected="ids => collection.removeEntries(ids)"
         @clear-selection="collection.clearSelection()"
         @select-all="collection.selectAll()"
+        @batch-save="handleDownloadBatch"
       />
     </template>
 

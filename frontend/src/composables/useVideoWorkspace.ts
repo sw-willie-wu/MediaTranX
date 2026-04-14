@@ -2,7 +2,7 @@ import { ref, computed, watch } from 'vue'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
-import { useFileDownload } from '@/composables/useFileDownload'
+import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
 import { apiFetch } from '@/composables/useApi'
@@ -108,7 +108,7 @@ export function useVideoWorkspace() {
   const filesStore = useFilesStore()
   const taskStore = useTaskStore()
   const toast = useToast()
-  const { downloadFile } = useFileDownload()
+  const { downloadFile, downloadBatch } = useFileDownload()
   const { t } = useI18n()
 
   // ── Collection (multi-video state) ──
@@ -222,6 +222,18 @@ export function useVideoWorkspace() {
     }
   }
 
+  async function handleDownloadBatch() {
+    const entries = await collectLatestOutputs(
+      [...collection.selectedIds.value],
+      collection.entries.value,
+    )
+    if (entries.length === 0) {
+      toast.show(t('common.no_exportable'), { type: 'info', icon: 'bi-info-circle' })
+      return
+    }
+    await downloadBatch(entries)
+  }
+
   // Watch for task completion
   const _notifiedTaskIds = new Set<string>()
   watch(
@@ -283,6 +295,7 @@ export function useVideoWorkspace() {
     handleRemoveFile,
     handlePanelSubmit,
     handleDownload,
+    handleDownloadBatch,
     goBack,
     goForward,
   }
