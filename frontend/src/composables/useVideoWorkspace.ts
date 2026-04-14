@@ -4,6 +4,7 @@ import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { useFileDownload } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
+import { usePendingFileListener } from '@/composables/usePendingFileListener'
 import { apiFetch } from '@/composables/useApi'
 import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
@@ -191,6 +192,8 @@ export function useVideoWorkspace() {
     }
   }
 
+  usePendingFileListener(handleFile, handleFiles)
+
   function handleRemoveFile() {
     const id = collection.activeId.value
     if (id) {
@@ -232,16 +235,9 @@ export function useVideoWorkspace() {
       if (!r.output_file_id) return
       log.info('task completed', { taskId: task.taskId, taskType: task.taskType, outputFileId: r.output_file_id })
 
-      const outputDir = (r as any).output_dir as string | undefined
-      const outputFilename = (r as any).output_filename as string | undefined
-      const hasOutputPath = outputDir && outputFilename && window.electron?.showItemInFolder
-
-      toast.show(`${task.label ?? '處理'} 完成`, {
+      toast.show(t('toast.task_completed', { label: task.label ?? '' }), {
         type: 'success',
         icon: 'bi-check-circle',
-        action: hasOutputPath
-          ? { label: t('toast.open_folder'), callback: () => window.electron!.showItemInFolder(`${outputDir}/${outputFilename}`) }
-          : { label: '下載', callback: () => handleDownload() },
       })
     },
     { deep: true }

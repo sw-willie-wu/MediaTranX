@@ -4,6 +4,7 @@ import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { useFileDownload } from '@/composables/useFileDownload'
+import { usePendingFileListener } from '@/composables/usePendingFileListener'
 import { apiFetch } from '@/composables/useApi'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { useI18n } from 'vue-i18n'
@@ -77,7 +78,7 @@ export function useImageWorkspace() {
   const filesStore = useFilesStore()
   const taskStore = useTaskStore()
   const toast = useToast()
-  const { downloadFile } = useFileDownload()
+  const { downloadFile, downloadBatch } = useFileDownload()
   const { t } = useI18n()
 
   // ── Collection (multi-image state) ──────────────────────────────────────────
@@ -92,11 +93,6 @@ export function useImageWorkspace() {
   // ── Image-specific state (not per-entry, lives here) ────────────────────────
   const imageInfo = ref<ImageInfo | null>(null)
   const isLoadingInfo = ref(false)
-
-  // 文字輸出結果（OCR 等非圖片任務）
-  const textResultFileId = ref<string | null>(null)
-  const textResultFilename = ref<string | null>(null)
-  const textResultContent = ref<string | null>(null)
 
 
   // ── Derived from active entry ────────────────────────────────────────────────
@@ -144,7 +140,7 @@ export function useImageWorkspace() {
     () => historyStack.value.at(-1)?.previewUrl ?? collection.activeEntry.value?.previewUrl ?? null,
   )
 
-  const hasResult = computed(() => canGoBack.value || !!textResultFileId.value)
+  const hasResult = computed(() => canGoBack.value)
 
   /**
    * Compute cumulative spatial transform from history stack.
@@ -251,10 +247,6 @@ export function useImageWorkspace() {
       return
     }
     log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
-    // Clear text results from the previous entry
-    textResultFileId.value = null
-    textResultFilename.value = null
-    textResultContent.value = null
     imageInfo.value = null
 
     // Add entry to collection (generates thumbnail, sets status = 'uploading')
@@ -281,6 +273,8 @@ export function useImageWorkspace() {
     }
   }
 
+  usePendingFileListener(handleFile, handleFiles)
+
   function handleRemoveFile() {
     const id = collection.activeId.value
     if (id) {
@@ -288,9 +282,6 @@ export function useImageWorkspace() {
     }
     if (!collection.hasEntries.value) {
       imageInfo.value = null
-      textResultFileId.value = null
-      textResultFilename.value = null
-      textResultContent.value = null
       isLoadingInfo.value = false
     }
   }
@@ -308,11 +299,6 @@ export function useImageWorkspace() {
     const latest = historyStack.value.at(-1)
     if (!latest) return
     downloadFile(latest.fileId, latest.outputFilename, sourceDir.value)
-  }
-
-  function handleTextDownload() {
-    if (!textResultFileId.value || !textResultFilename.value) return
-    downloadFile(textResultFileId.value, textResultFilename.value, sourceDir.value)
   }
 
   /**
@@ -342,11 +328,33 @@ export function useImageWorkspace() {
   }
 
   /**
-   * Batch export placeholder — implemented in Step 9.
+   * Save latest result (or original) of every selected entry to a user-chosen folder.
    */
-  function handleDownloadBatch() {
-    // TODO: Step 9 — iterate selectedIds and download each entry's latest result
-    toast.show('批次下載尚未實作', { type: 'info' })
+  async function handleDownloadBatch() {
+    const ids = [...collection.selectedIds.value]
+    const resolved = await Promise.all(
+      ids.map(async (id) => {
+        const e = collection.entries.value.get(id)
+        if (!e || e.status === 'processing') return null
+        const latest = e.historyStack.at(-1)
+        const fileId = latest ? latest.fileId : e.fileId
+        if (!fileId) return null
+        const filename = latest ? latest.outputFilename : e.file.name
+        // Fetch disk path so downloadBatch can fs.copyFileSync instead of HTTP-downloading
+        let srcPath: string | undefined
+        try {
+          const res = await apiFetch(`/files/${fileId}`)
+          if (res.ok) srcPath = (await res.json()).file_path
+        } catch {}
+        return { fileId, filename, srcPath }
+      }),
+    )
+    const entries = resolved.filter((x): x is NonNullable<typeof x> => x !== null)
+    if (entries.length === 0) {
+      toast.show(t('common.no_exportable'), { type: 'info', icon: 'bi-info-circle' })
+      return
+    }
+    await downloadBatch(entries)
   }
 
   // ── Watchers ─────────────────────────────────────────────────────────────────
@@ -356,9 +364,6 @@ export function useImageWorkspace() {
     () => collection.activeId.value,
     () => {
       imageInfo.value = null
-      textResultFileId.value = null
-      textResultFilename.value = null
-      textResultContent.value = null
       if (collection.activeEntry.value?.fileId) {
         loadImageInfo()
       }
@@ -386,50 +391,19 @@ export function useImageWorkspace() {
       if (task.status === 'completed' && task.result) {
         if (_notifiedTaskIds.has(task.taskId)) return
         _notifiedTaskIds.add(task.taskId)
-        const r = task.result as { output_file_id?: string; output_filename?: string }
+        const r = task.result as { output_file_id?: string; output_filename?: string; output_dir?: string }
         if (r.output_file_id) {
-          const isText = /\.(txt|md|json|csv|srt|vtt)$/i.test(r.output_filename ?? '')
           log.info('task completed', {
             taskId: task.taskId, taskType: task.taskType,
-            outputFileId: r.output_file_id, isText,
+            outputFileId: r.output_file_id,
           })
-          if (isText) {
-            // Text output (OCR etc.): useMediaCollection skipped historyStack
-            // but kept currentTaskId so this watcher fires. Clear it now.
-            const entryId = collection.activeId.value
-            if (entryId) {
-              collection.updateEntry(entryId, { currentTaskId: null })
-            }
-            textResultFileId.value = r.output_file_id
-            textResultFilename.value =
-              r.output_filename ??
-              `${currentFileName.value.replace(/\.[^.]+$/, '')}_ocr.txt`
-            apiFetch(`/files/${r.output_file_id}/download`)
-              .then((res) => (res.ok ? res.text() : null))
-              .then((text) => {
-                textResultContent.value = text
-              })
-              .catch(() => {})
-            toast.show(`${task.label ?? '處理'} 完成`, {
-              type: 'success',
-              icon: 'bi-check-circle',
-              action: { label: '下載', callback: () => handleTextDownload() },
-            })
-          } else {
-            // Image output: historyStack already updated by useMediaCollection's watcher.
-            // Reload imageInfo and show toast here.
-            loadImageInfo()
-            const outputDir = r.output_dir as string | undefined
-            const outputFilename = r.output_filename as string | undefined
-            const hasOutputPath = outputDir && outputFilename && window.electron?.showItemInFolder
-            toast.show(`${task.label ?? '處理'} 完成`, {
-              type: 'success',
-              icon: 'bi-check-circle',
-              action: hasOutputPath
-                ? { label: t('toast.open_folder'), callback: () => window.electron!.showItemInFolder(`${outputDir}/${outputFilename}`) }
-                : { label: '下載', callback: () => handleDownload() },
-            })
-          }
+          // Image output: historyStack already updated by useMediaCollection's watcher.
+          // Reload imageInfo and show toast here. Text outputs (OCR) land in Results drawer.
+          loadImageInfo()
+          toast.show(t('toast.task_completed', { label: task.label ?? '' }), {
+            type: 'success',
+            icon: 'bi-check-circle',
+          })
         }
       }
     },
@@ -454,9 +428,6 @@ export function useImageWorkspace() {
     hasResult,
     activeResultMeta,
     historyStack,
-    textResultFileId,
-    textResultFilename,
-    textResultContent,
 
     // Existing methods
     goBack,
@@ -466,7 +437,6 @@ export function useImageWorkspace() {
     handleRemoveFile,
     handlePanelSubmit,
     handleDownload,
-    handleTextDownload,
 
     // New additions
     collection,
