@@ -154,6 +154,10 @@ class AppContainer(containers.DeclarativeContainer):
         _lazy("app.services.video.cut_service", "VideoCutService"),
         ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
     )
+    video_crop = providers.Singleton(
+        _lazy("app.services.video.crop_service", "VideoCropService"),
+        ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
+    )
     video_extract_audio = providers.Singleton(
         _lazy("app.services.video.extract_audio_service", "VideoExtractAudioService"),
         ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
