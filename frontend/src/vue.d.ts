@@ -23,5 +23,6 @@ interface Window {
     downloadToPath: (url: string, destPath: string) => Promise<void>
     showItemInFolder: (filePath: string) => void
     openPath: (filePath: string) => Promise<string>
+    fileExists: (filePath: string) => Promise<boolean>
   }
 }
