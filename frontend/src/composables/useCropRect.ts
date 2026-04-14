@@ -13,8 +13,19 @@ const HANDLE_CURSORS: Record<Handle, string> = {
 // Canvas padding 設為 0 — canvas 完全對齊圖片，邊緣把手會被裁切但功能不影響
 const CANVAS_PAD = 0
 
+type MediaEl = HTMLImageElement | HTMLVideoElement
+
+function intrinsicSize(el: MediaEl): { w: number; h: number } {
+  if (el instanceof HTMLVideoElement) return { w: el.videoWidth, h: el.videoHeight }
+  return { w: el.naturalWidth, h: el.naturalHeight }
+}
+
+function intrinsicSrc(el: MediaEl): string {
+  return el.src || ''
+}
+
 export function useCropRect(
-  imgRef: Ref<HTMLImageElement | null>,
+  mediaRef: Ref<MediaEl | null>,
   containerRef: Ref<HTMLElement | null>,
   aspectRatioRef: Ref<string>,
 ) {
@@ -272,16 +283,16 @@ export function useCropRect(
   // 只更新 canvas 的 CSS 位置/尺寸，不重置裁切矩形（用於縮放/拖曳時）
   // canvas 比影像大 CANVAS_PAD 圈，所以 CSS 要向外偏移
   function repositionCanvas() {
-    const img = imgRef.value
+    const media = mediaRef.value
     const container = containerRef.value
     const canvas = canvasRef.value
-    if (!img || !container || !canvas) return
+    if (!media || !container || !canvas) return
 
-    const imgRect = img.getBoundingClientRect()
+    const imgRect = media.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
 
     // object-fit: contain 後的實際圖片顯示尺寸（不是元素 box 尺寸）
-    const nw = img.naturalWidth, nh = img.naturalHeight
+    const { w: nw, h: nh } = intrinsicSize(media)
     const boxW = imgRect.width, boxH = imgRect.height
     const scale = Math.min(boxW / nw, boxH / nh)
     const displayW = nw * scale
@@ -297,13 +308,13 @@ export function useCropRect(
   }
 
   function syncToImage(forceReset = false) {
-    const img = imgRef.value
+    const media = mediaRef.value
     const container = containerRef.value
     const canvas = canvasRef.value
-    if (!img || !container || !canvas || !img.naturalWidth) return
+    if (!media || !container || !canvas || !intrinsicSize(media).w) return
 
     // 偵測圖片切換 → 存舊的、還原或重設
-    const currentSrc = img.src
+    const currentSrc = intrinsicSrc(media)
     if (currentSrc !== _lastImgSrc) {
       // 存前一張的裁切框
       if (_lastImgSrc && cropRect.value) {
@@ -321,8 +332,9 @@ export function useCropRect(
     }
 
     repositionCanvas()
-    canvas.width  = img.naturalWidth  + 2 * CANVAS_PAD
-    canvas.height = img.naturalHeight + 2 * CANVAS_PAD
+    const { w: nw, h: nh } = intrinsicSize(media)
+    canvas.width  = nw + 2 * CANVAS_PAD
+    canvas.height = nh + 2 * CANVAS_PAD
 
     if (!cropRect.value || forceReset) {
       initDefaultRect()
