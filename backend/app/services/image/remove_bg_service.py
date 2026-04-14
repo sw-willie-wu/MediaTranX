@@ -29,14 +29,16 @@ class ImageRemoveBgService:
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_IMAGE_REMOVE_BG, self._handle_task)
+        self._task_manager.register_handler(
+            TASK_TYPE_IMAGE_REMOVE_BG, self._handle_task,
+            output_policy="history",
+        )
         logger.info("ImageRemoveBgService initialized")
 
     async def submit_remove_bg(
         self,
         file_id: str,
         mode: str = "auto",
-        output_dir: Optional[str] = None,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
         if not file_info:
@@ -44,7 +46,6 @@ class ImageRemoveBgService:
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_REMOVE_BG, {
             "file_id": file_id,
             "mode": mode,
-            "output_dir": output_dir,
         })
         logger.info(f"Image remove-bg task submitted: {task_id}")
         return task_id
@@ -86,7 +87,7 @@ class ImageRemoveBgService:
                     img = raw.copy()
 
             output_file_id = str(uuid4())
-            output_path = self._generate_output_path(file_info, params.get("output_dir"))
+            output_path = self._generate_output_path(file_info)
 
             progress_callback(0.9, "task.progress.saving_result")
             if anim_fmt:
@@ -106,7 +107,7 @@ class ImageRemoveBgService:
             "output_filename": output_info.filename,
         }
 
-    def _generate_output_path(self, file_info, custom_dir) -> Path:
-        output_dir = Path(custom_dir) if custom_dir else self._file_service.output_dir
+    def _generate_output_path(self, file_info) -> Path:
+        output_dir = self._file_service.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir / f"{Path(file_info.original_filename).stem}_nobg_{uuid4().hex[:8]}.png"

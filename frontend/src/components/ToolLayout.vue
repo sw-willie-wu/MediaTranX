@@ -41,7 +41,6 @@ const props = withDefaults(defineProps<{
   executeLoading?: boolean
   executeLabel?: string
   hideExecute?: boolean
-  hidePreviewTabs?: boolean
   showFilmstrip?: boolean
   collectionSize?: number
   originalPreviewUrl?: string | null
@@ -102,11 +101,6 @@ const isCurrentComingSoon = computed(() => currentSubFunction.value?.comingSoon 
 const router = useRouter()
 const filesStore = useFilesStore()
 
-// 預覽模式
-type PreviewMode = 'original' | 'result' | 'compare'
-const previewMode = ref<PreviewMode>('original')
-const canShowResult = computed(() => props.hasResult)
-
 // 內部檔案管理
 const currentFile = ref<File | null>(null)
 const previewUrl = ref<string | null>(null)
@@ -151,7 +145,6 @@ function setFile(file: File, sourceDir?: string) {
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   currentFile.value = file
   previewUrl.value = URL.createObjectURL(file)
-  previewMode.value = 'original'
   setFileName(file.name)
   emit('file', file, sourceDir)
 }
@@ -161,7 +154,6 @@ function removeFile() {
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   currentFile.value = null
   previewUrl.value = null
-  previewMode.value = 'original'
   clearFileName()
   emit('remove-file')
 }
@@ -249,8 +241,12 @@ function goToTool() {
 
 // KeepAlive: 每次 activated 時檢查 pending file
 onActivated(() => {
+  // Single pending file
   const pending = filesStore.consumePendingFile()
   if (pending) setFile(pending.file, pending.sourceDir)
+  // Batch pending files (cross-tool open with multi-select)
+  const many = filesStore.consumePendingFiles()
+  if (many.length > 0) emit('files', many)
 })
 
 onBeforeUnmount(() => {
@@ -287,27 +283,6 @@ onBeforeUnmount(() => {
 
     <!-- 中間：預覽區域 -->
     <main class="preview-area" :class="{ 'is-drag-over': isDragOver && hasFile }">
-
-      <!-- 預覽模式切換 (for non-image views) -->
-      <div v-if="hasFile && !props.hidePreviewTabs" class="preview-tabs">
-        <button
-          class="preview-tab"
-          :class="{ 'is-active': previewMode === 'original' }"
-          @click="previewMode = 'original'"
-        >{{ $t('common.original') }}</button>
-        <button
-          class="preview-tab"
-          :class="{ 'is-active': previewMode === 'result', disabled: !canShowResult }"
-          :disabled="!canShowResult"
-          @click="previewMode = 'result'"
-        >{{ $t('common.result') }}</button>
-        <button
-          class="preview-tab"
-          :class="{ 'is-active': previewMode === 'compare', disabled: !canShowResult }"
-          :disabled="!canShowResult"
-          @click="previewMode = 'compare'"
-        >{{ $t('common.side_by_side') }}</button>
-      </div>
 
       <!-- 預覽內容 -->
       <div
@@ -351,7 +326,6 @@ onBeforeUnmount(() => {
             name="preview"
             :file="currentFile!"
             :previewUrl="previewUrl!"
-            :mode="previewMode"
           >
             <div class="preview-placeholder">
               <i class="bi bi-image"></i>
@@ -518,28 +492,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-.preview-tabs {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.75rem;
-  border-bottom: 1px solid var(--panel-border);
-}
-
-.preview-tab {
-  padding: 0.4rem 0.75rem;
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:hover:not(.disabled) { background: var(--panel-bg-hover); color: var(--text-primary); }
-  &.is-active { background: var(--panel-bg-active); color: var(--text-primary); }
-  &.disabled { opacity: 0.4; cursor: not-allowed; }
-}
-
 .preview-content {
   position: relative;
   flex: 1;
@@ -613,7 +565,7 @@ onBeforeUnmount(() => {
     padding: 0;
   }
 
-  // Overlay mode (showFilmstrip = true) — absolute, bottom-center of preview-content
+  // Overlay mode (showFilmstrip = true) — inline at top of filmstrip slot
   &--overlay {
     min-height: unset;
     padding: 0.35rem 0.9rem;

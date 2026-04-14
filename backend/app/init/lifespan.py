@@ -105,6 +105,10 @@ def build_lifespan():
         tm.on_terminal(_on_terminal)
         LOGGER.info("Task history hook registered")
 
+        # Restore output files with sidecars from previous session
+        container.file_service().scan_output_dir()
+        LOGGER.info("Output files restored from sidecars")
+
         _warmup_setup_services(container)
 
         # Import heavy domain services in the background so the server
@@ -121,9 +125,6 @@ def build_lifespan():
         # ── Shutdown ──
         LOGGER.info("Shutting down...")
         tm.shutdown()
-
-        fs = container.file_service()
-        fs.cleanup_all()
         LOGGER.info("Shutdown complete")
 
     return lifespan

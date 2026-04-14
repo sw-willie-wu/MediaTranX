@@ -70,6 +70,7 @@ class SubtitleService:
         self._task_manager.register_handler(
             TASK_TYPE_VIDEO_SUBTITLE_GENERATE,
             self._handle_task,
+            output_policy="results",
         )
 
         logger.info("SubtitleService initialized")
@@ -84,8 +85,6 @@ class SubtitleService:
         language: Optional[str] = None,
         model_size: str = "medium",
         output_format: str = "srt",
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
         target_language: Optional[str] = None,
         translate_model_size: str = "4b",
         translate_model_family: str = "gemma4",
@@ -113,8 +112,6 @@ class SubtitleService:
             language: Language code (None=auto-detect, "zh"=Chinese, "en"=English...)
             model_size: Model size (tiny, base, small, medium, large-v3)
             output_format: Output format (srt, vtt)
-            output_dir: Custom output directory (optional)
-            output_filename: Custom output filename (optional)
             target_language: Translation target language (None=no translation)
             translate_model_size: Translation model size (4b, 12b, 27b)
             word_timestamps: Enable word-level timestamps
@@ -138,8 +135,6 @@ class SubtitleService:
             "language": language,
             "model_size": model_size,
             "output_format": output_format,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
             "target_language": target_language,
             "translate_model_size": translate_model_size,
             "translate_model_family": translate_model_family,
@@ -341,14 +336,10 @@ class SubtitleService:
             progress_callback(write_start, "task.progress.generate_file")
 
             # Determine base filename
-            custom_output_filename = params.get("output_filename")
-            if custom_output_filename:
-                base_name = Path(custom_output_filename).stem
-            else:
-                base_name = Path(file_info.original_filename).stem
+            base_name = Path(file_info.original_filename).stem
 
-            # Determine output directory (custom dir takes priority over default)
-            output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+            # Determine output directory
+            output_dir = self._file_service.output_dir
             output_dir.mkdir(parents=True, exist_ok=True)
 
             output_files = []

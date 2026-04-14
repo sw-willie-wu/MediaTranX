@@ -26,7 +26,6 @@ class ImageUpscaleRequest(BaseModel):
     face_restore_model_id: Optional[str] = Field(default=None, description="Face restoration model ID (e.g. codeformer-default)")
     face_restore_fidelity: float = Field(default=0.7, description="CodeFormer fidelity (0=strong restore, 1=preserve original)")
     face_restore_upscale: int = Field(default=2, description="GFPGAN upscale factor (1/2/4)")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
 
 
 class ImageUpscaleResponse(BaseModel):
@@ -52,7 +51,6 @@ async def upscale_image(
             face_restore_model_id=request.face_restore_model_id,
             face_restore_fidelity=request.face_restore_fidelity,
             face_restore_upscale=request.face_restore_upscale,
-            output_dir=request.output_dir,
         )
         return ImageUpscaleResponse(task_id=task_id)
     except ValueError as e:

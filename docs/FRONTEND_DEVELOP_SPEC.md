@@ -414,7 +414,7 @@
 
 ---
 
-## 16.1 AppSelect 分組（Optgroup）
+### 16.1 AppSelect 分組（Optgroup）
 
 AppSelect 支援 `SelectGroup` 型別，可將選項分組顯示：
 
@@ -458,7 +458,7 @@ if (parsed.isRemote) {
 
 ---
 
-## 16.2 AppSelect 規則
+### 16.2 AppSelect 規則
 
 - **禁止** 使用 `size="sm"`（全部統一預設尺寸）
 - Tool panels 和 Settings 都使用相同的 AppSelect，不區分尺寸
@@ -518,12 +518,20 @@ defineExpose({ execute, isDisabled, isLoading })
 | 物件移除 | 物件移除設定 |
 | 文字辨識 | 文字辨識設定 |
 
-### 輸出路徑原則
+### 輸出收納原則（temp-first + Results Drawer）
 
-| 情境 | 方式 | 說明 |
+所有產出一律先寫到後端 `temp/results/`，前端**不**預先問使用者儲存位置。依 `register_handler(output_policy=...)` 決定呈現位置：
+
+| policy | 情境 | 前端呈現 |
 |---|---|---|
-| **產出獨立新檔案**（字幕、逐字稿、OCR、PDF 轉換、分割） | 輸出路徑選擇 | 使用者設定完可直接執行，不需留在畫面等待 |
-| **對原始媒體的處理**（轉檔、剪輯、去背、濾鏡、壓縮等） | 下載按鈕 | 結果顯示在 preview 區，使用者確認後下載 |
+| `"history"` | 對原始媒體的 in-place 處理（轉檔、剪輯、去背、超解析等） | filmstrip 的 historyStack，使用者點「另存新檔」再選目的地 |
+| `"results"` | 跨類型 / 多檔產出（OCR、逐字稿、字幕、分割、分離 stems、MIDI 渲染） | 右上 Results Drawer，卡片可預覽 / 加入工具 / 另存新檔 |
+
+要點：
+- Panel 不放 `output_dir` / `output_filename` UI
+- 另存動作透過 `useFileDownload.downloadFile`（單檔）/ `downloadBatch`（批次）
+- 批次另存：filmstrip 多選時左上浮出 batch bar、Results Drawer 下方 batch bar
+- Panel preview 中「原始 / 結果 / 並排」tabs 已移除（`hidePreviewTabs` prop 已廢除）
 
 ### Preview 原則
 

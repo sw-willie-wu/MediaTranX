@@ -24,7 +24,8 @@ class AudioTranscodeService:
 
         self._task_manager.register_handler(
             TASK_TYPE_AUDIO_TRANSCODE,
-            self._handle_task
+            self._handle_task,
+            output_policy="history",
         )
 
         logger.info("AudioTranscodeService initialized")
@@ -53,8 +54,6 @@ class AudioTranscodeService:
         audio_bitrate: str = "192k",
         sample_rate: Optional[int] = None,
         channels: Optional[int] = None,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         """Submit an audio transcoding task."""
         file_info = self._file_service.get_file(file_id)
@@ -68,8 +67,6 @@ class AudioTranscodeService:
             "audio_bitrate": audio_bitrate,
             "sample_rate": sample_rate,
             "channels": channels,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_TRANSCODE, params)
@@ -98,19 +95,11 @@ class AudioTranscodeService:
             raise ValueError(f"File not found: {file_id}")
 
         # Build output path
-        custom_output_filename = params.get("output_filename")
         output_file_id = str(uuid4())
+        original_stem = Path(file_info.original_filename).stem
+        final_filename = f"{original_stem}_converted_{output_file_id[:8]}.{params['output_format']}"
 
-        if custom_output_filename:
-            base_name = Path(custom_output_filename).stem
-            final_filename = f"{base_name}.{params['output_format']}"
-        else:
-            original_stem = Path(file_info.original_filename).stem
-            final_filename = f"{original_stem}_converted_{output_file_id[:8]}.{params['output_format']}"
-
-        # Determine output directory (custom dir takes priority over default)
-        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = self._file_service.output_dir
         output_path = output_dir / final_filename
 
         # Build extra_args (codec-specific parameters)

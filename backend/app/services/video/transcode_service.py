@@ -34,7 +34,8 @@ class VideoTranscodeService:
         # Register task handler
         self._task_manager.register_handler(
             TASK_TYPE_VIDEO_TRANSCODE,
-            self._handle_task
+            self._handle_task,
+            output_policy="history",
         )
 
         logger.info("VideoTranscodeService initialized")
@@ -87,8 +88,6 @@ class VideoTranscodeService:
         scale_algorithm: Optional[str] = None,
         fps: Optional[float] = None,
         audio_bitrate: Optional[str] = None,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         """
         Submit a transcoding task.
@@ -103,8 +102,6 @@ class VideoTranscodeService:
             resolution: Resolution (e.g., "1920x1080")
             fps: Frame rate
             audio_bitrate: Audio bitrate (e.g., "128k")
-            output_dir: Custom output directory (optional)
-            output_filename: Custom output filename (optional, without extension)
 
         Returns:
             task_id: Task ID
@@ -126,8 +123,6 @@ class VideoTranscodeService:
             "scale_algorithm": scale_algorithm,
             "fps": fps,
             "audio_bitrate": audio_bitrate,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
 
         # Submit task
@@ -204,22 +199,11 @@ class VideoTranscodeService:
         )
 
         # Build output path
-        custom_output_dir = params.get("output_dir")
-        custom_output_filename = params.get("output_filename")
         output_file_id = str(uuid4())
+        original_stem = Path(file_info.original_filename).stem
+        final_filename = f"{original_stem}_transcoded_{output_file_id[:8]}.{params['output_format']}"
 
-        # Determine filename
-        if custom_output_filename:
-            # Use custom filename (strip user-provided extension, use selected format)
-            base_name = Path(custom_output_filename).stem
-            final_filename = f"{base_name}.{params['output_format']}"
-        else:
-            # Auto-generate filename
-            original_stem = Path(file_info.original_filename).stem
-            final_filename = f"{original_stem}_transcoded_{output_file_id[:8]}.{params['output_format']}"
-
-        # Determine output directory (custom dir takes priority over default)
-        output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
+        output_dir = self._file_service.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / final_filename
 

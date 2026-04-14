@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Optional
 from uuid import uuid4
 
 from app.services.files.file_service import FileService
@@ -58,19 +59,34 @@ class AudioMidiService:
         logger.info(f"MIDI saved: {file_info.file_path}")
         return {"status": "ok", "file_id": file_id}
 
-    async def convert_wav(self, file, output_format: str, output_path: str) -> dict:
-        """Convert uploaded WAV file to target format using FFmpeg."""
+    async def convert_wav(
+        self,
+        file,
+        output_format: str,
+        source_file_id: Optional[str] = None,
+    ) -> dict:
+        """Convert uploaded audio (WAV/WebM) to target format.
+
+        Output is written to temp/results and registered as a Results-drawer
+        artefact (tool_id=audio.midi.render). Source MIDI file id is recorded
+        for "來自 XX" display in the frontend.
+        """
         from app.engine.ffmpeg import FFmpegWrapper
 
-        output_path_obj = Path(output_path)
-        output_path_obj.parent.mkdir(parents=True, exist_ok=True)
+        # Create an output path in temp/results with suffix + chosen ext
+        original_filename = file.filename or f"rendered.{output_format}"
+        file_id, output_path = self._file_service.create_output_path(
+            original_filename=original_filename,
+            suffix="_rendered",
+            ext=f".{output_format}",
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Save uploaded audio to temp (may be WAV or WebM)
-        ext = Path(file.filename or 'export.webm').suffix or '.webm'
-        temp_wav = self._file_service.output_dir / f"_temp_export_{uuid4().hex}{ext}"
-        temp_wav.parent.mkdir(parents=True, exist_ok=True)
+        # Save uploaded blob to a sibling temp (may be WAV or WebM)
+        ext = Path(file.filename or "export.webm").suffix or ".webm"
+        temp_in = self._file_service.output_dir / f"_temp_in_{uuid4().hex}{ext}"
         content = await file.read()
-        temp_wav.write_bytes(content)
+        temp_in.write_bytes(content)
 
         try:
             ffmpeg = FFmpegWrapper()
@@ -83,12 +99,28 @@ class AudioMidiService:
             }
             codec, bitrate = codec_map.get(output_format, ("libmp3lame", "192k"))
             await ffmpeg.audio_convert(
-                input_path=temp_wav,
-                output_path=output_path_obj,
+                input_path=temp_in,
+                output_path=output_path,
                 audio_codec=codec,
                 audio_bitrate=bitrate,
             )
         finally:
-            temp_wav.unlink(missing_ok=True)
+            temp_in.unlink(missing_ok=True)
 
-        return {"status": "ok", "output_path": str(output_path_obj)}
+        # Register + tag as Results artefact
+        self._file_service.register_output(
+            file_id=file_id,
+            file_path=output_path,
+            original_filename=original_filename,
+        )
+        self._file_service.tag_as_result(
+            file_id=file_id,
+            tool_id="audio.midi.render",
+            source_file_id=source_file_id,
+        )
+
+        return {
+            "status": "ok",
+            "output_file_id": file_id,
+            "output_filename": output_path.name,
+        }

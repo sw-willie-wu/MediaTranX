@@ -27,8 +27,14 @@ class DocumentOcrService:
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_DOCUMENT_OCR, self._handle_task)
-        self._task_manager.register_handler(TASK_TYPE_DOCUMENT_OCR_REMOTE, self._handle_remote_task)
+        self._task_manager.register_handler(
+            TASK_TYPE_DOCUMENT_OCR, self._handle_task,
+            output_policy="results",
+        )
+        self._task_manager.register_handler(
+            TASK_TYPE_DOCUMENT_OCR_REMOTE, self._handle_remote_task,
+            output_policy="results",
+        )
         logger.info("DocumentOcrService initialized")
 
     def get_status(self, model_family: str = DEFAULT_VLM_MODEL, size: str = "4b",
@@ -43,8 +49,6 @@ class DocumentOcrService:
         size: str = "4b",
         quantization: Optional[str] = None,
         format: str = "md",
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -52,8 +56,7 @@ class DocumentOcrService:
         params = {
             "file_id": file_id, "model_family": model_family,
             "size": size, "quantization": quantization,
-            "format": format, "output_dir": output_dir,
-            "output_filename": output_filename,
+            "format": format,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_OCR, params)
         logger.info(f"Document OCR task submitted: {task_id}")
@@ -66,8 +69,6 @@ class DocumentOcrService:
         conn_id: Optional[int] = None,
         remote_model: str = "",
         format: str = "md",
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         """Submit a remote OCR task."""
         file_info = self._file_service.get_file(file_id)
@@ -76,8 +77,7 @@ class DocumentOcrService:
         params = {
             "file_id": file_id, "provider": provider,
             "conn_id": conn_id, "remote_model": remote_model,
-            "format": format, "output_dir": output_dir,
-            "output_filename": output_filename,
+            "format": format,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_OCR_REMOTE, params)
         logger.info(f"Remote OCR task submitted: {task_id} (provider={provider}, model={remote_model})")
@@ -126,11 +126,9 @@ class DocumentOcrService:
 
         output_file_id = str(uuid4())
         stem = Path(file_info.original_filename).stem
-        custom_filename = params.get("output_filename")
-        final_filename = custom_filename if custom_filename else f"{stem}_ocr_{output_file_id[:8]}.{ext}"
+        final_filename = f"{stem}_ocr_{output_file_id[:8]}.{ext}"
 
-        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = self._file_service.output_dir
         output_path = output_dir / final_filename
 
         with open(output_path, "w", encoding="utf-8") as f:
@@ -268,11 +266,9 @@ class DocumentOcrService:
 
         output_file_id = str(uuid4())
         stem = Path(file_info.original_filename).stem
-        custom_filename = params.get("output_filename")
-        final_filename = custom_filename if custom_filename else f"{stem}_ocr_{output_file_id[:8]}.{ext}"
+        final_filename = f"{stem}_ocr_{output_file_id[:8]}.{ext}"
 
-        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = self._file_service.output_dir
         output_path = output_dir / final_filename
         output_path.write_text(final_text, encoding="utf-8")
 

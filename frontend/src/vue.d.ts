@@ -22,5 +22,7 @@ interface Window {
     getFileSourceDir: (name: string, size: number, lastModified: number) => string | null
     downloadToPath: (url: string, destPath: string) => Promise<void>
     showItemInFolder: (filePath: string) => void
+    openPath: (filePath: string) => Promise<string>
+    fileExists: (filePath: string) => Promise<boolean>
   }
 }

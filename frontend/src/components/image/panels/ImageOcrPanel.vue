@@ -14,7 +14,6 @@ import { usePersistedModel } from '@/composables/usePersistedModel'
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
-  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -63,51 +62,11 @@ watch(localModelOptions, (options) => {
 const { mergedOptions: modelOptions } = useModelOptions('vision', localModelOptions)
 
 const outputFormat = ref<'md' | 'txt'>('md')
-const outputPath = ref('')
 
 const outputFormats = computed(() => [
   { value: 'md',  label: t('image.ocr.markdown') },
   { value: 'txt', label: t('image.ocr.text') },
 ])
-
-const defaultOutputName = computed(() => {
-  const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
-  return `${stem}_ocr.${outputFormat.value}`
-})
-
-const displayOutputPath = computed(() => {
-  if (outputPath.value) {
-    const parts = outputPath.value.replace(/\\/g, '/').split('/')
-    return parts[parts.length - 1]
-  }
-  return defaultOutputName.value
-})
-
-async function selectOutputFile() {
-  if ((window as any).electron?.saveFileDialog) {
-    const filter = outputFormat.value === 'md'
-      ? { name: 'Markdown', extensions: ['md'] }
-      : { name: t('image.ocr.text'), extensions: ['txt'] }
-    const result = await (window as any).electron.saveFileDialog({
-      title: t('image.ocr.select_output'),
-      defaultPath: defaultOutputName.value,
-      filters: [filter],
-    })
-    if (result) outputPath.value = result
-  }
-}
-
-function resetOutputPath() {
-  if (props.sourceDir) {
-    const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
-    outputPath.value = `${props.sourceDir}/${stem}_ocr.${outputFormat.value}`
-  } else {
-    outputPath.value = ''
-  }
-}
-watch(() => props.fileId, resetOutputPath)
-watch(outputFormat, resetOutputPath)
-watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 async function checkAvailable() {
   const parsed = parseModelValue(selectedModel.value)
@@ -153,16 +112,6 @@ function getParams(): Record<string, unknown> {
     params.model_family = family
     params.size = size
   }
-  if (outputPath.value) {
-    const path = outputPath.value.replace(/\\/g, '/')
-    const lastSlash = path.lastIndexOf('/')
-    if (lastSlash > 0) {
-      params.output_dir      = path.substring(0, lastSlash)
-      params.output_filename = path.substring(lastSlash + 1)
-    } else {
-      params.output_filename = path
-    }
-  }
   return params
 }
 
@@ -205,14 +154,6 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, getParams })
     <div class="form-group">
       <label>{{ $t('image.ocr.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
-    </div>
-
-    <div class="form-group">
-      <label>{{ $t('image.ocr.output_file') }}</label>
-      <div class="file-select" @click="selectOutputFile">
-        <span class="file-select-path">{{ displayOutputPath }}</span>
-        <i class="bi bi-folder2-open"></i>
-      </div>
     </div>
   </div>
 </template>

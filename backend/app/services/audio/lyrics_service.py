@@ -38,7 +38,10 @@ class AudioLyricsService:
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_AUDIO_LYRICS, self._handle_task)
+        self._task_manager.register_handler(
+            TASK_TYPE_AUDIO_LYRICS, self._handle_task,
+            output_policy="results",
+        )
         logger.info("AudioLyricsService initialized")
 
     async def submit_lyrics(
@@ -57,8 +60,6 @@ class AudioLyricsService:
         translate_conn_id: Optional[int] = None,
         translate_remote_model: Optional[str] = None,
         output_format: str = "lrc",
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -78,8 +79,6 @@ class AudioLyricsService:
             "translate_conn_id": translate_conn_id,
             "translate_remote_model": translate_remote_model,
             "output_format": output_format,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_LYRICS, params)
         logger.info(f"Audio lyrics task submitted: {task_id}")
@@ -102,16 +101,8 @@ class AudioLyricsService:
 
         original_stem = Path(file_info.original_filename).stem
 
-        # Determine output directory
-        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Determine base filename
-        custom_output_filename = params.get("output_filename")
-        if custom_output_filename:
-            base_name = Path(custom_output_filename).stem
-        else:
-            base_name = original_stem
+        output_dir = self._file_service.output_dir
+        base_name = original_stem
 
         # -- Dynamic progress allocation --
         weights = {"demucs": 3, "whisper": 5}  # demucs and whisper are required

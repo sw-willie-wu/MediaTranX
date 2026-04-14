@@ -55,6 +55,7 @@ class AppContainer(containers.DeclarativeContainer):
     task_manager = providers.Singleton(
         TaskManager,
         progress_tracker=progress_tracker,
+        file_service=file_service,
     )
 
     # ── Engine ──

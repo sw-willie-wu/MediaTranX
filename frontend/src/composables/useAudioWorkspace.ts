@@ -2,8 +2,9 @@ import { ref, computed, watch } from 'vue'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
-import { useFileDownload } from '@/composables/useFileDownload'
+import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
+import { usePendingFileListener } from '@/composables/usePendingFileListener'
 import { apiFetch } from '@/composables/useApi'
 import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
@@ -153,6 +154,8 @@ export function useAudioWorkspace() {
     }
   }
 
+  usePendingFileListener(handleFile, handleFiles)
+
   function handleRemoveFile() {
     const id = collection.activeId.value
     if (id) {
@@ -200,6 +203,18 @@ export function useAudioWorkspace() {
     downloadFile(latest.fileId, latest.outputFilename, sourceDir.value)
   }
 
+  async function handleDownloadBatch() {
+    const entries = await collectLatestOutputs(
+      [...collection.selectedIds.value],
+      collection.entries.value,
+    )
+    if (entries.length === 0) {
+      toast.show(t('common.no_exportable'), { type: 'info', icon: 'bi-info-circle' })
+      return
+    }
+    await downloadBatch(entries)
+  }
+
   // Watch for task completion
   const _notifiedTaskIds = new Set<string>()
   watch(
@@ -226,17 +241,9 @@ export function useAudioWorkspace() {
 
       log.info('task completed', { taskId: task.taskId, taskType: task.taskType, outputFileId: r.output_file_id })
 
-      // If output was saved to a directory, show "Open Folder"; otherwise show "Download"
-      const outputDir = (r as any).output_dir as string | undefined
-      const outputFilename = (r as any).output_filename as string | undefined
-      const hasOutputPath = outputDir && outputFilename && window.electron?.showItemInFolder
-
-      toast.show(`${task.label ?? '處理'} 完成`, {
+      toast.show(t('toast.task_completed', { label: task.label ?? '' }), {
         type: 'success',
         icon: 'bi-check-circle',
-        action: hasOutputPath
-          ? { label: t('toast.open_folder'), callback: () => window.electron!.showItemInFolder(`${outputDir}/${outputFilename}`) }
-          : { label: '下載', callback: () => handleDownload() },
       })
     },
     { deep: true }
@@ -306,6 +313,7 @@ export function useAudioWorkspace() {
     handleRemoveFile,
     handlePanelSubmit,
     handleDownload,
+    handleDownloadBatch,
     downloadFile,
     addMidiEntry,
     goBack,

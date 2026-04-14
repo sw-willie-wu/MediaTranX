@@ -15,7 +15,6 @@ const props = defineProps<{
   fileId: string | null
   currentFileName: string
   currentFileExt: string
-  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -66,7 +65,6 @@ const { mergedOptions: modelOptions } = useModelOptions('vision', localModelOpti
 // ── 輸出選項 ──────────────────────────────────────────────────────────────
 
 const outputFormat = ref<'md' | 'txt'>('md')
-const outputPath = ref('')
 
 const outputFormats = computed(() => [
   { value: 'md',  label: t('document.ocr.markdown') },
@@ -77,45 +75,6 @@ const isPdfOrImage = computed(() => {
   const ext = props.currentFileExt.toLowerCase()
   return ext === 'pdf' || ['png','jpg','jpeg','webp','bmp','tiff','tif'].includes(ext)
 })
-
-const defaultOutputName = computed(() => {
-  const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
-  return `${stem}_ocr.${outputFormat.value}`
-})
-
-const displayOutputPath = computed(() => {
-  if (outputPath.value) {
-    const parts = outputPath.value.replace(/\\/g, '/').split('/')
-    return parts[parts.length - 1]
-  }
-  return defaultOutputName.value
-})
-
-async function selectOutputFile() {
-  if ((window as any).electron?.saveFileDialog) {
-    const filter = outputFormat.value === 'md'
-      ? { name: 'Markdown', extensions: ['md'] }
-      : { name: 'Plain Text', extensions: ['txt'] }
-    const result = await (window as any).electron.saveFileDialog({
-      title: t('document.ocr.select_output'),
-      defaultPath: defaultOutputName.value,
-      filters: [filter],
-    })
-    if (result) outputPath.value = result
-  }
-}
-
-function resetOutputPath() {
-  if (props.sourceDir) {
-    const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
-    outputPath.value = `${props.sourceDir}/${stem}_ocr.${outputFormat.value}`
-  } else {
-    outputPath.value = ''
-  }
-}
-watch(() => props.fileId, resetOutputPath)
-watch(outputFormat, resetOutputPath)
-watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 
 // ── 狀態載入 ──────────────────────────────────────────────────────────────
 
@@ -169,17 +128,6 @@ async function execute() {
     body.size = size
   }
 
-  if (outputPath.value) {
-    const path = outputPath.value.replace(/\\/g, '/')
-    const last = path.lastIndexOf('/')
-    if (last > 0) {
-      body.output_dir      = path.substring(0, last)
-      body.output_filename = path.substring(last + 1)
-    } else {
-      body.output_filename = path
-    }
-  }
-
   const taskId = await submitTask('/document/ocr', body, t('document.ocr.task_label'), 'document.ocr', props.currentFileName)
   if (taskId) emit('submit', taskId)
 }
@@ -199,17 +147,6 @@ function getParams() {
     const [family, size] = selectedModel.value.split(':')
     body.model_family = family
     body.size = size
-  }
-
-  if (outputPath.value) {
-    const path = outputPath.value.replace(/\\/g, '/')
-    const last = path.lastIndexOf('/')
-    if (last > 0) {
-      body.output_dir      = path.substring(0, last)
-      body.output_filename = path.substring(last + 1)
-    } else {
-      body.output_filename = path
-    }
   }
 
   return body
@@ -245,18 +182,9 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, getParams })
       <label>{{ $t('document.ocr.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
-
-    <div class="form-group">
-      <label>{{ $t('document.ocr.output_file') }}</label>
-      <div class="file-select" @click="selectOutputFile">
-        <span class="file-select-path">{{ displayOutputPath }}</span>
-        <i class="bi bi-folder2-open"></i>
-      </div>
-    </div>
   </div>
 </template>
 
 <style lang="scss">
 @use '@/styles/tool-panels-shared';
 </style>
-

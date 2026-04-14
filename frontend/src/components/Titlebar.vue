@@ -3,6 +3,8 @@ import IconMinimize from './icons/IconMinimize.vue'
 import IconMaximize from './icons/IconMaximize.vue'
 import IconRestore from './icons/IconRestore.vue'
 import IconClose from './icons/IconClose.vue'
+import TitlebarButton from './common/TitlebarButton.vue'
+import TitlebarResultsButton from './TitlebarResultsButton.vue'
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -65,35 +67,46 @@ onMounted(async () => {
   <div class="titlebar pywebview-drag-region">
     <div class="titlebar-left">
       <template v-if="isToolPage">
-        <button class="titlebar-action" :disabled="!canUndo" :data-tooltip="$t('titlebar.undo')" @click="undo">
-          <i class="bi bi-arrow-return-left flip-v"></i>
-        </button>
-        <button class="titlebar-action" :disabled="!canRedo" :data-tooltip="$t('titlebar.redo')" @click="redo">
-          <i class="bi bi-arrow-return-right flip-v"></i>
-        </button>
-        <button class="titlebar-action" :class="{ 'is-highlighted': canSaveAs }" :disabled="!canSaveAs" :data-tooltip="$t('titlebar.save_as')" @click="saveAs">
-          <i class="bi bi-floppy"></i>
-        </button>
+        <TitlebarButton
+          icon="bi-arrow-return-left flip-v"
+          :disabled="!canUndo"
+          :tooltip="$t('titlebar.undo')"
+          @click="undo"
+        />
+        <TitlebarButton
+          icon="bi-arrow-return-right flip-v"
+          :disabled="!canRedo"
+          :tooltip="$t('titlebar.redo')"
+          @click="redo"
+        />
         <div v-if="extraActions.length" class="titlebar-separator"></div>
-        <button
+        <TitlebarButton
           v-for="action in extraActions"
           :key="action.id"
-          class="titlebar-action"
-          :class="{ 'is-active': action.active }"
+          :icon="action.icon"
+          :active="action.active"
           :disabled="action.disabled"
-          :data-tooltip="action.tooltip"
+          :tooltip="action.tooltip"
           @click="action.onClick"
-        >
-          <i :class="['bi', action.icon]"></i>
-        </button>
+        />
       </template>
     </div>
 
-    <!-- 中間：頁面標題 -->
-    <span v-if="pageTitle" class="app-title">{{ pageTitle }}</span>
+    <!-- 中間：頁面標題 + 當前檔案的另存 -->
+    <div v-if="pageTitle" class="app-title-wrap">
+      <span class="app-title">{{ pageTitle }}</span>
+      <TitlebarButton
+        v-if="isToolPage && canSaveAs"
+        class="title-save"
+        icon="bi-floppy"
+        :tooltip="$t('titlebar.save_as')"
+        @click="saveAs"
+      />
+    </div>
 
     <!-- 右側：視窗控制 -->
     <div class="titlebar-right">
+      <TitlebarResultsButton />
       <div class="window-controls">
         <button class="window-btn" @click="minimize" :title="$t('titlebar.minimize')">
           <IconMinimize />
@@ -136,76 +149,7 @@ onMounted(async () => {
   -webkit-app-region: no-drag;
 }
 
-.titlebar-action {
-  position: relative;
-  width: 32px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  font-size: 0.85rem;
-
-  &:hover:not(:disabled) {
-    background: var(--panel-bg-hover);
-    color: var(--text-primary);
-  }
-
-  &:active:not(:disabled) {
-    background: var(--panel-bg-active);
-  }
-
-  &:disabled {
-    opacity: 0.25;
-    cursor: default;
-  }
-
-  &.is-highlighted {
-    color: var(--color-primary);
-  }
-
-  // Tooltip — 下方浮出
-  &::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 4px 10px;
-    background: var(--panel-bg-active);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--panel-border);
-    border-radius: 6px;
-    color: var(--text-primary);
-    font-size: 0.75rem;
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s ease;
-    z-index: 100;
-  }
-
-  &:hover:not(:disabled)::after { opacity: 1; }
-
-  &.is-active {
-    background: var(--color-primary);
-    color: #fff;
-    opacity: 1;
-
-    &:hover { background: var(--color-primary-hover); }
-  }
-
-  .flip-v {
-    transform: scaleY(-1);
-  }
-}
+// Button styling moved to common/TitlebarButton.vue (shared with results button).
 
 .titlebar-separator {
   width: 1px;
@@ -228,18 +172,27 @@ onMounted(async () => {
   -webkit-app-region: no-drag;
 }
 
-.app-title {
+.app-title-wrap {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 60%;
+}
+.app-title {
   color: var(--text-secondary);
   font-size: 0.8rem;
   font-weight: 500;
   pointer-events: none;
-  max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.title-save {
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
 }
 
 .window-controls {

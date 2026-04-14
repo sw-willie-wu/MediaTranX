@@ -13,7 +13,6 @@ import ImageAdjustPanel, { type AdjustState } from '@/components/image/panels/Im
 import ImageFilterPanel, { type FilterState } from '@/components/image/panels/ImageFilterPanel.vue'
 import ImageCropPanel     from '@/components/image/panels/ImageCropPanel.vue'
 import ImageOcrPanel      from '@/components/image/panels/ImageOcrPanel.vue'
-import TextPreviewModal   from '@/components/common/TextPreviewModal.vue'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
 import { useImageWorkspace } from '@/composables/useImageWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
@@ -23,7 +22,7 @@ const {
   hasFile, fileId, isUploading, currentFileName, imageInfo, isLoadingInfo,
   canGoBack, canGoForward, activeFileId, activePreviewUrl, hasResult, activeResultMeta,
   goBack, goForward, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
-  handleDownload, handleTextDownload, textResultFileId, textResultFilename, textResultContent,
+  handleDownload, handleDownloadBatch,
   collection, activeId, selectedIds,
   sourceDir,
 } = useImageWorkspace()
@@ -48,7 +47,6 @@ const adjustPanelRef   = ref<InstanceType<typeof ImageAdjustPanel>   | null>(nul
 const filterPanelRef   = ref<InstanceType<typeof ImageFilterPanel>   | null>(null)
 const cropPanelRef     = ref<InstanceType<typeof ImageCropPanel>     | null>(null)
 const ocrPanelRef      = ref<InstanceType<typeof ImageOcrPanel>      | null>(null)
-const showOcrModal     = ref(false)
 
 const subFunctions = computed(() => [
   { id: 'convert',   name: t('image.functions.convert'),   icon: 'bi-arrow-repeat',         group: t('image.group.edit') },
@@ -334,7 +332,7 @@ function registerTitlebar() {
     canSaveAs: () => hasResult.value,
     onUndo: () => goBack(),
     onRedo: () => goForward(),
-    onSaveAs: () => currentFunction.value === 'ocr' ? handleTextDownload() : handleDownload(),
+    onSaveAs: () => handleDownload(),
   })
 }
 
@@ -354,15 +352,6 @@ watchEffect(() => {
     disabled: !compareEnabled,
     onClick: () => { if (compareEnabled) isComparing.value = !isComparing.value },
   })
-  // 文字預覽 (OCR)
-  const textPreviewEnabled = currentFunction.value === 'ocr' && !!textResultContent.value
-  actions.push({
-    id: 'text-preview',
-    icon: 'bi-file-text',
-    tooltip: t('common.view_ocr_result'),
-    disabled: !textPreviewEnabled,
-    onClick: () => { if (textPreviewEnabled) showOcrModal.value = true },
-  })
   setExtraActions(actions)
 })
 
@@ -380,7 +369,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     :upload-label="$t('image.upload_label')"
     :upload-hint="$t('image.upload_hint')"
     upload-accept="image/*"
-    hide-preview-tabs
     show-filmstrip
     :collection-size="filmstripItems.length"
     :active-file-name="currentFileName"
@@ -438,6 +426,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
         @remove-selected="ids => collection.removeEntries(ids)"
         @clear-selection="collection.clearSelection()"
         @select-all="collection.selectAll()"
+        @batch-save="handleDownloadBatch"
       />
     </template>
 
@@ -517,21 +506,11 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="ocrPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :source-dir="sourceDir"
           @submit="onPanelSubmit"
         />
       </div>
     </template>
   </ToolLayout>
-
-  <TextPreviewModal
-    v-if="showOcrModal && textResultContent"
-    :text="textResultContent"
-    :title="$t('image.ocr.result_title')"
-    :format="ocrPanelRef?.outputFormat ?? 'md'"
-    :filename="textResultFilename"
-    @close="showOcrModal = false"
-  />
 </template>
 
 <style lang="scss" scoped>

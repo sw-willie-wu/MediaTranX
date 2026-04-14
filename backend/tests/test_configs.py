@@ -13,8 +13,8 @@ class TestAppSettings:
     def test_default_mode(self, settings):
         assert settings.server.mode == "production"
 
-    def test_data_path_set(self, settings):
-        assert settings.path.data is not None
+    def test_root_path_set(self, settings):
+        assert settings.path.root is not None
 
     def test_is_frozen_default(self, settings):
         assert settings.is_frozen is False

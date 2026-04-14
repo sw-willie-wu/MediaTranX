@@ -134,6 +134,7 @@ class TranslateService:
         self._task_manager.register_handler(
             TASK_TYPE_DOCUMENT_TRANSLATE,
             self._handle_task,
+            output_policy="history",
         )
 
         logger.info("TranslateService initialized")
@@ -148,8 +149,6 @@ class TranslateService:
         quantization: Optional[str] = None,
         translate_style: str = "colloquial",
         glossary: Optional[dict[str, str]] = None,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         """
         Submit a document translation task.
@@ -159,8 +158,6 @@ class TranslateService:
             source_language: Source language
             target_language: Target language
             model_size: Model size (4b, 12b, 27b)
-            output_dir: Custom output directory
-            output_filename: Custom output filename
 
         Returns:
             task_id
@@ -178,8 +175,6 @@ class TranslateService:
             "quantization": quantization,
             "translate_style": translate_style,
             "glossary": glossary,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_TRANSLATE, params)
@@ -321,17 +316,11 @@ class TranslateService:
         output_file_id = str(uuid4())
 
         # Determine filename
-        custom_output_filename = params.get("output_filename")
-        if custom_output_filename:
-            final_filename = custom_output_filename
-        else:
-            original_stem = Path(file_info.original_filename).stem
-            original_ext = Path(file_info.original_filename).suffix or ".txt"
-            final_filename = f"{original_stem}_{target_language}{original_ext}"
+        original_stem = Path(file_info.original_filename).stem
+        original_ext = Path(file_info.original_filename).suffix or ".txt"
+        final_filename = f"{original_stem}_{target_language}{original_ext}"
 
-        # Determine output directory
-        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = self._file_service.output_dir
         output_path = output_dir / final_filename
 
         # Write output

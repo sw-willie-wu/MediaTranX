@@ -24,8 +24,6 @@ class ImageConvertRequest(BaseModel):
     width: Optional[int] = Field(default=None, gt=0, description="Target width")
     height: Optional[int] = Field(default=None, gt=0, description="Target height")
     scale: Optional[float] = Field(default=None, gt=0, description="Scale ratio")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
-    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class ImageConvertResponse(BaseModel):
@@ -74,8 +72,6 @@ async def convert_image(
             width=request.width,
             height=request.height,
             scale=request.scale,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
         )
         return ImageConvertResponse(task_id=task_id)
     except ValueError as e:

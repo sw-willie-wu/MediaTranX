@@ -26,8 +26,6 @@ class DocumentTranslateRequest(BaseModel):
     quantization: Optional[str] = Field(default=None, description="Model quantization (Q4_K_M, Q3_K_M, etc.)")
     translate_style: str = Field(default="colloquial", description="Translation style (colloquial, formal, literal)")
     glossary: Optional[dict[str, str]] = Field(default=None, description="Glossary {source_term: translation}")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
-    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class DocumentTranslateResponse(BaseModel):
@@ -59,8 +57,6 @@ async def translate_document(
             quantization=request.quantization,
             translate_style=request.translate_style,
             glossary=request.glossary,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
         )
         return DocumentTranslateResponse(task_id=task_id)
     except ValueError as e:

@@ -21,8 +21,6 @@ class DocumentOcrRequest(BaseModel):
     size: str = Field(default="4b")
     quantization: Optional[str] = Field(default=None)
     format: str = Field(default="md", description="Output format: txt or md")
-    output_dir: Optional[str] = Field(default=None)
-    output_filename: Optional[str] = Field(default=None)
     # Cloud model
     remote: bool = Field(default=False, description="Whether to use a cloud model")
     provider: Optional[str] = Field(default=None, description="Cloud provider")
@@ -46,8 +44,6 @@ async def ocr_document(
                 conn_id=request.conn_id,
                 remote_model=request.remote_model,
                 format=request.format,
-                output_dir=request.output_dir,
-                output_filename=request.output_filename,
             )
         else:
             model_family = request.model_family or language_service.get_default_vlm_model()
@@ -57,8 +53,6 @@ async def ocr_document(
                 size=request.size,
                 quantization=request.quantization,
                 format=request.format,
-                output_dir=request.output_dir,
-                output_filename=request.output_filename,
             )
         return {"task_id": task_id, "message": "OCR task submitted"}
     except ValueError as e:

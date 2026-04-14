@@ -17,9 +17,17 @@ import sys
 # ---------------------------------------------------------------------------
 
 def inject_paths():
-    """Add .venv/site-packages to sys.path if MEDIATRANX_PATH__VENV is set."""
-    venv = os.environ.get('MEDIATRANX_PATH__VENV')
-    if not venv:
+    """Add .venv/site-packages to sys.path.
+
+    Runs before pydantic is importable, so we can't read SETTINGS — derive
+    venv from MEDIATRANX_PATH__ROOT (the canonical root override). Kept
+    permissive: missing env var means "no override, use default import order".
+    """
+    root = os.environ.get('MEDIATRANX_PATH__ROOT')
+    if not root:
+        return
+    venv = os.path.join(root, '.venv')
+    if not os.path.isdir(venv):
         return
 
     if sys.platform == 'win32':
@@ -87,12 +95,6 @@ def register_dlls(settings) -> None:
                 dll_dirs.append(entry.path)
     except Exception:
         pass
-
-    # CUDA DLL path (downloaded by Electron)
-    cuda_dir = settings.path.data / 'cuda'
-    if cuda_dir.is_dir():
-        os.environ['PATH'] = str(cuda_dir) + os.pathsep + os.environ.get('PATH', '')
-        dll_dirs.append(str(cuda_dir))
 
     for d in dll_dirs:
         if os.path.isdir(d):

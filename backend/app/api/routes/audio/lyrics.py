@@ -33,8 +33,6 @@ class LyricsRequest(BaseModel):
     translate_conn_id: Optional[int] = Field(default=None, description="Cloud connection ID")
     translate_remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
     output_format: str = Field(default="lrc", description="Output format (lrc, txt)")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
-    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class LyricsResponse(BaseModel):
@@ -63,8 +61,6 @@ async def extract_lyrics(
             translate_conn_id=request.translate_conn_id,
             translate_remote_model=request.translate_remote_model,
             output_format=request.output_format,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
         )
         return LyricsResponse(task_id=task_id)
     except ValueError as e:

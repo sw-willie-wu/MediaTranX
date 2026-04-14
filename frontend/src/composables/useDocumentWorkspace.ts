@@ -2,8 +2,9 @@ import { ref, computed, watch } from 'vue'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
-import { useFileDownload } from '@/composables/useFileDownload'
+import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
+import { usePendingFileListener } from '@/composables/usePendingFileListener'
 import { apiFetch } from '@/composables/useApi'
 import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
@@ -52,7 +53,7 @@ export function useDocumentWorkspace() {
   const filesStore = useFilesStore()
   const taskStore = useTaskStore()
   const toast = useToast()
-  const { downloadFile } = useFileDownload()
+  const { downloadFile, downloadBatch } = useFileDownload()
   const { t } = useI18n()
 
   // ── Collection (multi-document state) ──
@@ -113,6 +114,8 @@ export function useDocumentWorkspace() {
     }
   }
 
+  usePendingFileListener(handleFile, handleFiles)
+
   function handleRemoveFile() {
     const id = collection.activeId.value
     if (id) {
@@ -141,6 +144,18 @@ export function useDocumentWorkspace() {
       downloadFile(latest.fileId, latest.outputFilename, sourceDir.value)
       return
     }
+  }
+
+  async function handleDownloadBatch() {
+    const entries = await collectLatestOutputs(
+      [...collection.selectedIds.value],
+      collection.entries.value,
+    )
+    if (entries.length === 0) {
+      toast.show(t('common.no_exportable'), { type: 'info', icon: 'bi-info-circle' })
+      return
+    }
+    await downloadBatch(entries)
   }
 
   function handleTextDownload() {
@@ -174,15 +189,9 @@ export function useDocumentWorkspace() {
         textResultFilename.value = null
       }
 
-      const outputDir = (r as any).output_dir as string | undefined
-      const outputFilename = r.output_filename as string | undefined
-      const hasOutputPath = outputDir && outputFilename && window.electron?.showItemInFolder
-      toast.show(`${task.label ?? '處理'} 完成`, {
+      toast.show(t('toast.task_completed', { label: task.label ?? '' }), {
         type: 'success',
         icon: 'bi-check-circle',
-        action: hasOutputPath
-          ? { label: t('toast.open_folder'), callback: () => window.electron!.showItemInFolder(`${outputDir}/${outputFilename}`) }
-          : { label: '下載', callback: () => handleDownload() },
       })
     },
     { deep: true },
@@ -213,6 +222,7 @@ export function useDocumentWorkspace() {
     handleRemoveFile,
     handlePanelSubmit,
     handleDownload,
+    handleDownloadBatch,
     handleTextDownload,
   }
 }

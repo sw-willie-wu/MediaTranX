@@ -21,6 +21,7 @@ const {
   canGoBack, canGoForward,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload,
+  handleDownloadBatch,
   goBack, goForward,
 } = useVideoWorkspace()
 
@@ -194,7 +195,6 @@ onUnmounted(() => { clearActions() })
     :upload-label="$t('video.upload_label')"
     :upload-hint="$t('video.upload_hint')"
     upload-accept="video/*"
-    hide-preview-tabs
     show-filmstrip
     :collection-size="filmstripItems.length"
     :active-file-name="currentFileName"
@@ -239,6 +239,7 @@ onUnmounted(() => { clearActions() })
         @remove-selected="ids => collection.removeEntries(ids)"
         @clear-selection="collection.clearSelection()"
         @select-all="collection.selectAll()"
+        @batch-save="handleDownloadBatch"
       />
     </template>
 
@@ -269,7 +270,6 @@ onUnmounted(() => { clearActions() })
             ref="subtitlePanelRef"
             :fileId="activeFileId"
             :mediaInfo="mediaInfo"
-            :source-dir="sourceDir"
             @submit="handlePanelSubmit"
           />
         </div>

@@ -27,7 +27,9 @@ class TestLifespan:
 
     @pytest.mark.asyncio
     async def test_shutdown_calls_task_manager_shutdown(self):
-        """Shutdown should call task_manager.shutdown() and file_service.cleanup_all()."""
+        """Shutdown should call task_manager.shutdown(). Temp cleanup is now manual
+        (via Results drawer / Settings 'clear temp' button), not automatic on exit.
+        """
         mock_tm = MagicMock()
         mock_fs = MagicMock()
         mock_container = MagicMock()
@@ -46,6 +48,8 @@ class TestLifespan:
             async with lifespan(app):
                 pass  # startup
 
-            # shutdown should have happened
             mock_tm.shutdown.assert_called_once()
-            mock_fs.cleanup_all.assert_called_once()
+            # Sidecar-based restore should have been invoked on startup
+            mock_fs.scan_output_dir.assert_called_once()
+            # cleanup_all must NOT be auto-called on shutdown
+            mock_fs.cleanup_all.assert_not_called()

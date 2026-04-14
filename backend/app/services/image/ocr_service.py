@@ -25,8 +25,14 @@ class ImageOcrService:
     def __init__(self, file_service: FileService, task_manager: TaskManager):
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_IMAGE_OCR, self._handle_task)
-        self._task_manager.register_handler(TASK_TYPE_IMAGE_OCR_REMOTE, self._handle_remote_task)
+        self._task_manager.register_handler(
+            TASK_TYPE_IMAGE_OCR, self._handle_task,
+            output_policy="results",
+        )
+        self._task_manager.register_handler(
+            TASK_TYPE_IMAGE_OCR_REMOTE, self._handle_remote_task,
+            output_policy="results",
+        )
         logger.info("ImageOcrService initialized")
 
     def get_status(
@@ -46,8 +52,6 @@ class ImageOcrService:
         size: str = "4b",
         quantization: Optional[str] = None,
         format: str = "md",
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         """Submit an OCR task."""
         file_info = self._file_service.get_file(file_id)
@@ -60,8 +64,6 @@ class ImageOcrService:
             "size": size,
             "quantization": quantization,
             "format": format,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_OCR, params)
         logger.info(f"Image OCR task submitted: {task_id}")
@@ -119,10 +121,9 @@ class ImageOcrService:
         progress_callback(0.97, "task.progress.ocr_saving")
         output_file_id = str(uuid4())
         original_stem = Path(file_info.original_filename).stem
-        custom_filename = params.get("output_filename")
-        final_filename = custom_filename if custom_filename else f"{original_stem}_ocr_{output_file_id[:8]}.{ext}"
+        final_filename = f"{original_stem}_ocr_{output_file_id[:8]}.{ext}"
 
-        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir = self._file_service.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / final_filename
 
@@ -150,8 +151,6 @@ class ImageOcrService:
         conn_id: Optional[int],
         remote_model: str,
         format: str = "md",
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         """Submit a remote OCR task."""
         file_info = self._file_service.get_file(file_id)
@@ -164,8 +163,6 @@ class ImageOcrService:
             "conn_id": conn_id,
             "remote_model": remote_model,
             "format": format,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_OCR_REMOTE, params)
         logger.info(f"Remote OCR task submitted: {task_id} (provider={provider}, model={remote_model})")
@@ -267,10 +264,9 @@ class ImageOcrService:
         progress_callback(0.95, "task.progress.ocr_saving")
         output_file_id = str(uuid4())
         original_stem = Path(file_info.original_filename).stem
-        custom_filename = params.get("output_filename")
-        final_filename = custom_filename if custom_filename else f"{original_stem}_ocr_{output_file_id[:8]}.{ext}"
+        final_filename = f"{original_stem}_ocr_{output_file_id[:8]}.{ext}"
 
-        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
+        output_dir = self._file_service.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / final_filename
 

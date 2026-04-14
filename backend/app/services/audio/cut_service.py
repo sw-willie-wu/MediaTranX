@@ -1,7 +1,7 @@
 """Audio cut service."""
 import logging
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 from uuid import uuid4
 
 from app.engine.ffmpeg import FFmpegWrapper
@@ -20,7 +20,10 @@ class AudioCutService:
         self._ffmpeg = ffmpeg
         self._file_service = file_service
         self._task_manager = task_manager
-        self._task_manager.register_handler(TASK_TYPE_AUDIO_CUT, self._handle_task)
+        self._task_manager.register_handler(
+            TASK_TYPE_AUDIO_CUT, self._handle_task,
+            output_policy="history",
+        )
         logger.info("AudioCutService initialized")
 
     async def submit_cut(
@@ -28,8 +31,6 @@ class AudioCutService:
         file_id: str,
         start_time: str,
         end_time: str,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         file_info = self._file_service.get_file(file_id)
         if file_info is None:
@@ -38,8 +39,6 @@ class AudioCutService:
             "file_id": file_id,
             "start_time": start_time,
             "end_time": end_time,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_CUT, params)
         logger.info(f"Audio cut task submitted: {task_id}")
@@ -58,17 +57,8 @@ class AudioCutService:
         ext = Path(file_info.original_filename).suffix or ".mp3"
         original_stem = Path(file_info.original_filename).stem
 
-        # Determine output directory
-        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Determine output filename
-        custom_output_filename = params.get("output_filename")
-        if custom_output_filename:
-            final_filename = custom_output_filename
-        else:
-            final_filename = f"{original_stem}_cut_{output_file_id[:8]}{ext}"
-
+        output_dir = self._file_service.output_dir
+        final_filename = f"{original_stem}_cut_{output_file_id[:8]}{ext}"
         output_path = output_dir / final_filename
 
         progress_callback(0.0, "task.progress.cut_starting")

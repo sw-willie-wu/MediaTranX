@@ -2,7 +2,7 @@
 MIDI editor API routes.
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -68,9 +68,11 @@ async def save_midi(
 async def convert_audio(
     file: UploadFile = File(...),
     format: str = Form("mp3"),
-    output_path: str = Form(...),
+    source_file_id: Optional[str] = Form(None),
     service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
 ):
-    """Convert uploaded WAV to target format via FFmpeg."""
-    result = await service.convert_wav(file, format, output_path)
-    return result
+    """Convert uploaded audio to target format; register as Results output.
+
+    Returns `output_file_id` which the frontend can fetch via /files/{id}.
+    """
+    return await service.convert_wav(file, format, source_file_id)

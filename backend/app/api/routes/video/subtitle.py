@@ -34,8 +34,6 @@ class SubtitleGenerateRequest(BaseModel):
         default="srt",
         description="Output format (srt, vtt)"
     )
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
-    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
     target_language: Optional[str] = Field(
         default=None,
         description="Translation target language (None=no translation, zh-TW, en, ja...)"
@@ -158,8 +156,6 @@ async def generate_subtitle(
             language=request.language,
             model_size=request.model_size,
             output_format=request.output_format,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
             target_language=request.target_language,
             translate_model_size=request.translate_model_size,
             translate_model_family=request.translate_model_family,
