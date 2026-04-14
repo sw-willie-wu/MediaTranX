@@ -3,7 +3,7 @@ File handling endpoints.
 """
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -118,6 +118,64 @@ async def register_local_file(
     )
 
 
+class TempStats(BaseModel):
+    """Temp folder byte usage response model."""
+    upload_bytes: int
+    output_bytes: int
+    total_bytes: int
+
+
+@router.get("", response_model=list[FileInfo])
+@inject
+async def list_files(
+    kind: Optional[Literal["output"]] = None,
+    file_service: FileService = Depends(Provide[AppContainer.file_service]),
+):
+    """List registered files.
+
+    - `kind=output`: return files with metadata.show_in_results=True
+      (Results drawer init).
+    - omit kind: return all registered files (debug / admin).
+    """
+    if kind == "output":
+        return [FileInfo.from_file_data(f) for f in file_service.get_output_files()]
+    return [FileInfo.from_file_data(f) for f in file_service._files.values()]
+
+
+@router.get("/stats", response_model=TempStats)
+@inject
+async def get_stats(
+    file_service: FileService = Depends(Provide[AppContainer.file_service]),
+):
+    """Return temp folder byte usage for Settings display."""
+    return TempStats(**file_service.get_temp_stats())
+
+
+class SavedPathRequest(BaseModel):
+    saved_path: str
+
+
+@router.patch("/{file_id}/saved-path")
+@inject
+async def update_saved_path(
+    file_id: str,
+    body: SavedPathRequest,
+    file_service: FileService = Depends(Provide[AppContainer.file_service]),
+):
+    """Persist the user-chosen save destination into FileData.metadata + sidecar."""
+    fd = file_service.get_file(file_id)
+    if fd is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    if not Path(body.saved_path).is_absolute():
+        raise HTTPException(status_code=400, detail="saved_path must be absolute")
+    fd.metadata = {**(fd.metadata or {}), "saved_path": body.saved_path}
+    try:
+        file_service.write_sidecar(file_id)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"sidecar write failed: {e}")
+    return {"ok": True}
+
+
 @router.get("/{file_id}", response_model=FileInfo)
 @inject
 async def get_file_info(
@@ -172,8 +230,8 @@ async def cleanup_all_files(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """
-    Clean up all temporary and output files for this session.
-    Called by Electron before the application closes (when autoCleanTemp is enabled).
+    Clean up all temporary files (uploads + outputs + sidecars).
+    Invoked manually via Settings > "Clear temp files" button.
     """
     count = file_service.cleanup_all()
     return {"status": "ok", "deleted": count}
