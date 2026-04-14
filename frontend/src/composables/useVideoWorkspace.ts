@@ -112,7 +112,7 @@ export function useVideoWorkspace() {
   const { t } = useI18n()
 
   // ── Collection (multi-video state) ──
-  const VIDEO_OUTPUT_TASKS = new Set(['video.transcode', 'video.cut', 'video.enhance', 'video.interpolate'])
+  const VIDEO_OUTPUT_TASKS = new Set(['video.transcode', 'video.cut', 'video.crop', 'video.enhance', 'video.interpolate'])
   const collection = useMediaCollection({
     shouldAddToHistory: (_result, taskType) => VIDEO_OUTPUT_TASKS.has(taskType),
   })

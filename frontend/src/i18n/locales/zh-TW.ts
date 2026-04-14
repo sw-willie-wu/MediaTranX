@@ -206,6 +206,7 @@ export default {
       // cut
       cut_starting: '開始剪輯...',
       cut_processing: '剪輯中...',
+      cutting_video: '剪輯中 {0}% (速度 {1}x)',
       cut_complete: '剪輯完成',
       // doc ocr
       doc_ocr_connecting: '連接 {0}...',
@@ -275,6 +276,7 @@ export default {
       // video transcode
       transcode_starting: '開始轉檔...',
       transcoding: '轉檔中...',
+      transcoding_video: '轉檔中 {0}% (速度 {1}x)',
       processing: '處理中...',
       transcode_complete: '轉檔完成',
       extract_audio_starting: '開始提取音訊...',
@@ -283,7 +285,9 @@ export default {
       loading_image: '載入圖片...',
       calculating_crop: '計算裁切範圍...',
       cropping: '裁切中 ({0}/{1})...',
+      cropping_video: '裁切中 {0}% (速度 {1}x)',
       saving_file: '儲存檔案...',
+      crop_starting: '開始裁切...',
       crop_complete: '裁切完成',
       // image remove object
       parsing_mask: '解析遮罩...',
@@ -513,6 +517,7 @@ export default {
     functions: {
       transcode: '轉檔',
       cut: '剪輯',
+      crop: '畫面裁切',
       subtitle: '字幕',
       interpolate: '補幀',
       enhance: '畫面強化',
@@ -560,6 +565,17 @@ export default {
       fast_mode_hint: '關閉可獲得精確剪輯點，但速度較慢',
       time_error: '結束時間必須大於開始時間',
       task_label: '影片 · 剪輯',
+    },
+
+    crop: {
+      title: '畫面裁切',
+      description: '拖曳選取要保留的畫面區域',
+      task_label: '畫面裁切',
+      aspect_ratio: '長寬比',
+      start_position: '起始位置',
+      crop_size: '裁切尺寸',
+      free: '自由',
+      square: '正方形',
     },
 
     subtitle: {

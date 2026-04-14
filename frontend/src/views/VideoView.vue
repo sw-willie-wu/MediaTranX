@@ -7,6 +7,7 @@ import VideoPreview from '@/components/video/VideoPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import VideoTranscodePanel from '@/components/video/panels/VideoTranscodePanel.vue'
 import VideoCutPanel from '@/components/video/panels/VideoCutPanel.vue'
+import VideoCropPanel from '@/components/video/panels/VideoCropPanel.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
 import VideoInterpolatePanel from '@/components/video/panels/VideoInterpolatePanel.vue'
 import VideoEnhancePanel from '@/components/video/panels/VideoEnhancePanel.vue'
@@ -46,13 +47,20 @@ watch(mediaInfo, (info) => {
 // Panel refs
 const transcodePanelRef = ref<InstanceType<typeof VideoTranscodePanel> | null>(null)
 const cutPanelRef = ref<InstanceType<typeof VideoCutPanel> | null>(null)
+const cropPanelRef = ref<InstanceType<typeof VideoCropPanel> | null>(null)
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
 const interpolatePanelRef = ref<InstanceType<typeof VideoInterpolatePanel> | null>(null)
 const enhancePanelRef = ref<InstanceType<typeof VideoEnhancePanel> | null>(null)
 
+// Crop state (shared between VideoPreview and VideoCropPanel)
+const showCropOverlay = ref(false)
+const cropAspectRatio = ref('free')
+const canvasCropRect = ref<{ x: number; y: number; w: number; h: number } | null>(null)
+
 const subFunctions = computed(() => [
   { id: 'transcode',   name: t('video.functions.transcode'),   icon: 'bi-arrow-repeat',   group: t('video.group.edit') },
   { id: 'cut',         name: t('video.functions.cut'),         icon: 'bi-scissors',       group: t('video.group.edit') },
+  { id: 'crop',        name: t('video.functions.crop'),        icon: 'bi-crop',           group: t('video.group.edit') },
   { id: 'subtitle',    name: t('video.functions.subtitle'),    icon: 'bi-badge-cc-fill',  group: t('video.group.ai') },
   { id: 'interpolate', name: t('video.functions.interpolate'), icon: 'bi-speedometer2',   group: t('video.group.ai') },
   { id: 'enhance',     name: t('video.functions.enhance'),     icon: 'bi-stars',          group: t('video.group.ai') },
@@ -66,6 +74,7 @@ const executeDisabled = computed(() => {
   if (currentFunction.value === 'subtitle')  return subtitlePanelRef.value?.isDisabled ?? true
   if (currentFunction.value === 'transcode') return transcodePanelRef.value?.isDisabled ?? !hasFile.value
   if (currentFunction.value === 'cut')       return cutPanelRef.value?.isDisabled ?? !hasFile.value
+  if (currentFunction.value === 'crop')      return cropPanelRef.value?.isDisabled ?? !hasFile.value
   return !hasFile.value
 })
 
@@ -74,6 +83,7 @@ const executeLoading = computed(() => {
   if (currentFunction.value === 'subtitle')  return subtitlePanelRef.value?.isLoading ?? false
   if (currentFunction.value === 'transcode') return transcodePanelRef.value?.isLoading ?? false
   if (currentFunction.value === 'cut')       return cutPanelRef.value?.isLoading ?? false
+  if (currentFunction.value === 'crop')      return cropPanelRef.value?.isLoading ?? false
   return false
 })
 
@@ -89,6 +99,7 @@ function handleSingleExecute() {
   switch (currentFunction.value) {
     case 'transcode':   transcodePanelRef.value?.execute(); break
     case 'cut':         cutPanelRef.value?.execute(); break
+    case 'crop':        cropPanelRef.value?.execute(); break
     case 'subtitle':    subtitlePanelRef.value?.submitGenerate(); break
     case 'interpolate': interpolatePanelRef.value?.execute(); break
     case 'enhance':     enhancePanelRef.value?.execute(); break
@@ -217,6 +228,9 @@ onUnmounted(() => { clearActions() })
         :current-function="currentFunction"
         v-model:start-time="cutStartTime"
         v-model:end-time="cutEndTime"
+        :show-crop-overlay="showCropOverlay && currentFunction === 'crop'"
+        :crop-aspect-ratio="cropAspectRatio"
+        @crop-rect-change="canvasCropRect = $event"
       />
     </template>
 
@@ -262,6 +276,18 @@ onUnmounted(() => { clearActions() })
           v-model:end-time="cutEndTime"
           v-model:stream-copy="cutStreamCopy"
           @submit="handlePanelSubmit"
+        />
+
+        <VideoCropPanel
+          v-else-if="currentFunction === 'crop'"
+          ref="cropPanelRef"
+          :file-id="activeFileId"
+          :current-file-name="currentFileName"
+          :video-size="mediaInfo ? { width: mediaInfo.width, height: mediaInfo.height } : null"
+          :canvas-crop-rect="canvasCropRect"
+          @submit="handlePanelSubmit"
+          @update:show-crop-overlay="showCropOverlay = $event"
+          @update:aspect-ratio="cropAspectRatio = $event"
         />
 
         <div v-else-if="currentFunction === 'subtitle'" class="function-settings">

@@ -206,6 +206,7 @@ export default {
       // cut
       cut_starting: 'Starting cut...',
       cut_processing: 'Cutting...',
+      cutting_video: 'Cutting {0}% (speed {1}x)',
       cut_complete: 'Cut complete',
       // doc ocr
       doc_ocr_connecting: 'Connecting to {0}...',
@@ -275,6 +276,7 @@ export default {
       // video transcode
       transcode_starting: 'Starting transcode...',
       transcoding: 'Transcoding...',
+      transcoding_video: 'Transcoding {0}% (speed {1}x)',
       processing: 'Processing...',
       transcode_complete: 'Transcode complete',
       extract_audio_starting: 'Starting audio extraction...',
@@ -283,7 +285,9 @@ export default {
       loading_image: 'Loading image...',
       calculating_crop: 'Calculating crop area...',
       cropping: 'Cropping ({0}/{1})...',
+      cropping_video: 'Cropping {0}% (speed {1}x)',
       saving_file: 'Saving file...',
+      crop_starting: 'Cropping...',
       crop_complete: 'Crop complete',
       // image remove object
       parsing_mask: 'Parsing mask...',
@@ -513,6 +517,7 @@ export default {
     functions: {
       transcode: 'Transcode',
       cut: 'Cut',
+      crop: 'Crop',
       subtitle: 'Subtitle',
       interpolate: 'Interpolate',
       enhance: 'Enhance',
@@ -560,6 +565,17 @@ export default {
       fast_mode_hint: 'Disable for precise cut points, but slower',
       time_error: 'End time must be after start time',
       task_label: 'Video · Cut',
+    },
+
+    crop: {
+      title: 'Crop',
+      description: 'Drag to select the region to keep',
+      task_label: 'Crop',
+      aspect_ratio: 'Aspect ratio',
+      start_position: 'Start position',
+      crop_size: 'Crop size',
+      free: 'Free',
+      square: 'Square',
     },
 
     subtitle: {

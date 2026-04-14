@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { useCropRect } from '@/composables/useCropRect'
 import type { VideoMediaInfo } from '@/composables/useVideoWorkspace'
 
 const props = defineProps<{
@@ -8,17 +9,58 @@ const props = defineProps<{
   currentFunction: string
   startTime: string
   endTime: string
+  showCropOverlay?: boolean
+  cropAspectRatio?: string
 }>()
 
 const emit = defineEmits<{
   'update:startTime': [v: string]
   'update:endTime': [v: string]
+  'crop-rect-change': [rect: { x: number; y: number; w: number; h: number } | null]
 }>()
 
 const videoRef = ref<HTMLVideoElement | null>(null)
+const containerRef = ref<HTMLElement | null>(null)
 const trackRef = ref<HTMLDivElement | null>(null)
 const dragging = ref<'start' | 'end' | null>(null)
 const playheadPercent = ref(0)
+
+// ── Crop Rect ─────────────────────────────────────────────────────────────
+const cropAspectRatioRef = computed(() => props.cropAspectRatio ?? 'free')
+const {
+  canvasRef: cropCanvasRef,
+  cropRect,
+  syncToImage: syncCropCanvas,
+  repositionCanvas: repositionCropCanvas,
+  onMouseDown: onCropMouseDown,
+  onMouseMove: onCropMouseMove,
+  onMouseUp: onCropMouseUp,
+  onMouseLeave: onCropMouseLeave,
+  clearRect: clearCropRect,
+} = useCropRect(videoRef, containerRef, cropAspectRatioRef)
+
+// 裁切矩形變動時通知父層
+watch(cropRect, (rect) => {
+  emit('crop-rect-change', rect ?? null)
+})
+
+// 進入/離開 crop overlay
+watch(() => props.showCropOverlay, async (active) => {
+  if (active) {
+    videoRef.value?.pause()
+    await nextTick()
+    syncCropCanvas()
+  } else {
+    clearCropRect()
+  }
+})
+
+async function onVideoLoadedMetadata() {
+  if (props.showCropOverlay) {
+    await nextTick()
+    syncCropCanvas()
+  }
+}
 
 function parseTimeToSeconds(time: string): number {
   const parts = time.split(':').map(Number)
@@ -111,18 +153,34 @@ onUnmounted(() => {
   document.removeEventListener('touchend', onDragEnd)
 })
 
+defineExpose({
+  cropRect,
+  clearCropRect,
+  syncCropCanvas,
+})
+
 </script>
 
 <template>
   <div class="preview-display">
     <div class="video-wrapper">
-      <div class="video-container">
+      <div ref="containerRef" class="video-container">
         <video
           ref="videoRef"
           :src="previewUrl ?? undefined"
           controls
           class="video-player"
           @timeupdate="onVideoTimeUpdate"
+          @loadedmetadata="onVideoLoadedMetadata"
+        />
+        <canvas
+          v-if="showCropOverlay"
+          ref="cropCanvasRef"
+          class="crop-canvas"
+          @mousedown.prevent.stop="onCropMouseDown"
+          @mousemove.prevent="onCropMouseMove"
+          @mouseup="onCropMouseUp"
+          @mouseleave="onCropMouseLeave"
         />
         <div v-if="currentFunction === 'cut' && mediaInfo" class="cut-timeline">
           <div
@@ -258,5 +316,12 @@ onUnmounted(() => {
   pointer-events: none;
   z-index: 1;
   transform: translateX(-50%);
+}
+
+.crop-canvas {
+  position: absolute;
+  cursor: crosshair;
+  z-index: 5;
+  pointer-events: auto;
 }
 </style>
