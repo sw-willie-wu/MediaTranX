@@ -3,7 +3,7 @@ import { useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
-import { useFileDownload } from '@/composables/useFileDownload'
+import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
 import { apiFetch } from '@/composables/useApi'
 import { useMediaCollection } from '@/composables/useMediaCollection'
@@ -331,25 +331,10 @@ export function useImageWorkspace() {
    * Save latest result (or original) of every selected entry to a user-chosen folder.
    */
   async function handleDownloadBatch() {
-    const ids = [...collection.selectedIds.value]
-    const resolved = await Promise.all(
-      ids.map(async (id) => {
-        const e = collection.entries.value.get(id)
-        if (!e || e.status === 'processing') return null
-        const latest = e.historyStack.at(-1)
-        const fileId = latest ? latest.fileId : e.fileId
-        if (!fileId) return null
-        const filename = latest ? latest.outputFilename : e.file.name
-        // Fetch disk path so downloadBatch can fs.copyFileSync instead of HTTP-downloading
-        let srcPath: string | undefined
-        try {
-          const res = await apiFetch(`/files/${fileId}`)
-          if (res.ok) srcPath = (await res.json()).file_path
-        } catch {}
-        return { fileId, filename, srcPath }
-      }),
+    const entries = await collectLatestOutputs(
+      [...collection.selectedIds.value],
+      collection.entries.value,
     )
-    const entries = resolved.filter((x): x is NonNullable<typeof x> => x !== null)
     if (entries.length === 0) {
       toast.show(t('common.no_exportable'), { type: 'info', icon: 'bi-info-circle' })
       return
