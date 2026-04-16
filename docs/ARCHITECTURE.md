@@ -278,6 +278,7 @@ All paths managed via `PathSettings` (pydantic-settings):
 | POST | `/api/video/interpolate` | Frame interpolation (RIFE) |
 | POST | `/api/video/enhance` | Video enhancement (Real-ESRGAN) |
 | POST | `/api/video/crop` | Crop video frame (spatial) |
+| POST | `/api/video/summary` | Video summary (subtitle → LLM markdown + key frames, ZIP) |
 | **Audio** | | |
 | GET | `/api/audio/info/{file_id}` | Audio info |
 | POST | `/api/audio/transcode` | Transcode |

@@ -15,7 +15,7 @@ from .base import BaseRuntime
 
 logger = logging.getLogger(__name__)
 
-LLAMA_SERVER_STARTUP_TIMEOUT = 120  # seconds
+LLAMA_SERVER_STARTUP_TIMEOUT = 180  # seconds (normal load is 10-20s; buffer for cold cache or VRAM-pressured init)
 
 
 def _find_free_port(start: int = 18080, end: int = 18200) -> int:
@@ -190,7 +190,7 @@ class LlamaServerRuntime(BaseRuntime):
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=300) as resp:
+            with urllib.request.urlopen(req, timeout=900) as resp:
                 result = json.loads(resp.read())
                 content = result["choices"][0]["message"]["content"].strip()
                 # Strip Qwen3 thinking tags if present
@@ -243,7 +243,7 @@ class LlamaServerRuntime(BaseRuntime):
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=300) as resp:
+            with urllib.request.urlopen(req, timeout=900) as resp:
                 result = json.loads(resp.read())
             content = result.get("content", "").strip()
             return self._strip_thinking(content)

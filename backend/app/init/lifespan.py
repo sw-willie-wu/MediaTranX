@@ -56,6 +56,7 @@ def _warmup_domain_services(container) -> None:
         container.video_crop,
         container.video_extract_audio,
         container.video_subtitle,
+        container.video_summary,
         container.video_interpolate,
         container.video_enhance,
         # Document

@@ -75,6 +75,10 @@ class SubtitleGenerateRequest(BaseModel):
         default=False,
         description="Enable precise alignment (Wav2Vec2 forced alignment)"
     )
+    vocal_separation: bool = Field(
+        default=False,
+        description="Enable Demucs vocal separation"
+    )
     # Translation options
     keep_names: bool = Field(
         default=True,
@@ -171,6 +175,8 @@ async def generate_subtitle(
             translate_provider=request.translate_provider,
             translate_conn_id=request.translate_conn_id,
             translate_remote_model=request.translate_remote_model,
+            vocal_separation=request.vocal_separation,
+            align=request.align,
         )
         return SubtitleGenerateResponse(task_id=task_id)
     except ValueError as e:

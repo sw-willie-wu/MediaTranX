@@ -11,6 +11,7 @@ import VideoCropPanel from '@/components/video/panels/VideoCropPanel.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
 import VideoInterpolatePanel from '@/components/video/panels/VideoInterpolatePanel.vue'
 import VideoEnhancePanel from '@/components/video/panels/VideoEnhancePanel.vue'
+import VideoSummaryPanel from '@/components/video/panels/VideoSummaryPanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTitlebar } from '@/composables/useTitlebar'
@@ -51,6 +52,7 @@ const cropPanelRef = ref<InstanceType<typeof VideoCropPanel> | null>(null)
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
 const interpolatePanelRef = ref<InstanceType<typeof VideoInterpolatePanel> | null>(null)
 const enhancePanelRef = ref<InstanceType<typeof VideoEnhancePanel> | null>(null)
+const summaryPanelRef = ref<InstanceType<typeof VideoSummaryPanel> | null>(null)
 
 // Crop state (shared between VideoPreview and VideoCropPanel)
 const showCropOverlay = ref(false)
@@ -62,6 +64,7 @@ const subFunctions = computed(() => [
   { id: 'cut',         name: t('video.functions.cut'),         icon: 'bi-scissors',       group: t('video.group.edit') },
   { id: 'crop',        name: t('video.functions.crop'),        icon: 'bi-crop',           group: t('video.group.edit') },
   { id: 'subtitle',    name: t('video.functions.subtitle'),    icon: 'bi-badge-cc-fill',  group: t('video.group.ai') },
+  { id: 'summary',     name: t('video.functions.summary'),     icon: 'bi-card-text',      group: t('video.group.ai') },
   { id: 'interpolate', name: t('video.functions.interpolate'), icon: 'bi-speedometer2',   group: t('video.group.ai') },
   { id: 'enhance',     name: t('video.functions.enhance'),     icon: 'bi-stars',          group: t('video.group.ai') },
 ])
@@ -75,6 +78,7 @@ const executeDisabled = computed(() => {
   if (currentFunction.value === 'transcode') return transcodePanelRef.value?.isDisabled ?? !hasFile.value
   if (currentFunction.value === 'cut')       return cutPanelRef.value?.isDisabled ?? !hasFile.value
   if (currentFunction.value === 'crop')      return cropPanelRef.value?.isDisabled ?? !hasFile.value
+  if (currentFunction.value === 'summary')   return summaryPanelRef.value?.isDisabled ?? true
   return !hasFile.value
 })
 
@@ -84,6 +88,7 @@ const executeLoading = computed(() => {
   if (currentFunction.value === 'transcode') return transcodePanelRef.value?.isLoading ?? false
   if (currentFunction.value === 'cut')       return cutPanelRef.value?.isLoading ?? false
   if (currentFunction.value === 'crop')      return cropPanelRef.value?.isLoading ?? false
+  if (currentFunction.value === 'summary')   return summaryPanelRef.value?.isLoading ?? false
   return false
 })
 
@@ -101,6 +106,7 @@ function handleSingleExecute() {
     case 'cut':         cutPanelRef.value?.execute(); break
     case 'crop':        cropPanelRef.value?.execute(); break
     case 'subtitle':    subtitlePanelRef.value?.submitGenerate(); break
+    case 'summary':     summaryPanelRef.value?.execute(); break
     case 'interpolate': interpolatePanelRef.value?.execute(); break
     case 'enhance':     enhancePanelRef.value?.execute(); break
   }
@@ -306,6 +312,14 @@ onUnmounted(() => { clearActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :media-info="mediaInfo"
+          @submit="handlePanelSubmit"
+        />
+
+        <VideoSummaryPanel
+          v-else-if="currentFunction === 'summary'"
+          ref="summaryPanelRef"
+          :file-id="activeFileId"
+          :current-file-name="currentFileName"
           @submit="handlePanelSubmit"
         />
 

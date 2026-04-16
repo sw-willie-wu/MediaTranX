@@ -166,6 +166,13 @@ class AppContainer(containers.DeclarativeContainer):
         _lazy("app.services.video.subtitle_service", "SubtitleService"),
         ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
     )
+    video_summary = providers.Singleton(
+        _lazy("app.services.video.summary_service", "VideoSummaryService"),
+        ffmpeg=ffmpeg,
+        file_service=file_service,
+        task_manager=task_manager,
+        chat_service=chat_service,
+    )
     video_interpolate = providers.Singleton(
         _lazy("app.services.video.interpolate_service", "InterpolateService"),
         file_service=file_service, task_manager=task_manager,

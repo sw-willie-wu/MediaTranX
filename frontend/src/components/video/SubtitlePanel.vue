@@ -5,6 +5,7 @@ import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import AppSelect from '@/components/common/AppSelect.vue'
+import AppToggle from '@/components/common/AppToggle.vue'
 import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
 import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
 import { apiFetch, getApiBase } from '@/composables/useApi'
@@ -68,6 +69,12 @@ watch(modelSizesWithBadge, (sizes) => {
 const language = ref('')
 const modelSize = usePersistedModel('subtitle_whisper_model', 'medium')
 const outputFormat = ref('srt')
+const vocalSeparation = ref(false)
+
+// Demucs model (for vocal separation guard)
+const demucsModel = computed(() =>
+  modelStore.byCategory('separate').find(m => m.family === 'demucs' && m.variant === 'htdemucs_6s')
+)
 
 const rawLanguages = ref<{ value: string; label: string }[]>([])
 
@@ -96,10 +103,21 @@ const outputFormats = computed(() => [
 const whisperAdvanced = ref<InstanceType<typeof WhisperAdvancedSettings> | null>(null)
 const translationOptions = ref<InstanceType<typeof TranslationOptionsPanel> | null>(null)
 
+// ── wav2vec2 (alignment) readiness ──────────────────────────────
+const alignReady = computed(() =>
+  modelStore.byCategory('alignment').some(m => m.downloaded)
+)
+
 // ── 提交 ────────────────────────────────────────────────────────
 async function submitGenerate() {
   const whisperModel = modelStore.byCategory('stt').find(m => m.variant === modelSize.value)
   if (!await guardModelReady(whisperModel?.downloaded === true, 'audio')) return
+  if (vocalSeparation.value) {
+    if (!await guardModelReady(demucsModel.value?.downloaded === true, 'audio')) return
+  }
+  if (whisperAdvanced.value?.align) {
+    if (!await guardModelReady(alignReady.value, 'audio')) return
+  }
   if (translationOptions.value?.enableTranslation) {
     const tParsed = parseModelValue(translationOptions.value.selectedTranslateModel)
     const tModel = translationOptions.value.selectedTranslateModel
@@ -118,6 +136,7 @@ async function submitGenerate() {
       file_id: props.fileId,
       model_size: modelSize.value,
       output_format: outputFormat.value,
+      vocal_separation: vocalSeparation.value,
     }
 
     if (language.value) body.language = language.value
@@ -212,6 +231,11 @@ onMounted(() => { loadLanguages(); modelStore.ensureLoaded() })
     <div class="form-group">
       <label>{{ $t('video.subtitle.model_settings') }}</label>
       <AppSelect v-model="modelSize" :options="modelSizesWithBadge" :placeholder="$t('common.no_models_available')" />
+    </div>
+
+    <div class="form-group">
+      <AppToggle v-model="vocalSeparation">{{ $t('video.subtitle.vocal_separation') }}</AppToggle>
+      <small class="form-hint">{{ $t('video.subtitle.vocal_separation_hint') }}</small>
     </div>
 
     <div class="form-group">

@@ -246,6 +246,12 @@ export default {
       // summarize
       summarizing_chunk: '摘要分段 {0}/{1}...',
       merging_summary: '合併摘要...',
+      // video summary
+      summary_transcribing: '正在轉錄字幕…',
+      summary_chunk: '摘要中（區塊 {0}/{1}）',
+      summary_bullet_frame: '擷取重點影格 {0}/{1}',
+      summary_tp_frame: '擷取轉折影格 {0}/{1}',
+      summary_packaging: '打包輸出檔…',
       // whisper
       init_ctranslate2: '正在初始化 CTranslate2...',
       loading_model_device: '正在載入模型 ({0})...',
@@ -519,6 +525,7 @@ export default {
       cut: '剪輯',
       crop: '畫面裁切',
       subtitle: '字幕',
+      summary: '影片摘要',
       interpolate: '補幀',
       enhance: '畫面強化',
     },
@@ -590,6 +597,8 @@ export default {
       task_label: '影片 · 字幕提取',
       task_label_with_translate: '影片 · 字幕提取 + 翻譯',
       start: '開始',
+      vocal_separation: '分離人聲',
+      vocal_separation_hint: '若影片配樂干擾辨識可開啟；會增加處理時間。',
     },
 
     translate: {
@@ -658,6 +667,21 @@ export default {
       output_format: '輸出格式',
       video_codec: '影像編碼',
       task_label: '影片 · 畫面強化',
+    },
+
+    summary: {
+      title: '影片摘要',
+      description: '使用 LLM 整理字幕為 Markdown 摘要，附關鍵影格；輸出為 ZIP 壓縮檔。',
+      whisper_model: '語音辨識模型',
+      vocal_separation: '分離人聲',
+      vocal_separation_hint: '若影片配樂干擾辨識可開啟；會增加處理時間。',
+      llm_model: '摘要模型（文字）',
+      llm_model_hint: '用於整理字幕為結構化摘要。建議 qwen3.5:9b。',
+      vlm_model: '影格選擇模型（視覺）',
+      vlm_model_hint: '可選。當場景候選多於一張時，由 VLM 挑選最代表的一張。留空則取中點最近者。',
+      vlm_none: '（不使用 VLM）',
+      select_model: '請選擇模型',
+      task_label: '影片摘要',
     },
   },
 

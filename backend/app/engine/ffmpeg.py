@@ -520,6 +520,62 @@ class FFmpegWrapper:
         finally:
             loop.close()
 
+    async def extract_frame(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        timestamp: float,
+    ) -> Path:
+        """Extract a single frame at ``timestamp`` seconds as a JPEG image.
+
+        Uses ``-ss`` before ``-i`` for fast input seeking plus ``-vframes 1`` to
+        grab exactly one frame. ``-q:v 2`` gives high-quality JPEG output.
+        """
+        input_path = Path(input_path)
+        output_path = Path(output_path)
+
+        if not input_path.exists():
+            raise FFmpegError(f"Input file not found: {input_path}")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        args = [
+            self.ffmpeg_path,
+            "-y",
+            "-ss", f"{timestamp:.3f}",
+            "-i", str(input_path),
+            "-vframes", "1",
+            "-q:v", "2",
+            str(output_path),
+        ]
+
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            raise FFmpegError(f"Frame extraction failed: {stderr.decode()}")
+
+        return output_path
+
+    def extract_frame_sync(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        timestamp: float,
+    ) -> Path:
+        """Sync version of extract_frame() for use in TaskManager handlers."""
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                self.extract_frame(input_path, output_path, timestamp)
+            )
+        finally:
+            loop.close()
+
     async def extract_audio(
         self,
         input_path: str | Path,

@@ -246,6 +246,12 @@ export default {
       // summarize
       summarizing_chunk: 'Summarizing chunk {0}/{1}...',
       merging_summary: 'Merging summary...',
+      // video summary
+      summary_transcribing: 'Transcribing subtitles...',
+      summary_chunk: 'Summarizing (chunk {0}/{1})',
+      summary_bullet_frame: 'Extracting bullet frame {0}/{1}',
+      summary_tp_frame: 'Extracting turning-point frame {0}/{1}',
+      summary_packaging: 'Packaging output...',
       // whisper
       init_ctranslate2: 'Initializing CTranslate2...',
       loading_model_device: 'Loading model ({0})...',
@@ -519,6 +525,7 @@ export default {
       cut: 'Cut',
       crop: 'Crop',
       subtitle: 'Subtitle',
+      summary: 'Summary',
       interpolate: 'Interpolate',
       enhance: 'Enhance',
     },
@@ -590,6 +597,8 @@ export default {
       task_label: 'Video · Subtitles',
       task_label_with_translate: 'Video · Subtitles + Translate',
       start: 'Start',
+      vocal_separation: 'Separate vocals (Demucs)',
+      vocal_separation_hint: 'Enable if background music interferes with transcription; adds processing time.',
     },
 
     translate: {
@@ -658,6 +667,21 @@ export default {
       output_format: 'Output Format',
       video_codec: 'Video Codec',
       task_label: 'Video · Enhancement',
+    },
+
+    summary: {
+      title: 'Video Summary',
+      description: 'LLM-organized markdown summary of video subtitles with key frames, packaged as a ZIP.',
+      whisper_model: 'Speech recognition model',
+      vocal_separation: 'Separate vocals (Demucs)',
+      vocal_separation_hint: 'Enable if background music interferes with transcription; adds processing time.',
+      llm_model: 'Summary Model (text)',
+      llm_model_hint: 'Organizes subtitles into structured summary. Recommended: qwen3.5:9b.',
+      vlm_model: 'Frame Selector Model (vision)',
+      vlm_model_hint: 'Optional. When multiple scene candidates exist, VLM picks the most representative one. Leave empty to fall back to midpoint-nearest.',
+      vlm_none: '(No VLM)',
+      select_model: 'Select model',
+      task_label: 'Video summary',
     },
   },
 
