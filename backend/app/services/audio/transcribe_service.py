@@ -3,43 +3,20 @@ Audio transcription service.
 Uses faster-whisper to convert audio to text.
 """
 import logging
-import tempfile
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-import soundfile as sf
-
-from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
+from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper
 from app.utils.prompts import WHISPER_TO_BCP47
+from app.utils.bilingual_output import write_bilingual_or_single
+from app.utils.transcribe import TranscribeOptions, transcribe_audio_sync
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
 TASK_TYPE_AUDIO_TRANSCRIBE = "audio.transcribe"
-
-
-def _format_srt_time(seconds: float) -> str:
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int((seconds % 1) * 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-
-
-def _write_txt(result: TranscribeResult, output_path: Path) -> None:
-    with open(output_path, "w", encoding="utf-8") as f:
-        for seg in result.segments:
-            f.write(seg.text.strip() + "\n")
-
-
-def _write_srt(result: TranscribeResult, output_path: Path) -> None:
-    with open(output_path, "w", encoding="utf-8") as f:
-        for i, seg in enumerate(result.segments, 1):
-            f.write(f"{i}\n")
-            f.write(f"{_format_srt_time(seg.start)} --> {_format_srt_time(seg.end)}\n")
-            f.write(f"{seg.text.strip()}\n\n")
 
 
 class AudioTranscribeService:
@@ -134,11 +111,11 @@ class AudioTranscribeService:
         base_name = original_stem
 
         do_vocal_sep = params.get("vocal_separation", False)
-        audio_path = str(file_info.file_path)
-        temp_vocals_path = None
 
         # -- Dynamic progress allocation --
-        # Allocate weights based on enabled features; file writing is fixed at 5%
+        # Allocate weights based on enabled features; file writing is fixed at 5%.
+        # The shared transcribe primitive covers demucs+whisper+align as one span;
+        # we still keep their individual weights here for overall progress remap.
         weights = {"whisper": 5}  # whisper is always required, highest weight
         if do_vocal_sep:  weights["demucs"] = 3
         if do_align:      weights["align"] = 3
@@ -161,67 +138,37 @@ class AudioTranscribeService:
             s, e = stages.get(stage, (0.0, 1.0))
             progress_callback(s + p * (e - s), msg)
 
-        # === GPU queue pipeline ===
-        from app.init.container import get_container
-        manager = get_container().model_manager()
+        # === Transcribe (Demucs + Whisper + align) via shared primitive ===
+        opts = TranscribeOptions(
+            language=params.get("language"),
+            model_size=params.get("model_size", "medium"),
+            word_timestamps=params.get("word_timestamps", do_align),
+            condition_on_previous_text=params.get("condition_on_previous_text", True),
+            min_silence_duration_ms=params.get("min_silence_duration_ms", 200),
+            vad_threshold=params.get("vad_threshold", 0.3),
+            separate_vocals=do_vocal_sep,
+            align=do_align,
+        )
 
-        with manager.gpu_session():
-            # === Vocal separation ===
-            if do_vocal_sep:
-                stage_progress("demucs", 0.0, "task.progress.separating_vocals")
-                from app.engine.ai.audio.demucs import get_demucs
-                demucs = get_demucs()
-                separated, sr = demucs.separate(
-                    audio_path=audio_path,
-                    variant="htdemucs_6s",
-                    stems=["vocals"],
-                    on_progress=lambda p, m: stage_progress("demucs", p, m),
-                )
+        # Compute the transcribe primitive's overall span in this service's
+        # progress timeline: it covers whichever of demucs/whisper/align are active.
+        first_stage = "demucs" if do_vocal_sep else "whisper"
+        last_stage = "align" if do_align else "whisper"
+        transcribe_start = stages[first_stage][0]
+        transcribe_end = stages[last_stage][1]
 
-                vocals = separated.get("vocals")
-                if vocals is not None:
-                    temp_vocals = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-                    temp_vocals_path = temp_vocals.name
-                    temp_vocals.close()
-                    sf.write(temp_vocals_path, vocals.T.numpy(), sr)
-                    audio_path = temp_vocals_path
-                stage_progress("demucs", 1.0, "task.progress.separation_complete")
+        def transcribe_progress(p: float, m: str) -> None:
+            progress_callback(
+                transcribe_start + p * (transcribe_end - transcribe_start), m
+            )
 
-            try:
-                # === Whisper transcription ===
-                stage_progress("whisper", 0.0, "task.progress.load_whisper")
-
-                result = self._whisper.transcribe(
-                    audio_path=audio_path,
-                    language=params.get("language"),
-                    model_size=params.get("model_size", "medium"),
-                    word_timestamps=do_align,
-                    condition_on_previous_text=True,
-                    on_progress=lambda p, m: stage_progress("whisper", p, m),
-                )
-
-                detected_lang = result.language
-                stage_progress("whisper", 1.0, "task.progress.recognition_complete")
-            finally:
-                if temp_vocals_path:
-                    try:
-                        Path(temp_vocals_path).unlink(missing_ok=True)
-                    except Exception:
-                        pass
-
-            # === Wav2Vec2 forced alignment ===
-            if do_align and detected_lang:
-                from app.engine.ai.audio.wav2vec2 import get_alignment_engine
-                aligner = get_alignment_engine()
-                if aligner.is_language_supported(detected_lang):
-                    stage_progress("align", 0.0, "task.progress.aligning")
-                    result.segments = aligner.align(
-                        audio_path=str(file_info.file_path),
-                        segments=result.segments,
-                        language=detected_lang,
-                        on_progress=lambda p, m: stage_progress("align", p, m),
-                    )
-                    stage_progress("align", 1.0, "task.progress.align_complete")
+        # Source is already audio — no FFmpeg extract step needed.
+        result = transcribe_audio_sync(
+            file_info.file_path,
+            opts,
+            on_progress=transcribe_progress,
+        )
+        detected_lang = result.language
 
         # === Translation ===
         from app.engine.ai.audio.whisper import TranscribeSegment
@@ -267,6 +214,7 @@ class AudioTranscribeService:
 
                 variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
                 src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
+                from app.init.container import get_container
                 runtime = get_container().llama_runtime()
 
                 stage_progress("translate", 0.0, "task.progress.load_translate_model")
@@ -337,6 +285,7 @@ class AudioTranscribeService:
                 summary_model_size = params.get("summarize_model_size", "4b")
                 summary_quantization = params.get("summarize_quantization")
                 summary_variant = f"{summary_model_size}:{summary_quantization}" if summary_quantization else summary_model_size
+                from app.init.container import get_container
                 runtime = get_container().llama_runtime()
 
                 config = get_inference_config(summary_model_family, summary_model_size, "summarize")
@@ -365,86 +314,55 @@ class AudioTranscribeService:
             stage_progress("summarize", 1.0, "task.progress.summary_complete")
 
         # === Write output files ===
+        from app.utils.subtitles import (
+            Segment,
+            format_srt,
+            format_txt,
+            format_vtt,
+        )
+
         stage_progress("write", 0.0, "task.progress.writing_file")
 
-        output_files = []
+        def _format_segments(segs) -> str:
+            seg_list = [Segment(s.start, s.end, s.text) for s in segs]
+            if output_format == "srt":
+                return format_srt(seg_list)
+            if output_format == "vtt":
+                return format_vtt(seg_list)
+            return format_txt(seg_list)
 
         if do_translate and target_lang:
-            # With translation: output two files
-            # 1. Source language transcript
-            source_filename = f"{base_name}.{detected_lang}.{output_format}"
-            source_path = output_dir / source_filename
-            source_result = TranscribeResult(
-                segments=original_segments, language=detected_lang,
-                language_probability=result.language_probability, duration=result.duration,
-            )
-            if output_format == "srt":
-                _write_srt(source_result, source_path)
-            else:
-                _write_txt(source_result, source_path)
-
-            source_file_id = str(uuid4())
-            source_info = self._file_service.register_output(
-                file_id=source_file_id,
-                file_path=source_path,
-                original_filename=file_info.original_filename,
-            )
-            output_files.append({
-                "file_id": source_file_id,
-                "filename": source_info.filename,
-                "language": detected_lang,
-                "type": "source",
-            })
-
-            # 2. Translated transcript
-            target_filename = f"{base_name}.{target_lang}.{output_format}"
-            target_path = output_dir / target_filename
-            target_result = TranscribeResult(
-                segments=result.segments, language=target_lang,
-                language_probability=result.language_probability, duration=result.duration,
-            )
-            if output_format == "srt":
-                _write_srt(target_result, target_path)
-            else:
-                _write_txt(target_result, target_path)
-
-            target_file_id = str(uuid4())
-            target_info = self._file_service.register_output(
-                file_id=target_file_id,
-                file_path=target_path,
-                original_filename=file_info.original_filename,
-            )
-            output_files.append({
-                "file_id": target_file_id,
-                "filename": target_info.filename,
-                "language": target_lang,
-                "type": "translated",
-            })
-
-            output_file_id = target_file_id
-            output_filename_result = target_info.filename
+            src_filename = f"{base_name}.{detected_lang}.{output_format}"
+            tgt_filename = f"{base_name}.{target_lang}.{output_format}"
+            source_text = _format_segments(original_segments)
+            target_text = _format_segments(result.segments)
         else:
-            # No translation: output single file
-            final_filename = f"{base_name}.{output_format}"
-            output_path = output_dir / final_filename
-            if output_format == "srt":
-                _write_srt(result, output_path)
-            else:
-                _write_txt(result, output_path)
+            src_filename = f"{base_name}.{output_format}"
+            tgt_filename = None
+            source_text = _format_segments(result.segments)
+            target_text = None
 
-            output_file_id = str(uuid4())
-            output_info = self._file_service.register_output(
-                file_id=output_file_id,
-                file_path=output_path,
-                original_filename=file_info.original_filename,
-            )
-            output_files.append({
-                "file_id": output_file_id,
-                "filename": output_info.filename,
-                "language": detected_lang,
-                "type": "source",
-            })
-            output_filename_result = output_info.filename
+        written = write_bilingual_or_single(
+            source_filename=src_filename,
+            source_text=source_text,
+            source_lang=detected_lang,
+            target_filename=tgt_filename,
+            target_text=target_text,
+            target_lang=target_lang if (do_translate and target_lang) else None,
+            output_dir=output_dir,
+            original_filename=file_info.original_filename,
+            file_service=self._file_service,
+        )
+
+        # Annotate "type" (service-specific metadata not in helper shape)
+        written[0]["type"] = "source"
+        if do_translate and target_lang:
+            written[1]["type"] = "translated"
+
+        output_files = written
+        primary = written[1] if (do_translate and target_lang) else written[0]
+        output_file_id = primary["file_id"]
+        output_filename_result = primary["filename"]
 
         # Write summary file
         if summary_text:

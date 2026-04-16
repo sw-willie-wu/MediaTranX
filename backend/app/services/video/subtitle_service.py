@@ -4,13 +4,15 @@ Uses faster-whisper to extract speech from video and generate subtitle files.
 """
 import logging
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 from uuid import uuid4
 
 from app.engine.ffmpeg import FFmpegWrapper
-from app.handler.exceptions import FFmpegError
-from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper, TranscribeResult
+from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper
 from app.utils.prompts import WHISPER_TO_BCP47
+from app.utils.bilingual_output import write_bilingual_or_single
+from app.utils.transcribe import TranscribeOptions, transcribe_audio_sync
+from app.utils.subtitles import Segment, format_srt, format_vtt
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -18,43 +20,6 @@ logger = logging.getLogger(__name__)
 
 # Task type constant
 TASK_TYPE_VIDEO_SUBTITLE_GENERATE = "video.subtitle_generate"
-
-
-def _format_srt_time(seconds: float) -> str:
-    """Format seconds as SRT time format (HH:MM:SS,mmm)."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int((seconds % 1) * 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-
-
-def _format_vtt_time(seconds: float) -> str:
-    """Format seconds as VTT time format (HH:MM:SS.mmm)."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int((seconds % 1) * 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
-
-
-def _write_srt(result: TranscribeResult, output_path: Path) -> None:
-    """Write transcription result in SRT format."""
-    with open(output_path, "w", encoding="utf-8") as f:
-        for i, seg in enumerate(result.segments, 1):
-            f.write(f"{i}\n")
-            f.write(f"{_format_srt_time(seg.start)} --> {_format_srt_time(seg.end)}\n")
-            f.write(f"{seg.text}\n\n")
-
-
-def _write_vtt(result: TranscribeResult, output_path: Path) -> None:
-    """Write transcription result in VTT format."""
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("WEBVTT\n\n")
-        for i, seg in enumerate(result.segments, 1):
-            f.write(f"{i}\n")
-            f.write(f"{_format_vtt_time(seg.start)} --> {_format_vtt_time(seg.end)}\n")
-            f.write(f"{seg.text}\n\n")
 
 
 class SubtitleService:
@@ -103,6 +68,10 @@ class SubtitleService:
         translate_provider: Optional[str] = None,
         translate_conn_id: Optional[int] = None,
         translate_remote_model: Optional[str] = None,
+        # Preprocessing
+        vocal_separation: bool = False,
+        # Alignment
+        align: bool = False,
     ) -> str:
         """
         Submit a subtitle generation task.
@@ -150,6 +119,8 @@ class SubtitleService:
             "translate_provider": translate_provider,
             "translate_conn_id": translate_conn_id,
             "translate_remote_model": translate_remote_model,
+            "vocal_separation": vocal_separation,
+            "align": align,
         }
 
         # Submit task
@@ -220,216 +191,163 @@ class SubtitleService:
             raise ValueError("No audio track found in video")
 
         # === Stage 1: Extract audio (0~10%) ===
-        # Create temporary audio path
         temp_audio_path = self._file_service.upload_dir / f"temp_audio_{uuid4().hex[:8]}.wav"
 
         try:
-            self._extract_audio_sync(file_info.file_path, temp_audio_path)
+            self._ffmpeg.extract_audio_sync(
+                input_path=file_info.file_path,
+                output_path=temp_audio_path,
+                audio_format="wav",
+                sample_rate=16000,
+                channels=1,
+            )
             progress_callback(0.10, "task.progress.audio_extracted")
 
-            # === GPU queue pipeline ===
-            # Only one task uses the GPU at a time; models are unloaded after use
-            from app.init.container import get_container
-            manager = get_container().model_manager()
+            # === Stage 2: Transcribe (10~70% if translating, else 10~90%) ===
+            transcribe_end = 0.70 if has_translation else 0.90
+            transcribe_range = transcribe_end - 0.10
 
-            with manager.gpu_session():
-                # === Stage 2: Speech recognition ===
-                # Without translation: 10~90%, with translation: 10~70%
-                whisper_end = 0.70 if has_translation else 0.90
-                whisper_range = whisper_end - 0.10
+            def transcribe_progress(p: float, m: str) -> None:
+                progress_callback(0.10 + p * transcribe_range, m)
 
-                def whisper_progress(percent: float, msg: str):
-                    overall = 0.10 + percent * whisper_range
+            opts = TranscribeOptions(
+                language=language,
+                model_size=model_size,
+                word_timestamps=word_timestamps,
+                condition_on_previous_text=condition_on_previous_text,
+                min_silence_duration_ms=min_silence_duration_ms,
+                vad_threshold=vad_threshold,
+                align=params.get("align", False),
+                separate_vocals=params.get("vocal_separation", False),
+            )
+            result = transcribe_audio_sync(
+                temp_audio_path, opts, on_progress=transcribe_progress
+            )
+
+            # Save original segments (for bilingual subtitle output when translating)
+            original_segments = list(result.segments)
+
+            # === Stage 3 (optional): Translate subtitles (70~95%) ===
+            if has_translation:
+                from app.engine.ai.audio.whisper import TranscribeSegment
+                from app.init.container import get_container
+
+                progress_callback(transcribe_end, "task.progress.prepare_translate")
+
+                seg_dicts = [
+                    {"start": s.start, "end": s.end, "text": s.text}
+                    for s in result.segments
+                ]
+
+                def translate_progress(percent: float, msg: str):
+                    overall = 0.70 + percent * 0.25
                     progress_callback(overall, msg)
 
-                result = self._whisper.transcribe(
-                    audio_path=temp_audio_path,
-                    language=language,
-                    model_size=model_size,
-                    on_progress=whisper_progress,
-                    word_timestamps=word_timestamps,
-                    condition_on_previous_text=condition_on_previous_text,
-                    min_silence_duration_ms=min_silence_duration_ms,
-                    vad_threshold=vad_threshold,
-                )
-                # Whisper is auto-unloaded in transcribe()'s finally block
+                src = WHISPER_TO_BCP47.get(result.language, result.language)
+                translate_remote = params.get("translate_remote", False)
 
-                # === Forced Alignment (optional) ===
-                if params.get("align", False) and result.language:
-                    from app.engine.ai.audio.wav2vec2 import get_alignment_engine
-                    aligner = get_alignment_engine()
-                    if aligner.is_language_supported(result.language):
-                        progress_callback(whisper_end - 0.05, "task.progress.aligning")
-                        result.segments = aligner.align(
-                            audio_path=temp_audio_path,
-                            segments=result.segments,
-                            language=result.language,
-                            on_progress=lambda p, m: progress_callback(whisper_end - 0.05 + p * 0.05, m),
-                        )
+                if translate_remote:
+                    # Cloud translation (batch)
+                    from app.utils.translate import get_cloud_provider, translate_srt_cloud
 
-                # === Stage 3 (optional): Translate subtitles (70~95%) ===
-                from app.engine.ai.audio.whisper import TranscribeSegment
+                    provider = params.get("translate_provider", "")
+                    conn_id = params.get("translate_conn_id")
+                    remote_model = params.get("translate_remote_model", "")
+                    prov = get_cloud_provider(provider, conn_id, remote_model)
 
-                # Save original segments (for bilingual subtitle output when translating)
-                original_segments = list(result.segments)
+                    translated_all = translate_srt_cloud(
+                        seg_dicts, src, target_language, prov, remote_model,
+                        on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
+                        keep_names=keep_names, style=translate_style, glossary=glossary,
+                    )
+                    translate_progress(1.0, "task.progress.translate_complete")
+                else:
+                    # Local translation
+                    from app.utils.translate import translate_srt_local
 
-                if has_translation:
-                    progress_callback(whisper_end, "task.progress.prepare_translate")
+                    variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
+                    runtime = get_container().llama_runtime()
 
-                    seg_dicts = [
-                        {"start": s.start, "end": s.end, "text": s.text}
-                        for s in result.segments
-                    ]
+                    translate_progress(0.0, "task.progress.load_translate_model")
 
-                    def translate_progress(percent: float, msg: str):
-                        overall = 0.70 + percent * 0.25
-                        progress_callback(overall, msg)
-
-                    src = WHISPER_TO_BCP47.get(result.language, result.language)
-                    translate_remote = params.get("translate_remote", False)
-
-                    if translate_remote:
-                        # Cloud translation (batch)
-                        from app.utils.translate import get_cloud_provider, translate_srt_cloud
-
-                        provider = params.get("translate_provider", "")
-                        conn_id = params.get("translate_conn_id")
-                        remote_model = params.get("translate_remote_model", "")
-                        prov = get_cloud_provider(provider, conn_id, remote_model)
-
-                        translated_all = translate_srt_cloud(
-                            seg_dicts, src, target_language, prov, remote_model,
+                    with runtime.acquire(translate_model_family, variant, lambda p, m: translate_progress(p * 0.05, m)):
+                        translate_progress(0.05, "task.progress.start_translate")
+                        translated_all = translate_srt_local(
+                            seg_dicts, src, target_language, runtime,
                             on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
                             keep_names=keep_names, style=translate_style, glossary=glossary,
+                            model_family=translate_model_family,
+                            model_size=translate_model_size,
                         )
-                        translate_progress(1.0, "task.progress.translate_complete")
-                    else:
-                        # Local translation
-                        from app.utils.translate import translate_srt_local
 
-                        variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
-                        runtime = get_container().llama_runtime()
+                    translate_progress(1.0, "task.progress.translate_complete")
 
-                        translate_progress(0.0, "task.progress.load_translate_model")
+                translated = translated_all
 
-                        with runtime.acquire(translate_model_family, variant, lambda p, m: translate_progress(p * 0.05, m)):
-                            translate_progress(0.05, "task.progress.start_translate")
-                            translated_all = translate_srt_local(
-                                seg_dicts, src, target_language, runtime,
-                                on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
-                                keep_names=keep_names, style=translate_style, glossary=glossary,
-                                model_family=translate_model_family,
-                                model_size=translate_model_size,
-                            )
-
-                        translate_progress(1.0, "task.progress.translate_complete")
-
-                    translated = translated_all
-
-                    result.segments = [
-                        TranscribeSegment(s["start"], s["end"], s["text"])
-                        for s in translated
-                    ]
+                result.segments = [
+                    TranscribeSegment(s["start"], s["end"], s["text"])
+                    for s in translated
+                ]
 
             # === Final stage: Write subtitle file ===
             write_start = 0.95 if has_translation else 0.90
             progress_callback(write_start, "task.progress.generate_file")
 
+            # Convert TranscribeSegments to utils.subtitles Segments for formatting
+            source_segments = [Segment(s.start, s.end, s.text) for s in original_segments]
+            target_segments = (
+                [Segment(s.start, s.end, s.text) for s in result.segments]
+                if has_translation
+                else None
+            )
+
+            # Format per output_format
+            if output_format == "srt":
+                source_text = format_srt(source_segments)
+                target_text = format_srt(target_segments) if target_segments else None
+            elif output_format == "vtt":
+                source_text = format_vtt(source_segments)
+                target_text = format_vtt(target_segments) if target_segments else None
+            else:
+                raise ValueError(f"Unsupported output format: {output_format}")
+
             # Determine base filename
             base_name = Path(file_info.original_filename).stem
-
-            # Determine output directory
             output_dir = self._file_service.output_dir
-            output_dir.mkdir(parents=True, exist_ok=True)
 
-            output_files = []
-
+            # Build filenames based on whether translation happened
             if has_translation:
-                # With translation: output two files
-                # 1. Source language subtitles (XXX.<source_lang>.srt)
                 source_lang = result.language  # e.g. "ja", "en"
-                source_filename = f"{base_name}.{source_lang}.{output_format}"
-                source_path = output_dir / source_filename
-
-                # Build source language result (using pre-translation segments)
-                from app.engine.ai.audio.whisper import TranscribeResult
-                original_result = TranscribeResult(
-                    language=result.language,
-                    language_probability=result.language_probability,
-                    segments=original_segments,  # saved before translation
-                    duration=result.duration,
-                )
-
-                if output_format == "vtt":
-                    _write_vtt(original_result, source_path)
-                else:
-                    _write_srt(original_result, source_path)
-
-                source_file_id = str(uuid4())
-                source_info = self._file_service.register_output(
-                    file_id=source_file_id,
-                    file_path=source_path,
-                    original_filename=file_info.original_filename,
-                )
-                output_files.append({
-                    "file_id": source_file_id,
-                    "filename": source_info.filename,
-                    "size": source_info.file_size,
-                    "language": source_lang,
-                    "type": "source",
-                })
-
-                # 2. Translated subtitles (XXX.<target_lang>.srt)
-                target_filename = f"{base_name}.{target_language}.{output_format}"
-                target_path = output_dir / target_filename
-
-                if output_format == "vtt":
-                    _write_vtt(result, target_path)
-                else:
-                    _write_srt(result, target_path)
-
-                target_file_id = str(uuid4())
-                target_info = self._file_service.register_output(
-                    file_id=target_file_id,
-                    file_path=target_path,
-                    original_filename=file_info.original_filename,
-                )
-                output_files.append({
-                    "file_id": target_file_id,
-                    "filename": target_info.filename,
-                    "size": target_info.file_size,
-                    "language": target_language,
-                    "type": "translated",
-                })
-
-                output_file_id = target_file_id  # primary output is the translated file
-                output_filename = target_info.filename
-                output_size = target_info.file_size
+                src_filename = f"{base_name}.{source_lang}.{output_format}"
+                tgt_filename = f"{base_name}.{target_language}.{output_format}"
             else:
-                # No translation: output single file (XXX.srt)
-                final_filename = f"{base_name}.{output_format}"
-                output_path = output_dir / final_filename
+                source_lang = result.language
+                src_filename = f"{base_name}.{output_format}"
+                tgt_filename = None
 
-                if output_format == "vtt":
-                    _write_vtt(result, output_path)
-                else:
-                    _write_srt(result, output_path)
+            written = write_bilingual_or_single(
+                source_filename=src_filename,
+                source_text=source_text,
+                source_lang=source_lang,
+                target_filename=tgt_filename,
+                target_text=target_text if has_translation else None,
+                target_lang=target_language if has_translation else None,
+                output_dir=output_dir,
+                original_filename=file_info.original_filename,
+                file_service=self._file_service,
+            )
 
-                output_file_id = str(uuid4())
-                output_info = self._file_service.register_output(
-                    file_id=output_file_id,
-                    file_path=output_path,
-                    original_filename=file_info.original_filename,
-                )
-                output_files.append({
-                    "file_id": output_file_id,
-                    "filename": output_info.filename,
-                    "size": output_info.file_size,
-                    "language": result.language,
-                    "type": "source",
-                })
-                output_filename = output_info.filename
-                output_size = output_info.file_size
+            # Annotate with "type" metadata (service-specific, not in helper shape)
+            written[0]["type"] = "source"
+            if has_translation:
+                written[1]["type"] = "translated"
+
+            output_files = written
+            # Primary output is the translated file if present, otherwise the source file
+            primary = written[1] if has_translation else written[0]
+            output_file_id = primary["file_id"]
+            output_filename = primary["filename"]
+            output_size = primary["size"]
 
             progress_callback(1.0, "task.progress.subtitle_complete")
 
@@ -453,17 +371,3 @@ class SubtitleService:
                     temp_audio_path.unlink()
                 except OSError:
                     logger.warning(f"Failed to delete temp audio: {temp_audio_path}")
-
-    def _extract_audio_sync(self, input_path: Path, output_path: Path) -> None:
-        """
-        Extract audio from video as WAV (16kHz, mono) using FFmpeg.
-
-        Optimal input format for faster-whisper: 16kHz mono WAV.
-        """
-        self._ffmpeg.extract_audio_sync(
-            input_path=input_path,
-            output_path=output_path,
-            audio_format="wav",
-            sample_rate=16000,
-            channels=1,
-        )

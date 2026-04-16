@@ -108,10 +108,26 @@ async function loadTranslateLanguages() {
 
 watch(translateEnabled, (val) => { if (val) loadTranslateLanguages() })
 
+// ── Demucs / wav2vec2 readiness ─────────────────────────────────
+// Lyrics ALWAYS runs Demucs (backend hardcoded separate_vocals=True).
+// Align is optional (controlled by alignEnabled toggle).
+const demucsReady = computed(() =>
+  modelStore.byCategory('separate').some(
+    m => m.family === 'demucs' && m.variant === 'htdemucs_6s' && m.downloaded
+  )
+)
+const alignReady = computed(() =>
+  modelStore.byCategory('alignment').some(m => m.downloaded)
+)
+
 // ── Submit ──────────────────────────────────────────────────────
 async function execute() {
   const whisperModel = modelStore.byCategory('stt').find(m => m.variant === modelSize.value)
   if (!await guardModelReady(whisperModel?.downloaded === true, 'audio')) return
+  if (!await guardModelReady(demucsReady.value, 'audio')) return
+  if (alignEnabled.value) {
+    if (!await guardModelReady(alignReady.value, 'audio')) return
+  }
   if (translateEnabled.value) {
     const tParsed = parseModelValue(selectedTranslateModel.value)
     const translateReady = tParsed.isRemote || localTranslateModelOptions.value.find(m => m.value === selectedTranslateModel.value)?.badge === 'ok'

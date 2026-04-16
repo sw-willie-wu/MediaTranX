@@ -3,33 +3,18 @@ Lyrics extraction service.
 Uses Demucs vocal separation + Whisper speech recognition to extract lyrics from music.
 """
 import logging
-import tempfile
 from pathlib import Path
 from typing import Callable, Optional
-from uuid import uuid4
 
-import soundfile as sf
-
-from app.utils.prompts import (
-    WHISPER_TO_BCP47,
-    build_srt_translate_prompt,
-    build_translate_messages,
-    segments_to_srt,
-    parse_srt_response,
-)
+from app.utils.prompts import WHISPER_TO_BCP47
+from app.utils.bilingual_output import write_bilingual_or_single
+from app.utils.transcribe import TranscribeOptions, transcribe_audio_sync
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
 TASK_TYPE_AUDIO_LYRICS = "audio.lyrics"
-
-
-def _format_lrc_time(seconds: float) -> str:
-    """Format seconds as LRC time format [mm:ss.xx]."""
-    minutes = int(seconds // 60)
-    secs = seconds % 60
-    return f"{minutes:02d}:{secs:05.2f}"
 
 
 class AudioLyricsService:
@@ -94,7 +79,6 @@ class AudioLyricsService:
             raise ValueError(f"File not found: {file_id}")
 
         whisper_size = params.get("whisper_size", "medium")
-        align = params.get("align", False)
         do_translate = params.get("translate", False)
         target_lang = params.get("target_lang")
         output_format = params.get("output_format", "lrc")
@@ -105,8 +89,8 @@ class AudioLyricsService:
         base_name = original_stem
 
         # -- Dynamic progress allocation --
-        weights = {"demucs": 3, "whisper": 5}  # demucs and whisper are required
-        if align:         weights["align"] = 3
+        # Lyrics ALWAYS run demucs + whisper + align; translation is optional.
+        weights = {"demucs": 3, "whisper": 5, "align": 3}
         if do_translate:  weights["translate"] = 2
         total_weight = sum(weights.values())
 
@@ -123,233 +107,168 @@ class AudioLyricsService:
             s, e = stages.get(stage, (0.0, 1.0))
             progress_callback(s + p * (e - s), msg)
 
-        # Temporary vocal file path
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            temp_vocals_path = Path(tmp.name)
+        # === Transcribe (Demucs + Whisper + align) via shared primitive ===
+        opts = TranscribeOptions(
+            language=params.get("language"),
+            model_size=whisper_size,
+            word_timestamps=True,  # lyrics need word-level timing for alignment
+            condition_on_previous_text=params.get("condition_on_previous_text", True),
+            min_silence_duration_ms=params.get("min_silence_duration_ms", 200),
+            vad_threshold=params.get("vad_threshold", 0.3),
+            separate_vocals=True,  # lyrics ALWAYS use demucs
+            align=True,            # lyrics ALWAYS align
+        )
 
-        try:
-            # === Demucs vocal separation ===
-            stage_progress("demucs", 0.0, "task.progress.lyrics_separating")
+        # The primitive's 0..1 progress spans demucs -> whisper -> align.
+        transcribe_start = stages["demucs"][0]
+        transcribe_end = stages["align"][1]
 
-            from app.engine.ai.audio.demucs import get_demucs
-            demucs = get_demucs()
-            separated, sample_rate = demucs.separate(
-                audio_path=str(file_info.file_path),
-                variant="htdemucs_6s",
-                stems=["vocals"],
-                on_progress=lambda p, m: stage_progress("demucs", p, m),
+        def transcribe_progress(p: float, m: str) -> None:
+            progress_callback(
+                transcribe_start + p * (transcribe_end - transcribe_start), m
             )
 
-            # Save vocals as temporary WAV
-            vocals_tensor = separated.get("vocals")
-            if vocals_tensor is None:
-                raise RuntimeError("Demucs failed to separate vocals")
-            audio_data = vocals_tensor.numpy().T
-            sf.write(str(temp_vocals_path), audio_data, sample_rate)
+        result = transcribe_audio_sync(
+            file_info.file_path,
+            opts,
+            on_progress=transcribe_progress,
+        )
+        detected_lang = result.language
 
-            stage_progress("demucs", 1.0, "task.progress.lyrics_separation_complete")
+        # === Translation ===
+        from app.engine.ai.audio.whisper import TranscribeSegment
+        from app.init.container import get_container
 
-            # === GPU queue pipeline ===
-            from app.init.container import get_container
-            manager = get_container().model_manager()
+        original_segments = list(result.segments)
 
-            with manager.gpu_session():
-                # === Whisper speech recognition ===
-                from app.engine.ai.audio.whisper import get_whisper
-                whisper = get_whisper()
+        if do_translate and target_lang:
+            stage_progress("translate", 0.0, "task.progress.lyrics_prepare_translate")
 
-                result = whisper.transcribe(
-                    audio_path=str(temp_vocals_path),
-                    model_size=whisper_size,
-                    on_progress=lambda p, m: stage_progress("whisper", p, m),
-                    word_timestamps=align,
+            translate_remote = params.get("translate_remote", False)
+
+            if translate_remote:
+                # Cloud translation (batch)
+                from app.utils.translate import get_cloud_provider, translate_srt_cloud
+
+                provider = params.get("translate_provider", "")
+                conn_id = params.get("translate_conn_id")
+                remote_model = params.get("translate_remote_model", "")
+                prov = get_cloud_provider(provider, conn_id, remote_model)
+
+                seg_dicts = [{"start": s.start, "end": s.end, "text": s.text} for s in result.segments]
+                translated_all = translate_srt_cloud(
+                    seg_dicts, detected_lang, target_lang, prov, remote_model,
+                    on_progress=lambda p, m: stage_progress("translate", p, m),
                 )
 
-                detected_lang = result.language
-                stage_progress("whisper", 1.0, "task.progress.lyrics_recognition_complete")
-
-                # === Wav2Vec2 forced alignment ===
-                if align and detected_lang:
-                    from app.engine.ai.audio.wav2vec2 import get_alignment_engine
-                    aligner = get_alignment_engine()
-                    if aligner.is_language_supported(detected_lang):
-                        stage_progress("align", 0.0, "task.progress.lyrics_aligning")
-                        result.segments = aligner.align(
-                            audio_path=str(temp_vocals_path),
-                            segments=result.segments,
-                            language=detected_lang,
-                            on_progress=lambda p, m: stage_progress("align", p, m),
-                        )
-                        stage_progress("align", 1.0, "task.progress.lyrics_align_complete")
-
-                # === Translation ===
-                from app.engine.ai.audio.whisper import TranscribeSegment
-
-                original_segments = list(result.segments)
-
-                if do_translate and target_lang:
-                    stage_progress("translate", 0.0, "task.progress.lyrics_prepare_translate")
-
-                    translate_remote = params.get("translate_remote", False)
-
-                    if translate_remote:
-                        # Cloud translation (batch)
-                        from app.utils.translate import get_cloud_provider, translate_srt_cloud
-
-                        provider = params.get("translate_provider", "")
-                        conn_id = params.get("translate_conn_id")
-                        remote_model = params.get("translate_remote_model", "")
-                        prov = get_cloud_provider(provider, conn_id, remote_model)
-
-                        seg_dicts = [{"start": s.start, "end": s.end, "text": s.text} for s in result.segments]
-                        translated_all = translate_srt_cloud(
-                            seg_dicts, detected_lang, target_lang, prov, remote_model,
-                            on_progress=lambda p, m: stage_progress("translate", p, m),
-                        )
-
-                        result.segments = [
-                            TranscribeSegment(s["start"], s["end"], s["text"])
-                            for s in translated_all
-                        ]
-                    else:
-                        # Local translation
-                        translate_model_family = params.get("translate_model_family", "gemma4")
-                        translate_model_size = params.get("translate_model_size", "4b")
-                        translate_quantization = params.get("translate_quantization")
-
-                        from app.utils.translate import translate_srt_local
-
-                        seg_dicts = [
-                            {"start": s.start, "end": s.end, "text": s.text}
-                            for s in result.segments
-                        ]
-
-                        variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
-                        src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
-                        runtime = get_container().llama_runtime()
-
-                        stage_progress("translate", 0.0, "task.progress.lyrics_load_translate")
-
-                        with runtime.acquire(translate_model_family, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
-                            stage_progress("translate", 0.05, "task.progress.lyrics_translating")
-                            translated_all = translate_srt_local(
-                                seg_dicts, src, target_lang, runtime,
-                                on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
-                                model_family=translate_model_family,
-                                model_size=translate_model_size,
-                            )
-
-                        stage_progress("translate", 1.0, "task.progress.lyrics_translate_complete")
-
-                        result.segments = [
-                            TranscribeSegment(s["start"], s["end"], s["text"])
-                            for s in translated_all
-                        ]
-
-            # === Stage 4: Write output files (0.95 ~ 1.0) ===
-            stage_progress("write", 0.0, "task.progress.lyrics_writing")
-
-            output_files = []
-
-            if do_translate and target_lang:
-                # With translation: output two files
-                # 1. Source language lyrics
-                source_filename = f"{base_name}.{detected_lang}.{output_format}"
-                source_path = output_dir / source_filename
-                self._write_output(original_segments, source_path, output_format)
-
-                source_file_id = str(uuid4())
-                source_info = self._file_service.register_output(
-                    file_id=source_file_id,
-                    file_path=source_path,
-                    original_filename=file_info.original_filename,
-                )
-                output_files.append({
-                    "file_id": source_file_id,
-                    "filename": source_info.filename,
-                    "language": detected_lang,
-                    "type": "source",
-                })
-
-                # 2. Translated lyrics
-                target_filename = f"{base_name}.{target_lang}.{output_format}"
-                target_path = output_dir / target_filename
-                self._write_output(result.segments, target_path, output_format)
-
-                target_file_id = str(uuid4())
-                target_info = self._file_service.register_output(
-                    file_id=target_file_id,
-                    file_path=target_path,
-                    original_filename=file_info.original_filename,
-                )
-                output_files.append({
-                    "file_id": target_file_id,
-                    "filename": target_info.filename,
-                    "language": target_lang,
-                    "type": "translated",
-                })
-
-                output_file_id = target_file_id
-                output_filename_result = target_info.filename
+                result.segments = [
+                    TranscribeSegment(s["start"], s["end"], s["text"])
+                    for s in translated_all
+                ]
             else:
-                # No translation: output single file
-                final_filename = f"{base_name}.{output_format}"
-                output_path = output_dir / final_filename
-                self._write_output(result.segments, output_path, output_format)
+                # Local translation
+                translate_model_family = params.get("translate_model_family", "gemma4")
+                translate_model_size = params.get("translate_model_size", "4b")
+                translate_quantization = params.get("translate_quantization")
 
-                output_file_id = str(uuid4())
-                output_info = self._file_service.register_output(
-                    file_id=output_file_id,
-                    file_path=output_path,
-                    original_filename=file_info.original_filename,
-                )
-                output_files.append({
-                    "file_id": output_file_id,
-                    "filename": output_info.filename,
-                    "language": detected_lang,
-                    "type": "source",
-                })
-                output_filename_result = output_info.filename
+                from app.utils.translate import translate_srt_local
 
-            progress_callback(1.0, "task.progress.lyrics_complete")
+                seg_dicts = [
+                    {"start": s.start, "end": s.end, "text": s.text}
+                    for s in result.segments
+                ]
 
-            # Read lyrics content for preview
-            text_content = None
-            if output_files:
-                try:
-                    fid = output_files[0]["file_id"]
-                    info = self._file_service.get_file(fid)
-                    if info and info.file_path:
-                        with open(info.file_path, "r", encoding="utf-8") as f:
-                            text_content = f.read()
-                except Exception:
-                    pass
+                variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
+                src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
+                runtime = get_container().llama_runtime()
 
-            return {
-                "output_file_id": output_file_id,
-                "output_filename": output_filename_result,
-                "output_files": output_files,
-                "text_file_id": output_file_id,
-                "text_content": text_content,
-                "detected_language": detected_lang,
-                "segment_count": len(result.segments),
-                "translated": do_translate and target_lang is not None,
-                "target_language": target_lang,
-            }
+                stage_progress("translate", 0.0, "task.progress.lyrics_load_translate")
 
-        finally:
-            # Clean up temporary vocal file
-            temp_vocals_path.unlink(missing_ok=True)
+                with runtime.acquire(translate_model_family, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
+                    stage_progress("translate", 0.05, "task.progress.lyrics_translating")
+                    translated_all = translate_srt_local(
+                        seg_dicts, src, target_lang, runtime,
+                        on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
+                        model_family=translate_model_family,
+                        model_size=translate_model_size,
+                    )
+
+                stage_progress("translate", 1.0, "task.progress.lyrics_translate_complete")
+
+                result.segments = [
+                    TranscribeSegment(s["start"], s["end"], s["text"])
+                    for s in translated_all
+                ]
+
+        # === Write output files ===
+        stage_progress("write", 0.0, "task.progress.lyrics_writing")
+
+        if do_translate and target_lang:
+            src_filename = f"{base_name}.{detected_lang}.{output_format}"
+            tgt_filename = f"{base_name}.{target_lang}.{output_format}"
+            source_text = self._format_output(original_segments, output_format)
+            target_text = self._format_output(result.segments, output_format)
+        else:
+            src_filename = f"{base_name}.{output_format}"
+            tgt_filename = None
+            source_text = self._format_output(result.segments, output_format)
+            target_text = None
+
+        written = write_bilingual_or_single(
+            source_filename=src_filename,
+            source_text=source_text,
+            source_lang=detected_lang,
+            target_filename=tgt_filename,
+            target_text=target_text,
+            target_lang=target_lang if (do_translate and target_lang) else None,
+            output_dir=output_dir,
+            original_filename=file_info.original_filename,
+            file_service=self._file_service,
+        )
+
+        # Annotate "type" (service-specific metadata, not in helper shape)
+        written[0]["type"] = "source"
+        if do_translate and target_lang:
+            written[1]["type"] = "translated"
+
+        output_files = written
+        primary = written[1] if (do_translate and target_lang) else written[0]
+        output_file_id = primary["file_id"]
+        output_filename_result = primary["filename"]
+
+        progress_callback(1.0, "task.progress.lyrics_complete")
+
+        # Read lyrics content for preview
+        text_content = None
+        if output_files:
+            try:
+                fid = output_files[0]["file_id"]
+                info = self._file_service.get_file(fid)
+                if info and info.file_path:
+                    with open(info.file_path, "r", encoding="utf-8") as f:
+                        text_content = f.read()
+            except Exception:
+                pass
+
+        return {
+            "output_file_id": output_file_id,
+            "output_filename": output_filename_result,
+            "output_files": output_files,
+            "text_file_id": output_file_id,
+            "text_content": text_content,
+            "detected_language": detected_lang,
+            "segment_count": len(result.segments),
+            "translated": do_translate and target_lang is not None,
+            "target_language": target_lang,
+        }
 
     @staticmethod
-    def _write_output(segments, output_path: Path, output_format: str) -> None:
-        """Write lyrics file in the specified format."""
-        with open(output_path, "w", encoding="utf-8") as f:
-            if output_format == "lrc":
-                for seg in segments:
-                    timestamp = _format_lrc_time(seg.start)
-                    f.write(f"[{timestamp}]{seg.text.strip()}\n")
-            else:
-                # txt: plain text, one line per segment
-                for seg in segments:
-                    f.write(seg.text.strip() + "\n")
+    def _format_output(segments, output_format: str) -> str:
+        """Format lyrics segments to text in the specified format."""
+        from app.utils.subtitles import Segment, format_lrc, format_txt
+
+        seg_list = [Segment(s.start, s.end, s.text) for s in segments]
+        if output_format == "lrc":
+            return format_lrc(seg_list)
+        # txt: plain text, one line per segment
+        return format_txt(seg_list)

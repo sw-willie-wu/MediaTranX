@@ -4,21 +4,18 @@ Translates uploaded text files using local LLM.
 Supports plain text files and subtitle files (SRT, VTT).
 """
 import logging
-import re
 from pathlib import Path
 from typing import Callable, Optional
-from uuid import uuid4
 
-from app.utils.prompts import (
-    WHISPER_TO_BCP47,
-    TranslateResult,
-    build_translate_prompt,
-    build_srt_translate_prompt,
-    build_translate_messages,
-    segments_to_srt,
-    parse_srt_response,
-    split_text,
+from app.utils.prompts import WHISPER_TO_BCP47
+from app.utils.subtitles import (
+    Segment,
+    format_srt,
+    format_vtt,
+    parse_srt,
+    parse_vtt,
 )
+from app.utils.bilingual_output import write_bilingual_or_single
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -32,95 +29,21 @@ SUBTITLE_EXTENSIONS = {".srt", ".vtt", ".lrc", ".ass"}
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".log", ".srt", ".vtt", ".lrc", ".ass"}
 
 
-def _parse_srt_time(time_str: str) -> float:
-    """Parse SRT time format (HH:MM:SS,mmm) to seconds."""
-    m = re.match(r"(\d+):(\d+):(\d+)[,.](\d+)", time_str.strip())
-    if not m:
-        return 0.0
-    h, mi, s, ms = int(m[1]), int(m[2]), int(m[3]), int(m[4])
-    return h * 3600 + mi * 60 + s + ms / 1000
+def _parse_subtitle_file(text: str, ext: str) -> list[dict]:
+    """Parse subtitle text to a list of ``{start, end, text}`` dicts.
 
-
-def _format_srt_time(seconds: float) -> str:
-    """Format seconds as SRT time format (HH:MM:SS,mmm)."""
-    h = int(seconds // 3600)
-    mi = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    ms = int((seconds % 1) * 1000)
-    return f"{h:02d}:{mi:02d}:{s:02d},{ms:03d}"
-
-
-def _format_vtt_time(seconds: float) -> str:
-    """Format seconds as VTT time format (HH:MM:SS.mmm)."""
-    h = int(seconds // 3600)
-    mi = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    ms = int((seconds % 1) * 1000)
-    return f"{h:02d}:{mi:02d}:{s:02d}.{ms:03d}"
-
-
-def _parse_srt(text: str) -> list[dict]:
+    The downstream translate helpers (``translate_srt_local`` /
+    ``translate_srt_cloud``) consume dict-shaped segments, so we adapt the
+    ``Segment`` dataclass from ``app.utils.subtitles`` here.
     """
-    Parse SRT subtitle file into segments.
-
-    Returns:
-        [{"start": float, "end": float, "text": str}, ...]
-    """
-    segments = []
-    blocks = re.split(r"\n\s*\n", text.strip())
-    for block in blocks:
-        lines = block.strip().split("\n")
-        if len(lines) < 2:
-            continue
-        # Find the timeline row (contains -->)
-        time_line_idx = None
-        for i, line in enumerate(lines):
-            if "-->" in line:
-                time_line_idx = i
-                break
-        if time_line_idx is None:
-            continue
-        parts = lines[time_line_idx].split("-->")
-        if len(parts) != 2:
-            continue
-        start = _parse_srt_time(parts[0])
-        end = _parse_srt_time(parts[1])
-        content = "\n".join(lines[time_line_idx + 1:]).strip()
-        if content:
-            segments.append({"start": start, "end": end, "text": content})
-    return segments
+    segs: list[Segment] = parse_vtt(text) if ext == ".vtt" else parse_srt(text)
+    return [{"start": s.start, "end": s.end, "text": s.text} for s in segs]
 
 
-def _parse_vtt(text: str) -> list[dict]:
-    """
-    Parse VTT subtitle file into segments.
-
-    Returns:
-        [{"start": float, "end": float, "text": str}, ...]
-    """
-    # Remove WEBVTT header and possible metadata
-    body = re.sub(r"^WEBVTT[^\n]*\n", "", text.strip(), count=1).strip()
-    # VTT uses . instead of , for time format, but _parse_srt_time supports both
-    return _parse_srt(body)
-
-
-def _write_srt(segments: list[dict], output_path: Path) -> None:
-    """Write segments in SRT format."""
-    with open(output_path, "w", encoding="utf-8") as f:
-        for i, seg in enumerate(segments, 1):
-            f.write(f"{i}\n")
-            f.write(f"{_format_srt_time(seg['start'])} --> {_format_srt_time(seg['end'])}\n")
-            f.write(f"{seg['text']}\n\n")
-
-
-def _write_vtt(segments: list[dict], output_path: Path) -> None:
-    """Write segments in VTT format."""
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("WEBVTT\n\n")
-        for i, seg in enumerate(segments, 1):
-            f.write(f"{i}\n")
-            f.write(f"{_format_vtt_time(seg['start'])} --> {_format_vtt_time(seg['end'])}\n")
-            f.write(f"{seg['text']}\n\n")
+def _format_subtitle_segments(segments: list[dict], ext: str) -> str:
+    """Format translated dict-segments back to SRT/VTT text."""
+    seg_list = [Segment(s["start"], s["end"], s["text"]) for s in segments]
+    return format_vtt(seg_list) if ext == ".vtt" else format_srt(seg_list)
 
 
 class TranslateService:
@@ -251,10 +174,7 @@ class TranslateService:
             prov = get_cloud_provider(provider, conn_id, remote_model)
 
             if is_subtitle:
-                if ext == ".vtt":
-                    segments = _parse_vtt(text)
-                else:
-                    segments = _parse_srt(text)
+                segments = _parse_subtitle_file(text, ext)
 
                 logger.info(f"Parsed {len(segments)} subtitle segments from {ext} file")
                 src = WHISPER_TO_BCP47.get(source_language, source_language)
@@ -284,10 +204,7 @@ class TranslateService:
 
                 with runtime.acquire(model_family, variant, lambda p, m: translate_progress(p * 0.05, m)):
                     if is_subtitle:
-                        if ext == ".vtt":
-                            segments = _parse_vtt(text)
-                        else:
-                            segments = _parse_srt(text)
+                        segments = _parse_subtitle_file(text, ext)
 
                         logger.info(f"Parsed {len(segments)} subtitle segments from {ext} file")
                         src = WHISPER_TO_BCP47.get(source_language, source_language)
@@ -313,43 +230,38 @@ class TranslateService:
         # === Stage 3: Write output file (95~100%) ===
         progress_callback(0.95, "task.progress.writing_output_file")
 
-        output_file_id = str(uuid4())
-
         # Determine filename
         original_stem = Path(file_info.original_filename).stem
         original_ext = Path(file_info.original_filename).suffix or ".txt"
         final_filename = f"{original_stem}_{target_language}{original_ext}"
 
-        output_dir = self._file_service.output_dir
-        output_path = output_dir / final_filename
-
-        # Write output
+        # Build output body
         if is_subtitle and translated_segments is not None:
-            if ext == ".vtt":
-                _write_vtt(translated_segments, output_path)
-            else:
-                _write_srt(translated_segments, output_path)
+            output_body = _format_subtitle_segments(translated_segments, ext)
+            translated_chars = sum(len(s["text"]) for s in translated_segments)
         else:
-            output_path.write_text(translated_text, encoding="utf-8")
+            output_body = translated_text
+            translated_chars = len(translated_text)
 
-        # Register output file
-        output_info = self._file_service.register_output(
-            file_id=output_file_id,
-            file_path=output_path,
+        outputs = write_bilingual_or_single(
+            source_filename=final_filename,
+            source_text=output_body,
+            source_lang=target_language,  # doc translate only saves translated output
+            target_filename=None,
+            target_text=None,
+            target_lang=None,
+            output_dir=self._file_service.output_dir,
             original_filename=file_info.original_filename,
+            file_service=self._file_service,
         )
+        out = outputs[0]
 
         progress_callback(1.0, "task.progress.translate_complete")
 
-        if is_subtitle and translated_segments is not None:
-            translated_chars = sum(len(s["text"]) for s in translated_segments)
-        else:
-            translated_chars = len(translated_text)
-
         return {
-            "output_file_id": output_file_id,
-            "output_filename": output_info.filename,
-            "output_size": output_info.file_size,
+            "output_file_id": out["file_id"],
+            "output_filename": out["filename"],
+            "output_size": out["size"],
             "source_language": source_language,
             "target_language": target_language,
             "source_chars": len(text),
