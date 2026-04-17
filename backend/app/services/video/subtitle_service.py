@@ -184,7 +184,7 @@ class SubtitleService:
         has_translation = target_language is not None
 
         # === Stage 0: Verify video has audio stream ===
-        progress_callback(0.0, "task.progress.extracting_audio")
+        progress_callback(0.0, "task.progress.extract_audio_starting")
 
         media_info = self._ffmpeg.get_media_info_sync(file_info.file_path)
         if not media_info.audio_codec:

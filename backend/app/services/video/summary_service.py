@@ -149,7 +149,7 @@ class VideoSummaryService:
         # Step 1a: extract audio from video
         temp_audio = self._file_service.upload_dir / f"summary_audio_{uuid4().hex[:8]}.wav"
         try:
-            progress_callback(0.02, "task.progress.extracting_audio")
+            progress_callback(0.02, "task.progress.extract_audio_starting")
             self._ffmpeg.extract_audio_sync(
                 video_path, temp_audio,
                 audio_format="wav", sample_rate=16000, channels=1,

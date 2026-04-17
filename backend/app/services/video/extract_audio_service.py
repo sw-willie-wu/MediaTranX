@@ -91,7 +91,7 @@ class VideoExtractAudioService:
         def on_ffmpeg_progress(progress: TranscodeProgress):
             progress_callback(
                 progress.percent / 100,
-                f"Extracting audio... {progress.percent:.1f}% (speed: {progress.speed:.1f}x)"
+                f"task.progress.extracting_audio|{progress.percent:.1f}|{progress.speed:.1f}"
             )
 
         progress_callback(0.0, "task.progress.extract_audio_starting")
