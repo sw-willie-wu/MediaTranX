@@ -1,8 +1,9 @@
 """
 Active task endpoints.
 """
+from __future__ import annotations
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, List, Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +11,9 @@ from pydantic import BaseModel, Field, field_serializer
 
 from app.init.container import AppContainer
 from app.schemas.task import TaskData, TaskStatus
-from app.workers.task_manager import TaskManager
+
+if TYPE_CHECKING:
+    from app.workers.task_manager import TaskManager
 
 
 def _serialize_dt(v: datetime) -> str:

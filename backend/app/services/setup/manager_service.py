@@ -18,12 +18,17 @@ class SetupService:
     """Environment setup, system status, and model download/removal service."""
 
     def __init__(self, task_manager: TaskManager):
+        self._task_manager = task_manager
         # Register model download handler with TaskManager
         task_manager.register_handler(
             "setup.model_download", self._handle_model_download,
             output_policy="history",
         )
         logger.info("SetupService initialized, registered setup.model_download handler")
+
+    async def submit_model_download(self, item_id: str) -> str:
+        """Submit a tool/model download task and return the task_id."""
+        return await self._task_manager.submit("setup.model_download", {"id": item_id})
 
     async def get_system_status(self) -> dict:
         """Get detailed system and environment status."""

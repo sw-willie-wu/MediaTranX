@@ -1,9 +1,10 @@
 """
 File handling endpoints.
 """
+from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -11,8 +12,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_serializer
 
 from app.init.container import AppContainer
-from app.services.files.file_service import FileService
 from app.schemas.file import FileData
+
+if TYPE_CHECKING:
+    from app.services.files.file_service import FileService
 
 
 def _serialize_dt(v: datetime) -> str:

@@ -9,10 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.llm.language_service import LanguageService
 
 if TYPE_CHECKING:
     from app.services.image.ocr_service import ImageOcrService
+    from app.services.llm.language_service import LanguageService
 
 router = APIRouter()
 

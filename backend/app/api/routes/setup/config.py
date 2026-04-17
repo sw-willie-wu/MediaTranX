@@ -1,12 +1,18 @@
 """
 Application configuration routes.
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.init.container import AppContainer
-from app.services.setup.config_service import ConfigService
+
+if TYPE_CHECKING:
+    from app.services.setup.config_service import ConfigService
+
 router = APIRouter()
 
 

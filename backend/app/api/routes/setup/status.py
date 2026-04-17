@@ -1,11 +1,16 @@
 """
 System status routes.
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends
 
 from app.init.container import AppContainer
-from app.services.setup.manager_service import SetupService
+
+if TYPE_CHECKING:
+    from app.services.setup.manager_service import SetupService
 
 router = APIRouter()
 

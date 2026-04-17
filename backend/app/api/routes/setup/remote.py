@@ -1,14 +1,17 @@
 """
 Remote API connection management routes.
 """
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.init.container import AppContainer
-from app.services.setup.remote_service import RemoteService
+
+if TYPE_CHECKING:
+    from app.services.setup.remote_service import RemoteService
 
 router = APIRouter()
 

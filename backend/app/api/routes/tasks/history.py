@@ -1,13 +1,16 @@
 """
 Task history endpoints.
 """
+from __future__ import annotations
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from app.init.container import AppContainer
-from app.services.tasks.history_service import TaskHistoryService
+
+if TYPE_CHECKING:
+    from app.services.tasks.history_service import TaskHistoryService
 
 router = APIRouter(prefix="/history")
 

@@ -1,13 +1,17 @@
 """
 Health check endpoints.
 """
+from __future__ import annotations
 import logging
+from typing import TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends
 
 from app.init.container import AppContainer, get_container
-from app.services.setup.device_service import DeviceService
+
+if TYPE_CHECKING:
+    from app.services.setup.device_service import DeviceService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
