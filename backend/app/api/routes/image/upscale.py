@@ -53,9 +53,5 @@ async def upscale_image(
             face_restore_upscale=request.face_restore_upscale,
         )
         return ImageUpscaleResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))

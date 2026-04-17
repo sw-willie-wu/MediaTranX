@@ -26,13 +26,8 @@ async def convert_document(
     service: DocumentPdfConvertService = Depends(Provide[AppContainer.doc_pdf_convert]),
 ):
     """Submit document conversion task."""
-    try:
-        task_id = await service.submit(
-            file_id=request.file_id,
-            output_format=request.output_format,
-        )
-        return {"task_id": task_id, "message": "Conversion task submitted"}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit(
+        file_id=request.file_id,
+        output_format=request.output_format,
+    )
+    return {"task_id": task_id, "message": "Conversion task submitted"}

@@ -67,26 +67,21 @@ async def filter_image(
     service: ImageFilterService = Depends(Provide[AppContainer.image_filter]),
 ):
     """Submit image filter task."""
-    try:
-        task_id = await service.submit_filter(
-            file_id=request.file_id,
-            brightness=request.brightness,
-            contrast=request.contrast,
-            saturation=request.saturation,
-            hue=request.hue,
-            sharpness=request.sharpness,
-            warmth=request.warmth,
-            grayscale=request.grayscale,
-            sepia=request.sepia,
-            invert=request.invert,
-            blur=request.blur,
-            vignette=request.vignette,
-        )
-        return ImageFilterResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_filter(
+        file_id=request.file_id,
+        brightness=request.brightness,
+        contrast=request.contrast,
+        saturation=request.saturation,
+        hue=request.hue,
+        sharpness=request.sharpness,
+        warmth=request.warmth,
+        grayscale=request.grayscale,
+        sepia=request.sepia,
+        invert=request.invert,
+        blur=request.blur,
+        vignette=request.vignette,
+    )
+    return ImageFilterResponse(task_id=task_id)
 
 
 @router.post("/filter/preview", response_model=ImageFilterPreviewResponse)
@@ -96,15 +91,10 @@ async def preview_filter(
     service: ImageFilterService = Depends(Provide[AppContainer.image_filter]),
 ):
     """Synchronously generate a preview image (reduced resolution, returns base64 data URI)."""
-    try:
-        params = request.model_dump(exclude={"file_id"})
-        data_uri = await asyncio.to_thread(
-            service.generate_preview,
-            file_id=request.file_id,
-            params=params,
-        )
-        return ImageFilterPreviewResponse(preview=data_uri)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    params = request.model_dump(exclude={"file_id"})
+    data_uri = await asyncio.to_thread(
+        service.generate_preview,
+        file_id=request.file_id,
+        params=params,
+    )
+    return ImageFilterPreviewResponse(preview=data_uri)

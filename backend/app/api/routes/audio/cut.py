@@ -27,14 +27,9 @@ async def cut_audio(
     request: AudioCutRequest,
     service: AudioCutService = Depends(Provide[AppContainer.audio_cut]),
 ):
-    try:
-        task_id = await service.submit_cut(
-            file_id=request.file_id,
-            start_time=request.start_time,
-            end_time=request.end_time,
-        )
-        return AudioCutResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_cut(
+        file_id=request.file_id,
+        start_time=request.start_time,
+        end_time=request.end_time,
+    )
+    return AudioCutResponse(task_id=task_id)

@@ -27,11 +27,8 @@ async def create_midi(
     service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
 ):
     """Create a new MIDI file from editor data, returns file_id."""
-    try:
-        file_id = service.create_midi(request.data)
-        return {"file_id": file_id}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    file_id = service.create_midi(request.data)
+    return {"file_id": file_id}
 
 
 @router.get("/midi/{file_id}")
@@ -40,12 +37,7 @@ async def read_midi(
     file_id: str,
     service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
 ):
-    try:
-        return service.read_midi(file_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.read_midi(file_id)
 
 
 @router.put("/midi/{file_id}")
@@ -55,12 +47,7 @@ async def save_midi(
     request: MidiSaveRequest,
     service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
 ):
-    try:
-        return service.save_midi(file_id, request.data)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.save_midi(file_id, request.data)
 
 
 @router.post("/midi/convert")

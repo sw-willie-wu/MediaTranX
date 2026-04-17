@@ -26,13 +26,8 @@ async def split_document(
     service: DocumentSplitService = Depends(Provide[AppContainer.doc_split]),
 ):
     """Submit PDF split task."""
-    try:
-        task_id = await service.submit(
-            file_id=request.file_id,
-            pages=request.pages,
-        )
-        return {"task_id": task_id, "message": "PDF split task submitted"}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit(
+        file_id=request.file_id,
+        pages=request.pages,
+    )
+    return {"task_id": task_id, "message": "PDF split task submitted"}

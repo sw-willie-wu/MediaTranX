@@ -38,12 +38,5 @@ async def interpolate_video(
     request: InterpolateRequest,
     service: InterpolateService = Depends(Provide[AppContainer.video_interpolate]),
 ):
-    try:
-        task_id = await service.submit(file_id=request.file_id, model=request.model, mode=request.mode, target_fps=request.target_fps, output_format=request.output_format, video_codec=request.video_codec)
-        return InterpolateResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit(file_id=request.file_id, model=request.model, mode=request.mode, target_fps=request.target_fps, output_format=request.output_format, video_codec=request.video_codec)
+    return InterpolateResponse(task_id=task_id)

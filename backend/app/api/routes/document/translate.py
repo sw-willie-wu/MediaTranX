@@ -47,19 +47,14 @@ async def translate_document(
     Translates uploaded text files using local LLM.
     The specified model is automatically downloaded on first use.
     """
-    try:
-        task_id = await service.submit_translate(
-            file_id=request.file_id,
-            source_language=request.source_language,
-            target_language=request.target_language,
-            model_size=request.model_size,
-            model_family=request.model_family,
-            quantization=request.quantization,
-            translate_style=request.translate_style,
-            glossary=request.glossary,
-        )
-        return DocumentTranslateResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_translate(
+        file_id=request.file_id,
+        source_language=request.source_language,
+        target_language=request.target_language,
+        model_size=request.model_size,
+        model_family=request.model_family,
+        quantization=request.quantization,
+        translate_style=request.translate_style,
+        glossary=request.glossary,
+    )
+    return DocumentTranslateResponse(task_id=task_id)

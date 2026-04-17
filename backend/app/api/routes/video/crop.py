@@ -33,14 +33,9 @@ async def crop_video(
     request: VideoCropRequest,
     service: VideoCropService = Depends(Provide[AppContainer.video_crop]),
 ):
-    try:
-        task_id = await service.submit_crop(
-            file_id=request.file_id,
-            x=request.x, y=request.y,
-            width=request.width, height=request.height,
-        )
-        return VideoCropResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_crop(
+        file_id=request.file_id,
+        x=request.x, y=request.y,
+        width=request.width, height=request.height,
+    )
+    return VideoCropResponse(task_id=task_id)

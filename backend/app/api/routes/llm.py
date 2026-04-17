@@ -49,11 +49,7 @@ async def get_translate_model_status(
     language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
 ):
     """Query translation model download/availability status."""
-    try:
-        status = language_service.get_model_status(model_family, model_size, quantization)
-        return status
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return language_service.get_model_status(model_family, model_size, quantization)
 
 
 # ── Chat ──
@@ -79,14 +75,11 @@ async def llm_chat(
     service: ChatService = Depends(Provide[AppContainer.chat_service]),
 ):
     """Send a prompt directly to a local LLM."""
-    try:
-        output = service.chat(
-            prompt=request.prompt,
-            model_family=request.model_family,
-            model_size=request.model_size,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-        )
-        return ChatResponse(result=output)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    output = service.chat(
+        prompt=request.prompt,
+        model_family=request.model_family,
+        model_size=request.model_size,
+        max_tokens=request.max_tokens,
+        temperature=request.temperature,
+    )
+    return ChatResponse(result=output)

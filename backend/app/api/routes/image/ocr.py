@@ -43,29 +43,24 @@ async def ocr_image(
     language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
 ):
     """Submit image OCR task."""
-    try:
-        if request.remote and request.provider and request.remote_model:
-            task_id = await service.submit_ocr_remote(
-                file_id=request.file_id,
-                provider=request.provider,
-                conn_id=request.conn_id,
-                remote_model=request.remote_model,
-                format=request.format,
-            )
-        else:
-            model_family = request.model_family or language_service.get_default_vlm_model()
-            task_id = await service.submit_ocr(
-                file_id=request.file_id,
-                model_family=model_family,
-                size=request.size,
-                quantization=request.quantization,
-                format=request.format,
-            )
-        return ImageOcrResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    if request.remote and request.provider and request.remote_model:
+        task_id = await service.submit_ocr_remote(
+            file_id=request.file_id,
+            provider=request.provider,
+            conn_id=request.conn_id,
+            remote_model=request.remote_model,
+            format=request.format,
+        )
+    else:
+        model_family = request.model_family or language_service.get_default_vlm_model()
+        task_id = await service.submit_ocr(
+            file_id=request.file_id,
+            model_family=model_family,
+            size=request.size,
+            quantization=request.quantization,
+            format=request.format,
+        )
+    return ImageOcrResponse(task_id=task_id)
 
 
 @router.get("/ocr/status")
@@ -78,8 +73,5 @@ async def get_ocr_status(
     language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
 ):
     """Query VLM OCR environment status."""
-    try:
-        effective_model_family = model_family or language_service.get_default_vlm_model()
-        return service.get_status(model_family=effective_model_family, size=size, quantization=quantization)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    effective_model_family = model_family or language_service.get_default_vlm_model()
+    return service.get_status(model_family=effective_model_family, size=size, quantization=quantization)

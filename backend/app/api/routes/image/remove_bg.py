@@ -33,13 +33,8 @@ async def remove_bg(
     service: ImageRemoveBgService = Depends(Provide[AppContainer.image_remove_bg]),
 ):
     """Submit background removal task."""
-    try:
-        task_id = await service.submit_remove_bg(
-            file_id=request.file_id,
-            mode=request.mode,
-        )
-        return ImageRemoveBgResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_remove_bg(
+        file_id=request.file_id,
+        mode=request.mode,
+    )
+    return ImageRemoveBgResponse(task_id=task_id)

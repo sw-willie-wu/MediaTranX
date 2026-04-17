@@ -39,21 +39,16 @@ async def save_history(
     history: TaskHistoryService = Depends(Provide[AppContainer.task_history]),
 ):
     """Save a frontend-only task to history."""
-    try:
-        history.save_frontend_task(
-            task_id=request.task_id,
-            task_type=request.task_type,
-            status=request.status,
-            label=request.label,
-            file_name=request.file_name,
-            error=request.error,
-            result=request.result,
-        )
-        return SaveHistoryResponse(status="saved", task_id=request.task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    history.save_frontend_task(
+        task_id=request.task_id,
+        task_type=request.task_type,
+        status=request.status,
+        label=request.label,
+        file_name=request.file_name,
+        error=request.error,
+        result=request.result,
+    )
+    return SaveHistoryResponse(status="saved", task_id=request.task_id)
 
 
 @router.get("")

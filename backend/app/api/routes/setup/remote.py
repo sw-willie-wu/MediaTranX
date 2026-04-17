@@ -98,16 +98,11 @@ async def test_connection(
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
     """Test a connection."""
-    try:
-        return service.test_connection(
-            provider=data.provider,
-            endpoint=data.endpoint,
-            api_key=data.api_key,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.test_connection(
+        provider=data.provider,
+        endpoint=data.endpoint,
+        api_key=data.api_key,
+    )
 
 
 @router.get("/remote/models")
@@ -119,9 +114,4 @@ async def list_remote_models(
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
     """List available remote models."""
-    try:
-        return {"models": service.list_remote_models(provider, endpoint, api_key)}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return {"models": service.list_remote_models(provider, endpoint, api_key)}

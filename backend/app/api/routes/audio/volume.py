@@ -27,14 +27,9 @@ async def adjust_volume(
     request: AudioVolumeRequest,
     service: AudioVolumeService = Depends(Provide[AppContainer.audio_volume]),
 ):
-    try:
-        task_id = await service.submit_volume(
-            file_id=request.file_id,
-            volume_db=request.volume_db,
-            normalize=request.normalize,
-        )
-        return AudioVolumeResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_volume(
+        file_id=request.file_id,
+        volume_db=request.volume_db,
+        normalize=request.normalize,
+    )
+    return AudioVolumeResponse(task_id=task_id)

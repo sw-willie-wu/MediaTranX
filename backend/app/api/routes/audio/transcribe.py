@@ -60,10 +60,7 @@ async def get_transcribe_status(
     model_size: str = "medium",
     service: AudioTranscribeService = Depends(Provide[AppContainer.audio_transcribe]),
 ):
-    try:
-        return service.get_model_status(model_size)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.get_model_status(model_size)
 
 @router.post("/transcribe", response_model=AudioTranscribeResponse)
 @inject
@@ -71,34 +68,29 @@ async def transcribe_audio(
     request: AudioTranscribeRequest,
     service: AudioTranscribeService = Depends(Provide[AppContainer.audio_transcribe]),
 ):
-    try:
-        task_id = await service.submit_transcribe(
-            file_id=request.file_id,
-            language=request.language,
-            model_size=request.model_size,
-            output_format=request.output_format,
-            vocal_separation=request.vocal_separation,
-            align=request.align,
-            translate=request.translate,
-            target_lang=request.target_lang,
-            translate_model_family=request.translate_model_family,
-            translate_model_size=request.translate_model_size,
-            translate_quantization=request.translate_quantization,
-            translate_remote=request.translate_remote,
-            translate_provider=request.translate_provider,
-            translate_conn_id=request.translate_conn_id,
-            translate_remote_model=request.translate_remote_model,
-            summarize=request.summarize,
-            summarize_model_family=request.summarize_model_family,
-            summarize_model_size=request.summarize_model_size,
-            summarize_quantization=request.summarize_quantization,
-            summarize_remote=request.summarize_remote,
-            summarize_provider=request.summarize_provider,
-            summarize_conn_id=request.summarize_conn_id,
-            summarize_remote_model=request.summarize_remote_model,
-        )
-        return AudioTranscribeResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_transcribe(
+        file_id=request.file_id,
+        language=request.language,
+        model_size=request.model_size,
+        output_format=request.output_format,
+        vocal_separation=request.vocal_separation,
+        align=request.align,
+        translate=request.translate,
+        target_lang=request.target_lang,
+        translate_model_family=request.translate_model_family,
+        translate_model_size=request.translate_model_size,
+        translate_quantization=request.translate_quantization,
+        translate_remote=request.translate_remote,
+        translate_provider=request.translate_provider,
+        translate_conn_id=request.translate_conn_id,
+        translate_remote_model=request.translate_remote_model,
+        summarize=request.summarize,
+        summarize_model_family=request.summarize_model_family,
+        summarize_model_size=request.summarize_model_size,
+        summarize_quantization=request.summarize_quantization,
+        summarize_remote=request.summarize_remote,
+        summarize_provider=request.summarize_provider,
+        summarize_conn_id=request.summarize_conn_id,
+        summarize_remote_model=request.summarize_remote_model,
+    )
+    return AudioTranscribeResponse(task_id=task_id)

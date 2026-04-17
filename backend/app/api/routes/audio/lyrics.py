@@ -46,24 +46,19 @@ async def extract_lyrics(
     request: LyricsRequest,
     service: AudioLyricsService = Depends(Provide[AppContainer.audio_lyrics]),
 ):
-    try:
-        task_id = await service.submit_lyrics(
-            file_id=request.file_id,
-            whisper_size=request.whisper_size,
-            align=request.align,
-            translate=request.translate,
-            target_lang=request.target_lang,
-            translate_model_family=request.translate_model_family,
-            translate_model_size=request.translate_model_size,
-            translate_quantization=request.translate_quantization,
-            translate_remote=request.translate_remote,
-            translate_provider=request.translate_provider,
-            translate_conn_id=request.translate_conn_id,
-            translate_remote_model=request.translate_remote_model,
-            output_format=request.output_format,
-        )
-        return LyricsResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_lyrics(
+        file_id=request.file_id,
+        whisper_size=request.whisper_size,
+        align=request.align,
+        translate=request.translate,
+        target_lang=request.target_lang,
+        translate_model_family=request.translate_model_family,
+        translate_model_size=request.translate_model_size,
+        translate_quantization=request.translate_quantization,
+        translate_remote=request.translate_remote,
+        translate_provider=request.translate_provider,
+        translate_conn_id=request.translate_conn_id,
+        translate_remote_model=request.translate_remote_model,
+        output_format=request.output_format,
+    )
+    return LyricsResponse(task_id=task_id)

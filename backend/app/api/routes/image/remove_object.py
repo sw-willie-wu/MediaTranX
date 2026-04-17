@@ -39,9 +39,5 @@ async def remove_object(
             mask_data=request.mask_data,
         )
         return ImageRemoveObjectResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))

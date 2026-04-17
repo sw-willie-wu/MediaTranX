@@ -65,13 +65,8 @@ async def get_audio_info(
     service: AudioTranscodeService = Depends(Provide[AppContainer.audio_transcode]),
 ):
     """Get audio file info."""
-    try:
-        info = await service.get_audio_info(file_id)
-        return AudioInfoResponse(**info)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    info = await service.get_audio_info(file_id)
+    return AudioInfoResponse(**info)
 
 
 @router.post("/transcode", response_model=AudioTranscodeResponse)
@@ -81,21 +76,16 @@ async def transcode_audio(
     service: AudioTranscodeService = Depends(Provide[AppContainer.audio_transcode]),
 ):
     """Submit audio transcode task."""
-    try:
-        codec = _FORMAT_CODEC_MAP.get(request.output_format)
-        if not codec:
-            raise ValueError(f"Unsupported format: {request.output_format}")
+    codec = _FORMAT_CODEC_MAP.get(request.output_format)
+    if not codec:
+        raise ValueError(f"Unsupported format: {request.output_format}")
 
-        task_id = await service.submit_transcode(
-            file_id=request.file_id,
-            output_format=request.output_format,
-            audio_codec=codec,
-            audio_bitrate=request.audio_bitrate,
-            sample_rate=request.sample_rate,
-            channels=request.channels,
-        )
-        return AudioTranscodeResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_transcode(
+        file_id=request.file_id,
+        output_format=request.output_format,
+        audio_codec=codec,
+        audio_bitrate=request.audio_bitrate,
+        sample_rate=request.sample_rate,
+        channels=request.channels,
+    )
+    return AudioTranscodeResponse(task_id=task_id)
