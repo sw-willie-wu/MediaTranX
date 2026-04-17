@@ -6,6 +6,8 @@ Routes should not import engine.ai.registry / engine.ai.model_manager directly.
 import logging
 from pathlib import Path
 
+from app.engine.ai.model_manager import ModelManager
+
 logger = logging.getLogger(__name__)
 
 # --- Category definitions (dynamically generated for frontend tabs) ---
@@ -81,7 +83,8 @@ _LANG_NAMES = {
 class ModelMetadataService:
     """Model metadata enumeration and download status query service."""
 
-    def __init__(self):
+    def __init__(self, model_manager: ModelManager):
+        self._model_manager = model_manager
         logger.info("ModelMetadataService initialized")
 
     def list_all(self) -> dict:
@@ -117,10 +120,9 @@ class ModelMetadataService:
 
     def _enumerate_pth_models(self) -> list[dict]:
         """Enumerate PyTorch models (super-resolution, face restoration, segmentation)."""
-        from app.init.container import get_container
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
 
-        manager = get_container().model_manager()
+        manager = self._model_manager
         items = []
         pth_models = MODELS_REGISTRY.get(FORMAT_PTH, {})
 

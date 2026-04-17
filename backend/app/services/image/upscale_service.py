@@ -2,10 +2,10 @@
 import logging
 from pathlib import Path
 from typing import Callable, Optional
-from uuid import uuid4
 
 from PIL import Image
 
+from app.engine.ai.model_manager import ModelManager
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 logger = logging.getLogger(__name__)
@@ -29,9 +29,11 @@ def _parse_model_id(model_id: str, known_families: list) -> tuple:
 class ImageUpscaleService:
     """Image super-resolution using Real-ESRGAN / Real-CUGAN / SwinIR / BSRGAN models."""
 
-    def __init__(self, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, file_service: FileService, task_manager: TaskManager,
+                 model_manager: ModelManager):
         self._file_service = file_service
         self._task_manager = task_manager
+        self._model_manager = model_manager
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_UPSCALE,
@@ -52,9 +54,7 @@ class ImageUpscaleService:
         face_restore_fidelity: float = 0.7,
         face_restore_upscale: int = 2,
     ) -> str:
-        file_info = self._file_service.get_file(file_id)
-        if not file_info:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_UPSCALE, {
             "file_id": file_id,
@@ -79,13 +79,10 @@ class ImageUpscaleService:
         face_fix = params.get("face_fix", False)
         face_restore_model_id = params.get("face_restore_model_id")
 
-        file_info = self._file_service.get_file(file_id)
+        file_info = self._file_service.require_file(file_id)
 
         # === GPU queue pipeline ===
-        from app.init.container import get_container
-        manager = get_container().model_manager()
-
-        with manager.gpu_session():
+        with self._model_manager.gpu_session():
             # -- Super-resolution --
             upscale_family, upscale_variant = _parse_model_id(model_id, _UPSCALE_FAMILIES)
             progress_callback(0.05, f"task.progress.load_model|{model_id}")
@@ -103,32 +100,28 @@ class ImageUpscaleService:
 
             upscale_end = 0.7 if face_fix else 0.85
 
+            from app.utils.image_alpha import preserve_alpha
+
             def _upscale_single(img: Image.Image, progress_start: float, progress_end: float) -> Image.Image:
                 """Upscale one frame, preserving alpha if present."""
-                img_rgba = img.convert("RGBA")
-                alpha_channel = img_rgba.split()[3]
-                has_alpha = alpha_channel.getextrema()[0] < 255
-                img_to_process = img_rgba.convert("RGB") if has_alpha else img.convert("RGB")
-
                 span = progress_end - progress_start
-                result = upscaler.enhance(
-                    img_to_process,
-                    model_id=upscale_variant,
-                    scale=native_scale,
-                    on_progress=lambda p, m: progress_callback(
-                        progress_start + (0.05 + p * 0.35 if p <= 1.0 else 0.40 + (p - 1.0) * 0.30) * span,
-                        m,
-                    ),
-                )
-                if scale < native_scale:
-                    orig_w, orig_h = img.size
-                    result = result.resize((orig_w * scale, orig_h * scale), Image.LANCZOS)
-                if has_alpha:
-                    alpha_upscaled = alpha_channel.resize(result.size, Image.LANCZOS)
-                    result_rgba = result.convert("RGBA")
-                    result_rgba.putalpha(alpha_upscaled)
-                    result = result_rgba
-                return result
+
+                def _upscale_rgb(rgb: Image.Image) -> Image.Image:
+                    result = upscaler.enhance(
+                        rgb,
+                        model_id=upscale_variant,
+                        scale=native_scale,
+                        on_progress=lambda p, m: progress_callback(
+                            progress_start + (0.05 + p * 0.35 if p <= 1.0 else 0.40 + (p - 1.0) * 0.30) * span,
+                            m,
+                        ),
+                    )
+                    if scale < native_scale:
+                        orig_w, orig_h = rgb.size
+                        result = result.resize((orig_w * scale, orig_h * scale), Image.LANCZOS)
+                    return result
+
+                return preserve_alpha(img, _upscale_rgb)
 
             with Image.open(file_info.file_path) as raw:
                 anim_fmt = animation_format(raw)
@@ -167,8 +160,11 @@ class ImageUpscaleService:
                 except Exception as e:
                     logger.warning(f"Face restore failed, returning upscaled image only: {e}")
 
-        output_file_id = str(uuid4())
-        output_path = self._generate_output_path(file_info, scale)
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix=f"_x{scale}",
+            ext=".png",
+        )
         if anim_fmt:
             output_path = output_path.with_suffix(animation_ext(anim_fmt))
             save_animated(result_frames, output_path, anim_fmt)
@@ -189,7 +185,3 @@ class ImageUpscaleService:
             "scale": scale,
         }
 
-    def _generate_output_path(self, file_info, scale) -> Path:
-        output_dir = self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        return output_dir / f"{Path(file_info.original_filename).stem}_x{scale}_{uuid4().hex[:8]}.png"

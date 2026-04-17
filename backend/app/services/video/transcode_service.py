@@ -3,7 +3,6 @@ import logging
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable, Optional
-from uuid import uuid4
 
 from app.engine.ffmpeg import (
     FFmpegWrapper,
@@ -68,9 +67,7 @@ class VideoTranscodeService:
         Returns:
             Media information dictionary
         """
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         media_info = await self._ffmpeg.get_media_info(file_info.file_path)
         return asdict(media_info)
@@ -106,9 +103,7 @@ class VideoTranscodeService:
             task_id: Task ID
         """
         # Validate file exists
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         # Build task parameters
         params = {
@@ -154,10 +149,7 @@ class VideoTranscodeService:
             Result dictionary
         """
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         # Map codec strings to enums
         video_codec_map = {
@@ -198,13 +190,11 @@ class VideoTranscodeService:
         )
 
         # Build output path
-        output_file_id = str(uuid4())
-        original_stem = Path(file_info.original_filename).stem
-        final_filename = f"{original_stem}_transcoded_{output_file_id[:8]}.{params['output_format']}"
-
-        output_dir = self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / final_filename
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_transcoded",
+            ext=f".{params['output_format']}",
+        )
 
         # Progress callback wrapper
         def on_ffmpeg_progress(progress: TranscodeProgress):

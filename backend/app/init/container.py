@@ -33,7 +33,13 @@ from app.services.tasks.history_service import TaskHistoryService
 # Defers `import module; cls(...)` until the Singleton is first accessed.
 
 def _lazy(module_path: str, class_name: str):
-    """Return a callable that lazily imports *class_name* from *module_path*."""
+    """Return a callable that lazily imports *class_name* from *module_path*.
+
+    `_cls` cache is not lock-protected on purpose: the container is wired at
+    startup and every Singleton is resolved from a single event loop or request
+    worker; the narrow race (two concurrent first-access) would at worst load
+    the module twice (a no-op) under Python's GIL.
+    """
     _cls = None
 
     def factory(*args, **kwargs):
@@ -69,17 +75,19 @@ class AppContainer(containers.DeclarativeContainer):
     # ── LLM Service ──
     chat_service = providers.Singleton(
         _lazy("app.services.llm.chat_service", "ChatService"),
+        llama_runtime=llama_runtime,
     )
 
     # ── Setup Services ──
     config_service = providers.Singleton(ConfigService)
     device_service = providers.Singleton(DeviceService)
-    language_service = providers.Singleton(LanguageService)
-    model_metadata = providers.Singleton(ModelMetadataService)
+    language_service = providers.Singleton(LanguageService, model_manager=model_manager)
+    model_metadata = providers.Singleton(ModelMetadataService, model_manager=model_manager)
     remote_service = providers.Singleton(RemoteService)
     setup_service = providers.Singleton(
         SetupService,
         task_manager=task_manager,
+        model_manager=model_manager,
     )
 
     # ── Task History ──
@@ -101,10 +109,12 @@ class AppContainer(containers.DeclarativeContainer):
     audio_transcribe = providers.Singleton(
         _lazy("app.services.audio.transcribe_service", "AudioTranscribeService"),
         file_service=file_service, task_manager=task_manager,
+        llama_runtime=llama_runtime,
     )
     audio_separate = providers.Singleton(
         _lazy("app.services.audio.separate_service", "AudioSeparateService"),
         file_service=file_service, task_manager=task_manager,
+        model_manager=model_manager,
     )
     audio_lyrics = providers.Singleton(
         _lazy("app.services.audio.lyrics_service", "AudioLyricsService"),
@@ -119,6 +129,7 @@ class AppContainer(containers.DeclarativeContainer):
     image_upscale = providers.Singleton(
         _lazy("app.services.image.upscale_service", "ImageUpscaleService"),
         file_service=file_service, task_manager=task_manager,
+        model_manager=model_manager,
     )
     image_crop = providers.Singleton(
         _lazy("app.services.image.crop_service", "ImageCropService"),
@@ -135,14 +146,18 @@ class AppContainer(containers.DeclarativeContainer):
     image_ocr = providers.Singleton(
         _lazy("app.services.image.ocr_service", "ImageOcrService"),
         file_service=file_service, task_manager=task_manager,
+        model_manager=model_manager, llama_runtime=llama_runtime,
+        language_service=language_service, remote_service=remote_service,
     )
     image_remove_bg = providers.Singleton(
         _lazy("app.services.image.remove_bg_service", "ImageRemoveBgService"),
         file_service=file_service, task_manager=task_manager,
+        model_manager=model_manager,
     )
     image_remove_object = providers.Singleton(
         _lazy("app.services.image.remove_object_service", "ImageRemoveObjectService"),
         file_service=file_service, task_manager=task_manager,
+        model_manager=model_manager,
     )
 
     # ── Video Services (lazy) ──
@@ -167,7 +182,7 @@ class AppContainer(containers.DeclarativeContainer):
         ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
     )
     video_summary = providers.Singleton(
-        _lazy("app.services.video.summary_service", "VideoSummaryService"),
+        _lazy("app.services.video.summary.service", "VideoSummaryService"),
         ffmpeg=ffmpeg,
         file_service=file_service,
         task_manager=task_manager,
@@ -176,16 +191,20 @@ class AppContainer(containers.DeclarativeContainer):
     video_interpolate = providers.Singleton(
         _lazy("app.services.video.interpolate_service", "InterpolateService"),
         file_service=file_service, task_manager=task_manager,
+        ffmpeg=ffmpeg,
     )
     video_enhance = providers.Singleton(
         _lazy("app.services.video.enhance_service", "EnhanceService"),
         file_service=file_service, task_manager=task_manager,
+        ffmpeg=ffmpeg,
     )
 
     # ── Document Services (lazy) ──
     doc_ocr = providers.Singleton(
         _lazy("app.services.document.doc_ocr_service", "DocumentOcrService"),
         file_service=file_service, task_manager=task_manager,
+        model_manager=model_manager, llama_runtime=llama_runtime,
+        language_service=language_service, remote_service=remote_service,
     )
     doc_pdf_convert = providers.Singleton(
         _lazy("app.services.document.pdf_convert_service", "DocumentPdfConvertService"),
@@ -198,6 +217,7 @@ class AppContainer(containers.DeclarativeContainer):
     doc_translate = providers.Singleton(
         _lazy("app.services.document.translate_service", "TranslateService"),
         file_service=file_service, task_manager=task_manager,
+        model_manager=model_manager, llama_runtime=llama_runtime,
     )
 
 

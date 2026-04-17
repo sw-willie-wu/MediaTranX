@@ -6,14 +6,15 @@ Routes should not import app.utils.prompts constants directly.
 import logging
 from typing import Optional
 
-from app.utils.prompts import (
+from app.engine.ai.model_manager import ModelManager
+from app.utils.languages import (
     WHISPER_LANGUAGE_OPTIONS,
     SUPPORTED_LANGUAGES,
     STYLE_OPTIONS,
     WHISPER_TO_BCP47,
     LANG_NAMES_EN,
-    DEFAULT_VLM_MODEL,
 )
+from app.utils.prompts import DEFAULT_VLM_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,8 @@ logger = logging.getLogger(__name__)
 class LanguageService:
     """Language options, translation model status, and VLM status query service."""
 
-    def __init__(self):
+    def __init__(self, model_manager: ModelManager):
+        self._model_manager = model_manager
         logger.info("LanguageService initialized")
 
     def get_whisper_languages(self) -> list[dict]:
@@ -50,9 +52,7 @@ class LanguageService:
 
     def get_model_status(self, model_family: str = "gemma4", model_size: str = "4b", quantization: Optional[str] = None) -> dict:
         """Query translation model status (llama-server binary + model file)."""
-        from app.init.container import get_container
-
-        mm = get_container().model_manager()
+        mm = self._model_manager
         available = mm.is_llama_ready()
         variant = f"{model_size}:{quantization}" if quantization else model_size
         model_downloaded = (
@@ -67,9 +67,7 @@ class LanguageService:
 
     def get_vlm_status(self, model_family: str = "qwen3vl", size: str = "4b", quantization: Optional[str] = None) -> dict:
         """Query VLM model status."""
-        from app.init.container import get_container
-
-        mm = get_container().model_manager()
+        mm = self._model_manager
         available = mm.is_llama_ready()
         variant = f"{size}:{quantization}" if quantization else size
         model_downloaded = (

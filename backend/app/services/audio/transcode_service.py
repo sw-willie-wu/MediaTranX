@@ -2,7 +2,6 @@
 import logging
 from pathlib import Path
 from typing import Callable, Optional
-from uuid import uuid4
 
 from app.engine.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
@@ -11,7 +10,6 @@ from app.workers.task_manager import TaskManager
 logger = logging.getLogger(__name__)
 
 TASK_TYPE_AUDIO_TRANSCODE = "audio.transcode"
-DEFAULT_SAMPLE_RATE = 44100
 
 
 class AudioTranscodeService:
@@ -32,15 +30,13 @@ class AudioTranscodeService:
 
     async def get_audio_info(self, file_id: str) -> dict:
         """Get audio file information."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         media_info = await self._ffmpeg.get_media_info(file_info.file_path)
         return {
             "duration": media_info.duration,
-            "sample_rate": DEFAULT_SAMPLE_RATE,  # TODO: get from ffprobe
-            "channels": 2,
+            "sample_rate": media_info.sample_rate or 44100,
+            "channels": media_info.channels or 2,
             "codec": media_info.audio_codec,
             "bitrate": media_info.bitrate,
             "file_size": media_info.file_size,
@@ -56,9 +52,7 @@ class AudioTranscodeService:
         channels: Optional[int] = None,
     ) -> str:
         """Submit an audio transcoding task."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id": file_id,
@@ -89,18 +83,14 @@ class AudioTranscodeService:
     ) -> dict:
         """Execute audio transcoding."""
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         # Build output path
-        output_file_id = str(uuid4())
-        original_stem = Path(file_info.original_filename).stem
-        final_filename = f"{original_stem}_converted_{output_file_id[:8]}.{params['output_format']}"
-
-        output_dir = self._file_service.output_dir
-        output_path = output_dir / final_filename
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_converted",
+            ext=f".{params['output_format']}",
+        )
 
         # Build extra_args (codec-specific parameters)
         codec = params["audio_codec"]

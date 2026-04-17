@@ -47,9 +47,7 @@ class DocumentSplitService:
         file_id: str,
         pages: str,
     ) -> str:
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
         params = {
             "file_id": file_id, "pages": pages,
         }
@@ -61,9 +59,7 @@ class DocumentSplitService:
         from pypdf import PdfReader, PdfWriter
 
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         progress_callback(0.1, "task.progress.reading_pdf")
         reader = PdfReader(str(file_info.file_path))

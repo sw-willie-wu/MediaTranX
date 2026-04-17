@@ -2,7 +2,6 @@
 import logging
 from pathlib import Path
 from typing import Callable, Optional
-from uuid import uuid4
 
 from PIL import Image
 
@@ -38,9 +37,7 @@ class ImageCropService:
         height: int = 0,
     ) -> str:
         """Submit an image crop task."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id": file_id,
@@ -72,10 +69,7 @@ class ImageCropService:
         from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
 
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         progress_callback(0.1, "task.progress.loading_image")
 
@@ -101,14 +95,12 @@ class ImageCropService:
         progress_callback(0.7, "task.progress.saving_file")
 
         # Build output path
-        output_file_id = str(uuid4())
-        original_stem = Path(file_info.original_filename).stem
         ext = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
-        final_filename = f"{original_stem}_cropped_{output_file_id[:8]}.{ext}"
-
-        output_dir = self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / final_filename
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_cropped",
+            ext=f".{ext}",
+        )
 
         if anim_fmt:
             save_animated(result_frames, output_path, anim_fmt)

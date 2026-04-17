@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from app.init.container import AppContainer
 
 if TYPE_CHECKING:
-    from app.services.video.summary_service import VideoSummaryService
+    from app.services.video.summary import VideoSummaryService
 
 router = APIRouter()
 
@@ -55,25 +55,20 @@ async def summarize_video(
     request: VideoSummaryRequest,
     service: VideoSummaryService = Depends(Provide[AppContainer.video_summary]),
 ):
-    try:
-        task_id = await service.submit_summary(
-            file_id=request.file_id,
-            llm_model_family=request.llm_model_family,
-            llm_model_size=request.llm_model_size,
-            language=request.language,
-            vlm_model_family=request.vlm_model_family,
-            vlm_model_size=request.vlm_model_size,
-            whisper_model_size=request.whisper_model_size,
-            vocal_separation=request.vocal_separation,
-            align=request.align,
-            word_timestamps=request.word_timestamps,
-            condition_on_previous_text=request.condition_on_previous_text,
-            min_silence_duration_ms=request.min_silence_duration_ms,
-            vad_threshold=request.vad_threshold,
-            summary_mode=request.summary_mode,
-        )
-        return VideoSummaryResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_summary(
+        file_id=request.file_id,
+        llm_model_family=request.llm_model_family,
+        llm_model_size=request.llm_model_size,
+        language=request.language,
+        vlm_model_family=request.vlm_model_family,
+        vlm_model_size=request.vlm_model_size,
+        whisper_model_size=request.whisper_model_size,
+        vocal_separation=request.vocal_separation,
+        align=request.align,
+        word_timestamps=request.word_timestamps,
+        condition_on_previous_text=request.condition_on_previous_text,
+        min_silence_duration_ms=request.min_silence_duration_ms,
+        vad_threshold=request.vad_threshold,
+        summary_mode=request.summary_mode,
+    )
+    return VideoSummaryResponse(task_id=task_id)

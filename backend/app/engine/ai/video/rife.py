@@ -15,7 +15,6 @@ from PIL import Image
 
 from app.init.configs import SETTINGS
 from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
-from app.init.container import get_container
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +34,10 @@ class RIFEWrapper:
         self._model = None
         self._device = None
         self._variant = None
+        # Lazy import to avoid top-level container coupling (audit §9.2 #2).
+        # RIFE is not a BaseRuntime subclass yet (see audit §9.1), so it has to
+        # fetch the manager at construction time rather than receive it via DI.
+        from app.init.container import get_container
         self._manager = get_container().model_manager()
         logger.info("RIFEWrapper initialized")
 
@@ -212,6 +215,7 @@ class RIFEWrapper:
         self,
         input_path: str | Path,
         output_path: str | Path,
+        ffmpeg_path: str,
         variant: str = "v4.26",
         multiplier: int = 2,
         width: int = 0,
@@ -240,6 +244,7 @@ class RIFEWrapper:
             output_fps=output_fps,
             input_width=width, input_height=height,
             output_width=width, output_height=height,
+            ffmpeg_path=ffmpeg_path,
             video_codec=video_codec,
             target_fps=target_fps,
         )

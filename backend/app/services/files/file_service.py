@@ -182,8 +182,39 @@ class FileService:
         return file_info
 
     def get_file(self, file_id: str) -> Optional[FileData]:
-        """Get file information."""
+        """Get file information; returns None if not registered (use `require_file`
+        for the raise-on-missing path)."""
         return self._files.get(file_id)
+
+    def list_files(self) -> list[FileData]:
+        """Return all registered files (avoids route-layer access to _files dict)."""
+        return list(self._files.values())
+
+    def set_saved_path(self, file_id: str, saved_path: str) -> None:
+        """Persist the user-chosen save destination to FileData.metadata + sidecar.
+
+        Raises FileNotFoundError_ if the file is not registered.
+        Raises OSError if sidecar write fails.
+        """
+        from app.handler.exceptions import FileNotFoundError_
+        fd = self._files.get(file_id)
+        if fd is None:
+            raise FileNotFoundError_(f"File not found: {file_id}")
+        fd.metadata = {**(fd.metadata or {}), "saved_path": saved_path}
+        self.write_sidecar(file_id)
+
+    def require_file(self, file_id: str) -> FileData:
+        """Get file information; raises FileNotFoundError_ (→ 404) if not registered.
+
+        Use this in submit/execute paths that need the file to exist. Keep
+        `get_file` for optional lookups (e.g. best-effort preview reads).
+        """
+        from app.handler.exceptions import FileNotFoundError_
+
+        fd = self._files.get(file_id)
+        if fd is None:
+            raise FileNotFoundError_(f"File not found: {file_id}")
+        return fd
 
     def get_file_path(self, file_id: str) -> Optional[Path]:
         """Get file path."""

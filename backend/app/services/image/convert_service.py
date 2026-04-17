@@ -2,7 +2,6 @@
 import logging
 from pathlib import Path
 from typing import Callable, Optional
-from uuid import uuid4
 
 from PIL import Image
 
@@ -33,9 +32,7 @@ class ImageConvertService:
         """Get image information."""
         from app.utils.gif_utils import is_animated
 
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         # Read image info with PIL
         with Image.open(file_info.file_path) as img:
@@ -62,9 +59,7 @@ class ImageConvertService:
         scale: Optional[float] = None,
     ) -> str:
         """Submit an image conversion task."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id": file_id,
@@ -95,10 +90,7 @@ class ImageConvertService:
     ) -> dict:
         """Execute image format conversion."""
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         from app.utils.gif_utils import animation_format, process_gif_frames, save_animated
 
@@ -151,9 +143,6 @@ class ImageConvertService:
         progress_callback(0.6, "task.progress.converting_format")
 
         # Build output path
-        output_file_id = str(uuid4())
-
-        # Format to extension mapping
         ext_map = {
             "JPEG": "jpg",
             "JPG": "jpg",
@@ -166,11 +155,11 @@ class ImageConvertService:
         }
         ext = ext_map.get(output_format, params["output_format"])
 
-        original_stem = Path(file_info.original_filename).stem
-        final_filename = f"{original_stem}_converted_{output_file_id[:8]}.{ext}"
-
-        output_dir = self._file_service.output_dir
-        output_path = output_dir / final_filename
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_converted",
+            ext=f".{ext}",
+        )
 
         progress_callback(0.8, "task.progress.saving_file")
 

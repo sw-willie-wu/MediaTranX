@@ -9,7 +9,8 @@ logger = logging.getLogger(__name__)
 class ChatService:
     """Direct LLM chat inference service."""
 
-    def __init__(self):
+    def __init__(self, llama_runtime):
+        self._llama_runtime = llama_runtime
         logger.info("ChatService initialized")
 
     def chat(
@@ -21,9 +22,7 @@ class ChatService:
         temperature: float = 0.1,
     ) -> str:
         """Send a prompt directly to a local LLM and return the response."""
-        from app.init.container import get_container
-
-        runtime = get_container().llama_runtime()
+        runtime = self._llama_runtime
         with runtime.acquire(model_family, model_size):
             return runtime.chat(
                 messages=[{"role": "user", "content": prompt}],

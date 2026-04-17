@@ -5,6 +5,7 @@ SetupService singleton + system status query + feature module delegation.
 import sys
 import logging
 from typing import Callable
+from app.engine.ai.model_manager import ModelManager
 from app.init.configs import SETTINGS
 from app.workers.task_manager import TaskManager
 
@@ -17,8 +18,9 @@ logger = logging.getLogger(__name__)
 class SetupService:
     """Environment setup, system status, and model download/removal service."""
 
-    def __init__(self, task_manager: TaskManager):
+    def __init__(self, task_manager: TaskManager, model_manager: ModelManager):
         self._task_manager = task_manager
+        self._model_manager = model_manager
         # Register model download handler with TaskManager
         task_manager.register_handler(
             "setup.model_download", self._handle_model_download,
@@ -32,12 +34,10 @@ class SetupService:
 
     async def get_system_status(self) -> dict:
         """Get detailed system and environment status."""
-        from pathlib import Path
         from app.engine.device import get_device_info, select_torch_index
-        from app.init.container import get_container
 
         device = get_device_info()
-        manager = get_container().model_manager()
+        manager = self._model_manager
         torch_idx = select_torch_index()
         return {
             "device": device,

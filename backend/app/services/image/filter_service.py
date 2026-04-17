@@ -6,7 +6,6 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Callable
-from uuid import uuid4
 
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
@@ -50,9 +49,7 @@ class ImageFilterService:
         vignette:   float = 0.0,
     ) -> str:
         """Submit an image adjustment task."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id":    file_id,
@@ -225,9 +222,7 @@ class ImageFilterService:
         import base64
         import io
 
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         # Use cached thumbnail to avoid repeated disk I/O + resize
         rgb_bytes, alpha_bytes = self._load_preview_thumb(str(file_info.file_path), max_size)
@@ -318,26 +313,18 @@ class ImageFilterService:
         progress_callback: Callable[[float, str], None],
     ) -> dict:
         file_id   = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
 
         progress_callback(0.05, "task.progress.loading_image")
 
+        from app.utils.image_alpha import preserve_alpha
+
+        def noop(p, m): pass
+
         def _filter_single(frame: Image.Image) -> Image.Image:
-            _rgba = frame.convert("RGBA")
-            alpha_ch = _rgba.split()[3]
-            has_alpha = alpha_ch.getextrema()[0] < 255
-            rgb = _rgba.convert("RGB")
-            def noop(p, m): pass
-            rgb = self._apply_all(rgb, params, noop)
-            if has_alpha:
-                out = rgb.convert("RGBA")
-                out.putalpha(alpha_ch)
-                return out
-            return rgb
+            return preserve_alpha(frame, lambda rgb: self._apply_all(rgb, params, noop))
 
         with Image.open(file_info.file_path) as raw:
             anim_fmt = animation_format(raw)
@@ -355,16 +342,13 @@ class ImageFilterService:
 
         progress_callback(0.75, "task.progress.saving_file")
 
-        output_file_id    = str(uuid4())
-        original_stem     = Path(file_info.original_filename).stem
-        ext               = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
-        final_filename    = f"{original_stem}_adjusted_{output_file_id[:8]}.{ext}"
-
+        ext = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
         # Save adjusted results to system temp dir; user chooses final location on download
-        output_dir = self._file_service.output_dir
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / final_filename
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_adjusted",
+            ext=f".{ext}",
+        )
 
         if anim_fmt:
             save_animated(result_frames, output_path, anim_fmt)

@@ -4,7 +4,6 @@ Video cut service — trim video by time range.
 import logging
 from pathlib import Path
 from typing import Callable, Optional
-from uuid import uuid4
 
 from app.engine.ffmpeg import (
     FFmpegWrapper,
@@ -42,9 +41,7 @@ class VideoCutService:
         stream_copy: bool = True,
     ) -> str:
         """Submit a video cut task."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id": file_id,
@@ -72,25 +69,17 @@ class VideoCutService:
     ) -> dict:
         """Execute video cut."""
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         start_time = params["start_time"]
         end_time = params["end_time"]
         stream_copy = params.get("stream_copy", True)
 
         # Build output path
-        output_file_id = str(uuid4())
-
-        original_ext = Path(file_info.original_filename).suffix
-        original_stem = Path(file_info.original_filename).stem
-        final_filename = f"{original_stem}_cut_{output_file_id[:8]}{original_ext}"
-
-        output_dir = self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / final_filename
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_cut",
+        )
 
         def on_ffmpeg_progress(progress: TranscodeProgress):
             progress_callback(

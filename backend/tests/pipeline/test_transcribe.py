@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.utils.transcribe import (
+from app.pipeline.transcribe import (
     TranscribeOptions,
     _build_stage_list,
     _make_stage_progress,

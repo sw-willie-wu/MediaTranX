@@ -26,9 +26,7 @@ class AudioMidiService:
         """Read a .mid file and return JSON representation."""
         from app.utils.midi import midi_to_json
 
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
         return midi_to_json(file_info.file_path)
 
     def create_midi(self, data: dict) -> str:
@@ -52,9 +50,7 @@ class AudioMidiService:
         """Save edited MIDI JSON back to .mid file."""
         from app.utils.midi import json_to_midi
 
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
         json_to_midi(data, file_info.file_path)
         logger.info(f"MIDI saved: {file_info.file_path}")
         return {"status": "ok", "file_id": file_id}

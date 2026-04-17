@@ -14,6 +14,7 @@ class TestFramePipeConstructor:
             output_fps=30.0,
             input_width=1920, input_height=1080,
             output_width=3840, output_height=2160,
+            ffmpeg_path="ffmpeg",
         )
         assert pipe.input_width == 1920
         assert pipe.input_height == 1080
@@ -27,6 +28,7 @@ class TestFramePipeConstructor:
             output_fps=60.0,
             input_width=1280, input_height=720,
             output_width=1280, output_height=720,
+            ffmpeg_path="ffmpeg",
         )
         assert pipe.input_width == pipe.output_width
         assert pipe._frame_size == 1280 * 720 * 3
@@ -38,6 +40,7 @@ class TestFramePipeConstructor:
             output_fps=fps,
             input_width=1920, input_height=1080,
             output_width=1920, output_height=1080,
+            ffmpeg_path="ffmpeg",
         )
         assert pipe.output_fps == Fraction(60000, 1001)
         assert float(pipe.output_fps) == pytest.approx(59.94, abs=0.01)
@@ -48,6 +51,7 @@ class TestFramePipeConstructor:
             output_fps=30.0,
             input_width=640, input_height=480,
             output_width=640, output_height=480,
+            ffmpeg_path="ffmpeg",
         )
         assert isinstance(pipe.output_fps, Fraction)
         assert float(pipe.output_fps) == 30.0
@@ -58,6 +62,7 @@ class TestFramePipeConstructor:
             output_fps=Fraction(60000, 1001),
             input_width=640, input_height=480,
             output_width=640, output_height=480,
+            ffmpeg_path="ffmpeg",
             target_fps=Fraction(30000, 1001),
         )
         assert isinstance(pipe.target_fps, Fraction)

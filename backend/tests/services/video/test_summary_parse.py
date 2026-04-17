@@ -1,36 +1,7 @@
-from app.utils.video_summary import (
+from app.services.video.summary.parse import (
     SubtitleEntry,
-    parse_srt_text,
     chunk_entries_by_tokens,
 )
-
-
-SAMPLE_SRT = """1
-00:00:01,000 --> 00:00:03,500
-第一句
-
-2
-00:00:03,500 --> 00:00:06,000
-第二句
-
-3
-00:00:06,000 --> 00:00:09,000
-第三句
-"""
-
-
-def test_parse_srt_text_returns_entries_with_seconds():
-    entries = parse_srt_text(SAMPLE_SRT)
-    assert len(entries) == 3
-    assert entries[0].start == 1.0
-    assert entries[0].end == 3.5
-    assert entries[0].text == "第一句"
-    assert entries[2].end == 9.0
-
-
-def test_parse_srt_handles_utf8_bom():
-    entries = parse_srt_text("\ufeff" + SAMPLE_SRT)
-    assert len(entries) == 3
 
 
 def test_chunk_entries_by_tokens_splits_when_budget_exceeded():
@@ -58,11 +29,6 @@ def test_chunk_single_when_budget_large():
     assert chunks[0] == entries
 
 
-def test_parse_srt_text_handles_empty_and_garbage():
-    assert parse_srt_text("") == []
-    assert parse_srt_text("not an srt") == []
-
-
 def test_chunk_single_oversize_entry_still_produces_one_chunk():
     # A single cue that alone exceeds the budget should still form a chunk
     # rather than being dropped or causing an infinite loop.
@@ -73,7 +39,7 @@ def test_chunk_single_oversize_entry_still_produces_one_chunk():
 
 
 def test_format_transcript_joins_entries_with_newline():
-    from app.utils.video_summary import format_transcript
+    from app.services.video.summary.parse import format_transcript
     entries = [
         SubtitleEntry(start=1.0, end=2.0, text="x"),
         SubtitleEntry(start=2.0, end=3.5, text="y"),
@@ -81,37 +47,43 @@ def test_format_transcript_joins_entries_with_newline():
     assert format_transcript(entries) == "[1.0-2.0] x\n[2.0-3.5] y"
 
 
-from app.utils.video_summary import (
-    build_summary_prompt,
+from app.utils.prompts import build_summary_prompt
+from app.services.video.summary.parse import (
+    format_transcript,
     parse_summary_json,
     parse_bullets_markdown,
     merge_chunk_outputs,
     SummaryChunkResult,
 )
+from app.services.video.summary.markdown import build_markdown
+
+
+def _prompt_for(entries, **kwargs):
+    return build_summary_prompt(format_transcript(entries), **kwargs)
 
 
 def test_build_summary_prompt_contains_transcript():
     entries = [SubtitleEntry(start=0.0, end=2.0, text="hello")]
-    prompt = build_summary_prompt(entries, output_language="zh-TW")
+    prompt = _prompt_for(entries, output_language="zh-TW")
     assert "[0.0-2.0] hello" in prompt
     assert "Traditional Chinese" in prompt
 
 
 def test_build_summary_prompt_simplified_chinese():
     entries = [SubtitleEntry(start=0.0, end=2.0, text="hello")]
-    prompt = build_summary_prompt(entries, output_language="zh-CN")
+    prompt = _prompt_for(entries, output_language="zh-CN")
     assert "Simplified Chinese" in prompt
 
 
 def test_build_summary_prompt_fallback_when_no_language():
     entries = [SubtitleEntry(start=0.0, end=2.0, text="hello")]
-    prompt = build_summary_prompt(entries)
+    prompt = _prompt_for(entries)
     assert "same language as the transcript" in prompt
 
 
 def test_build_summary_prompt_bullets_mode_asks_for_markdown():
     entries = [SubtitleEntry(start=0.0, end=2.0, text="hello")]
-    prompt = build_summary_prompt(entries, summary_mode="bullets")
+    prompt = _prompt_for(entries, summary_mode="bullets")
     assert "Markdown" in prompt or "markdown" in prompt
     assert "[mm:ss-mm:ss]" in prompt
     # bullets mode never mentions narrative/turning_points
@@ -121,7 +93,7 @@ def test_build_summary_prompt_bullets_mode_asks_for_markdown():
 
 def test_build_summary_prompt_narrative_mode_asks_for_json():
     entries = [SubtitleEntry(start=0.0, end=2.0, text="hello")]
-    prompt = build_summary_prompt(entries, summary_mode="narrative")
+    prompt = _prompt_for(entries, summary_mode="narrative")
     assert "JSON" in prompt
     assert "narrative" in prompt
     assert "turning_points" in prompt
@@ -242,9 +214,6 @@ def test_merge_narrative_concats_summaries_and_tps():
 
 
 # ---- build_markdown ----
-
-from app.utils.video_summary import build_markdown
-
 
 def test_build_markdown_inserts_images_into_bullets_markdown():
     parsed = parse_bullets_markdown(

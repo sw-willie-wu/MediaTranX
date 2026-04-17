@@ -35,9 +35,7 @@ class DocumentPdfConvertService:
         file_id: str,
         output_format: str = "txt",
     ) -> str:
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
         params = {
             "file_id": file_id,
             "output_format": output_format,
@@ -48,9 +46,7 @@ class DocumentPdfConvertService:
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         src_path = file_info.file_path
         src_ext = Path(file_info.original_filename).suffix.lower()

@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 
-from app.utils.prompts import WHISPER_TO_BCP47
+from app.utils.languages import WHISPER_TO_BCP47
 from app.utils.subtitles import (
     Segment,
     format_srt,
@@ -16,6 +16,7 @@ from app.utils.subtitles import (
     parse_vtt,
 )
 from app.utils.bilingual_output import write_bilingual_or_single
+from app.engine.ai.model_manager import ModelManager
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -49,9 +50,12 @@ def _format_subtitle_segments(segments: list[dict], ext: str) -> str:
 class TranslateService:
     """Document translation service for text and subtitle files (local and remote)."""
 
-    def __init__(self, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, file_service: FileService, task_manager: TaskManager,
+                 model_manager: ModelManager, llama_runtime):
         self._file_service = file_service
         self._task_manager = task_manager
+        self._model_manager = model_manager
+        self._llama_runtime = llama_runtime
 
         # Register task handler
         self._task_manager.register_handler(
@@ -85,9 +89,7 @@ class TranslateService:
         Returns:
             task_id
         """
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id": file_id,
@@ -127,10 +129,7 @@ class TranslateService:
         3. Write output file (95~100%)
         """
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         source_language = params["source_language"]
         target_language = params["target_language"]
@@ -164,68 +163,59 @@ class TranslateService:
 
         is_remote = params.get("remote", False)
 
-        if is_remote:
-            # === Cloud translation ===
-            from app.utils.translate import get_cloud_provider, translate_srt_cloud, translate_text_cloud
+        if is_subtitle:
+            from app.pipeline.translate import translate_srt_auto
 
-            provider = params.get("provider", "")
-            conn_id = params.get("conn_id")
-            remote_model = params.get("remote_model", "")
-            prov = get_cloud_provider(provider, conn_id, remote_model)
+            segments = _parse_subtitle_file(text, ext)
+            logger.info(f"Parsed {len(segments)} subtitle segments from {ext} file")
+            src = source_language if is_remote else WHISPER_TO_BCP47.get(source_language, source_language)
 
-            if is_subtitle:
-                segments = _parse_subtitle_file(text, ext)
+            translated_segments = translate_srt_auto(
+                segments, src, target_language,
+                remote=is_remote,
+                on_progress=translate_progress,
+                provider=params.get("provider", ""),
+                conn_id=params.get("conn_id"),
+                remote_model=params.get("remote_model", ""),
+                model_family=model_family,
+                model_size=model_size,
+                quantization=quantization,
+                style=translate_style,
+                glossary=glossary,
+            )
+            translated_text = None
+        elif is_remote:
+            # === Cloud text translation ===
+            from app.pipeline.translate import get_cloud_provider
+            from app.services.document.translate_text import translate_text_cloud
 
-                logger.info(f"Parsed {len(segments)} subtitle segments from {ext} file")
-                src = WHISPER_TO_BCP47.get(source_language, source_language)
-
-                translated_segments = translate_srt_cloud(
-                    segments, src, target_language, prov, remote_model,
-                    on_progress=translate_progress,
-                    style=translate_style, glossary=glossary,
-                )
-                translated_text = None
-            else:
-                translated_text = translate_text_cloud(
-                    text, source_language, target_language, prov, remote_model,
-                    on_progress=translate_progress, glossary=glossary,
-                )
-                translated_segments = None
+            prov = get_cloud_provider(
+                params.get("provider", ""),
+                params.get("conn_id"),
+                params.get("remote_model", ""),
+            )
+            translated_text = translate_text_cloud(
+                text, source_language, target_language, prov, params.get("remote_model", ""),
+                on_progress=translate_progress, glossary=glossary,
+            )
+            translated_segments = None
         else:
-            # === Local translation ===
-            from app.init.container import get_container
-            from app.utils.translate import translate_srt_local, translate_text_local
+            # === Local text translation ===
+            from app.services.document.translate_text import translate_text_local
 
             variant = f"{model_size}:{quantization}" if quantization else model_size
-
-            with get_container().model_manager().gpu_session():
-                runtime = get_container().llama_runtime()
+            with self._model_manager.gpu_session():
+                runtime = self._llama_runtime
                 translate_progress(0.0, "task.progress.load_translate_model")
-
                 with runtime.acquire(model_family, variant, lambda p, m: translate_progress(p * 0.05, m)):
-                    if is_subtitle:
-                        segments = _parse_subtitle_file(text, ext)
-
-                        logger.info(f"Parsed {len(segments)} subtitle segments from {ext} file")
-                        src = WHISPER_TO_BCP47.get(source_language, source_language)
-
-                        translate_progress(0.05, "task.progress.start_translate")
-                        translated_segments = translate_srt_local(
-                            segments, src, target_language, runtime,
-                            on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
-                            style=translate_style, glossary=glossary,
-                            model_family=model_family, model_size=model_size,
-                        )
-                        translated_text = None
-                    else:
-                        translate_progress(0.05, "task.progress.start_translate")
-                        translated_text = translate_text_local(
-                            text, source_language, target_language, runtime,
-                            on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
-                            glossary=glossary, model_family=model_family,
-                            model_size=model_size,
-                        )
-                        translated_segments = None
+                    translate_progress(0.05, "task.progress.start_translate")
+                    translated_text = translate_text_local(
+                        text, source_language, target_language, runtime,
+                        on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
+                        glossary=glossary, model_family=model_family,
+                        model_size=model_size,
+                    )
+                    translated_segments = None
 
         # === Stage 3: Write output file (95~100%) ===
         progress_callback(0.95, "task.progress.writing_output_file")

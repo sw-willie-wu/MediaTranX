@@ -4,7 +4,6 @@ Video extract-audio service — extract audio track from video files.
 import logging
 from pathlib import Path
 from typing import Callable, Optional
-from uuid import uuid4
 
 from app.engine.ffmpeg import (
     FFmpegWrapper,
@@ -42,9 +41,7 @@ class VideoExtractAudioService:
         audio_bitrate: Optional[str] = None,
     ) -> str:
         """Submit an audio extraction task."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id": file_id,
@@ -71,22 +68,17 @@ class VideoExtractAudioService:
     ) -> dict:
         """Execute audio extraction."""
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         audio_format = params.get("audio_format", "mp3")
         audio_bitrate = params.get("audio_bitrate")
 
         # Build output path
-        output_file_id = str(uuid4())
-        original_stem = Path(file_info.original_filename).stem
-        final_filename = f"{original_stem}_audio_{output_file_id[:8]}.{audio_format}"
-
-        output_dir = self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / final_filename
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_audio",
+            ext=f".{audio_format}",
+        )
 
         def on_ffmpeg_progress(progress: TranscodeProgress):
             progress_callback(

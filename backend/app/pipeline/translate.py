@@ -1,10 +1,13 @@
-"""
-Batch translation utility functions.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Provides SRT-format batch translation, shared across services.
-Supports both cloud (RemoteProvider) and local (LlamaServerRuntime) backends.
+"""Cross-service SRT batch translation orchestration.
 
+Supports both cloud (RemoteProvider) and local (LlamaServerRuntime) backends.
 All translations use SRT format (aligned by index, more stable than line-split).
+
+Plain-text translation (document-only) lives in
+`services/document/translate_text.py` since it has a single consumer.
+
+`get_cloud_provider` remains here temporarily and is scheduled for removal
+after Wave 4 §2.4 (services inject RemoteService directly).
 """
 from __future__ import annotations
 
@@ -24,14 +27,9 @@ _CLOUD_DEFAULT_CTX = {
 
 
 def _calc_srt_batch_size(n_ctx: int, seg_dicts: list[dict], max_batch: int = 0) -> int:
-    """
-    Calculate SRT translation batch size from context window and segment content.
-    Shared by both local and cloud translation paths.
+    """Calculate SRT translation batch size from context window and segment content.
 
-    Args:
-        n_ctx: context window size (tokens)
-        seg_dicts: subtitle segments
-        max_batch: hard cap (0 = no cap)
+    Shared by both local and cloud translation paths.
     """
     if not seg_dicts:
         return 1
@@ -58,7 +56,7 @@ def _calc_srt_batch_size(n_ctx: int, seg_dicts: list[dict], max_batch: int = 0) 
     return result
 
 
-def _get_cloud_ctx(prov, model: str = "") -> int:
+def get_cloud_ctx(prov, model: str = "") -> int:
     """Get context window size for a cloud provider."""
     provider_name = type(prov).__name__.lower().replace("provider", "")
     if provider_name == "ollama":
@@ -70,149 +68,17 @@ def _get_cloud_ctx(prov, model: str = "") -> int:
     return _CLOUD_DEFAULT_CTX.get(provider_name, _CLOUD_DEFAULT_CTX["default"])
 
 
-def _get_cloud_text_chunk_size(prov, model: str = "") -> int:
-    """Get plain-text translation chunk size (in characters) based on provider context."""
-    n_ctx = _get_cloud_ctx(prov, model)
-    # Reserve half for output, ~2 chars per token
-    return max(1000, (n_ctx // 4) * 2)
-
-
 def get_cloud_provider(
     provider: str,
     conn_id: Optional[int],
     remote_model: str,
 ) -> "RemoteProvider":
-    """Get a cloud provider instance."""
+    """Get a cloud provider instance. TEMPORARY: removed after Wave 4 §2.4."""
     from app.init.container import get_container
     prov = get_container().remote_service().get_provider_for_connection(conn_id, provider)
     if prov is None:
         raise RuntimeError(f"No available {provider} connection found")
     return prov
-
-
-def translate_text_cloud(
-    text: str,
-    source_lang: str,
-    target_lang: str,
-    prov: "RemoteProvider",
-    model: str,
-    on_progress: Optional[Callable[[float, str], None]] = None,
-    max_chars: Optional[int] = None,
-    glossary: Optional[dict[str, str]] = None,
-) -> str:
-    """
-    Chunked plain-text translation (cloud). Suitable for OCR results,
-    documents, and other text without timestamps.
-
-    Returns:
-        The fully translated text.
-    """
-    from app.utils.inference import get_remote_inference_config
-    from app.utils.prompts import build_translate_prompt, split_text
-
-    remote_config = get_remote_inference_config("translate")
-
-    if max_chars is None:
-        max_chars = _get_cloud_text_chunk_size(prov, model)
-    chunks = split_text(text, max_chars=max_chars)
-    total = len(chunks)
-    logger.info(f"translate_text_cloud: {len(text)} chars, max_chars={max_chars}, chunks={total}")
-    translated_chunks = []
-
-    for i, chunk in enumerate(chunks):
-        if on_progress:
-            if total == 1:
-                on_progress(0.05, "task.progress.translating")
-            else:
-                on_progress(i / total, f"task.progress.translating_segment|{i + 1}|{total}")
-
-        prompt = build_translate_prompt(chunk, source_lang, target_lang, glossary=glossary)
-        messages = [
-            {"role": "system", "content": "You are a professional translator."},
-            {"role": "user", "content": prompt},
-        ]
-        max_tokens = min(max(len(chunk) * 4, 100), remote_config["max_tokens"])
-        result = prov.chat(
-            model=model, messages=messages,
-            max_tokens=max_tokens, temperature=remote_config["temperature"],
-        )
-        translated_chunks.append(result)
-
-        if on_progress:
-            progress = min((i + 1) / total, 1.0)
-            on_progress(progress, f"task.progress.translated_segment|{i + 1}|{total}")
-
-    return "\n\n".join(translated_chunks)
-
-
-def translate_text_local(
-    text: str,
-    source_lang: str,
-    target_lang: str,
-    runtime,
-    on_progress: Optional[Callable[[float, str], None]] = None,
-    max_chars: Optional[int] = None,
-    glossary: Optional[dict[str, str]] = None,
-    model_family: str = "gemma4",
-    model_size: str = "4b",
-    style: str = "colloquial",
-    format: str = "text",
-) -> str:
-    """
-    Chunked plain-text translation (local LLM). Must be called within
-    a runtime.acquire() context.
-
-    Returns:
-        The fully translated text.
-    """
-    from app.utils.inference import get_inference_config, calc_max_tokens, estimate_tokens
-    from app.utils.prompts import get_prompt_builder, split_text
-
-    config = get_inference_config(model_family, model_size, "translate")
-    builder = get_prompt_builder("translate", config["prompt_builder"], thinking=config.get("thinking", False))
-    n_ctx = config["n_ctx"]
-
-    # Auto-calculate chunk size from model capacity if not specified
-    if max_chars is None:
-        chunk_tokens = n_ctx // 3  # Reserve 2/3 for output + prompt overhead
-        max_chars = int(chunk_tokens * 3.5)
-
-    chunks = split_text(text, max_chars=max_chars)
-    total = len(chunks)
-    logger.info(f"translate_text_local: {len(text)} chars, max_chars={max_chars}, chunks={total}")
-    translated_chunks = []
-
-    from app.utils.inference import fake_progress
-
-    for i, chunk in enumerate(chunks):
-        result = builder(chunk, source_lang, target_lang, format, style, glossary)
-        input_tokens = estimate_tokens(chunk)
-        max_tokens = calc_max_tokens(config, n_ctx, input_tokens)
-
-        chunk_start_pct = i / total
-        chunk_end_pct = (i + 1) / total
-
-        with fake_progress(on_progress, chunk_start_pct, chunk_end_pct,
-                           f"task.progress.translating_segment|{i + 1}|{total}",
-                           runtime=runtime):
-            if result["mode"] == "chat":
-                output = runtime.chat(
-                    messages=result["messages"], max_tokens=max_tokens,
-                    temperature=config["temperature"],
-                    top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
-                )
-            else:
-                output = runtime.complete(
-                    prompt=result["prompt"], max_tokens=max_tokens,
-                    temperature=config["temperature"],
-                    top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
-                )
-        translated_chunks.append(output)
-
-        if on_progress:
-            on_progress(chunk_end_pct, f"task.progress.translating_segment|{i + 1}|{total}")
-
-    return "\n\n".join(translated_chunks)
 
 
 def translate_srt_cloud(
@@ -227,24 +93,15 @@ def translate_srt_cloud(
     style: str = "colloquial",
     glossary: Optional[dict[str, str]] = None,
 ) -> list[dict]:
-    """
-    Cloud SRT batch translation.
-
-    Args:
-        seg_dicts: [{"start": float, "end": float, "text": str}, ...]
-        prov: RemoteProvider instance
-        model: Cloud model ID
-
-    Returns:
-        Translated seg_dicts list.
-    """
+    """Cloud SRT batch translation."""
     from app.utils.inference import get_remote_inference_config
-    from app.utils.prompts import build_srt_translate_prompt, segments_to_srt, parse_srt_response
+    from app.utils.prompts import build_srt_translate_prompt
+    from app.utils.subtitles import segments_to_srt, parse_srt_response
 
     remote_config = get_remote_inference_config("translate")
 
     if batch_size is None:
-        n_ctx = _get_cloud_ctx(prov, model)
+        n_ctx = get_cloud_ctx(prov, model)
         batch_size = _calc_srt_batch_size(n_ctx, seg_dicts)
 
     total = len(seg_dicts)
@@ -288,6 +145,70 @@ def translate_srt_cloud(
     return translated_all
 
 
+def translate_srt_auto(
+    seg_dicts: list[dict],
+    source_lang: str,
+    target_lang: str,
+    *,
+    remote: bool = False,
+    on_progress: Optional[Callable[[float, str], None]] = None,
+    # Remote-only
+    provider: str = "",
+    conn_id: Optional[int] = None,
+    remote_model: str = "",
+    # Local-only
+    model_family: str = "gemma4",
+    model_size: str = "4b",
+    quantization: Optional[str] = None,
+    # Common
+    keep_names: bool = True,
+    style: str = "colloquial",
+    glossary: Optional[dict[str, str]] = None,
+    # Progress keys (local path only; overridable for per-service naming)
+    load_msg: str = "task.progress.load_translate_model",
+    start_msg: str = "task.progress.start_translate",
+) -> list[dict]:
+    """Unified local/remote SRT translation dispatch.
+
+    Collapses the 4-service-copied boilerplate (cloud provider fetch + acquire +
+    0.05/0.95 progress split + translate_srt_{cloud,local}). Caller pre-shapes
+    progress via `on_progress` (e.g. stage_progress callback).
+
+    Progress layout (when `on_progress` provided):
+    - Remote: translate_srt_cloud spans the full 0..1 range.
+    - Local: 0.0 → 0.05 for runtime.acquire (model load), 0.05 → 1.0 for translation.
+    """
+    if remote:
+        prov = get_cloud_provider(provider, conn_id, remote_model)
+        return translate_srt_cloud(
+            seg_dicts, source_lang, target_lang, prov, remote_model,
+            on_progress=on_progress,
+            keep_names=keep_names, style=style, glossary=glossary,
+        )
+
+    from app.init.container import get_container
+
+    variant = f"{model_size}:{quantization}" if quantization else model_size
+    runtime = get_container().llama_runtime()
+
+    if on_progress:
+        on_progress(0.0, load_msg)
+
+    with runtime.acquire(
+        model_family,
+        variant,
+        lambda p, m: on_progress(p * 0.05, m) if on_progress else None,
+    ):
+        if on_progress:
+            on_progress(0.05, start_msg)
+        return translate_srt_local(
+            seg_dicts, source_lang, target_lang, runtime,
+            on_progress=lambda p, m: on_progress(0.05 + p * 0.95, m) if on_progress else None,
+            keep_names=keep_names, style=style, glossary=glossary,
+            model_family=model_family, model_size=model_size,
+        )
+
+
 def translate_srt_local(
     seg_dicts: list[dict],
     source_lang: str,
@@ -301,20 +222,15 @@ def translate_srt_local(
     model_family: str = "gemma4",
     model_size: str = "4b",
 ) -> list[dict]:
-    """
-    Local LLM SRT batch translation (must be called within runtime.acquire() context).
-
-    Args:
-        seg_dicts: [{"start": float, "end": float, "text": str}, ...]
-        runtime: An acquired LlamaServerRuntime instance
-        model_family: Model family for inference config
-        model_size: Model size variant (e.g. "4b", "12b")
-
-    Returns:
-        Translated seg_dicts list.
-    """
-    from app.utils.inference import get_inference_config, calc_max_tokens, estimate_tokens
-    from app.utils.prompts import get_prompt_builder, segments_to_srt, parse_srt_response
+    """Local LLM SRT batch translation (must be called within runtime.acquire() context)."""
+    from app.utils.inference import (
+        get_inference_config,
+        calc_max_tokens,
+        estimate_tokens,
+        fake_progress,
+    )
+    from app.utils.prompts import get_prompt_builder
+    from app.utils.subtitles import segments_to_srt, parse_srt_response
 
     config = get_inference_config(model_family, model_size, "translate")
     builder = get_prompt_builder("translate", config["prompt_builder"], thinking=config.get("thinking", False))
@@ -329,8 +245,6 @@ def translate_srt_local(
     num_batches = (total + batch_size - 1) // batch_size
     logger.info(f"translate_srt_local: {total} segments, batch_size={batch_size}, batches={num_batches}")
     translated_all = []
-
-    from app.utils.inference import fake_progress
 
     for batch_idx in range(num_batches):
         start = batch_idx * batch_size

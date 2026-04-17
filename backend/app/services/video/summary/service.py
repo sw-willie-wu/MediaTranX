@@ -11,19 +11,22 @@ from app.engine.video import SceneDetector
 from app.services.files.file_service import FileService
 from app.services.video._frame_picker import pick_frame_timestamp
 from app.utils.inference import calc_max_tokens, estimate_tokens, get_inference_config
-from app.utils.transcribe import TranscribeOptions, transcribe_audio_sync
-from app.utils.video_summary import (
+from app.pipeline.transcribe import TranscribeOptions, transcribe_audio_sync
+from app.utils.prompts import (
     SUMMARY_MODE_BULLETS,
     SUMMARY_MODE_NARRATIVE,
+    build_summary_prompt,
+)
+from app.services.video.summary.parse import (
     SubtitleEntry,
     SummaryChunkResult,
-    build_markdown,
-    build_summary_prompt,
     chunk_entries_by_tokens,
+    format_transcript,
     merge_chunk_outputs,
     parse_bullets_markdown,
     parse_summary_json,
 )
+from app.services.video.summary.markdown import build_markdown
 from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
@@ -96,9 +99,7 @@ class VideoSummaryService:
         summary_mode: str = "bullets",
     ) -> str:
         """Submit a summary task."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id": file_id,
@@ -140,9 +141,7 @@ class VideoSummaryService:
         language = params.get("language", "zh-TW")
         summary_mode = params.get("summary_mode", "bullets")
 
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         video_path = Path(file_info.file_path)
 
@@ -235,7 +234,7 @@ class VideoSummaryService:
             # JSON for narrative mode) — see video_summary.py for the templates.
             output_lang = _resolve_output_language(language, result.language)
             prompt = build_summary_prompt(
-                chunk,
+                format_transcript(chunk),
                 output_language=output_lang,
                 summary_mode=summary_mode,
             )

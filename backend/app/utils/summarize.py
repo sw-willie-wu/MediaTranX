@@ -38,8 +38,8 @@ def map_reduce_summarize(
         build_summarize_prompt,
         build_chunk_summarize_prompt,
         build_merge_summaries_prompt,
-        split_text_for_context,
     )
+    from app.utils.text_chunking import split_text_for_context
 
     chunks = split_text_for_context(full_text, max_tokens=max_tokens_per_chunk)
     logger.info(f"map_reduce_summarize: {len(full_text)} chars, chunks={len(chunks)}")

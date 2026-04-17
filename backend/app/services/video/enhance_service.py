@@ -11,6 +11,7 @@ from uuid import uuid4
 import numpy as np
 from PIL import Image
 
+from app.engine.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -22,9 +23,11 @@ TASK_TYPE_VIDEO_ENHANCE = "video.enhance"
 class EnhanceService:
     """Video frame-by-frame enhancement using Real-ESRGAN super-resolution."""
 
-    def __init__(self, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, file_service: FileService, task_manager: TaskManager,
+                 ffmpeg: FFmpegWrapper):
         self._file_service = file_service
         self._task_manager = task_manager
+        self._ffmpeg = ffmpeg
         self._task_manager.register_handler(
             TASK_TYPE_VIDEO_ENHANCE, self._handle_task,
             output_policy="history",
@@ -44,7 +47,6 @@ class EnhanceService:
         return self._execute(params, progress_callback)
 
     def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        from app.init.container import get_container
         from app.engine.ai.image.realesrgan import get_realesrgan
         from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
         from app.utils.video_frames import FramePipe
@@ -54,16 +56,14 @@ class EnhanceService:
         output_format = params.get("output_format", "mp4")
         video_codec = params.get("video_codec", "h264")
 
-        file_info = self._file_service.get_file(file_id)
-        if not file_info:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         variant_spec = MODELS_REGISTRY[FORMAT_PTH]["realesrgan"]["variants"].get(variant)
         if not variant_spec:
             raise ValueError(f"Unknown variant: {variant}")
         scale = variant_spec.get("scale", 4)
 
-        ffmpeg = get_container().ffmpeg()
+        ffmpeg = self._ffmpeg
         media_info = ffmpeg.get_media_info_sync(file_info.file_path)
         source_fps = media_info.fps or 30.0
         source_fps_frac = media_info.fps_fraction or Fraction(30)
@@ -74,9 +74,7 @@ class EnhanceService:
 
         original_stem = Path(file_info.original_filename).stem
         output_filename = f"{original_stem}.enhanced_{variant}.{output_format}"
-        output_dir = self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / output_filename
+        output_path = self._file_service.output_dir / output_filename
 
         # Pipe: FFmpeg decode → Real-ESRGAN → FFmpeg encode
         # Decoder reads at source resolution, encoder writes at scaled resolution
@@ -89,6 +87,7 @@ class EnhanceService:
             output_fps=source_fps_frac,
             input_width=width, input_height=height,
             output_width=out_w, output_height=out_h,
+            ffmpeg_path=ffmpeg.ffmpeg_path,
             video_codec=video_codec,
         )
         pipe.open()

@@ -2,10 +2,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 import pytest
 
-from app.services.video.summary_service import (
-    VideoSummaryService,
-    TASK_TYPE_VIDEO_SUMMARY,
-)
+from app.services.video.summary import VideoSummaryService
+from app.services.video.summary.service import TASK_TYPE_VIDEO_SUMMARY
+from app.handler.exceptions import FileNotFoundError_
 
 
 def test_service_registers_handler():
@@ -31,7 +30,7 @@ def test_service_registers_handler():
 async def test_submit_summary_validates_file_exists():
     ffmpeg = MagicMock()
     file_service = MagicMock()
-    file_service.get_file.return_value = None
+    file_service.require_file.side_effect = FileNotFoundError_("File not found: nonexistent")
     task_manager = MagicMock()
 
     svc = VideoSummaryService(
@@ -40,7 +39,7 @@ async def test_submit_summary_validates_file_exists():
         task_manager=task_manager,
         chat_service=MagicMock(),
     )
-    with pytest.raises(ValueError, match="File not found"):
+    with pytest.raises(FileNotFoundError_, match="File not found"):
         await svc.submit_summary(
             file_id="nonexistent",
             llm_model_family="qwen3.5",
@@ -58,6 +57,7 @@ def _make_svc_with_mocks(tmp_path):
         original_filename="v.mp4",
     )
     file_service.get_file.return_value = file_info
+    file_service.require_file.return_value = file_info
     file_service.upload_dir = tmp_path / "upload"
     file_service.upload_dir.mkdir()
     file_service.output_dir = tmp_path / "out"
@@ -112,7 +112,7 @@ def test_execute_produces_zip_with_md_and_frames(tmp_path):
     def on_progress(p, m):
         progress_events.append((p, m))
 
-    with patch("app.services.video.summary_service.transcribe_audio_sync", return_value=fake_result), \
+    with patch("app.services.video.summary.service.transcribe_audio_sync", return_value=fake_result), \
          patch("app.engine.video.SceneDetector", FakeDetector):
         result = svc._execute(
             params={

@@ -8,9 +8,9 @@ from typing import Callable, Optional
 from uuid import uuid4
 
 from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper
-from app.utils.prompts import WHISPER_TO_BCP47
+from app.utils.languages import WHISPER_TO_BCP47
 from app.utils.bilingual_output import write_bilingual_or_single
-from app.utils.transcribe import TranscribeOptions, transcribe_audio_sync
+from app.pipeline.transcribe import TranscribeOptions, transcribe_audio_sync
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -22,10 +22,12 @@ TASK_TYPE_AUDIO_TRANSCRIBE = "audio.transcribe"
 class AudioTranscribeService:
     """Audio transcription using faster-whisper with optional translation and summarization."""
 
-    def __init__(self, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, file_service: FileService, task_manager: TaskManager,
+                 llama_runtime):
         self._whisper: WhisperWrapper = get_whisper()
         self._file_service = file_service
         self._task_manager = task_manager
+        self._llama_runtime = llama_runtime
         self._task_manager.register_handler(
             TASK_TYPE_AUDIO_TRANSCRIBE, self._handle_task,
             output_policy="results",
@@ -61,9 +63,7 @@ class AudioTranscribeService:
         summarize_conn_id: Optional[int] = None,
         summarize_remote_model: Optional[str] = None,
     ) -> str:
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
         params = {
             "file_id": file_id,
             "language": language,
@@ -95,9 +95,7 @@ class AudioTranscribeService:
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         output_format = params.get("output_format", "txt")
         do_align = params.get("align", False)
@@ -180,58 +178,27 @@ class AudioTranscribeService:
 
             translate_remote = params.get("translate_remote", False)
 
-            if translate_remote:
-                # Cloud translation (batch)
-                from app.utils.translate import get_cloud_provider, translate_srt_cloud
+            from app.pipeline.translate import translate_srt_auto
 
-                provider = params.get("translate_provider", "")
-                conn_id = params.get("translate_conn_id")
-                remote_model = params.get("translate_remote_model", "")
-                prov = get_cloud_provider(provider, conn_id, remote_model)
+            seg_dicts = [{"start": s.start, "end": s.end, "text": s.text} for s in result.segments]
+            src = detected_lang if translate_remote else WHISPER_TO_BCP47.get(detected_lang, detected_lang)
 
-                seg_dicts = [{"start": s.start, "end": s.end, "text": s.text} for s in result.segments]
-                translated_all = translate_srt_cloud(
-                    seg_dicts, detected_lang, target_lang, prov, remote_model,
-                    on_progress=lambda p, m: stage_progress("translate", p, m),
-                )
+            translated_all = translate_srt_auto(
+                seg_dicts, src, target_lang,
+                remote=translate_remote,
+                on_progress=lambda p, m: stage_progress("translate", p, m),
+                provider=params.get("translate_provider", ""),
+                conn_id=params.get("translate_conn_id"),
+                remote_model=params.get("translate_remote_model", ""),
+                model_family=params.get("translate_model_family", "gemma4"),
+                model_size=params.get("translate_model_size", "4b"),
+                quantization=params.get("translate_quantization"),
+            )
 
-                result.segments = [
-                    TranscribeSegment(s["start"], s["end"], s["text"])
-                    for s in translated_all
-                ]
-            else:
-                # Local translation
-                from app.utils.translate import translate_srt_local
-
-                translate_model_family = params.get("translate_model_family", "gemma4")
-                translate_model_size = params.get("translate_model_size", "4b")
-                translate_quantization = params.get("translate_quantization")
-
-                seg_dicts = [
-                    {"start": s.start, "end": s.end, "text": s.text}
-                    for s in result.segments
-                ]
-
-                variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
-                src = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
-                from app.init.container import get_container
-                runtime = get_container().llama_runtime()
-
-                stage_progress("translate", 0.0, "task.progress.load_translate_model")
-
-                with runtime.acquire(translate_model_family, variant, lambda p, m: stage_progress("translate", p * 0.05, m)):
-                    stage_progress("translate", 0.05, "task.progress.start_translate")
-                    translated_all = translate_srt_local(
-                        seg_dicts, src, target_lang, runtime,
-                        on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
-                        model_family=translate_model_family,
-                        model_size=translate_model_size,
-                    )
-
-                result.segments = [
-                    TranscribeSegment(s["start"], s["end"], s["text"])
-                    for s in translated_all
-                ]
+            result.segments = [
+                TranscribeSegment(s["start"], s["end"], s["text"])
+                for s in translated_all
+            ]
 
         # === Summarization ===
         summary_text = None
@@ -248,7 +215,7 @@ class AudioTranscribeService:
 
             if summarize_remote:
                 # Cloud map-reduce
-                from app.utils.translate import get_cloud_provider
+                from app.pipeline.translate import get_cloud_provider
                 from app.utils.inference import get_remote_inference_config
 
                 provider = params.get("summarize_provider", "")
@@ -266,9 +233,9 @@ class AudioTranscribeService:
                     )
 
                 from app.utils.summarize import map_reduce_summarize
-                from app.utils.translate import _get_cloud_ctx
+                from app.pipeline.translate import get_cloud_ctx
                 source_language = WHISPER_TO_BCP47.get(detected_lang, detected_lang)
-                cloud_ctx = _get_cloud_ctx(prov, remote_model)
+                cloud_ctx = get_cloud_ctx(prov, remote_model)
                 # Reserve half for output, 200 for prompt overhead
                 chunk_tokens = max(500, cloud_ctx // 2 - 200)
                 summary_text = map_reduce_summarize(
@@ -286,7 +253,7 @@ class AudioTranscribeService:
                 summary_quantization = params.get("summarize_quantization")
                 summary_variant = f"{summary_model_size}:{summary_quantization}" if summary_quantization else summary_model_size
                 from app.init.container import get_container
-                runtime = get_container().llama_runtime()
+                runtime = self._llama_runtime
 
                 config = get_inference_config(summary_model_family, summary_model_size, "summarize")
 

@@ -2,7 +2,6 @@
 import logging
 from pathlib import Path
 from typing import Callable
-from uuid import uuid4
 
 from app.engine.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
@@ -32,9 +31,7 @@ class AudioCutService:
         start_time: str,
         end_time: str,
     ) -> str:
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
         params = {
             "file_id": file_id,
             "start_time": start_time,
@@ -49,17 +46,14 @@ class AudioCutService:
 
     def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
-        output_file_id = str(uuid4())
         ext = Path(file_info.original_filename).suffix or ".mp3"
-        original_stem = Path(file_info.original_filename).stem
-
-        output_dir = self._file_service.output_dir
-        final_filename = f"{original_stem}_cut_{output_file_id[:8]}{ext}"
-        output_path = output_dir / final_filename
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_cut",
+            ext=ext,
+        )
 
         progress_callback(0.0, "task.progress.cut_starting")
         self._ffmpeg.cut_sync(

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
+from app.engine.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -19,9 +20,11 @@ TASK_TYPE_VIDEO_INTERPOLATE = "video.interpolate"
 class InterpolateService:
     """Video frame interpolation using RIFE to increase frame rate."""
 
-    def __init__(self, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, file_service: FileService, task_manager: TaskManager,
+                 ffmpeg: FFmpegWrapper):
         self._file_service = file_service
         self._task_manager = task_manager
+        self._ffmpeg = ffmpeg
         self._task_manager.register_handler(
             TASK_TYPE_VIDEO_INTERPOLATE, self._handle_task,
             output_policy="history",
@@ -55,7 +58,6 @@ class InterpolateService:
         return self._execute(params, progress_callback)
 
     def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        from app.init.container import get_container
         from app.engine.ai.video.rife import get_rife
 
         file_id = params["file_id"]
@@ -65,11 +67,9 @@ class InterpolateService:
         output_format = params.get("output_format", "mp4")
         video_codec = params.get("video_codec", "h264")
 
-        file_info = self._file_service.get_file(file_id)
-        if not file_info:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
-        ffmpeg = get_container().ffmpeg()
+        ffmpeg = self._ffmpeg
         media_info = ffmpeg.get_media_info_sync(file_info.file_path)
         source_fps = media_info.fps or 30.0
         source_fps_frac = media_info.fps_fraction or Fraction(30)
@@ -94,9 +94,7 @@ class InterpolateService:
         # Output path
         original_stem = Path(file_info.original_filename).stem
         output_filename = f"{original_stem}.interpolated_{mode}.{output_format}"
-        output_dir = self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / output_filename
+        output_path = self._file_service.output_dir / output_filename
 
         # Pipe mode: FFmpeg decode → RIFE → FFmpeg encode (zero disk I/O)
         progress_callback(0.0, "task.progress.interpolating")
@@ -108,6 +106,7 @@ class InterpolateService:
         total_out, _ = rife.interpolate_pipe(
             input_path=file_info.file_path,
             output_path=output_path,
+            ffmpeg_path=ffmpeg.ffmpeg_path,
             variant=model,
             multiplier=multiplier,
             width=width,

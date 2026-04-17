@@ -5,6 +5,11 @@ Pipeline:
 
 Callers provide an already-extracted audio file. Video callers extract first via
 FFmpegWrapper.extract_audio_sync. Output formatting is in `utils/subtitles.py`.
+
+`model_manager` parameter is optional during the Wave 2→Wave 4 transition: when
+None, the pipeline falls back to `get_container().model_manager()`. After Wave 4
+§2.1 injects model_manager into the 4 caller services, the fallback can be
+dropped and `model_manager` made required.
 """
 from __future__ import annotations
 
@@ -67,6 +72,8 @@ def transcribe_audio_sync(
     audio_path: Path,
     options: TranscribeOptions,
     on_progress: Optional[Callable[[float, str], None]] = None,
+    model_manager=None,
+    ffmpeg_path: Optional[str] = None,
 ):
     """[Demucs] -> Whisper -> [align]. Returns faster-whisper TranscribeResult.
 
@@ -77,7 +84,14 @@ def transcribe_audio_sync(
     """
     # Lazy imports per BACKEND_DEVELOP_SPEC §3.2
     from app.engine.ai.audio.whisper import get_whisper
-    from app.init.container import get_container
+
+    if model_manager is None or ffmpeg_path is None:
+        from app.init.container import get_container
+        container = get_container()
+        if model_manager is None:
+            model_manager = container.model_manager()
+        if ffmpeg_path is None:
+            ffmpeg_path = container.ffmpeg().ffmpeg_path
 
     stages = _build_stage_list(options)
     stage_progress = _make_stage_progress(stages, on_progress)
@@ -110,9 +124,8 @@ def transcribe_audio_sync(
             stage_progress("demucs", 1.0, "task.progress.separation_complete")
 
         # Stage 2 (Whisper) + Stage 3 (align) share a GPU session
-        manager = get_container().model_manager()
         whisper = get_whisper()
-        with manager.gpu_session():
+        with model_manager.gpu_session():
             stage_progress("whisper", 0.0, "task.progress.load_whisper")
             result = whisper.transcribe(
                 audio_path=working_audio,
@@ -137,6 +150,7 @@ def transcribe_audio_sync(
                         segments=result.segments,
                         language=result.language,
                         on_progress=lambda p, m: stage_progress("align", p, m),
+                        ffmpeg_path=ffmpeg_path,
                     )
                     stage_progress("align", 1.0, "task.progress.align_complete")
                 else:

@@ -10,6 +10,7 @@ from uuid import uuid4
 import soundfile as sf
 
 from app.engine.ai.audio.demucs import DemucsWrapper, get_demucs
+from app.engine.ai.model_manager import ModelManager
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -21,10 +22,12 @@ TASK_TYPE_AUDIO_SEPARATE = "audio.separate"
 class AudioSeparateService:
     """Audio source separation using Demucs (vocals, drums, bass, guitar, piano, other)."""
 
-    def __init__(self, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, file_service: FileService, task_manager: TaskManager,
+                 model_manager: ModelManager):
         self._demucs: DemucsWrapper = get_demucs()
         self._file_service = file_service
         self._task_manager = task_manager
+        self._model_manager = model_manager
         self._task_manager.register_handler(
             TASK_TYPE_AUDIO_SEPARATE, self._handle_task,
             output_policy="results",
@@ -42,9 +45,7 @@ class AudioSeparateService:
         output_format: str = "wav",
         generate_midi: bool = False,
     ) -> str:
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
         params = {
             "file_id": file_id,
             "model_name": model_name,
@@ -58,9 +59,7 @@ class AudioSeparateService:
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         model_name = params.get("model_name", "htdemucs_6s")
         stems = params.get("stems")
@@ -76,10 +75,7 @@ class AudioSeparateService:
         progress_callback(0.0, "task.progress.loading_model_generic")
 
         # === GPU queue pipeline ===
-        from app.init.container import get_container
-        manager = get_container().model_manager()
-
-        with manager.gpu_session():
+        with self._model_manager.gpu_session():
             # Execute separation
             separated, sample_rate = self._demucs.separate(
                 audio_path=str(file_info.file_path),

@@ -42,6 +42,7 @@ class FramePipe:
         input_height: int,
         output_width: int,
         output_height: int,
+        ffmpeg_path: str,
         video_codec: str = "h264",
         crf: int = 18,
         target_fps: Fraction | float = 0,
@@ -54,6 +55,7 @@ class FramePipe:
         self.input_height = input_height
         self.output_width = output_width
         self.output_height = output_height
+        self.ffmpeg_path = ffmpeg_path
         self.video_codec = video_codec
         self.crf = crf
         self._decoder: subprocess.Popen | None = None
@@ -62,8 +64,7 @@ class FramePipe:
 
     def open(self):
         """Start decoder and encoder FFmpeg processes."""
-        ffmpeg = get_container().ffmpeg()
-        ffmpeg_path = ffmpeg.ffmpeg_path
+        ffmpeg_path = self.ffmpeg_path
 
         # Decoder: video → raw RGB frames on stdout
         self._decoder = subprocess.Popen([

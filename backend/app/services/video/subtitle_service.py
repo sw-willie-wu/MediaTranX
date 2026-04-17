@@ -9,9 +9,9 @@ from uuid import uuid4
 
 from app.engine.ffmpeg import FFmpegWrapper
 from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper
-from app.utils.prompts import WHISPER_TO_BCP47
+from app.utils.languages import WHISPER_TO_BCP47
 from app.utils.bilingual_output import write_bilingual_or_single
-from app.utils.transcribe import TranscribeOptions, transcribe_audio_sync
+from app.pipeline.transcribe import TranscribeOptions, transcribe_audio_sync
 from app.utils.subtitles import Segment, format_srt, format_vtt
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
@@ -94,9 +94,7 @@ class SubtitleService:
             task_id: Task ID
         """
         # Validate file exists
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         # Build task parameters
         params = {
@@ -157,10 +155,7 @@ class SubtitleService:
         4. Write segments to SRT/VTT subtitle file -- progress 95~100%
         """
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         language = params.get("language")  # None = auto detect
         model_size = params.get("model_size", "medium")
@@ -246,41 +241,23 @@ class SubtitleService:
                 src = WHISPER_TO_BCP47.get(result.language, result.language)
                 translate_remote = params.get("translate_remote", False)
 
-                if translate_remote:
-                    # Cloud translation (batch)
-                    from app.utils.translate import get_cloud_provider, translate_srt_cloud
+                from app.pipeline.translate import translate_srt_auto
 
-                    provider = params.get("translate_provider", "")
-                    conn_id = params.get("translate_conn_id")
-                    remote_model = params.get("translate_remote_model", "")
-                    prov = get_cloud_provider(provider, conn_id, remote_model)
-
-                    translated_all = translate_srt_cloud(
-                        seg_dicts, src, target_language, prov, remote_model,
-                        on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
-                        keep_names=keep_names, style=translate_style, glossary=glossary,
-                    )
-                    translate_progress(1.0, "task.progress.translate_complete")
-                else:
-                    # Local translation
-                    from app.utils.translate import translate_srt_local
-
-                    variant = f"{translate_model_size}:{translate_quantization}" if translate_quantization else translate_model_size
-                    runtime = get_container().llama_runtime()
-
-                    translate_progress(0.0, "task.progress.load_translate_model")
-
-                    with runtime.acquire(translate_model_family, variant, lambda p, m: translate_progress(p * 0.05, m)):
-                        translate_progress(0.05, "task.progress.start_translate")
-                        translated_all = translate_srt_local(
-                            seg_dicts, src, target_language, runtime,
-                            on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
-                            keep_names=keep_names, style=translate_style, glossary=glossary,
-                            model_family=translate_model_family,
-                            model_size=translate_model_size,
-                        )
-
-                    translate_progress(1.0, "task.progress.translate_complete")
+                translated_all = translate_srt_auto(
+                    seg_dicts, src, target_language,
+                    remote=translate_remote,
+                    on_progress=translate_progress,
+                    provider=params.get("translate_provider", ""),
+                    conn_id=params.get("translate_conn_id"),
+                    remote_model=params.get("translate_remote_model", ""),
+                    model_family=translate_model_family,
+                    model_size=translate_model_size,
+                    quantization=translate_quantization,
+                    keep_names=keep_names,
+                    style=translate_style,
+                    glossary=glossary,
+                )
+                translate_progress(1.0, "task.progress.translate_complete")
 
                 translated = translated_all
 

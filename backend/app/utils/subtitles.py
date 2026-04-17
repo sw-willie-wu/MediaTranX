@@ -5,11 +5,15 @@ Parses: SRT, VTT.
 Consumers:
   - Transcribe services (audio/transcribe, audio/lyrics, video/subtitle) — format path
   - document/translate_service — parse + format (it translates existing SRT/VTT files, no STT)
-  - video/summary_service — not used directly; summary builds its own markdown
+  - video/summary/service — not used directly; summary builds its own markdown
+  - translate pipeline (SRT batch) — dict-shaped segments_to_srt + parse_srt_response
 """
 from __future__ import annotations
 from dataclasses import dataclass
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -157,3 +161,57 @@ def format_lrc(segments: list[Segment]) -> str:
 def from_whisper_result(result) -> list[Segment]:
     """Convert a faster-whisper TranscribeResult to a plain Segment list."""
     return [Segment(start=s.start, end=s.end, text=s.text) for s in result.segments]
+
+
+# -- Dict-shaped helpers for translate pipeline (LLM input/output) --
+
+def segments_to_srt(segments: list[dict], start_index: int = 1) -> str:
+    """Convert dict segments to SRT format string. Supports start_index for batched output."""
+    lines: list[str] = []
+    for i, seg in enumerate(segments, start_index):
+        start_time = format_srt_time(seg["start"])
+        end_time = format_srt_time(seg["end"])
+        lines.append(f"{i}")
+        lines.append(f"{start_time} --> {end_time}")
+        lines.append(seg["text"])
+        lines.append("")
+    return "\n".join(lines)
+
+
+def parse_srt_response(srt_text: str, original_segments: list[dict]) -> list[dict]:
+    """Parse translated SRT text and return segments.
+
+    Falls back to original text for segments that can't be parsed (LLM-robust).
+    Preserves original timestamps even if the LLM modified them.
+    """
+    # Strip markdown code fences (some models wrap output in ```srt ... ```)
+    cleaned = srt_text.strip()
+    cleaned = re.sub(r'^```(?:srt)?\s*\n', '', cleaned)
+    cleaned = re.sub(r'\n```\s*$', '', cleaned)
+
+    pattern = r'(\d+)\s*\n(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})\s*\n([\s\S]*?)(?=\n\n\d+\s*\n|\n\d+\s*\n|\n*$)'
+    matches = re.findall(pattern, cleaned.strip() + "\n\n")
+
+    translated: list[dict] = []
+    fallback_count = 0
+    for i, orig_seg in enumerate(original_segments):
+        if i < len(matches):
+            _, _, _, text = matches[i]
+            text_clean = text.strip()
+            translated.append({
+                "start": orig_seg["start"],
+                "end": orig_seg["end"],
+                "text": text_clean if text_clean else orig_seg["text"],
+            })
+        else:
+            translated.append(orig_seg)
+            fallback_count += 1
+
+    if fallback_count > 0:
+        logger.warning(
+            f"SRT parse: {fallback_count}/{len(original_segments)} segments fell back to original "
+            f"(parsed {len(matches)}, expected {len(original_segments)})"
+        )
+        logger.debug(f"SRT parse raw response (first 500 chars): {srt_text[:500]}")
+
+    return translated
