@@ -259,9 +259,7 @@ class XxxService:
 
     async def submit_xxx(self, file_id: str, **params) -> str:
         """驗證輸入 → 提交任務 → 回傳 task_id"""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)  # raises FileNotFoundError_ → 404
 
         task_id = await self._task_manager.submit(TASK_TYPE_XXX, {
             "file_id": file_id,
@@ -374,23 +372,22 @@ async def do_action(
     service: XxxService = Depends(Provide[AppContainer.xxx_service]),
 ):
     """端點說明"""
-    try:
-        task_id = await service.submit_xxx(
-            file_id=request.file_id,
-            option=request.option,
-        )
-        return XxxResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_xxx(
+        file_id=request.file_id,
+        option=request.option,
+    )
+    return XxxResponse(task_id=task_id)
 ```
 
 ### 5.2 規則
 
 - Request/Response 模型定義在 route 檔案內
 - `Field(...)` 表示必填，`Field(default=...)` 表示選填
-- 錯誤處理：`ValueError` → 404，其他 → 500
+- **錯誤處理**：Routes **不寫 try/except**；由全域 exception handler（`handler/error_responses.py`）統一處理：
+  - `FileNotFoundError_` / `ModelNotFoundError` → 404
+  - `ValueError` (參數驗證失敗) → 400
+  - `RemoteApiError` → 502
+  - `FFmpegError` / `MediaTranXError` / 其他 → 500
 - Route 內**不可**有業務邏輯，只做：驗證 → 呼叫 Service → 回傳
 - 新 route 必須在對應的 `routes/{domain}/__init__.py` 中 include
 
@@ -648,11 +645,11 @@ LLM 共用查詢（語言列表、翻譯風格、模型狀態）放在 `/api/llm
 ### 11.1 Service 層
 
 ```python
-# submit 方法：驗證失敗拋 ValueError
-async def submit_xxx(self, file_id: str, ...) -> str:
-    file_info = self._file_service.get_file(file_id)
-    if file_info is None:
-        raise ValueError(f"File not found: {file_id}")
+# submit 方法：用 require_file 驗證；參數非法拋 ValueError
+async def submit_xxx(self, file_id: str, quality: int, ...) -> str:
+    file_info = self._file_service.require_file(file_id)  # FileNotFoundError_ → 404
+    if not 0 <= quality <= 100:
+        raise ValueError(f"quality must be 0-100, got {quality}")  # → 400
 
 # execute 方法：讓異常自然拋出，TaskManager 會捕獲並設定 FAILED 狀態
 def _execute(self, params, progress_callback):
@@ -660,16 +657,33 @@ def _execute(self, params, progress_callback):
     ...
 ```
 
+異常語意：
+- `FileNotFoundError_` — file_id 不存在於 FileService 登記；由 `FileService.require_file()` 自動拋出
+- `ModelNotFoundError` — 模型檔案不存在（未下載）
+- `ValueError` — 參數驗證失敗（如 quality 超範圍、unknown variant）
+- `RemoteApiError(code, detail)` — 遠端 API 呼叫失敗
+- `FFmpegError` — FFmpeg 執行失敗
+
 ### 11.2 Route 層
 
+Routes **不寫 try/except**。全域 exception handler（`handler/error_responses.py`）自動映射：
+
+| 異常 | HTTP 狀態 |
+|---|---|
+| `FileNotFoundError_` | 404 |
+| `ModelNotFoundError` | 404 |
+| `ValueError` | 400 |
+| `RemoteApiError` | 502 |
+| `FFmpegError` | 500 |
+| `MediaTranXError` (基類) / 其他 | 500 |
+
 ```python
-try:
-    task_id = await service.submit_xxx(...)
+# Route 只做：呼叫 Service → 回傳
+@router.post("/action")
+@inject
+async def do_action(request: XxxRequest, service: XxxService = Depends(...)):
+    task_id = await service.submit_xxx(file_id=request.file_id, option=request.option)
     return XxxResponse(task_id=task_id)
-except ValueError as e:
-    raise HTTPException(status_code=404, detail=str(e))
-except Exception as e:
-    raise HTTPException(status_code=500, detail=str(e))
 ```
 
 ### 11.3 Engine 層
