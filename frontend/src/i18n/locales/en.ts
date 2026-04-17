@@ -146,7 +146,7 @@ export default {
   task: {
     progress: {
       // subtitle
-      extracting_audio: 'Extracting audio...',
+      extracting_audio: 'Extracting audio {0}% (speed {1}x)',
       audio_extracted: 'Audio extracted, preparing transcription...',
       aligning: 'Performing word alignment...',
       prepare_translate: 'Preparing subtitle translation...',
@@ -1185,6 +1185,15 @@ export default {
     // Interpolation
     rife: 'Video Frame Interpolation',
     basic_pitch: 'Audio to MIDI',
+    // LLM families (GGUF)
+    qwen3: 'Qwen3 Translation Model',
+    qwen3vl: 'Qwen3-VL Vision-Language Model (OCR)',
+    internvl2_5: 'InternVL2.5 Vision-Language Model (OCR)',
+    gemma3: 'Gemma 3 Text Model',
+    gemma4: 'Gemma 4 Multimodal Model',
+    qwen3_5: 'Qwen3.5 Multimodal Model',
+    // Forced alignment
+    alignment: 'Forced Alignment',
     // Whisper
     whisper: {
       tiny: 'Ultra-Fast Speech Recognition',

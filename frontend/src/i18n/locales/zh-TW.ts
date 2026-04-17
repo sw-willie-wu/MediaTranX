@@ -146,7 +146,7 @@ export default {
   task: {
     progress: {
       // subtitle
-      extracting_audio: '正在從影片提取音訊...',
+      extracting_audio: '提取音訊 {0}% (速度 {1}x)',
       audio_extracted: '音訊提取完成，準備語音辨識...',
       aligning: '精準對齊中...',
       prepare_translate: '準備翻譯字幕...',
@@ -1180,6 +1180,13 @@ export default {
     demucs: '音源分離（人聲/鼓/貝斯/吉他/鋼琴/其他）',
     rife: '影片補幀（Frame Interpolation）',
     basic_pitch: '音訊轉 MIDI',
+    qwen3: 'Qwen3 翻譯模型',
+    qwen3vl: 'Qwen3-VL 視覺語言模型（OCR）',
+    internvl2_5: 'InternVL2.5 視覺語言模型（OCR）',
+    gemma3: 'Gemma 3 文字模型',
+    gemma4: 'Gemma 4 多模態模型',
+    qwen3_5: 'Qwen3.5 多模態模型',
+    alignment: '強制對齊',
     whisper: {
       tiny: '極速語音辨識',
       base: '快速語音辨識',

@@ -135,7 +135,7 @@ MODELS_REGISTRY = {
             "slot": SLOT_LLM,
             "label": "Qwen3",
             "capabilities": ["text"],
-            "description": "Qwen3 translation model",
+            "description": "models.qwen3",
             "inference": {
                 "translate": {
                     "temperature": 0.1, "top_k": 40, "top_p": 0.9,
@@ -227,7 +227,7 @@ MODELS_REGISTRY = {
             "slot": SLOT_LLM,
             "label": "Qwen3-VL",
             "capabilities": ["vision"],
-            "description": "Qwen3-VL vision-language model (OCR)",
+            "description": "models.qwen3vl",
             "inference": {
                 "ocr": {
                     "temperature": 0.0, "top_k": 40, "top_p": 0.9,
@@ -312,7 +312,7 @@ MODELS_REGISTRY = {
             "slot": SLOT_LLM,
             "label": "InternVL2.5",
             "capabilities": ["text", "vision"],
-            "description": "InternVL2.5 vision-language model (OCR)",
+            "description": "models.internvl2_5",
             "inference": {
                 "translate": {
                     "temperature": 0.1, "top_k": 40, "top_p": 0.9,
@@ -382,7 +382,7 @@ MODELS_REGISTRY = {
             "slot": SLOT_LLM,
             "label": "Gemma3",
             "capabilities": ["text"],
-            "description": "Gemma 3 text model",
+            "description": "models.gemma3",
             "inference": {
                 "translate": {
                     "temperature": 0.1, "top_k": 40, "top_p": 0.9,
@@ -440,7 +440,7 @@ MODELS_REGISTRY = {
             "slot": SLOT_LLM,
             "label": "Gemma4",
             "capabilities": ["text", "vision"],
-            "description": "Gemma 4 multimodal model",
+            "description": "models.gemma4",
             "inference": {
                 "translate": {
                     "temperature": 0.1, "top_k": 40, "top_p": 0.9,
@@ -517,7 +517,7 @@ MODELS_REGISTRY = {
             "slot": SLOT_LLM,
             "label": "Qwen3.5",
             "capabilities": ["text", "vision"],
-            "description": "Qwen3.5 multimodal model",
+            "description": "models.qwen3_5",
             "inference": {
                 "translate": {
                     "temperature": 0.1, "top_k": 40, "top_p": 0.9,

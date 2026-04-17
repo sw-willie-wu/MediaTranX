@@ -290,7 +290,7 @@ class ModelMetadataService:
                 "variant": lang_code,
                 "variant_label": lang_name,
                 "category": "alignment",
-                "description": f"Forced Alignment ({lang_code})",
+                "description": f"models.alignment||{lang_code}",
                 "downloaded": downloaded,
                 "size_mb": 1200,
                 "vram_mb": 1000,
