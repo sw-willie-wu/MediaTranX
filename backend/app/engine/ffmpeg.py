@@ -16,6 +16,15 @@ from app.handler.exceptions import FFmpegError
 from app.init.configs import SETTINGS
 
 
+def _run_sync(coro):
+    """Run an async coroutine in a fresh event loop. Module-private helper."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
 class VideoCodec(str, Enum):
     """Video codec."""
     H264 = "libx264"
@@ -229,13 +238,7 @@ class FFmpegWrapper:
 
     def get_media_info_sync(self, input_path: str | Path) -> MediaInfo:
         """Sync version of get_media_info() for use in TaskManager handlers."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(
-                self.get_media_info(input_path)
-            )
-        finally:
-            loop.close()
+        return _run_sync(self.get_media_info(input_path))
 
     def _build_transcode_args(
         self,
@@ -430,14 +433,8 @@ class FFmpegWrapper:
         on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
     ) -> Path:
         """Sync version of cut() for use in TaskManager handlers."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(
-                self.cut(input_path, output_path, start_time, end_time,
-                         stream_copy, on_progress)
-            )
-        finally:
-            loop.close()
+        return _run_sync(self.cut(input_path, output_path, start_time, end_time,
+                                  stream_copy, on_progress))
 
     async def crop(
         self,
@@ -516,13 +513,7 @@ class FFmpegWrapper:
         on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
     ) -> Path:
         """Sync version of crop() for use in TaskManager handlers."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(
-                self.crop(input_path, output_path, x, y, width, height, on_progress)
-            )
-        finally:
-            loop.close()
+        return _run_sync(self.crop(input_path, output_path, x, y, width, height, on_progress))
 
     async def extract_frame(
         self,
@@ -572,13 +563,7 @@ class FFmpegWrapper:
         timestamp: float,
     ) -> Path:
         """Sync version of extract_frame() for use in TaskManager handlers."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(
-                self.extract_frame(input_path, output_path, timestamp)
-            )
-        finally:
-            loop.close()
+        return _run_sync(self.extract_frame(input_path, output_path, timestamp))
 
     async def extract_audio(
         self,
@@ -682,15 +667,9 @@ class FFmpegWrapper:
         on_progress: Optional[Callable[["TranscodeProgress"], None]] = None,
     ) -> Path:
         """Sync version of extract_audio() for use in TaskManager handlers."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(
-                self.extract_audio(input_path, output_path, audio_format,
-                                   audio_bitrate, sample_rate, channels,
-                                   on_progress)
-            )
-        finally:
-            loop.close()
+        return _run_sync(self.extract_audio(input_path, output_path, audio_format,
+                                            audio_bitrate, sample_rate, channels,
+                                            on_progress))
 
     async def adjust_volume(
         self,
@@ -735,13 +714,7 @@ class FFmpegWrapper:
         af_filter: str,
     ) -> Path:
         """Sync version of adjust_volume() for use in TaskManager handlers."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(
-                self.adjust_volume(input_path, output_path, af_filter)
-            )
-        finally:
-            loop.close()
+        return _run_sync(self.adjust_volume(input_path, output_path, af_filter))
 
     async def audio_convert(
         self,
@@ -811,15 +784,9 @@ class FFmpegWrapper:
         extra_args: Optional[list[str]] = None,
     ) -> Path:
         """Sync version of audio_convert() for use in TaskManager handlers."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(
-                self.audio_convert(input_path, output_path, audio_codec,
-                                   audio_bitrate, sample_rate, channels,
-                                   extra_args)
-            )
-        finally:
-            loop.close()
+        return _run_sync(self.audio_convert(input_path, output_path, audio_codec,
+                                            audio_bitrate, sample_rate, channels,
+                                            extra_args))
 
     async def transcode(
         self,
@@ -894,10 +861,4 @@ class FFmpegWrapper:
         on_progress: Optional[Callable[[TranscodeProgress], None]] = None
     ) -> Path:
         """Sync version of transcode() for use in TaskManager handlers."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(
-                self.transcode(input_path, output_path, options, on_progress)
-            )
-        finally:
-            loop.close()
+        return _run_sync(self.transcode(input_path, output_path, options, on_progress))
