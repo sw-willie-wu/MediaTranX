@@ -86,6 +86,7 @@ class AlignmentEngine:
         segments: list,
         language: str,
         on_progress: Optional[Callable[[float, str], None]] = None,
+        ffmpeg_path: Optional[str] = None,
     ) -> list:
         """
         Perform forced alignment on Whisper segments.
@@ -95,6 +96,8 @@ class AlignmentEngine:
             segments: List of Whisper TranscribeSegment.
             language: Language code (en, zh, ja...).
             on_progress: Progress callback.
+            ffmpeg_path: Path to ffmpeg binary (optional; falls back to
+                get_container().ffmpeg() for legacy callers).
 
         Returns:
             Corrected TranscribeSegment list (with words attribute).
@@ -118,7 +121,7 @@ class AlignmentEngine:
             # Read full audio
             if on_progress:
                 on_progress(0.1, "task.progress.reading_audio")
-            full_waveform = self._load_audio(audio_path)
+            full_waveform = self._load_audio(audio_path, ffmpeg_path=ffmpeg_path)
 
             # Per-segment inference (avoid sending entire long audio at once to prevent OOM/stalls)
             from app.engine.ai.audio.whisper import TranscribeSegment
@@ -228,10 +231,12 @@ class AlignmentEngine:
                 pass
             logger.info("Alignment model unloaded")
 
-    def _load_audio(self, audio_path: str) -> list[float]:
+    def _load_audio(self, audio_path: str, ffmpeg_path: Optional[str] = None) -> list[float]:
         """Read audio and resample to 16kHz mono."""
-        from app.init.container import get_container
-        ffmpeg_path = get_container().ffmpeg().ffmpeg_path
+        if ffmpeg_path is None:
+            # Legacy fallback for callers that haven't threaded ffmpeg_path yet.
+            from app.init.container import get_container
+            ffmpeg_path = get_container().ffmpeg().ffmpeg_path
 
         # Use ffmpeg to convert to 16kHz mono PCM
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)

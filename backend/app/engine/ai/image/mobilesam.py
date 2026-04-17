@@ -50,15 +50,17 @@ class MobileSAMWrapper(PackageRuntime):
         return sam
 
     def _resolve_model_path(self, model_id: str, variant: Optional[str] = None):
-        """Resolve MobileSAM model path."""
+        """Resolve MobileSAM model path via ModelManager (single source of truth).
+
+        Audit §9.3: the previous `SETTINGS.path.models / "mobilesam" / ...`
+        fallback broke `ModelManager` as the sole path authority and let stale
+        on-disk files resurrect after a logical delete. Removed.
+        """
         model_path = self._manager.get_model_path(model_id, variant or "default")
         if not model_path:
-            from app.init.configs import SETTINGS
-            model_path = SETTINGS.path.models / "mobilesam" / "mobile_sam.pt"
-            if not model_path.exists():
-                raise FileNotFoundError(
-                    "MobileSAM model not downloaded. Please download it from Settings > Model Management."
-                )
+            raise FileNotFoundError(
+                "MobileSAM model not downloaded. Please download it from Settings > Model Management."
+            )
 
         config = {
             "model_id": model_id,

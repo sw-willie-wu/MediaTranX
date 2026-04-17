@@ -21,7 +21,7 @@ def bootstrap() -> None:
     register_dlls(SETTINGS)
 
     from app.init.compat import apply_compat_patches
-    apply_compat_patches(SETTINGS)
+    apply_compat_patches()
 
     from app.init.logging_config import configure_logging
     configure_logging(SETTINGS)

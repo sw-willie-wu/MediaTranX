@@ -55,6 +55,8 @@ class MediaInfo:
     audio_codec: str
     bitrate: int  # kbps
     file_size: int  # bytes
+    sample_rate: int = 0  # Hz; 0 if no audio stream
+    channels: int = 0     # audio channels; 0 if no audio stream
 
 
 @dataclass
@@ -220,7 +222,9 @@ class FFmpegWrapper:
             video_codec=video_stream.get("codec_name", "") if video_stream else "",
             audio_codec=audio_stream.get("codec_name", "") if audio_stream else "",
             bitrate=int(format_info.get("bit_rate", 0)) // 1000,
-            file_size=int(format_info.get("size", 0))
+            file_size=int(format_info.get("size", 0)),
+            sample_rate=int(audio_stream.get("sample_rate", 0)) if audio_stream else 0,
+            channels=int(audio_stream.get("channels", 0)) if audio_stream else 0,
         )
 
     def get_media_info_sync(self, input_path: str | Path) -> MediaInfo:

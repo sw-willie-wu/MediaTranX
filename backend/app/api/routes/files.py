@@ -142,7 +142,7 @@ async def list_files(
     """
     if kind == "output":
         return [FileInfo.from_file_data(f) for f in file_service.get_output_files()]
-    return [FileInfo.from_file_data(f) for f in file_service._files.values()]
+    return [FileInfo.from_file_data(f) for f in file_service.list_files()]
 
 
 @router.get("/stats", response_model=TempStats)
@@ -166,14 +166,10 @@ async def update_saved_path(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """Persist the user-chosen save destination into FileData.metadata + sidecar."""
-    fd = file_service.get_file(file_id)
-    if fd is None:
-        raise HTTPException(status_code=404, detail="File not found")
     if not Path(body.saved_path).is_absolute():
         raise HTTPException(status_code=400, detail="saved_path must be absolute")
-    fd.metadata = {**(fd.metadata or {}), "saved_path": body.saved_path}
     try:
-        file_service.write_sidecar(file_id)
+        file_service.set_saved_path(file_id, body.saved_path)
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"sidecar write failed: {e}")
     return {"ok": True}

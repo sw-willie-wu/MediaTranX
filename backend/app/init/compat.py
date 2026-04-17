@@ -5,7 +5,7 @@ import sys
 import types
 
 
-def apply_compat_patches(settings) -> None:
+def apply_compat_patches() -> None:
     """Apply all compat patches."""
     _patch_torchvision_functional_tensor()
     _patch_scipy_signal_gaussian()
