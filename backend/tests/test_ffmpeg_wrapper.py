@@ -1,10 +1,10 @@
-"""Tests for FFmpegWrapper — engine/ffmpeg.py."""
+"""Tests for FFmpegWrapper — adapters/binary/ffmpeg.py."""
 import pytest
 from fractions import Fraction
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.engine.ffmpeg import FFmpegWrapper, _parse_time, FFmpegError
+from app.adapters.binary.ffmpeg import FFmpegWrapper, _parse_time, FFmpegError
 
 
 # ── _parse_time helper ──────────────────────────────────────────────────────

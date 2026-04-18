@@ -11,7 +11,7 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def rife():
-    from app.engine.ai.video.rife import get_rife
+    from app.adapters.ai.wrapper.rife import get_rife
     return get_rife()
 
 

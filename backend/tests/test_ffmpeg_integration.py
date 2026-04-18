@@ -11,7 +11,7 @@ pytestmark = pytest.mark.ffmpeg
 
 @pytest.fixture
 def ffmpeg():
-    from app.engine.ffmpeg import FFmpegWrapper
+    from app.adapters.binary.ffmpeg import FFmpegWrapper
     wrapper = FFmpegWrapper()
     if not wrapper.is_installed():
         pytest.skip("ffmpeg not installed")

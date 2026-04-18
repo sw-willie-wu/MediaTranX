@@ -10,7 +10,7 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def basic_pitch():
-    from app.engine.ai.audio.basic_pitch import get_basic_pitch
+    from app.adapters.ai.wrapper.basic_pitch import get_basic_pitch
     return get_basic_pitch()
 
 

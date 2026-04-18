@@ -10,7 +10,7 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def realesrgan():
-    from app.engine.ai.image import get_upscaler
+    from app.adapters.ai.wrapper import get_upscaler
     return get_upscaler("realesrgan")
 
 

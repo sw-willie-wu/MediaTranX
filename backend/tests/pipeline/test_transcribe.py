@@ -62,7 +62,7 @@ def test_transcribe_audio_sync_whisper_only(monkeypatch, tmp_path):
     fake_container = MagicMock()
     fake_container.model_manager.return_value = fake_manager
 
-    monkeypatch.setattr("app.engine.ai.audio.whisper.get_whisper", lambda: fake_whisper)
+    monkeypatch.setattr("app.adapters.ai.wrapper.whisper.get_whisper", lambda: fake_whisper)
     monkeypatch.setattr("app.init.container.get_container", lambda: fake_container)
 
     opts = TranscribeOptions(model_size="tiny")
@@ -87,8 +87,8 @@ def test_transcribe_audio_sync_with_demucs_writes_temp_and_cleans(monkeypatch, t
     fake_manager.gpu_session.return_value.__exit__ = lambda *a: None
     fake_container = MagicMock(model_manager=lambda: fake_manager)
 
-    monkeypatch.setattr("app.engine.ai.audio.whisper.get_whisper", lambda: fake_whisper)
-    monkeypatch.setattr("app.engine.ai.audio.demucs.get_demucs", lambda: fake_demucs)
+    monkeypatch.setattr("app.adapters.ai.wrapper.whisper.get_whisper", lambda: fake_whisper)
+    monkeypatch.setattr("app.adapters.ai.wrapper.demucs.get_demucs", lambda: fake_demucs)
     monkeypatch.setattr("app.init.container.get_container", lambda: fake_container)
 
     written_paths: list[str] = []
@@ -119,7 +119,7 @@ def test_transcribe_audio_sync_raises_if_demucs_no_vocals(monkeypatch, tmp_path)
     fake_manager.gpu_session.return_value.__exit__ = lambda *a: None
     fake_container = MagicMock(model_manager=lambda: fake_manager)
 
-    monkeypatch.setattr("app.engine.ai.audio.demucs.get_demucs", lambda: fake_demucs)
+    monkeypatch.setattr("app.adapters.ai.wrapper.demucs.get_demucs", lambda: fake_demucs)
     monkeypatch.setattr("app.init.container.get_container", lambda: fake_container)
 
     opts = TranscribeOptions(separate_vocals=True)
@@ -143,8 +143,8 @@ def test_transcribe_audio_sync_with_align_calls_aligner(monkeypatch, tmp_path):
     fake_manager.gpu_session.return_value.__exit__ = lambda *a: None
     fake_container = MagicMock(model_manager=lambda: fake_manager)
 
-    monkeypatch.setattr("app.engine.ai.audio.whisper.get_whisper", lambda: fake_whisper)
-    monkeypatch.setattr("app.engine.ai.audio.wav2vec2.get_alignment_engine", lambda: fake_aligner)
+    monkeypatch.setattr("app.adapters.ai.wrapper.whisper.get_whisper", lambda: fake_whisper)
+    monkeypatch.setattr("app.adapters.ai.wrapper.wav2vec2.get_alignment_engine", lambda: fake_aligner)
     monkeypatch.setattr("app.init.container.get_container", lambda: fake_container)
 
     opts = TranscribeOptions(align=True, model_size="tiny")
@@ -167,8 +167,8 @@ def test_transcribe_audio_sync_skips_align_if_language_unsupported(monkeypatch, 
     fake_manager.gpu_session.return_value.__exit__ = lambda *a: None
     fake_container = MagicMock(model_manager=lambda: fake_manager)
 
-    monkeypatch.setattr("app.engine.ai.audio.whisper.get_whisper", lambda: fake_whisper)
-    monkeypatch.setattr("app.engine.ai.audio.wav2vec2.get_alignment_engine", lambda: fake_aligner)
+    monkeypatch.setattr("app.adapters.ai.wrapper.whisper.get_whisper", lambda: fake_whisper)
+    monkeypatch.setattr("app.adapters.ai.wrapper.wav2vec2.get_alignment_engine", lambda: fake_aligner)
     monkeypatch.setattr("app.init.container.get_container", lambda: fake_container)
 
     opts = TranscribeOptions(align=True, model_size="tiny")

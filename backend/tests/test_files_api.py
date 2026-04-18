@@ -18,7 +18,7 @@ def client(tmp_path):
 
     app = FastAPI()
     app.include_router(files_router, prefix="/api/files")
-    container.wire(modules=["app.api.routes.files"])
+    container.wire(packages=["app.api.routes.files"])
 
     try:
         yield TestClient(app), temp_fs

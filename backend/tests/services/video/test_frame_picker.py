@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from app.services.video._frame_picker import pick_frame_timestamp
+from app.services.video.summary_service.frame_picker import pick_frame_timestamp
 
 
 def test_pick_returns_middle_when_no_scenes():

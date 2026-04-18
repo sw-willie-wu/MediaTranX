@@ -24,7 +24,7 @@ def health_app():
     mock_conn.__exit__ = MagicMock(return_value=False)
     mock_engine.connect.return_value = mock_conn
 
-    with patch("app.api.routes.health.get_container", return_value=mock_container), \
+    with patch("app.api.routes.health.health.get_container", return_value=mock_container), \
          patch("app.db.database.get_engine", return_value=mock_engine):
         from app.api.routes.health import router
         app = FastAPI()

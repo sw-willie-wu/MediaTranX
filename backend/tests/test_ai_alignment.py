@@ -10,7 +10,7 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def alignment_engine():
-    from app.engine.ai.audio.wav2vec2 import get_alignment_engine
+    from app.adapters.ai.wrapper.wav2vec2 import get_alignment_engine
     return get_alignment_engine()
 
 
@@ -45,5 +45,6 @@ class TestAlignmentAlign:
             audio_path=str(audio_path),
             segments=[],
             language="en",
+            ffmpeg_path="ffmpeg",  # not invoked (empty segments)
         )
         assert result == []

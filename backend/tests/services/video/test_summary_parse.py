@@ -1,4 +1,4 @@
-from app.services.video.summary.parse import (
+from app.services.video.summary_service.parse import (
     SubtitleEntry,
     chunk_entries_by_tokens,
 )
@@ -39,7 +39,7 @@ def test_chunk_single_oversize_entry_still_produces_one_chunk():
 
 
 def test_format_transcript_joins_entries_with_newline():
-    from app.services.video.summary.parse import format_transcript
+    from app.services.video.summary_service.parse import format_transcript
     entries = [
         SubtitleEntry(start=1.0, end=2.0, text="x"),
         SubtitleEntry(start=2.0, end=3.5, text="y"),
@@ -48,14 +48,14 @@ def test_format_transcript_joins_entries_with_newline():
 
 
 from app.utils.prompts import build_summary_prompt
-from app.services.video.summary.parse import (
+from app.services.video.summary_service.parse import (
     format_transcript,
     parse_summary_json,
     parse_bullets_markdown,
     merge_chunk_outputs,
     SummaryChunkResult,
 )
-from app.services.video.summary.markdown import build_markdown
+from app.services.video.summary_service.markdown import build_markdown
 
 
 def _prompt_for(entries, **kwargs):

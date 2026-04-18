@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from app.engine.video.scene_detect import SceneDetector
+from app.services.video.summary_service.scene_detect import SceneDetector
 
 
 def test_detect_in_window_returns_scene_timestamps_within_range():

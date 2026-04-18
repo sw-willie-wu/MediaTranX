@@ -30,7 +30,7 @@ async def test_convert_wav_registers_result_with_sidecar(tmp_path):
         output_path.write_bytes(b"\x00" * 256)
 
     with patch(
-        "app.engine.ffmpeg.FFmpegWrapper.audio_convert",
+        "app.adapters.binary.ffmpeg.FFmpegWrapper.audio_convert",
         new=AsyncMock(side_effect=fake_audio_convert),
     ):
         result = await svc.convert_wav(upload, "mp3", source_file_id="midi-42")

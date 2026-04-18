@@ -10,7 +10,7 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def demucs():
-    from app.engine.ai.audio.demucs import get_demucs
+    from app.adapters.ai.wrapper.demucs import get_demucs
     return get_demucs()
 
 

@@ -2,8 +2,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 import pytest
 
-from app.services.video.summary import VideoSummaryService
-from app.services.video.summary.service import TASK_TYPE_VIDEO_SUMMARY
+from app.services.video.summary_service import VideoSummaryService
+from app.services.video.summary_service.service import TASK_TYPE_VIDEO_SUMMARY
 from app.handler.exceptions import FileNotFoundError_
 
 
@@ -112,8 +112,8 @@ def test_execute_produces_zip_with_md_and_frames(tmp_path):
     def on_progress(p, m):
         progress_events.append((p, m))
 
-    with patch("app.services.video.summary.service.transcribe_audio_sync", return_value=fake_result), \
-         patch("app.engine.video.SceneDetector", FakeDetector):
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync", return_value=fake_result), \
+         patch("app.services.video.summary_service.service.SceneDetector", FakeDetector):
         result = svc._execute(
             params={
                 "file_id": "f1",

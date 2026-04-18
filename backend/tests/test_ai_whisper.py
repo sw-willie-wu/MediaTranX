@@ -11,7 +11,7 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def whisper():
-    from app.engine.ai.audio.whisper import get_whisper
+    from app.adapters.ai.wrapper.whisper import get_whisper
     return get_whisper()
 
 
