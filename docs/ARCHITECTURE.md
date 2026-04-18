@@ -19,7 +19,8 @@ graph TB
     subgraph Backend["FastAPI Backend (port 8001)"]
         Routes["API Routes"]
         Services["Services"]
-        Engine["Engine Layer"]
+        Pipeline["Pipeline<br/>(domain orchestration)"]
+        Adapters["Adapters<br/>(external systems)"]
         TM["TaskManager + ProgressTracker"]
     end
 
@@ -35,72 +36,77 @@ graph TB
 
     UI -->|"REST API + Polling"| Routes
     Routes --> Services
-    Services --> Engine
+    Services --> Pipeline
+    Services --> Adapters
     Services --> TM
-    Engine --> Llama
-    Engine --> PyTorch
-    Engine --> CT2
-    Engine --> Demucs
-    Engine --> FFmpeg
-    Engine --> Remote
+    Pipeline --> Adapters
+    Adapters --> Llama
+    Adapters --> PyTorch
+    Adapters --> CT2
+    Adapters --> Demucs
+    Adapters --> FFmpeg
+    Adapters --> Remote
 ```
 
 ---
 
-## 2. Backend Three-Layer Architecture
+## 2. Backend Layered Architecture
 
 ```mermaid
 graph LR
     R["API Routes<br/>(api/routes/)"] -->|"validate + call"| S["Services<br/>(services/)"]
-    S -->|"coordinate"| E["Engine<br/>(engine/)"]
+    S -->|"domain orchestration"| P["Pipeline<br/>(pipeline/)"]
+    S -->|"call adapter"| A["Adapters<br/>(adapters/)"]
+    P --> A
     S -->|"submit tasks"| W["Workers<br/>(workers/)"]
 
     style R fill:#e3f2fd
     style S fill:#fff3e0
-    style E fill:#e8f5e9
+    style P fill:#f3e5f5
+    style A fill:#e8f5e9
     style W fill:#fce4ec
 ```
 
-**Rules:** Route → Service → Engine. No cross-layer jumps.
+**Rules:** Route → Service → (Pipeline) → Adapter. No cross-layer jumps.
 
 ```
 backend/app/
 ├── main.py                          # FastAPI entry point
-├── init/                            # Startup (DLL injection, logging, DI container)
+├── init/                            # Startup (DI container, configs, lifespan)
 │   ├── container.py                 # DI container with _lazy() domain services
 │   └── lifespan.py                  # Startup/shutdown + background warmup thread
 ├── api/routes/                      # Route layer (TYPE_CHECKING service imports)
-│   ├── audio/                       # transcode, cut, volume, transcribe, separate, lyrics, midi
-│   ├── video/                       # transcode, cut, extract-audio, subtitle, interpolate, enhance
-│   ├── image/                       # convert, upscale, remove-bg, remove-object, filter, crop, ocr
-│   ├── document/                    # ocr, translate, split, pdf-convert
-│   ├── setup/                       # status, config, models, remote
-│   ├── llm.py                       # LLM shared queries (translate languages/styles/status)
-│   └── tasks/                       # active, history
-├── services/                        # Business layer (one service per task type)
-│   ├── audio/                       # cut, lyrics, separate, transcode, transcribe, volume, midi
-│   ├── video/                       # transcode, cut, extract_audio, subtitle, interpolate, enhance
-│   ├── image/                       # convert, crop, filter, ocr, remove_bg, remove_object, upscale
-│   ├── document/                    # doc_ocr, pdf_convert, split, translate
-│   ├── files/                       # file_service (upload, temp storage)
-│   ├── setup/                       # config, device, model_download, remote, ...
-│   └── tasks/                       # history_service
-├── engine/                          # Low-level wrappers
+│   ├── audio/, image/, video/, document/     # per-feature route files + inline DTO
+│   ├── files/, llm/, health/                 # concern folders
+│   ├── setup/, tasks/
+├── adapters/                        # External-system adapters (需跨層協調)
 │   ├── device.py                    # GPU/CPU detection
-│   ├── ffmpeg.py                    # FFmpegWrapper (async + sync methods)
-│   └── ai/                          # AI models
-│       ├── registry.py              # Model registry (FORMAT × family × variant + inference config)
-│       ├── model_manager.py         # VRAM slot scheduling
-│       ├── runtime/                 # BaseRuntime, PackageRuntime, PTHRuntime, LlamaServerRuntime
-│       ├── audio/                   # whisper, demucs, wav2vec2, basic_pitch
-│       ├── image/                   # realesrgan, swinir, bsrgan, real_cugan, waifu2x, codeformer, gfpgan, mobilesam
-│       ├── video/                   # rife
-│       ├── remote/                  # ollama, openai, gemini
-│       └── llama/                   # LLM prompt templates
-├── workers/                         # TaskManager + ProgressTracker
+│   ├── binary/                      # Binary subprocess wrappers
+│   │   ├── ffmpeg.py
+│   │   └── llama_server.py
+│   └── ai/                          # AI domain adapters
+│       ├── model_manager.py         # VRAM slot + acquire coordinator
+│       ├── registry.py              # Static model metadata
+│       ├── tile_inference.py        # PTH tensor tile/stitch helper
+│       ├── remote/                  # HTTP provider adapters (openai/gemini/ollama)
+│       └── wrapper/                 # AI model lifecycle wrapper family
+│           ├── base.py              # BaseWrapper / PackageWrapper / PthWrapper
+│           ├── whisper.py, demucs.py, basic_pitch.py, wav2vec2.py
+│           ├── bsrgan.py, realesrgan.py, swinir.py, waifu2x.py, real_cugan.py
+│           ├── codeformer.py, gfpgan.py
+│           ├── mobilesam.py, rife.py
+│           └── llm.py               # LlmWrapper (wraps binary/llama_server)
+├── services/                        # Business layer (service = cohesive business logic)
+│   ├── audio/, image/, video/, document/     # modality feature services
+│   ├── files/, llm/, setup/, tasks/          # cross-cutting services
+├── pipeline/                        # Cross-service domain orchestration
+│   └── translate.py, transcribe.py, ocr.py
+├── utils/                           # Pure technical helpers (技術中性 + 2+ consumer)
+├── workers/                         # TaskManager + ProgressTracker + media_kind
+├── handler/                         # HTTP cross-cutting (exceptions + responses + middleware)
+├── schemas/                         # Cross-layer domain types (TaskData, FileData)
 ├── db/                              # SQLModel (api_connection, task_history)
-├── types/                           # Cross-layer domain types (TaskData, FileData)
-└── utils/                           # inference, prompts, translate, summarize, video_frames, gif_utils
+└── main.py
 ```
 
 Development specs: [BACKEND_DEVELOP_SPEC.md](BACKEND_DEVELOP_SPEC.md)
@@ -109,28 +115,29 @@ Development specs: [BACKEND_DEVELOP_SPEC.md](BACKEND_DEVELOP_SPEC.md)
 
 ```mermaid
 graph TB
-    subgraph Registry["Registry (registry.py)"]
+    subgraph Registry["Registry (adapters/ai/registry.py)"]
         FORMAT_PKG["FORMAT_PKG<br/>Whisper, Demucs"]
         FORMAT_GGUF["FORMAT_GGUF<br/>Qwen3, Gemma 4"]
         FORMAT_PTH["FORMAT_PTH<br/>Real-ESRGAN, GFPGAN, ..."]
         FORMAT_VLM["FORMAT_VLM<br/>Qwen3-VL, InternVL, Gemma 3"]
     end
 
-    subgraph Manager["ModelManager (model_manager.py)"]
+    subgraph Manager["ModelManager (adapters/ai/model_manager.py)"]
         Slots["VRAM Slots<br/>(pth, whisper, llm, ...)"]
+        Acquire["acquire(slot, model_id, variant)"]
     end
 
-    subgraph Runtimes["Runtimes (runtime/)"]
-        PKG["PackageRuntime"]
-        PTH["PTHRuntime"]
-        LLAMA["LlamaServerRuntime"]
+    subgraph Wrappers["Wrappers (adapters/ai/wrapper/)"]
+        PKG["PackageWrapper"]
+        PTH["PthWrapper<br/>+ tile_inference"]
+        LLM["LlmWrapper<br/>→ binary/llama_server"]
     end
 
     FORMAT_PKG --> PKG
     FORMAT_PTH --> PTH
-    FORMAT_GGUF --> LLAMA
-    FORMAT_VLM --> LLAMA
-    Manager -->|"acquire/release"| Runtimes
+    FORMAT_GGUF --> LLM
+    FORMAT_VLM --> LLM
+    Manager -->|"acquire/evict"| Wrappers
 ```
 
 ### Remote API Providers
@@ -205,7 +212,7 @@ sequenceDiagram
     participant R as Route
     participant S as Service
     participant TM as TaskManager
-    participant E as Engine
+    participant A as Adapter
 
     FE->>R: POST /api/{domain}/{action}
     R->>S: submit_xxx(file_id, params)
@@ -219,8 +226,8 @@ sequenceDiagram
     end
 
     TM->>S: _handle_task(params, progress_callback)
-    S->>E: AI inference / FFmpeg
-    E-->>S: result
+    S->>A: AI inference / FFmpeg (via mm.acquire)
+    A-->>S: result
     S-->>TM: {output_file_id, output_filename}
     TM-->>FE: status=completed + result
 
@@ -250,7 +257,9 @@ All paths managed via `PathSettings` (pydantic-settings):
 |--------|----------|-------------|
 | **System & Setup** | | |
 | GET | `/api/health` | Health check |
+| GET | `/api/health/deep` | Deep health check |
 | GET | `/api/device` | GPU/CPU device info |
+| POST | `/api/device/refresh` | Refresh device state |
 | GET | `/api/setup/status` | AI environment status |
 | POST | `/api/setup/initialize` | Start AI environment installation |
 | GET/POST | `/api/setup/config` | App configuration |
@@ -269,6 +278,11 @@ All paths managed via `PathSettings` (pydantic-settings):
 | GET | `/api/tasks/{id}/progress` | Task progress |
 | POST | `/api/tasks/{id}/cancel` | Cancel task |
 | GET | `/api/tasks/history` | Task history |
+| **LLM** | | |
+| GET | `/api/llm/translate/languages` | Supported translation languages |
+| GET | `/api/llm/translate/styles` | Supported translation styles |
+| GET | `/api/llm/translate/status` | Translation model status |
+| POST | `/api/llm/chat` | Direct LLM chat (test) |
 | **Video** | | |
 | GET | `/api/video/info/{file_id}` | Media info |
 | POST | `/api/video/transcode` | Transcode |
