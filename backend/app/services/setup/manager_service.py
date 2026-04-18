@@ -5,7 +5,7 @@ SetupService singleton + system status query + feature module delegation.
 import sys
 import logging
 from typing import Callable
-from app.engine.ai.model_manager import ModelManager
+from app.adapters.ai.model_manager import ModelManager
 from app.init.configs import SETTINGS
 from app.workers.task_manager import TaskManager
 
@@ -34,7 +34,7 @@ class SetupService:
 
     async def get_system_status(self) -> dict:
         """Get detailed system and environment status."""
-        from app.engine.device import get_device_info, select_torch_index
+        from app.adapters.device import get_device_info, select_torch_index
 
         device = get_device_info()
         manager = self._model_manager

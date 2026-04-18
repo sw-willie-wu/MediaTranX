@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 
-from app.engine.ffmpeg import (
+from app.adapters.binary.ffmpeg import (
     FFmpegWrapper,
     TranscodeProgress,
 )

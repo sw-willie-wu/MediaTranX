@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.engine.ffmpeg import FFmpegWrapper
-from app.engine.ai.audio.whisper import WhisperWrapper, get_whisper
+from app.adapters.binary.ffmpeg import FFmpegWrapper
+from app.adapters.ai.wrapper.whisper import WhisperWrapper, get_whisper
 from app.utils.languages import WHISPER_TO_BCP47
 from app.utils.bilingual_output import write_bilingual_or_single
+from app.utils.progress_stages import StageProgress
 from app.pipeline.transcribe import TranscribeOptions, transcribe_audio_sync
 from app.utils.subtitles import Segment, format_srt, format_vtt
 from app.services.files.file_service import FileService
@@ -185,10 +186,21 @@ class SubtitleService:
         if not media_info.audio_codec:
             raise ValueError("No audio track found in video")
 
-        # === Stage 1: Extract audio (0~10%) ===
+        # === Dynamic progress allocation (via StageProgress) ===
+        # With translation: extract=1 / transcribe=6 / translate=2  (~11% / 67% / 22% of pre-final)
+        # Without:          extract=1 / transcribe=8                (~11% / 84% of pre-final)
+        # Final write stage reserves 5% of overall.
+        weights = {"extract": 1, "transcribe": 6 if has_translation else 8}
+        if has_translation:
+            weights["translate"] = 2
+        sp = StageProgress(progress_callback, weights, final_weight=0.05)
+        stage_progress = sp.stage
+
+        # === Stage 1: Extract audio ===
         temp_audio_path = self._file_service.upload_dir / f"temp_audio_{uuid4().hex[:8]}.wav"
 
         try:
+            stage_progress("extract", 0.0, "task.progress.extract_audio_starting")
             self._ffmpeg.extract_audio_sync(
                 input_path=file_info.file_path,
                 output_path=temp_audio_path,
@@ -196,14 +208,11 @@ class SubtitleService:
                 sample_rate=16000,
                 channels=1,
             )
-            progress_callback(0.10, "task.progress.audio_extracted")
+            stage_progress("extract", 1.0, "task.progress.audio_extracted")
 
-            # === Stage 2: Transcribe (10~70% if translating, else 10~90%) ===
-            transcribe_end = 0.70 if has_translation else 0.90
-            transcribe_range = transcribe_end - 0.10
-
+            # === Stage 2: Transcribe ===
             def transcribe_progress(p: float, m: str) -> None:
-                progress_callback(0.10 + p * transcribe_range, m)
+                stage_progress("transcribe", p, m)
 
             opts = TranscribeOptions(
                 language=language,
@@ -222,12 +231,12 @@ class SubtitleService:
             # Save original segments (for bilingual subtitle output when translating)
             original_segments = list(result.segments)
 
-            # === Stage 3 (optional): Translate subtitles (70~95%) ===
+            # === Stage 3 (optional): Translate subtitles ===
             if has_translation:
-                from app.engine.ai.audio.whisper import TranscribeSegment
+                from app.adapters.ai.wrapper.whisper import TranscribeSegment
                 from app.init.container import get_container
 
-                progress_callback(transcribe_end, "task.progress.prepare_translate")
+                stage_progress("translate", 0.0, "task.progress.prepare_translate")
 
                 seg_dicts = [
                     {"start": s.start, "end": s.end, "text": s.text}
@@ -235,8 +244,7 @@ class SubtitleService:
                 ]
 
                 def translate_progress(percent: float, msg: str):
-                    overall = 0.70 + percent * 0.25
-                    progress_callback(overall, msg)
+                    stage_progress("translate", percent, msg)
 
                 src = WHISPER_TO_BCP47.get(result.language, result.language)
                 translate_remote = params.get("translate_remote", False)
@@ -267,8 +275,7 @@ class SubtitleService:
                 ]
 
             # === Final stage: Write subtitle file ===
-            write_start = 0.95 if has_translation else 0.90
-            progress_callback(write_start, "task.progress.generate_file")
+            stage_progress("write", 0.0, "task.progress.generate_file")
 
             # Convert TranscribeSegments to utils.subtitles Segments for formatting
             source_segments = [Segment(s.start, s.end, s.text) for s in original_segments]
@@ -326,7 +333,7 @@ class SubtitleService:
             output_filename = primary["filename"]
             output_size = primary["size"]
 
-            progress_callback(1.0, "task.progress.subtitle_complete")
+            stage_progress("write", 1.0, "task.progress.subtitle_complete")
 
             return {
                 "output_file_id": output_file_id,

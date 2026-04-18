@@ -1,12 +1,11 @@
 """Background removal service (rembg)."""
 import logging
-from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 from PIL import Image
 from rembg import remove, new_session
 
-from app.engine.ai.model_manager import ModelManager
+from app.adapters.ai.model_manager import ModelManager
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -71,17 +70,10 @@ class ImageRemoveBgService:
             os.environ["U2NET_HOME"] = str(rembg_dir)
             session = new_session(model_name)
 
-            from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
+            from app.utils.gif_utils import animation_format, apply_and_save, animation_ext
 
             with Image.open(file_info.file_path) as raw:
                 anim_fmt = animation_format(raw)
-                if anim_fmt:
-                    def _remove_frame(frame, idx, total):
-                        progress_callback(0.4 + idx / total * 0.5, f"task.progress.removing_bg|{idx + 1}|{total}")
-                        return remove(frame, session=session)
-                    result_frames = process_gif_frames(raw, _remove_frame)
-                else:
-                    img = raw.copy()
 
             output_file_id, output_path = self._file_service.create_output_path(
                 original_filename=file_info.original_filename,
@@ -89,13 +81,22 @@ class ImageRemoveBgService:
                 ext=".png",
             )
 
-            progress_callback(0.9, "task.progress.saving_result")
             if anim_fmt:
                 output_path = output_path.with_suffix(animation_ext(anim_fmt))
-                save_animated(result_frames, output_path, anim_fmt)
-            else:
-                result_img = remove(img, session=session)
-                result_img.save(output_path, "PNG")
+
+            progress_callback(0.9, "task.progress.saving_result")
+
+            with Image.open(file_info.file_path) as raw:
+                apply_and_save(
+                    raw,
+                    output_path,
+                    lambda frame: remove(frame, session=session),
+                    on_progress=lambda p, msg: progress_callback(0.4 + p * 0.5, msg),
+                    # rembg.remove() returns RGBA with its own alpha mask; preserve_alpha
+                    # would overwrite that mask with the original input alpha — incorrect.
+                    preserve_alpha=False,
+                    static_save_kwargs={"format": "PNG"},
+                )
 
         output_info = self._file_service.register_output(
             file_id=output_file_id,

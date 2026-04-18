@@ -8,6 +8,7 @@ from typing import Callable, Optional
 
 from app.utils.languages import WHISPER_TO_BCP47
 from app.utils.bilingual_output import write_bilingual_or_single
+from app.utils.progress_stages import StageProgress
 from app.pipeline.transcribe import TranscribeOptions, transcribe_audio_sync
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
@@ -88,20 +89,9 @@ class AudioLyricsService:
         # Lyrics ALWAYS run demucs + whisper + align; translation is optional.
         weights = {"demucs": 3, "whisper": 5, "align": 3}
         if do_translate:  weights["translate"] = 2
-        total_weight = sum(weights.values())
 
-        stages: dict[str, tuple[float, float]] = {}
-        cursor = 0.0
-        for stage in ["demucs", "whisper", "align", "translate"]:
-            if stage in weights:
-                w = weights[stage] / total_weight * 0.95
-                stages[stage] = (cursor, cursor + w)
-                cursor += w
-        stages["write"] = (0.95, 1.0)
-
-        def stage_progress(stage: str, p: float, msg: str):
-            s, e = stages.get(stage, (0.0, 1.0))
-            progress_callback(s + p * (e - s), msg)
+        sp = StageProgress(progress_callback, weights)
+        stage_progress = sp.stage
 
         # === Transcribe (Demucs + Whisper + align) via shared primitive ===
         opts = TranscribeOptions(
@@ -116,8 +106,8 @@ class AudioLyricsService:
         )
 
         # The primitive's 0..1 progress spans demucs -> whisper -> align.
-        transcribe_start = stages["demucs"][0]
-        transcribe_end = stages["align"][1]
+        transcribe_start = sp.range("demucs")[0]
+        transcribe_end = sp.range("align")[1]
 
         def transcribe_progress(p: float, m: str) -> None:
             progress_callback(
@@ -132,7 +122,7 @@ class AudioLyricsService:
         detected_lang = result.language
 
         # === Translation ===
-        from app.engine.ai.audio.whisper import TranscribeSegment
+        from app.adapters.ai.wrapper.whisper import TranscribeSegment
         from app.init.container import get_container
 
         original_segments = list(result.segments)
@@ -208,16 +198,7 @@ class AudioLyricsService:
         progress_callback(1.0, "task.progress.lyrics_complete")
 
         # Read lyrics content for preview
-        text_content = None
-        if output_files:
-            try:
-                fid = output_files[0]["file_id"]
-                info = self._file_service.get_file(fid)
-                if info and info.file_path:
-                    with open(info.file_path, "r", encoding="utf-8") as f:
-                        text_content = f.read()
-            except Exception:
-                pass
+        text_content = self._file_service.read_text(output_files[0]["file_id"]) if output_files else None
 
         return {
             "output_file_id": output_file_id,

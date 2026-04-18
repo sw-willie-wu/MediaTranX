@@ -35,13 +35,14 @@ def recognize_image_local(
         model_family: e.g. "qwen3vl", "internvl2.5", "gemma4"
         variant: model variant used for inference_config lookup; may be "4b" or "4b:Q4_K_M"
         fmt: output format, "md" or "txt"
-        runtime: acquired LlamaServerRuntime instance
+        runtime: acquired LlmWrapper instance
         on_progress: optional 0..1 progress callback; fake_progress interpolates while chat runs.
 
     Returns:
         Extracted text as a string (possibly empty).
     """
-    from app.utils.inference import get_inference_config, calc_max_tokens, fake_progress
+    from app.adapters.ai.inference_config import get_inference_config
+    from app.utils.inference import calc_max_tokens, fake_progress
     from app.utils.prompts import get_prompt_builder
 
     variant_size = variant.split(":")[0] if ":" in variant else variant

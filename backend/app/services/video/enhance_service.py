@@ -11,7 +11,7 @@ from uuid import uuid4
 import numpy as np
 from PIL import Image
 
-from app.engine.ffmpeg import FFmpegWrapper
+from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -47,8 +47,8 @@ class EnhanceService:
         return self._execute(params, progress_callback)
 
     def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        from app.engine.ai.image.realesrgan import get_realesrgan
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
+        from app.adapters.ai.wrapper.realesrgan import get_realesrgan
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PTH
         from app.utils.video_frames import FramePipe
 
         file_id = params["file_id"]

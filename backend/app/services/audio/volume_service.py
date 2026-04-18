@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-from app.engine.ffmpeg import FFmpegWrapper
+from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 

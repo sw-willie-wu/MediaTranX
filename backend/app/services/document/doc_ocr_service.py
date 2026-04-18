@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 
-from app.engine.ai.model_manager import ModelManager
+from app.adapters.ai.model_manager import ModelManager
 from app.utils.prompts import DEFAULT_VLM_MODEL
 from app.services.files.file_service import FileService
 from app.services.llm.language_service import LanguageService
@@ -158,7 +158,7 @@ class DocumentOcrService:
             build_vision_chat_messages,
             OCR_SYSTEM_MD, OCR_SYSTEM_TXT, OCR_USER_MD, OCR_USER_TXT,
         )
-        from app.utils.inference import get_remote_inference_config
+        from app.adapters.ai.inference_config import get_remote_inference_config
 
         image_b64, mime = prepare_image_for_remote_vlm(image_path)
 

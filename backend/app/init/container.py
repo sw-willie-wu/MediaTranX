@@ -14,8 +14,8 @@ from app.workers.progress_tracker import ProgressTracker
 from app.workers.task_manager import TaskManager
 
 # ── Engine (lightweight) ──
-from app.engine.ffmpeg import FFmpegWrapper
-from app.engine.ai.model_manager import ModelManager
+from app.adapters.binary.ffmpeg import FFmpegWrapper
+from app.adapters.ai.model_manager import ModelManager
 
 # ── Setup Services (lightweight — needed for settings page) ──
 from app.services.setup.config_service import ConfigService
@@ -68,7 +68,7 @@ class AppContainer(containers.DeclarativeContainer):
     ffmpeg = providers.Singleton(FFmpegWrapper)
     model_manager = providers.Singleton(ModelManager)
     llama_runtime = providers.Singleton(
-        _lazy("app.engine.ai.runtime.llama_server", "LlamaServerRuntime"),
+        _lazy("app.adapters.ai.wrapper.llm", "LlmWrapper"),
         slot="llm",
     )
 
@@ -182,7 +182,7 @@ class AppContainer(containers.DeclarativeContainer):
         ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
     )
     video_summary = providers.Singleton(
-        _lazy("app.services.video.summary.service", "VideoSummaryService"),
+        _lazy("app.services.video.summary_service", "VideoSummaryService"),
         ffmpeg=ffmpeg,
         file_service=file_service,
         task_manager=task_manager,

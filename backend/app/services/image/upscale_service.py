@@ -5,7 +5,7 @@ from typing import Callable, Optional
 
 from PIL import Image
 
-from app.engine.ai.model_manager import ModelManager
+from app.adapters.ai.model_manager import ModelManager
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 logger = logging.getLogger(__name__)
@@ -87,15 +87,18 @@ class ImageUpscaleService:
             upscale_family, upscale_variant = _parse_model_id(model_id, _UPSCALE_FAMILIES)
             progress_callback(0.05, f"task.progress.load_model|{model_id}")
 
-            from app.engine.ai.image import get_upscaler
+            from app.adapters.ai.wrapper import get_upscaler
             upscaler = get_upscaler(upscale_family)
 
             # Query the model's native scale
-            from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
+            from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PTH
             native_scale = MODELS_REGISTRY.get(FORMAT_PTH, {}).get(upscale_family, {}).get(
                 "variants", {}
             ).get(upscale_variant, {}).get("scale", 4)
 
+            # TODO(audit-a10-upscale): deferred migration; extract_frames semantics diverge from process_gif_frames
+            # because upscale needs per-frame progress_start/progress_end bounds for sub-frame reporting,
+            # which cannot be expressed through apply_and_save's single on_progress callback.
             from app.utils.gif_utils import animation_format, extract_frames, save_animated, animation_ext
 
             upscale_end = 0.7 if face_fix else 0.85
@@ -147,7 +150,7 @@ class ImageUpscaleService:
                     face_upscale = params.get("face_restore_upscale", 2)
                     progress_callback(0.75, f"task.progress.load_face_model|{face_restore_model_id}")
 
-                    from app.engine.ai.image import get_face_restorer
+                    from app.adapters.ai.wrapper import get_face_restorer
                     restorer = get_face_restorer(face_family)
 
                     restore_kwargs: dict = {"model_id": face_variant, "on_progress": lambda p, m: progress_callback(0.75 + p * 0.15, m)}

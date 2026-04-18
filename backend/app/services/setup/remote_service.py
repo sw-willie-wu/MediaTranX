@@ -80,13 +80,13 @@ class RemoteService:
     def _get_provider(self, provider: str, endpoint: str, api_key: Optional[str] = None):
         """Get provider instance."""
         if provider == "ollama":
-            from app.engine.ai.remote.ollama import OllamaProvider
+            from app.adapters.ai.remote.ollama import OllamaProvider
             return OllamaProvider(endpoint, api_key)
         if provider == "openai":
-            from app.engine.ai.remote.openai import OpenAIProvider
+            from app.adapters.ai.remote.openai import OpenAIProvider
             return OpenAIProvider(endpoint, api_key)
         if provider == "gemini":
-            from app.engine.ai.remote.gemini import GeminiProvider
+            from app.adapters.ai.remote.gemini import GeminiProvider
             return GeminiProvider(endpoint, api_key)
         raise ValueError(f"Unknown provider: {provider}")
 

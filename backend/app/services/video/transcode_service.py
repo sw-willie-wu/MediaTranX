@@ -4,7 +4,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from app.engine.ffmpeg import (
+from app.adapters.binary.ffmpeg import (
     FFmpegWrapper,
     TranscodeOptions,
     TranscodeProgress,

@@ -1,10 +1,10 @@
 """Cross-service SRT batch translation orchestration.
 
-Supports both cloud (RemoteProvider) and local (LlamaServerRuntime) backends.
+Supports both cloud (RemoteProvider) and local (LlmWrapper) backends.
 All translations use SRT format (aligned by index, more stable than line-split).
 
 Plain-text translation (document-only) lives in
-`services/document/translate_text.py` since it has a single consumer.
+`services/document/translate_service/text.py` since it has a single consumer.
 
 `get_cloud_provider` remains here temporarily and is scheduled for removal
 after Wave 4 §2.4 (services inject RemoteService directly).
@@ -15,7 +15,7 @@ import logging
 from typing import Callable, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.engine.ai.remote.base import RemoteProvider
+    from app.adapters.ai.remote.base import RemoteProvider
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ def translate_srt_cloud(
     glossary: Optional[dict[str, str]] = None,
 ) -> list[dict]:
     """Cloud SRT batch translation."""
-    from app.utils.inference import get_remote_inference_config
+    from app.adapters.ai.inference_config import get_remote_inference_config
     from app.utils.prompts import build_srt_translate_prompt
     from app.utils.subtitles import segments_to_srt, parse_srt_response
 
@@ -223,8 +223,8 @@ def translate_srt_local(
     model_size: str = "4b",
 ) -> list[dict]:
     """Local LLM SRT batch translation (must be called within runtime.acquire() context)."""
+    from app.adapters.ai.inference_config import get_inference_config
     from app.utils.inference import (
-        get_inference_config,
         calc_max_tokens,
         estimate_tokens,
         fake_progress,

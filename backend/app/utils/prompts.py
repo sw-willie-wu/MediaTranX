@@ -1,6 +1,6 @@
 """Prompt templates and per-model prompt builders.
 
-This is a pure utility module -- importing app.engine.* is prohibited.
+This is a pure utility module -- importing app.adapters.* is prohibited.
 Language constants live in utils/languages.py; SRT helpers in utils/subtitles.py;
 text chunking in utils/text_chunking.py; VLM chat message assembly (with PIL)
 in utils/vision_messages.py.
@@ -320,7 +320,7 @@ def get_prompt_builder(task: str, model_family: str, thinking: bool = False):
         task: "translate", "summarize", or "ocr"
         model_family: prompt builder key from inference config
         thinking: when True, skip /no_think for models that support thinking mode.
-                  Output <think> blocks are always stripped by LlamaServerRuntime.
+                  Output <think> blocks are always stripped by LlmWrapper.
     """
     # When thinking is enabled, Qwen3 should NOT add /no_think — use default builder
     if thinking and model_family in ("qwen3",):

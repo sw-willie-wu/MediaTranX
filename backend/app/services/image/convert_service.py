@@ -92,7 +92,7 @@ class ImageConvertService:
         file_id = params["file_id"]
         file_info = self._file_service.require_file(file_id)
 
-        from app.utils.gif_utils import animation_format, process_gif_frames, save_animated
+        from app.utils.gif_utils import animation_format, apply_and_save
 
         progress_callback(0.1, "task.progress.loading_image")
 
@@ -122,22 +122,14 @@ class ImageConvertService:
                     (src_anim_fmt == "PNG" and output_format == "PNG")
                 )
             ) else None
-            if keep_anim_fmt:
-                def _convert_frame(frame, idx, total):
-                    progress_callback(0.1 + idx / total * 0.5, f"task.progress.converting|{idx + 1}|{total}")
-                    return _resize_frame(frame)
-                anim_frames = process_gif_frames(raw, _convert_frame)
-            else:
+            if not keep_anim_fmt:
                 img = raw.copy()
+                # Handle RGBA to RGB conversion (JPEG doesn't support alpha)
+                if output_format in ["JPEG", "JPG"] and img.mode in ["RGBA", "P"]:
+                    img = img.convert("RGB")
 
         if not keep_anim_fmt:
-            # Handle RGBA to RGB conversion (JPEG doesn't support alpha)
-            if output_format in ["JPEG", "JPG"] and img.mode in ["RGBA", "P"]:
-                img = img.convert("RGB")
-
-        progress_callback(0.3, "task.progress.resizing")
-
-        if not keep_anim_fmt:
+            progress_callback(0.3, "task.progress.resizing")
             img = _resize_frame(img)
 
         progress_callback(0.6, "task.progress.converting_format")
@@ -164,10 +156,20 @@ class ImageConvertService:
         progress_callback(0.8, "task.progress.saving_file")
 
         if keep_anim_fmt:
-            save_animated(anim_frames, output_path, keep_anim_fmt)
+            def _anim_progress(p: float, msg: str) -> None:
+                progress_callback(0.1 + p * 0.5, msg)
+
+            with Image.open(file_info.file_path) as raw_anim:
+                apply_and_save(
+                    raw_anim,
+                    output_path,
+                    _resize_frame,
+                    on_progress=_anim_progress,
+                    preserve_alpha=False,
+                )
         else:
             # Save options
-            save_kwargs = {}
+            save_kwargs: dict = {}
             if output_format in ["JPEG", "JPG", "WEBP"]:
                 save_kwargs["quality"] = params.get("quality", 85)
             if output_format == "PNG":

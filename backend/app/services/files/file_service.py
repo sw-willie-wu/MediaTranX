@@ -107,9 +107,10 @@ class FileService:
         """
         Register a local file directly (no copy), for Electron local environment.
         """
+        from app.handler.exceptions import FileNotFoundError_
         path = Path(file_path)
         if not path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
+            raise FileNotFoundError_(f"File not found: {file_path}")
 
         file_id = str(uuid4())
         mime_type, _ = mimetypes.guess_type(path.name)
@@ -223,6 +224,22 @@ class FileService:
             return Path(file_info.file_path)
         return None
 
+    def read_text(self, file_id: str) -> Optional[str]:
+        """Read a registered output file as UTF-8 text.
+
+        Returns None if the file_id is not registered, the path is missing,
+        or any I/O / decode error occurs.
+        """
+        info = self.get_file(file_id)
+        if info is None or not info.file_path:
+            return None
+        try:
+            with open(info.file_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except (OSError, UnicodeDecodeError) as e:
+            logger.debug(f"read_text({file_id}) failed: {e}")
+            return None
+
     def create_output_path(
         self,
         original_filename: str,
@@ -271,7 +288,8 @@ class FileService:
             FileData: File information
         """
         if not file_path.exists():
-            raise FileNotFoundError(f"Output file not found: {file_path}")
+            from app.handler.exceptions import FileNotFoundError_
+            raise FileNotFoundError_(f"Output file not found: {file_path}")
 
         if mime_type is None:
             mime_type, _ = mimetypes.guess_type(str(file_path))

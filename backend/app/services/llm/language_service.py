@@ -6,7 +6,7 @@ Routes should not import app.utils.prompts constants directly.
 import logging
 from typing import Optional
 
-from app.engine.ai.model_manager import ModelManager
+from app.adapters.ai.model_manager import ModelManager
 from app.utils.languages import (
     WHISPER_LANGUAGE_OPTIONS,
     SUPPORTED_LANGUAGES,

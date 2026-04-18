@@ -1,4 +1,6 @@
 """Soundfont sample file endpoints for frontend playback (web fallback)."""
+from __future__ import annotations
+
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException

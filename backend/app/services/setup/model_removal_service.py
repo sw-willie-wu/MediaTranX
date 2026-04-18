@@ -28,7 +28,7 @@ def remove_model(item_id: str) -> None:
     elif item_id.startswith("qwen3-"):
         parts = item_id.split("-", 2)
         size, quant = parts[1], parts[2]
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
 
         qwen3_config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get("qwen3", {})
         specs = qwen3_config.get("specs", {})
@@ -49,7 +49,7 @@ def remove_model(item_id: str) -> None:
         model_family = size_parts[0]
         size = size_parts[1]
 
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
         config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get(model_family, {})
         variant = config.get("specs", {}).get(size, {}).get("variants", {}).get(quant)
         if variant:
@@ -71,7 +71,7 @@ def remove_model(item_id: str) -> None:
     elif item_id.startswith("rife-"):
         # RIFE: models/rife/flownet-*.pkl
         variant_name = item_id[len("rife-"):]
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
         rife_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})
         variant_spec = rife_config.get("variants", {}).get(variant_name)
         if variant_spec:
@@ -82,7 +82,7 @@ def remove_model(item_id: str) -> None:
 
     else:
         # PTH models (upscale / face_restore): {family}-{variant}
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PTH
 
         # Decompose ID: family-variant
         if '-' in item_id:

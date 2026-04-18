@@ -8,7 +8,7 @@ from typing import Callable, Optional
 
 from PIL import Image as PILImage
 
-from app.engine.ai.model_manager import ModelManager
+from app.adapters.ai.model_manager import ModelManager
 from app.utils.prompts import DEFAULT_VLM_MODEL
 from app.services.files.file_service import FileService
 from app.services.llm.language_service import LanguageService
@@ -181,7 +181,7 @@ class ImageOcrService:
         progress_callback(0.2, "task.progress.recognizing")
         messages = build_vision_chat_messages(provider, prompt, image_b64, mime_type)
 
-        from app.utils.inference import get_remote_inference_config
+        from app.adapters.ai.inference_config import get_remote_inference_config
         remote_config = get_remote_inference_config("ocr")
         final_text = p.chat(
             model=remote_model, messages=messages,

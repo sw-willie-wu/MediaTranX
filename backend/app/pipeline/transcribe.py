@@ -83,7 +83,7 @@ def transcribe_audio_sync(
     vocals temp file is managed internally.
     """
     # Lazy imports per BACKEND_DEVELOP_SPEC §3.2
-    from app.engine.ai.audio.whisper import get_whisper
+    from app.adapters.ai.wrapper.whisper import get_whisper
 
     if model_manager is None or ffmpeg_path is None:
         from app.init.container import get_container
@@ -102,7 +102,7 @@ def transcribe_audio_sync(
         # Stage 1: Demucs vocal separation (optional)
         working_audio = audio_path
         if options.separate_vocals:
-            from app.engine.ai.audio.demucs import get_demucs
+            from app.adapters.ai.wrapper.demucs import get_demucs
             import soundfile as sf
 
             stage_progress("demucs", 0.0, "task.progress.separating_vocals")
@@ -140,7 +140,7 @@ def transcribe_audio_sync(
             stage_progress("whisper", 1.0, "task.progress.recognition_complete")
 
             if options.align and result.language:
-                from app.engine.ai.audio.wav2vec2 import get_alignment_engine
+                from app.adapters.ai.wrapper.wav2vec2 import get_alignment_engine
 
                 aligner = get_alignment_engine()
                 if aligner.is_language_supported(result.language):

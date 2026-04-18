@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
-from app.engine.ffmpeg import FFmpegWrapper
+from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -33,7 +33,7 @@ class InterpolateService:
 
     def get_rife_status(self) -> dict:
         """Query RIFE model download status for each variant."""
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PKG
         from app.init.configs import SETTINGS
 
         rife = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})
@@ -58,7 +58,7 @@ class InterpolateService:
         return self._execute(params, progress_callback)
 
     def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        from app.engine.ai.video.rife import get_rife
+        from app.adapters.ai.wrapper.rife import get_rife
 
         file_id = params["file_id"]
         model = params.get("model", "v4.26")

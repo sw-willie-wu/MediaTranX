@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from app.engine.ai.model_manager import ModelManager
+from app.adapters.ai.model_manager import ModelManager
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -50,7 +50,7 @@ class ImageRemoveObjectService:
         return task_id
 
     def _get_mobilesam(self):
-        from app.engine.ai.image.mobilesam import get_mobilesam
+        from app.adapters.ai.wrapper.mobilesam import get_mobilesam
         return get_mobilesam()
 
     def _load_lama(self):

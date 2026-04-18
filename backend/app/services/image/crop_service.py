@@ -1,6 +1,5 @@
 """Image cropping service."""
 import logging
-from pathlib import Path
 from typing import Callable, Optional
 
 from PIL import Image
@@ -66,7 +65,7 @@ class ImageCropService:
         progress_callback: Callable[[float, str], None]
     ) -> dict:
         """Execute image cropping."""
-        from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
+        from app.utils.gif_utils import animation_format, apply_and_save, animation_ext
 
         file_id = params["file_id"]
         file_info = self._file_service.require_file(file_id)
@@ -77,20 +76,12 @@ class ImageCropService:
             img_width, img_height = raw.size
             anim_fmt = animation_format(raw)
 
-            progress_callback(0.3, "task.progress.calculating_crop")
-            x = max(0, min(params["x"], img_width - 1))
-            y = max(0, min(params["y"], img_height - 1))
-            crop_width  = max(1, min(params["width"],  img_width  - x))
-            crop_height = max(1, min(params["height"], img_height - y))
-            box = (x, y, x + crop_width, y + crop_height)
-
-            if anim_fmt:
-                def _crop_frame(frame, idx, total):
-                    progress_callback(0.4 + idx / total * 0.4, f"task.progress.cropping|{idx + 1}|{total}")
-                    return frame.crop(box)
-                result_frames = process_gif_frames(raw, _crop_frame)
-            else:
-                img = raw.copy().crop(box)
+        progress_callback(0.3, "task.progress.calculating_crop")
+        x = max(0, min(params["x"], img_width - 1))
+        y = max(0, min(params["y"], img_height - 1))
+        crop_width  = max(1, min(params["width"],  img_width  - x))
+        crop_height = max(1, min(params["height"], img_height - y))
+        box = (x, y, x + crop_width, y + crop_height)
 
         progress_callback(0.7, "task.progress.saving_file")
 
@@ -102,11 +93,15 @@ class ImageCropService:
             ext=f".{ext}",
         )
 
-        if anim_fmt:
-            save_animated(result_frames, output_path, anim_fmt)
-        else:
-            img.save(str(output_path), format="PNG")
-            img.close()
+        with Image.open(file_info.file_path) as raw:
+            apply_and_save(
+                raw,
+                output_path,
+                lambda frame: frame.crop(box),
+                on_progress=lambda p, msg: progress_callback(0.4 + p * 0.3, msg),
+                preserve_alpha=True,
+                static_save_kwargs={"format": "PNG"},
+            )
 
         # Register output file
         output_info = self._file_service.register_output(

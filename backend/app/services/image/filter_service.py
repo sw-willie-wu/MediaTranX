@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import logging
 from functools import lru_cache
-from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -315,32 +314,18 @@ class ImageFilterService:
         file_id   = params["file_id"]
         file_info = self._file_service.require_file(file_id)
 
-        from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
+        from app.utils.gif_utils import animation_format, apply_and_save, animation_ext
 
         progress_callback(0.05, "task.progress.loading_image")
 
-        from app.utils.image_alpha import preserve_alpha
-
         def noop(p, m): pass
 
-        def _filter_single(frame: Image.Image) -> Image.Image:
-            return preserve_alpha(frame, lambda rgb: self._apply_all(rgb, params, noop))
+        # frame_fn receives the RGB view (preserve_alpha=True in apply_and_save handles stripping/restoring alpha)
+        def _frame_fn(rgb: Image.Image) -> Image.Image:
+            return self._apply_all(rgb, params, noop)
 
         with Image.open(file_info.file_path) as raw:
             anim_fmt = animation_format(raw)
-            if anim_fmt:
-                def _process_frame(frame, idx, total):
-                    progress_callback(0.15 + idx / total * 0.6, f"task.progress.applying_adjustment|{idx + 1}|{total}")
-                    return _filter_single(frame)
-                result_frames = process_gif_frames(raw, _process_frame)
-            else:
-                raw = raw.copy()
-
-        if not anim_fmt:
-            progress_callback(0.15, "task.progress.applying_adjustment_single")
-            img = _filter_single(raw)
-
-        progress_callback(0.75, "task.progress.saving_file")
 
         ext = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
         # Save adjusted results to system temp dir; user chooses final location on download
@@ -350,11 +335,24 @@ class ImageFilterService:
             ext=f".{ext}",
         )
 
-        if anim_fmt:
-            save_animated(result_frames, output_path, anim_fmt)
-        else:
-            img.save(str(output_path), format="PNG")
-            img.close()
+        def _on_progress(p: float, msg: str) -> None:
+            # animation: scale per-frame progress into 0.15–0.75 band
+            progress_callback(0.15 + p * 0.6, msg)
+
+        if not anim_fmt:
+            progress_callback(0.15, "task.progress.applying_adjustment_single")
+
+        with Image.open(file_info.file_path) as raw:
+            apply_and_save(
+                raw,
+                output_path,
+                _frame_fn,
+                on_progress=_on_progress if anim_fmt else None,
+                preserve_alpha=True,
+                static_save_kwargs={"format": "PNG"},
+            )
+
+        progress_callback(0.9, "task.progress.saving_file")
 
         output_info = self._file_service.register_output(
             file_id=output_file_id,
