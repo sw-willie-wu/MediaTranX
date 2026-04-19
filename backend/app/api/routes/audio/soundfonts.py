@@ -1,11 +1,10 @@
 """Soundfont sample file endpoints for frontend playback (web fallback)."""
 from __future__ import annotations
 
-from pathlib import Path
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
+from app.handler.exceptions import FileNotFoundError_
 from app.init.configs import SETTINGS
 
 router = APIRouter(prefix="/soundfonts", tags=["audio"])
@@ -23,5 +22,5 @@ async def get_sample(instrument: str, note: str):
     """Serve individual instrument sample file (web fallback)."""
     sample_path = SETTINGS.path.soundfonts / instrument / note
     if not sample_path.exists():
-        raise HTTPException(status_code=404, detail="Sample not found")
+        raise FileNotFoundError_(f"Sample not found: {instrument}/{note}")
     return FileResponse(path=sample_path, media_type="audio/mpeg")

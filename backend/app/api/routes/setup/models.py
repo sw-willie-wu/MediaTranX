@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
 
@@ -29,7 +29,7 @@ async def get_models_status(
 
 
 class DownloadRequest(BaseModel):
-    id: str
+    id: str = Field(..., min_length=1, description="Model/tool identifier")
 
 
 @router.post("/models/remove")
@@ -39,8 +39,6 @@ async def remove_model_item(
     setup_service: SetupService = Depends(Provide[AppContainer.setup_service]),
 ):
     """Delete downloaded tool/model files."""
-    if not request.id:
-        raise HTTPException(status_code=400, detail="Missing id")
     setup_service.remove_model(request.id)
     return {"ok": True}
 
@@ -52,8 +50,5 @@ async def download_model_item(
     setup_service: SetupService = Depends(Provide[AppContainer.setup_service]),
 ):
     """Submit tool/model download task."""
-    if not request.id:
-        raise HTTPException(status_code=400, detail="Missing id")
-
     task_id = await setup_service.submit_model_download(request.id)
     return {"task_id": task_id}

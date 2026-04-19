@@ -1,10 +1,9 @@
 """File registration + saved-path endpoints."""
 from __future__ import annotations
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.init.container import AppContainer
@@ -60,7 +59,5 @@ async def update_saved_path(
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """Persist the user-chosen save destination into FileData.metadata + sidecar."""
-    if not Path(body.saved_path).is_absolute():
-        raise HTTPException(status_code=400, detail="saved_path must be absolute")
     file_service.set_saved_path(file_id, body.saved_path)
     return {"ok": True}

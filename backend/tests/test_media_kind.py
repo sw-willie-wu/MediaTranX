@@ -1,5 +1,5 @@
 import pytest
-from app.utils.media_kind import infer_kind, MediaKind
+from app.workers.media_kind import infer_kind, MediaKind
 
 
 @pytest.mark.parametrize("filename,expected", [

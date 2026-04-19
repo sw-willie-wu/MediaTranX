@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Literal, Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_serializer
 
 from app.init.container import AppContainer
@@ -100,9 +100,4 @@ async def get_file_info(
     Args:
         file_id: File ID
     """
-    file_data = file_service.get_file(file_id)
-
-    if file_data is None:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    return FileInfo.from_file_data(file_data)
+    return FileInfo.from_file_data(file_service.require_file(file_id))

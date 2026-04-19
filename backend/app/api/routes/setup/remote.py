@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.init.container import AppContainer
@@ -70,13 +70,10 @@ async def update_connection(
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
     """Update a connection."""
-    conn = service.update_connection(
+    return service.update_connection(
         conn_id,
         **data.model_dump(exclude_none=True),
     )
-    if not conn:
-        raise HTTPException(status_code=404, detail="Connection not found")
-    return conn
 
 
 @router.delete("/remote/connections/{conn_id}")
@@ -86,8 +83,7 @@ async def delete_connection(
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
     """Delete a connection."""
-    if not service.delete_connection(conn_id):
-        raise HTTPException(status_code=404, detail="Connection not found")
+    service.delete_connection(conn_id)
     return {"ok": True}
 
 

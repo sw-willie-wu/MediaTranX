@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
@@ -41,17 +41,14 @@ async def upscale_image(
     service: ImageUpscaleService = Depends(Provide[AppContainer.image_upscale]),
 ):
     """Submit image super-resolution task."""
-    try:
-        task_id = await service.submit_upscale(
-            file_id=request.file_id,
-            model_id=request.model_id,
-            scale=request.scale,
-            sharpen=request.sharpen,
-            face_fix=request.face_fix,
-            face_restore_model_id=request.face_restore_model_id,
-            face_restore_fidelity=request.face_restore_fidelity,
-            face_restore_upscale=request.face_restore_upscale,
-        )
-        return ImageUpscaleResponse(task_id=task_id)
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    task_id = await service.submit_upscale(
+        file_id=request.file_id,
+        model_id=request.model_id,
+        scale=request.scale,
+        sharpen=request.sharpen,
+        face_fix=request.face_fix,
+        face_restore_model_id=request.face_restore_model_id,
+        face_restore_fidelity=request.face_restore_fidelity,
+        face_restore_upscale=request.face_restore_upscale,
+    )
+    return ImageUpscaleResponse(task_id=task_id)

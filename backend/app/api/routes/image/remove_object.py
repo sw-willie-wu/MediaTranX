@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
@@ -33,11 +33,8 @@ async def remove_object(
     service: ImageRemoveObjectService = Depends(Provide[AppContainer.image_remove_object]),
 ):
     """Submit AI object removal task."""
-    try:
-        task_id = await service.submit_remove_object(
-            file_id=request.file_id,
-            mask_data=request.mask_data,
-        )
-        return ImageRemoveObjectResponse(task_id=task_id)
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    task_id = await service.submit_remove_object(
+        file_id=request.file_id,
+        mask_data=request.mask_data,
+    )
+    return ImageRemoveObjectResponse(task_id=task_id)

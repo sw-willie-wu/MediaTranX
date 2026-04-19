@@ -235,7 +235,7 @@ class TaskManager:
 
         Writes sidecar for results-policy outputs so they survive restart.
         """
-        from app.utils.media_kind import infer_kind  # local: cold-start friendly
+        from app.workers.media_kind import infer_kind  # local: cold-start friendly
 
         fs = self._file_service
         source_file_id = params.get("file_id")
@@ -319,12 +319,27 @@ class TaskManager:
             ]
         return [self.get_task(task_id) for task_id in active_ids]
 
-    async def cancel(self, task_id: str) -> bool:
-        """Cancel a task."""
+    def require_task(self, task_id: str) -> TaskData:
+        """Get task status, raising NotFoundError if unknown."""
+        from app.handler.exceptions import NotFoundError
+
+        task = self.get_task(task_id)
+        if task is None:
+            raise NotFoundError(f"Task not found: {task_id}")
+        return task
+
+    async def cancel(self, task_id: str) -> None:
+        """Cancel a task.
+
+        Raises:
+            NotFoundError: task_id is unknown.
+            ValueError: task is already terminal (cannot cancel).
+        """
         with self._lock:
             task = self._tasks.get(task_id)
         if task is None:
-            return False
+            from app.handler.exceptions import NotFoundError
+            raise NotFoundError(f"Task not found: {task_id}")
 
         if task.status == TaskStatus.PENDING:
             task.status = TaskStatus.CANCELLED
@@ -332,32 +347,38 @@ class TaskManager:
             await self._progress_tracker.emit(task_id, task.progress, "Task cancelled")
             logger.info(f"Task cancelled (pending): {task_id}")
             self._notify_terminal(task)
-            return True
+            return
 
         if task.status == TaskStatus.PROCESSING:
             with self._lock:
                 self._cancelled_ids.add(task_id)
             logger.info(f"Task cancel requested: {task_id}")
-            return True
+            return
 
-        return False
+        raise ValueError(f"Cannot cancel task in state {task.status.value}: {task_id}")
 
-    def remove(self, task_id: str) -> bool:
-        """Remove a completed task."""
+    def remove(self, task_id: str) -> None:
+        """Remove a completed task.
+
+        Raises:
+            NotFoundError: task_id is unknown.
+            ValueError: task is not in a terminal state (cannot remove yet).
+        """
+        from app.handler.exceptions import NotFoundError
+
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
-                return False
+                raise NotFoundError(f"Task not found: {task_id}")
 
             if task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
                 del self._tasks[task_id]
                 self._cancelled_ids.discard(task_id)
             else:
-                return False
+                raise ValueError(f"Cannot remove task in state {task.status.value}: {task_id}")
 
         self._progress_tracker.cleanup(task_id)
         logger.info(f"Task removed: {task_id}")
-        return True
 
     def cleanup_completed(self, max_age_hours: int = 24) -> int:
         """Clean up expired completed tasks."""
@@ -369,10 +390,17 @@ class TaskManager:
                 and (now - task.updated_at).total_seconds() / 3600 > max_age_hours
             ]
 
+        from app.handler.exceptions import NotFoundError
+        removed = 0
         for task_id in to_remove:
-            self.remove(task_id)
+            try:
+                self.remove(task_id)
+                removed += 1
+            except (NotFoundError, ValueError):
+                # Raced with another caller; skip silently.
+                pass
 
-        return len(to_remove)
+        return removed
 
     def shutdown(self) -> None:
         """Graceful shutdown: cancel pending tasks, wait for executor."""

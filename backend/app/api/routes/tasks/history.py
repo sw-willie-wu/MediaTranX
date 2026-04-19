@@ -3,8 +3,8 @@ Task history endpoints.
 """
 from __future__ import annotations
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from typing import Optional, TYPE_CHECKING
 
 from app.init.container import AppContainer
@@ -70,8 +70,7 @@ async def delete_history_item(
     history: TaskHistoryService = Depends(Provide[AppContainer.task_history]),
 ):
     """Delete a single history entry."""
-    if not history.delete(task_id):
-        raise HTTPException(status_code=404, detail="History item not found")
+    history.delete(task_id)
     return {"status": "deleted", "task_id": task_id}
 
 

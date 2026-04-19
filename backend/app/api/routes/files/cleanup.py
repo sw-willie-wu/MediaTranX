@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from app.init.container import AppContainer
 
@@ -33,13 +33,6 @@ async def delete_file(
     file_id: str,
     file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
-    """
-    Delete a file.
-
-    Args:
-        file_id: File ID
-    """
-    if not file_service.delete_file(file_id):
-        raise HTTPException(status_code=404, detail="File not found")
-
+    """Delete a file."""
+    file_service.delete_file(file_id)
     return {"status": "deleted", "file_id": file_id}

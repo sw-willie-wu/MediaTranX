@@ -195,12 +195,12 @@ class FileService:
         """Persist the user-chosen save destination to FileData.metadata + sidecar.
 
         Raises FileNotFoundError_ if the file is not registered.
+        Raises ValueError if saved_path is not absolute.
         Raises OSError if sidecar write fails.
         """
-        from app.handler.exceptions import FileNotFoundError_
-        fd = self._files.get(file_id)
-        if fd is None:
-            raise FileNotFoundError_(f"File not found: {file_id}")
+        if not Path(saved_path).is_absolute():
+            raise ValueError("saved_path must be absolute")
+        fd = self.require_file(file_id)
         fd.metadata = {**(fd.metadata or {}), "saved_path": saved_path}
         self.write_sidecar(file_id)
 
@@ -215,6 +215,19 @@ class FileService:
         fd = self._files.get(file_id)
         if fd is None:
             raise FileNotFoundError_(f"File not found: {file_id}")
+        return fd
+
+    def require_file_on_disk(self, file_id: str) -> FileData:
+        """Get file information and verify the on-disk payload exists.
+
+        Raises FileNotFoundError_ (→ 404) if either registration or disk file
+        is missing. Used by the download endpoint to serve bytes.
+        """
+        from app.handler.exceptions import FileNotFoundError_
+
+        fd = self.require_file(file_id)
+        if not Path(fd.file_path).exists():
+            raise FileNotFoundError_(f"File not found on disk: {file_id}")
         return fd
 
     def get_file_path(self, file_id: str) -> Optional[Path]:
@@ -427,39 +440,22 @@ class FileService:
             "total_bytes": upload_bytes + output_bytes,
         }
 
-    def delete_file(self, file_id: str) -> bool:
-        """
-        Delete a file.
+    def delete_file(self, file_id: str) -> None:
+        """Delete a registered file. Raises FileNotFoundError_ if unknown."""
+        file_info = self.require_file(file_id)
 
-        Args:
-            file_id: File ID
+        file_path = Path(file_info.file_path)
+        # Only delete files within the temp directory to avoid deleting user's original files (from register_local_file)
+        is_managed = (
+            str(file_path).startswith(str(self._upload_dir)) or
+            str(file_path).startswith(str(self._output_dir))
+        )
+        if is_managed and file_path.exists():
+            file_path.unlink()
 
-        Returns:
-            Whether deletion was successful
-        """
-        file_info = self._files.get(file_id)
-        if file_info is None:
-            return False
-
-        try:
-            file_path = Path(file_info.file_path)
-            # Only delete files within the temp directory to avoid deleting user's original files (from register_local_file)
-            is_managed = (
-                str(file_path).startswith(str(self._upload_dir)) or
-                str(file_path).startswith(str(self._output_dir))
-            )
-            if is_managed and file_path.exists():
-                file_path.unlink()
-
-            # Also remove sidecar (silent if not present)
-            self._sidecar_path(file_id).unlink(missing_ok=True)
-
-            del self._files[file_id]
-            logger.info(f"File deleted: {file_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete file {file_id}: {e}")
-            return False
+        self._sidecar_path(file_id).unlink(missing_ok=True)
+        del self._files[file_id]
+        logger.info(f"File deleted: {file_id}")
 
     def cleanup_temp(self, max_age_hours: int = 24) -> int:
         """

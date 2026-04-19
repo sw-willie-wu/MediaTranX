@@ -35,6 +35,11 @@ class FileNotFoundError_(MediaTranXError):
     pass
 
 
+class NotFoundError(MediaTranXError):
+    """Generic resource not found (record, task, connection, etc.)."""
+    pass
+
+
 class ConfigError(MediaTranXError):
     """Configuration error (invalid path, illegal value)."""
     pass

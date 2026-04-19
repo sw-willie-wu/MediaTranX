@@ -78,9 +78,12 @@ class TaskHistoryService:
         """Query history records with pagination."""
         return self._dao.query(page=page, page_size=page_size, status=status)
 
-    def delete(self, task_id: str) -> bool:
-        """Delete a single history record."""
-        return self._dao.delete(task_id)
+    def delete(self, task_id: str) -> None:
+        """Delete a single history record. Raises NotFoundError if missing."""
+        from app.handler.exceptions import NotFoundError
+
+        if not self._dao.delete(task_id):
+            raise NotFoundError(f"History item not found: {task_id}")
 
     def clear(self) -> int:
         """Clear all history records."""

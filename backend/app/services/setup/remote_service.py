@@ -41,14 +41,21 @@ class RemoteService:
         )
         return conn.model_dump()
 
-    def update_connection(self, conn_id: int, **kwargs) -> Optional[dict]:
-        """Update a connection."""
-        conn = self._dao.update(conn_id, **kwargs)
-        return conn.model_dump() if conn else None
+    def update_connection(self, conn_id: int, **kwargs) -> dict:
+        """Update a connection. Raises NotFoundError if conn_id is unknown."""
+        from app.handler.exceptions import NotFoundError
 
-    def delete_connection(self, conn_id: int) -> bool:
-        """Delete a connection."""
-        return self._dao.delete(conn_id)
+        conn = self._dao.update(conn_id, **kwargs)
+        if conn is None:
+            raise NotFoundError(f"Connection not found: {conn_id}")
+        return conn.model_dump()
+
+    def delete_connection(self, conn_id: int) -> None:
+        """Delete a connection. Raises NotFoundError if conn_id is unknown."""
+        from app.handler.exceptions import NotFoundError
+
+        if not self._dao.delete(conn_id):
+            raise NotFoundError(f"Connection not found: {conn_id}")
 
     def test_connection(self, provider: str, endpoint: str, api_key: Optional[str] = None) -> dict:
         """Test if a connection is working."""

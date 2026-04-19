@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, List, Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_serializer
 
 from app.init.container import AppContainer
@@ -79,12 +79,7 @@ async def get_task(
     task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
 ):
     """Get task status."""
-    task = task_manager.get_task(task_id)
-
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    return TaskResponse.from_task_data(task)
+    return TaskResponse.from_task_data(task_manager.require_task(task_id))
 
 
 @router.post("/{task_id}/cancel")
@@ -94,9 +89,7 @@ async def cancel_task(
     task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
 ):
     """Cancel a task."""
-    if not await task_manager.cancel(task_id):
-        raise HTTPException(status_code=400, detail="Cannot cancel task")
-
+    await task_manager.cancel(task_id)
     return {"status": "cancelled", "task_id": task_id}
 
 
@@ -107,7 +100,5 @@ async def remove_task(
     task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
 ):
     """Remove a completed task."""
-    if not task_manager.remove(task_id):
-        raise HTTPException(status_code=400, detail="Cannot remove task")
-
+    task_manager.remove(task_id)
     return {"status": "removed", "task_id": task_id}
