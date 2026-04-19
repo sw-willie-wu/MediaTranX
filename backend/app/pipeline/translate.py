@@ -6,8 +6,9 @@ All translations use SRT format (aligned by index, more stable than line-split).
 Plain-text translation (document-only) lives in
 `services/document/translate_service/text.py` since it has a single consumer.
 
-`get_cloud_provider` remains here temporarily and is scheduled for removal
-after Wave 4 §2.4 (services inject RemoteService directly).
+Callers resolve `prov` / `llama_runtime` themselves via injected dependencies;
+the pipeline layer does not reach into the DI container (per spec §1.4 —
+`pipeline/` does not import `init/`).
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from typing import Callable, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.adapters.ai.remote.base import RemoteProvider
+    from app.adapters.ai.wrapper.llm import LlmWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -66,19 +68,6 @@ def get_cloud_ctx(prov, model: str = "") -> int:
         except Exception:
             pass
     return _CLOUD_DEFAULT_CTX.get(provider_name, _CLOUD_DEFAULT_CTX["default"])
-
-
-def get_cloud_provider(
-    provider: str,
-    conn_id: Optional[int],
-    remote_model: str,
-) -> "RemoteProvider":
-    """Get a cloud provider instance. TEMPORARY: removed after Wave 4 §2.4."""
-    from app.init.container import get_container
-    prov = get_container().remote_service().get_provider_for_connection(conn_id, provider)
-    if prov is None:
-        raise RuntimeError(f"No available {provider} connection found")
-    return prov
 
 
 def translate_srt_cloud(
@@ -150,13 +139,12 @@ def translate_srt_auto(
     source_lang: str,
     target_lang: str,
     *,
-    remote: bool = False,
     on_progress: Optional[Callable[[float, str], None]] = None,
-    # Remote-only
-    provider: str = "",
-    conn_id: Optional[int] = None,
+    # Remote path — caller resolves via its injected RemoteService
+    prov: Optional["RemoteProvider"] = None,
     remote_model: str = "",
-    # Local-only
+    # Local path — caller passes its injected LlmWrapper
+    llama_runtime: Optional["LlmWrapper"] = None,
     model_family: str = "gemma4",
     model_size: str = "4b",
     quantization: Optional[str] = None,
@@ -170,31 +158,30 @@ def translate_srt_auto(
 ) -> list[dict]:
     """Unified local/remote SRT translation dispatch.
 
-    Collapses the 4-service-copied boilerplate (cloud provider fetch + acquire +
-    0.05/0.95 progress split + translate_srt_{cloud,local}). Caller pre-shapes
-    progress via `on_progress` (e.g. stage_progress callback).
+    Dispatch is determined by which resource the caller supplies:
+    - `prov` present  → remote path (translate_srt_cloud)
+    - `llama_runtime` present → local path (translate_srt_local w/ acquire)
 
     Progress layout (when `on_progress` provided):
     - Remote: translate_srt_cloud spans the full 0..1 range.
     - Local: 0.0 → 0.05 for runtime.acquire (model load), 0.05 → 1.0 for translation.
     """
-    if remote:
-        prov = get_cloud_provider(provider, conn_id, remote_model)
+    if prov is not None:
         return translate_srt_cloud(
             seg_dicts, source_lang, target_lang, prov, remote_model,
             on_progress=on_progress,
             keep_names=keep_names, style=style, glossary=glossary,
         )
 
-    from app.init.container import get_container
+    if llama_runtime is None:
+        raise ValueError("translate_srt_auto: either 'prov' or 'llama_runtime' must be provided")
 
     variant = f"{model_size}:{quantization}" if quantization else model_size
-    runtime = get_container().llama_runtime()
 
     if on_progress:
         on_progress(0.0, load_msg)
 
-    with runtime.acquire(
+    with llama_runtime.acquire(
         model_family,
         variant,
         lambda p, m: on_progress(p * 0.05, m) if on_progress else None,
@@ -202,7 +189,7 @@ def translate_srt_auto(
         if on_progress:
             on_progress(0.05, start_msg)
         return translate_srt_local(
-            seg_dicts, source_lang, target_lang, runtime,
+            seg_dicts, source_lang, target_lang, llama_runtime,
             on_progress=lambda p, m: on_progress(0.05 + p * 0.95, m) if on_progress else None,
             keep_names=keep_names, style=style, glossary=glossary,
             model_family=model_family, model_size=model_size,

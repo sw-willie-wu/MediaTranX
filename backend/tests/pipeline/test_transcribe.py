@@ -59,14 +59,10 @@ def test_transcribe_audio_sync_whisper_only(monkeypatch, tmp_path):
     fake_manager.gpu_session.return_value.__enter__ = lambda *a: None
     fake_manager.gpu_session.return_value.__exit__ = lambda *a: None
 
-    fake_container = MagicMock()
-    fake_container.model_manager.return_value = fake_manager
-
     monkeypatch.setattr("app.adapters.ai.wrapper.whisper.get_whisper", lambda: fake_whisper)
-    monkeypatch.setattr("app.init.container.get_container", lambda: fake_container)
 
     opts = TranscribeOptions(model_size="tiny")
-    result = transcribe_audio_sync(tmp_path / "x.wav", opts)
+    result = transcribe_audio_sync(tmp_path / "x.wav", opts, fake_manager, "fake-ffmpeg")
 
     assert result is fake_result
     fake_whisper.transcribe.assert_called_once()
@@ -85,11 +81,9 @@ def test_transcribe_audio_sync_with_demucs_writes_temp_and_cleans(monkeypatch, t
     fake_manager = MagicMock()
     fake_manager.gpu_session.return_value.__enter__ = lambda *a: None
     fake_manager.gpu_session.return_value.__exit__ = lambda *a: None
-    fake_container = MagicMock(model_manager=lambda: fake_manager)
 
     monkeypatch.setattr("app.adapters.ai.wrapper.whisper.get_whisper", lambda: fake_whisper)
     monkeypatch.setattr("app.adapters.ai.wrapper.demucs.get_demucs", lambda: fake_demucs)
-    monkeypatch.setattr("app.init.container.get_container", lambda: fake_container)
 
     written_paths: list[str] = []
     def fake_sf_write(path, data, sr):
@@ -98,7 +92,7 @@ def test_transcribe_audio_sync_with_demucs_writes_temp_and_cleans(monkeypatch, t
     monkeypatch.setattr("soundfile.write", fake_sf_write)
 
     opts = TranscribeOptions(separate_vocals=True, model_size="tiny")
-    transcribe_audio_sync(tmp_path / "x.wav", opts)
+    transcribe_audio_sync(tmp_path / "x.wav", opts, fake_manager, "fake-ffmpeg")
 
     assert fake_demucs.separate.called
     assert fake_whisper.transcribe.called
@@ -117,14 +111,12 @@ def test_transcribe_audio_sync_raises_if_demucs_no_vocals(monkeypatch, tmp_path)
     fake_manager = MagicMock()
     fake_manager.gpu_session.return_value.__enter__ = lambda *a: None
     fake_manager.gpu_session.return_value.__exit__ = lambda *a: None
-    fake_container = MagicMock(model_manager=lambda: fake_manager)
 
     monkeypatch.setattr("app.adapters.ai.wrapper.demucs.get_demucs", lambda: fake_demucs)
-    monkeypatch.setattr("app.init.container.get_container", lambda: fake_container)
 
     opts = TranscribeOptions(separate_vocals=True)
     with pytest.raises(RuntimeError, match="vocals"):
-        transcribe_audio_sync(tmp_path / "x.wav", opts)
+        transcribe_audio_sync(tmp_path / "x.wav", opts, fake_manager, "fake-ffmpeg")
 
 
 def test_transcribe_audio_sync_with_align_calls_aligner(monkeypatch, tmp_path):
@@ -141,14 +133,12 @@ def test_transcribe_audio_sync_with_align_calls_aligner(monkeypatch, tmp_path):
     fake_manager = MagicMock()
     fake_manager.gpu_session.return_value.__enter__ = lambda *a: None
     fake_manager.gpu_session.return_value.__exit__ = lambda *a: None
-    fake_container = MagicMock(model_manager=lambda: fake_manager)
 
     monkeypatch.setattr("app.adapters.ai.wrapper.whisper.get_whisper", lambda: fake_whisper)
     monkeypatch.setattr("app.adapters.ai.wrapper.wav2vec2.get_alignment_engine", lambda: fake_aligner)
-    monkeypatch.setattr("app.init.container.get_container", lambda: fake_container)
 
     opts = TranscribeOptions(align=True, model_size="tiny")
-    result = transcribe_audio_sync(tmp_path / "x.wav", opts)
+    result = transcribe_audio_sync(tmp_path / "x.wav", opts, fake_manager, "fake-ffmpeg")
 
     assert fake_aligner.align.called
     assert result.segments == aligned_segments
@@ -165,14 +155,12 @@ def test_transcribe_audio_sync_skips_align_if_language_unsupported(monkeypatch, 
     fake_manager = MagicMock()
     fake_manager.gpu_session.return_value.__enter__ = lambda *a: None
     fake_manager.gpu_session.return_value.__exit__ = lambda *a: None
-    fake_container = MagicMock(model_manager=lambda: fake_manager)
 
     monkeypatch.setattr("app.adapters.ai.wrapper.whisper.get_whisper", lambda: fake_whisper)
     monkeypatch.setattr("app.adapters.ai.wrapper.wav2vec2.get_alignment_engine", lambda: fake_aligner)
-    monkeypatch.setattr("app.init.container.get_container", lambda: fake_container)
 
     opts = TranscribeOptions(align=True, model_size="tiny")
-    result = transcribe_audio_sync(tmp_path / "x.wav", opts)
+    result = transcribe_audio_sync(tmp_path / "x.wav", opts, fake_manager, "fake-ffmpeg")
 
     fake_aligner.align.assert_not_called()
     assert result.segments == segs

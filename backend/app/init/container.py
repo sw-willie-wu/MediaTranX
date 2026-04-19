@@ -109,7 +109,10 @@ class AppContainer(containers.DeclarativeContainer):
     audio_transcribe = providers.Singleton(
         _lazy("app.services.audio.transcribe_service", "AudioTranscribeService"),
         file_service=file_service, task_manager=task_manager,
+        ffmpeg=ffmpeg,
+        model_manager=model_manager,
         llama_runtime=llama_runtime,
+        remote_service=remote_service,
     )
     audio_separate = providers.Singleton(
         _lazy("app.services.audio.separate_service", "AudioSeparateService"),
@@ -119,6 +122,10 @@ class AppContainer(containers.DeclarativeContainer):
     audio_lyrics = providers.Singleton(
         _lazy("app.services.audio.lyrics_service", "AudioLyricsService"),
         file_service=file_service, task_manager=task_manager,
+        ffmpeg=ffmpeg,
+        model_manager=model_manager,
+        llama_runtime=llama_runtime,
+        remote_service=remote_service,
     )
     audio_midi = providers.Singleton(
         _lazy("app.services.audio.audio_midi_service", "AudioMidiService"),
@@ -180,6 +187,9 @@ class AppContainer(containers.DeclarativeContainer):
     video_subtitle = providers.Singleton(
         _lazy("app.services.video.subtitle_service", "SubtitleService"),
         ffmpeg=ffmpeg, file_service=file_service, task_manager=task_manager,
+        model_manager=model_manager,
+        llama_runtime=llama_runtime,
+        remote_service=remote_service,
     )
     video_summary = providers.Singleton(
         _lazy("app.services.video.summary_service", "VideoSummaryService"),
@@ -187,6 +197,7 @@ class AppContainer(containers.DeclarativeContainer):
         file_service=file_service,
         task_manager=task_manager,
         chat_service=chat_service,
+        model_manager=model_manager,
     )
     video_interpolate = providers.Singleton(
         _lazy("app.services.video.interpolate_service", "InterpolateService"),
@@ -218,6 +229,7 @@ class AppContainer(containers.DeclarativeContainer):
         _lazy("app.services.document.translate_service", "TranslateService"),
         file_service=file_service, task_manager=task_manager,
         model_manager=model_manager, llama_runtime=llama_runtime,
+        remote_service=remote_service,
     )
 
 

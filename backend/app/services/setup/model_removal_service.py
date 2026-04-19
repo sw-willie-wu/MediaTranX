@@ -16,7 +16,7 @@ def _models_dir(category: str = "") -> Path:
     return d / category if category else d
 
 
-def remove_model(item_id: str) -> None:
+def remove_model(item_id: str, model_manager) -> None:
     """Delete downloaded model/tool files."""
     if item_id.startswith("whisper-"):
         size = item_id[len("whisper-"):]
@@ -98,9 +98,7 @@ def remove_model(item_id: str) -> None:
             if variant:
                 variant_spec = model_config.get("variants", {}).get(variant)
                 if variant_spec:
-                    from app.init.container import get_container
-                    manager = get_container().model_manager()
-                    model_path = manager.get_model_path(family, variant)
+                    model_path = model_manager.get_model_path(family, variant)
                     if model_path and model_path.exists():
                         model_path.unlink()
                         logger.info(f"Removed PTH model: {item_id}")
@@ -108,9 +106,7 @@ def remove_model(item_id: str) -> None:
                 variants = model_config.get("variants", {})
                 if variants:
                     first_variant = list(variants.keys())[0]
-                    from app.init.container import get_container
-                    manager = get_container().model_manager()
-                    model_path = manager.get_model_path(family, first_variant)
+                    model_path = model_manager.get_model_path(family, first_variant)
                     if model_path and model_path.exists():
                         model_path.unlink()
                         logger.info(f"Removed PTH model: {family}")

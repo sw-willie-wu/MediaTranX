@@ -82,4 +82,4 @@ class SetupService:
 
     def remove_model(self, item_id: str) -> None:
         """Delete downloaded model/tool files."""
-        remove_model(item_id)
+        remove_model(item_id, self._model_manager)

@@ -3,13 +3,12 @@
 Pipeline:
   [optional Demucs vocal separation] -> Whisper STT -> [optional wav2vec2 forced alignment]
 
-Callers provide an already-extracted audio file. Video callers extract first via
+Callers provide an already-extracted audio file + the AI resources the pipeline
+needs (`model_manager`, `ffmpeg_path`). Video callers extract first via
 FFmpegWrapper.extract_audio_sync. Output formatting is in `utils/subtitles.py`.
 
-`model_manager` parameter is optional during the Wave 2→Wave 4 transition: when
-None, the pipeline falls back to `get_container().model_manager()`. After Wave 4
-§2.1 injects model_manager into the 4 caller services, the fallback can be
-dropped and `model_manager` made required.
+Per spec §1.4, pipeline/ cannot import init/ — callers must inject the required
+resources explicitly.
 """
 from __future__ import annotations
 
@@ -71,9 +70,9 @@ def _make_stage_progress(
 def transcribe_audio_sync(
     audio_path: Path,
     options: TranscribeOptions,
+    model_manager,
+    ffmpeg_path: str,
     on_progress: Optional[Callable[[float, str], None]] = None,
-    model_manager=None,
-    ffmpeg_path: Optional[str] = None,
 ):
     """[Demucs] -> Whisper -> [align]. Returns faster-whisper TranscribeResult.
 
@@ -84,14 +83,6 @@ def transcribe_audio_sync(
     """
     # Lazy imports per BACKEND_DEVELOP_SPEC §3.2
     from app.adapters.ai.wrapper.whisper import get_whisper
-
-    if model_manager is None or ffmpeg_path is None:
-        from app.init.container import get_container
-        container = get_container()
-        if model_manager is None:
-            model_manager = container.model_manager()
-        if ffmpeg_path is None:
-            ffmpeg_path = container.ffmpeg().ffmpeg_path
 
     stages = _build_stage_list(options)
     stage_progress = _make_stage_progress(stages, on_progress)

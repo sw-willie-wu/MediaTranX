@@ -18,6 +18,7 @@ def test_service_registers_handler():
         file_service=file_service,
         task_manager=task_manager,
         chat_service=chat_service,
+        model_manager=MagicMock(),
     )
     assert svc is not None
     task_manager.register_handler.assert_called_once()
@@ -38,6 +39,7 @@ async def test_submit_summary_validates_file_exists():
         file_service=file_service,
         task_manager=task_manager,
         chat_service=MagicMock(),
+        model_manager=MagicMock(),
     )
     with pytest.raises(FileNotFoundError_, match="File not found"):
         await svc.submit_summary(
@@ -81,6 +83,7 @@ def _make_svc_with_mocks(tmp_path):
         file_service=file_service,
         task_manager=task_manager,
         chat_service=chat_service,
+        model_manager=MagicMock(),
     )
     return svc, file_service
 

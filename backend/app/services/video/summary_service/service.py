@@ -68,11 +68,13 @@ class VideoSummaryService:
         file_service: FileService,
         task_manager: TaskManager,
         chat_service,
+        model_manager,
     ):
         self._ffmpeg = ffmpeg
         self._file_service = file_service
         self._task_manager = task_manager
         self._chat_service = chat_service
+        self._model_manager = model_manager
 
         self._task_manager.register_handler(
             TASK_TYPE_VIDEO_SUMMARY,
@@ -172,7 +174,12 @@ class VideoSummaryService:
                 # Map [0,1] from whisper to [0.05, 0.15] of overall progress.
                 progress_callback(0.05 + p * 0.10, m)
 
-            result = transcribe_audio_sync(temp_audio, opts, on_progress=_t_progress)
+            result = transcribe_audio_sync(
+                temp_audio, opts,
+                self._model_manager,
+                self._ffmpeg.ffmpeg_path,
+                on_progress=_t_progress,
+            )
         finally:
             temp_audio.unlink(missing_ok=True)
 

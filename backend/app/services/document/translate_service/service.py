@@ -18,6 +18,7 @@ from app.utils.subtitles import (
 from app.utils.bilingual_output import write_bilingual_or_single
 from app.adapters.ai.model_manager import ModelManager
 from app.services.files.file_service import FileService
+from app.services.setup.remote_service import RemoteService
 from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
@@ -51,11 +52,13 @@ class TranslateService:
     """Document translation service for text and subtitle files (local and remote)."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
-                 model_manager: ModelManager, llama_runtime):
+                 model_manager: ModelManager, llama_runtime,
+                 remote_service: RemoteService):
         self._file_service = file_service
         self._task_manager = task_manager
         self._model_manager = model_manager
         self._llama_runtime = llama_runtime
+        self._remote_service = remote_service
 
         # Register task handler
         self._task_manager.register_handler(
@@ -170,30 +173,43 @@ class TranslateService:
             logger.info(f"Parsed {len(segments)} subtitle segments from {ext} file")
             src = source_language if is_remote else WHISPER_TO_BCP47.get(source_language, source_language)
 
-            translated_segments = translate_srt_auto(
-                segments, src, target_language,
-                remote=is_remote,
-                on_progress=translate_progress,
-                provider=params.get("provider", ""),
-                conn_id=params.get("conn_id"),
-                remote_model=params.get("remote_model", ""),
-                model_family=model_family,
-                model_size=model_size,
-                quantization=quantization,
-                style=translate_style,
-                glossary=glossary,
-            )
+            if is_remote:
+                prov = self._remote_service.get_provider_for_connection(
+                    params.get("conn_id"),
+                    params.get("provider", ""),
+                )
+                if prov is None:
+                    raise ValueError(f"No available {params.get('provider', '')} connection")
+                translated_segments = translate_srt_auto(
+                    segments, src, target_language,
+                    on_progress=translate_progress,
+                    prov=prov,
+                    remote_model=params.get("remote_model", ""),
+                    style=translate_style,
+                    glossary=glossary,
+                )
+            else:
+                translated_segments = translate_srt_auto(
+                    segments, src, target_language,
+                    on_progress=translate_progress,
+                    llama_runtime=self._llama_runtime,
+                    model_family=model_family,
+                    model_size=model_size,
+                    quantization=quantization,
+                    style=translate_style,
+                    glossary=glossary,
+                )
             translated_text = None
         elif is_remote:
             # === Cloud text translation ===
-            from app.pipeline.translate import get_cloud_provider
             from .text import translate_text_cloud
 
-            prov = get_cloud_provider(
-                params.get("provider", ""),
+            prov = self._remote_service.get_provider_for_connection(
                 params.get("conn_id"),
-                params.get("remote_model", ""),
+                params.get("provider", ""),
             )
+            if prov is None:
+                raise ValueError(f"No available {params.get('provider', '')} connection")
             translated_text = translate_text_cloud(
                 text, source_language, target_language, prov, params.get("remote_model", ""),
                 on_progress=translate_progress, glossary=glossary,

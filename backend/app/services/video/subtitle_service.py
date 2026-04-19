@@ -8,6 +8,7 @@ from typing import Callable, Optional
 from uuid import uuid4
 
 from app.adapters.binary.ffmpeg import FFmpegWrapper
+from app.adapters.ai.model_manager import ModelManager
 from app.adapters.ai.wrapper.whisper import WhisperWrapper, get_whisper
 from app.utils.languages import WHISPER_TO_BCP47
 from app.utils.bilingual_output import write_bilingual_or_single
@@ -15,6 +16,7 @@ from app.utils.progress_stages import StageProgress
 from app.pipeline.transcribe import TranscribeOptions, transcribe_audio_sync
 from app.utils.subtitles import Segment, format_srt, format_vtt
 from app.services.files.file_service import FileService
+from app.services.setup.remote_service import RemoteService
 from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
@@ -26,11 +28,15 @@ TASK_TYPE_VIDEO_SUBTITLE_GENERATE = "video.subtitle_generate"
 class SubtitleService:
     """Subtitle generation from video using FFmpeg audio extraction and Whisper STT."""
 
-    def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager,
+                 model_manager: ModelManager, llama_runtime, remote_service: RemoteService):
         self._ffmpeg = ffmpeg
         self._whisper: WhisperWrapper = get_whisper()
         self._file_service = file_service
         self._task_manager = task_manager
+        self._model_manager = model_manager
+        self._llama_runtime = llama_runtime
+        self._remote_service = remote_service
 
         # Register task handler
         self._task_manager.register_handler(
@@ -225,7 +231,10 @@ class SubtitleService:
                 separate_vocals=params.get("vocal_separation", False),
             )
             result = transcribe_audio_sync(
-                temp_audio_path, opts, on_progress=transcribe_progress
+                temp_audio_path, opts,
+                self._model_manager,
+                self._ffmpeg.ffmpeg_path,
+                on_progress=transcribe_progress,
             )
 
             # Save original segments (for bilingual subtitle output when translating)
@@ -234,7 +243,6 @@ class SubtitleService:
             # === Stage 3 (optional): Translate subtitles ===
             if has_translation:
                 from app.adapters.ai.wrapper.whisper import TranscribeSegment
-                from app.init.container import get_container
 
                 stage_progress("translate", 0.0, "task.progress.prepare_translate")
 
@@ -251,20 +259,36 @@ class SubtitleService:
 
                 from app.pipeline.translate import translate_srt_auto
 
-                translated_all = translate_srt_auto(
-                    seg_dicts, src, target_language,
-                    remote=translate_remote,
-                    on_progress=translate_progress,
-                    provider=params.get("translate_provider", ""),
-                    conn_id=params.get("translate_conn_id"),
-                    remote_model=params.get("translate_remote_model", ""),
-                    model_family=translate_model_family,
-                    model_size=translate_model_size,
-                    quantization=translate_quantization,
-                    keep_names=keep_names,
-                    style=translate_style,
-                    glossary=glossary,
-                )
+                if translate_remote:
+                    prov = self._remote_service.get_provider_for_connection(
+                        params.get("translate_conn_id"),
+                        params.get("translate_provider", ""),
+                    )
+                    if prov is None:
+                        raise ValueError(
+                            f"No available {params.get('translate_provider', '')} connection"
+                        )
+                    translated_all = translate_srt_auto(
+                        seg_dicts, src, target_language,
+                        on_progress=translate_progress,
+                        prov=prov,
+                        remote_model=params.get("translate_remote_model", ""),
+                        keep_names=keep_names,
+                        style=translate_style,
+                        glossary=glossary,
+                    )
+                else:
+                    translated_all = translate_srt_auto(
+                        seg_dicts, src, target_language,
+                        on_progress=translate_progress,
+                        llama_runtime=self._llama_runtime,
+                        model_family=translate_model_family,
+                        model_size=translate_model_size,
+                        quantization=translate_quantization,
+                        keep_names=keep_names,
+                        style=translate_style,
+                        glossary=glossary,
+                    )
                 translate_progress(1.0, "task.progress.translate_complete")
 
                 translated = translated_all

@@ -6,11 +6,14 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 
+from app.adapters.ai.model_manager import ModelManager
+from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.utils.languages import WHISPER_TO_BCP47
 from app.utils.bilingual_output import write_bilingual_or_single
 from app.utils.progress_stages import StageProgress
 from app.pipeline.transcribe import TranscribeOptions, transcribe_audio_sync
 from app.services.files.file_service import FileService
+from app.services.setup.remote_service import RemoteService
 from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
@@ -21,9 +24,15 @@ TASK_TYPE_AUDIO_LYRICS = "audio.lyrics"
 class AudioLyricsService:
     """Lyrics extraction using Demucs vocal separation and Whisper transcription."""
 
-    def __init__(self, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, file_service: FileService, task_manager: TaskManager,
+                 ffmpeg: FFmpegWrapper, model_manager: ModelManager,
+                 llama_runtime, remote_service: RemoteService):
         self._file_service = file_service
         self._task_manager = task_manager
+        self._ffmpeg = ffmpeg
+        self._model_manager = model_manager
+        self._llama_runtime = llama_runtime
+        self._remote_service = remote_service
         self._task_manager.register_handler(
             TASK_TYPE_AUDIO_LYRICS, self._handle_task,
             output_policy="results",
@@ -117,13 +126,14 @@ class AudioLyricsService:
         result = transcribe_audio_sync(
             file_info.file_path,
             opts,
+            self._model_manager,
+            self._ffmpeg.ffmpeg_path,
             on_progress=transcribe_progress,
         )
         detected_lang = result.language
 
         # === Translation ===
         from app.adapters.ai.wrapper.whisper import TranscribeSegment
-        from app.init.container import get_container
 
         original_segments = list(result.segments)
 
@@ -137,19 +147,32 @@ class AudioLyricsService:
             seg_dicts = [{"start": s.start, "end": s.end, "text": s.text} for s in result.segments]
             src = detected_lang if translate_remote else WHISPER_TO_BCP47.get(detected_lang, detected_lang)
 
-            translated_all = translate_srt_auto(
-                seg_dicts, src, target_lang,
-                remote=translate_remote,
-                on_progress=lambda p, m: stage_progress("translate", p, m),
-                provider=params.get("translate_provider", ""),
-                conn_id=params.get("translate_conn_id"),
-                remote_model=params.get("translate_remote_model", ""),
-                model_family=params.get("translate_model_family", "gemma4"),
-                model_size=params.get("translate_model_size", "4b"),
-                quantization=params.get("translate_quantization"),
-                load_msg="task.progress.lyrics_load_translate",
-                start_msg="task.progress.lyrics_translating",
-            )
+            if translate_remote:
+                prov = self._remote_service.get_provider_for_connection(
+                    params.get("translate_conn_id"),
+                    params.get("translate_provider", ""),
+                )
+                if prov is None:
+                    raise ValueError(
+                        f"No available {params.get('translate_provider', '')} connection"
+                    )
+                translated_all = translate_srt_auto(
+                    seg_dicts, src, target_lang,
+                    on_progress=lambda p, m: stage_progress("translate", p, m),
+                    prov=prov,
+                    remote_model=params.get("translate_remote_model", ""),
+                )
+            else:
+                translated_all = translate_srt_auto(
+                    seg_dicts, src, target_lang,
+                    on_progress=lambda p, m: stage_progress("translate", p, m),
+                    llama_runtime=self._llama_runtime,
+                    model_family=params.get("translate_model_family", "gemma4"),
+                    model_size=params.get("translate_model_size", "4b"),
+                    quantization=params.get("translate_quantization"),
+                    load_msg="task.progress.lyrics_load_translate",
+                    start_msg="task.progress.lyrics_translating",
+                )
 
             if not translate_remote:
                 stage_progress("translate", 1.0, "task.progress.lyrics_translate_complete")
