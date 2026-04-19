@@ -50,7 +50,7 @@ class RIFEWrapper(PackageWrapper):
         """Load RIFE model from model_path."""
         variant = config.get("variant")
         state_dict = torch.load(str(model_path), map_location=device, weights_only=True)
-        from app.adapters.ai.wrapper._rife_arch import IFNet
+        from app.adapters.ai.wrapper.rife_arch import IFNet
         model = IFNet()
         model.load_state_dict(state_dict, strict=False)
         model.eval()
