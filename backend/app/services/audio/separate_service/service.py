@@ -9,7 +9,8 @@ from uuid import uuid4
 
 import soundfile as sf
 
-from app.adapters.ai.wrapper.demucs import DemucsWrapper, get_demucs
+from app.adapters.ai.wrapper.demucs import DemucsWrapper
+from app.adapters.ai.wrapper.basic_pitch import BasicPitchWrapper
 from app.adapters.ai.model_manager import ModelManager
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
@@ -23,8 +24,10 @@ class AudioSeparateService:
     """Audio source separation using Demucs (vocals, drums, bass, guitar, piano, other)."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
-                 model_manager: ModelManager):
-        self._demucs: DemucsWrapper = get_demucs()
+                 model_manager: ModelManager,
+                 demucs: DemucsWrapper, basic_pitch: BasicPitchWrapper):
+        self._demucs = demucs
+        self._basic_pitch = basic_pitch
         self._file_service = file_service
         self._task_manager = task_manager
         self._model_manager = model_manager
@@ -136,10 +139,9 @@ class AudioSeparateService:
         if midi_mode:
             progress_callback(0.6, "task.progress.converting_to_midi")
 
-            from app.adapters.ai.wrapper.basic_pitch import get_basic_pitch
             from .midi_compose import transcribe_drums, merge_tracks_to_midi
 
-            basic_pitch = get_basic_pitch()
+            basic_pitch = self._basic_pitch
             midi_tracks = []
             midi_errors = []
 

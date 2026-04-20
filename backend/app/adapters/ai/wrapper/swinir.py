@@ -101,16 +101,3 @@ class SwinIRWrapper(PthWrapper):
         """Convert tensor back to numpy image."""
         array = (tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
         return array
-
-
-# ═══════════════════════════════════════════════════════════
-# Singleton factory
-# ═══════════════════════════════════════════════════════════
-_swinir: Optional[SwinIRWrapper] = None
-
-def get_swinir() -> SwinIRWrapper:
-    """Get the SwinIRWrapper singleton."""
-    global _swinir
-    if _swinir is None:
-        _swinir = SwinIRWrapper()
-    return _swinir

@@ -72,6 +72,65 @@ class AppContainer(containers.DeclarativeContainer):
         slot="llm",
     )
 
+    # ── AI Wrappers (lazy singletons) ──
+    # Concrete wrapper classes live in `app.adapters.ai.wrapper.*`. These
+    # providers hand the same instance to services, pipelines, and
+    # ModelManager._ensure_runtime (registered in init_container below).
+    whisper_wrapper = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.whisper", "WhisperWrapper"),
+    )
+    demucs_wrapper = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.demucs", "DemucsWrapper"),
+    )
+    alignment_engine = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.wav2vec2", "AlignmentEngine"),
+    )
+    basic_pitch_wrapper = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.basic_pitch", "BasicPitchWrapper"),
+    )
+    mobilesam_wrapper = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.mobilesam", "MobileSAMWrapper"),
+    )
+    rife_wrapper = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.rife", "RIFEWrapper"),
+    )
+    realesrgan_wrapper = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.realesrgan", "RealESRGANWrapper"),
+    )
+    swinir_wrapper = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.swinir", "SwinIRWrapper"),
+    )
+    bsrgan_wrapper = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.bsrgan", "BSRGANWrapper"),
+    )
+    real_cugan_wrapper = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.real_cugan", "RealCUGANWrapper"),
+    )
+    waifu2x_wrapper = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.waifu2x", "Waifu2xWrapper"),
+    )
+    codeformer_wrapper = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.codeformer", "CodeFormerWrapper"),
+    )
+    gfpgan_wrapper = providers.Singleton(
+        _lazy("app.adapters.ai.wrapper.gfpgan", "GFPGANWrapper"),
+    )
+
+    # Family-keyed dicts for dispatcher slots (upscale / face_restore).
+    # Services inject these; ModelManager also uses them via registered
+    # dispatchers. `providers.Dict` returns a plain dict each call.
+    upscalers = providers.Dict(
+        realesrgan=realesrgan_wrapper,
+        swinir=swinir_wrapper,
+        bsrgan=bsrgan_wrapper,
+        **{"real-cugan": real_cugan_wrapper},  # hyphenated key
+        waifu2x=waifu2x_wrapper,
+    )
+    face_restorers = providers.Dict(
+        codeformer=codeformer_wrapper,
+        gfpgan=gfpgan_wrapper,
+    )
+
     # ── LLM Service ──
     chat_service = providers.Singleton(
         _lazy("app.services.llm.chat_service", "ChatService"),
@@ -113,11 +172,16 @@ class AppContainer(containers.DeclarativeContainer):
         model_manager=model_manager,
         llama_runtime=llama_runtime,
         remote_service=remote_service,
+        whisper=whisper_wrapper,
+        demucs=demucs_wrapper,
+        alignment_engine=alignment_engine,
     )
     audio_separate = providers.Singleton(
         _lazy("app.services.audio.separate_service", "AudioSeparateService"),
         file_service=file_service, task_manager=task_manager,
         model_manager=model_manager,
+        demucs=demucs_wrapper,
+        basic_pitch=basic_pitch_wrapper,
     )
     audio_lyrics = providers.Singleton(
         _lazy("app.services.audio.lyrics_service", "AudioLyricsService"),
@@ -126,6 +190,9 @@ class AppContainer(containers.DeclarativeContainer):
         model_manager=model_manager,
         llama_runtime=llama_runtime,
         remote_service=remote_service,
+        whisper=whisper_wrapper,
+        demucs=demucs_wrapper,
+        alignment_engine=alignment_engine,
     )
     audio_midi = providers.Singleton(
         _lazy("app.services.audio.audio_midi_service", "AudioMidiService"),
@@ -137,6 +204,8 @@ class AppContainer(containers.DeclarativeContainer):
         _lazy("app.services.image.upscale_service", "ImageUpscaleService"),
         file_service=file_service, task_manager=task_manager,
         model_manager=model_manager,
+        upscalers=upscalers,
+        face_restorers=face_restorers,
     )
     image_crop = providers.Singleton(
         _lazy("app.services.image.crop_service", "ImageCropService"),
@@ -165,6 +234,7 @@ class AppContainer(containers.DeclarativeContainer):
         _lazy("app.services.image.remove_object_service", "ImageRemoveObjectService"),
         file_service=file_service, task_manager=task_manager,
         model_manager=model_manager,
+        mobilesam=mobilesam_wrapper,
     )
 
     # ── Video Services (lazy) ──
@@ -190,6 +260,9 @@ class AppContainer(containers.DeclarativeContainer):
         model_manager=model_manager,
         llama_runtime=llama_runtime,
         remote_service=remote_service,
+        whisper=whisper_wrapper,
+        demucs=demucs_wrapper,
+        alignment_engine=alignment_engine,
     )
     video_summary = providers.Singleton(
         _lazy("app.services.video.summary_service", "VideoSummaryService"),
@@ -198,16 +271,21 @@ class AppContainer(containers.DeclarativeContainer):
         task_manager=task_manager,
         chat_service=chat_service,
         model_manager=model_manager,
+        whisper=whisper_wrapper,
+        demucs=demucs_wrapper,
+        alignment_engine=alignment_engine,
     )
     video_interpolate = providers.Singleton(
         _lazy("app.services.video.interpolate_service", "InterpolateService"),
         file_service=file_service, task_manager=task_manager,
         ffmpeg=ffmpeg,
+        rife=rife_wrapper,
     )
     video_enhance = providers.Singleton(
         _lazy("app.services.video.enhance_service", "EnhanceService"),
         file_service=file_service, task_manager=task_manager,
         ffmpeg=ffmpeg,
+        realesrgan=realesrgan_wrapper,
     )
 
     # ── Document Services (lazy) ──
@@ -247,6 +325,22 @@ def get_container() -> AppContainer:
 def init_container() -> AppContainer:
     """Initialize the global container. Called once at startup."""
     global _container_instance
-    _container_instance = AppContainer()
-    _container_instance.wire(packages=["app.api.routes"])
+    c = AppContainer()
+
+    # Register wrapper providers with the ModelManager so `_ensure_runtime`
+    # resolves wrappers via the same lazy-singleton path the container uses.
+    mm = c.model_manager()
+    mm.register_runtime_provider("whisper", c.whisper_wrapper)
+    mm.register_runtime_provider("demucs", c.demucs_wrapper)
+    mm.register_runtime_provider("align", c.alignment_engine)
+    mm.register_runtime_provider("basic_pitch", c.basic_pitch_wrapper)
+    mm.register_runtime_provider("mobilesam", c.mobilesam_wrapper)
+    mm.register_runtime_provider("rife", c.rife_wrapper)
+
+    # Dispatcher slots: container exposes family→wrapper dicts.
+    mm.register_dispatcher("upscale", lambda family: c.upscalers()[family])
+    mm.register_dispatcher("face_restore", lambda family: c.face_restorers()[family])
+
+    c.wire(packages=["app.api.routes"])
+    _container_instance = c
     return _container_instance

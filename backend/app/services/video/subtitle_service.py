@@ -9,7 +9,9 @@ from uuid import uuid4
 
 from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.adapters.ai.model_manager import ModelManager
-from app.adapters.ai.wrapper.whisper import WhisperWrapper, get_whisper
+from app.adapters.ai.wrapper.whisper import WhisperWrapper
+from app.adapters.ai.wrapper.demucs import DemucsWrapper
+from app.adapters.ai.wrapper.wav2vec2 import AlignmentEngine
 from app.utils.languages import WHISPER_TO_BCP47
 from app.utils.bilingual_output import write_bilingual_or_single
 from app.utils.progress_stages import StageProgress
@@ -29,9 +31,14 @@ class SubtitleService:
     """Subtitle generation from video using FFmpeg audio extraction and Whisper STT."""
 
     def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager,
-                 model_manager: ModelManager, llama_runtime, remote_service: RemoteService):
+                 model_manager: ModelManager, llama_runtime, remote_service: RemoteService,
+                 whisper: WhisperWrapper,
+                 demucs: DemucsWrapper = None,
+                 alignment_engine: AlignmentEngine = None):
         self._ffmpeg = ffmpeg
-        self._whisper: WhisperWrapper = get_whisper()
+        self._whisper = whisper
+        self._demucs = demucs
+        self._alignment_engine = alignment_engine
         self._file_service = file_service
         self._task_manager = task_manager
         self._model_manager = model_manager
@@ -234,6 +241,9 @@ class SubtitleService:
                 temp_audio_path, opts,
                 self._model_manager,
                 self._ffmpeg.ffmpeg_path,
+                whisper=self._whisper,
+                demucs=self._demucs,
+                alignment_engine=self._alignment_engine,
                 on_progress=transcribe_progress,
             )
 

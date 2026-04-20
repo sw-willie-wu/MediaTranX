@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from app.adapters.ai.model_manager import ModelManager
+from app.adapters.ai.wrapper.whisper import WhisperWrapper
+from app.adapters.ai.wrapper.demucs import DemucsWrapper
+from app.adapters.ai.wrapper.wav2vec2 import AlignmentEngine
 from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.utils.languages import WHISPER_TO_BCP47
 from app.utils.bilingual_output import write_bilingual_or_single
@@ -26,13 +29,18 @@ class AudioLyricsService:
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
                  ffmpeg: FFmpegWrapper, model_manager: ModelManager,
-                 llama_runtime, remote_service: RemoteService):
+                 llama_runtime, remote_service: RemoteService,
+                 whisper: WhisperWrapper, demucs: DemucsWrapper,
+                 alignment_engine: AlignmentEngine):
         self._file_service = file_service
         self._task_manager = task_manager
         self._ffmpeg = ffmpeg
         self._model_manager = model_manager
         self._llama_runtime = llama_runtime
         self._remote_service = remote_service
+        self._whisper = whisper
+        self._demucs = demucs
+        self._alignment_engine = alignment_engine
         self._task_manager.register_handler(
             TASK_TYPE_AUDIO_LYRICS, self._handle_task,
             output_policy="results",
@@ -128,6 +136,9 @@ class AudioLyricsService:
             opts,
             self._model_manager,
             self._ffmpeg.ffmpeg_path,
+            whisper=self._whisper,
+            demucs=self._demucs,
+            alignment_engine=self._alignment_engine,
             on_progress=transcribe_progress,
         )
         detected_lang = result.language

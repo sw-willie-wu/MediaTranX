@@ -78,16 +78,3 @@ class RealCUGANWrapper(PthWrapper):
         
         finally:
             self._unload_model()
-
-
-# ═══════════════════════════════════════════════════════════
-# Singleton factory
-# ═══════════════════════════════════════════════════════════
-_real_cugan: Optional[RealCUGANWrapper] = None
-
-def get_real_cugan() -> RealCUGANWrapper:
-    """Get the RealCUGANWrapper singleton."""
-    global _real_cugan
-    if _real_cugan is None:
-        _real_cugan = RealCUGANWrapper()
-    return _real_cugan

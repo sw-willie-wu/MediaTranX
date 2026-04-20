@@ -10,12 +10,12 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def demucs():
-    from app.adapters.ai.wrapper.demucs import get_demucs
-    return get_demucs()
+    from app.adapters.ai.wrapper.demucs import DemucsWrapper
+    return DemucsWrapper()
 
 
 class TestDemucsAvailability:
-    def test_get_demucs_returns_instance(self, demucs):
+    def test_demucs_wrapper_instantiable(self, demucs):
         assert demucs is not None
 
     def test_model_status_structure(self, demucs):

@@ -322,13 +322,3 @@ class RIFEWrapper(PackageWrapper):
 
         logger.info(f"Pipe interpolated {frame_idx} frames → {total_written} frames ({multiplier}x)")
         return total_written, multiplier
-
-
-_rife: Optional[RIFEWrapper] = None
-
-
-def get_rife() -> RIFEWrapper:
-    global _rife
-    if _rife is None:
-        _rife = RIFEWrapper()
-    return _rife

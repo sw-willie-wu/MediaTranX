@@ -76,17 +76,3 @@ class Waifu2xWrapper(PthWrapper):
 
         finally:
             self._unload_model()
-
-
-# ═══════════════════════════════════════════════════════════
-# Singleton factory
-# ═══════════════════════════════════════════════════════════
-_waifu2x: Optional[Waifu2xWrapper] = None
-
-
-def get_waifu2x() -> Waifu2xWrapper:
-    """Get the Waifu2xWrapper singleton."""
-    global _waifu2x
-    if _waifu2x is None:
-        _waifu2x = Waifu2xWrapper()
-    return _waifu2x

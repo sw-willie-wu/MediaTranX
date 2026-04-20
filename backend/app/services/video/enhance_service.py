@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image
 
 from app.adapters.binary.ffmpeg import FFmpegWrapper
+from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -24,10 +25,11 @@ class EnhanceService:
     """Video frame-by-frame enhancement using Real-ESRGAN super-resolution."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
-                 ffmpeg: FFmpegWrapper):
+                 ffmpeg: FFmpegWrapper, realesrgan: RealESRGANWrapper):
         self._file_service = file_service
         self._task_manager = task_manager
         self._ffmpeg = ffmpeg
+        self._realesrgan = realesrgan
         self._task_manager.register_handler(
             TASK_TYPE_VIDEO_ENHANCE, self._handle_task,
             output_policy="history",
@@ -47,7 +49,6 @@ class EnhanceService:
         return self._execute(params, progress_callback)
 
     def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        from app.adapters.ai.wrapper.realesrgan import get_realesrgan
         from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PTH
         from app.utils.video_frames import FramePipe
 
@@ -79,7 +80,7 @@ class EnhanceService:
         # Pipe: FFmpeg decode → Real-ESRGAN → FFmpeg encode
         # Decoder reads at source resolution, encoder writes at scaled resolution
         progress_callback(0.0, "task.progress.enhance_processing")
-        realesrgan = get_realesrgan()
+        realesrgan = self._realesrgan
 
         pipe = FramePipe(
             input_path=file_info.file_path,

@@ -30,10 +30,12 @@ class ImageUpscaleService:
     """Image super-resolution using Real-ESRGAN / Real-CUGAN / SwinIR / BSRGAN models."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
-                 model_manager: ModelManager):
+                 model_manager: ModelManager, upscalers: dict, face_restorers: dict):
         self._file_service = file_service
         self._task_manager = task_manager
         self._model_manager = model_manager
+        self._upscalers = upscalers
+        self._face_restorers = face_restorers
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_UPSCALE,
@@ -87,8 +89,9 @@ class ImageUpscaleService:
             upscale_family, upscale_variant = _parse_model_id(model_id, _UPSCALE_FAMILIES)
             progress_callback(0.05, f"task.progress.load_model|{model_id}")
 
-            from app.adapters.ai.wrapper import get_upscaler
-            upscaler = get_upscaler(upscale_family)
+            upscaler = self._upscalers.get(upscale_family)
+            if upscaler is None:
+                raise ValueError(f"Unknown upscale family: {upscale_family}. Available: {list(self._upscalers)}")
 
             # Query the model's native scale
             from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PTH
@@ -150,8 +153,9 @@ class ImageUpscaleService:
                     face_upscale = params.get("face_restore_upscale", 2)
                     progress_callback(0.75, f"task.progress.load_face_model|{face_restore_model_id}")
 
-                    from app.adapters.ai.wrapper import get_face_restorer
-                    restorer = get_face_restorer(face_family)
+                    restorer = self._face_restorers.get(face_family)
+                    if restorer is None:
+                        raise ValueError(f"Unknown face_restore family: {face_family}. Available: {list(self._face_restorers)}")
 
                     restore_kwargs: dict = {"model_id": face_variant, "on_progress": lambda p, m: progress_callback(0.75 + p * 0.15, m)}
                     if face_family == "codeformer":

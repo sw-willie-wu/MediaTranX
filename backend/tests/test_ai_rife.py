@@ -11,8 +11,8 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def rife():
-    from app.adapters.ai.wrapper.rife import get_rife
-    return get_rife()
+    from app.adapters.ai.wrapper.rife import RIFEWrapper
+    return RIFEWrapper()
 
 
 def _model_available(rife, variant="v4.26"):
@@ -25,7 +25,7 @@ def _model_available(rife, variant="v4.26"):
 
 
 class TestRIFE:
-    def test_get_rife_returns_instance(self, rife):
+    def test_rife_wrapper_instantiable(self, rife):
         assert rife is not None
 
     def test_interpolate_two_frames(self, rife):

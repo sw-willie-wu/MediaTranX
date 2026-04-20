@@ -78,16 +78,3 @@ class BSRGANWrapper(PthWrapper):
         
         finally:
             self._unload_model()
-
-
-# ═══════════════════════════════════════════════════════════
-# Singleton factory
-# ═══════════════════════════════════════════════════════════
-_bsrgan: Optional[BSRGANWrapper] = None
-
-def get_bsrgan() -> BSRGANWrapper:
-    """Get the BSRGANWrapper singleton."""
-    global _bsrgan
-    if _bsrgan is None:
-        _bsrgan = BSRGANWrapper()
-    return _bsrgan

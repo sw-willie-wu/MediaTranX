@@ -99,17 +99,3 @@ class MobileSAMWrapper(PackageWrapper):
                 multimask_output=False,
             )
             return (masks[0] * 255).astype(np.uint8)
-
-
-# ═══════════════════════════════════════════════════════════
-# Singleton factory
-# ═══════════════════════════════════════════════════════════
-_mobilesam: Optional[MobileSAMWrapper] = None
-
-
-def get_mobilesam() -> MobileSAMWrapper:
-    """Get the MobileSAMWrapper singleton."""
-    global _mobilesam
-    if _mobilesam is None:
-        _mobilesam = MobileSAMWrapper()
-    return _mobilesam

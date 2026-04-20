@@ -79,16 +79,3 @@ class RealESRGANWrapper(PthWrapper):
             torch.cuda.empty_cache()
 
             return result
-
-
-# ═══════════════════════════════════════════════════════════
-# Singleton factory (backward compatible)
-# ═══════════════════════════════════════════════════════════
-_realesrgan: Optional[RealESRGANWrapper] = None
-
-def get_realesrgan() -> RealESRGANWrapper:
-    """Get the RealESRGANWrapper singleton."""
-    global _realesrgan
-    if _realesrgan is None:
-        _realesrgan = RealESRGANWrapper()
-    return _realesrgan

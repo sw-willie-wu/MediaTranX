@@ -85,16 +85,3 @@ class GFPGANWrapper(PthWrapper):
         
         finally:
             self._unload_model()
-
-
-# ═══════════════════════════════════════════════════════════
-# Singleton factory
-# ═══════════════════════════════════════════════════════════
-_gfpgan: Optional[GFPGANWrapper] = None
-
-def get_gfpgan() -> GFPGANWrapper:
-    """Get the GFPGANWrapper singleton."""
-    global _gfpgan
-    if _gfpgan is None:
-        _gfpgan = GFPGANWrapper()
-    return _gfpgan

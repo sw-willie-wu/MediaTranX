@@ -457,16 +457,3 @@ class AlignmentEngine:
 
         return words
 
-
-# ═══════════════════════════════════════════════════════════
-# Singleton factory
-# ═══════════════════════════════════════════════════════════
-_engine: Optional[AlignmentEngine] = None
-
-
-def get_alignment_engine() -> AlignmentEngine:
-    """Get the AlignmentEngine singleton."""
-    global _engine
-    if _engine is None:
-        _engine = AlignmentEngine()
-    return _engine

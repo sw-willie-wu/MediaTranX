@@ -10,12 +10,12 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def realesrgan():
-    from app.adapters.ai.wrapper import get_upscaler
-    return get_upscaler("realesrgan")
+    from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper
+    return RealESRGANWrapper()
 
 
 class TestRealESRGAN:
-    def test_get_upscaler_returns_instance(self, realesrgan):
+    def test_realesrgan_wrapper_instantiable(self, realesrgan):
         assert realesrgan is not None
 
     def test_enhance_small_image(self, realesrgan):

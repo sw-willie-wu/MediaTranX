@@ -1,7 +1,6 @@
 """Unit tests for ModelManager new API (register_runtime, acquire, _ensure_runtime)."""
 import pytest
-from unittest.mock import MagicMock
-from app.adapters.ai.model_manager import ModelManager, _RUNTIME_FACTORIES
+from app.adapters.ai.model_manager import ModelManager
 
 
 class FakeRuntime:
@@ -95,56 +94,46 @@ def test_acquire_unknown_slot_raises():
             pass
 
 
-def test_ensure_runtime_lazy_imports_from_factories(monkeypatch):
-    """When slot has a factory entry, first acquire triggers lazy import."""
+def test_runtime_provider_invoked_on_first_acquire():
+    """Non-dispatcher slot with registered provider: first acquire calls provider."""
     mm = ModelManager()
     r = FakeRuntime(slot="whisper")
+    call_count = {"n": 0}
 
-    def fake_get_whisper():
+    def provider():
+        call_count["n"] += 1
         return r
 
-    # Patch _RUNTIME_FACTORIES to point at a fake factory
-    monkeypatch.setitem(
-        _RUNTIME_FACTORIES, "whisper",
-        ("tests.adapters.test_model_manager_acquire", "fake_get_whisper", False),
-    )
-    import sys
-    sys.modules["tests.adapters.test_model_manager_acquire"].fake_get_whisper = fake_get_whisper
-    # First acquire creates it
+    mm.register_runtime_provider("whisper", provider)
+    # First acquire resolves via provider
     with mm.acquire("whisper", "whisper", "medium"):
         pass
     assert mm._runtimes["whisper"] is r
+    assert call_count["n"] == 1
+    # Second acquire reuses cached runtime (provider not called again)
+    with mm.acquire("whisper", "whisper", "medium"):
+        pass
+    assert call_count["n"] == 1
 
 
-def test_dispatcher_slot_swap_on_model_id_change():
-    """Upscale/face_restore — different model_id → unload old wrapper + load new."""
+def test_dispatcher_swaps_runtime_on_model_id_change():
+    """Dispatcher slot: different model_id → unload old wrapper + load new."""
     mm = ModelManager()
     r_real = FakeRuntime(slot="upscale")
     r_bs = FakeRuntime(slot="upscale")
-    r_real._dispatched_model_id = "realesrgan"
 
-    # Simulate existing registration
-    mm._runtimes["upscale"] = r_real
-    mm._unloaders["upscale"] = r_real.unload
-
-    # Fake dispatcher entry
-    def fake_get_upscaler(model_id):
+    def dispatcher(model_id):
         if model_id == "bsrgan":
-            r_bs._dispatched_model_id = "bsrgan"
             return r_bs
         return r_real
 
-    import app.adapters.ai.model_manager as mm_mod
-    mm_mod._RUNTIME_FACTORIES["upscale"] = (
-        "app.adapters.ai.wrapper", "get_upscaler_TEST", True
-    )
-    import app.adapters.ai.wrapper
-    app.adapters.ai.wrapper.get_upscaler_TEST = fake_get_upscaler
-    try:
-        with mm.acquire("upscale", "bsrgan", "x4"):
-            pass
-        assert mm._runtimes["upscale"] is r_bs
-        assert r_real.unload_calls >= 1
-    finally:
-        del mm_mod._RUNTIME_FACTORIES["upscale"]
-        del app.adapters.ai.wrapper.get_upscaler_TEST
+    mm.register_dispatcher("upscale", dispatcher)
+
+    with mm.acquire("upscale", "realesrgan", "x4"):
+        pass
+    assert mm._runtimes["upscale"] is r_real
+
+    with mm.acquire("upscale", "bsrgan", "x4"):
+        pass
+    assert mm._runtimes["upscale"] is r_bs
+    assert r_real.unload_calls >= 1

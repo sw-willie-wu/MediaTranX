@@ -85,16 +85,3 @@ class CodeFormerWrapper(PthWrapper):
         
         finally:
             self._unload_model()
-
-
-# ═══════════════════════════════════════════════════════════
-# Singleton factory
-# ═══════════════════════════════════════════════════════════
-_codeformer: Optional[CodeFormerWrapper] = None
-
-def get_codeformer() -> CodeFormerWrapper:
-    """Get the CodeFormerWrapper singleton."""
-    global _codeformer
-    if _codeformer is None:
-        _codeformer = CodeFormerWrapper()
-    return _codeformer

@@ -8,6 +8,9 @@ from typing import Callable, Optional
 from uuid import uuid4
 
 from app.services.files.file_service import FileService
+from app.adapters.ai.wrapper.whisper import WhisperWrapper
+from app.adapters.ai.wrapper.demucs import DemucsWrapper
+from app.adapters.ai.wrapper.wav2vec2 import AlignmentEngine
 from app.adapters.ai.inference_config import get_inference_config
 from app.utils.inference import calc_max_tokens, estimate_tokens
 from app.pipeline.transcribe import TranscribeOptions, transcribe_audio_sync
@@ -69,12 +72,18 @@ class VideoSummaryService:
         task_manager: TaskManager,
         chat_service,
         model_manager,
+        whisper: WhisperWrapper,
+        demucs: DemucsWrapper = None,
+        alignment_engine: AlignmentEngine = None,
     ):
         self._ffmpeg = ffmpeg
         self._file_service = file_service
         self._task_manager = task_manager
         self._chat_service = chat_service
         self._model_manager = model_manager
+        self._whisper = whisper
+        self._demucs = demucs
+        self._alignment_engine = alignment_engine
 
         self._task_manager.register_handler(
             TASK_TYPE_VIDEO_SUMMARY,
@@ -178,6 +187,9 @@ class VideoSummaryService:
                 temp_audio, opts,
                 self._model_manager,
                 self._ffmpeg.ffmpeg_path,
+                whisper=self._whisper,
+                demucs=self._demucs,
+                alignment_engine=self._alignment_engine,
                 on_progress=_t_progress,
             )
         finally:

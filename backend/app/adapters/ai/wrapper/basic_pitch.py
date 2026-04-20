@@ -180,17 +180,3 @@ class BasicPitchWrapper(PackageWrapper):
             "is_drum": False,
             "notes": notes,
         }
-
-
-# ═══════════════════════════════════════════════════════════
-# Singleton factory
-# ═══════════════════════════════════════════════════════════
-_basic_pitch: Optional[BasicPitchWrapper] = None
-
-
-def get_basic_pitch() -> BasicPitchWrapper:
-    """Get the BasicPitchWrapper singleton."""
-    global _basic_pitch
-    if _basic_pitch is None:
-        _basic_pitch = BasicPitchWrapper()
-    return _basic_pitch

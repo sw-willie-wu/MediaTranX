@@ -11,8 +11,8 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def whisper():
-    from app.adapters.ai.wrapper.whisper import get_whisper
-    return get_whisper()
+    from app.adapters.ai.wrapper.whisper import WhisperWrapper
+    return WhisperWrapper()
 
 
 @pytest.fixture
@@ -27,7 +27,7 @@ def test_audio(tmp_path):
 
 
 class TestWhisperAvailability:
-    def test_get_whisper_returns_instance(self, whisper):
+    def test_whisper_wrapper_instantiable(self, whisper):
         assert whisper is not None
 
     def test_model_status_structure(self, whisper):

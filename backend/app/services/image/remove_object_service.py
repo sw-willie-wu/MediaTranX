@@ -13,6 +13,7 @@ import torch
 from PIL import Image
 
 from app.adapters.ai.model_manager import ModelManager
+from app.adapters.ai.wrapper.mobilesam import MobileSAMWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -25,10 +26,11 @@ class ImageRemoveObjectService:
     """AI object removal using MobileSAM segmentation and LaMa inpainting."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
-                 model_manager: ModelManager):
+                 model_manager: ModelManager, mobilesam: MobileSAMWrapper):
         self._file_service = file_service
         self._task_manager = task_manager
         self._model_manager = model_manager
+        self._mobilesam = mobilesam
         self._lama_model = None
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_REMOVE_OBJECT, self._handle_task,
@@ -48,10 +50,6 @@ class ImageRemoveObjectService:
         })
         logger.info(f"Image remove-object task submitted: {task_id}")
         return task_id
-
-    def _get_mobilesam(self):
-        from app.adapters.ai.wrapper.mobilesam import get_mobilesam
-        return get_mobilesam()
 
     def _load_lama(self):
         if self._lama_model is not None:
@@ -161,7 +159,7 @@ class ImageRemoveObjectService:
         y2 = min(image_rgb.shape[0] - 1, int(ys.max()) + pad)
 
         box = np.array([x1, y1, x2, y2])
-        return self._get_mobilesam().predict_box(image_rgb, box)
+        return self._mobilesam.predict_box(image_rgb, box)
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         return self._execute(params, progress_callback)

@@ -365,16 +365,3 @@ class WhisperWrapper(PackageWrapper):
         finally:
             # Unload model to release VRAM
             self._unload_model()
-
-
-# ═══════════════════════════════════════════════════════════
-# Singleton factory
-# ═══════════════════════════════════════════════════════════
-_whisper: Optional[WhisperWrapper] = None
-
-def get_whisper() -> WhisperWrapper:
-    """Get the WhisperWrapper singleton."""
-    global _whisper
-    if _whisper is None:
-        _whisper = WhisperWrapper()
-    return _whisper

@@ -192,17 +192,3 @@ class DemucsWrapper(PackageWrapper):
             on_progress(1.0, "task.progress.separation_done")
 
         return result, sample_rate
-
-
-# ═══════════════════════════════════════════════════════════
-# Singleton factory
-# ═══════════════════════════════════════════════════════════
-_demucs: Optional[DemucsWrapper] = None
-
-
-def get_demucs() -> DemucsWrapper:
-    """Get the DemucsWrapper singleton."""
-    global _demucs
-    if _demucs is None:
-        _demucs = DemucsWrapper()
-    return _demucs

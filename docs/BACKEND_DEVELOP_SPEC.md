@@ -266,7 +266,7 @@ conn = dao.create(provider="ollama", name="Local", endpoint="http://localhost:11
 | 情境 | 加 `_` | 理由 |
 |---|---|---|
 | Class 內部 state（mutation 有 invariant） | ✓ | `_lock`、`_model`、`_runtimes` |
-| Module-private constant（防外部 `from x import _Y`） | ✓ | `_RUNTIME_FACTORIES` |
+| Module-private constant（防外部 `from x import _Y`） | ✓ | `_MAX_CHARS_PER_LINE`、`_PAUSE_THRESHOLD_S` |
 | Subclass override hook（Python template method） | ✓ | `_load_impl`、`_unload_impl`、`_resolve_model_path` |
 | Subpackage 內部檔案 | ✗ | package boundary 即 encapsulation（`frame_picker.py`） |
 | Subpackage 內部 module 裡的 function | ✗ | 同上 |
@@ -964,7 +964,7 @@ Adapter 方法失敗時直接拋異常，由上層 Service/TaskManager 處理。
    - Image PTH 模型：`PthWrapper`（torch state_dict 載入，VRAM-aware tile inference via `tile_inference.py`）
    - Python 套件模型：`PackageWrapper`（第三方套件自帶載入，如 faster-whisper / demucs）
    - LLM (GGUF)：繼承合適基類；包 `adapters/binary/llama_server.py`
-3. [ ] 註冊到 `model_manager._RUNTIME_FACTORIES`（若是 lazy factory slot）或由 container 顯式 `register_runtime`
+3. [ ] 在 `container.py` 加 `_lazy()` Singleton provider；於 `init_container()` 呼叫 `mm.register_runtime_provider(slot, provider)`（非 dispatcher slot）或 `mm.register_dispatcher(slot, dispatcher)`（如 upscale/face_restore）
 4. [ ] 在 Service 的 `_execute` 方法中透過 `mm.acquire(slot, model_id, variant)` 呼叫
 
 ### 新增遠端 API Provider

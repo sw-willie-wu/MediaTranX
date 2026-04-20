@@ -22,20 +22,6 @@ from .registry import (
 
 logger = logging.getLogger(__name__)
 
-# Module-level slot → factory table.
-# (module_path, factory_fn_name, takes_model_id)
-# "llm" not in table — LlmWrapper pre-registered by init_container.
-_RUNTIME_FACTORIES: dict[str, tuple[str, str, bool]] = {
-    "whisper":      ("app.adapters.ai.wrapper.whisper",     "get_whisper",          False),
-    "demucs":       ("app.adapters.ai.wrapper.demucs",      "get_demucs",           False),
-    "basic_pitch":  ("app.adapters.ai.wrapper.basic_pitch", "get_basic_pitch",      False),
-    "align":        ("app.adapters.ai.wrapper.wav2vec2",    "get_alignment_engine", False),
-    "mobilesam":    ("app.adapters.ai.wrapper.mobilesam",   "get_mobilesam",        False),
-    "rife":         ("app.adapters.ai.wrapper.rife",        "get_rife",             False),
-    "upscale":      ("app.adapters.ai.wrapper",             "get_upscaler",         True),
-    "face_restore": ("app.adapters.ai.wrapper",             "get_face_restorer",    True),
-}
-
 
 class ModelManager:
     """
@@ -47,6 +33,10 @@ class ModelManager:
         self._loaded_slots: Set[str] = set()
         self._unloaders: Dict[str, Callable[[], None]] = {}
         self._runtimes: Dict[str, Any] = {}
+        # slot → zero-arg callable returning a wrapper instance (DI singleton).
+        self._runtime_providers: Dict[str, Callable[[], Any]] = {}
+        # slot → callable(model_id) returning a wrapper instance (fresh per model_id).
+        self._dispatchers: Dict[str, Callable[[str], Any]] = {}
         logger.info("ModelManager (V6) initialized with Registry")
 
     @contextmanager
@@ -86,6 +76,23 @@ class ModelManager:
         """
         self._runtimes[runtime.slot] = runtime
         self._unloaders[runtime.slot] = runtime.unload
+
+    def register_runtime_provider(self, slot: str, provider: Callable[[], Any]) -> None:
+        """Register a zero-arg factory for a non-dispatcher slot.
+
+        Called by `init_container` at startup. `provider` typically wraps a
+        DI singleton so all consumers share the same wrapper instance.
+        """
+        self._runtime_providers[slot] = provider
+
+    def register_dispatcher(self, slot: str, dispatcher: Callable[[str], Any]) -> None:
+        """Register a per-model_id factory for a dispatcher slot.
+
+        `dispatcher(model_id)` returns a wrapper instance for that family.
+        Different model_ids map to different wrapper instances (the manager
+        caches the currently-loaded one in `_runtimes[slot]`).
+        """
+        self._dispatchers[slot] = dispatcher
 
     @contextmanager
     def acquire(
@@ -146,46 +153,45 @@ class ModelManager:
     def _ensure_runtime(self, slot: str, model_id: Optional[str] = None) -> Any:
         """Return the runtime instance for (slot, model_id).
 
-        Cases:
-        1. Cached — return it.
-        2. Dispatcher slot (`takes_model_id=True`) and cached wrapper's model_id
-           differs — unload old, build new.
-        3. No cache — lazy-import factory, instantiate.
-
-        Pre-registered runtimes (slot in `_runtimes` but not in `_RUNTIME_FACTORIES`)
-        always return the cached instance. Pre-registered slots MUST NOT be
-        dispatcher slots (enforced by convention; today only "llm").
+        Three cases:
+        1. Slot has a dispatcher (e.g. `upscale`): instantiate via dispatcher,
+           swap cached instance when model_id changes.
+        2. Slot has a runtime provider (e.g. `whisper`): one-shot init from the
+           provider (typically a DI singleton), cache for lifetime of the process.
+        3. Pre-registered runtime (e.g. `llm` — registered via `register_runtime`):
+           always return the cached instance.
         """
         existing = self._runtimes.get(slot)
-        factory_spec = _RUNTIME_FACTORIES.get(slot)
 
-        if factory_spec is None:
-            if existing is None:
-                raise KeyError(f"Unknown runtime slot: {slot!r}")
+        dispatcher = self._dispatchers.get(slot)
+        if dispatcher is not None:
+            needs_swap = (
+                model_id is not None
+                and existing is not None
+                and getattr(existing, "_dispatched_model_id", None) != model_id
+            )
+            if existing is None or needs_swap:
+                if existing is not None:
+                    existing.unload()
+                runtime = dispatcher(model_id)
+                runtime._dispatched_model_id = model_id
+                self._runtimes[slot] = runtime
+                self._unloaders[slot] = runtime.unload
+                return runtime
             return existing
 
-        module_path, fn_name, takes_model_id = factory_spec
+        provider = self._runtime_providers.get(slot)
+        if provider is not None:
+            if existing is None:
+                runtime = provider()
+                self._runtimes[slot] = runtime
+                self._unloaders[slot] = runtime.unload
+                return runtime
+            return existing
 
-        needs_swap = (
-            takes_model_id
-            and model_id is not None
-            and existing is not None
-            and getattr(existing, "_dispatched_model_id", None) != model_id
-        )
-
-        if existing is None or needs_swap:
-            if existing is not None:
-                existing.unload()
-            mod = __import__(module_path, fromlist=[fn_name])
-            factory = getattr(mod, fn_name)
-            runtime = factory(model_id) if takes_model_id else factory()
-            if takes_model_id:
-                runtime._dispatched_model_id = model_id
-            self._runtimes[slot] = runtime
-            self._unloaders[slot] = runtime.unload
-            return runtime
-
-        return existing
+        if existing is not None:
+            return existing  # pre-registered (LLM)
+        raise KeyError(f"Unknown runtime slot: {slot!r}")
 
     def _acquire_lock(self, slot: str, required_vram_mb: int = 0) -> None:
         """Legacy VRAM-only lock (pre-B-clean). Retained private until all callers

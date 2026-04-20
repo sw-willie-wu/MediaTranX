@@ -72,18 +72,24 @@ def transcribe_audio_sync(
     options: TranscribeOptions,
     model_manager,
     ffmpeg_path: str,
+    whisper,
+    demucs=None,
+    alignment_engine=None,
     on_progress: Optional[Callable[[float, str], None]] = None,
 ):
     """[Demucs] -> Whisper -> [align]. Returns faster-whisper TranscribeResult.
+
+    Wrapper instances are passed in by the caller (DI-injected) instead of
+    pulled from module-level singletons. `demucs` is required when
+    `options.separate_vocals` is True; `alignment_engine` when
+    `options.align` is True. Callers that don't use those features may
+    pass None.
 
     Caller is responsible for: audio extraction from video source (use
     FFmpegWrapper.extract_audio_sync), output file writing, translation,
     and temp file lifecycle of the input audio_path itself. Demucs-separated
     vocals temp file is managed internally.
     """
-    # Lazy imports per BACKEND_DEVELOP_SPEC §3.2
-    from app.adapters.ai.wrapper.whisper import get_whisper
-
     stages = _build_stage_list(options)
     stage_progress = _make_stage_progress(stages, on_progress)
 
@@ -93,11 +99,11 @@ def transcribe_audio_sync(
         # Stage 1: Demucs vocal separation (optional)
         working_audio = audio_path
         if options.separate_vocals:
-            from app.adapters.ai.wrapper.demucs import get_demucs
+            if demucs is None:
+                raise ValueError("demucs wrapper required when separate_vocals=True")
             import soundfile as sf
 
             stage_progress("demucs", 0.0, "task.progress.separating_vocals")
-            demucs = get_demucs()
             separated, sample_rate = demucs.separate(
                 str(audio_path),
                 variant="htdemucs_6s",
@@ -115,7 +121,6 @@ def transcribe_audio_sync(
             stage_progress("demucs", 1.0, "task.progress.separation_complete")
 
         # Stage 2 (Whisper) + Stage 3 (align) share a GPU session
-        whisper = get_whisper()
         with model_manager.gpu_session():
             stage_progress("whisper", 0.0, "task.progress.load_whisper")
             result = whisper.transcribe(
@@ -131,9 +136,9 @@ def transcribe_audio_sync(
             stage_progress("whisper", 1.0, "task.progress.recognition_complete")
 
             if options.align and result.language:
-                from app.adapters.ai.wrapper.wav2vec2 import get_alignment_engine
-
-                aligner = get_alignment_engine()
+                if alignment_engine is None:
+                    raise ValueError("alignment_engine wrapper required when align=True")
+                aligner = alignment_engine
                 if aligner.is_language_supported(result.language):
                     stage_progress("align", 0.0, "task.progress.aligning")
                     result.segments = aligner.align(

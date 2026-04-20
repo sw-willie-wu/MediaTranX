@@ -9,6 +9,7 @@ from typing import Callable, Optional
 from uuid import uuid4
 
 from app.adapters.binary.ffmpeg import FFmpegWrapper
+from app.adapters.ai.wrapper.rife import RIFEWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -21,10 +22,11 @@ class InterpolateService:
     """Video frame interpolation using RIFE to increase frame rate."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
-                 ffmpeg: FFmpegWrapper):
+                 ffmpeg: FFmpegWrapper, rife: RIFEWrapper):
         self._file_service = file_service
         self._task_manager = task_manager
         self._ffmpeg = ffmpeg
+        self._rife = rife
         self._task_manager.register_handler(
             TASK_TYPE_VIDEO_INTERPOLATE, self._handle_task,
             output_policy="history",
@@ -58,8 +60,6 @@ class InterpolateService:
         return self._execute(params, progress_callback)
 
     def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        from app.adapters.ai.wrapper.rife import get_rife
-
         file_id = params["file_id"]
         model = params.get("model", "v4.26")
         mode = params.get("mode", "2x")
@@ -98,7 +98,7 @@ class InterpolateService:
 
         # Pipe mode: FFmpeg decode → RIFE → FFmpeg encode (zero disk I/O)
         progress_callback(0.0, "task.progress.interpolating")
-        rife = get_rife()
+        rife = self._rife
 
         def interp_progress(p, msg):
             progress_callback(p * 0.95, msg)
