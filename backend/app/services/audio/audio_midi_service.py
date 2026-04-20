@@ -1,5 +1,7 @@
-"""
-MIDI editor backend service — read, save, export.
+"""MIDI editor backend service — read, save, export, and WAV conversion.
+
+MIDI I/O helpers live in `app.utils.midi_io` (shared with the separate
+service's merge path).
 """
 from __future__ import annotations
 
@@ -34,7 +36,7 @@ class AudioMidiService:
         from app.utils.midi_io import json_to_midi
 
         file_id = str(uuid4())
-        temp_dir = self._file_service._upload_dir
+        temp_dir = self._file_service.upload_dir
         temp_dir.mkdir(parents=True, exist_ok=True)
         midi_path = temp_dir / f"{file_id}.mid"
         json_to_midi(data, str(midi_path))

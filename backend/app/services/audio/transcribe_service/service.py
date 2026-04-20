@@ -109,6 +109,9 @@ class AudioTranscribeService:
         return task_id
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+        return self._execute(params, progress_callback)
+
+    def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
         file_info = self._file_service.require_file(file_id)
 

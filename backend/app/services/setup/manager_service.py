@@ -77,7 +77,10 @@ class SetupService:
         return versions
 
     def _handle_model_download(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        """Model download task handler (synchronous, runs in ThreadPoolExecutor)."""
+        return self._execute_model_download(params, progress_callback)
+
+    def _execute_model_download(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
+        """Model download task logic (synchronous, runs in ThreadPoolExecutor)."""
         return handle_model_download(params, progress_callback)
 
     def remove_model(self, item_id: str) -> None:
