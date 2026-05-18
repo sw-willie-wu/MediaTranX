@@ -25,12 +25,12 @@ class DocumentOcrService:
     """Document OCR service for PDF and images using VLM (local or remote)."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
-                 model_manager: ModelManager, llama_runtime,
+                 model_manager: ModelManager, chat_service,
                  language_service: LanguageService, remote_service: RemoteService):
         self._file_service = file_service
         self._task_manager = task_manager
         self._model_manager = model_manager
-        self._llama_runtime = llama_runtime
+        self._chat_service = chat_service
         self._language_service = language_service
         self._remote_service = remote_service
         self._task_manager.register_handler(
@@ -190,15 +190,6 @@ class DocumentOcrService:
         )
         return "\n\n---\n\n".join(texts)
 
-    def _recognize(self, image_path: str, model_family: str, variant: str, fmt: str,
-                   on_progress: Optional[Callable[[float, str], None]] = None) -> str:
-        """Recognize text in a single image using local VLM."""
-        from app.pipeline.ocr import recognize_image_local
-
-        runtime = self._llama_runtime
-        with runtime.acquire(model_family, variant, on_progress):
-            return recognize_image_local(image_path, model_family, variant, fmt, runtime, on_progress)
-
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         file_id = params["file_id"]
         file_info = self._file_service.require_file(file_id)
@@ -218,15 +209,34 @@ class DocumentOcrService:
         progress_callback(0.05, "task.progress.ocr_prepare")
 
         # === GPU queue pipeline ===
-        with self._model_manager.gpu_session():
+        with self._model_manager.gpu_session(), self._chat_service.session(
+            model_family=model_family,
+            model_size=size,
+            quantization=quantization,
+        ) as session:
+            from app.pipeline.ocr import recognize_image_local, ocr_pdf_pages
+
             if src_ext == ".pdf":
-                final_text = self._ocr_pdf(
-                    file_info.file_path, model_family, variant, fmt, progress_callback,
+                page_results = ocr_pdf_pages(
+                    file_info.file_path,
+                    lambda img: recognize_image_local(
+                        img, model_family, variant, fmt, session,
+                        on_progress=lambda p, m: None,
+                    ),
+                    on_progress=lambda p, m: progress_callback(0.1 + p * 0.85, m),
                 )
+                total = len(page_results)
+                if fmt == "md":
+                    parts = [
+                        (f"## Page {i+1}\n\n" if total > 1 else "") + text
+                        for i, text in enumerate(page_results)
+                    ]
+                    final_text = "\n\n---\n\n".join(parts)
+                else:
+                    final_text = "\n\n".join(page_results)
             elif src_ext in _IMAGE_EXTS:
-                final_text = self._recognize(
-                    image_path=str(file_info.file_path),
-                    model_family=model_family, variant=variant, fmt=fmt,
+                final_text = recognize_image_local(
+                    str(file_info.file_path), model_family, variant, fmt, session,
                     on_progress=lambda p, m: progress_callback(0.1 + p * 0.85, m),
                 )
             else:
@@ -252,25 +262,3 @@ class DocumentOcrService:
             "output_filename": output_info.filename,
             "char_count": len(final_text),
         }
-
-    def _ocr_pdf(self, src_path: Path, model_family, variant, fmt, progress_callback) -> str:
-        from app.pipeline.ocr import ocr_pdf_pages
-
-        page_results = ocr_pdf_pages(
-            src_path,
-            lambda img: self._recognize(
-                image_path=img,
-                model_family=model_family, variant=variant, fmt=fmt,
-                on_progress=lambda p, m: None,
-            ),
-            on_progress=lambda p, m: progress_callback(0.1 + p * 0.85, m),
-        )
-
-        total = len(page_results)
-        if fmt == "md":
-            parts = []
-            for i, text in enumerate(page_results):
-                header = f"## Page {i+1}\n\n" if total > 1 else ""
-                parts.append(f"{header}{text}")
-            return "\n\n---\n\n".join(parts)
-        return "\n\n".join(page_results)

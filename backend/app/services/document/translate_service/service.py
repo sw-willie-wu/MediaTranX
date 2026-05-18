@@ -52,12 +52,12 @@ class TranslateService:
     """Document translation service for text and subtitle files (local and remote)."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
-                 model_manager: ModelManager, llama_runtime,
+                 model_manager: ModelManager, chat_service,
                  remote_service: RemoteService):
         self._file_service = file_service
         self._task_manager = task_manager
         self._model_manager = model_manager
-        self._llama_runtime = llama_runtime
+        self._chat_service = chat_service
         self._remote_service = remote_service
 
         # Register task handler
@@ -189,16 +189,26 @@ class TranslateService:
                     glossary=glossary,
                 )
             else:
-                translated_segments = translate_srt_auto(
-                    segments, src, target_language,
-                    on_progress=translate_progress,
-                    llama_runtime=self._llama_runtime,
+                # Local SRT translation — no gpu_session wrapper, matching
+                # audio/transcribe + video/subtitle pattern (pure-LLM work,
+                # chat_service.session's internal acquire is the only
+                # serialization needed).
+                with self._chat_service.session(
                     model_family=model_family,
                     model_size=model_size,
                     quantization=quantization,
-                    style=translate_style,
-                    glossary=glossary,
-                )
+                    on_load_progress=lambda p, m: translate_progress(p * 0.05, m),
+                ) as session:
+                    translate_progress(0.05, "task.progress.start_translate")
+                    translated_segments = translate_srt_auto(
+                        segments, src, target_language,
+                        on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
+                        session=session,
+                        model_family=model_family,
+                        model_size=model_size,
+                        style=translate_style,
+                        glossary=glossary,
+                    )
             translated_text = None
         elif is_remote:
             # === Cloud text translation ===
@@ -216,22 +226,23 @@ class TranslateService:
             )
             translated_segments = None
         else:
-            # === Local text translation ===
+            # === Local text translation === (pure LLM, no gpu_session wrapper)
             from .text import translate_text_local
 
-            variant = f"{model_size}:{quantization}" if quantization else model_size
-            with self._model_manager.gpu_session():
-                runtime = self._llama_runtime
-                translate_progress(0.0, "task.progress.load_translate_model")
-                with runtime.acquire(model_family, variant, lambda p, m: translate_progress(p * 0.05, m)):
-                    translate_progress(0.05, "task.progress.start_translate")
-                    translated_text = translate_text_local(
-                        text, source_language, target_language, runtime,
-                        on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
-                        glossary=glossary, model_family=model_family,
-                        model_size=model_size,
-                    )
-                    translated_segments = None
+            with self._chat_service.session(
+                model_family=model_family,
+                model_size=model_size,
+                quantization=quantization,
+                on_load_progress=lambda p, m: translate_progress(p * 0.05, m),
+            ) as session:
+                translate_progress(0.05, "task.progress.start_translate")
+                translated_text = translate_text_local(
+                    text, source_language, target_language, session,
+                    on_progress=lambda p, m: translate_progress(0.05 + p * 0.95, m),
+                    glossary=glossary, model_family=model_family,
+                    model_size=model_size,
+                )
+                translated_segments = None
 
         # === Stage 3: Write output file (95~100%) ===
         progress_callback(0.95, "task.progress.writing_output_file")

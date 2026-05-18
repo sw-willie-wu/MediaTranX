@@ -222,7 +222,7 @@ class AppContainer(containers.DeclarativeContainer):
     image_ocr = providers.Singleton(
         _lazy("app.services.image.ocr_service", "ImageOcrService"),
         file_service=file_service, task_manager=task_manager,
-        model_manager=model_manager, llama_runtime=llama_runtime,
+        model_manager=model_manager, chat_service=chat_service,
         language_service=language_service, remote_service=remote_service,
     )
     image_remove_bg = providers.Singleton(
@@ -292,7 +292,7 @@ class AppContainer(containers.DeclarativeContainer):
     doc_ocr = providers.Singleton(
         _lazy("app.services.document.doc_ocr_service", "DocumentOcrService"),
         file_service=file_service, task_manager=task_manager,
-        model_manager=model_manager, llama_runtime=llama_runtime,
+        model_manager=model_manager, chat_service=chat_service,
         language_service=language_service, remote_service=remote_service,
     )
     doc_pdf_convert = providers.Singleton(
@@ -306,7 +306,7 @@ class AppContainer(containers.DeclarativeContainer):
     doc_translate = providers.Singleton(
         _lazy("app.services.document.translate_service", "TranslateService"),
         file_service=file_service, task_manager=task_manager,
-        model_manager=model_manager, llama_runtime=llama_runtime,
+        model_manager=model_manager, chat_service=chat_service,
         remote_service=remote_service,
     )
 

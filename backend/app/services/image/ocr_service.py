@@ -25,12 +25,12 @@ class ImageOcrService:
     """Image OCR using vision-language models (local or remote)."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
-                 model_manager: ModelManager, llama_runtime,
+                 model_manager: ModelManager, chat_service,
                  language_service: LanguageService, remote_service: RemoteService):
         self._file_service = file_service
         self._task_manager = task_manager
         self._model_manager = model_manager
-        self._llama_runtime = llama_runtime
+        self._chat_service = chat_service
         self._language_service = language_service
         self._remote_service = remote_service
         self._task_manager.register_handler(
@@ -90,17 +90,19 @@ class ImageOcrService:
             raise RuntimeError("llama-server not installed; please install AI core environment in settings")
 
         # === GPU queue pipeline ===
-        with self._model_manager.gpu_session():
+        with self._model_manager.gpu_session(), self._chat_service.session(
+            model_family=model_family,
+            model_size=size,
+            quantization=quantization,
+            on_load_progress=lambda p, m: progress_callback(0.1 + p * 0.05, m),
+        ) as session:
             from app.pipeline.ocr import recognize_image_local
 
             variant = f"{size}:{quantization}" if quantization else size
-            runtime = self._llama_runtime
-
-            with runtime.acquire(model_family, variant, lambda p, m: progress_callback(0.1 + p * 0.85, m)):
-                final_text = recognize_image_local(
-                    str(file_info.file_path), model_family, variant, fmt, runtime,
-                    on_progress=lambda p, m: progress_callback(0.95 + p * 0.05, m),
-                )
+            final_text = recognize_image_local(
+                str(file_info.file_path), model_family, variant, fmt, session,
+                on_progress=lambda p, m: progress_callback(0.15 + p * 0.80, m),
+            )
 
         if not final_text.strip():
             final_text = "(No text detected)"
@@ -119,7 +121,7 @@ class ImageOcrService:
         output_info = self._file_service.register_output(
             file_id=output_file_id,
             file_path=output_path,
-            original_filename=final_filename,
+            original_filename=output_path.name,
         )
 
         progress_callback(1.0, "task.progress.ocr_complete")
