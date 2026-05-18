@@ -1,3 +1,10 @@
 uv.lock text eol=lf
 *.py text eol=lf
 *.bat text eol=crlf
+
+# Binary test fixtures — must not be line-ending-normalized
+*.pdf binary
+*.wav binary
+*.mid binary
+*.png binary
+*.jpg binary
