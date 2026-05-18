@@ -29,15 +29,16 @@ class AudioLyricsService:
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
                  ffmpeg: FFmpegWrapper, model_manager: ModelManager,
-                 llama_runtime, remote_service: RemoteService,
+                 remote_service: RemoteService,
+                 chat_service,
                  whisper: WhisperWrapper, demucs: DemucsWrapper,
                  alignment_engine: AlignmentEngine):
         self._file_service = file_service
         self._task_manager = task_manager
         self._ffmpeg = ffmpeg
         self._model_manager = model_manager
-        self._llama_runtime = llama_runtime
         self._remote_service = remote_service
+        self._chat_service = chat_service
         self._whisper = whisper
         self._demucs = demucs
         self._alignment_engine = alignment_engine
@@ -174,16 +175,23 @@ class AudioLyricsService:
                     remote_model=params.get("translate_remote_model", ""),
                 )
             else:
-                translated_all = translate_srt_auto(
-                    seg_dicts, src, target_lang,
-                    on_progress=lambda p, m: stage_progress("translate", p, m),
-                    llama_runtime=self._llama_runtime,
-                    model_family=params.get("translate_model_family", "gemma4"),
-                    model_size=params.get("translate_model_size", "4b"),
-                    quantization=params.get("translate_quantization"),
-                    load_msg="task.progress.lyrics_load_translate",
-                    start_msg="task.progress.lyrics_translating",
-                )
+                translate_model_family = params.get("translate_model_family", "gemma4")
+                translate_model_size = params.get("translate_model_size", "4b")
+                translate_quantization = params.get("translate_quantization")
+                with self._chat_service.session(
+                    model_family=translate_model_family,
+                    model_size=translate_model_size,
+                    quantization=translate_quantization,
+                    on_load_progress=lambda p, m: stage_progress("translate", p * 0.05, m),
+                ) as session:
+                    translated_all = translate_srt_auto(
+                        seg_dicts, src, target_lang,
+                        on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
+                        session=session,
+                        model_family=translate_model_family,
+                        model_size=translate_model_size,
+                        start_msg="task.progress.lyrics_translating",
+                    )
 
             if not translate_remote:
                 stage_progress("translate", 1.0, "task.progress.lyrics_translate_complete")

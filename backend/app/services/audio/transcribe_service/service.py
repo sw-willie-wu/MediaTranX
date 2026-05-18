@@ -30,7 +30,8 @@ class AudioTranscribeService:
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
                  ffmpeg: FFmpegWrapper, model_manager: ModelManager,
-                 llama_runtime, remote_service: RemoteService,
+                 remote_service: RemoteService,
+                 chat_service,
                  whisper: WhisperWrapper,
                  demucs: DemucsWrapper = None,
                  alignment_engine: AlignmentEngine = None):
@@ -41,8 +42,8 @@ class AudioTranscribeService:
         self._task_manager = task_manager
         self._ffmpeg = ffmpeg
         self._model_manager = model_manager
-        self._llama_runtime = llama_runtime
         self._remote_service = remote_service
+        self._chat_service = chat_service
         self._task_manager.register_handler(
             TASK_TYPE_AUDIO_TRANSCRIBE, self._handle_task,
             output_policy="results",
@@ -212,14 +213,22 @@ class AudioTranscribeService:
                     remote_model=translate_remote_model,
                 )
             else:
-                translated_all = translate_srt_auto(
-                    seg_dicts, src, target_lang,
-                    on_progress=lambda p, m: stage_progress("translate", p, m),
-                    llama_runtime=self._llama_runtime,
-                    model_family=params.get("translate_model_family", "gemma4"),
-                    model_size=params.get("translate_model_size", "4b"),
-                    quantization=params.get("translate_quantization"),
-                )
+                translate_model_family = params.get("translate_model_family", "gemma4")
+                translate_model_size = params.get("translate_model_size", "4b")
+                translate_quantization = params.get("translate_quantization")
+                with self._chat_service.session(
+                    model_family=translate_model_family,
+                    model_size=translate_model_size,
+                    quantization=translate_quantization,
+                    on_load_progress=lambda p, m: stage_progress("translate", p * 0.05, m),
+                ) as session:
+                    translated_all = translate_srt_auto(
+                        seg_dicts, src, target_lang,
+                        on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
+                        session=session,
+                        model_family=translate_model_family,
+                        model_size=translate_model_size,
+                    )
 
             result.segments = [
                 TranscribeSegment(s["start"], s["end"], s["text"])
@@ -277,14 +286,16 @@ class AudioTranscribeService:
                 summary_model_family = params.get("summarize_model_family", "gemma4")
                 summary_model_size = params.get("summarize_model_size", "4b")
                 summary_quantization = params.get("summarize_quantization")
-                summary_variant = f"{summary_model_size}:{summary_quantization}" if summary_quantization else summary_model_size
-                runtime = self._llama_runtime
 
                 config = get_inference_config(summary_model_family, summary_model_size, "summarize")
 
-                with runtime.acquire(summary_model_family, summary_variant):
+                with self._chat_service.session(
+                    model_family=summary_model_family,
+                    model_size=summary_model_size,
+                    quantization=summary_quantization,
+                ) as session:
                     def _local_chat(prompt: str, max_tokens: int = 2048) -> str:
-                        return runtime.chat(
+                        return session.chat(
                             messages=[{"role": "user", "content": prompt}],
                             max_tokens=max_tokens,
                             temperature=config["temperature"],

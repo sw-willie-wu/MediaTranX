@@ -17,7 +17,6 @@ from typing import Callable, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.adapters.ai.remote.base import RemoteProvider
-    from app.adapters.ai.wrapper.llm import LlmWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -140,31 +139,24 @@ def translate_srt_auto(
     target_lang: str,
     *,
     on_progress: Optional[Callable[[float, str], None]] = None,
-    # Remote path — caller resolves via its injected RemoteService
+    # Remote path — caller passes a RemoteChatSession (or any chat-shaped object)
     prov: Optional["RemoteProvider"] = None,
     remote_model: str = "",
-    # Local path — caller passes its injected LlmWrapper
-    llama_runtime: Optional["LlmWrapper"] = None,
+    # Local path — caller passes an open ChatSession
+    session=None,  # ChatSession-shaped
     model_family: str = "gemma4",
     model_size: str = "4b",
-    quantization: Optional[str] = None,
     # Common
     keep_names: bool = True,
     style: str = "colloquial",
     glossary: Optional[dict[str, str]] = None,
-    # Progress keys (local path only; overridable for per-service naming)
-    load_msg: str = "task.progress.load_translate_model",
     start_msg: str = "task.progress.start_translate",
 ) -> list[dict]:
     """Unified local/remote SRT translation dispatch.
 
     Dispatch is determined by which resource the caller supplies:
     - `prov` present  → remote path (translate_srt_cloud)
-    - `llama_runtime` present → local path (translate_srt_local w/ acquire)
-
-    Progress layout (when `on_progress` provided):
-    - Remote: translate_srt_cloud spans the full 0..1 range.
-    - Local: 0.0 → 0.05 for runtime.acquire (model load), 0.05 → 1.0 for translation.
+    - `session` present → local path (translate_srt_local); caller owns the acquire lifecycle.
     """
     if prov is not None:
         return translate_srt_cloud(
@@ -173,34 +165,25 @@ def translate_srt_auto(
             keep_names=keep_names, style=style, glossary=glossary,
         )
 
-    if llama_runtime is None:
-        raise ValueError("translate_srt_auto: either 'prov' or 'llama_runtime' must be provided")
-
-    variant = f"{model_size}:{quantization}" if quantization else model_size
+    if session is None:
+        raise ValueError("translate_srt_auto: either 'prov' or 'session' must be provided")
 
     if on_progress:
-        on_progress(0.0, load_msg)
+        on_progress(0.0, start_msg)
 
-    with llama_runtime.acquire(
-        model_family,
-        variant,
-        lambda p, m: on_progress(p * 0.05, m) if on_progress else None,
-    ):
-        if on_progress:
-            on_progress(0.05, start_msg)
-        return translate_srt_local(
-            seg_dicts, source_lang, target_lang, llama_runtime,
-            on_progress=lambda p, m: on_progress(0.05 + p * 0.95, m) if on_progress else None,
-            keep_names=keep_names, style=style, glossary=glossary,
-            model_family=model_family, model_size=model_size,
-        )
+    return translate_srt_local(
+        seg_dicts, source_lang, target_lang, session,
+        on_progress=on_progress,
+        keep_names=keep_names, style=style, glossary=glossary,
+        model_family=model_family, model_size=model_size,
+    )
 
 
 def translate_srt_local(
     seg_dicts: list[dict],
     source_lang: str,
     target_lang: str,
-    runtime,
+    session,  # ChatSession-shaped (chat / complete / kill_process)
     on_progress: Optional[Callable[[float, str], None]] = None,
     batch_size: Optional[int] = None,
     keep_names: bool = True,
@@ -209,7 +192,7 @@ def translate_srt_local(
     model_family: str = "gemma4",
     model_size: str = "4b",
 ) -> list[dict]:
-    """Local LLM SRT batch translation (must be called within runtime.acquire() context)."""
+    """Local LLM SRT batch translation. Caller owns the model-load lifecycle via `session`."""
     from app.adapters.ai.inference_config import get_inference_config
     from app.utils.inference import (
         calc_max_tokens,
@@ -248,15 +231,15 @@ def translate_srt_local(
 
         with fake_progress(on_progress, batch_start_pct, batch_end_pct,
                            f"task.progress.translating_segment|{start + 1}|{total}",
-                           runtime=runtime):
+                           cancellable=session):
             if result["mode"] == "chat":
-                translated_srt = runtime.chat(
+                translated_srt = session.chat(
                     messages=result["messages"], max_tokens=max_tokens,
                     temperature=config["temperature"],
                     top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
                 )
             else:
-                translated_srt = runtime.complete(
+                translated_srt = session.complete(
                     prompt=result["prompt"], max_tokens=max_tokens,
                     temperature=config["temperature"],
                     top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),

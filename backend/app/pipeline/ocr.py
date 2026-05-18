@@ -51,7 +51,7 @@ def recognize_image_local(
     result = builder(image_path, output_format=fmt, source_lang=None)
     max_tokens = calc_max_tokens(config, config["n_ctx"], 1000)  # ~1000 tokens for image
 
-    with fake_progress(on_progress, 0.0, 1.0, "task.progress.ocr_recognizing", runtime=runtime):
+    with fake_progress(on_progress, 0.0, 1.0, "task.progress.ocr_recognizing", cancellable=runtime):
         return runtime.chat(
             messages=result["messages"], max_tokens=max_tokens,
             temperature=config["temperature"],

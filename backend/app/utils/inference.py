@@ -98,7 +98,7 @@ def estimate_tokens(text: str) -> int:
 
 
 def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
-                  duration: float = 30.0, runtime=None):
+                  duration: float = 30.0, cancellable=None):
     """
     Context manager that emits interpolated progress while waiting for a blocking call.
 
@@ -108,6 +108,11 @@ def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
 
     Progress interpolates from start_pct to (end_pct - 1%) over `duration` seconds,
     then stops. Real progress is reported by the caller after the `with` block.
+
+    Args:
+        cancellable: optional object with .kill_process() — invoked when the
+            on_progress callback raises (e.g. TaskCancelledError) to unblock
+            the in-flight llama-server HTTP call.
     """
     import threading
     from contextlib import contextmanager
@@ -134,9 +139,9 @@ def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
                     # TaskCancelledError from cancellable callback
                     cancelled_error[0] = e
                     # Kill llama-server to unblock the HTTP call in main thread
-                    if runtime is not None and hasattr(runtime, '_process') and runtime._process:
+                    if cancellable is not None:
                         try:
-                            runtime._process.kill()
+                            cancellable.kill_process()
                         except Exception:
                             pass
                     stop.set()

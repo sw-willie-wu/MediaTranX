@@ -124,7 +124,7 @@ def translate_text_local(
 
         with fake_progress(on_progress, chunk_start_pct, chunk_end_pct,
                            f"task.progress.translating_segment|{i + 1}|{total}",
-                           runtime=runtime):
+                           cancellable=runtime):
             if result["mode"] == "chat":
                 output = runtime.chat(
                     messages=result["messages"], max_tokens=max_tokens,

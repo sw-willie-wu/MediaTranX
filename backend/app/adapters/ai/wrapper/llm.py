@@ -86,6 +86,21 @@ class LlmWrapper(BaseWrapper):
         )
         return self._strip_thinking(content)
 
+    def kill_process(self) -> None:
+        """Best-effort cancellation hook for fake_progress(cancellable=...).
+
+        No-op if the model is not loaded or the subprocess handle is gone.
+        """
+        if self._model is None:
+            return
+        proc = getattr(self._model, "_process", None)
+        if proc is None:
+            return
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
     @staticmethod
     def _strip_thinking(text: str) -> str:
         """Remove <think>...</think> blocks from Qwen3 thinking mode output."""

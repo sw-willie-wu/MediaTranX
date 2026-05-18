@@ -31,7 +31,8 @@ class SubtitleService:
     """Subtitle generation from video using FFmpeg audio extraction and Whisper STT."""
 
     def __init__(self, ffmpeg: FFmpegWrapper, file_service: FileService, task_manager: TaskManager,
-                 model_manager: ModelManager, llama_runtime, remote_service: RemoteService,
+                 model_manager: ModelManager, remote_service: RemoteService,
+                 chat_service,
                  whisper: WhisperWrapper,
                  demucs: DemucsWrapper = None,
                  alignment_engine: AlignmentEngine = None):
@@ -42,8 +43,8 @@ class SubtitleService:
         self._file_service = file_service
         self._task_manager = task_manager
         self._model_manager = model_manager
-        self._llama_runtime = llama_runtime
         self._remote_service = remote_service
+        self._chat_service = chat_service
 
         # Register task handler
         self._task_manager.register_handler(
@@ -288,17 +289,22 @@ class SubtitleService:
                         glossary=glossary,
                     )
                 else:
-                    translated_all = translate_srt_auto(
-                        seg_dicts, src, target_language,
-                        on_progress=translate_progress,
-                        llama_runtime=self._llama_runtime,
+                    with self._chat_service.session(
                         model_family=translate_model_family,
                         model_size=translate_model_size,
                         quantization=translate_quantization,
-                        keep_names=keep_names,
-                        style=translate_style,
-                        glossary=glossary,
-                    )
+                        on_load_progress=lambda p, m: stage_progress("translate", p * 0.05, m),
+                    ) as session:
+                        translated_all = translate_srt_auto(
+                            seg_dicts, src, target_language,
+                            on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
+                            session=session,
+                            model_family=translate_model_family,
+                            model_size=translate_model_size,
+                            keep_names=keep_names,
+                            style=translate_style,
+                            glossary=glossary,
+                        )
                 translate_progress(1.0, "task.progress.translate_complete")
 
                 translated = translated_all
