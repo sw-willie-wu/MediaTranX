@@ -71,26 +71,22 @@ class SwinIRWrapper(PthWrapper):
         
         vram_needed = variant_spec["vram_mb"]  # noqa: F841 — used by outer mm.acquire (Wave D)
 
-        try:
-            # Load model using PthWrapper
-            with self.acquire(
-                model_id="swinir",
-                variant=model_id,
-                on_progress=on_progress
-            ) as model:
-                img_array = np.array(image.convert("RGB"))
-                img_tensor = self._image_to_tensor(img_array)
+        # Load model using PthWrapper; ModelManager handles unload on eviction.
+        with self.acquire(
+            model_id="swinir",
+            variant=model_id,
+            on_progress=on_progress
+        ):
+            img_array = np.array(image.convert("RGB"))
+            img_tensor = self._image_to_tensor(img_array)
 
-                def infer_cb(p: float, m: str) -> None:
-                    if on_progress:
-                        on_progress(1.0 + p, m)
+            def infer_cb(p: float, m: str) -> None:
+                if on_progress:
+                    on_progress(1.0 + p, m)
 
-                output_tensor = self.run_inference(model, img_tensor, scale=scale, on_progress=infer_cb)
-                output_array = self._tensor_to_image(output_tensor)
-                return Image.fromarray(output_array)
-        
-        finally:
-            self._unload_model()
+            output_tensor = self.run_inference(self._model, img_tensor, scale=scale, on_progress=infer_cb)
+            output_array = self._tensor_to_image(output_tensor)
+            return Image.fromarray(output_array)
     
     def _image_to_tensor(self, image: np.ndarray):
         """Convert numpy image to tensor (C, H, W)."""

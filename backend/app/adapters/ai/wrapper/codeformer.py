@@ -56,7 +56,11 @@ class CodeFormerWrapper(PthWrapper):
             model_id="codeformer",
             variant=model_id,
             on_progress=lambda p, m: on_progress(p * 0.05, m) if on_progress else None,
-        ) as model:
+        ):
+            # `acquire()` yields the wrapper itself (per BaseWrapper.acquire);
+            # the loaded spandrel-wrapped CodeFormer model lives on `self._model`.
+            model = self._model
+
             if self._face_pipeline is None:
                 from app.adapters.ai.face_pipeline import FacePipeline
                 self._face_pipeline = FacePipeline(device=self._device)

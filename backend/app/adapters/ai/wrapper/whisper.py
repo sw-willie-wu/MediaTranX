@@ -281,7 +281,10 @@ class WhisperWrapper(PackageWrapper):
                 model_id="whisper",
                 variant=model_size,
                 on_progress=lambda p, m: on_progress(p * 0.05, m) if on_progress else None
-            ) as model:
+            ):
+                # `acquire()` yields the wrapper itself (per BaseWrapper.acquire);
+                # the loaded faster_whisper.WhisperModel lives on `self._model`.
+                model = self._model
                 if on_progress:
                     on_progress(0.05, "task.progress.start_recognition")
 

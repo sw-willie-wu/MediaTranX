@@ -61,7 +61,7 @@ class RealESRGANWrapper(PthWrapper):
             model_id="realesrgan",
             variant=model_id,
             on_progress=on_progress
-        ) as model:
+        ):
             img_array = np.array(image.convert("RGB"))
             img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0).float() / 255.0
             img_tensor = img_tensor.to(self._device)
@@ -70,7 +70,7 @@ class RealESRGANWrapper(PthWrapper):
                 if on_progress:
                     on_progress(1.0 + p, m)
 
-            output_tensor = self.run_inference(model, img_tensor, scale=scale, on_progress=infer_cb)
+            output_tensor = self.run_inference(self._model, img_tensor, scale=scale, on_progress=infer_cb)
             output_array = (output_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
             result = Image.fromarray(output_array)
 

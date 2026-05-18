@@ -88,10 +88,12 @@ class MobileSAMWrapper(PackageWrapper):
             model_id="mobilesam",
             variant="default",
             on_progress=on_progress,
-        ) as sam:
+        ):
+            # `acquire()` yields the wrapper itself (per BaseWrapper.acquire);
+            # the loaded mobile_sam model object lives on `self._model`.
             from mobile_sam import SamPredictor
 
-            predictor = SamPredictor(sam)
+            predictor = SamPredictor(self._model)
             predictor.set_image(image_rgb)
 
             masks, _, _ = predictor.predict(
