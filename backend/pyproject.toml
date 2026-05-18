@@ -71,6 +71,25 @@ markers = [
     "ffmpeg: tests requiring ffmpeg binary",
 ]
 
+[tool.coverage.run]
+source = ["app"]
+# Exclude site-packages — coverage instrumentation breaks torch's _add_docstr (which
+# rejects re-docstring-ing). Keep tracing limited to first-party `app/` code.
+omit = [
+    "app/main.py",
+    "app/init/*",
+    "app/adapters/device.py",
+    "app/adapters/ai/wrapper/rife_arch.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
 [tool.uv]
 managed = true
 # basic-pitch 拉入 tensorflow，但我們只用 ONNX 後端（已有 onnxruntime）
