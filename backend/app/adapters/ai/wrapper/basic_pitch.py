@@ -41,6 +41,16 @@ class BasicPitchWrapper(PackageWrapper):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
         """Load basic-pitch predict function and built-in ONNX model path."""
+        # basic-pitch 0.4.x calls scipy.signal.gaussian which was removed in
+        # scipy >= 1.13 (moved to scipy.signal.windows.gaussian). Patch the
+        # attribute back before basic_pitch.inference imports note_creation,
+        # otherwise AttributeError at first predict() call. Upstream issue:
+        # https://github.com/spotify/basic-pitch/issues/199
+        import scipy.signal as _scipy_signal
+        if not hasattr(_scipy_signal, "gaussian"):
+            from scipy.signal import windows as _scipy_windows
+            _scipy_signal.gaussian = _scipy_windows.gaussian
+
         from basic_pitch.inference import predict
 
         if on_progress:
@@ -133,10 +143,13 @@ class BasicPitchWrapper(PackageWrapper):
                 model_id="basic_pitch",
                 variant="default",
                 on_progress=on_progress,
-            ) as bp:
+            ):
+                # `acquire()` yields the wrapper itself (per BaseWrapper.acquire
+                # contract); the loaded model dict lives on `self._model`.
                 if on_progress:
                     on_progress(0.3, "task.progress.analyzing_audio")
 
+                bp = self._model  # {"predict": fn, "model_path": Path}
                 # predict(audio_path, model_or_model_path) returns (model_output, midi_data, note_events)
                 model_output, midi_data, note_events = bp["predict"](
                     safe_path,

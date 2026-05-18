@@ -1,7 +1,15 @@
-"""Tests for API schema serialization (Pydantic V2)."""
+"""Tests for API schema serialization (Pydantic V2).
+
+`ProgressUpdate` was removed during the audit refactor — progress is now
+emitted from `app.workers.progress_tracker.ProgressEvent` (an internal
+dataclass, not a Pydantic model), so there's no public Pydantic surface to
+test for it. `TaskResponse` lives in `routes/tasks/active.py` and `FileInfo`
+in `routes/files/browse.py` (inline DTO per audit §1.2.1).
+"""
 from datetime import datetime, timezone
 
-from app.api.schemas.common import TaskResponse, ProgressUpdate, FileInfo
+from app.api.routes.tasks.active import TaskResponse
+from app.api.routes.files.browse import FileInfo  # noqa: F401 — imported to ensure module loads
 
 
 class TestTaskResponseSerialization:
@@ -24,14 +32,3 @@ class TestTaskResponseSerialization:
     def test_no_v1_config_class(self):
         """Ensure deprecated Config inner class is gone."""
         assert not hasattr(TaskResponse, "Config")
-
-
-class TestProgressUpdateSerialization:
-    def test_datetime_serializes_to_iso(self):
-        now = datetime(2026, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
-        r = ProgressUpdate(task_id="t1", progress=0.5, timestamp=now)
-        data = r.model_dump(mode="json")
-        assert data["timestamp"] == "2026-01-15T10:30:00+00:00"
-
-    def test_no_v1_config_class(self):
-        assert not hasattr(ProgressUpdate, "Config")

@@ -296,6 +296,7 @@ export default {
       calculating_crop: 'Calculating crop area...',
       cropping: 'Cropping ({0}/{1})...',
       cropping_video: 'Cropping {0}% (speed {1}x)',
+      processing_frame: 'Processing frame {0}/{1}',
       saving_file: 'Saving file...',
       crop_starting: 'Cropping...',
       crop_complete: 'Crop complete',

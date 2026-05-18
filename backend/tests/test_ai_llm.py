@@ -30,9 +30,11 @@ def _llama_ready() -> bool:
 
 class TestLlamaServerAvailability:
     def test_llama_binary_check(self):
-        from app.init.container import get_container
-        mm = get_container().model_manager()
-        # Just check the method exists and returns bool
+        # Don't go through get_container() — that depends on init_container()
+        # having run earlier in the session (test-order coupling). Just spin a
+        # fresh ModelManager; is_llama_ready() is a self-contained check.
+        from app.adapters.ai.model_manager import ModelManager
+        mm = ModelManager()
         assert isinstance(mm.is_llama_ready(), bool)
 
 

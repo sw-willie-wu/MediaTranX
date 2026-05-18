@@ -160,9 +160,13 @@ class DemucsWrapper(PackageWrapper):
             model_id="demucs",
             variant=variant,
             on_progress=on_progress,
-        ) as separator:
+        ):
+            # `acquire()` yields the wrapper itself (per BaseWrapper.acquire
+            # contract); the loaded `demucs.api.Separator` lives on `self._model`.
             if on_progress:
                 on_progress(0.3, "task.progress.separating")
+
+            separator = self._model
 
             # Set callback for progress reporting during inference (used for cancel check)
             if on_progress:

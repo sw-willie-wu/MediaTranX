@@ -296,6 +296,7 @@ export default {
       calculating_crop: '計算裁切範圍...',
       cropping: '裁切中 ({0}/{1})...',
       cropping_video: '裁切中 {0}% (速度 {1}x)',
+      processing_frame: '處理影格 {0}/{1}',
       saving_file: '儲存檔案...',
       crop_starting: '開始裁切...',
       crop_complete: '裁切完成',

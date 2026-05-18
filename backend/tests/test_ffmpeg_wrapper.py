@@ -45,7 +45,7 @@ class TestCutStringTime:
             pytest.skip("ffmpeg not installed")
 
         # Just verify the method signature accepts strings (will fail on missing input)
-        with pytest.raises(FFmpegError, match="不存在"):
+        with pytest.raises(FFmpegError, match="not found"):
             await wrapper.cut(
                 input_path=tmp_path / "nonexistent.mp4",
                 output_path=tmp_path / "out.mp4",
@@ -94,7 +94,7 @@ class TestExtractAudioParams:
         if not wrapper.is_installed():
             pytest.skip("ffmpeg not installed")
 
-        with pytest.raises(FFmpegError, match="不存在"):
+        with pytest.raises(FFmpegError, match="not found"):
             await wrapper.extract_audio(
                 input_path=tmp_path / "nonexistent.mp4",
                 output_path=tmp_path / "out.wav",

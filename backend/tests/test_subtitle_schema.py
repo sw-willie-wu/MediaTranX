@@ -20,8 +20,8 @@ class TestSubtitleGenerateRequest:
     def test_defaults_match_frontend(self):
         """Frontend WhisperAdvancedSettings defaults must match schema defaults."""
         req = SubtitleGenerateRequest(file_id="test")
-        assert req.min_silence_duration_ms == 500
-        assert req.vad_threshold == 0.5
+        assert req.min_silence_duration_ms == 200
+        assert req.vad_threshold == 0.3
         assert req.word_timestamps is False
         assert req.condition_on_previous_text is True
 
@@ -29,11 +29,11 @@ class TestSubtitleGenerateRequest:
         req = SubtitleGenerateRequest(
             file_id="test",
             target_language="zh-TW",
-            translate_model_type="qwen3",
+            translate_model_family="qwen3",
             translate_model_size="8b",
             translate_quantization="Q4_K_M",
             keep_names=True,
             translate_style="formal",
         )
         assert req.target_language == "zh-TW"
-        assert req.translate_model_type == "qwen3"
+        assert req.translate_model_family == "qwen3"
