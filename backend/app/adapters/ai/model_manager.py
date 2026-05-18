@@ -72,10 +72,13 @@ class ModelManager:
     def register_runtime(self, runtime: Any) -> None:
         """Directly register a runtime instance.
 
-        Used by container for pre-registered slots (LlmWrapper).
+        Used by container for pre-registered slots (LlmWrapper). Attaches
+        `runtime._model_manager = self` so `BaseWrapper.acquire()` can delegate
+        back here.
         """
         self._runtimes[runtime.slot] = runtime
         self._unloaders[runtime.slot] = runtime.unload
+        runtime._model_manager = self
 
     def register_runtime_provider(self, slot: str, provider: Callable[[], Any]) -> None:
         """Register a zero-arg factory for a non-dispatcher slot.
@@ -175,6 +178,7 @@ class ModelManager:
                     existing.unload()
                 runtime = dispatcher(model_id)
                 runtime._dispatched_model_id = model_id
+                runtime._model_manager = self
                 self._runtimes[slot] = runtime
                 self._unloaders[slot] = runtime.unload
                 return runtime
@@ -184,6 +188,7 @@ class ModelManager:
         if provider is not None:
             if existing is None:
                 runtime = provider()
+                runtime._model_manager = self
                 self._runtimes[slot] = runtime
                 self._unloaders[slot] = runtime.unload
                 return runtime

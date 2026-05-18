@@ -14,6 +14,7 @@ This module consolidates the three base classes used by concrete wrappers:
 import logging
 import threading
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Callable, Any
 
@@ -40,6 +41,7 @@ class BaseWrapper(ABC):
         self._lock = threading.RLock()               # impl detail
         self._model: Optional[Any] = None            # hidden, read via is_loaded()
         self._current_config: Optional[dict] = None  # hidden, read via get_current_config()
+        self._model_manager = None                   # set by ModelManager at registration
         logger.debug(f"BaseWrapper initialized for slot: {slot}")
 
     # -- Public API (called by ModelManager) --
@@ -64,6 +66,32 @@ class BaseWrapper(ABC):
                 self._unload_impl()
                 self._model = None
                 self._current_config = None
+
+    @contextmanager
+    def acquire(
+        self,
+        model_id: str,
+        variant: Optional[str] = None,
+        on_progress: Optional[Callable[[float, str], None]] = None,
+    ):
+        """Acquire this wrapper loaded with the requested model/variant.
+
+        Thin bridge to `ModelManager.acquire(self.slot, ...)`. Yields whatever
+        the manager yields (typically `self` for non-dispatcher slots; the
+        currently-dispatched wrapper for dispatcher slots). The wrapper must
+        have been registered with a ModelManager — typically done by
+        `init_container` calling `register_runtime_provider` / `register_dispatcher`
+        / `register_runtime`.
+        """
+        if self._model_manager is None:
+            raise RuntimeError(
+                f"{type(self).__name__}(slot={self.slot!r}) not registered with "
+                "ModelManager; cannot acquire (DI wiring missing or test setup incomplete)"
+            )
+        with self._model_manager.acquire(
+            slot=self.slot, model_id=model_id, variant=variant, on_progress=on_progress,
+        ) as runtime:
+            yield runtime
 
     def is_loaded(self) -> bool:
         return self._model is not None
