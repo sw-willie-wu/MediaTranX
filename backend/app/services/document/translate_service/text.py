@@ -14,6 +14,7 @@ from typing import Callable, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.adapters.ai.remote.base import RemoteProvider
+    from app.services.llm.chat_service import ChatSession
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ def translate_text_local(
     text: str,
     source_lang: str,
     target_lang: str,
-    runtime,
+    session: "ChatSession",
     on_progress: Optional[Callable[[float, str], None]] = None,
     max_chars: Optional[int] = None,
     glossary: Optional[dict[str, str]] = None,
@@ -90,7 +91,7 @@ def translate_text_local(
     style: str = "colloquial",
     format: str = "text",
 ) -> str:
-    """Chunked plain-text translation (local LLM). Must be called within runtime.acquire() context."""
+    """Chunked plain-text translation (local LLM). Must be called within a `chat_service.session()` block."""
     from app.adapters.ai.inference_config import get_inference_config
     from app.utils.inference import (
         calc_max_tokens,
@@ -124,15 +125,15 @@ def translate_text_local(
 
         with fake_progress(on_progress, chunk_start_pct, chunk_end_pct,
                            f"task.progress.translating_segment|{i + 1}|{total}",
-                           cancellable=runtime):
+                           cancellable=session):
             if result["mode"] == "chat":
-                output = runtime.chat(
+                output = session.chat(
                     messages=result["messages"], max_tokens=max_tokens,
                     temperature=config["temperature"],
                     top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
                 )
             else:
-                output = runtime.complete(
+                output = session.complete(
                     prompt=result["prompt"], max_tokens=max_tokens,
                     temperature=config["temperature"],
                     top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),

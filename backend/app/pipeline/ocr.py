@@ -12,7 +12,10 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.llm.chat_service import ChatSession
 
 logger = logging.getLogger(__name__)
 
@@ -22,20 +25,20 @@ def recognize_image_local(
     model_family: str,
     variant: str,
     fmt: str,
-    runtime,
+    session: "ChatSession",
     on_progress: Optional[Callable[[float, str], None]] = None,
 ) -> str:
     """Single-image VLM OCR via local llama-server runtime.
 
-    Caller owns `runtime.acquire()` — this function does NOT acquire. It assumes
-    the runtime is already holding the requested model.
+    Caller owns the `chat_service.session()` block — this function does NOT
+    acquire. It assumes the session is already holding the requested model.
 
     Args:
         image_path: absolute path to the image
         model_family: e.g. "qwen3vl", "internvl2.5", "gemma4"
         variant: model variant used for inference_config lookup; may be "4b" or "4b:Q4_K_M"
         fmt: output format, "md" or "txt"
-        runtime: acquired LlmWrapper instance
+        session: the `ChatSession` yielded by `chat_service.session(...)`
         on_progress: optional 0..1 progress callback; fake_progress interpolates while chat runs.
 
     Returns:
@@ -51,8 +54,8 @@ def recognize_image_local(
     result = builder(image_path, output_format=fmt, source_lang=None)
     max_tokens = calc_max_tokens(config, config["n_ctx"], 1000)  # ~1000 tokens for image
 
-    with fake_progress(on_progress, 0.0, 1.0, "task.progress.ocr_recognizing", cancellable=runtime):
-        return runtime.chat(
+    with fake_progress(on_progress, 0.0, 1.0, "task.progress.ocr_recognizing", cancellable=session):
+        return session.chat(
             messages=result["messages"], max_tokens=max_tokens,
             temperature=config["temperature"],
             top_k=config.get("top_k", 40), top_p=config.get("top_p", 0.9),
