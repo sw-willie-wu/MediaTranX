@@ -79,6 +79,10 @@ class TranslateService:
         quantization: Optional[str] = None,
         translate_style: str = "colloquial",
         glossary: Optional[dict[str, str]] = None,
+        remote: bool = False,
+        provider: Optional[str] = None,
+        conn_id: Optional[int] = None,
+        remote_model: Optional[str] = None,
     ) -> str:
         """
         Submit a document translation task.
@@ -88,6 +92,10 @@ class TranslateService:
             source_language: Source language
             target_language: Target language
             model_size: Model size (4b, 12b, 27b)
+            remote: Use cloud provider instead of local LLM
+            provider: Cloud provider id (when remote=True)
+            conn_id: Cloud connection id (when remote=True)
+            remote_model: Cloud model id (when remote=True)
 
         Returns:
             task_id
@@ -103,6 +111,10 @@ class TranslateService:
             "quantization": quantization,
             "translate_style": translate_style,
             "glossary": glossary,
+            "remote": remote,
+            "provider": provider,
+            "conn_id": conn_id,
+            "remote_model": remote_model,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_TRANSLATE, params)

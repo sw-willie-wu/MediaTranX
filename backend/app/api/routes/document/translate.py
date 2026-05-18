@@ -26,6 +26,11 @@ class DocumentTranslateRequest(BaseModel):
     quantization: Optional[str] = Field(default=None, description="Model quantization (Q4_K_M, Q3_K_M, etc.)")
     translate_style: str = Field(default="colloquial", description="Translation style (colloquial, formal, literal)")
     glossary: Optional[dict[str, str]] = Field(default=None, description="Glossary {source_term: translation}")
+    # Cloud translation
+    remote: bool = Field(default=False, description="Whether to use a cloud model")
+    provider: Optional[str] = Field(default=None, description="Cloud provider")
+    conn_id: Optional[int] = Field(default=None, description="Connection ID")
+    remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
 
 
 class DocumentTranslateResponse(BaseModel):
@@ -44,7 +49,8 @@ async def translate_document(
     """
     Submit document translation task.
 
-    Translates uploaded text files using local LLM.
+    Translates uploaded text files using local LLM, or via a cloud provider
+    when `remote=True` and a connection is supplied.
     The specified model is automatically downloaded on first use.
     """
     task_id = await service.submit_translate(
@@ -56,5 +62,9 @@ async def translate_document(
         quantization=request.quantization,
         translate_style=request.translate_style,
         glossary=request.glossary,
+        remote=request.remote,
+        provider=request.provider,
+        conn_id=request.conn_id,
+        remote_model=request.remote_model,
     )
     return DocumentTranslateResponse(task_id=task_id)
