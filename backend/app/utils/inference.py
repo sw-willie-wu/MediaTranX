@@ -26,6 +26,8 @@ def calc_max_tokens(config: dict, n_ctx: int, input_len: int) -> int:
         capped = min(raw, config.get("max_tokens_cap", n_ctx))
     elif strategy == "context_ratio":
         capped = int(n_ctx * config.get("max_tokens_ratio", 0.5))
+    elif strategy == "fixed":
+        capped = config.get("max_tokens_cap", 4096)
     else:
         capped = config.get("max_tokens_cap", 4096)
 

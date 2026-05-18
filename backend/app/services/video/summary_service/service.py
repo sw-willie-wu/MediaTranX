@@ -395,6 +395,8 @@ class VideoSummaryService:
         midpoint-nearest. This keeps the feature shippable without VLM support
         while leaving the hook for later.
         """
+        cfg = get_inference_config(family, size, "frame_select")
+
         def _cb(context_text: str, frame_paths: list) -> int:
             if not hasattr(self._chat_service, "chat_with_images"):
                 raise RuntimeError("VLM chat_with_images not available; falling back")
@@ -405,13 +407,14 @@ class VideoSummaryService:
                 f"{indexed}\n\n"
                 f"只回答一個數字（0 到 {len(frame_paths) - 1}），不要多餘文字。"
             )
+            max_tokens = calc_max_tokens(cfg, n_ctx=cfg["n_ctx"], input_len=estimate_tokens(prompt))
             raw = self._chat_service.chat_with_images(
                 prompt=prompt,
                 images=frame_paths,
                 model_family=family,
                 model_size=size,
-                max_tokens=16,
-                temperature=0.0,
+                max_tokens=max_tokens,
+                temperature=cfg["temperature"],
             )
             import re
             m = re.search(r"\d+", raw)

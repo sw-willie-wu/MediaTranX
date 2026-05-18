@@ -234,6 +234,11 @@ MODELS_REGISTRY = {
                     "prompt_builder": "default",
                     "max_tokens_strategy": "context_ratio", "max_tokens_ratio": 0.5,
                 },
+                "frame_select": {
+                    "temperature": 0.0, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "default",
+                    "max_tokens_strategy": "fixed", "max_tokens_cap": 16,
+                },
             },
             "specs": {
                 "2b": {
@@ -328,6 +333,11 @@ MODELS_REGISTRY = {
                     "temperature": 0.0, "top_k": 40, "top_p": 0.9,
                     "prompt_builder": "default",
                     "max_tokens_strategy": "context_ratio", "max_tokens_ratio": 0.5,
+                },
+                "frame_select": {
+                    "temperature": 0.0, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "default",
+                    "max_tokens_strategy": "fixed", "max_tokens_cap": 16,
                 },
             },
             "specs": {
@@ -457,6 +467,11 @@ MODELS_REGISTRY = {
                     "prompt_builder": "gemma",
                     "max_tokens_strategy": "context_ratio", "max_tokens_ratio": 0.5,
                 },
+                "frame_select": {
+                    "temperature": 0.0, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "gemma",
+                    "max_tokens_strategy": "fixed", "max_tokens_cap": 16,
+                },
             },
             "specs": {
                 "e2b": {
@@ -533,6 +548,11 @@ MODELS_REGISTRY = {
                     "temperature": 0.0, "top_k": 40, "top_p": 0.9,
                     "prompt_builder": "default",
                     "max_tokens_strategy": "context_ratio", "max_tokens_ratio": 0.5,
+                },
+                "frame_select": {
+                    "temperature": 0.0, "top_k": 40, "top_p": 0.9,
+                    "prompt_builder": "default",
+                    "max_tokens_strategy": "fixed", "max_tokens_cap": 16,
                 },
             },
             "specs": {
@@ -862,7 +882,8 @@ MODELS_REGISTRY = {
 # Remote Inference Defaults
 # ═══════════════════════════════════════════════════════════
 REMOTE_INFERENCE_DEFAULTS = {
-    "translate": {"temperature": 0.1, "max_tokens": 16384},
-    "summarize": {"temperature": 0.3, "max_tokens": 4096},
-    "ocr":       {"temperature": 0.0, "max_tokens": 32768},
+    "translate":    {"temperature": 0.1, "max_tokens": 16384},
+    "summarize":    {"temperature": 0.3, "max_tokens": 4096},
+    "ocr":          {"temperature": 0.0, "max_tokens": 32768},
+    "frame_select": {"temperature": 0.0, "max_tokens": 16},
 }
