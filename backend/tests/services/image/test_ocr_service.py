@@ -81,6 +81,17 @@ def test_init_registers_both_handlers(tmp_path):
         assert call.kwargs.get("output_policy") == "results"
 
 
+def test_get_status_delegates_to_language_service(tmp_path):
+    """API: GET /api/image/ocr/status → service.get_status → language_service.get_vlm_status."""
+    svc, fs, tm, mm, cs, rs = _make_svc(tmp_path)
+    svc._language_service.get_vlm_status.return_value = {"available": True}
+    result = svc.get_status(model_family="qwen3vl", size="4b", quantization="Q4_K_M")
+    assert result == {"available": True}
+    svc._language_service.get_vlm_status.assert_called_once_with(
+        model_family="qwen3vl", size="4b", quantization="Q4_K_M",
+    )
+
+
 @pytest.mark.asyncio
 async def test_submit_ocr_validates_file_and_submits(tmp_path):
     svc, fs, tm, mm, cs, rs = _make_svc(tmp_path)

@@ -77,6 +77,65 @@ def test_init_registers_both_handlers(tmp_path):
     assert TASK_TYPE_DOCUMENT_OCR_REMOTE in types_registered
 
 
+def test_get_status_delegates_to_language_service(tmp_path):
+    """API: GET /api/document/ocr/status → service.get_status → language_service.get_vlm_status."""
+    svc, fs, tm, mm, cs, rs, _src = _make_svc(tmp_path, "in.png")
+    svc._language_service.get_vlm_status.return_value = {"available": True}
+    result = svc.get_status(model_family="qwen3vl", size="4b", quantization="Q4_K_M")
+    assert result == {"available": True}
+    svc._language_service.get_vlm_status.assert_called_once_with(
+        model_family="qwen3vl", size="4b", quantization="Q4_K_M",
+    )
+
+
+@pytest.mark.asyncio
+async def test_submit_validates_file_and_submits_local(tmp_path):
+    """API: POST /api/document/ocr (local) → service.submit."""
+    svc, fs, tm, mm, cs, rs, _src = _make_svc(tmp_path, "in.png")
+
+    async def _async_submit(*a, **k):
+        return "t1"
+    tm.submit.side_effect = lambda *a, **k: _async_submit(*a, **k)
+
+    task_id = await svc.submit(
+        file_id="fid", model_family="qwen3vl", size="4b",
+        quantization="Q4_K_M", format="md",
+    )
+    assert task_id == "t1"
+    fs.require_file.assert_called_once_with("fid")
+    args, _ = tm.submit.call_args
+    assert args[0] == TASK_TYPE_DOCUMENT_OCR
+    p = args[1]
+    assert p["file_id"] == "fid"
+    assert p["model_family"] == "qwen3vl"
+    assert p["size"] == "4b"
+    assert p["quantization"] == "Q4_K_M"
+    assert p["format"] == "md"
+
+
+@pytest.mark.asyncio
+async def test_submit_remote_passes_provider_params(tmp_path):
+    """API: POST /api/document/ocr (remote) → service.submit_remote."""
+    svc, fs, tm, mm, cs, rs, _src = _make_svc(tmp_path, "in.png")
+
+    async def _async_submit(*a, **k):
+        return "tr1"
+    tm.submit.side_effect = lambda *a, **k: _async_submit(*a, **k)
+
+    task_id = await svc.submit_remote(
+        file_id="fid", provider="openai", conn_id=7,
+        remote_model="gpt-4o", format="txt",
+    )
+    assert task_id == "tr1"
+    args, _ = tm.submit.call_args
+    assert args[0] == TASK_TYPE_DOCUMENT_OCR_REMOTE
+    p = args[1]
+    assert p["provider"] == "openai"
+    assert p["conn_id"] == 7
+    assert p["remote_model"] == "gpt-4o"
+    assert p["format"] == "txt"
+
+
 def test_handle_task_image_path_writes_output(tmp_path):
     svc, fs, *_rest = _make_svc(tmp_path, "in.png")
     with patch("app.pipeline.ocr.recognize_image_local", return_value="img-text"):
