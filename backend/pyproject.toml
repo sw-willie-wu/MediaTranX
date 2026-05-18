@@ -123,4 +123,9 @@ demucs = { git = "https://github.com/facebookresearch/demucs" }
 torch = { index = "pytorch-cu124" }
 torchvision = { index = "pytorch-cu124" }
 torchaudio = { index = "pytorch-cu124" }
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.1.0",
+]
 # --- END AUTO-GENERATED ---
