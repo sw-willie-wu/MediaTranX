@@ -111,7 +111,12 @@ class AudioSeparateService:
                     sf.write(tmp_path, audio_data, sample_rate)
                     from app.adapters.binary.ffmpeg import FFmpegWrapper
                     ffmpeg = FFmpegWrapper()
-                    ffmpeg.convert(tmp_path, str(file_path), {"format": "mp3", "bitrate": "192k"})
+                    ffmpeg.audio_convert_sync(
+                        input_path=tmp_path,
+                        output_path=str(file_path),
+                        audio_codec="libmp3lame",
+                        audio_bitrate="192k",
+                    )
                 finally:
                     Path(tmp_path).unlink(missing_ok=True)
             elif output_format == "flac":
