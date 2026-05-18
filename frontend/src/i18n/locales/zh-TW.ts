@@ -171,6 +171,10 @@ export default {
       upscale_frame: '超解析中 ({0}/{1})...',
       upscale_complete: '超解析完成',
       load_face_model: '正在載入人臉修復模型: {0}...',
+      face_detect: '偵測人臉中…',
+      face_restore: '人臉修復中 {0}/{1}…',
+      face_paste_back: '合成中…',
+      face_restore_complete: '人臉修復完成',
       registering: '正在註冊結果...',
       // ocr (image)
       ocr_prepare: '準備辨識...',

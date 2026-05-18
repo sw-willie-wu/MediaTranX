@@ -171,6 +171,10 @@ export default {
       upscale_frame: 'Upscaling ({0}/{1})...',
       upscale_complete: 'Upscale complete',
       load_face_model: 'Loading face restore model: {0}...',
+      face_detect: 'Detecting faces…',
+      face_restore: 'Restoring face {0}/{1}…',
+      face_paste_back: 'Compositing faces…',
+      face_restore_complete: 'Face restoration complete',
       registering: 'Registering result...',
       // ocr (image)
       ocr_prepare: 'Preparing recognition...',

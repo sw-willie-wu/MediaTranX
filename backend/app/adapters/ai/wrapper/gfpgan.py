@@ -5,7 +5,7 @@ Refactored: inherits PthWrapper, supports GAN enhancement.
 from __future__ import annotations
 
 import logging
-from typing import Optional, Callable
+from typing import Any, Optional, Callable
 
 import numpy as np
 import torch
@@ -29,59 +29,47 @@ class GFPGANWrapper(PthWrapper):
 
     def __init__(self):
         super().__init__(slot="gfpgan", use_spandrel=True)
+        self._face_pipeline: Optional[Any] = None
         logger.info("GFPGANWrapper initialized (PthWrapper)")
     
     def restore(
         self,
         image: Image.Image,
         model_id: str = "v1.4",
-        upscale: int = 2,  # noqa: ARG002
+        upscale: int = 2,
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Image.Image:
+        """Run GFPGAN face restoration.
+
+        Pipeline: detect faces → align each to 512x512 → GFPGAN restore →
+        paste back. Background outside detected faces is unchanged.
         """
-        Run GFPGAN face restoration inference.
-
-        Args:
-            image: Input image.
-            model_id: Model variant (currently only "v1.4").
-            upscale: Scale factor (1/2/4).
-            on_progress: Progress callback.
-
-        Returns:
-            Restored image.
-
-        TODO: Currently a simplified implementation; future integration with full GFPGAN
-              pipeline (face detection, restoration, background enhancement).
-        """
-        # Get VRAM requirement
         variant_spec = MODELS_REGISTRY[FORMAT_PTH]["gfpgan"]["variants"].get(model_id)
         if not variant_spec:
             raise ValueError(f"Unknown GFPGAN variant: {model_id}")
-        
+
         vram_needed = variant_spec["vram_mb"]  # noqa: F841 — used by outer mm.acquire (Wave D)
 
-        try:
-            # Load model using PthWrapper
-            with self.acquire(
-                model_id="gfpgan",
-                variant=model_id,
-                on_progress=on_progress
-            ) as model:
-                # Simplified inference (production use requires full face detection pipeline)
-                img_array = np.array(image.convert("RGB"))
-                img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0).float() / 255.0
-                img_tensor = img_tensor.to(self._device)
-                
+        with self.acquire(
+            model_id="gfpgan",
+            variant=model_id,
+            on_progress=lambda p, m: on_progress(p * 0.05, m) if on_progress else None,
+        ) as model:
+            if self._face_pipeline is None:
+                from app.adapters.ai.face_pipeline import FacePipeline
+                self._face_pipeline = FacePipeline(device=self._device)
+
+            def restore_fn(face_tensor):
                 with torch.no_grad():
-                    # GFPGAN requires special handling
-                    # This is a simplified version; actual use should follow the GFPGAN official API
-                    if hasattr(model, 'forward'):
-                        output_tensor = model(img_tensor)
-                    else:
-                        output_tensor = img_tensor  # fallback
-                
-                output_array = (output_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
-                return Image.fromarray(output_array)
-        
-        finally:
-            self._unload_model()
+                    # IMPLEMENTER NOTE: GFPGAN's spandrel-wrapped call typically returns
+                    # a tuple (restored_face, intermediate_features) or just the tensor.
+                    # Unpack if tuple; pass through if tensor.
+                    output = model(face_tensor)
+                    if isinstance(output, tuple):
+                        output = output[0]
+                    return output
+
+            face_progress = lambda p, m: on_progress(0.05 + p * 0.95, m) if on_progress else None
+            return self._face_pipeline.restore(
+                image, restore_fn, face_upscale=upscale, on_progress=face_progress,
+            )
