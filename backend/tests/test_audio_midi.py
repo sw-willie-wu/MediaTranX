@@ -1,5 +1,7 @@
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch
 
 from app.services.audio.audio_midi_service import AudioMidiService
 from app.services.files.file_service import FileService
@@ -47,5 +49,63 @@ async def test_convert_wav_registers_result_with_sidecar(tmp_path):
     # Sidecar persisted
     assert (fs.output_dir / f"{fid}.meta.json").exists()
     # Output lives in output_dir
-    from pathlib import Path
     assert Path(fd.file_path).is_file()
+
+
+# --- read_midi / create_midi / save_midi ---
+
+def _make_midi_svc(tmp_path):
+    fs = MagicMock()
+    fs.output_dir = tmp_path / "out"; fs.output_dir.mkdir()
+    fs.upload_dir = tmp_path / "upload"; fs.upload_dir.mkdir()
+    tm = MagicMock()
+    svc = AudioMidiService(file_service=fs, task_manager=tm)
+    return svc, fs, tm
+
+
+def test_read_midi_delegates_to_midi_to_json(tmp_path):
+    svc, fs, tm = _make_midi_svc(tmp_path)
+    midi_path = tmp_path / "in.mid"
+    midi_path.write_bytes(b"MThd")
+    fs.require_file.return_value = MagicMock(file_path=midi_path)
+
+    with patch("app.utils.midi_io.midi_to_json", return_value={"tracks": []}) as m:
+        result = svc.read_midi("fid")
+    assert result == {"tracks": []}
+    m.assert_called_once_with(midi_path)
+
+
+def test_create_midi_writes_file_and_registers(tmp_path):
+    svc, fs, tm = _make_midi_svc(tmp_path)
+    captured = []
+    def _register_output(*, file_id, file_path, original_filename):
+        captured.append((file_id, file_path, original_filename))
+        return MagicMock(filename=Path(file_path).name, file_size=0)
+    fs.register_output.side_effect = _register_output
+
+    data = {"tempo": 120, "tracks": []}
+    with patch("app.utils.midi_io.json_to_midi") as m:
+        file_id = svc.create_midi(data)
+    m.assert_called_once()
+    args, _ = m.call_args
+    assert args[0] == data
+    assert len(captured) == 1
+    reg_id, reg_path, reg_name = captured[0]
+    assert reg_id == file_id
+    assert Path(reg_path).suffix == ".mid"
+    assert reg_name == "Untitled.mid"
+
+
+def test_save_midi_writes_to_existing_path(tmp_path):
+    svc, fs, tm = _make_midi_svc(tmp_path)
+    midi_path = tmp_path / "edit.mid"
+    midi_path.write_bytes(b"MThd")
+    fs.require_file.return_value = MagicMock(file_path=midi_path)
+
+    data = {"tempo": 90, "tracks": [{"notes": []}]}
+    with patch("app.utils.midi_io.json_to_midi") as m:
+        result = svc.save_midi("fid", data)
+    assert result == {"status": "ok", "file_id": "fid"}
+    args, _ = m.call_args
+    assert args[0] == data
+    assert args[1] == midi_path
