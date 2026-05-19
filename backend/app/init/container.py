@@ -345,6 +345,15 @@ def init_container() -> AppContainer:
     mm.register_dispatcher("upscale", lambda family: c.upscalers()[family])
     mm.register_dispatcher("face_restore", lambda family: c.face_restorers()[family])
 
+    # Eagerly attach _model_manager to dispatcher-managed wrappers.
+    # ModelManager only attaches _model_manager when its dispatcher actually
+    # fires (model_manager.py:181), but services call wrapper.enhance()
+    # directly which then calls self.acquire() → checks _model_manager →
+    # None → RuntimeError("not registered"). Services bypass mm.acquire,
+    # so we need to attach upfront.
+    for wrapper in list(c.upscalers().values()) + list(c.face_restorers().values()):
+        wrapper._model_manager = mm
+
     c.wire(packages=["app.api.routes"])
     _container_instance = c
     return _container_instance
