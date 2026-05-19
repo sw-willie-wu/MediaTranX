@@ -23,8 +23,7 @@ class ImageUpscaleRequest(BaseModel):
     scale: int = Field(default=4, description="Upscale factor (2, 3, 4)")
     sharpen: bool = Field(default=False, description="Sharpen post-processing")
     face_fix: bool = Field(default=False, description="Face restoration post-processing")
-    face_restore_model_id: Optional[str] = Field(default=None, description="Face restoration model ID (e.g. codeformer-default)")
-    face_restore_fidelity: float = Field(default=0.7, description="CodeFormer fidelity (0=strong restore, 1=preserve original)")
+    face_restore_model_id: Optional[str] = Field(default=None, description="Face restoration model ID (e.g. gfpgan-v1.4)")
     face_restore_upscale: int = Field(default=2, description="GFPGAN upscale factor (1/2/4)")
 
 
@@ -48,7 +47,6 @@ async def upscale_image(
         sharpen=request.sharpen,
         face_fix=request.face_fix,
         face_restore_model_id=request.face_restore_model_id,
-        face_restore_fidelity=request.face_restore_fidelity,
         face_restore_upscale=request.face_restore_upscale,
     )
     return ImageUpscaleResponse(task_id=task_id)

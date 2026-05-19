@@ -801,23 +801,6 @@ MODELS_REGISTRY = {
             },
         },
         
-        # ▸ CodeFormer
-        "codeformer": {
-            "slot": "codeformer",
-            "label": "CodeFormer",
-            "category": "face_restore",
-            "description": "models.codeformer",
-            "variants": {
-                "default": {
-                    "label": "v0.1.0",
-                    "url": "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth",
-                    "filename": "codeformer.pth",
-                    "size_mb": 357,
-                    "vram_mb": 2500,
-                },
-            },
-        },
-
         # ▸ GFPGAN
         "gfpgan": {
             "slot": "gfpgan",

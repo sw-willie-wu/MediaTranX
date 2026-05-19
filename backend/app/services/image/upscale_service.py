@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 TASK_TYPE_IMAGE_UPSCALE = "image.upscale"
 
 _UPSCALE_FAMILIES = ["real-cugan", "realesrgan", "swinir", "bsrgan", "waifu2x"]
-_FACE_FAMILIES = ["codeformer", "gfpgan"]
+_FACE_FAMILIES = ["gfpgan"]
 
 
 def _parse_model_id(model_id: str, known_families: list) -> tuple:
@@ -53,7 +53,6 @@ class ImageUpscaleService:
         sharpen: bool = False,
         face_fix: bool = False,
         face_restore_model_id: Optional[str] = None,
-        face_restore_fidelity: float = 0.7,
         face_restore_upscale: int = 2,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
@@ -65,7 +64,6 @@ class ImageUpscaleService:
             "sharpen": sharpen,
             "face_fix": face_fix,
             "face_restore_model_id": face_restore_model_id,
-            "face_restore_fidelity": face_restore_fidelity,
             "face_restore_upscale": face_restore_upscale,
         })
         logger.info(f"Image upscale task submitted: {task_id}")
@@ -149,7 +147,6 @@ class ImageUpscaleService:
             if not anim_fmt and face_fix and face_restore_model_id:
                 try:
                     face_family, face_variant = _parse_model_id(face_restore_model_id, _FACE_FAMILIES)
-                    fidelity = params.get("face_restore_fidelity", 0.7)
                     face_upscale = params.get("face_restore_upscale", 2)
                     progress_callback(0.75, f"task.progress.load_face_model|{face_restore_model_id}")
 
@@ -157,12 +154,11 @@ class ImageUpscaleService:
                     if restorer is None:
                         raise ValueError(f"Unknown face_restore family: {face_family}. Available: {list(self._face_restorers)}")
 
-                    restore_kwargs: dict = {"model_id": face_variant, "on_progress": lambda p, m: progress_callback(0.75 + p * 0.15, m)}
-                    if face_family == "codeformer":
-                        restore_kwargs["fidelity"] = fidelity
-                    elif face_family == "gfpgan":
-                        restore_kwargs["upscale"] = face_upscale
-
+                    restore_kwargs: dict = {
+                        "model_id": face_variant,
+                        "on_progress": lambda p, m: progress_callback(0.75 + p * 0.15, m),
+                        "upscale": face_upscale,
+                    }
                     result_img = restorer.restore(result_img, **restore_kwargs)
                 except Exception as e:
                     logger.warning(f"Face restore failed, returning upscaled image only: {e}")

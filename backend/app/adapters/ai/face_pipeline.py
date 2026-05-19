@@ -1,6 +1,6 @@
 """Face-restoration pipeline: detect → align → restore → paste-back.
 
-Wraps facexlib.FaceRestoreHelper to give CodeFormer / GFPGAN wrappers a
+Wraps facexlib.FaceRestoreHelper to give the GFPGAN wrapper a
 model-agnostic per-face inference orchestrator. The actual restoration
 model is supplied via a callable per restore() invocation.
 

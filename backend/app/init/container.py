@@ -109,9 +109,6 @@ class AppContainer(containers.DeclarativeContainer):
     waifu2x_wrapper = providers.Singleton(
         _lazy("app.adapters.ai.wrapper.waifu2x", "Waifu2xWrapper"),
     )
-    codeformer_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.codeformer", "CodeFormerWrapper"),
-    )
     gfpgan_wrapper = providers.Singleton(
         _lazy("app.adapters.ai.wrapper.gfpgan", "GFPGANWrapper"),
     )
@@ -127,7 +124,6 @@ class AppContainer(containers.DeclarativeContainer):
         waifu2x=waifu2x_wrapper,
     )
     face_restorers = providers.Dict(
-        codeformer=codeformer_wrapper,
         gfpgan=gfpgan_wrapper,
     )
 
