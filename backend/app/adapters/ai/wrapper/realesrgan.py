@@ -12,7 +12,7 @@ import torch
 from PIL import Image
 
 from app.adapters.ai.wrapper.base import PthWrapper
-from app.adapters.ai.registry import FORMAT_PTH, MODELS_REGISTRY, SLOT_PTH
+from app.adapters.ai.registry import FORMAT_PTH, MODELS_REGISTRY
 
 logger = logging.getLogger(__name__)
 

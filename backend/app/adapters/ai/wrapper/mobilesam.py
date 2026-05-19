@@ -11,7 +11,6 @@ import numpy as np
 import torch
 
 from app.adapters.ai.wrapper.base import PackageWrapper
-from app.adapters.ai.registry import SLOT_SEGMENT
 
 logger = logging.getLogger(__name__)
 
