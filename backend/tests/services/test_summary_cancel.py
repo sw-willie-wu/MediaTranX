@@ -38,6 +38,30 @@ def test_bulletloop_shape_reraises():
         run()
 
 
+def test_make_vlm_callback_threads_params():
+    """_make_vlm_callback must forward on_progress/cancel_pct/cancel_msg into
+    the one-shot chat_with_images so the VLM call is guarded."""
+    from app.services.video.summary_service.service import VideoSummaryService
+    captured = {}
+
+    class FakeChat:
+        def chat_with_images(self, **kw):
+            captured.update(kw)
+            return "0"
+
+    svc = VideoSummaryService.__new__(VideoSummaryService)
+    svc._chat_service = FakeChat()
+    cb = lambda p, m: None
+    vlm = svc._make_vlm_callback(
+        "qwen3vl", "8b", on_progress=cb, cancel_pct=0.7,
+        cancel_msg="task.progress.summary_bullet_frame|1|40",
+    )
+    vlm("ctx", ["a.jpg", "b.jpg"])
+    assert captured["on_progress"] is cb
+    assert captured["cancel_pct"] == 0.7
+    assert captured["cancel_msg"] == "task.progress.summary_bullet_frame|1|40"
+
+
 def test_chunktext_valueerror_shape_does_not_swallow_cancel():
     """AC#4 'both': chunk loop's `except ValueError: continue` must NOT eat
     TaskCancelledError (raised by the guarded one-shot before the parse)."""

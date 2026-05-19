@@ -311,6 +311,7 @@ class AudioTranscribeService:
                         source_lang=source_language,
                         on_progress=lambda p, m: stage_progress("summarize", p, m),
                         max_tokens_per_chunk=chunk_tokens,
+                        cancellable=session,
                     )
 
             stage_progress("summarize", 1.0, "task.progress.summary_complete")
