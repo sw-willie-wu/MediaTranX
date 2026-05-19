@@ -30,6 +30,13 @@ class LlmWrapper(BaseWrapper):
         config: dict,
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
+        if self._model is not None:
+            try:
+                self._model.stop()
+            except Exception as e:
+                logger.warning(
+                    f"Failed to stop prior llama-server before reload: {e}"
+                )
         from app.adapters.device import has_nvidia_gpu
 
         n_gpu_layers = config.get("layers", 99) if has_nvidia_gpu() else 0
@@ -89,17 +96,17 @@ class LlmWrapper(BaseWrapper):
     def kill_process(self) -> None:
         """Best-effort cancellation hook for fake_progress(cancellable=...).
 
-        No-op if the model is not loaded or the subprocess handle is gone.
+        Routes through LlamaServer.stop(timeout=2): terminate() is immediate
+        on Windows so the in-flight HTTP call unblocks at once; the bounded
+        wait keeps `_process`/`_job` state consistent. No-op if not loaded;
+        never raises.
         """
         if self._model is None:
             return
-        proc = getattr(self._model, "_process", None)
-        if proc is None:
-            return
         try:
-            proc.kill()
+            self._model.stop(timeout=2.0)
         except Exception:
-            pass
+            pass  # best-effort
 
     @staticmethod
     def _strip_thinking(text: str) -> str:

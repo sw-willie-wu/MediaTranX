@@ -149,28 +149,32 @@ class TestKillProcess:
     def test_noop_when_no_model_loaded(self):
         w = LlmWrapper(slot="llm")
         w._model = None
-        w.kill_process()  # should not raise
+        w.kill_process()  # must not raise
 
-    def test_kills_process_when_loaded(self):
+    def test_reroutes_through_server_stop_with_short_timeout(self):
         w = LlmWrapper(slot="llm")
-        fake_proc = MagicMock()
         fake_server = MagicMock()
-        fake_server._process = fake_proc
         w._model = fake_server
         w.kill_process()
-        fake_proc.kill.assert_called_once()
+        fake_server.stop.assert_called_once_with(timeout=2.0)
 
-    def test_swallows_kill_exception(self):
+    def test_swallows_stop_exception(self):
         w = LlmWrapper(slot="llm")
-        fake_proc = MagicMock()
-        fake_proc.kill.side_effect = OSError("zombie")
         fake_server = MagicMock()
-        fake_server._process = fake_proc
+        fake_server.stop.side_effect = OSError("zombie")
         w._model = fake_server
-        w.kill_process()  # should not raise
+        w.kill_process()  # must not raise
 
-    def test_noop_when_process_handle_missing(self):
+
+class TestLoadImplStopsPrior:
+    def test_load_impl_stops_existing_server_before_reload(self, tmp_path):
         w = LlmWrapper(slot="llm")
-        fake_server = MagicMock(spec=[])  # no _process attribute
-        w._model = fake_server
-        w.kill_process()  # should not raise
+        old_server = MagicMock()
+        w._model = old_server
+        new_server = MagicMock()
+        with patch("app.adapters.ai.wrapper.llm.LlamaServer",
+                   return_value=new_server), \
+             patch("app.adapters.device.has_nvidia_gpu", return_value=False):
+            result = w._load_impl(tmp_path / "m.gguf", config={})
+        old_server.stop.assert_called_once()
+        assert result is new_server
