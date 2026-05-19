@@ -75,3 +75,38 @@ def test_detect_all_returns_empty_on_error():
     detector = SceneDetector(ffmpeg=MagicMock())
     with patch("scenedetect.detect", side_effect=RuntimeError("bad")):
         assert detector.detect_all(Path("dummy.mp4")) == []
+
+
+def test_extract_frame_forwards_max_edge_when_set(tmp_path):
+    from unittest.mock import MagicMock
+    from pathlib import Path
+    from app.services.video.summary_service.scene_detect import SceneDetector
+
+    mock_ffmpeg = MagicMock()
+    mock_ffmpeg.extract_frame_sync = MagicMock()
+    det = SceneDetector(ffmpeg=mock_ffmpeg)
+    out = tmp_path / "f.jpg"
+
+    det.extract_frame(input_path=Path("v.mp4"), output_path=out,
+                       timestamp=1.0, max_edge=768)
+    mock_ffmpeg.extract_frame_sync.assert_called_once_with(
+        input_path=Path("v.mp4"), output_path=out, timestamp=1.0,
+        max_edge=768,
+    )
+
+
+def test_extract_frame_omits_max_edge_kwarg_when_none(tmp_path):
+    from unittest.mock import MagicMock
+    from pathlib import Path
+    from app.services.video.summary_service.scene_detect import SceneDetector
+
+    mock_ffmpeg = MagicMock()
+    mock_ffmpeg.extract_frame_sync = MagicMock()
+    det = SceneDetector(ffmpeg=mock_ffmpeg)
+    out = tmp_path / "f.jpg"
+
+    det.extract_frame(input_path=Path("v.mp4"), output_path=out, timestamp=1.0)
+    # max_edge must NOT be in the forwarded kwargs (keeps the legacy
+    # test_extract_frame_invokes_ffmpeg exact 3-kwarg contract green).
+    _, kwargs = mock_ffmpeg.extract_frame_sync.call_args
+    assert "max_edge" not in kwargs
