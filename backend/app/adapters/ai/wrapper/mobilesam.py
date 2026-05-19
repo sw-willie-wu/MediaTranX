@@ -26,7 +26,7 @@ class MobileSAMWrapper(PackageWrapper):
     """
 
     def __init__(self):
-        super().__init__(slot=SLOT_SEGMENT)
+        super().__init__(slot="mobilesam")
         logger.info("MobileSAMWrapper initialized (PackageWrapper)")
 
     def _create_model(

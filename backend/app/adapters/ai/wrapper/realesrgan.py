@@ -28,7 +28,7 @@ class RealESRGANWrapper(PthWrapper):
     """
 
     def __init__(self):
-        super().__init__(slot=SLOT_PTH, use_spandrel=True)
+        super().__init__(slot="upscale", use_spandrel=True)
         logger.info("RealESRGANWrapper initialized (PthWrapper, spandrel)")
     
     def enhance(

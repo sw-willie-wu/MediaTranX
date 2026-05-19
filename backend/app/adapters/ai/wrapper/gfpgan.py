@@ -28,7 +28,7 @@ class GFPGANWrapper(PthWrapper):
     """
 
     def __init__(self):
-        super().__init__(slot="gfpgan", use_spandrel=True)
+        super().__init__(slot="face_restore", use_spandrel=True)
         self._face_pipeline: Optional[Any] = None
         logger.info("GFPGANWrapper initialized (PthWrapper)")
     

@@ -28,7 +28,7 @@ class BSRGANWrapper(PthWrapper):
     """
     
     def __init__(self):
-        super().__init__(slot="bsrgan", use_spandrel=True)
+        super().__init__(slot="upscale", use_spandrel=True)
         logger.info("BSRGANWrapper initialized (PthWrapper + Spandrel)")
     
     def enhance(

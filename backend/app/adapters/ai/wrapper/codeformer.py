@@ -27,7 +27,7 @@ class CodeFormerWrapper(PthWrapper):
     """
 
     def __init__(self):
-        super().__init__(slot=SLOT_PTH, use_spandrel=True)
+        super().__init__(slot="face_restore", use_spandrel=True)
         self._face_pipeline: Optional[Any] = None  # lazy FacePipeline
         logger.info("CodeFormerWrapper initialized (PthWrapper)")
     
