@@ -103,3 +103,23 @@ def make_file_service_mock(tmp_path, *, use_create_output_path: bool = True) -> 
         return fd
     fs.require_file.side_effect = _require_file
     return fs
+
+
+# ─── Wave E shared helpers ───
+
+def model_available(model_id: str, variant: str | None = None) -> bool:
+    """Return True if the given model is downloaded.
+
+    Used by @pytest.mark.ai integration tests to gate skipif checks. Does NOT
+    require the model to be loaded — only present on disk.
+    """
+    try:
+        from app.init.configs import SETTINGS
+        base = SETTINGS.path.models / model_id
+        if not base.exists():
+            return False
+        if variant is None:
+            return any(base.iterdir())
+        return any(variant in p.name for p in base.rglob("*"))
+    except Exception:
+        return False
