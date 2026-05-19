@@ -41,6 +41,7 @@ class LlamaServer:
         self._process: Optional[subprocess.Popen] = None
         self._port: Optional[int] = None
         self._log_file: Optional[TextIO] = None
+        self._job: Optional[int] = None  # Win32 Job Object handle (F1)
 
     @property
     def port(self) -> Optional[int]:
@@ -111,27 +112,51 @@ class LlamaServer:
         if on_progress:
             on_progress(1.0, "task.progress.model_loaded")
 
-    def stop(self) -> None:
-        """Terminate subprocess and close log file."""
-        if self._process is not None:
+    def stop(self, timeout: float = 10.0) -> None:
+        """Stop the subprocess deterministically and close the job handle.
+
+        terminate() → wait(timeout); on timeout/exception escalate to kill().
+        State (`_process`/`_port`/`_job`) is cleared **only after the child is
+        confirmed gone** (`poll()` is not None). If both terminate and kill
+        fail the handle is retained so a later stop() can retry — we never
+        pretend a live child is gone.
+        """
+        proc = self._process
+        if proc is not None:
             logger.info(f"Terminating llama-server (port {self._port})")
             try:
-                self._process.terminate()
-                self._process.wait(timeout=10)
+                proc.terminate()
+                proc.wait(timeout=timeout)
             except Exception as e:
-                logger.warning(f"Error terminating llama-server: {e}")
+                logger.warning(f"terminate() failed, escalating to kill(): {e}")
                 try:
-                    self._process.kill()
-                except Exception:
-                    pass
-            self._process = None
-            self._port = None
+                    proc.kill()
+                    proc.wait(timeout=timeout)
+                except Exception as e2:
+                    logger.error(f"kill() also failed; retaining handle: {e2}")
+            if proc.poll() is not None:
+                self._process = None
+                self._port = None
+                self._close_job()
+            else:
+                logger.error(
+                    f"llama-server (port {self._port}) survived stop(); "
+                    "handle retained for a later retry"
+                )
         if self._log_file is not None:
             try:
                 self._log_file.close()
             except Exception:
                 pass
             self._log_file = None
+
+    def _close_job(self) -> None:
+        """Close the Win32 Job Object handle (deterministic; prevents
+        per-model-switch kernel-handle accumulation over a long session)."""
+        if self._job is not None:
+            from app.adapters.binary import _proc_lifetime
+            _proc_lifetime.close_job(self._job)
+            self._job = None
 
     def post_chat(
         self,
