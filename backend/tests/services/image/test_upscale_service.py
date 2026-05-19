@@ -52,10 +52,9 @@ class TestParseModelId:
         assert v == variant
 
     def test_face_families(self):
-        family, variant = _parse_model_id("codeformer-v0.1.0", _FACE_FAMILIES)
-        assert family == "codeformer"
         family, variant = _parse_model_id("gfpgan-v1.4", _FACE_FAMILIES)
         assert family == "gfpgan"
+        assert variant == "v1.4"
 
 
 def _build(tmp_path, face_restorers=None):
@@ -101,8 +100,8 @@ class TestSubmit:
         tid = await svc.submit_upscale(
             file_id="fid", model_id="realesrgan-x2plus", scale=2,
             sharpen=True, face_fix=True,
-            face_restore_model_id="codeformer-v0.1.0",
-            face_restore_fidelity=0.6, face_restore_upscale=2,
+            face_restore_model_id="gfpgan-v1.4",
+            face_restore_upscale=2,
         )
         assert tid == "tid"
         args, _ = tm.submit.call_args
@@ -119,7 +118,7 @@ class TestUpscaleStatic:
                 {"file_id": "f", "model_id": "realesrgan-x4plus", "scale": 4,
                  "sharpen": False, "face_fix": False,
                  "face_restore_model_id": None,
-                 "face_restore_fidelity": 0.7, "face_restore_upscale": 2},
+                 "face_restore_upscale": 2},
                 lambda p, m: None,
             )
         upscaler.enhance.assert_called_once()
@@ -135,30 +134,13 @@ class TestUpscaleStatic:
                 {"file_id": "f", "model_id": "realesrgan-x4plus", "scale": 2,
                  "sharpen": False, "face_fix": False,
                  "face_restore_model_id": None,
-                 "face_restore_fidelity": 0.7, "face_restore_upscale": 2},
+                 "face_restore_upscale": 2},
                 lambda p, m: None,
             )
         upscaler.enhance.assert_called_once()
 
 
 class TestFaceRestoration:
-    def test_face_fix_with_codeformer_uses_fidelity_kwarg(self, tmp_path):
-        face = MagicMock()
-        face.restore = MagicMock(return_value=Image.new("RGB", (256, 256)))
-        svc, fs, upscaler = _build(tmp_path, face_restorers={"codeformer": face})
-        with patch("app.adapters.ai.registry.MODELS_REGISTRY", FAKE_REGISTRY):
-            svc._execute(
-                {"file_id": "f", "model_id": "realesrgan-x4plus", "scale": 4,
-                 "sharpen": False, "face_fix": True,
-                 "face_restore_model_id": "codeformer-v0.1.0",
-                 "face_restore_fidelity": 0.6, "face_restore_upscale": 2},
-                lambda p, m: None,
-            )
-        face.restore.assert_called_once()
-        kwargs = face.restore.call_args.kwargs
-        assert kwargs.get("fidelity") == 0.6
-        assert "upscale" not in kwargs  # codeformer path
-
     def test_face_fix_with_gfpgan_uses_upscale_kwarg(self, tmp_path):
         face = MagicMock()
         face.restore = MagicMock(return_value=Image.new("RGB", (256, 256)))
@@ -168,23 +150,22 @@ class TestFaceRestoration:
                 {"file_id": "f", "model_id": "realesrgan-x4plus", "scale": 4,
                  "sharpen": False, "face_fix": True,
                  "face_restore_model_id": "gfpgan-v1.4",
-                 "face_restore_fidelity": 0.7, "face_restore_upscale": 3},
+                 "face_restore_upscale": 3},
                 lambda p, m: None,
             )
         kwargs = face.restore.call_args.kwargs
         assert kwargs.get("upscale") == 3
-        assert "fidelity" not in kwargs  # gfpgan path
 
     def test_face_restore_failure_falls_back_silently(self, tmp_path):
         face = MagicMock()
         face.restore = MagicMock(side_effect=RuntimeError("face restore failed"))
-        svc, fs, upscaler = _build(tmp_path, face_restorers={"codeformer": face})
+        svc, fs, upscaler = _build(tmp_path, face_restorers={"gfpgan": face})
         with patch("app.adapters.ai.registry.MODELS_REGISTRY", FAKE_REGISTRY):
             result = svc._execute(
                 {"file_id": "f", "model_id": "realesrgan-x4plus", "scale": 4,
                  "sharpen": False, "face_fix": True,
-                 "face_restore_model_id": "codeformer-v0.1.0",
-                 "face_restore_fidelity": 0.7, "face_restore_upscale": 2},
+                 "face_restore_model_id": "gfpgan-v1.4",
+                 "face_restore_upscale": 2},
                 lambda p, m: None,
             )
         # No exception bubbled; result still returned
@@ -198,8 +179,8 @@ class TestFaceRestoration:
             result = svc._execute(
                 {"file_id": "f", "model_id": "realesrgan-x4plus", "scale": 4,
                  "sharpen": False, "face_fix": True,
-                 "face_restore_model_id": "codeformer-v0.1.0",
-                 "face_restore_fidelity": 0.7, "face_restore_upscale": 2},
+                 "face_restore_model_id": "gfpgan-v1.4",
+                 "face_restore_upscale": 2},
                 lambda p, m: None,
             )
         # graceful fallback — no exception
@@ -222,7 +203,7 @@ class TestUnknownUpscaleFamily:
                     {"file_id": "f", "model_id": "realesrgan-x4plus", "scale": 4,
                      "sharpen": False, "face_fix": False,
                      "face_restore_model_id": None,
-                     "face_restore_fidelity": 0.7, "face_restore_upscale": 2},
+                     "face_restore_upscale": 2},
                     lambda p, m: None,
                 )
 
@@ -236,7 +217,7 @@ class TestProgress:
                 {"file_id": "f", "model_id": "realesrgan-x4plus", "scale": 4,
                  "sharpen": False, "face_fix": False,
                  "face_restore_model_id": None,
-                 "face_restore_fidelity": 0.7, "face_restore_upscale": 2},
+                 "face_restore_upscale": 2},
                 lambda p, m: progress.append((p, m)),
             )
         for _, msg in progress:

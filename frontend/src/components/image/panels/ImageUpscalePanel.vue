@@ -29,7 +29,6 @@ const selectedFaceModelId = usePersistedModel('upscale_face_model')
 const upscaleScale = ref(4)
 const sharpen = ref(false)
 const faceRestore = ref(false)
-const faceRestoreFidelity = ref(0.7)
 const faceRestoreUpscale = ref(2)
 
 const upscaleModels = computed(() => modelStore.forPanel(modelStore.byCategory('upscale')))
@@ -44,7 +43,6 @@ watch(maxScale, (max) => {
 })
 
 const selectedFaceFamily = computed(() => {
-  if (selectedFaceModelId.value.startsWith('codeformer')) return 'codeformer'
   if (selectedFaceModelId.value.startsWith('gfpgan')) return 'gfpgan'
   return ''
 })
@@ -102,7 +100,6 @@ function getParams(): Record<string, unknown> {
     face_restore_model_id: faceRestore.value && selectedFaceModelId.value
       ? selectedFaceModelId.value
       : null,
-    face_restore_fidelity: faceRestoreFidelity.value,
     face_restore_upscale: faceRestoreUpscale.value,
   }
 }
@@ -176,16 +173,6 @@ defineExpose({ execute, isDisabled, isLoading, upscaleScale, getParams })
           :placeholder="$t('common.select_function')"
           @update:model-value="selectFaceModel"
         />
-
-        <!-- CodeFormer: fidelity -->
-        <template v-if="selectedFaceFamily === 'codeformer'">
-          <label class="sub-label">
-            {{ $t('image.upscale.fidelity') }}
-            <span class="param-value">{{ faceRestoreFidelity.toFixed(1) }}</span>
-          </label>
-          <AppRange v-model="faceRestoreFidelity" :min="0" :max="1" :step="0.1" />
-          <div class="range-ticks"><span>{{ $t('image.upscale.strong_restore') }}</span><span>{{ $t('image.upscale.preserve_original') }}</span></div>
-        </template>
 
         <!-- GFPGAN: upscale -->
         <template v-if="selectedFaceFamily === 'gfpgan'">

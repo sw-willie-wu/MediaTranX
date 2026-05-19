@@ -27,7 +27,7 @@ def test_unknown_variant_raises():
 
 
 def test_restore_forwards_upscale_to_facepipeline():
-    """Unlike CodeFormer, GFPGAN does forward `upscale` correctly as `face_upscale=`."""
+    """GFPGAN forwards `upscale` correctly to FacePipeline as `face_upscale=`."""
     w = GFPGANWrapper()
     fake_output = Image.new("RGB", (256, 256))
 

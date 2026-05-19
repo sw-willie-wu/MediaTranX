@@ -61,7 +61,7 @@ def test_upscale_dispatch_acquires_correct_wrapper(container, family):
         )
 
 
-@pytest.mark.parametrize("family", ["codeformer", "gfpgan"])
+@pytest.mark.parametrize("family", ["gfpgan"])
 def test_face_restore_dispatch_acquires_correct_wrapper(container, family):
     mm = container.model_manager()
     with mm.acquire(slot="face_restore", model_id=family, variant="default") as runtime:

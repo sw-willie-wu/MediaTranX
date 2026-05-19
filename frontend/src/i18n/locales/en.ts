@@ -452,9 +452,6 @@ export default {
       sharpen_hint: 'Enhance edge sharpness, reduces painterly effect',
       face_restore: 'Face Restoration',
       face_restore_hint: 'Restore and enhance faces after upscaling',
-      fidelity: 'Fidelity',
-      strong_restore: 'Strong',
-      preserve_original: 'Preserve',
       face_scale: 'Face Scale',
       task_label: 'Image · Upscale',
     },
@@ -1181,7 +1178,6 @@ export default {
     real_cugan: 'Anime-Style Super-Resolution',
     waifu2x: 'Classic Anime Super-Resolution',
     // Face restore
-    codeformer: 'VQ-GAN Face Restoration',
     gfpgan: 'GAN Face Restoration',
     // Segment
     mobilesam: 'Lightweight Segmentation (AI Removal)',
