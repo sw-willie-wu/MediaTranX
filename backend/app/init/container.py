@@ -335,6 +335,12 @@ def init_container() -> AppContainer:
     mm.register_runtime_provider("mobilesam", c.mobilesam_wrapper)
     mm.register_runtime_provider("rife", c.rife_wrapper)
 
+    # Pre-register LlmWrapper (slot="llm") so ChatService.session() →
+    # llama_runtime.acquire() → mm.acquire("llm", ...) resolves. Without
+    # this every translate/summarize service crashes with KeyError on the
+    # first session() call.
+    mm.register_runtime(c.llama_runtime())
+
     # Dispatcher slots: container exposes family→wrapper dicts.
     mm.register_dispatcher("upscale", lambda family: c.upscalers()[family])
     mm.register_dispatcher("face_restore", lambda family: c.face_restorers()[family])
