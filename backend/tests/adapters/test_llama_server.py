@@ -172,3 +172,28 @@ class TestStartBindingAndIdempotency:
         assert names.index("close_job") < names.index("popen")
         assert server._process is new_proc
         assert server._job is None                     # create returned None here
+
+    def test_start_closes_old_job_when_stop_cannot_confirm_death(self, tmp_path):
+        """M1: stop() fails to confirm old child dead → old job closed
+        defensively before _process/_job are overwritten (no handle leak)."""
+        server = LlamaServer()
+        old_proc = MagicMock()
+        old_proc.terminate.side_effect = OSError("zombie")
+        old_proc.kill.side_effect = OSError("zombie")
+        old_proc.poll.return_value = None  # never confirmed dead
+        server._process = old_proc
+        server._job = 999
+        new_proc = MagicMock()
+        new_proc._handle = 4321
+        new_proc.poll.return_value = None
+        with self._patch_settings(tmp_path), \
+             patch("app.adapters.binary.llama_server.subprocess.Popen",
+                   return_value=new_proc), \
+             patch.object(LlamaServer, "_wait_ready"), \
+             patch("app.adapters.binary._proc_lifetime.close_job") as cj, \
+             patch("app.adapters.binary._proc_lifetime.create_kill_on_close_job",
+                   return_value=None):
+            server.start(model_path=tmp_path / "m.gguf", n_ctx=4096, n_gpu_layers=99)
+        cj.assert_called_once_with(999)   # old job closed despite stop() failure
+        assert server._process is new_proc
+        assert server._job is None

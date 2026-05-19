@@ -65,6 +65,16 @@ class LlamaServer:
                 "first (two children must never share one kill-on-close job)"
             )
             self.stop()
+            if self._process is not None:
+                # stop() could not confirm the old child dead (both
+                # terminate+kill failed). Don't leak the old Job handle when
+                # we overwrite _process/_job below — its KILL_ON_JOB_CLOSE net
+                # still reaps at process exit, but close it deterministically.
+                logger.error(
+                    "old llama-server survived stop() before restart; "
+                    "closing its job handle defensively"
+                )
+                self._close_job()
 
         from app.init.configs import SETTINGS
 
