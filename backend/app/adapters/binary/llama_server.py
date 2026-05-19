@@ -59,6 +59,13 @@ class LlamaServer:
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> None:
         """Start llama-server subprocess and block until /health returns ok."""
+        if self._process is not None:
+            logger.warning(
+                "start() called with an existing llama-server; stopping it "
+                "first (two children must never share one kill-on-close job)"
+            )
+            self.stop()
+
         from app.init.configs import SETTINGS
 
         if on_progress:
@@ -99,12 +106,28 @@ class LlamaServer:
         log_path = log_dir / "llama_server.log"
         self._log_file = open(str(log_path), "a", encoding="utf-8")  # noqa: SIM115
 
+        from app.adapters.binary import _proc_lifetime
+
         self._process = subprocess.Popen(
             cmd,
             stdout=self._log_file,
             stderr=self._log_file,
             cwd=str(llama_dir),
+            preexec_fn=_proc_lifetime.posix_pdeathsig_preexec(),  # None on win32
         )
+
+        # F1: bind the child to a kill-on-close Job Object so it cannot
+        # outlive this backend process (taskkill /F / crash / clean exit).
+        # `Popen._handle` is a private CPython _winapi Handle (stdlib is
+        # bundled under Nuitka — see project_nuitka_path_issue); pin int().
+        job = _proc_lifetime.create_kill_on_close_job()
+        if job is not None:
+            if _proc_lifetime.assign_process_to_job(
+                job, int(self._process._handle)  # noqa: SLF001 - see comment
+            ):
+                self._job = job
+            else:
+                _proc_lifetime.close_job(job)
 
         self._wait_ready(on_progress)
 
