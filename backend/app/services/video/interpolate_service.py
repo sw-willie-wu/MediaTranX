@@ -103,21 +103,24 @@ class InterpolateService:
         def interp_progress(p, msg):
             progress_callback(p * 0.95, msg)
 
-        total_out, _ = rife.interpolate_pipe(
-            input_path=file_info.file_path,
-            output_path=output_path,
-            ffmpeg_path=ffmpeg.ffmpeg_path,
-            variant=model,
-            multiplier=multiplier,
-            width=width,
-            height=height,
-            source_fps=source_fps,
-            duration=media_info.duration or 0.0,
-            target_fps=out_fps if mode == "custom" else Fraction(0),
-            video_codec=video_codec,
-            on_progress=interp_progress,
-            output_fps=out_fps,
-        )
+        # rife.interpolate_pipe asserts self.is_loaded() — must wrap in
+        # mm.acquire so the model is loaded before pipe inference starts.
+        with rife.acquire(model_id="rife", variant=model, on_progress=interp_progress):
+            total_out, _ = rife.interpolate_pipe(
+                input_path=file_info.file_path,
+                output_path=output_path,
+                ffmpeg_path=ffmpeg.ffmpeg_path,
+                variant=model,
+                multiplier=multiplier,
+                width=width,
+                height=height,
+                source_fps=source_fps,
+                duration=media_info.duration or 0.0,
+                target_fps=out_fps if mode == "custom" else Fraction(0),
+                video_codec=video_codec,
+                on_progress=interp_progress,
+                output_fps=out_fps,
+            )
 
         output_file_id = str(uuid4())
         self._file_service.register_output(
