@@ -1,6 +1,6 @@
 """Unit tests for LlmWrapper (BaseWrapper subclass holding a LlamaServer)."""
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -63,3 +63,114 @@ def test_unload_stops_server():
 
     mock_server.stop.assert_called_once()
     assert not w.is_loaded()
+
+
+# ─── Wave E additions ───
+
+
+class TestLoadImpl:
+    def test_load_impl_starts_llamaserver_with_gpu_layers_when_nvidia(self, tmp_path):
+        w = LlmWrapper(slot="llm")
+        fake_server = MagicMock()
+        with patch("app.adapters.ai.wrapper.llm.LlamaServer", return_value=fake_server), \
+             patch("app.adapters.device.has_nvidia_gpu", return_value=True):
+            result = w._load_impl(tmp_path / "model.gguf", config={"n_ctx": 8192})
+
+        assert result is fake_server
+        fake_server.start.assert_called_once()
+        kwargs = fake_server.start.call_args.kwargs
+        assert kwargs["n_gpu_layers"] == 99
+        assert kwargs["n_ctx"] == 8192
+
+    def test_load_impl_uses_cpu_when_no_nvidia(self, tmp_path):
+        w = LlmWrapper(slot="llm")
+        fake_server = MagicMock()
+        with patch("app.adapters.ai.wrapper.llm.LlamaServer", return_value=fake_server), \
+             patch("app.adapters.device.has_nvidia_gpu", return_value=False):
+            w._load_impl(tmp_path / "model.gguf", config={})
+
+        kwargs = fake_server.start.call_args.kwargs
+        assert kwargs["n_gpu_layers"] == 0
+
+    def test_load_impl_passes_mmproj_when_present(self, tmp_path):
+        w = LlmWrapper(slot="llm")
+        fake_server = MagicMock()
+        mmproj = tmp_path / "mmproj.gguf"
+        mmproj.write_bytes(b"")
+        with patch("app.adapters.ai.wrapper.llm.LlamaServer", return_value=fake_server), \
+             patch("app.adapters.device.has_nvidia_gpu", return_value=False):
+            w._load_impl(tmp_path / "model.gguf", config={"mmproj_path": mmproj})
+
+        kwargs = fake_server.start.call_args.kwargs
+        assert kwargs["mmproj_path"] == mmproj
+
+
+class TestResolveModelPath:
+    def test_unknown_model_id_raises(self):
+        w = LlmWrapper(slot="llm")
+        with pytest.raises(ValueError, match="Unknown model"):
+            w._resolve_model_path("bogus-model", variant="4b:Q4_K_M", manager=MagicMock())
+
+    def test_resolve_gguf_path_parses_size_quant(self):
+        """variant='size:quant' → split into size + quant via real registry."""
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
+
+        gguf = MODELS_REGISTRY.get(FORMAT_GGUF, {})
+        if not gguf:
+            pytest.skip("No GGUF families registered")
+
+        known_family = next(iter(gguf))
+        specs = gguf[known_family]["specs"]
+        size = next(iter(specs))
+        variants = specs[size].get("variants", {})
+        if not variants:
+            pytest.skip(f"No variants for {known_family}/{size}")
+        quant = next(iter(variants))
+
+        w = LlmWrapper(slot="llm")
+        fake_manager = MagicMock()
+        fake_manager.get_model_path.return_value = "/fake/path/model.gguf"
+
+        # mmproj_filename may be present → patch SETTINGS to a tmp path with the file
+        variant_spec = variants[quant]
+        if "mmproj_filename" in variant_spec:
+            pytest.skip("variant has mmproj; covered in separate test")
+
+        model_path, config = w._resolve_model_path(
+            known_family, variant=f"{size}:{quant}", manager=fake_manager,
+        )
+        assert config["size"] == size
+        assert config["quantization"] == quant
+        assert config["model_id"] == known_family
+        assert config["n_ctx"] >= 1
+
+
+class TestKillProcess:
+    def test_noop_when_no_model_loaded(self):
+        w = LlmWrapper(slot="llm")
+        w._model = None
+        w.kill_process()  # should not raise
+
+    def test_kills_process_when_loaded(self):
+        w = LlmWrapper(slot="llm")
+        fake_proc = MagicMock()
+        fake_server = MagicMock()
+        fake_server._process = fake_proc
+        w._model = fake_server
+        w.kill_process()
+        fake_proc.kill.assert_called_once()
+
+    def test_swallows_kill_exception(self):
+        w = LlmWrapper(slot="llm")
+        fake_proc = MagicMock()
+        fake_proc.kill.side_effect = OSError("zombie")
+        fake_server = MagicMock()
+        fake_server._process = fake_proc
+        w._model = fake_server
+        w.kill_process()  # should not raise
+
+    def test_noop_when_process_handle_missing(self):
+        w = LlmWrapper(slot="llm")
+        fake_server = MagicMock(spec=[])  # no _process attribute
+        w._model = fake_server
+        w.kill_process()  # should not raise

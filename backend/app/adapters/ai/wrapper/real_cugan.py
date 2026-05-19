@@ -28,7 +28,7 @@ class RealCUGANWrapper(PthWrapper):
     """
 
     def __init__(self):
-        super().__init__(slot="real-cugan", use_spandrel=True)
+        super().__init__(slot="upscale", use_spandrel=True)
         logger.info("RealCUGANWrapper initialized (PthWrapper + Spandrel)")
     
     def enhance(

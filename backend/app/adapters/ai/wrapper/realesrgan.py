@@ -12,7 +12,7 @@ import torch
 from PIL import Image
 
 from app.adapters.ai.wrapper.base import PthWrapper
-from app.adapters.ai.registry import FORMAT_PTH, MODELS_REGISTRY, SLOT_PTH
+from app.adapters.ai.registry import FORMAT_PTH, MODELS_REGISTRY
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class RealESRGANWrapper(PthWrapper):
     """
 
     def __init__(self):
-        super().__init__(slot=SLOT_PTH, use_spandrel=True)
+        super().__init__(slot="upscale", use_spandrel=True)
         logger.info("RealESRGANWrapper initialized (PthWrapper, spandrel)")
     
     def enhance(

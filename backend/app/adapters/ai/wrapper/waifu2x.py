@@ -28,13 +28,13 @@ class Waifu2xWrapper(PthWrapper):
     """
 
     def __init__(self):
-        super().__init__(slot="waifu2x", use_spandrel=True)
+        super().__init__(slot="upscale", use_spandrel=True)
         logger.info("Waifu2xWrapper initialized (PthWrapper + Spandrel)")
 
     def enhance(
         self,
         image: Image.Image,
-        model_id: str = "cunet",
+        model_id: str = "cunet-art-2x",
         scale: int = 2,  # noqa: ARG002
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Image.Image:
@@ -43,7 +43,7 @@ class Waifu2xWrapper(PthWrapper):
 
         Args:
             image: Input image.
-            model_id: Model variant (cunet).
+            model_id: Model variant (cunet-art-2x is the only registered variant).
             scale: Scale factor (fixed at 2).
             on_progress: Progress callback.
 

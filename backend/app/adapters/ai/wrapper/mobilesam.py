@@ -11,7 +11,6 @@ import numpy as np
 import torch
 
 from app.adapters.ai.wrapper.base import PackageWrapper
-from app.adapters.ai.registry import SLOT_SEGMENT
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +25,7 @@ class MobileSAMWrapper(PackageWrapper):
     """
 
     def __init__(self):
-        super().__init__(slot=SLOT_SEGMENT)
+        super().__init__(slot="mobilesam")
         logger.info("MobileSAMWrapper initialized (PackageWrapper)")
 
     def _create_model(

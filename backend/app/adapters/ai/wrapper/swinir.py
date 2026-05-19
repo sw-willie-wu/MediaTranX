@@ -28,7 +28,7 @@ class SwinIRWrapper(PthWrapper):
     """
 
     def __init__(self):
-        super().__init__(slot="swinir", use_spandrel=True)
+        super().__init__(slot="upscale", use_spandrel=True)
         logger.info("SwinIRWrapper initialized (PthWrapper + Spandrel)")
 
     def _get_tile_size(self) -> int:

@@ -11,7 +11,7 @@ import torch
 from PIL import Image
 
 from app.adapters.ai.wrapper.base import PthWrapper
-from app.adapters.ai.registry import FORMAT_PTH, MODELS_REGISTRY, SLOT_PTH
+from app.adapters.ai.registry import FORMAT_PTH, MODELS_REGISTRY
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class CodeFormerWrapper(PthWrapper):
     """
 
     def __init__(self):
-        super().__init__(slot=SLOT_PTH, use_spandrel=True)
+        super().__init__(slot="face_restore", use_spandrel=True)
         self._face_pipeline: Optional[Any] = None  # lazy FacePipeline
         logger.info("CodeFormerWrapper initialized (PthWrapper)")
     
@@ -67,12 +67,14 @@ class CodeFormerWrapper(PthWrapper):
 
             def restore_fn(face_tensor):
                 with torch.no_grad():
-                    # IMPLEMENTER NOTE: confirm the spandrel-wrapped CodeFormer model's
-                    # call signature at runtime. Likely shapes:
-                    #   - model(face_tensor) returns (restored, _logits) tuple, OR
-                    #   - model(face_tensor, w=fidelity) for fidelity-aware variants.
-                    # If spandrel exposes .model.w as an attribute, set it before calling.
-                    # Default to the simple call and unpack tuple if needed.
+                    # TODO(bug #5, Wave E): `fidelity` is currently a no-op — the
+                    # spandrel-wrapped model is called as `model(face_tensor)`
+                    # without forwarding `w=fidelity`. Wave E test
+                    # `tests/adapters/ai/wrapper/test_codeformer_wrapper.py::
+                    # test_restore_with_mocked_facepipeline_and_acquire` asserts
+                    # current (broken) behavior. Fix needs spandrel CodeFormer API
+                    # research: likely `model(face_tensor, w=fidelity)` or
+                    # `model.model.w = fidelity` before calling.
                     output = model(face_tensor)
                     if isinstance(output, tuple):
                         output = output[0]
