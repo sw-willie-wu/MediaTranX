@@ -366,5 +366,5 @@ class WhisperWrapper(PackageWrapper):
 
             return result
         finally:
-            # Unload model to release VRAM
-            self._unload_model()
+            # Unload model to release VRAM (BaseWrapper.unload → _unload_impl → _cleanup_model)
+            self.unload()
