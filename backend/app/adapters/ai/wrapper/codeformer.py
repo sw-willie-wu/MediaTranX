@@ -67,14 +67,27 @@ class CodeFormerWrapper(PthWrapper):
 
             def restore_fn(face_tensor):
                 with torch.no_grad():
-                    # TODO(bug #5, Wave E): `fidelity` is currently a no-op — the
-                    # spandrel-wrapped model is called as `model(face_tensor)`
-                    # without forwarding `w=fidelity`. Wave E test
-                    # `tests/adapters/ai/wrapper/test_codeformer_wrapper.py::
-                    # test_restore_with_mocked_facepipeline_and_acquire` asserts
-                    # current (broken) behavior. Fix needs spandrel CodeFormer API
-                    # research: likely `model(face_tensor, w=fidelity)` or
-                    # `model.model.w = fidelity` before calling.
+                    # KNOWN BROKEN — bug #5 (Wave E follow-up research):
+                    # This wrapper has never worked in production. spandrel
+                    # 0.4.2's MAIN_REGISTRY has no CodeFormer arch (only
+                    # RestoreFormer/GFPGAN/etc.), so PthWrapper._load_with_spandrel
+                    # raises spandrel.UnsupportedModelError on the .pth load
+                    # before this restore_fn is ever called. basicsr-pip doesn't
+                    # bundle CodeFormer either (the official CodeFormer is a
+                    # standalone sczhou/CodeFormer GitHub repo, not a pip pkg).
+                    #
+                    # Three options for a real fix (deferred — needs user input):
+                    #   (A) Vendor the CodeFormer arch (~500 LOC from
+                    #       sczhou/CodeFormer/basicsr/archs/codeformer_arch.py)
+                    #       + set use_spandrel=False + add _build_arch override.
+                    #       Wire fidelity via `model(x, w=fidelity, adain=True)`.
+                    #   (B) Remove the CodeFormer wrapper + registry entry +
+                    #       container face_restorers entry; ship only GFPGAN.
+                    #   (C) Pin spandrel to a future version that adds CodeFormer
+                    #       arch support (no such release at the time of this note).
+                    #
+                    # Wave E test asserts current call shape (face_upscale=2
+                    # hardcoded; fidelity ignored) so this TODO doesn't break tests.
                     output = model(face_tensor)
                     if isinstance(output, tuple):
                         output = output[0]
