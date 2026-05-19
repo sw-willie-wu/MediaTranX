@@ -1,3 +1,4 @@
+from fractions import Fraction
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 import pytest
@@ -5,6 +6,15 @@ import pytest
 from app.services.video.summary_service import VideoSummaryService
 from app.services.video.summary_service.service import TASK_TYPE_VIDEO_SUMMARY
 from app.handler.exceptions import FileNotFoundError_
+from app.adapters.binary.ffmpeg import MediaInfo
+
+
+def _media_info(duration: float = 120.0, fps: float = 30.0) -> MediaInfo:
+    return MediaInfo(
+        duration=duration, width=1920, height=1080, fps=fps,
+        fps_fraction=Fraction(30, 1), video_codec="h264",
+        audio_codec="aac", bitrate=1000, file_size=1,
+    )
 
 
 def test_service_registers_handler():
@@ -58,6 +68,7 @@ async def test_submit_summary_validates_file_exists():
 
 def _make_svc_with_mocks(tmp_path):
     ffmpeg = MagicMock()
+    ffmpeg.get_media_info_sync.return_value = _media_info()
 
     file_service = MagicMock()
     file_info = MagicMock(
@@ -143,5 +154,89 @@ def test_execute_produces_zip_with_md_and_frames(tmp_path):
     assert result["bullet_count"] == 2
     assert result["turning_point_count"] == 0
     assert progress_events[-1] == (1.0, "task.progress.summary_complete")
+    zips = list(file_service.output_dir.glob("*_summary_*.zip"))
+    assert len(zips) == 1
+
+
+# ── fix/video-summary-frame-ts-clamp: per-item resilience ──────────────
+def _run_execute(svc, detector_cls):
+    fake_result = MagicMock(
+        segments=[
+            MagicMock(start=0.0, end=5.0, text="這是第一段測試"),
+            MagicMock(start=5.0, end=10.0, text="這是第二段內容"),
+        ],
+        language="zh",
+    )
+    events: list[tuple[float, str]] = []
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync", return_value=fake_result), \
+         patch("app.services.video.summary_service.service.SceneDetector", detector_cls):
+        return svc._execute(
+            params={
+                "file_id": "f1",
+                "llm_model_family": "qwen3.5",
+                "llm_model_size": "9b",
+                "language": "zh-TW",
+                "vlm_model_family": None,
+                "vlm_model_size": None,
+                "summary_mode": "bullets",
+            },
+            progress_callback=lambda p, m: events.append((p, m)),
+        ), events
+
+
+def test_execute_tolerates_failing_frame(tmp_path):
+    svc, file_service = _make_svc_with_mocks(tmp_path)
+
+    class FlakyDetector:
+        calls = 0
+
+        def __init__(self, *a, **kw):
+            pass
+
+        def detect_in_window(self, *a, **kw):
+            return []
+
+        def extract_frame(self, input_path, output_path, timestamp):
+            FlakyDetector.calls += 1
+            if FlakyDetector.calls == 2:  # 2nd bullet's frame fails
+                raise RuntimeError("Frame extraction failed: simulated")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"fake-jpg")
+
+    result, events = _run_execute(svc, FlakyDetector)
+
+    # Task still completes despite one frame failing.
+    assert "output_file_id" in result
+    assert result["bullet_count"] == 2  # from merged.bullet_items, not frames
+    assert events[-1] == (1.0, "task.progress.summary_complete")
+    zips = list(file_service.output_dir.glob("*_summary_*.zip"))
+    assert len(zips) == 1
+    # Only the first bullet's frame made it into the zip (work_dir is
+    # rmtree'd in finally, so inspect the archive, not the staging dir).
+    import zipfile
+    with zipfile.ZipFile(zips[0]) as zf:
+        jpgs = [n for n in zf.namelist() if n.endswith(".jpg")]
+    assert len(jpgs) == 1
+
+
+def test_execute_all_frames_fail_still_produces_zip(tmp_path):
+    svc, file_service = _make_svc_with_mocks(tmp_path)
+
+    class DeadDetector:
+        def __init__(self, *a, **kw):
+            pass
+
+        def detect_in_window(self, *a, **kw):
+            return []
+
+        def extract_frame(self, input_path, output_path, timestamp):
+            raise RuntimeError("Frame extraction failed: simulated total failure")
+
+    result, events = _run_execute(svc, DeadDetector)
+
+    # No raise even when every frame fails; image-less report still produced.
+    assert "output_file_id" in result
+    assert result["bullet_count"] == 2
+    assert events[-1] == (1.0, "task.progress.summary_complete")
     zips = list(file_service.output_dir.glob("*_summary_*.zip"))
     assert len(zips) == 1

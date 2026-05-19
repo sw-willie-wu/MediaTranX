@@ -280,6 +280,19 @@ class VideoSummaryService:
 
         merged = merge_chunk_outputs(chunk_results)
 
+        # Probe duration/fps once to clamp LLM-drifted frame timestamps.
+        # Best-effort: the per-item try/except below is the actual guarantee
+        # (an out-of-range -ss seek decodes 0 frames and ffmpeg hard-fails).
+        try:
+            _mi = self._ffmpeg.get_media_info_sync(video_path)
+            video_duration = _mi.duration if _mi.duration and _mi.duration > 0 else None
+            video_fps = _mi.fps if _mi.fps and _mi.fps > 0 else None
+        except Exception as e:
+            logger.warning(
+                f"summary: media_info probe failed ({e}); frame ts clamp disabled"
+            )
+            video_duration, video_fps = None, None
+
         # Step 3: set up output staging
         output_id = str(uuid4())
         stem = Path(file_info.original_filename).stem
@@ -300,7 +313,13 @@ class VideoSummaryService:
 
             # Step 4: bullet frames (60% ~ 80%)
             # Iterate over merged.bullet_items (each carries time_range + line_index for image insertion).
+            # Per-item resilience: a single frame-extraction failure (e.g. an
+            # LLM-drifted timestamp ffmpeg can't decode) must NOT abort the
+            # whole job — the summary text is already generated. Skip the inline
+            # image for that item and continue. progress_callback stays OUTSIDE
+            # the try so cooperative TaskCancelledError still propagates.
             bullet_frames: dict[int, str] = {}
+            bullet_fail = 0
             md_lines = merged.bullets_markdown.splitlines()
             for i, item in enumerate(merged.bullet_items):
                 pct = 0.60 + 0.20 * (i / max(1, len(merged.bullet_items)))
@@ -308,48 +327,75 @@ class VideoSummaryService:
                     pct,
                     f"task.progress.summary_bullet_frame|{i + 1}|{len(merged.bullet_items)}",
                 )
-                t_start, t_end = item["time_range"]
-                # Use the bullet's own markdown line as VLM context (label + description).
-                line_i = item["line_index"]
-                context_text = md_lines[line_i] if 0 <= line_i < len(md_lines) else ""
-                ts = pick_frame_timestamp(
-                    detector=detector,
-                    vlm_callback=vlm_cb,
-                    video_path=video_path,
-                    window_start=t_start,
-                    window_end=t_end,
-                    context_text=context_text,
-                    temp_dir=work_dir / f"candidates_b{i}",
-                )
-                out = frames_dir / f"bullet_{i:03d}.jpg"
-                detector.extract_frame(
-                    input_path=video_path, output_path=out, timestamp=ts
-                )
-                bullet_frames[i] = f"frames/bullet_{i:03d}.jpg"
+                try:
+                    t_start, t_end = item["time_range"]
+                    # Use the bullet's own markdown line as VLM context (label + description).
+                    line_i = item["line_index"]
+                    context_text = md_lines[line_i] if 0 <= line_i < len(md_lines) else ""
+                    ts = pick_frame_timestamp(
+                        detector=detector,
+                        vlm_callback=vlm_cb,
+                        video_path=video_path,
+                        window_start=t_start,
+                        window_end=t_end,
+                        context_text=context_text,
+                        temp_dir=work_dir / f"candidates_b{i}",
+                        duration=video_duration,
+                        fps=video_fps,
+                    )
+                    out = frames_dir / f"bullet_{i:03d}.jpg"
+                    detector.extract_frame(
+                        input_path=video_path, output_path=out, timestamp=ts
+                    )
+                    bullet_frames[i] = f"frames/bullet_{i:03d}.jpg"
+                except Exception as e:
+                    bullet_fail += 1
+                    logger.warning(
+                        f"summary: bullet {i} frame failed ({e}); skipping image"
+                    )
+                    continue
 
             # Step 5: turning-point frames (80% ~ 90%)
             tp_frames: dict[int, str] = {}
+            tp_fail = 0
             for i, tp in enumerate(merged.turning_points):
                 pct = 0.80 + 0.10 * (i / max(1, len(merged.turning_points)))
                 progress_callback(
                     pct,
                     f"task.progress.summary_tp_frame|{i + 1}|{len(merged.turning_points)}",
                 )
-                t = tp["time"]
-                ts = pick_frame_timestamp(
-                    detector=detector,
-                    vlm_callback=vlm_cb,
-                    video_path=video_path,
-                    window_start=max(0.0, t - 5.0),
-                    window_end=t + 5.0,
-                    context_text=tp["text"],
-                    temp_dir=work_dir / f"candidates_t{i}",
+                try:
+                    t = tp["time"]
+                    ts = pick_frame_timestamp(
+                        detector=detector,
+                        vlm_callback=vlm_cb,
+                        video_path=video_path,
+                        window_start=max(0.0, t - 5.0),
+                        window_end=t + 5.0,
+                        context_text=tp["text"],
+                        temp_dir=work_dir / f"candidates_t{i}",
+                        duration=video_duration,
+                        fps=video_fps,
+                    )
+                    out = frames_dir / f"tp_{i:03d}.jpg"
+                    detector.extract_frame(
+                        input_path=video_path, output_path=out, timestamp=ts
+                    )
+                    tp_frames[i] = f"frames/tp_{i:03d}.jpg"
+                except Exception as e:
+                    tp_fail += 1
+                    logger.warning(
+                        f"summary: turning-point {i} frame failed ({e}); skipping image"
+                    )
+                    continue
+
+            if bullet_fail or tp_fail:
+                logger.warning(
+                    f"summary: frame extraction failed "
+                    f"bullets={bullet_fail}/{len(merged.bullet_items)} "
+                    f"tp={tp_fail}/{len(merged.turning_points)} "
+                    f"(report still produced without those inline images)"
                 )
-                out = frames_dir / f"tp_{i:03d}.jpg"
-                detector.extract_frame(
-                    input_path=video_path, output_path=out, timestamp=ts
-                )
-                tp_frames[i] = f"frames/tp_{i:03d}.jpg"
 
             # Step 6: build markdown + zip (90% ~ 95%)
             progress_callback(0.92, "task.progress.summary_packaging")
