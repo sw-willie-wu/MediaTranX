@@ -7,7 +7,7 @@ from app.services.video.summary_service.scene_detect import SceneDetector
 
 
 def test_detect_in_window_returns_scene_timestamps_within_range():
-    detector = SceneDetector()
+    detector = SceneDetector(ffmpeg=MagicMock())
 
     fake_scenes = [
         (MagicMock(get_seconds=lambda: 12.0), MagicMock(get_seconds=lambda: 30.0)),
@@ -25,19 +25,17 @@ def test_detect_in_window_returns_scene_timestamps_within_range():
 
 
 def test_detect_in_window_returns_empty_on_error():
-    detector = SceneDetector()
+    detector = SceneDetector(ffmpeg=MagicMock())
     with patch("scenedetect.detect", side_effect=RuntimeError("bad")):
         result = detector.detect_in_window(Path("dummy.mp4"), 0.0, 10.0)
     assert result == []
 
 
 def test_extract_frame_invokes_ffmpeg(tmp_path):
-    detector = SceneDetector()
-    out = tmp_path / "frame.jpg"
-
     mock_ffmpeg = MagicMock()
     mock_ffmpeg.extract_frame_sync = MagicMock()
-    detector._ffmpeg = mock_ffmpeg  # inject
+    detector = SceneDetector(ffmpeg=mock_ffmpeg)
+    out = tmp_path / "frame.jpg"
 
     detector.extract_frame(input_path=Path("dummy.mp4"), output_path=out, timestamp=42.5)
 

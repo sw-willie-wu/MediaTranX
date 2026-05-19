@@ -17,8 +17,8 @@ class SceneDetector:
     BACKEND_DEVELOP_SPEC §3.2).
     """
 
-    def __init__(self, ffmpeg: FFmpegWrapper | None = None):
-        self._ffmpeg = ffmpeg or FFmpegWrapper()
+    def __init__(self, ffmpeg: FFmpegWrapper):
+        self._ffmpeg = ffmpeg
 
     def detect_in_window(
         self,
