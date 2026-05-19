@@ -345,6 +345,22 @@ def init_container() -> AppContainer:
     mm.register_dispatcher("upscale", lambda family: c.upscalers()[family])
     mm.register_dispatcher("face_restore", lambda family: c.face_restorers()[family])
 
+    # Eagerly attach _model_manager to ALL wrappers (dispatcher + provider).
+    # ModelManager only attaches _model_manager when its dispatcher/provider
+    # actually fires inside _ensure_runtime (model_manager.py:181/191), but
+    # services call wrapper.enhance()/transcribe()/etc. directly — which
+    # then calls self.acquire() → checks _model_manager → None →
+    # RuntimeError("not registered"). Services bypass mm.acquire entirely,
+    # so we need to attach upfront. LlmWrapper is already attached via
+    # register_runtime above (model_manager.py:81).
+    for wrapper in (
+        list(c.upscalers().values())
+        + list(c.face_restorers().values())
+        + [c.whisper_wrapper(), c.demucs_wrapper(), c.alignment_engine(),
+           c.basic_pitch_wrapper(), c.mobilesam_wrapper(), c.rife_wrapper()]
+    ):
+        wrapper._model_manager = mm
+
     c.wire(packages=["app.api.routes"])
     _container_instance = c
     return _container_instance
