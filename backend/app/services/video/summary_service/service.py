@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
+from app.handler.exceptions import TaskCancelledError
 from app.services.files.file_service import FileService
 from app.adapters.ai.wrapper.whisper import WhisperWrapper
 from app.adapters.ai.wrapper.demucs import DemucsWrapper
@@ -369,6 +370,8 @@ class VideoSummaryService:
                         input_path=video_path, output_path=out, timestamp=ts
                     )
                     bullet_frames[orig_i] = f"frames/bullet_{orig_i:03d}.jpg"
+                except TaskCancelledError:
+                    raise
                 except Exception as e:
                     bullet_fail += 1
                     logger.warning(
@@ -406,6 +409,8 @@ class VideoSummaryService:
                         input_path=video_path, output_path=out, timestamp=ts
                     )
                     tp_frames[orig_i] = f"frames/tp_{orig_i:03d}.jpg"
+                except TaskCancelledError:
+                    raise
                 except Exception as e:
                     tp_fail += 1
                     logger.warning(

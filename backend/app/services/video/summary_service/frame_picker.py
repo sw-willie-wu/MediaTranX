@@ -12,6 +12,8 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 
+from app.handler.exceptions import TaskCancelledError
+
 logger = logging.getLogger(__name__)
 
 # vlm_callback signature:
@@ -93,6 +95,8 @@ def pick_frame_timestamp(
         idx = vlm_callback(context_text, frame_paths)
         idx = max(0, min(idx, len(candidates) - 1))
         return _clamp_ts(candidates[idx], duration, fps)
+    except TaskCancelledError:
+        raise
     except Exception as e:
         logger.warning(f"VLM pick failed: {e}; fallback to midpoint-nearest")
         return _clamp_ts(min(candidates, key=lambda t: abs(t - mid)), duration, fps)
