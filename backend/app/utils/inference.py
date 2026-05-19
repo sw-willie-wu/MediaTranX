@@ -4,10 +4,20 @@ Inference parameter helper.
 Provides unified access to per-model, per-task inference config.
 All services should use this instead of hardcoding temperature/max_tokens.
 """
+import contextvars
 import logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Shared single-poller coordination: set True (on the entering/call thread)
+# by whichever in-call watcher owns poll+kill for the current blocking call
+# (fake_progress when it has a cancellable, or cancel_guard). A nested guard
+# that sees this True is a pure pass-through → exactly one watcher per call.
+_in_call_cancel_owner: contextvars.ContextVar = contextvars.ContextVar(
+    "in_call_cancel_owner", default=False
+)
+_CANCEL_GUARD_TICK = 1.0  # seconds; ≥1.0 (no synchronous work on the call thread)
 
 
 def calc_max_tokens(config: dict, n_ctx: int, input_len: int) -> int:
@@ -150,11 +160,77 @@ def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
 
         t = threading.Thread(target=_run, daemon=True)
         t.start()
+        # When this fake_progress owns a cancellable it is the single
+        # poll+kill owner for the wrapped blocking call — mark it so a nested
+        # cancel_guard (e.g. ChatSession self-guard) passes through.
+        _own_token = (
+            _in_call_cancel_owner.set(True) if cancellable is not None else None
+        )
         try:
             yield
         finally:
             stop.set()
+            if _own_token is not None:
+                _in_call_cancel_owner.reset(_own_token)
             # Re-raise cancel error caught in background thread
+            if cancelled_error[0] is not None:
+                raise cancelled_error[0]
+
+    return _ctx()
+
+
+def cancel_guard(on_progress, *, cancellable, progress: float, message: str):
+    """Pure cancel-watch (constant heartbeat, no progress animation) for
+    blocking calls that have NO enclosing fake_progress owner — e.g. the
+    one-shot summary chunk / VLM frame-select path.
+
+    A daemon watcher ticks every _CANCEL_GUARD_TICK calling
+    on_progress(progress, message) — a constant heartbeat at the caller's
+    stable phase pct (never 0.0). If on_progress raises (TaskCancelledError),
+    cancellable.kill_process() is invoked best-effort and the error re-raised.
+
+    Pass-through (no watcher, never raises by itself) when on_progress is
+    None, cancellable is None, OR an enclosing owner already set the shared
+    ContextVar (fake_progress-with-cancellable, or an outer cancel_guard) —
+    guaranteeing exactly one poll+kill watcher per in-flight call. The
+    ContextVar is set/reset on the entering (call) thread only; the watcher
+    thread never touches it (threading.Thread starts with a fresh context —
+    do NOT copy_context for the watcher).
+    """
+    import threading
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _ctx():
+        if (on_progress is None or cancellable is None
+                or _in_call_cancel_owner.get()):
+            yield
+            return
+        token = _in_call_cancel_owner.set(True)
+        stop = threading.Event()
+        cancelled_error = [None]
+
+        def _run():
+            while not stop.is_set():
+                try:
+                    on_progress(progress, message)
+                except Exception as e:
+                    cancelled_error[0] = e
+                    try:
+                        cancellable.kill_process()
+                    except Exception:
+                        pass
+                    stop.set()
+                    return
+                stop.wait(_CANCEL_GUARD_TICK)
+
+        t = threading.Thread(target=_run, daemon=True, name="cancel-guard")
+        t.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            _in_call_cancel_owner.reset(token)
             if cancelled_error[0] is not None:
                 raise cancelled_error[0]
 
