@@ -51,6 +51,7 @@ def pick_frame_timestamp(
     duration: Optional[float] = None,
     fps: Optional[float] = None,
     scenes: Optional[list[float]] = None,
+    candidate_max_edge: Optional[int] = None,
 ) -> float:
     """Return a single representative timestamp for [window_start, window_end].
 
@@ -88,7 +89,10 @@ def pick_frame_timestamp(
     for i, t in enumerate(candidates):
         ct = _clamp_ts(t, duration, fps)
         p = temp_dir / f"candidate_{i:03d}.jpg"
-        detector.extract_frame(input_path=video_path, output_path=p, timestamp=ct)
+        _ekw = dict(input_path=video_path, output_path=p, timestamp=ct)
+        if candidate_max_edge is not None:
+            _ekw["max_edge"] = candidate_max_edge
+        detector.extract_frame(**_ekw)
         frame_paths.append(p)
 
     try:
