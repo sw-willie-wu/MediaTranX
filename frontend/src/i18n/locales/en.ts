@@ -191,6 +191,7 @@ export default {
       recognition_complete: 'Speech recognition complete',
       align_complete: 'Alignment complete',
       prepare_translate_audio: 'Preparing translation...',
+      generating: 'Generating...',
       generating_summary: 'Generating summary outline...',
       summary_complete: 'Summary complete',
       writing_file: 'Writing file...',

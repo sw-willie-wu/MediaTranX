@@ -191,6 +191,7 @@ export default {
       recognition_complete: '語音辨識完成',
       align_complete: '對齊完成',
       prepare_translate_audio: '準備翻譯...',
+      generating: '產生中...',
       generating_summary: '正在生成摘要大綱...',
       summary_complete: '摘要完成',
       writing_file: '正在寫入檔案...',
