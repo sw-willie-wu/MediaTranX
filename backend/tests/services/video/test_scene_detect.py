@@ -44,3 +44,34 @@ def test_extract_frame_invokes_ffmpeg(tmp_path):
         output_path=out,
         timestamp=42.5,
     )
+
+
+# ── perf/video-summary-bullet-cap-scene-once: detect_all ───────────────
+def test_detect_all_one_pass_no_window_kwargs():
+    detector = SceneDetector(ffmpeg=MagicMock())
+    fake = [
+        (MagicMock(get_seconds=lambda: 5.0), MagicMock(get_seconds=lambda: 9.0)),
+        (MagicMock(get_seconds=lambda: 9.0), MagicMock(get_seconds=lambda: 20.0)),
+    ]
+    with patch("scenedetect.detect", return_value=fake) as m:
+        result = detector.detect_all(Path("dummy.mp4"))
+    assert m.called
+    _, kwargs = m.call_args
+    assert "start_time" not in kwargs and "end_time" not in kwargs
+    assert result == [5.0, 9.0]
+
+
+def test_detect_all_is_cached():
+    detector = SceneDetector(ffmpeg=MagicMock())
+    fake = [(MagicMock(get_seconds=lambda: 1.0), MagicMock(get_seconds=lambda: 2.0))]
+    with patch("scenedetect.detect", return_value=fake) as m:
+        a = detector.detect_all(Path("dummy.mp4"))
+        b = detector.detect_all(Path("dummy.mp4"))
+    assert a == b == [1.0]
+    assert m.call_count == 1  # second call served from cache
+
+
+def test_detect_all_returns_empty_on_error():
+    detector = SceneDetector(ffmpeg=MagicMock())
+    with patch("scenedetect.detect", side_effect=RuntimeError("bad")):
+        assert detector.detect_all(Path("dummy.mp4")) == []

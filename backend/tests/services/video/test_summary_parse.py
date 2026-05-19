@@ -269,3 +269,55 @@ def test_build_markdown_handles_missing_bullet_frames_gracefully():
     md = build_markdown(parsed, bullet_frames={}, tp_frames={}, title="T")
     assert "**x：**" in md
     assert "![" not in md
+
+
+# ── perf/video-summary-bullet-cap-scene-once ───────────────────────────
+import pytest as _pytest
+from app.services.video.summary_service.parse import (
+    compute_bullet_target,
+    even_indices,
+)
+
+
+@_pytest.mark.parametrize("content_sec,expected", [
+    (180.0, 8),     # 3min → round(4.5)→ clamp floor 8
+    (600.0, 15),    # 10min → 15
+    (2400.0, 40),   # 40min → 60 → clamp ceil 40
+    (7200.0, 40),   # 120min → 180 → 40
+    (0.0, 8),       # degenerate → floor 8
+])
+def test_compute_bullet_target(content_sec, expected):
+    assert compute_bullet_target(content_sec) == expected
+
+
+def test_even_indices_basic():
+    assert even_indices(50, 8) == [0, 7, 14, 21, 28, 35, 42, 49]
+
+
+@_pytest.mark.parametrize("n,k", [(2, 8), (8, 8), (5, 10)])
+def test_even_indices_k_ge_n_is_range(n, k):
+    assert even_indices(n, k) == list(range(n))
+
+
+def test_even_indices_edge_cases():
+    assert even_indices(0, 8) == []
+    assert even_indices(10, 1) == [0]      # defensive guard (unreachable in prod)
+    assert even_indices(10, 0) == [0]
+
+
+@_pytest.mark.parametrize("n,k", [(50, 8), (109, 40), (41, 40), (100, 7), (9, 8)])
+def test_even_indices_unique_sorted_in_range(n, k):
+    idx = even_indices(n, k)
+    assert idx == sorted(idx)
+    assert len(idx) == len(set(idx))           # unique
+    assert len(idx) == k
+    assert idx[0] == 0 and idx[-1] == n - 1    # spans both ends
+    assert all(0 <= i < n for i in idx)
+
+
+def test_bullets_prompt_rule3_relaxed():
+    entries = [SubtitleEntry(start=0.0, end=5.0, text="hello")]
+    p = _prompt_for(entries, summary_mode="bullets")
+    assert "60 seconds" not in p              # hard split rule removed
+    assert "[mm:ss-mm:ss]" in p               # timestamp contract kept
+    assert "narrative" not in p and "turning_points" not in p

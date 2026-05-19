@@ -48,15 +48,25 @@ def pick_frame_timestamp(
     temp_dir: Optional[Path] = None,
     duration: Optional[float] = None,
     fps: Optional[float] = None,
+    scenes: Optional[list[float]] = None,
 ) -> float:
     """Return a single representative timestamp for [window_start, window_end].
 
     All return paths are clamped to the video's decodable range via
     ``_clamp_ts`` (``duration``/``fps`` default to no-clamp sentinels).
+
+    ``scenes``: a precomputed whole-video scene list. When provided, candidates
+    are filtered in-memory (end-exclusive, matching scenedetect ``end_time``
+    semantics) instead of running a per-window decode — an empty filtered
+    result takes the same midpoint path as no-candidate. ``None`` → legacy
+    per-window ``detect_in_window`` (unchanged).
     """
     mid = (window_start + window_end) / 2
 
-    candidates = detector.detect_in_window(video_path, window_start, window_end)
+    if scenes is not None:
+        candidates = [t for t in scenes if window_start <= t < window_end]
+    else:
+        candidates = detector.detect_in_window(video_path, window_start, window_end)
 
     if not candidates:
         logger.debug(
