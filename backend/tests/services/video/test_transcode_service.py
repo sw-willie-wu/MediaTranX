@@ -169,36 +169,40 @@ class TestQueryMethods:
         assert result["duration"] == 10.0
         assert result["video_codec"] == "h264"
 
-    def test_get_ffmpeg_status_patches_class_symbol(self, tmp_path):
-        """DI violation: get_ffmpeg_status() does FFmpegWrapper() directly + classmethods.
-        Patching self._ffmpeg won't intercept; must patch the class symbol in the
-        service module namespace. Follow-up: refactor get_ffmpeg_status to use DI."""
+    def test_get_ffmpeg_status_uses_injected_wrapper(self, tmp_path):
+        """After DI fix: get_ffmpeg_status() routes everything through self._ffmpeg
+        (no inline FFmpegWrapper() instantiation, no class-symbol classmethod call)."""
         injected_ffmpeg = MagicMock()
+        injected_ffmpeg.is_installed.return_value = True
+        injected_ffmpeg.get_bin_dir.return_value = Path("/fake/bin")
+        injected_ffmpeg.ffmpeg_path = "/fake/bin/ffmpeg.exe"
+        injected_ffmpeg.ffprobe_path = "/fake/bin/ffprobe.exe"
+
         fs = make_file_service_mock(tmp_path)
         svc = VideoTranscodeService(ffmpeg=injected_ffmpeg, file_service=fs, task_manager=MagicMock())
 
+        # Guard: if any code path reaches for the class symbol, fail loudly.
         with patch("app.services.video.transcode_service.FFmpegWrapper") as MockFF:
-            MockFF.is_installed.return_value = True
-            MockFF.get_bin_dir.return_value = Path("/fake/bin")
-            instance = MockFF.return_value
-            instance.ffmpeg_path = "/fake/bin/ffmpeg.exe"
-            instance.ffprobe_path = "/fake/bin/ffprobe.exe"
             status = svc.get_ffmpeg_status()
+            MockFF.assert_not_called()
+            MockFF.is_installed.assert_not_called()
+            MockFF.get_bin_dir.assert_not_called()
 
         assert status["installed"] is True
         assert status["ffmpeg_path"] == "/fake/bin/ffmpeg.exe"
-        assert "bin_dir" in status
-        # Confirm injected wrapper was NOT touched (proves the DI violation)
-        injected_ffmpeg.is_installed.assert_not_called()
+        assert status["ffprobe_path"] == "/fake/bin/ffprobe.exe"
+        assert status["bin_dir"] == str(Path("/fake/bin"))
 
     def test_get_ffmpeg_status_when_not_installed(self, tmp_path):
+        injected_ffmpeg = MagicMock()
+        injected_ffmpeg.is_installed.return_value = False
+        injected_ffmpeg.get_bin_dir.return_value = Path("/fake/bin")
+
         fs = make_file_service_mock(tmp_path)
-        svc = VideoTranscodeService(ffmpeg=MagicMock(), file_service=fs, task_manager=MagicMock())
+        svc = VideoTranscodeService(ffmpeg=injected_ffmpeg, file_service=fs, task_manager=MagicMock())
 
-        with patch("app.services.video.transcode_service.FFmpegWrapper") as MockFF:
-            MockFF.is_installed.return_value = False
-            MockFF.get_bin_dir.return_value = Path("/fake/bin")
-            status = svc.get_ffmpeg_status()
-
+        status = svc.get_ffmpeg_status()
         assert status["installed"] is False
         assert status["ffmpeg_path"] is None
+        assert status["ffprobe_path"] is None
+        assert status["bin_dir"] == str(Path("/fake/bin"))
