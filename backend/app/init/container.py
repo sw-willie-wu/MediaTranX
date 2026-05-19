@@ -182,6 +182,7 @@ class AppContainer(containers.DeclarativeContainer):
         model_manager=model_manager,
         demucs=demucs_wrapper,
         basic_pitch=basic_pitch_wrapper,
+        ffmpeg=ffmpeg,
     )
     audio_lyrics = providers.Singleton(
         _lazy("app.services.audio.lyrics_service", "AudioLyricsService"),
@@ -197,6 +198,7 @@ class AppContainer(containers.DeclarativeContainer):
     audio_midi = providers.Singleton(
         _lazy("app.services.audio.audio_midi_service", "AudioMidiService"),
         file_service=file_service, task_manager=task_manager,
+        ffmpeg=ffmpeg,
     )
 
     # ── Image Services (lazy) ──

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import soundfile as sf
 
+from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.adapters.ai.wrapper.demucs import DemucsWrapper
 from app.adapters.ai.wrapper.basic_pitch import BasicPitchWrapper
 from app.adapters.ai.model_manager import ModelManager
@@ -25,12 +26,14 @@ class AudioSeparateService:
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
                  model_manager: ModelManager,
-                 demucs: DemucsWrapper, basic_pitch: BasicPitchWrapper):
+                 demucs: DemucsWrapper, basic_pitch: BasicPitchWrapper,
+                 ffmpeg: FFmpegWrapper):
         self._demucs = demucs
         self._basic_pitch = basic_pitch
         self._file_service = file_service
         self._task_manager = task_manager
         self._model_manager = model_manager
+        self._ffmpeg = ffmpeg
         self._task_manager.register_handler(
             TASK_TYPE_AUDIO_SEPARATE, self._handle_task,
             output_policy="results",
@@ -109,9 +112,7 @@ class AudioSeparateService:
                     tmp_path = tmp.name
                 try:
                     sf.write(tmp_path, audio_data, sample_rate)
-                    from app.adapters.binary.ffmpeg import FFmpegWrapper
-                    ffmpeg = FFmpegWrapper()
-                    ffmpeg.audio_convert_sync(
+                    self._ffmpeg.audio_convert_sync(
                         input_path=tmp_path,
                         output_path=str(file_path),
                         audio_codec="libmp3lame",

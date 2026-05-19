@@ -39,21 +39,18 @@ class VideoTranscodeService:
         logger.info("VideoTranscodeService initialized")
 
     def get_ffmpeg_status(self) -> dict:
-        """Query FFmpeg installation status."""
-        is_installed = FFmpegWrapper.is_installed()
-        bin_dir = str(FFmpegWrapper.get_bin_dir())
+        """Query FFmpeg installation status via the injected wrapper."""
+        ffmpeg = self._ffmpeg
+        is_installed = ffmpeg.is_installed()
+        bin_dir = str(ffmpeg.get_bin_dir())
 
         if is_installed:
-            try:
-                ffmpeg = FFmpegWrapper()
-                return {
-                    "installed": True,
-                    "ffmpeg_path": ffmpeg.ffmpeg_path,
-                    "ffprobe_path": ffmpeg.ffprobe_path,
-                    "bin_dir": bin_dir,
-                }
-            except Exception:
-                pass
+            return {
+                "installed": True,
+                "ffmpeg_path": ffmpeg.ffmpeg_path,
+                "ffprobe_path": ffmpeg.ffprobe_path,
+                "bin_dir": bin_dir,
+            }
 
         return {"installed": False, "ffmpeg_path": None, "ffprobe_path": None, "bin_dir": bin_dir}
 

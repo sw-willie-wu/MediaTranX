@@ -32,11 +32,12 @@ def _make_svc(tmp_path):
     fake_tensor.numpy.return_value = np.zeros((2, 4000), dtype=np.float32)
     demucs.separate.return_value = ({"vocals": fake_tensor, "drums": fake_tensor}, 44100)
     basic_pitch = MagicMock()
+    ffmpeg = MagicMock()
     svc = AudioSeparateService(
         file_service=fs, task_manager=tm, model_manager=mm,
-        demucs=demucs, basic_pitch=basic_pitch,
+        demucs=demucs, basic_pitch=basic_pitch, ffmpeg=ffmpeg,
     )
-    return svc, fs, tm, mm, demucs, basic_pitch
+    return svc, fs, tm, mm, demucs, basic_pitch, ffmpeg
 
 
 def test_init_registers_handler(tmp_path):
@@ -48,7 +49,7 @@ def test_init_registers_handler(tmp_path):
 
 
 def test_get_model_status_delegates_to_demucs(tmp_path):
-    svc, fs, tm, mm, demucs, basic_pitch = _make_svc(tmp_path)
+    svc, fs, tm, mm, demucs, basic_pitch, ffmpeg = _make_svc(tmp_path)
     demucs.get_model_status.return_value = {"available": True}
     result = svc.get_model_status("htdemucs_6s")
     assert result == {"available": True}
@@ -71,7 +72,7 @@ async def test_submit_separate_passes_params(tmp_path):
 
 
 def test_execute_wav_format_writes_stem_files(tmp_path):
-    svc, fs, tm, mm, demucs, basic_pitch = _make_svc(tmp_path)
+    svc, fs, tm, mm, demucs, basic_pitch, ffmpeg = _make_svc(tmp_path)
     result = svc._execute({
         "file_id": "fid", "model_name": "htdemucs_6s", "stems": None,
         "output_format": "wav", "generate_midi": False,
@@ -84,30 +85,23 @@ def test_execute_wav_format_writes_stem_files(tmp_path):
 
 
 def test_execute_mp3_format_calls_audio_convert_sync(tmp_path):
-    """The mp3 branch does `from app.adapters.binary.ffmpeg import FFmpegWrapper`
-    lazily inside the function body, then `FFmpegWrapper().audio_convert_sync(...)`.
-    Patch the source module so the lazy import picks up the mock.
-
-    After 2986c37 prod fix, the call must be audio_convert_sync with
-    codec=libmp3lame + bitrate=192k (not the old broken `.convert(...)`)."""
-    svc, fs, tm, mm, demucs, basic_pitch = _make_svc(tmp_path)
-    with patch("app.adapters.binary.ffmpeg.FFmpegWrapper") as MockFF:
-        MockFF.return_value.audio_convert_sync = MagicMock()
-        svc._execute({
-            "file_id": "fid", "model_name": "htdemucs_6s", "stems": None,
-            "output_format": "mp3", "generate_midi": False,
-        }, lambda p, m: None)
-    # FFmpegWrapper instantiated once per stem (2 stems)
-    assert MockFF.call_count == 2
-    assert MockFF.return_value.audio_convert_sync.call_count == 2
-    call = MockFF.return_value.audio_convert_sync.call_args
+    """After DI fix: mp3 branch calls self._ffmpeg.audio_convert_sync (no inline
+    FFmpegWrapper() instantiation). Codec=libmp3lame + bitrate=192k (2986c37)."""
+    svc, fs, tm, mm, demucs, basic_pitch, ffmpeg = _make_svc(tmp_path)
+    svc._execute({
+        "file_id": "fid", "model_name": "htdemucs_6s", "stems": None,
+        "output_format": "mp3", "generate_midi": False,
+    }, lambda p, m: None)
+    # audio_convert_sync called once per stem (2 stems: vocals, drums)
+    assert ffmpeg.audio_convert_sync.call_count == 2
+    call = ffmpeg.audio_convert_sync.call_args
     assert call.kwargs["audio_codec"] == "libmp3lame"
     assert call.kwargs["audio_bitrate"] == "192k"
 
 
 def test_execute_midi_mode_calls_basic_pitch_and_merge(tmp_path):
     """When generate_midi=True, non-drum stems go through basic_pitch.audio_to_midi."""
-    svc, fs, tm, mm, demucs, basic_pitch = _make_svc(tmp_path)
+    svc, fs, tm, mm, demucs, basic_pitch, ffmpeg = _make_svc(tmp_path)
     basic_pitch.audio_to_midi.return_value = {"notes": [{"pitch": 60, "start": 0, "duration": 0.5}]}
 
     with patch("app.services.audio.separate_service.midi_compose.transcribe_drums",

@@ -65,3 +65,49 @@ def test_audio_convert_sync_signature_covers_separate_mp3_branch():
         "If FFmpegWrapper.convert is added later, audit separate_service "
         "mp3 branch to ensure it still uses audio_convert_sync (correct API)."
     )
+
+
+# ─── Wave D extensions ───
+
+def test_crop_sync_signature():
+    """VideoCropService passes input_path/output_path/x/y/width/height + on_progress."""
+    params = _get_kwargs(FFmpegWrapper.crop_sync)
+    required = {"input_path", "output_path", "x", "y", "width", "height", "on_progress"}
+    assert required.issubset(params), f"missing: {required - params}"
+
+
+def test_extract_audio_sync_signature():
+    """Video extract_audio + subtitle services pass input_path/output_path/audio_format/
+    audio_bitrate/sample_rate/channels + on_progress."""
+    params = _get_kwargs(FFmpegWrapper.extract_audio_sync)
+    required = {
+        "input_path", "output_path", "audio_format", "audio_bitrate",
+        "sample_rate", "channels", "on_progress",
+    }
+    assert required.issubset(params), f"missing: {required - params}"
+
+
+def test_transcode_sync_signature():
+    """VideoTranscodeService passes input_path/output_path/options/on_progress."""
+    params = _get_kwargs(FFmpegWrapper.transcode_sync)
+    required = {"input_path", "output_path", "options", "on_progress"}
+    assert required.issubset(params), f"missing: {required - params}"
+
+
+def test_get_media_info_sync_signature():
+    """VideoTranscodeService.get_media_info async-wraps this sync version."""
+    assert hasattr(FFmpegWrapper, "get_media_info_sync")
+    params = _get_kwargs(FFmpegWrapper.get_media_info_sync)
+    assert "input_path" in params
+
+
+def test_classmethod_surface_for_get_ffmpeg_status():
+    """transcode_service.get_ffmpeg_status reaches for FFmpegWrapper classmethods."""
+    assert hasattr(FFmpegWrapper, "is_installed")
+    assert hasattr(FFmpegWrapper, "get_bin_dir")
+
+
+def test_ffmpeg_path_attribute_exists_after_init():
+    """enhance_service/interpolate_service read FFmpegWrapper().ffmpeg_path attribute."""
+    ff = FFmpegWrapper()
+    assert hasattr(ff, "ffmpeg_path")
