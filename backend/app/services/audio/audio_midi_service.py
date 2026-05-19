@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
+from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -19,9 +20,11 @@ logger = logging.getLogger(__name__)
 class AudioMidiService:
     """MIDI read/write/export and WAV conversion service."""
 
-    def __init__(self, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, file_service: FileService, task_manager: TaskManager,
+                 ffmpeg: FFmpegWrapper):
         self._file_service = file_service
         self._task_manager = task_manager
+        self._ffmpeg = ffmpeg
         logger.info("AudioMidiService initialized")
 
     def read_midi(self, file_id: str) -> dict:
@@ -69,8 +72,6 @@ class AudioMidiService:
         artefact (tool_id=audio.midi.render). Source MIDI file id is recorded
         for "來自 XX" display in the frontend.
         """
-        from app.adapters.binary.ffmpeg import FFmpegWrapper
-
         # Create an output path in temp/results with suffix + chosen ext
         original_filename = file.filename or f"rendered.{output_format}"
         file_id, output_path = self._file_service.create_output_path(
@@ -87,7 +88,7 @@ class AudioMidiService:
         temp_in.write_bytes(content)
 
         try:
-            ffmpeg = FFmpegWrapper()
+            ffmpeg = self._ffmpeg
             codec_map = {
                 "wav": ("pcm_s16le", None),
                 "mp3": ("libmp3lame", "192k"),

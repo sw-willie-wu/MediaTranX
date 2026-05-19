@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.services.audio.audio_midi_service import AudioMidiService
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
@@ -23,19 +24,17 @@ class _FakeUpload:
 async def test_convert_wav_registers_result_with_sidecar(tmp_path):
     fs = FileService(base_dir=str(tmp_path))
     tm = TaskManager(progress_tracker=ProgressTracker(), file_service=fs)
-    svc = AudioMidiService(file_service=fs, task_manager=tm)
+    ffmpeg = FFmpegWrapper()
+    svc = AudioMidiService(file_service=fs, task_manager=tm, ffmpeg=ffmpeg)
 
     upload = _FakeUpload("song.wav", b"\x00\x00\x00\x00")
 
-    # Patch FFmpeg to simulate a successful conversion (write bytes to the output path)
+    # Patch the injected wrapper's audio_convert directly (no inline instantiation now)
     async def fake_audio_convert(input_path, output_path, audio_codec, audio_bitrate):
         output_path.write_bytes(b"\x00" * 256)
 
-    with patch(
-        "app.adapters.binary.ffmpeg.FFmpegWrapper.audio_convert",
-        new=AsyncMock(side_effect=fake_audio_convert),
-    ):
-        result = await svc.convert_wav(upload, "mp3", source_file_id="midi-42")
+    ffmpeg.audio_convert = AsyncMock(side_effect=fake_audio_convert)
+    result = await svc.convert_wav(upload, "mp3", source_file_id="midi-42")
 
     assert result["status"] == "ok"
     fid = result["output_file_id"]
@@ -59,7 +58,8 @@ def _make_midi_svc(tmp_path):
     fs.output_dir = tmp_path / "out"; fs.output_dir.mkdir()
     fs.upload_dir = tmp_path / "upload"; fs.upload_dir.mkdir()
     tm = MagicMock()
-    svc = AudioMidiService(file_service=fs, task_manager=tm)
+    ffmpeg = MagicMock()
+    svc = AudioMidiService(file_service=fs, task_manager=tm, ffmpeg=ffmpeg)
     return svc, fs, tm
 
 
