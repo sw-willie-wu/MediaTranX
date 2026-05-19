@@ -53,12 +53,12 @@ def test_session_complete_forwards_to_runtime():
     rt.complete.assert_called_once()
 
 
-def test_session_kill_process_kills_llama_server():
+def test_session_kill_process_routes_through_server_stop():
     rt = _fake_llama_runtime()
     svc = ChatService(rt)
     with svc.session(model_family="gemma4", model_size="4b") as session:
         session.kill_process()
-    rt._model._process.kill.assert_called_once()
+    rt._model.stop.assert_called_once_with(timeout=2.0)
 
 
 def test_session_kill_process_safe_when_no_process():

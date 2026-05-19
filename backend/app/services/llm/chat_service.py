@@ -85,19 +85,18 @@ class ChatSession:
         )
 
     def kill_process(self) -> None:
-        """Best-effort cancellation: kill the underlying llama-server subprocess.
+        """Best-effort cancellation: stop the underlying llama-server.
 
-        Used by `fake_progress(cancellable=...)`. No-op if the runtime isn't
-        loaded yet or the process handle is gone.
+        Routes through LlamaServer.stop(timeout=2) (consistent _process/_job
+        state, immediate Windows terminate unblocks the HTTP call). Used by
+        `fake_progress(cancellable=...)`. No-op if the runtime isn't loaded
+        yet; never raises.
         """
         model = getattr(self._runtime, "_model", None)
         if model is None:
             return
-        proc = getattr(model, "_process", None)
-        if proc is None:
-            return
         try:
-            proc.kill()
+            model.stop(timeout=2.0)
         except Exception:
             pass  # best-effort
 
