@@ -359,7 +359,7 @@ Write a **hierarchical Markdown summary** of the transcript. Structure:
 Rules:
 1. Use `##` for major themes (3~6 sections) and `###` for sub-themes when helpful
 2. Every top-level bullet (line starting with `- **label：**`) MUST end with a timestamp range in the form `[mm:ss-mm:ss]` covering when the topic appears in the transcript
-3. **Each bullet's [mm:ss-mm:ss] range MUST NOT exceed 60 seconds** — split longer topics into multiple adjacent bullets, each describing the concrete content of that span (no broad/summarising sentences)
+3. Each top-level bullet should cover one coherent topic (typically 1–5 minutes of the transcript); do NOT micro-split a continuous topic into many short bullets — prefer fewer, substantive bullets over many fragmentary ones
 4. Use bold labels at the start of each bullet (e.g., `**活動背景：**`); nested sub-bullets (indented 4 spaces) are optional and do NOT need timestamps
 5. All timestamps must fall within the transcript range
 6. Output Markdown only — no JSON, no code fences, no extra text

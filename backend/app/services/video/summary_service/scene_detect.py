@@ -19,6 +19,36 @@ class SceneDetector:
 
     def __init__(self, ffmpeg: FFmpegWrapper):
         self._ffmpeg = ffmpeg
+        self._all_cache: dict[str, list[float]] = {}
+
+    def detect_all(self, video_path: Path, threshold: float = 27.0) -> list[float]:
+        """Return ALL scene-change start timestamps for the whole video.
+
+        One full-video pass (no start/end), cached per path so callers can
+        replace ~N per-window decodes with a single decode + in-memory filter.
+        Same lazy-import + ``except → []`` contract as :meth:`detect_in_window`.
+        """
+        key = str(video_path)
+        if key in self._all_cache:
+            return self._all_cache[key]
+        # Lazy import — scenedetect transitively loads cv2 which is heavy.
+        import scenedetect
+        from scenedetect import ContentDetector
+
+        try:
+            scenes = scenedetect.detect(
+                str(video_path), ContentDetector(threshold=threshold)
+            )
+        except Exception as e:
+            logger.warning(
+                f"PySceneDetect detect_all failed on {video_path.name}: {e}"
+            )
+            self._all_cache[key] = []
+            return []
+
+        out = [s[0].get_seconds() for s in scenes]
+        self._all_cache[key] = out
+        return out
 
     def detect_in_window(
         self,

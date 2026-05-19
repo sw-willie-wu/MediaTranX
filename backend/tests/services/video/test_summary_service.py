@@ -118,6 +118,9 @@ def test_execute_produces_zip_with_md_and_frames(tmp_path):
         def detect_in_window(self, *a, **kw):
             return []
 
+        def detect_all(self, *a, **kw):
+            return []
+
         def extract_frame(self, input_path, output_path, timestamp):
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(b"fake-jpg")
@@ -196,6 +199,9 @@ def test_execute_tolerates_failing_frame(tmp_path):
         def detect_in_window(self, *a, **kw):
             return []
 
+        def detect_all(self, *a, **kw):
+            return []
+
         def extract_frame(self, input_path, output_path, timestamp):
             FlakyDetector.calls += 1
             if FlakyDetector.calls == 2:  # 2nd bullet's frame fails
@@ -229,6 +235,9 @@ def test_execute_all_frames_fail_still_produces_zip(tmp_path):
         def detect_in_window(self, *a, **kw):
             return []
 
+        def detect_all(self, *a, **kw):
+            return []
+
         def extract_frame(self, input_path, output_path, timestamp):
             raise RuntimeError("Frame extraction failed: simulated total failure")
 
@@ -240,3 +249,92 @@ def test_execute_all_frames_fail_still_produces_zip(tmp_path):
     assert events[-1] == (1.0, "task.progress.summary_complete")
     zips = list(file_service.output_dir.glob("*_summary_*.zip"))
     assert len(zips) == 1
+
+
+# ── perf/video-summary-bullet-cap-scene-once ───────────────────────────
+def _svc_with_chat(tmp_path, chat_markdown):
+    ffmpeg = MagicMock()
+    ffmpeg.get_media_info_sync.return_value = _media_info()
+    file_service = MagicMock()
+    file_info = MagicMock(file_path=tmp_path / "v.mp4", original_filename="v.mp4")
+    file_service.get_file.return_value = file_info
+    file_service.require_file.return_value = file_info
+    file_service.upload_dir = tmp_path / "u"; file_service.upload_dir.mkdir()
+    file_service.output_dir = tmp_path / "o"; file_service.output_dir.mkdir()
+    file_service.register_output.side_effect = lambda file_id, file_path, original_filename: MagicMock(
+        filename=file_path.name, file_size=file_path.stat().st_size)
+    chat_service = MagicMock()
+    chat_service.chat.return_value = chat_markdown
+    svc = VideoSummaryService(
+        ffmpeg=ffmpeg, file_service=file_service, task_manager=MagicMock(),
+        chat_service=chat_service, model_manager=MagicMock(), whisper=MagicMock(),
+        demucs=MagicMock(), alignment_engine=MagicMock(),
+    )
+    return svc, file_service
+
+
+def _exec(svc, detector_cls, end=10.0):
+    fake = MagicMock(segments=[MagicMock(start=0.0, end=end, text="內容")], language="zh")
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync", return_value=fake), \
+         patch("app.services.video.summary_service.service.SceneDetector", detector_cls):
+        return svc._execute(
+            params={"file_id": "f1", "llm_model_family": "qwen3.5",
+                    "llm_model_size": "9b", "language": "zh-TW",
+                    "vlm_model_family": None, "vlm_model_size": None,
+                    "summary_mode": "bullets"},
+            progress_callback=lambda p, m: None,
+        )
+
+
+def _zip_jpgs(file_service):
+    import zipfile
+    z = list(file_service.output_dir.glob("*_summary_*.zip"))[0]
+    with zipfile.ZipFile(z) as zf:
+        return sorted(n for n in zf.namelist() if n.endswith(".jpg"))
+
+
+def test_bullets_over_K_caps_frames_by_original_index(tmp_path):
+    # 12 bullets, content 10s → K=8 → even_indices(12,8)=[0,2,3,5,6,8,9,11]
+    md = "## 主題\n" + "".join(
+        f"- **重點{i}：** 內容{i} [00:{i:02d}-00:{i+1:02d}]\n" for i in range(12)
+    )
+    svc, fs = _svc_with_chat(tmp_path, md)
+
+    detect_all_calls = []
+
+    class FakeDetector:
+        def __init__(self, *a, **kw): pass
+        def detect_all(self, *a, **kw):
+            detect_all_calls.append(1); return []
+        def detect_in_window(self, *a, **kw): return []
+        def extract_frame(self, input_path, output_path, timestamp):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"j")
+
+    result = _exec(svc, FakeDetector)
+
+    assert result["bullet_count"] == 12          # full text, not capped
+    jpgs = _zip_jpgs(fs)
+    assert len(jpgs) == 8                          # K=8 frames only
+    assert jpgs == [f"frames/bullet_{i:03d}.jpg"
+                    for i in [0, 2, 3, 5, 6, 8, 9, 11]]   # ORIGINAL indices
+    assert len(detect_all_calls) == 1             # scene detect once
+
+
+def test_bullets_under_K_all_framed(tmp_path):
+    md = "## 主題\n" + "".join(
+        f"- **重點{i}：** 內容{i} [00:{i:02d}-00:{i+1:02d}]\n" for i in range(3)
+    )
+    svc, fs = _svc_with_chat(tmp_path, md)
+
+    class FakeDetector:
+        def __init__(self, *a, **kw): pass
+        def detect_all(self, *a, **kw): return []
+        def detect_in_window(self, *a, **kw): return []
+        def extract_frame(self, input_path, output_path, timestamp):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"j")
+
+    result = _exec(svc, FakeDetector)
+    assert result["bullet_count"] == 3
+    assert _zip_jpgs(fs) == [f"frames/bullet_{i:03d}.jpg" for i in range(3)]

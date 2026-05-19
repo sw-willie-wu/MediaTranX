@@ -164,3 +164,55 @@ def test_pick_clamps_candidate_when_past_duration():
     )
     assert result <= 2444.0
     assert result == pytest.approx(2443.95)
+
+
+# ── perf/video-summary-bullet-cap-scene-once: scenes= param ────────────
+def test_pick_with_scenes_filters_end_exclusive_no_detect_call():
+    detector = MagicMock()
+    # scenes provided → detect_in_window must NOT be called
+    result = pick_frame_timestamp(
+        detector=detector,
+        vlm_callback=None,
+        video_path=Path("x.mp4"),
+        window_start=10.0,
+        window_end=30.0,
+        context_text="x",
+        scenes=[5.0, 10.0, 20.0, 30.0, 40.0],  # 30.0 excluded (end-exclusive)
+        duration=600.0,
+        fps=30.0,
+    )
+    detector.detect_in_window.assert_not_called()
+    # candidates = [10.0, 20.0]; no vlm → nearest to mid(20.0) → 20.0
+    assert result == pytest.approx(20.0)
+
+
+def test_pick_with_scenes_empty_filter_falls_back_to_midpoint():
+    detector = MagicMock()
+    result = pick_frame_timestamp(
+        detector=detector,
+        vlm_callback=None,
+        video_path=Path("x.mp4"),
+        window_start=100.0,
+        window_end=110.0,
+        context_text="x",
+        scenes=[5.0, 10.0, 900.0],  # none in [100,110)
+        duration=600.0,
+        fps=30.0,
+    )
+    detector.detect_in_window.assert_not_called()
+    assert result == pytest.approx(105.0)  # midpoint, in range → unclamped
+
+
+def test_pick_scenes_none_still_uses_detect_in_window():
+    detector = MagicMock()
+    detector.detect_in_window.return_value = [12.3]
+    result = pick_frame_timestamp(
+        detector=detector,
+        vlm_callback=None,
+        video_path=Path("x.mp4"),
+        window_start=10.0,
+        window_end=20.0,
+        context_text="x",
+    )
+    detector.detect_in_window.assert_called_once()
+    assert result == 12.3

@@ -25,6 +25,8 @@ from .parse import (
     SubtitleEntry,
     SummaryChunkResult,
     chunk_entries_by_tokens,
+    compute_bullet_target,
+    even_indices,
     format_transcript,
     merge_chunk_outputs,
     parse_bullets_markdown,
@@ -202,6 +204,12 @@ class VideoSummaryService:
         if not entries:
             raise RuntimeError("Transcription returned no segments")
 
+        # Duration-scaled cap on how many bullets get an inline frame. The
+        # rendered summary keeps every bullet; this only bounds frame work so
+        # a long video doesn't run ~N per-item scene-detects + extracts.
+        content_sec = max(e.end for e in entries)
+        bullet_cap = compute_bullet_target(content_sec)
+
         # Step 2: chunk + LLM (15% ~ 60%)
         cfg = get_inference_config(llm_family, llm_size, "summarize")
         n_ctx = cfg["n_ctx"]
@@ -307,6 +315,11 @@ class VideoSummaryService:
         try:
             detector = SceneDetector(ffmpeg=self._ffmpeg)
 
+            # Scene-detect ONCE over the whole video (cached); pick_frame_timestamp
+            # filters this list in-memory per window instead of decoding the
+            # source video ~N times. Best-effort: [] → midpoint fallback.
+            global_scenes = detector.detect_all(video_path)
+
             vlm_cb = None
             if vlm_family and vlm_size:
                 vlm_cb = self._make_vlm_callback(vlm_family, vlm_size)
@@ -318,14 +331,21 @@ class VideoSummaryService:
             # whole job — the summary text is already generated. Skip the inline
             # image for that item and continue. progress_callback stays OUTSIDE
             # the try so cooperative TaskCancelledError still propagates.
+            # Deterministic frame cap: only ``bullet_cap`` evenly-spaced bullets
+            # get an inline frame. Keys/filenames use the ORIGINAL index into
+            # merged.bullet_items because build_markdown iterates the full list
+            # and does bullet_frames.get(idx) — keying by subset position would
+            # paste images onto the wrong bullets.
             bullet_frames: dict[int, str] = {}
             bullet_fail = 0
             md_lines = merged.bullets_markdown.splitlines()
-            for i, item in enumerate(merged.bullet_items):
-                pct = 0.60 + 0.20 * (i / max(1, len(merged.bullet_items)))
+            bullet_sel = even_indices(len(merged.bullet_items), bullet_cap)
+            for n_done, orig_i in enumerate(bullet_sel):
+                item = merged.bullet_items[orig_i]
+                pct = 0.60 + 0.20 * (n_done / max(1, len(bullet_sel)))
                 progress_callback(
                     pct,
-                    f"task.progress.summary_bullet_frame|{i + 1}|{len(merged.bullet_items)}",
+                    f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
                 )
                 try:
                     t_start, t_end = item["time_range"]
@@ -339,30 +359,33 @@ class VideoSummaryService:
                         window_start=t_start,
                         window_end=t_end,
                         context_text=context_text,
-                        temp_dir=work_dir / f"candidates_b{i}",
+                        temp_dir=work_dir / f"candidates_b{orig_i}",
                         duration=video_duration,
                         fps=video_fps,
+                        scenes=global_scenes,
                     )
-                    out = frames_dir / f"bullet_{i:03d}.jpg"
+                    out = frames_dir / f"bullet_{orig_i:03d}.jpg"
                     detector.extract_frame(
                         input_path=video_path, output_path=out, timestamp=ts
                     )
-                    bullet_frames[i] = f"frames/bullet_{i:03d}.jpg"
+                    bullet_frames[orig_i] = f"frames/bullet_{orig_i:03d}.jpg"
                 except Exception as e:
                     bullet_fail += 1
                     logger.warning(
-                        f"summary: bullet {i} frame failed ({e}); skipping image"
+                        f"summary: bullet {orig_i} frame failed ({e}); skipping image"
                     )
                     continue
 
             # Step 5: turning-point frames (80% ~ 90%)
             tp_frames: dict[int, str] = {}
             tp_fail = 0
-            for i, tp in enumerate(merged.turning_points):
-                pct = 0.80 + 0.10 * (i / max(1, len(merged.turning_points)))
+            tp_sel = even_indices(len(merged.turning_points), bullet_cap)
+            for n_done, orig_i in enumerate(tp_sel):
+                tp = merged.turning_points[orig_i]
+                pct = 0.80 + 0.10 * (n_done / max(1, len(tp_sel)))
                 progress_callback(
                     pct,
-                    f"task.progress.summary_tp_frame|{i + 1}|{len(merged.turning_points)}",
+                    f"task.progress.summary_tp_frame|{n_done + 1}|{len(tp_sel)}",
                 )
                 try:
                     t = tp["time"]
@@ -373,19 +396,20 @@ class VideoSummaryService:
                         window_start=max(0.0, t - 5.0),
                         window_end=t + 5.0,
                         context_text=tp["text"],
-                        temp_dir=work_dir / f"candidates_t{i}",
+                        temp_dir=work_dir / f"candidates_t{orig_i}",
                         duration=video_duration,
                         fps=video_fps,
+                        scenes=global_scenes,
                     )
-                    out = frames_dir / f"tp_{i:03d}.jpg"
+                    out = frames_dir / f"tp_{orig_i:03d}.jpg"
                     detector.extract_frame(
                         input_path=video_path, output_path=out, timestamp=ts
                     )
-                    tp_frames[i] = f"frames/tp_{i:03d}.jpg"
+                    tp_frames[orig_i] = f"frames/tp_{orig_i:03d}.jpg"
                 except Exception as e:
                     tp_fail += 1
                     logger.warning(
-                        f"summary: turning-point {i} frame failed ({e}); skipping image"
+                        f"summary: turning-point {orig_i} frame failed ({e}); skipping image"
                     )
                     continue
 

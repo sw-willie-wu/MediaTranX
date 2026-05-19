@@ -14,6 +14,35 @@ from app.utils.inference import estimate_tokens
 logger = logging.getLogger(__name__)
 
 
+def compute_bullet_target(content_sec: float, rate: float = 1.5,
+                          k_min: int = 8, k_max: int = 40) -> int:
+    """Duration-scaled cap on how many bullets get an inline frame.
+
+    ``content_sec`` = spoken-content duration (max subtitle end). Scales at
+    ``rate`` bullets/min, clamped to ``[k_min, k_max]``. The rendered summary
+    text still contains every bullet; this only bounds frame-extraction work.
+    """
+    return max(k_min, min(k_max, round(content_sec / 60.0 * rate)))
+
+
+def even_indices(n: int, k: int) -> list[int]:
+    """``k`` evenly-spaced unique ascending indices in ``[0, n-1]``.
+
+    ``k >= n`` → ``range(n)``. ``k <= 1`` → ``[0]`` (defensive; production call
+    sites pass ``k >= K_MIN = 8`` via :func:`compute_bullet_target`, so this
+    branch is unreachable there). For ``n > k >= 2`` the step
+    ``(n-1)/(k-1) > 1`` so ``round()`` yields ``k`` unique ascending indices
+    spanning both ends.
+    """
+    if n <= 0:
+        return []
+    if k >= n:
+        return list(range(n))
+    if k <= 1:
+        return [0]
+    return [round(i * (n - 1) / (k - 1)) for i in range(k)]
+
+
 @dataclass(frozen=True)
 class SubtitleEntry:
     start: float  # seconds
