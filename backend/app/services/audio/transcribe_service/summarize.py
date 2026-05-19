@@ -19,6 +19,7 @@ def map_reduce_summarize(
     on_progress: Optional[Callable[[float, str], None]] = None,
     model_family: str = "default",
     source_lang: Optional[str] = None,
+    cancellable=None,
 ) -> str:
     """
     Map-reduce summarization.
@@ -47,7 +48,8 @@ def map_reduce_summarize(
     from app.utils.inference import fake_progress
 
     if len(chunks) == 1:
-        with fake_progress(on_progress, 0.1, 0.95, "task.progress.generating_summary"):
+        with fake_progress(on_progress, 0.1, 0.95, "task.progress.generating_summary",
+                           cancellable=cancellable):
             return chat_fn(build_summarize_prompt(full_text, source_lang), 2048)
 
     # Map: summarize each chunk independently
@@ -56,11 +58,13 @@ def map_reduce_summarize(
         start_pct = 0.1 + 0.7 * (ci / len(chunks))
         end_pct = 0.1 + 0.7 * ((ci + 1) / len(chunks))
         with fake_progress(on_progress, start_pct, end_pct,
-                           f"task.progress.summarizing_chunk|{ci + 1}|{len(chunks)}"):
+                           f"task.progress.summarizing_chunk|{ci + 1}|{len(chunks)}",
+                           cancellable=cancellable):
             chunk_summaries.append(chat_fn(build_chunk_summarize_prompt(chunk, source_lang), 1024).strip())
 
     # Reduce: merge summaries
-    with fake_progress(on_progress, 0.85, 0.95, "task.progress.merging_summary"):
+    with fake_progress(on_progress, 0.85, 0.95, "task.progress.merging_summary",
+                       cancellable=cancellable):
         merged = "\n\n".join(chunk_summaries)
         return chat_fn(build_merge_summaries_prompt(merged, source_lang), 2048)
 

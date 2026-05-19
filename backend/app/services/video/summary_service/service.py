@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from uuid import uuid4
 
+from app.handler.exceptions import TaskCancelledError
 from app.services.files.file_service import FileService
 from app.adapters.ai.wrapper.whisper import WhisperWrapper
 from app.adapters.ai.wrapper.demucs import DemucsWrapper
@@ -274,6 +275,9 @@ class VideoSummaryService:
                 model_size=llm_size,
                 max_tokens=max_tokens,
                 temperature=cfg["temperature"],
+                on_progress=progress_callback,
+                cancel_pct=pct,
+                cancel_msg=f"task.progress.summary_chunk|{i + 1}|{len(chunks)}",
             )
             try:
                 if summary_mode == SUMMARY_MODE_NARRATIVE:
@@ -320,9 +324,10 @@ class VideoSummaryService:
             # source video ~N times. Best-effort: [] → midpoint fallback.
             global_scenes = detector.detect_all(video_path)
 
+            # vlm_cb is (re)built per loop iteration so the cancel heartbeat
+            # carries that iteration's live pct/message (shape (a)). The build
+            # is cheap (a get_inference_config registry lookup, no model load).
             vlm_cb = None
-            if vlm_family and vlm_size:
-                vlm_cb = self._make_vlm_callback(vlm_family, vlm_size)
 
             # Step 4: bullet frames (60% ~ 80%)
             # Iterate over merged.bullet_items (each carries time_range + line_index for image insertion).
@@ -347,6 +352,11 @@ class VideoSummaryService:
                     pct,
                     f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
                 )
+                vlm_cb = (self._make_vlm_callback(
+                    vlm_family, vlm_size, on_progress=progress_callback,
+                    cancel_pct=pct,
+                    cancel_msg=f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
+                ) if vlm_family and vlm_size else None)
                 try:
                     t_start, t_end = item["time_range"]
                     # Use the bullet's own markdown line as VLM context (label + description).
@@ -369,6 +379,8 @@ class VideoSummaryService:
                         input_path=video_path, output_path=out, timestamp=ts
                     )
                     bullet_frames[orig_i] = f"frames/bullet_{orig_i:03d}.jpg"
+                except TaskCancelledError:
+                    raise
                 except Exception as e:
                     bullet_fail += 1
                     logger.warning(
@@ -387,6 +399,11 @@ class VideoSummaryService:
                     pct,
                     f"task.progress.summary_tp_frame|{n_done + 1}|{len(tp_sel)}",
                 )
+                vlm_cb = (self._make_vlm_callback(
+                    vlm_family, vlm_size, on_progress=progress_callback,
+                    cancel_pct=pct,
+                    cancel_msg=f"task.progress.summary_tp_frame|{n_done + 1}|{len(tp_sel)}",
+                ) if vlm_family and vlm_size else None)
                 try:
                     t = tp["time"]
                     ts = pick_frame_timestamp(
@@ -406,6 +423,8 @@ class VideoSummaryService:
                         input_path=video_path, output_path=out, timestamp=ts
                     )
                     tp_frames[orig_i] = f"frames/tp_{orig_i:03d}.jpg"
+                except TaskCancelledError:
+                    raise
                 except Exception as e:
                     tp_fail += 1
                     logger.warning(
@@ -457,7 +476,9 @@ class VideoSummaryService:
             "turning_point_count": len(merged.turning_points),
         }
 
-    def _make_vlm_callback(self, family: str, size: str):
+    def _make_vlm_callback(self, family: str, size: str, *,
+                           on_progress=None, cancel_pct: float = 0.0,
+                           cancel_msg: str = "task.progress.summary_bullet_frame"):
         """Build a VLM callback: (context_text, frame_paths) -> chosen_index.
 
         In v1, if `chat_with_images` isn't available on ChatService, the callback
@@ -485,6 +506,9 @@ class VideoSummaryService:
                 model_size=size,
                 max_tokens=max_tokens,
                 temperature=cfg["temperature"],
+                on_progress=on_progress,
+                cancel_pct=cancel_pct,
+                cancel_msg=cancel_msg,
             )
             import re
             m = re.search(r"\d+", raw)
