@@ -119,3 +119,13 @@ def test_known_text_families_support_translate_and_summarize():
         inference = gguf[family].get("inference", {})
         assert "translate" in inference, f"{family} lost 'translate' inference config"
         assert "summarize" in inference, f"{family} lost 'summarize' inference config"
+
+
+def test_frame_select_config_exposes_max_image_edge():
+    from app.adapters.ai.inference_config import get_inference_config
+    # qwen3vl has a frame_select block; key must always be present.
+    cfg = get_inference_config("qwen3vl", "8b", "frame_select")
+    assert "max_image_edge" in cfg
+    # A family/task with no max_image_edge in registry yields None, not KeyError.
+    txt = get_inference_config("qwen3", "8b", "summarize")
+    assert txt["max_image_edge"] is None
