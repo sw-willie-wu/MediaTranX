@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import base64
 import logging
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Callable, Iterator, Optional
+
+from app.utils.inference import cancel_guard
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +24,26 @@ class ChatSession:
     calls (no per-batch acquire cost).
     """
 
-    def __init__(self, llama_runtime):
+    def __init__(self, llama_runtime, *, on_progress=None,
+                 cancel_pct: float = 0.0,
+                 cancel_msg: str = "task.progress.generating"):
         self._runtime = llama_runtime
+        self._on_progress = on_progress
+        self._cancel_pct = cancel_pct
+        self._cancel_msg = cancel_msg
+
+    def _guard(self):
+        """Single poll+kill watcher for the wrapped blocking call.
+
+        nullcontext when no on_progress (legacy behaviour); otherwise
+        cancel_guard, which itself passes through if an enclosing
+        fake_progress(cancellable=) already owns poll+kill (shared ContextVar)
+        — exactly one watcher per call.
+        """
+        if self._on_progress is None:
+            return nullcontext()
+        return cancel_guard(self._on_progress, cancellable=self,
+                            progress=self._cancel_pct, message=self._cancel_msg)
 
     def chat(
         self,
@@ -35,10 +55,11 @@ class ChatSession:
         top_p: float = 0.9,
         stop: Optional[list[str]] = None,
     ) -> str:
-        return self._runtime.chat(
-            messages=messages, max_tokens=max_tokens, temperature=temperature,
-            top_k=top_k, top_p=top_p, stop=stop,
-        )
+        with self._guard():
+            return self._runtime.chat(
+                messages=messages, max_tokens=max_tokens, temperature=temperature,
+                top_k=top_k, top_p=top_p, stop=stop,
+            )
 
     def complete(
         self,
@@ -50,10 +71,11 @@ class ChatSession:
         top_p: float = 0.9,
         stop: Optional[list[str]] = None,
     ) -> str:
-        return self._runtime.complete(
-            prompt=prompt, max_tokens=max_tokens, temperature=temperature,
-            top_k=top_k, top_p=top_p, stop=stop,
-        )
+        with self._guard():
+            return self._runtime.complete(
+                prompt=prompt, max_tokens=max_tokens, temperature=temperature,
+                top_k=top_k, top_p=top_p, stop=stop,
+            )
 
     def chat_with_images(
         self,
@@ -79,10 +101,11 @@ class ChatSession:
                 "image_url": {"url": f"data:{mime};base64,{b64}"},
             })
         messages = [{"role": "user", "content": content}]
-        return self._runtime.chat(
-            messages=messages, max_tokens=max_tokens, temperature=temperature,
-            top_k=top_k, top_p=top_p, stop=None,
-        )
+        with self._guard():
+            return self._runtime.chat(
+                messages=messages, max_tokens=max_tokens, temperature=temperature,
+                top_k=top_k, top_p=top_p, stop=None,
+            )
 
     def kill_process(self) -> None:
         """Best-effort cancellation: stop the underlying llama-server.
@@ -134,6 +157,9 @@ class ChatService:
         model_size: str,
         quantization: Optional[str] = None,
         on_load_progress: Optional[Callable] = None,
+        on_progress: Optional[Callable] = None,
+        cancel_pct: float = 0.0,
+        cancel_msg: str = "task.progress.generating",
     ) -> Iterator[ChatSession]:
         """Hold an LLM loaded for the duration of the block.
 
@@ -150,7 +176,8 @@ class ChatService:
         with self._llama_runtime.acquire(
             model_family, variant, on_progress=on_load_progress,
         ):
-            yield ChatSession(self._llama_runtime)
+            yield ChatSession(self._llama_runtime, on_progress=on_progress,
+                              cancel_pct=cancel_pct, cancel_msg=cancel_msg)
 
     def chat(
         self,
@@ -159,9 +186,15 @@ class ChatService:
         model_size: str = "8b",
         max_tokens: int = 4096,
         temperature: float = 0.1,
+        *,
+        on_progress: Optional[Callable] = None,
+        cancel_pct: float = 0.0,
+        cancel_msg: str = "task.progress.generating",
     ) -> str:
         """One-shot chat (backward-compat). Opens its own session for the single call."""
-        with self.session(model_family=model_family, model_size=model_size) as session:
+        with self.session(model_family=model_family, model_size=model_size,
+                          on_progress=on_progress, cancel_pct=cancel_pct,
+                          cancel_msg=cancel_msg) as session:
             return session.chat(
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens, temperature=temperature,
@@ -177,10 +210,14 @@ class ChatService:
         quantization: Optional[str] = None,
         max_tokens: int,
         temperature: float,
+        on_progress: Optional[Callable] = None,
+        cancel_pct: float = 0.0,
+        cancel_msg: str = "task.progress.generating",
     ) -> str:
         """One-shot VLM chat. Backward-compat shape for callers that don't need a session."""
         with self.session(
             model_family=model_family, model_size=model_size, quantization=quantization,
+            on_progress=on_progress, cancel_pct=cancel_pct, cancel_msg=cancel_msg,
         ) as session:
             return session.chat_with_images(
                 prompt=prompt, images=images,
