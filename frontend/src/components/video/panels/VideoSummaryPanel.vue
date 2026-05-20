@@ -31,6 +31,13 @@ const { guardModelReady } = useModelGuard()
 const llmModel = usePersistedModel('video_summary_llm_model')
 const vlmModel = usePersistedModel('video_summary_vlm_model')
 
+// Summary style: 'bullets' (key points) | 'narrative' (story outline)
+const summaryMode = usePersistedModel('video_summary_mode', 'bullets')
+const summaryModeOptions = computed(() => [
+  { value: 'bullets', label: t('video.summary.mode_bullets') },
+  { value: 'narrative', label: t('video.summary.mode_narrative') },
+])
+
 // Whisper selections
 const whisperModelSize = usePersistedModel('video_summary_whisper_model', 'medium')
 const vocalSeparation = ref(false)
@@ -156,6 +163,7 @@ async function execute() {
     language: props.language ?? 'zh-TW',
     whisper_model_size: whisperModelSize.value,
     vocal_separation: vocalSeparation.value,
+    summary_mode: summaryMode.value,
   }
 
   if (vlmModel.value) {
@@ -191,6 +199,14 @@ defineExpose({ execute, isDisabled, isLoading })
       <i class="bi bi-card-text me-2"></i>{{ $t('video.summary.title') }}
     </h6>
     <p class="form-hint">{{ $t('video.summary.description') }}</p>
+
+    <div class="form-group">
+      <label>{{ $t('video.summary.mode') }}</label>
+      <AppSelect
+        v-model="summaryMode"
+        :options="summaryModeOptions"
+      />
+    </div>
 
     <div class="form-group">
       <label>{{ $t('video.summary.whisper_model') }}</label>
