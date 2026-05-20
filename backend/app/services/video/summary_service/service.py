@@ -344,6 +344,17 @@ class VideoSummaryService:
             # Scene-detect ONCE over the whole video (cached); pick_frame_timestamp
             # filters this list in-memory per window instead of decoding the
             # source video ~N times. Best-effort: [] → midpoint fallback.
+            #
+            # detect_all() is a CPU-bound, whole-video blocking pass with no
+            # progress of its own — emit one event first so the bar isn't
+            # frozen here. Clamp to >= the chunk loop's last pct (which is
+            # 0.15 + 0.45·(N-1)/N and exceeds 0.58 only at N >= 23 chunks) so
+            # progress stays monotonic and below the frame loop's 0.60 start.
+            detect_pct = max(
+                0.58,
+                0.15 + 0.45 * ((len(chunks) - 1) / max(1, len(chunks))),
+            )
+            progress_callback(detect_pct, "task.progress.summary_detecting_scenes")
             global_scenes = detector.detect_all(video_path)
 
             # vlm_cb is (re)built per loop iteration so the cancel heartbeat
