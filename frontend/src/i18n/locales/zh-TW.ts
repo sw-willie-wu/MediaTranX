@@ -1127,6 +1127,7 @@ export default {
       'video.cut': '影片 · 剪輯',
       'video.extract_audio': '影片 · 音軌提取',
       'video.subtitle_generate': '影片 · 字幕提取',
+      'video.summary': '影片 · 摘要',
       'audio.transcode': '音訊 · 轉檔',
       'audio.cut': '音訊 · 剪輯',
       'audio.volume': '音訊 · 音量調整',
