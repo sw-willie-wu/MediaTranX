@@ -38,16 +38,6 @@ def test_chunk_single_oversize_entry_still_produces_one_chunk():
     assert chunks[0] == entries
 
 
-def test_format_transcript_joins_entries_with_newline():
-    # Unchanged: format_transcript stays the seconds format (narrative mode).
-    from app.services.video.summary_service.parse import format_transcript
-    entries = [
-        SubtitleEntry(start=1.0, end=2.0, text="x"),
-        SubtitleEntry(start=2.0, end=3.5, text="y"),
-    ]
-    assert format_transcript(entries) == "[1.0-2.0] x\n[2.0-3.5] y"
-
-
 # ---- format_transcript_numbered (bullets mode, [L<n>] line numbers) ----
 
 def test_format_transcript_numbered_single_chunk():
@@ -70,9 +60,7 @@ def test_format_transcript_numbered_offset_continues_across_chunks():
 
 from app.utils.prompts import build_summary_prompt
 from app.services.video.summary_service.parse import (
-    format_transcript,
     format_transcript_numbered,
-    parse_summary_json,
     parse_bullets_markdown,
     parse_narrative_paragraphs,
     merge_chunk_outputs,
@@ -336,39 +324,6 @@ def test_parse_narrative_paragraphs_does_not_strip_mid_block_bracket():
     assert "[L5-L9]" in result.narrative_paragraphs[0]["text"]
 
 
-# ---- narrative-mode JSON parser ----
-
-def test_parse_summary_json_strips_code_fence():
-    raw = """```json
-{"narrative": {"summary": "", "turning_points": []}}
-```"""
-    parsed = parse_summary_json(raw)
-    assert parsed.narrative_summary == ""
-    assert parsed.turning_points == []
-
-
-def test_parse_summary_json_rejects_invalid():
-    import pytest
-    with pytest.raises(ValueError):
-        parse_summary_json("not json")
-
-
-def test_parse_summary_json_accepts_narrative():
-    raw = '{"narrative": {"summary": "s", "turning_points": [{"time": 5.0, "text": "tp"}]}}'
-    parsed = parse_summary_json(raw)
-    assert parsed.narrative_summary == "s"
-    assert parsed.turning_points[0]["text"] == "tp"
-
-
-def test_parse_summary_json_drops_turning_points_missing_time():
-    raw = '{"narrative": {"summary": "s", "turning_points": [' \
-          '{"text": "no time"}, {"time": "str", "text": "bad"}, ' \
-          '{"time": 1.0, "text": "ok"}]}}'
-    parsed = parse_summary_json(raw)
-    assert len(parsed.turning_points) == 1
-    assert parsed.turning_points[0]["text"] == "ok"
-
-
 # ---- merge ----
 
 def test_merge_bullets_offsets_line_index_across_chunks():
@@ -395,21 +350,6 @@ def test_merge_narrative_paragraphs_concatenated():
     merged = merge_chunk_outputs([c1, c2])
     assert [p["text"] for p in merged.narrative_paragraphs] == ["段一", "段二"]
     assert merged.narrative_paragraphs[1]["line_range"] == (6, 9)
-
-
-def test_merge_narrative_concats_summaries_and_tps():
-    c1 = SummaryChunkResult(
-        narrative_summary="開頭敘述。",
-        turning_points=[{"time": 5.0, "text": "T1"}],
-    )
-    c2 = SummaryChunkResult(
-        narrative_summary="後續敘述。",
-        turning_points=[{"time": 15.0, "text": "T2"}],
-    )
-    merged = merge_chunk_outputs([c1, c2])
-    assert "開頭敘述。" in merged.narrative_summary
-    assert "後續敘述。" in merged.narrative_summary
-    assert len(merged.turning_points) == 2
 
 
 # ---- build_markdown ----
