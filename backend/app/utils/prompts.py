@@ -358,7 +358,7 @@ Write a **hierarchical Markdown summary** of the transcript. Structure:
 
 Rules:
 1. Use `##` for major themes (3~6 sections) and `###` for sub-themes when helpful
-2. Every top-level bullet (line starting with `- **label：**`) MUST end with a line-number citation `[L<first>-L<last>]`, where `<first>` and `<last>` are the line numbers of the FIRST and LAST transcript lines that bullet covers. Copy the line numbers exactly as shown in the transcript (e.g. `[L12-L48]`). Do NOT write timestamps, do NOT write mm:ss, do NOT compute seconds — cite only line numbers. If a bullet covers a single line, cite `[L<n>-L<n>]`.
+2. Every top-level bullet (line starting with `- **label：**`) MUST end with a line-number citation `[L<first>-L<last>]`, where `<first>` and `<last>` are the line numbers of the FIRST and LAST transcript lines that bullet covers. Copy the line numbers exactly as shown in the transcript (e.g. `[L12-L48]`). Do NOT write timestamps, do NOT write mm:ss, do NOT compute seconds — cite only line numbers. If a bullet covers a single line, cite `[L<n>-L<n>]`. Put the citation as a single bracket at the very end of the bullet with nothing after it — no period, no other punctuation — and do NOT split it into multiple comma-separated ranges.
 3. Each top-level bullet should cover one coherent topic; do NOT micro-split a continuous topic into many short bullets — prefer fewer, substantive bullets over many fragmentary ones
 4. Use bold labels at the start of each bullet (e.g., `**活動背景：**`); nested sub-bullets (indented 4 spaces) are optional and do NOT need a line citation
 5. Every cited line number must be a line number that actually appears in the transcript above
@@ -375,7 +375,7 @@ Write a **flowing narrative summary** of the transcript as a sequence of prose p
 Rules:
 1. Divide the transcript into a handful of coherent paragraphs (aim for 3~6), each covering one continuous topic or scene; do NOT micro-split a continuous topic.
 2. Each paragraph is plain prose — a few connected sentences. Do NOT use bullet points, headings, or bold labels.
-3. Every paragraph MUST end with a line-number citation `[L<first>-L<last>]`, where `<first>` and `<last>` are the line numbers of the FIRST and LAST transcript lines that paragraph covers. Copy the line numbers exactly as shown in the transcript (e.g. `[L12-L48]`). Do NOT write timestamps, do NOT write mm:ss, do NOT compute seconds — cite only line numbers.
+3. Every paragraph MUST end with a line-number citation `[L<first>-L<last>]`, where `<first>` and `<last>` are the line numbers of the FIRST and LAST transcript lines that paragraph covers. Copy the line numbers exactly as shown in the transcript (e.g. `[L12-L48]`). Do NOT write timestamps, do NOT write mm:ss, do NOT compute seconds — cite only line numbers. Put the citation as a single bracket at the very end of the paragraph with nothing after it — no period, no other punctuation — and do NOT split it into multiple comma-separated ranges.
 4. Separate paragraphs with a blank line.
 5. Every cited line number must be a line number that actually appears in the transcript above.
 6. Output prose only — no JSON, no code fences, no Markdown headings, no extra text.

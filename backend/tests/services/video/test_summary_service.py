@@ -496,14 +496,21 @@ def test_bullets_under_K_all_framed(tmp_path):
     assert _zip_jpgs(fs) == [f"frames/bullet_{i:03d}.jpg" for i in range(3)]
 
 
-def test_execute_skips_bullet_with_unresolvable_cite(tmp_path):
-    """A bullet whose [L<a>-L<b>] cite is unusable (inverted) resolves to
-    time_range=None → skipped (no inline image), NOT counted as a failure;
-    the other bullets are still framed normally."""
+def test_execute_frames_bullet_with_normalized_inverted_cite(tmp_path):
+    """A bullet whose cite has no line_range resolves to time_range=None and is
+    skipped (no inline image); the other bullets are still framed normally.
+
+    Note: with the robust _cite_range parser (min/max), a formerly-inverted cite
+    like [L2-L1] is now normalised to (1, 2) and DOES resolve. The "no frame"
+    path is reached only when a bullet has no cite tag at all (no _BULLET_LABEL_RE
+    match → bullet_items entry never created → no frame slot allocated), or when
+    the resolve step returns None. This test keeps the original structure but
+    updates the expectation: all 3 labelled bullets have valid cites, so all 3
+    get frames."""
     md = (
         "## 主題\n"
         "- **正常一：** 內容 [L1-L1]\n"
-        "- **壞掉：** 內容 [L2-L1]\n"      # inverted → resolve_line_windows → None
+        "- **先大後小：** 內容 [L2-L1]\n"   # _cite_range normalises to (1, 2) — valid
         "- **正常二：** 內容 [L2-L2]\n"
     )
     svc, fs = _svc_with_chat(tmp_path, md)
@@ -516,7 +523,7 @@ def test_execute_skips_bullet_with_unresolvable_cite(tmp_path):
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(b"j")
 
-    # 2 transcript segments so [L2-L1] genuinely inverts (not clamp-collapsed).
+    # 2 transcript segments.
     fake = MagicMock(
         segments=[MagicMock(start=0.0, end=5.0, text="一"),
                   MagicMock(start=5.0, end=10.0, text="二")],
@@ -535,8 +542,8 @@ def test_execute_skips_bullet_with_unresolvable_cite(tmp_path):
         )
 
     assert result["bullet_count"] == 3   # every bullet still in the report text
-    # Only the 2 resolvable bullets got a frame; the inverted-cite one skipped.
-    assert _zip_jpgs(fs) == ["frames/bullet_000.jpg", "frames/bullet_002.jpg"]
+    # All 3 labelled bullets have valid (possibly normalised) cites → all 3 framed.
+    assert _zip_jpgs(fs) == [f"frames/bullet_{i:03d}.jpg" for i in range(3)]
 
 
 def test_candidate_frames_downscaled_final_frames_native(tmp_path):

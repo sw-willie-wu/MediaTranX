@@ -453,3 +453,69 @@ def test_bullets_prompt_rule3_relaxed():
     assert "60 seconds" not in p              # hard split rule removed
     assert "[L<first>-L<last>]" in p          # line-citation contract kept
     assert "narrative" not in p and "turning_points" not in p
+
+
+# ── summary-1.4.1: robust cite parsing ──────────────────────────────────
+def test_parse_bullets_strips_cite_with_trailing_period():
+    """LLM 在 [L#-L#] 後加句號 → 標記仍被剝、句號保留、line_range 記到。"""
+    raw = "- **背景：** 描述內容 [L1-L8]。\n"
+    result = parse_bullets_markdown(raw)
+    assert len(result.bullet_items) == 1
+    assert result.bullet_items[0]["line_range"] == (1, 8)
+    assert "[L1-L8]" not in result.bullets_markdown
+    assert "描述內容。" in result.bullets_markdown   # 句號保留、無殘留空格
+
+
+def test_parse_bullets_strips_multi_range_cite():
+    """多重區間 [L#-L#, L#-L#] → 剝除,line_range 取所有 L 數字的 min/max。"""
+    raw = "- **背景：** 描述 [L18-L20, L28-L30]。\n"
+    result = parse_bullets_markdown(raw)
+    assert len(result.bullet_items) == 1
+    assert result.bullet_items[0]["line_range"] == (18, 30)
+    assert "L18" not in result.bullets_markdown
+    assert "L28" not in result.bullets_markdown
+    assert "描述。" in result.bullets_markdown
+
+
+def test_parse_bullets_accepts_single_line_cite():
+    """單一 [L5](無區間)→ line_range (5, 5)、剝除。"""
+    raw = "- **背景：** 描述 [L5]\n"
+    result = parse_bullets_markdown(raw)
+    assert len(result.bullet_items) == 1
+    assert result.bullet_items[0]["line_range"] == (5, 5)
+    assert "[L5]" not in result.bullets_markdown
+
+
+def test_parse_narrative_strips_cite_with_trailing_period():
+    raw = "敘事段落內容 [L3-L7]。"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 1
+    assert result.narrative_paragraphs[0]["line_range"] == (3, 7)
+    assert "[L3-L7]" not in result.narrative_paragraphs[0]["text"]
+
+
+def test_parse_narrative_strips_multi_range_cite():
+    raw = "敘事段落 [L18-L20, L28-L30]"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 1
+    assert result.narrative_paragraphs[0]["line_range"] == (18, 30)
+    assert "L28" not in result.narrative_paragraphs[0]["text"]
+
+
+def test_cite_re_no_backtracking_on_unclosed_bracket():
+    """An unclosed [L...] tag must fail fast (no exponential backtracking)."""
+    import time
+    from app.services.video.summary_service.parse import _CITE_RE
+    evil = "- **x：** text [" + " ".join(f"L{i}" for i in range(40))  # no closing ]
+    t0 = time.monotonic()
+    assert _CITE_RE.search(evil) is None
+    assert time.monotonic() - t0 < 1.0, "regex took too long — backtracking?"
+
+
+def test_parse_bullets_strips_cite_with_ascii_trailing_punctuation():
+    raw = "- **背景：** 描述內容 [L1-L8].\n"
+    result = parse_bullets_markdown(raw)
+    assert len(result.bullet_items) == 1
+    assert result.bullet_items[0]["line_range"] == (1, 8)
+    assert "[L1-L8]" not in result.bullets_markdown
+    assert "描述內容." in result.bullets_markdown

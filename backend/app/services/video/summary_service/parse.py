@@ -109,13 +109,29 @@ class SummaryChunkResult:
     # ^ each: {"text": str, "line_range": (a, b) | None, "time_range": (s, e) | None}
 
 
-# Match a line-citation tag `[L<a>-L<b>]` at the end of a bullet line. `a`/`b`
-# are 1-based global transcript line numbers (see format_transcript_numbered).
-# The literal `L` prefix makes the token distinctive, so this is safe to use
-# both to extract the cite (.search) and to strip it (.sub) from any line —
-# legitimate bracketed content like `[80-120]` is never matched.
-_CITE_RE = re.compile(r"\[\s*L(\d+)\s*-\s*L(\d+)\s*\]\s*$")
+# Match a line-citation tag at the end of a bullet line / narrative block.
+# Accepts a bracket whose body is ONLY `L<digits>` tokens joined by `-`, `,`
+# or whitespace — e.g. `[L1-L8]`, `[L5]`, `[L18-L20, L28-L30]`. The `L` prefix
+# keeps it distinctive, so a plain numeric bracket like `[80-120]` is never
+# matched. The match is still end-anchored (a trailing-punctuation lookahead
+# tolerates a sentence period after `]`), so:
+#   - parse_narrative_paragraphs (.search on a whole block) only ever matches
+#     the cite at the block's end, never one mid-paragraph;
+#   - the leading `\s*` is consumed so .sub leaves no stray space.
+_CITE_RE = re.compile(
+    r"\s*\[\s*L\d+(?:[\s,-]+L\d+)*\s*\](?=\s*[。．.,，、]*\s*$)"
+)
 _BULLET_LABEL_RE = re.compile(r"^\s*-\s*\*\*[^*]+\*\*")
+
+
+def _cite_range(cite_text: str) -> tuple[int, int]:
+    """Min/max over every L-number in a matched cite token.
+
+    `[L18-L20, L28-L30]` -> (18, 30); `[L5]` -> (5, 5). The cite_text is the
+    substring matched by _CITE_RE (which contains only L-numbers + separators).
+    """
+    nums = [int(n) for n in re.findall(r"L(\d+)", cite_text)]
+    return (min(nums), max(nums))
 
 
 def parse_bullets_markdown(raw: str) -> SummaryChunkResult:
@@ -141,7 +157,7 @@ def parse_bullets_markdown(raw: str) -> SummaryChunkResult:
         if cite:
             items.append({
                 "line_index": len(out_lines),
-                "line_range": (int(cite.group(1)), int(cite.group(2))),
+                "line_range": _cite_range(cite.group()),
             })
         # Strip the trailing [L<a>-L<b>] cite from the rendered line. Run on
         # every line: the `L` prefix means legit bracketed content is untouched.
@@ -172,13 +188,11 @@ def parse_narrative_paragraphs(raw: str) -> SummaryChunkResult:
         block = block.strip()
         if not block:
             continue
-        # _CITE_RE is anchored with `$` (no MULTILINE) -> matches only a cite at
-        # the very end of the stripped block, never one mid-paragraph.
+        # _CITE_RE is end-anchored (no MULTILINE) -> .search matches only a
+        # cite at the very end of the stripped block, never one mid-paragraph.
         cite = _CITE_RE.search(block)
         if cite:
-            line_range: tuple[int, int] | None = (
-                int(cite.group(1)), int(cite.group(2))
-            )
+            line_range: tuple[int, int] | None = _cite_range(cite.group())
             block = _CITE_RE.sub("", block).rstrip()
         else:
             line_range = None
@@ -224,6 +238,8 @@ def resolve_line_windows(items: list[dict], entries: list[SubtitleEntry]) -> Non
         a, b = item["line_range"]
         ia = min(max(int(a), 1), n) - 1
         ib = min(max(int(b), 1), n) - 1
+        # Unreachable for parser-produced items (_cite_range yields min<=max);
+        # kept as a guard for hand-constructed `items`.
         if ia > ib:
             item["time_range"] = None
         else:
