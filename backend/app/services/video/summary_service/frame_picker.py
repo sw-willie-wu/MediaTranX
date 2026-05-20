@@ -1,10 +1,12 @@
 """Pick a representative frame timestamp for a time window.
 
 Strategy:
-  - scene_detect returns 0 candidates → middle of window
-  - 1 candidate → use it
-  - 2+ candidates + vlm_callback → extract all, let VLM pick
-  - 2+ candidates, no VLM (or VLM raises) → scene change closest to window midpoint
+  - scene_detect returns 0 candidates → middle of window used as sole candidate
+  - 1 candidate + no VLM → use it directly
+  - any candidates + VLM (and temp_dir) → extract all, let VLM pick or reject
+  - VLM returns -1 (or any negative) → caller renders item with no image (None)
+  - no VLM (or no temp_dir) → scene change closest to window midpoint (always float)
+  - VLM raises → fallback to midpoint-nearest (always float)
 """
 from __future__ import annotations
 
@@ -52,17 +54,24 @@ def pick_frame_timestamp(
     fps: Optional[float] = None,
     scenes: Optional[list[float]] = None,
     candidate_max_edge: Optional[int] = None,
-) -> float:
+) -> Optional[float]:
     """Return a single representative timestamp for [window_start, window_end].
 
-    All return paths are clamped to the video's decodable range via
+    Returns ``None`` when a VLM is supplied and judges that no candidate frame
+    matches ``context_text`` (callback returned a negative index) — the caller
+    then renders that item with no inline image.
+
+    All non-None return paths are clamped to the video's decodable range via
     ``_clamp_ts`` (``duration``/``fps`` default to no-clamp sentinels).
 
     ``scenes``: a precomputed whole-video scene list. When provided, candidates
-    are filtered in-memory (end-exclusive, matching scenedetect ``end_time``
-    semantics) instead of running a per-window decode — an empty filtered
-    result takes the same midpoint path as no-candidate. ``None`` → legacy
-    per-window ``detect_in_window`` (unchanged).
+    are filtered in-memory (end-exclusive) instead of a per-window decode.
+    ``None`` → legacy per-window ``detect_in_window``.
+
+    VLM gate: when ``vlm_callback`` AND ``temp_dir`` are both provided, every
+    item is routed through the VLM (a window with no scene candidate uses its
+    midpoint as the sole candidate). Without a VLM the legacy heuristic is used
+    and a float is always returned.
     """
     mid = (window_start + window_end) / 2
 
@@ -75,15 +84,16 @@ def pick_frame_timestamp(
         logger.debug(
             f"No scenes in [{window_start}-{window_end}]; using middle {mid}"
         )
-        return _clamp_ts(mid, duration, fps)
+        candidates = [mid]
 
-    if len(candidates) == 1:
-        return _clamp_ts(candidates[0], duration, fps)
+    use_vlm = vlm_callback is not None and temp_dir is not None
 
-    if vlm_callback is None or temp_dir is None:
+    if not use_vlm:
+        if len(candidates) == 1:
+            return _clamp_ts(candidates[0], duration, fps)
         return _clamp_ts(min(candidates, key=lambda t: abs(t - mid)), duration, fps)
 
-    # VLM path: extract each candidate, ask VLM to choose
+    # VLM path: extract each candidate, ask VLM to choose one or reject all.
     temp_dir.mkdir(parents=True, exist_ok=True)
     frame_paths: list[Path] = []
     for i, t in enumerate(candidates):
@@ -97,6 +107,9 @@ def pick_frame_timestamp(
 
     try:
         idx = vlm_callback(context_text, frame_paths)
+        if idx < 0:
+            logger.debug("VLM rejected all candidates; no frame for this item")
+            return None
         idx = max(0, min(idx, len(candidates) - 1))
         return _clamp_ts(candidates[idx], duration, fps)
     except TaskCancelledError:
