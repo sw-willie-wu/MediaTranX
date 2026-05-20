@@ -83,17 +83,38 @@ def _format_entry_line(e: SubtitleEntry) -> str:
 
 
 def format_transcript(entries: list[SubtitleEntry]) -> str:
-    """Format entries as LLM-facing transcript lines."""
+    """Format entries as LLM-facing transcript lines (seconds format).
+
+    Used by narrative mode (which asks the LLM for float-second timestamps)
+    and by :func:`chunk_entries_by_tokens` for token budgeting.
+    """
     return "\n".join(_format_entry_line(e) for e in entries)
+
+
+def format_transcript_numbered(entries: list[SubtitleEntry], start_index: int = 1) -> str:
+    """Format entries as LLM-facing lines prefixed with a global line number.
+
+    Each line is ``[L<n>] <text>`` where ``n`` is a 1-based line number kept
+    continuous across chunks (callers pass ``start_index`` = the running
+    offset). Unlike :func:`format_transcript` this carries no timestamps — the
+    bullets-mode LLM cites these line numbers and the service resolves them
+    back to real Whisper timestamps (see :func:`resolve_bullet_windows`).
+    """
+    return "\n".join(
+        f"[L{start_index + i}] {e.text}" for i, e in enumerate(entries)
+    )
 
 
 @dataclass
 class SummaryChunkResult:
     # Bullets mode
-    bullets_markdown: str = ""           # cleaned markdown (timestamp tags stripped)
+    bullets_markdown: str = ""           # cleaned markdown ([L..] cite tags stripped)
     bullet_items: list[dict] = field(default_factory=list)
-    # ^ each item: {"line_index": int (0-based, position in bullets_markdown),
-    #               "time_range": (start_sec: float, end_sec: float)}
+    # ^ each item dict, by lifecycle stage:
+    #   parse_bullets_markdown -> {"line_index": int (0-based pos in bullets_markdown),
+    #                              "line_range": (a, b) — 1-based global transcript lines}
+    #   merge_chunk_outputs    -> "line_index" offset; "line_range" passed through unchanged
+    #   resolve_bullet_windows -> adds "time_range": (start_sec, end_sec) | None
     # Narrative mode (existing)
     narrative_summary: str = ""
     turning_points: list[dict] = field(default_factory=list)
@@ -136,32 +157,25 @@ def parse_summary_json(raw: str) -> SummaryChunkResult:
     )
 
 
-# Match `[mm:ss-mm:ss]`, `[m:ss-m:ss]`, or seconds-only `[123-456]` at end of bullet line.
-_TS_TAG_RE = re.compile(
-    r"\[\s*"
-    r"(?:(\d+):(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?))"  # start: mm:ss OR raw_seconds
-    r"\s*-\s*"
-    r"(?:(\d+):(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?))"  # end: mm:ss OR raw_seconds
-    r"\s*\]"
-)
+# Match a line-citation tag `[L<a>-L<b>]` at the end of a bullet line. `a`/`b`
+# are 1-based global transcript line numbers (see format_transcript_numbered).
+# The literal `L` prefix makes the token distinctive, so this is safe to use
+# both to extract the cite (.search) and to strip it (.sub) from any line —
+# legitimate bracketed content like `[80-120]` is never matched.
+_CITE_RE = re.compile(r"\[\s*L(\d+)\s*-\s*L(\d+)\s*\]\s*$")
 _BULLET_LABEL_RE = re.compile(r"^\s*-\s*\*\*[^*]+\*\*")
-
-
-def _parse_time_groups(g1, g2, g3) -> float:
-    """g1/g2 = mm/ss (preferred); g3 = raw seconds."""
-    if g1 is not None and g2 is not None:
-        return int(g1) * 60 + float(g2)
-    return float(g3)
 
 
 def parse_bullets_markdown(raw: str) -> SummaryChunkResult:
     """Parse hierarchical bullets-mode markdown.
 
     Strips any wrapping code fence, then walks line-by-line:
-      - lines that look like `- **label：** text [mm:ss-mm:ss]` get added to
-        bullet_items with line_index + time_range, and the timestamp tag is
-        stripped from the rendered markdown
-      - all other lines pass through unchanged
+      - top-level bullet lines (`- **label：** text [L<a>-L<b>]`) whose trailing
+        `[L<a>-L<b>]` cite matches get added to bullet_items with line_index +
+        line_range (the 1-based global transcript line numbers the LLM cited)
+      - the `[L<a>-L<b>]` cite tag is stripped from every line (recorded or not,
+        bullet or sub-bullet) so it never leaks into the rendered markdown
+      - all other content passes through unchanged
     """
     text = raw.strip()
     text = re.sub(r"^```(?:markdown|md)?\s*", "", text, flags=re.IGNORECASE)
@@ -170,22 +184,48 @@ def parse_bullets_markdown(raw: str) -> SummaryChunkResult:
     items: list[dict] = []
     out_lines: list[str] = []
     for line in text.splitlines():
-        m = _TS_TAG_RE.search(line)
-        if m and _BULLET_LABEL_RE.match(line):
-            sm, ss, s_raw, em, es, e_raw = m.groups()
-            t_start = _parse_time_groups(sm, ss, s_raw)
-            t_end = _parse_time_groups(em, es, e_raw)
+        is_bullet = _BULLET_LABEL_RE.match(line)
+        cite = _CITE_RE.search(line) if is_bullet else None
+        if cite:
             items.append({
                 "line_index": len(out_lines),
-                "time_range": (t_start, t_end),
+                "line_range": (int(cite.group(1)), int(cite.group(2))),
             })
-            line = _TS_TAG_RE.sub("", line).rstrip()
+        # Strip the trailing [L<a>-L<b>] cite from the rendered line. Run on
+        # every line: the `L` prefix means legit bracketed content is untouched.
+        line = _CITE_RE.sub("", line).rstrip()
         out_lines.append(line)
 
     return SummaryChunkResult(
         bullets_markdown="\n".join(out_lines),
         bullet_items=items,
     )
+
+
+def resolve_bullet_windows(items: list[dict], entries: list[SubtitleEntry]) -> None:
+    """Resolve each bullet_item's cited line range to a real time window.
+
+    Sets ``item["time_range"]`` in place to ``(start_sec, end_sec)`` taken from
+    the cited Whisper ``entries``, or ``None`` when the citation is unusable.
+
+    ``items`` carry ``line_range = (a, b)`` — 1-based global transcript line
+    numbers. ``entries`` MUST be the full global list those line numbers index
+    into (not a per-chunk slice). Out-of-range indices are clamped into range;
+    a citation still inverted after clamping (``a > b``) is dropped (``None``)
+    rather than fabricating a window from self-evidently-garbage output.
+    """
+    n = len(entries)
+    for item in items:
+        if n == 0:
+            item["time_range"] = None
+            continue
+        a, b = item["line_range"]
+        ia = min(max(int(a), 1), n) - 1
+        ib = min(max(int(b), 1), n) - 1
+        if ia > ib:
+            item["time_range"] = None
+        else:
+            item["time_range"] = (entries[ia].start, entries[ib].end)
 
 
 def merge_chunk_outputs(chunks: list[SummaryChunkResult]) -> SummaryChunkResult:
@@ -209,7 +249,8 @@ def merge_chunk_outputs(chunks: list[SummaryChunkResult]) -> SummaryChunkResult:
             for item in c.bullet_items:
                 merged_items.append({
                     "line_index": item["line_index"] + line_offset,
-                    "time_range": item["time_range"],
+                    # line_range is a global transcript line cite — NOT offset.
+                    "line_range": item["line_range"],
                 })
             # +2 for the blank separator line we'll insert (\n\n joins → +2 lines).
             line_offset += c.bullets_markdown.count("\n") + 2

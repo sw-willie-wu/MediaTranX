@@ -342,7 +342,7 @@ def get_prompt_builder(task: str, model_family: str, thinking: bool = False):
 SUMMARY_MODE_BULLETS = "bullets"
 SUMMARY_MODE_NARRATIVE = "narrative"
 
-_PROMPT_BULLETS = """Below is a subtitle transcript in format [start_sec-end_sec] text:
+_PROMPT_BULLETS = """Below is a subtitle transcript. Every line is prefixed with a line number in the form [L<n>]:
 
 {transcript}
 
@@ -351,17 +351,17 @@ Write a **hierarchical Markdown summary** of the transcript. Structure:
 ```
 ## {{H2 major theme}}
 ### {{H3 sub-theme — only when grouping helps}}
-- **{{short label}}：** {{one-sentence description}} [mm:ss-mm:ss]
-- **{{another label}}：** {{description}} [mm:ss-mm:ss]
-    - {{optional nested sub-bullet — no timestamp needed}}
+- **{{short label}}：** {{one-sentence description}} [L<first>-L<last>]
+- **{{another label}}：** {{description}} [L<first>-L<last>]
+    - {{optional nested sub-bullet — no line citation needed}}
 ```
 
 Rules:
 1. Use `##` for major themes (3~6 sections) and `###` for sub-themes when helpful
-2. Every top-level bullet (line starting with `- **label：**`) MUST end with a timestamp range in the form `[mm:ss-mm:ss]` covering when the topic appears in the transcript
-3. Each top-level bullet should cover one coherent topic (typically 1–5 minutes of the transcript); do NOT micro-split a continuous topic into many short bullets — prefer fewer, substantive bullets over many fragmentary ones
-4. Use bold labels at the start of each bullet (e.g., `**活動背景：**`); nested sub-bullets (indented 4 spaces) are optional and do NOT need timestamps
-5. All timestamps must fall within the transcript range
+2. Every top-level bullet (line starting with `- **label：**`) MUST end with a line-number citation `[L<first>-L<last>]`, where `<first>` and `<last>` are the line numbers of the FIRST and LAST transcript lines that bullet covers. Copy the line numbers exactly as shown in the transcript (e.g. `[L12-L48]`). Do NOT write timestamps, do NOT write mm:ss, do NOT compute seconds — cite only line numbers. If a bullet covers a single line, cite `[L<n>-L<n>]`.
+3. Each top-level bullet should cover one coherent topic; do NOT micro-split a continuous topic into many short bullets — prefer fewer, substantive bullets over many fragmentary ones
+4. Use bold labels at the start of each bullet (e.g., `**活動背景：**`); nested sub-bullets (indented 4 spaces) are optional and do NOT need a line citation
+5. Every cited line number must be a line number that actually appears in the transcript above
 6. Output Markdown only — no JSON, no code fences, no extra text
 7. {language_directive}
 """

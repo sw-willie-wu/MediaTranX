@@ -39,6 +39,7 @@ def test_chunk_single_oversize_entry_still_produces_one_chunk():
 
 
 def test_format_transcript_joins_entries_with_newline():
+    # Unchanged: format_transcript stays the seconds format (narrative mode).
     from app.services.video.summary_service.parse import format_transcript
     entries = [
         SubtitleEntry(start=1.0, end=2.0, text="x"),
@@ -47,45 +48,79 @@ def test_format_transcript_joins_entries_with_newline():
     assert format_transcript(entries) == "[1.0-2.0] x\n[2.0-3.5] y"
 
 
+# ---- format_transcript_numbered (bullets mode, [L<n>] line numbers) ----
+
+def test_format_transcript_numbered_single_chunk():
+    from app.services.video.summary_service.parse import format_transcript_numbered
+    entries = [
+        SubtitleEntry(start=0.0, end=1.0, text="a"),
+        SubtitleEntry(start=1.0, end=2.0, text="b"),
+    ]
+    assert format_transcript_numbered(entries) == "[L1] a\n[L2] b"
+
+
+def test_format_transcript_numbered_offset_continues_across_chunks():
+    from app.services.video.summary_service.parse import format_transcript_numbered
+    entries = [
+        SubtitleEntry(start=0.0, end=1.0, text="x"),
+        SubtitleEntry(start=1.0, end=2.0, text="y"),
+    ]
+    assert format_transcript_numbered(entries, start_index=4) == "[L4] x\n[L5] y"
+
+
 from app.utils.prompts import build_summary_prompt
 from app.services.video.summary_service.parse import (
     format_transcript,
+    format_transcript_numbered,
     parse_summary_json,
     parse_bullets_markdown,
     merge_chunk_outputs,
+    resolve_bullet_windows,
     SummaryChunkResult,
 )
 from app.services.video.summary_service.markdown import build_markdown
 
 
-def _prompt_for(entries, **kwargs):
-    return build_summary_prompt(format_transcript(entries), **kwargs)
+def _bullets_prompt_for(entries, **kwargs):
+    """Bullets-mode prompt: transcript carries [L<n>] line numbers."""
+    return build_summary_prompt(
+        format_transcript_numbered(entries), summary_mode="bullets", **kwargs
+    )
+
+
+def _narrative_prompt_for(entries, **kwargs):
+    """Narrative-mode prompt: transcript keeps the seconds format."""
+    return build_summary_prompt(
+        format_transcript(entries), summary_mode="narrative", **kwargs
+    )
 
 
 def test_build_summary_prompt_contains_transcript():
     entries = [SubtitleEntry(start=0.0, end=2.0, text="hello")]
-    prompt = _prompt_for(entries, output_language="zh-TW")
-    assert "[0.0-2.0] hello" in prompt
+    prompt = _bullets_prompt_for(entries, output_language="zh-TW")
+    assert "[L1] hello" in prompt
     assert "Traditional Chinese" in prompt
 
 
 def test_build_summary_prompt_simplified_chinese():
     entries = [SubtitleEntry(start=0.0, end=2.0, text="hello")]
-    prompt = _prompt_for(entries, output_language="zh-CN")
+    prompt = _bullets_prompt_for(entries, output_language="zh-CN")
     assert "Simplified Chinese" in prompt
 
 
 def test_build_summary_prompt_fallback_when_no_language():
     entries = [SubtitleEntry(start=0.0, end=2.0, text="hello")]
-    prompt = _prompt_for(entries)
+    prompt = _bullets_prompt_for(entries)
     assert "same language as the transcript" in prompt
 
 
-def test_build_summary_prompt_bullets_mode_asks_for_markdown():
+def test_build_summary_prompt_bullets_mode_asks_for_line_cites():
     entries = [SubtitleEntry(start=0.0, end=2.0, text="hello")]
-    prompt = _prompt_for(entries, summary_mode="bullets")
+    prompt = _bullets_prompt_for(entries)
     assert "Markdown" in prompt or "markdown" in prompt
-    assert "[mm:ss-mm:ss]" in prompt
+    # bullets mode cites line numbers, never timestamps
+    assert "[L<first>-L<last>]" in prompt
+    assert "[mm:ss-mm:ss]" not in prompt
     # bullets mode never mentions narrative/turning_points
     assert "narrative" not in prompt
     assert "turning_points" not in prompt
@@ -93,63 +128,132 @@ def test_build_summary_prompt_bullets_mode_asks_for_markdown():
 
 def test_build_summary_prompt_narrative_mode_asks_for_json():
     entries = [SubtitleEntry(start=0.0, end=2.0, text="hello")]
-    prompt = _prompt_for(entries, summary_mode="narrative")
+    prompt = _narrative_prompt_for(entries)
     assert "JSON" in prompt
     assert "narrative" in prompt
     assert "turning_points" in prompt
 
 
-# ---- bullets-mode markdown parser ----
+# ---- bullets-mode markdown parser ([L<a>-L<b>] line citations) ----
 
-def test_parse_bullets_markdown_extracts_timestamps_and_strips_tags():
+def test_parse_bullets_markdown_extracts_line_ranges_and_strips_tags():
     raw = """## 主題
 ### 子主題
-- **活動背景：** 描述一 [01:08-01:40]
-- **開發方向：** 描述二 [02:25-03:20]
+- **活動背景：** 描述一 [L3-L9]
+- **開發方向：** 描述二 [L10-L18]
 """
     result = parse_bullets_markdown(raw)
     assert len(result.bullet_items) == 2
-    assert result.bullet_items[0]["time_range"] == (68.0, 100.0)
-    assert result.bullet_items[1]["time_range"] == (145.0, 200.0)
-    # Tags removed from rendered markdown
-    assert "[01:08-01:40]" not in result.bullets_markdown
-    assert "[02:25-03:20]" not in result.bullets_markdown
+    assert result.bullet_items[0]["line_range"] == (3, 9)
+    assert result.bullet_items[1]["line_range"] == (10, 18)
+    # Cite tags removed from rendered markdown
+    assert "[L3-L9]" not in result.bullets_markdown
+    assert "[L10-L18]" not in result.bullets_markdown
     # Headings preserved
     assert "## 主題" in result.bullets_markdown
     assert "### 子主題" in result.bullets_markdown
 
 
-def test_parse_bullets_markdown_skips_lines_without_label_or_tag():
+def test_parse_bullets_markdown_skips_lines_without_label_or_cite():
     raw = """## 主題
-- 沒有粗體標籤的 bullet [00:00-00:30]
-- **有粗體但沒時間：** 描述
-- **有粗體有時間：** 描述 [01:00-01:30]
-    - 巢狀子項不會被收
+- 沒有粗體標籤的 bullet [L1-L3]
+- **有粗體但沒引用：** 描述
+- **有粗體有引用：** 描述 [L4-L9]
+    - 巢狀子項不會被收 [L10-L12]
 """
     result = parse_bullets_markdown(raw)
     assert len(result.bullet_items) == 1
-    assert result.bullet_items[0]["time_range"] == (60.0, 90.0)
+    assert result.bullet_items[0]["line_range"] == (4, 9)
+    # Cite stripped from render even on lines that were NOT recorded
+    assert "[L1-L3]" not in result.bullets_markdown
+    assert "[L10-L12]" not in result.bullets_markdown
 
 
-def test_parse_bullets_markdown_accepts_seconds_only_format():
-    raw = "- **fallback：** desc [120.5-150.0]\n"
+def test_parse_bullets_markdown_single_line_cite():
+    raw = "- **單行：** 描述 [L7-L7]\n"
     result = parse_bullets_markdown(raw)
-    assert result.bullet_items[0]["time_range"] == (120.5, 150.0)
+    assert result.bullet_items[0]["line_range"] == (7, 7)
+
+
+def test_parse_bullets_markdown_does_not_strip_plain_brackets():
+    # A plain numeric bracket is legitimate content and must survive; only the
+    # distinctive `[L<a>-L<b>]` token is stripped.
+    raw = "- **價格：** 票價區間 [80-120]\n- **章節：** 詳見 [L5-L8]\n"
+    result = parse_bullets_markdown(raw)
+    assert "[80-120]" in result.bullets_markdown
+    assert "[L5-L8]" not in result.bullets_markdown
+    assert len(result.bullet_items) == 1
+    assert result.bullet_items[0]["line_range"] == (5, 8)
 
 
 def test_parse_bullets_markdown_strips_code_fence():
-    raw = "```markdown\n- **x：** y [00:01-00:02]\n```"
+    raw = "```markdown\n- **x：** y [L1-L2]\n```"
     result = parse_bullets_markdown(raw)
     assert len(result.bullet_items) == 1
     assert "```" not in result.bullets_markdown
 
 
 def test_parse_bullets_markdown_line_index_points_to_correct_line():
-    raw = "## H2\n\n- **a：** desc1 [00:00-00:10]\n- **b：** desc2 [00:10-00:20]\n"
+    raw = "## H2\n\n- **a：** desc1 [L1-L2]\n- **b：** desc2 [L3-L4]\n"
     result = parse_bullets_markdown(raw)
     md_lines = result.bullets_markdown.splitlines()
     assert md_lines[result.bullet_items[0]["line_index"]].startswith("- **a")
     assert md_lines[result.bullet_items[1]["line_index"]].startswith("- **b")
+
+
+# ---- resolve_bullet_windows (line range -> real Whisper time window) ----
+
+def _entries(n):
+    return [SubtitleEntry(start=float(i), end=float(i) + 0.5, text=f"t{i}")
+            for i in range(n)]
+
+
+def test_resolve_bullet_windows_basic():
+    entries = _entries(6)
+    items = [{"line_index": 0, "line_range": (2, 5)}]
+    resolve_bullet_windows(items, entries)
+    # 1-based (2,5) -> 0-based idx 1..4
+    assert items[0]["time_range"] == (entries[1].start, entries[4].end)
+
+
+def test_resolve_bullet_windows_single_line():
+    entries = _entries(6)
+    items = [{"line_index": 0, "line_range": (3, 3)}]
+    resolve_bullet_windows(items, entries)
+    assert items[0]["time_range"] == (entries[2].start, entries[2].end)
+
+
+def test_resolve_bullet_windows_clamps_out_of_range():
+    entries = _entries(4)
+    items = [{"line_index": 0, "line_range": (0, 999)}]
+    resolve_bullet_windows(items, entries)
+    # 0 -> clamp to 1 -> idx0 ; 999 -> clamp to 4 -> idx3
+    assert items[0]["time_range"] == (entries[0].start, entries[3].end)
+
+
+def test_resolve_bullet_windows_inverted_is_dropped():
+    entries = _entries(6)
+    # (8,3): clamp -> (6,3) -> idx (5,2) still inverted -> None
+    items = [{"line_index": 0, "line_range": (8, 3)}]
+    resolve_bullet_windows(items, entries)
+    assert items[0]["time_range"] is None
+
+
+def test_resolve_bullet_windows_single_entry():
+    entries = [SubtitleEntry(start=5.0, end=9.0, text="only")]
+    items = [{"line_index": 0, "line_range": (3, 7)}]  # both clamp to 1 -> idx0
+    resolve_bullet_windows(items, entries)
+    assert items[0]["time_range"] == (5.0, 9.0)
+
+
+def test_resolve_bullet_windows_empty_entries():
+    items = [{"line_index": 0, "line_range": (1, 2)}]
+    resolve_bullet_windows(items, [])
+    assert items[0]["time_range"] is None
+
+
+def test_resolve_bullet_windows_empty_items_no_crash():
+    resolve_bullet_windows([], _entries(3))  # must not raise
 
 
 # ---- narrative-mode JSON parser ----
@@ -188,14 +292,17 @@ def test_parse_summary_json_drops_turning_points_missing_time():
 # ---- merge ----
 
 def test_merge_bullets_offsets_line_index_across_chunks():
-    c1 = parse_bullets_markdown("## A\n- **a1：** d [00:00-00:10]\n")
-    c2 = parse_bullets_markdown("## B\n- **b1：** d [00:10-00:20]\n")
+    c1 = parse_bullets_markdown("## A\n- **a1：** d [L1-L5]\n")
+    c2 = parse_bullets_markdown("## B\n- **b1：** d [L6-L9]\n")
     merged = merge_chunk_outputs([c1, c2])
 
     md_lines = merged.bullets_markdown.splitlines()
     # Both items still point to their respective lines after concat
     assert md_lines[merged.bullet_items[0]["line_index"]].startswith("- **a1")
     assert md_lines[merged.bullet_items[1]["line_index"]].startswith("- **b1")
+    # line_range is a global transcript cite — NOT offset by merge
+    assert merged.bullet_items[0]["line_range"] == (1, 5)
+    assert merged.bullet_items[1]["line_range"] == (6, 9)
 
 
 def test_merge_narrative_concats_summaries_and_tps():
@@ -218,8 +325,8 @@ def test_merge_narrative_concats_summaries_and_tps():
 def test_build_markdown_inserts_images_into_bullets_markdown():
     parsed = parse_bullets_markdown(
         "## 主題\n"
-        "- **a：** desc [00:00-00:10]\n"
-        "- **b：** desc [00:10-00:20]\n"
+        "- **a：** desc [L1-L2]\n"
+        "- **b：** desc [L3-L4]\n"
     )
     md = build_markdown(
         parsed,
@@ -265,7 +372,7 @@ def test_build_markdown_uses_english_headers_for_en_language():
 
 
 def test_build_markdown_handles_missing_bullet_frames_gracefully():
-    parsed = parse_bullets_markdown("- **x：** desc [00:00-00:10]\n")
+    parsed = parse_bullets_markdown("- **x：** desc [L1-L2]\n")
     md = build_markdown(parsed, bullet_frames={}, tp_frames={}, title="T")
     assert "**x：**" in md
     assert "![" not in md
@@ -317,7 +424,7 @@ def test_even_indices_unique_sorted_in_range(n, k):
 
 def test_bullets_prompt_rule3_relaxed():
     entries = [SubtitleEntry(start=0.0, end=5.0, text="hello")]
-    p = _prompt_for(entries, summary_mode="bullets")
+    p = _bullets_prompt_for(entries)
     assert "60 seconds" not in p              # hard split rule removed
-    assert "[mm:ss-mm:ss]" in p               # timestamp contract kept
+    assert "[L<first>-L<last>]" in p          # line-citation contract kept
     assert "narrative" not in p and "turning_points" not in p
