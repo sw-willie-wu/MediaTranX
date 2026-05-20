@@ -29,9 +29,11 @@ from .parse import (
     compute_bullet_target,
     even_indices,
     format_transcript,
+    format_transcript_numbered,
     merge_chunk_outputs,
     parse_bullets_markdown,
     parse_summary_json,
+    resolve_bullet_windows,
 )
 from .markdown import build_markdown
 from app.workers.task_manager import TaskManager
@@ -253,6 +255,11 @@ class VideoSummaryService:
         )
 
         chunk_results: list[SummaryChunkResult] = []
+        # 1-based global transcript line number for the next chunk. Bullets mode
+        # numbers transcript lines so the LLM cites [L<n>] ranges; the numbering
+        # must stay continuous across chunks for resolve_bullet_windows to map
+        # cites back onto the global `entries` list.
+        line_offset = 1
         for i, chunk in enumerate(chunks):
             pct = 0.15 + 0.45 * (i / max(1, len(chunks)))
             progress_callback(
@@ -262,8 +269,16 @@ class VideoSummaryService:
             # uses dedicated structured prompts (hierarchical-markdown for bullets mode,
             # JSON for narrative mode) — see video_summary.py for the templates.
             output_lang = _resolve_output_language(language, result.language)
+            # Bullets mode: line-numbered transcript ([L<n>] text) so the LLM
+            # cites line numbers, not timestamps. Narrative mode keeps the
+            # seconds-format transcript (its prompt asks for float seconds).
+            if summary_mode == SUMMARY_MODE_NARRATIVE:
+                transcript = format_transcript(chunk)
+            else:
+                transcript = format_transcript_numbered(chunk, start_index=line_offset)
+            line_offset += len(chunk)
             prompt = build_summary_prompt(
-                format_transcript(chunk),
+                transcript,
                 output_language=output_lang,
                 summary_mode=summary_mode,
             )
@@ -291,6 +306,11 @@ class VideoSummaryService:
             raise RuntimeError("All chunks failed to produce a usable summary")
 
         merged = merge_chunk_outputs(chunk_results)
+
+        # Resolve each bullet's cited transcript line range ([L<a>-L<b>]) to a
+        # real Whisper time window. `entries` is the full global list the line
+        # numbers index into. Unusable cites get time_range=None (skipped below).
+        resolve_bullet_windows(merged.bullet_items, entries)
 
         # Probe duration/fps once to clamp LLM-drifted frame timestamps.
         # Best-effort: the per-item try/except below is the actual guarantee
@@ -352,6 +372,13 @@ class VideoSummaryService:
                     pct,
                     f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
                 )
+                # Bullet whose line citation didn't resolve to a usable window
+                # (resolve_bullet_windows set time_range=None): deliberately skip
+                # — no inline image. This is NOT a failure, so it stays out of
+                # bullet_fail. progress_callback above already fired (keeps the
+                # cancel heartbeat / monotonic progress).
+                if item["time_range"] is None:
+                    continue
                 vlm_cb = (self._make_vlm_callback(
                     vlm_family, vlm_size, on_progress=progress_callback,
                     cancel_pct=pct,
