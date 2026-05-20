@@ -338,3 +338,82 @@ def test_bullets_under_K_all_framed(tmp_path):
     result = _exec(svc, FakeDetector)
     assert result["bullet_count"] == 3
     assert _zip_jpgs(fs) == [f"frames/bullet_{i:03d}.jpg" for i in range(3)]
+
+
+def test_candidate_frames_downscaled_final_frames_native(tmp_path):
+    """Bullet loop: VLM candidate extractions carry the family max_image_edge;
+    the final bullet keyframe extraction carries NO max_edge (stays native).
+    Drives the real _execute bullet loop end-to-end."""
+    svc, file_service = _make_svc_with_mocks(tmp_path)
+    # VLM picks index 0 cleanly (numeric str → _cb's re.search succeeds).
+    svc._chat_service.chat_with_images = MagicMock(return_value="0")
+
+    class SpyDetector:
+        calls: list[dict] = []
+
+        def __init__(self, *a, **kw):
+            pass
+
+        def detect_in_window(self, *a, **kw):
+            return []
+
+        def detect_all(self, *a, **kw):
+            # ≥2 scenes inside the first bullet window [0,5] → forces the
+            # multi-candidate VLM branch in pick_frame_timestamp.
+            return [1.0, 2.0, 6.0, 7.0]
+
+        def extract_frame(self, input_path, output_path, timestamp,
+                          max_edge=None):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"fake-jpg")
+            SpyDetector.calls.append(
+                {"name": output_path.name, "max_edge": max_edge}
+            )
+
+    SpyDetector.calls = []
+
+    cfg = {
+        "max_image_edge": 777, "temperature": 0.0, "top_k": 40, "top_p": 0.9,
+        "prompt_builder": "default", "thinking": False,
+        "max_tokens_strategy": "fixed", "max_tokens_ratio": 4,
+        "max_tokens_cap": 16, "n_ctx": 4096, "n_ctx_min": 2048,
+        "n_ctx_max": 8192, "vram_per_ctx_token": 0.04, "max_srt_batch": 0,
+    }
+
+    fake_result = MagicMock(
+        segments=[
+            MagicMock(start=0.0, end=5.0, text="這是第一段測試"),
+            MagicMock(start=5.0, end=10.0, text="這是第二段內容"),
+        ],
+        language="zh",
+    )
+
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync",
+               return_value=fake_result), \
+         patch("app.services.video.summary_service.service.SceneDetector",
+               SpyDetector), \
+         patch("app.services.video.summary_service.service.get_inference_config",
+               lambda f, s, t: cfg):
+        result = svc._execute(
+            params={
+                "file_id": "f1",
+                "llm_model_family": "qwen3.5",
+                "llm_model_size": "9b",
+                "language": "zh-TW",
+                "vlm_model_family": "qwen3vl",
+                "vlm_model_size": "8b",
+                "summary_mode": "bullets",
+            },
+            progress_callback=lambda p, m: None,
+        )
+
+    assert "output_file_id" in result
+    cand = [c for c in SpyDetector.calls if c["name"].startswith("candidate_")]
+    final = [c for c in SpyDetector.calls
+             if c["name"].startswith(("bullet_", "tp_"))]
+    assert cand, "expected candidate extractions (VLM branch must have run)"
+    assert all(c["max_edge"] == 777 for c in cand), \
+        f"candidate frames must carry family max_image_edge: {cand}"
+    assert final, "expected final keyframe extraction"
+    assert all(c["max_edge"] is None for c in final), \
+        f"final keyframes must stay native (no max_edge): {final}"

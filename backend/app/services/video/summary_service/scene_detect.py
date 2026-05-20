@@ -82,10 +82,15 @@ class SceneDetector:
 
         return [s[0].get_seconds() for s in scenes]
 
-    def extract_frame(self, input_path: Path, output_path: Path, timestamp: float) -> None:
-        """Extract one JPEG frame at a given timestamp via FFmpeg."""
-        self._ffmpeg.extract_frame_sync(
-            input_path=input_path,
-            output_path=output_path,
-            timestamp=timestamp,
-        )
+    def extract_frame(self, input_path: Path, output_path: Path,
+                       timestamp: float, max_edge: int | None = None) -> None:
+        """Extract one JPEG frame at a given timestamp via FFmpeg.
+
+        ``max_edge`` is forwarded only when set, so callers that don't pass it
+        keep the exact 3-kwarg call contract (see test_scene_detect.py).
+        """
+        kwargs = dict(input_path=input_path, output_path=output_path,
+                      timestamp=timestamp)
+        if max_edge is not None:
+            kwargs["max_edge"] = max_edge
+        self._ffmpeg.extract_frame_sync(**kwargs)

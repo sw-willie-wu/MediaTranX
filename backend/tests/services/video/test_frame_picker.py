@@ -216,3 +216,43 @@ def test_pick_scenes_none_still_uses_detect_in_window():
     )
     detector.detect_in_window.assert_called_once()
     assert result == 12.3
+
+
+def test_pick_frame_timestamp_forwards_candidate_max_edge(tmp_path):
+    """candidate_max_edge reaches the candidate extract call; default None."""
+    from unittest.mock import MagicMock
+    from pathlib import Path
+    from app.services.video.summary_service import frame_picker
+
+    detector = MagicMock()
+    detector.extract_frame = MagicMock()
+    # Force the multi-candidate VLM branch: 2 scenes in-window.
+    vlm_cb = MagicMock(return_value=0)
+
+    frame_picker.pick_frame_timestamp(
+        detector=detector,
+        vlm_callback=vlm_cb,
+        video_path=Path("v.mp4"),
+        window_start=0.0,
+        window_end=10.0,
+        context_text="ctx",
+        temp_dir=tmp_path,
+        scenes=[1.0, 5.0],
+        candidate_max_edge=768,
+    )
+    for call in detector.extract_frame.call_args_list:
+        assert call.kwargs.get("max_edge") == 768
+
+    detector.extract_frame.reset_mock()
+    frame_picker.pick_frame_timestamp(
+        detector=detector,
+        vlm_callback=vlm_cb,
+        video_path=Path("v.mp4"),
+        window_start=0.0,
+        window_end=10.0,
+        context_text="ctx",
+        temp_dir=tmp_path,
+        scenes=[1.0, 5.0],
+    )
+    for call in detector.extract_frame.call_args_list:
+        assert "max_edge" not in call.kwargs  # default → not forwarded

@@ -102,3 +102,68 @@ class TestExtractAudioParams:
                 sample_rate=16000,
                 channels=1,
             )
+
+
+# ── extract_frame max_edge ──────────────────────────────────────────────────
+
+class TestExtractFrameMaxEdge:
+    """extract_frame ffmpeg args: byte-identical when max_edge=None;
+    adds -vf scale when set. No real ffmpeg (subprocess mocked)."""
+
+    def _wrapper(self):
+        # FFmpegWrapper.__init__ calls _find_ffmpeg() AND _find_ffprobe()
+        # (ffmpeg.py:120-122); patch both so the unit test is fully
+        # environment-independent (no real binary discovery).
+        from unittest.mock import patch
+        from app.adapters.binary.ffmpeg import FFmpegWrapper
+        with patch.object(FFmpegWrapper, "_find_ffmpeg", return_value="ffmpeg"), \
+             patch.object(FFmpegWrapper, "_find_ffprobe", return_value="ffprobe"):
+            return FFmpegWrapper()
+
+    async def _capture_args(self, w, **kw):
+        from unittest.mock import patch, AsyncMock
+        proc = AsyncMock()
+        proc.returncode = 0
+        proc.communicate = AsyncMock(return_value=(b"", b""))
+        with patch(
+            "app.adapters.binary.ffmpeg.asyncio.create_subprocess_exec",
+            new=AsyncMock(return_value=proc),
+        ) as m:
+            await w.extract_frame(**kw)
+        return list(m.call_args.args)
+
+    # No @pytest.mark.asyncio needed: pyproject.toml sets asyncio_mode="auto",
+    # so bare `async def` tests run automatically.
+    async def test_no_max_edge_args_unchanged(self, tmp_path):
+        w = self._wrapper()
+        # extract_frame guards `if not input_path.exists()` (ffmpeg.py:532-533)
+        # BEFORE the subprocess call, so the input must really exist even
+        # though the subprocess itself is mocked.
+        src = tmp_path / "in.mp4"
+        src.write_bytes(b"x")
+        out = tmp_path / "f.jpg"
+        args = await self._capture_args(
+            w, input_path=src, output_path=out, timestamp=42.5
+        )
+        assert args == [
+            "ffmpeg", "-y", "-ss", "42.500", "-i", str(src),
+            "-vframes", "1", "-q:v", "2", str(out),
+        ]
+        assert "-vf" not in args
+
+    async def test_max_edge_adds_scale_filter(self, tmp_path):
+        w = self._wrapper()
+        src = tmp_path / "in.mp4"
+        src.write_bytes(b"x")
+        out = tmp_path / "f.jpg"
+        args = await self._capture_args(
+            w, input_path=src, output_path=out, timestamp=1.0,
+            max_edge=768,
+        )
+        assert "-vf" in args
+        vf = args[args.index("-vf") + 1]
+        assert vf == (
+            "scale='if(gt(iw,ih),min(768,iw),-2)':"
+            "'if(gt(iw,ih),-2,min(768,ih))'"
+        )
+        assert args.index("-vf") < args.index(str(out))  # filter before output

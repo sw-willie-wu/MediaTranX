@@ -520,11 +520,15 @@ class FFmpegWrapper:
         input_path: str | Path,
         output_path: str | Path,
         timestamp: float,
+        max_edge: int | None = None,
     ) -> Path:
         """Extract a single frame at ``timestamp`` seconds as a JPEG image.
 
         Uses ``-ss`` before ``-i`` for fast input seeking plus ``-vframes 1`` to
         grab exactly one frame. ``-q:v 2`` gives high-quality JPEG output.
+        ``max_edge``: when set, the longest edge is scaled down to this many
+        pixels (aspect preserved, never upscaled, output dims kept even);
+        ``None`` (default) means no scaling — args are byte-identical to before.
         """
         input_path = Path(input_path)
         output_path = Path(output_path)
@@ -541,8 +545,14 @@ class FFmpegWrapper:
             "-i", str(input_path),
             "-vframes", "1",
             "-q:v", "2",
-            str(output_path),
         ]
+        if max_edge is not None:
+            args += [
+                "-vf",
+                f"scale='if(gt(iw,ih),min({max_edge},iw),-2)':"
+                f"'if(gt(iw,ih),-2,min({max_edge},ih))'",
+            ]
+        args.append(str(output_path))
 
         proc = await asyncio.create_subprocess_exec(
             *args,
@@ -561,9 +571,12 @@ class FFmpegWrapper:
         input_path: str | Path,
         output_path: str | Path,
         timestamp: float,
+        max_edge: int | None = None,
     ) -> Path:
         """Sync version of extract_frame() for use in TaskManager handlers."""
-        return _run_sync(self.extract_frame(input_path, output_path, timestamp))
+        return _run_sync(
+            self.extract_frame(input_path, output_path, timestamp, max_edge)
+        )
 
     async def extract_audio(
         self,

@@ -115,3 +115,60 @@ class TestFFmpegAudioConvert:
         import soundfile as sf
         _, sr = sf.read(str(result))
         assert sr == 22050
+
+
+def _make_src(tmp_path, w, h):
+    """A solid-color PNG of exact (w,h). PNG has no even-dimension
+    constraint (unlike libx264/mp4), so odd sizes are representable.
+    extract_frame reads it as a single-frame input (ffmpeg autodetects;
+    `-ss 0 -i img.png -vframes 1` grabs the image)."""
+    from PIL import Image
+    src = tmp_path / f"src_{w}x{h}.png"
+    Image.new("RGB", (w, h), (200, 30, 30)).save(src)
+    return src
+
+
+class TestExtractFrameDownscaleDims:
+    @pytest.mark.parametrize("sw,sh,edge,exp", [
+        (1920, 1080, 768, (768, 432)),    # landscape down
+        (1080, 1920, 768, (432, 768)),    # portrait down
+        (1000, 1000, 768, (768, 768)),    # square down
+        (640, 480, 768, (640, 480)),      # sub-N even → unchanged
+    ])
+    async def test_dims(self, ffmpeg, tmp_path, sw, sh, edge, exp):
+        from PIL import Image
+        src = _make_src(tmp_path, sw, sh)
+        out = tmp_path / "o.jpg"
+        await ffmpeg.extract_frame(src, out, 0.0, max_edge=edge)
+        assert Image.open(out).size == exp
+
+    async def test_proportional_other_axis_rounded_even(self, ffmpeg, tmp_path):
+        # 1000x563 → longest edge 768: w=768, h=563*768/1000≈432.4 → -2
+        # forces the computed axis to the nearest even value.
+        from PIL import Image
+        src = _make_src(tmp_path, 1000, 563)
+        out = tmp_path / "o.jpg"
+        await ffmpeg.extract_frame(src, out, 0.0, max_edge=768)
+        w, h = Image.open(out).size
+        assert w == 768
+        assert h % 2 == 0 and abs(h - 432) <= 2  # -2 even-rounding, ~proportional
+
+    async def test_sub_n_odd_dim_not_upscaled_odd_axis_even(self, ffmpeg, tmp_path):
+        # 321x241 ≤ 768: never upscaled; the -2 axis is even; both axes
+        # within ≤1px of source (exact JPEG odd-axis handling is encoder-
+        # dependent, so assert the AC2 contract, not exact pixels).
+        from PIL import Image
+        src = _make_src(tmp_path, 321, 241)
+        out = tmp_path / "o.jpg"
+        await ffmpeg.extract_frame(src, out, 0.0, max_edge=768)
+        w, h = Image.open(out).size
+        assert abs(w - 321) <= 1 and abs(h - 241) <= 1  # not upscaled, ≤1px
+        assert h % 2 == 0                                # -2 axis even
+        assert max(w, h) <= 768                          # never upscaled
+
+    async def test_none_is_native(self, ffmpeg, tmp_path):
+        from PIL import Image
+        src = _make_src(tmp_path, 1280, 720)
+        out = tmp_path / "o.jpg"
+        await ffmpeg.extract_frame(src, out, 0.0)
+        assert Image.open(out).size == (1280, 720)

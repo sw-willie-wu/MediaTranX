@@ -27,6 +27,7 @@ _REQUIRED_LOCAL_KEYS = {
     "max_tokens_strategy", "max_tokens_ratio", "max_tokens_cap",
     "n_ctx", "n_ctx_min", "n_ctx_max",
     "vram_per_ctx_token", "max_srt_batch",
+    "max_image_edge",
 }
 
 _VALID_MAX_TOKENS_STRATEGIES = {"input_ratio", "context_ratio", "fixed"}
@@ -63,6 +64,7 @@ def test_local_inference_config_shape(family: str, task: str, size: str):
     assert isinstance(cfg["max_tokens_cap"], int) and cfg["max_tokens_cap"] > 0
     assert isinstance(cfg["n_ctx"], int) and cfg["n_ctx"] > 0
     assert cfg["n_ctx_min"] <= cfg["n_ctx"] <= cfg["n_ctx_max"]
+    assert cfg["max_image_edge"] is None or isinstance(cfg["max_image_edge"], int)
 
 
 def test_local_inference_config_unknown_family_uses_defaults():
@@ -119,3 +121,25 @@ def test_known_text_families_support_translate_and_summarize():
         inference = gguf[family].get("inference", {})
         assert "translate" in inference, f"{family} lost 'translate' inference config"
         assert "summarize" in inference, f"{family} lost 'summarize' inference config"
+
+
+def test_frame_select_config_exposes_max_image_edge():
+    from app.adapters.ai.inference_config import get_inference_config
+    # qwen3vl has a frame_select block; key must always be present.
+    cfg = get_inference_config("qwen3vl", "8b", "frame_select")
+    assert "max_image_edge" in cfg
+    # A family/task with no max_image_edge in registry yields None, not KeyError.
+    txt = get_inference_config("qwen3", "8b", "summarize")
+    assert txt["max_image_edge"] is None
+
+
+@pytest.mark.parametrize("family,size,expected", [
+    ("qwen3vl", "8b", 768),
+    ("internvl2.5", "4b", 1024),
+    ("gemma4", "e4b", 1024),
+    ("qwen3.5", "9b", 1024),
+])
+def test_vision_families_have_max_image_edge(family, size, expected):
+    from app.adapters.ai.inference_config import get_inference_config
+    cfg = get_inference_config(family, size, "frame_select")
+    assert cfg["max_image_edge"] == expected

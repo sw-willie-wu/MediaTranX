@@ -238,6 +238,7 @@ MODELS_REGISTRY = {
                     "temperature": 0.0, "top_k": 40, "top_p": 0.9,
                     "prompt_builder": "default",
                     "max_tokens_strategy": "fixed", "max_tokens_cap": 16,
+                    "max_image_edge": 768,  # Task-1 spike sweet spot (2026-05-19)
                 },
             },
             "specs": {
@@ -338,6 +339,7 @@ MODELS_REGISTRY = {
                     "temperature": 0.0, "top_k": 40, "top_p": 0.9,
                     "prompt_builder": "default",
                     "max_tokens_strategy": "fixed", "max_tokens_cap": 16,
+                    "max_image_edge": 1024,  # conservative; un-measured (per-family tuning = follow-up)
                 },
             },
             "specs": {
@@ -471,6 +473,7 @@ MODELS_REGISTRY = {
                     "temperature": 0.0, "top_k": 40, "top_p": 0.9,
                     "prompt_builder": "gemma",
                     "max_tokens_strategy": "fixed", "max_tokens_cap": 16,
+                    "max_image_edge": 1024,  # conservative; un-measured (per-family tuning = follow-up)
                 },
             },
             "specs": {
@@ -553,6 +556,7 @@ MODELS_REGISTRY = {
                     "temperature": 0.0, "top_k": 40, "top_p": 0.9,
                     "prompt_builder": "default",
                     "max_tokens_strategy": "fixed", "max_tokens_cap": 16,
+                    "max_image_edge": 1024,  # conservative; un-measured (per-family tuning = follow-up)
                 },
             },
             "specs": {

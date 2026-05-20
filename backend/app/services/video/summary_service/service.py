@@ -357,6 +357,12 @@ class VideoSummaryService:
                     cancel_pct=pct,
                     cancel_msg=f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
                 ) if vlm_family and vlm_size else None)
+                cand_max_edge = (
+                    get_inference_config(
+                        vlm_family, vlm_size, "frame_select"
+                    )["max_image_edge"]
+                    if vlm_family and vlm_size else None
+                )
                 try:
                     t_start, t_end = item["time_range"]
                     # Use the bullet's own markdown line as VLM context (label + description).
@@ -373,6 +379,7 @@ class VideoSummaryService:
                         duration=video_duration,
                         fps=video_fps,
                         scenes=global_scenes,
+                        candidate_max_edge=cand_max_edge,
                     )
                     out = frames_dir / f"bullet_{orig_i:03d}.jpg"
                     detector.extract_frame(
@@ -404,6 +411,12 @@ class VideoSummaryService:
                     cancel_pct=pct,
                     cancel_msg=f"task.progress.summary_tp_frame|{n_done + 1}|{len(tp_sel)}",
                 ) if vlm_family and vlm_size else None)
+                cand_max_edge = (
+                    get_inference_config(
+                        vlm_family, vlm_size, "frame_select"
+                    )["max_image_edge"]
+                    if vlm_family and vlm_size else None
+                )
                 try:
                     t = tp["time"]
                     ts = pick_frame_timestamp(
@@ -417,6 +430,7 @@ class VideoSummaryService:
                         duration=video_duration,
                         fps=video_fps,
                         scenes=global_scenes,
+                        candidate_max_edge=cand_max_edge,
                     )
                     out = frames_dir / f"tp_{orig_i:03d}.jpg"
                     detector.extract_frame(

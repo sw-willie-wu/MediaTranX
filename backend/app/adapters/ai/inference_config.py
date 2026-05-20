@@ -15,9 +15,9 @@ def get_inference_config(model_family: str, size: str, task: str) -> dict:
     Merges family-level inference params with size-level capacity params.
 
     Returns dict with keys:
-        temperature, top_k, top_p, prompt_builder,
+        temperature, top_k, top_p, prompt_builder, thinking,
         max_tokens_strategy, max_tokens_ratio, max_tokens_cap,
-        n_ctx, n_ctx_min, n_ctx_max
+        n_ctx, n_ctx_min, n_ctx_max, max_image_edge
     """
     from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
 
@@ -32,6 +32,7 @@ def get_inference_config(model_family: str, size: str, task: str) -> dict:
         "top_p": inference.get("top_p", 0.9),
         "prompt_builder": inference.get("prompt_builder", "default"),
         "thinking": inference.get("thinking", False),
+        "max_image_edge": inference.get("max_image_edge"),
         # Max tokens strategy (from family inference)
         "max_tokens_strategy": inference.get("max_tokens_strategy", "input_ratio"),
         "max_tokens_ratio": inference.get("max_tokens_ratio", 4),
