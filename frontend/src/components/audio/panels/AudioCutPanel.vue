@@ -7,7 +7,6 @@ const props = defineProps<{
   fileId: string | null
   currentFileName: string
   duration?: number
-  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -89,7 +88,6 @@ async function execute() {
       file_id: props.fileId,
       start_time: startTime.value,
       end_time: endTime.value,
-      ...(props.sourceDir ? { output_dir: props.sourceDir } : {}),
     },
     t('audio.cut.task_label'),
     'audio.cut',

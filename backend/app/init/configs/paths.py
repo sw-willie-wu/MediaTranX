@@ -1,31 +1,54 @@
 """Path resolution settings."""
 import sys
 from pathlib import Path
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, computed_field
 
 _WIN = sys.platform == "win32"
 
 
 class PathSettings(BaseModel):
     """Path configuration. Defaults are relative to cwd (core/backend/ in dev).
-    In production, Electron overrides via MEDIATRANX_PATH__* env vars."""
-    data: Path = Path(".")
-    venv: Path = Path(".venv")
-    bin: Path = Path("bin")
+    In production, Electron overrides via MEDIATRANX_PATH__* env vars.
+
+    Top-level (env-overridable, user-relocatable):
+      - `root`   : writable user-data root (DB, .env, manager base_dir,
+                   parent of bin/.venv/logs)
+      - `models` : AI models (user may move to bigger drive via Settings UI)
+      - `temp`   : uploads/results/sidecars (user may move via Settings UI)
+
+    Computed from `root`:
+      - `venv`       : python virtual env (root/.venv)
+      - `log`        : log files (root/logs)
+      - `ffmpeg`     : Windows root/bin/ffmpeg/; Linux/macOS = system 'ffmpeg'
+      - `llama`      : root/bin/llama/
+      - `soundfonts` : root/bin/soundfonts/musyngkite/
+    """
+    root: Path = Path(".")
     models: Path = Path("models")
-    temp: Path = Path("data/temp")
+    temp: Path = Path("temp")
 
-    # Windows: derived from bin. Linux/macOS: system binary name.
-    ffmpeg: Path = Path("bin/ffmpeg") if _WIN else Path("ffmpeg")
-    llama: Path = Path("bin/llama")
+    @computed_field
+    @property
+    def venv(self) -> Path:
+        return self.root / ".venv"
 
-    @model_validator(mode="after")
-    def _derive_bin_paths(self) -> "PathSettings":
-        """When bin is overridden (e.g. by Electron), update tool paths to match."""
-        if self.bin != Path("bin"):
-            b = self.bin
-            if _WIN and self.ffmpeg == Path("bin/ffmpeg"):
-                self.ffmpeg = b / "ffmpeg"
-            if self.llama == Path("bin/llama"):
-                self.llama = b / "llama"
-        return self
+    @computed_field
+    @property
+    def log(self) -> Path:
+        return self.root / "logs"
+
+    @computed_field
+    @property
+    def ffmpeg(self) -> Path:
+        # On non-Windows, prefer system-installed ffmpeg (binary on PATH)
+        return self.root / "bin" / "ffmpeg" if _WIN else Path("ffmpeg")
+
+    @computed_field
+    @property
+    def llama(self) -> Path:
+        return self.root / "bin" / "llama"
+
+    @computed_field
+    @property
+    def soundfonts(self) -> Path:
+        return self.root / "bin" / "soundfonts" / "musyngkite"

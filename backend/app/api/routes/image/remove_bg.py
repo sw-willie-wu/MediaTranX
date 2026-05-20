@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
@@ -19,7 +19,6 @@ router = APIRouter()
 class ImageRemoveBgRequest(BaseModel):
     file_id: str = Field(..., description="Input file ID")
     mode: str = Field(default="auto", description="Removal mode (auto/person/product/animal/anime)")
-    output_dir: Optional[str] = Field(default=None)
 
 
 class ImageRemoveBgResponse(BaseModel):
@@ -34,14 +33,8 @@ async def remove_bg(
     service: ImageRemoveBgService = Depends(Provide[AppContainer.image_remove_bg]),
 ):
     """Submit background removal task."""
-    try:
-        task_id = await service.submit_remove_bg(
-            file_id=request.file_id,
-            mode=request.mode,
-            output_dir=request.output_dir,
-        )
-        return ImageRemoveBgResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_remove_bg(
+        file_id=request.file_id,
+        mode=request.mode,
+    )
+    return ImageRemoveBgResponse(task_id=task_id)

@@ -1,10 +1,12 @@
 """
 Model metadata service.
 Enumerates all model statuses (download state, size, category, etc.) for the route layer.
-Routes should not import engine.ai.registry / engine.ai.model_manager directly.
+Routes should not import adapters.ai.registry / adapters.ai.model_manager directly.
 """
 import logging
 from pathlib import Path
+
+from app.adapters.ai.model_manager import ModelManager
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +83,8 @@ _LANG_NAMES = {
 class ModelMetadataService:
     """Model metadata enumeration and download status query service."""
 
-    def __init__(self):
+    def __init__(self, model_manager: ModelManager):
+        self._model_manager = model_manager
         logger.info("ModelMetadataService initialized")
 
     def list_all(self) -> dict:
@@ -117,10 +120,9 @@ class ModelMetadataService:
 
     def _enumerate_pth_models(self) -> list[dict]:
         """Enumerate PyTorch models (super-resolution, face restoration, segmentation)."""
-        from app.init.container import get_container
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PTH
 
-        manager = get_container().model_manager()
+        manager = self._model_manager
         items = []
         pth_models = MODELS_REGISTRY.get(FORMAT_PTH, {})
 
@@ -153,7 +155,7 @@ class ModelMetadataService:
 
     def _enumerate_whisper_models(self) -> list[dict]:
         """Enumerate Whisper STT models."""
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PKG
         from app.init.configs import SETTINGS
 
         whisper_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("whisper", {})
@@ -187,7 +189,7 @@ class ModelMetadataService:
 
     def _enumerate_demucs_models(self) -> list[dict]:
         """Enumerate Demucs audio source separation models."""
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PKG
         from app.init.configs import SETTINGS
 
         demucs_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("demucs", {})
@@ -222,7 +224,7 @@ class ModelMetadataService:
 
     def _enumerate_gguf_models(self) -> list[dict]:
         """Dynamically enumerate all GGUF models (text + vision) from registry."""
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
         from app.init.configs import SETTINGS
 
         items = []
@@ -271,7 +273,7 @@ class ModelMetadataService:
 
     def _enumerate_alignment_models(self) -> list[dict]:
         """Enumerate Wav2Vec2 speech alignment models."""
-        from app.engine.ai.audio.wav2vec2 import LANG_MODELS
+        from app.adapters.ai.wrapper.wav2vec2 import LANG_MODELS
         from app.init.configs import SETTINGS
 
         align_dir = SETTINGS.path.models / "alignment"
@@ -290,7 +292,7 @@ class ModelMetadataService:
                 "variant": lang_code,
                 "variant_label": lang_name,
                 "category": "alignment",
-                "description": f"Forced Alignment ({lang_code})",
+                "description": f"models.alignment||{lang_code}",
                 "downloaded": downloaded,
                 "size_mb": 1200,
                 "vram_mb": 1000,
@@ -300,7 +302,7 @@ class ModelMetadataService:
 
     def _enumerate_rife_models(self) -> list[dict]:
         """Enumerate RIFE interpolation models"""
-        from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
         from app.init.configs import SETTINGS
 
         rife_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife", {})

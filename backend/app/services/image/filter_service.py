@@ -4,9 +4,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from functools import lru_cache
-from pathlib import Path
 from typing import Callable
-from uuid import uuid4
 
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
@@ -28,7 +26,8 @@ class ImageFilterService:
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_FILTER,
-            self._handle_task
+            self._handle_task,
+            output_policy="history",
         )
 
         logger.info("ImageFilterService initialized")
@@ -49,9 +48,7 @@ class ImageFilterService:
         vignette:   float = 0.0,
     ) -> str:
         """Submit an image adjustment task."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id":    file_id,
@@ -224,9 +221,7 @@ class ImageFilterService:
         import base64
         import io
 
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         # Use cached thumbnail to avoid repeated disk I/O + resize
         rgb_bytes, alpha_bytes = self._load_preview_thumb(str(file_info.file_path), max_size)
@@ -317,59 +312,47 @@ class ImageFilterService:
         progress_callback: Callable[[float, str], None],
     ) -> dict:
         file_id   = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
-        from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
+        from app.utils.gif_utils import animation_format, apply_and_save, animation_ext
 
         progress_callback(0.05, "task.progress.loading_image")
 
-        def _filter_single(frame: Image.Image) -> Image.Image:
-            _rgba = frame.convert("RGBA")
-            alpha_ch = _rgba.split()[3]
-            has_alpha = alpha_ch.getextrema()[0] < 255
-            rgb = _rgba.convert("RGB")
-            def noop(p, m): pass
-            rgb = self._apply_all(rgb, params, noop)
-            if has_alpha:
-                out = rgb.convert("RGBA")
-                out.putalpha(alpha_ch)
-                return out
-            return rgb
+        def noop(p, m): pass
+
+        # frame_fn receives the RGB view (preserve_alpha=True in apply_and_save handles stripping/restoring alpha)
+        def _frame_fn(rgb: Image.Image) -> Image.Image:
+            return self._apply_all(rgb, params, noop)
 
         with Image.open(file_info.file_path) as raw:
             anim_fmt = animation_format(raw)
-            if anim_fmt:
-                def _process_frame(frame, idx, total):
-                    progress_callback(0.15 + idx / total * 0.6, f"task.progress.applying_adjustment|{idx + 1}|{total}")
-                    return _filter_single(frame)
-                result_frames = process_gif_frames(raw, _process_frame)
-            else:
-                raw = raw.copy()
+
+        ext = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
+        # Save adjusted results to system temp dir; user chooses final location on download
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_adjusted",
+            ext=f".{ext}",
+        )
+
+        def _on_progress(p: float, msg: str) -> None:
+            # animation: scale per-frame progress into 0.15–0.75 band
+            progress_callback(0.15 + p * 0.6, msg)
 
         if not anim_fmt:
             progress_callback(0.15, "task.progress.applying_adjustment_single")
-            img = _filter_single(raw)
 
-        progress_callback(0.75, "task.progress.saving_file")
+        with Image.open(file_info.file_path) as raw:
+            apply_and_save(
+                raw,
+                output_path,
+                _frame_fn,
+                on_progress=_on_progress if anim_fmt else None,
+                preserve_alpha=True,
+                static_save_kwargs={"format": "PNG"},
+            )
 
-        output_file_id    = str(uuid4())
-        original_stem     = Path(file_info.original_filename).stem
-        ext               = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
-        final_filename    = f"{original_stem}_adjusted_{output_file_id[:8]}.{ext}"
-
-        # Save adjusted results to system temp dir; user chooses final location on download
-        output_dir = self._file_service.output_dir
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / final_filename
-
-        if anim_fmt:
-            save_animated(result_frames, output_path, anim_fmt)
-        else:
-            img.save(str(output_path), format="PNG")
-            img.close()
+        progress_callback(0.9, "task.progress.saving_file")
 
         output_info = self._file_service.register_output(
             file_id=output_file_id,

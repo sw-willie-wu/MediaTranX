@@ -2,7 +2,7 @@
 from fractions import Fraction
 from dataclasses import fields
 
-from app.engine.ffmpeg import MediaInfo
+from app.adapters.binary.ffmpeg import MediaInfo
 
 
 class TestMediaInfoFpsFraction:
@@ -45,11 +45,11 @@ class TestMediaInfoFpsFraction:
 
 class TestKoreanWav2Vec2:
     def test_korean_repo_exists(self):
-        from app.engine.ai.audio.wav2vec2 import LANG_MODELS
+        from app.adapters.ai.wrapper.wav2vec2 import LANG_MODELS
         assert "ko" in LANG_MODELS
         assert LANG_MODELS["ko"] == "kresnik/wav2vec2-large-xlsr-korean"
 
     def test_all_languages_defined(self):
-        from app.engine.ai.audio.wav2vec2 import LANG_MODELS
+        from app.adapters.ai.wrapper.wav2vec2 import LANG_MODELS
         expected = {"en", "zh", "ja", "ko", "fr", "de", "es", "pt", "it", "nl", "pl", "ru", "ar", "fi", "hu", "el"}
         assert set(LANG_MODELS.keys()) == expected

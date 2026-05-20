@@ -21,6 +21,9 @@ export const useFilesStore = defineStore('files', () => {
   const pendingFile = ref<File | null>(null)
   const pendingSourceDir = ref<string | undefined>(undefined)
 
+  // 批次暫存（跨工具開啟多選結果用）
+  const pendingFiles = ref<File[]>([])
+
   // 計算屬性
   const allFiles = computed(() => Array.from(files.value.values()))
 
@@ -217,6 +220,12 @@ export const useFilesStore = defineStore('files', () => {
     currentFile.value = null
   }
 
+  // 設定暫存檔案（由 HomeView 等入口呼叫，跨頁面傳遞）
+  function setPendingFile(file: File, sourceDir?: string) {
+    pendingFile.value = file
+    pendingSourceDir.value = sourceDir
+  }
+
   // 取出暫存檔案（取出後清除）
   function consumePendingFile(): { file: File; sourceDir?: string } | null {
     const file = pendingFile.value
@@ -227,6 +236,18 @@ export const useFilesStore = defineStore('files', () => {
     return { file, sourceDir: srcDir }
   }
 
+  // 批次暫存檔案（由 results store openManyInTool 呼叫）
+  function setPendingFiles(files: File[]) {
+    pendingFiles.value = [...files]
+  }
+
+  // 取出批次暫存檔案（取出後清除）
+  function consumePendingFiles(): File[] {
+    const arr = pendingFiles.value
+    pendingFiles.value = []
+    return arr
+  }
+
   return {
     // 狀態
     files,
@@ -235,6 +256,7 @@ export const useFilesStore = defineStore('files', () => {
     uploadProgress,
     pendingFile,
     pendingSourceDir,
+    pendingFiles,
     allFiles,
     imageFiles,
     videoFiles,
@@ -245,7 +267,10 @@ export const useFilesStore = defineStore('files', () => {
     downloadFile,
     deleteFile,
     setCurrentFile,
+    setPendingFile,
     consumePendingFile,
+    setPendingFiles,
+    consumePendingFiles,
     cleanup,
   }
 })

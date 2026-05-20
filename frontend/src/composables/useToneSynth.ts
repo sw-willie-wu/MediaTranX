@@ -419,7 +419,12 @@ export function useToneSynth() {
   /**
    * Update effects parameters and apply to active nodes.
    */
-  function updateEffects(params: Partial<typeof effectsState>): void {
+  function updateEffects(params: {
+    eq?: Partial<typeof effectsState.eq>
+    compressor?: Partial<typeof effectsState.compressor>
+    delay?: Partial<typeof effectsState.delay>
+    reverb?: Partial<typeof effectsState.reverb>
+  }): void {
     if (params.eq) {
       Object.assign(effectsState.eq, params.eq)
       if (_eq) {

@@ -22,6 +22,46 @@ export default {
     save_as: 'Save As',
   },
 
+  // ── Results drawer ────────────────────────────────────────────────────
+  results: {
+    title: 'Results',
+    empty: 'No results yet',
+    from_source: 'from {name}',
+    preview: 'Preview',
+    save_as: 'Save as',
+    saving: 'Saving...',
+    browse_saved: 'Browse',
+    add_to_tool: 'Add to {tool}',
+    remove: 'Remove',
+    select_all: 'Select all',
+    clear: 'Clear',
+    confirm_clear: 'Clear all results? (Related temp files will be deleted)',
+    group_time: 'Time',
+    group_tool: 'Tool',
+    group_by_tool: 'Group by tool',
+    batch_save: 'Save all',
+    batch_open: 'Open in {tool}',
+    batch_open_disabled: 'Mixed types',
+    batch_delete: 'Delete',
+    mixed_types_disabled: 'Disabled for mixed types',
+    confirm_batch_delete: 'Delete {count} selected results?',
+  },
+  tool_labels: {
+    'audio.transcribe': 'Audio Transcription',
+    'audio.separate': 'Source Separation',
+    'audio.lyrics': 'Lyrics Alignment',
+    'audio.midi.render': 'MIDI Render',
+    'image.ocr': 'Image OCR',
+    'image.ocr.remote': 'Image OCR (Cloud)',
+    'document.ocr': 'Document OCR',
+    'document.ocr.remote': 'Document OCR (Cloud)',
+    'document.pdf_convert': 'PDF Convert',
+    'document.split': 'Document Split',
+    'video.extract_audio': 'Extract Audio',
+    'video.subtitle': 'Subtitle',
+    unknown: 'Unknown tool',
+  },
+
   // ── Home ──────────────────────────────────────────────────────────────
   home: {
     select_tool: 'Select Tool',
@@ -36,7 +76,7 @@ export default {
 
   // ── Common ────────────────────────────────────────────────────────────
   common: {
-    execute: 'Execute',
+    execute: 'Apply',
     processing: 'Processing...',
     completed: 'Completed!',
     save: 'Save Result',
@@ -47,6 +87,9 @@ export default {
     remove_confirm: 'Are you sure you want to remove this file?',
     remove_selected_confirm: 'Are you sure you want to remove {count} files?',
     remove_file: 'Remove File',
+    selected_count: 'Selected {count}',
+    batch_save: 'Save All',
+    no_exportable: 'Nothing to export',
     compare: 'Compare Original and Result',
     original: 'Original',
     result: 'Result',
@@ -82,6 +125,7 @@ export default {
   // ── Toast notifications ───────────────────────────────────────────────
   toast: {
     task_submitted: '{label} task submitted',
+    task_completed: '{label} completed',
     submit_failed: 'Failed to submit task',
     submit_error: 'Submit failed',
     saved: 'Saved to specified location',
@@ -90,6 +134,7 @@ export default {
     batch_save_failed: 'Batch save failed',
     batch_submitted: '{count} tasks submitted',
     no_eligible_items: 'No eligible items to submit',
+    clear_temp_failed: 'Failed to clear temp',
     installing: 'Installing...',
     install_failed: 'Installation failed',
     mark_area_first: 'Please mark the area to remove on the image first',
@@ -101,7 +146,7 @@ export default {
   task: {
     progress: {
       // subtitle
-      extracting_audio: 'Extracting audio...',
+      extracting_audio: 'Extracting audio {0}% (speed {1}x)',
       audio_extracted: 'Audio extracted, preparing transcription...',
       aligning: 'Performing word alignment...',
       prepare_translate: 'Preparing subtitle translation...',
@@ -126,6 +171,10 @@ export default {
       upscale_frame: 'Upscaling ({0}/{1})...',
       upscale_complete: 'Upscale complete',
       load_face_model: 'Loading face restore model: {0}...',
+      face_detect: 'Detecting faces…',
+      face_restore: 'Restoring face {0}/{1}…',
+      face_paste_back: 'Compositing faces…',
+      face_restore_complete: 'Face restoration complete',
       registering: 'Registering result...',
       // ocr (image)
       ocr_prepare: 'Preparing recognition...',
@@ -142,6 +191,7 @@ export default {
       recognition_complete: 'Speech recognition complete',
       align_complete: 'Alignment complete',
       prepare_translate_audio: 'Preparing translation...',
+      generating: 'Generating...',
       generating_summary: 'Generating summary outline...',
       summary_complete: 'Summary complete',
       writing_file: 'Writing file...',
@@ -161,6 +211,7 @@ export default {
       // cut
       cut_starting: 'Starting cut...',
       cut_processing: 'Cutting...',
+      cutting_video: 'Cutting {0}% (speed {1}x)',
       cut_complete: 'Cut complete',
       // doc ocr
       doc_ocr_connecting: 'Connecting to {0}...',
@@ -200,6 +251,12 @@ export default {
       // summarize
       summarizing_chunk: 'Summarizing chunk {0}/{1}...',
       merging_summary: 'Merging summary...',
+      // video summary
+      summary_transcribing: 'Transcribing subtitles...',
+      summary_chunk: 'Summarizing (chunk {0}/{1})',
+      summary_bullet_frame: 'Extracting bullet frame {0}/{1}',
+      summary_paragraph_frame: 'Extracting paragraph frame {0}/{1}',
+      summary_packaging: 'Packaging output...',
       // whisper
       init_ctranslate2: 'Initializing CTranslate2...',
       loading_model_device: 'Loading model ({0})...',
@@ -230,6 +287,7 @@ export default {
       // video transcode
       transcode_starting: 'Starting transcode...',
       transcoding: 'Transcoding...',
+      transcoding_video: 'Transcoding {0}% (speed {1}x)',
       processing: 'Processing...',
       transcode_complete: 'Transcode complete',
       extract_audio_starting: 'Starting audio extraction...',
@@ -238,7 +296,10 @@ export default {
       loading_image: 'Loading image...',
       calculating_crop: 'Calculating crop area...',
       cropping: 'Cropping ({0}/{1})...',
+      cropping_video: 'Cropping {0}% (speed {1}x)',
+      processing_frame: 'Processing frame {0}/{1}',
       saving_file: 'Saving file...',
+      crop_starting: 'Cropping...',
       crop_complete: 'Crop complete',
       // image remove object
       parsing_mask: 'Parsing mask...',
@@ -392,9 +453,6 @@ export default {
       sharpen_hint: 'Enhance edge sharpness, reduces painterly effect',
       face_restore: 'Face Restoration',
       face_restore_hint: 'Restore and enhance faces after upscaling',
-      fidelity: 'Fidelity',
-      strong_restore: 'Strong',
-      preserve_original: 'Preserve',
       face_scale: 'Face Scale',
       task_label: 'Image · Upscale',
     },
@@ -468,7 +526,9 @@ export default {
     functions: {
       transcode: 'Transcode',
       cut: 'Cut',
+      crop: 'Crop',
       subtitle: 'Subtitle',
+      summary: 'Summary',
       interpolate: 'Interpolate',
       enhance: 'Enhance',
     },
@@ -517,6 +577,17 @@ export default {
       task_label: 'Video · Cut',
     },
 
+    crop: {
+      title: 'Crop',
+      description: 'Drag to select the region to keep',
+      task_label: 'Crop',
+      aspect_ratio: 'Aspect ratio',
+      start_position: 'Start position',
+      crop_size: 'Crop size',
+      free: 'Free',
+      square: 'Square',
+    },
+
     subtitle: {
       title: 'Subtitle Settings',
       language: 'Language',
@@ -529,6 +600,8 @@ export default {
       task_label: 'Video · Subtitles',
       task_label_with_translate: 'Video · Subtitles + Translate',
       start: 'Start',
+      vocal_separation: 'Separate vocals (Demucs)',
+      vocal_separation_hint: 'Enable if background music interferes with transcription; adds processing time.',
     },
 
     translate: {
@@ -597,6 +670,24 @@ export default {
       output_format: 'Output Format',
       video_codec: 'Video Codec',
       task_label: 'Video · Enhancement',
+    },
+
+    summary: {
+      title: 'Video Summary',
+      description: 'LLM-organized markdown summary of video subtitles with key frames, packaged as a ZIP.',
+      whisper_model: 'Speech recognition model',
+      vocal_separation: 'Separate vocals (Demucs)',
+      vocal_separation_hint: 'Enable if background music interferes with transcription; adds processing time.',
+      llm_model: 'Summary Model (text)',
+      llm_model_hint: 'Organizes subtitles into structured summary. Recommended: qwen3.5:9b.',
+      vlm_model: 'Frame Selector Model (vision)',
+      vlm_model_hint: 'Optional. Picks the most representative frame for each segment; a frame that clearly mismatches the text is skipped (that segment gets no image). Leave empty to always attach the midpoint frame.',
+      vlm_none: '(No VLM)',
+      mode: 'Summary Style',
+      mode_bullets: 'Key Points',
+      mode_narrative: 'Story Outline',
+      select_model: 'Select model',
+      task_label: 'Video summary',
     },
   },
 
@@ -790,10 +881,12 @@ export default {
       effects_reverb_wet: 'Wet',
       export_format: 'Format',
       export_path: 'Output Path',
+      export_to_results_hint: 'The render appears in the Results drawer on the right — save or open from there.',
       export_loading_samples: 'Loading instrument samples...',
       export_rendering: 'Rendering audio...',
       export_encoding: 'Encoding WAV...',
       export_saving: 'Saving file...',
+      render_done: 'MIDI render complete (check Results drawer)',
     },
   },
 
@@ -902,7 +995,10 @@ export default {
       temp_folder: 'Temp Folder',
       models_dir: 'AI Models Directory',
       restart_required: 'Restart required to take effect',
-      auto_clean_temp: 'Auto clean temp files on exit',
+      temp_usage: 'Current usage',
+      clear_temp: 'Clear temp files',
+      clearing: 'Clearing...',
+      confirm_clear_temp: 'Clear all temp files (including unsaved results)?',
       restart_section: 'Restart',
       restart_app: 'Restart Application',
     },
@@ -914,6 +1010,7 @@ export default {
       github: 'GitHub',
       feedback: 'Feedback',
       website: 'Website',
+      components: 'Components',
       credits: 'Credits',
       credits_intro: 'MediaTranX is built on many excellent open-source technologies:',
       credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, Llama-cpp-python, etc.',
@@ -950,6 +1047,7 @@ export default {
       restart_to_apply: 'Please restart the application to apply',
       restart_now: 'Restart Now',
       reinstall_button: 'Reinstall Core Modules',
+      retry: 'Retry',
       incomplete_title: 'Core Modules Not Fully Installed',
       will_install: 'Will install Torch {index} + llama-server',
       with_driver: '(Driver {version})',
@@ -1032,6 +1130,7 @@ export default {
       'video.cut': 'Video · Cut',
       'video.extract_audio': 'Video · Extract Audio',
       'video.subtitle_generate': 'Video · Subtitles',
+      'video.summary': 'Video · Summary',
       'audio.transcode': 'Audio · Transcode',
       'audio.cut': 'Audio · Cut',
       'audio.volume': 'Audio · Volume',
@@ -1084,7 +1183,6 @@ export default {
     real_cugan: 'Anime-Style Super-Resolution',
     waifu2x: 'Classic Anime Super-Resolution',
     // Face restore
-    codeformer: 'VQ-GAN Face Restoration',
     gfpgan: 'GAN Face Restoration',
     // Segment
     mobilesam: 'Lightweight Segmentation (AI Removal)',
@@ -1093,6 +1191,15 @@ export default {
     // Interpolation
     rife: 'Video Frame Interpolation',
     basic_pitch: 'Audio to MIDI',
+    // LLM families (GGUF)
+    qwen3: 'Qwen3 Translation Model',
+    qwen3vl: 'Qwen3-VL Vision-Language Model (OCR)',
+    internvl2_5: 'InternVL2.5 Vision-Language Model (OCR)',
+    gemma3: 'Gemma 3 Text Model',
+    gemma4: 'Gemma 4 Multimodal Model',
+    qwen3_5: 'Qwen3.5 Multimodal Model',
+    // Forced alignment
+    alignment: 'Forced Alignment',
     // Whisper
     whisper: {
       tiny: 'Ultra-Fast Speech Recognition',

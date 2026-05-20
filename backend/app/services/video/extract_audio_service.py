@@ -4,9 +4,8 @@ Video extract-audio service — extract audio track from video files.
 import logging
 from pathlib import Path
 from typing import Callable, Optional
-from uuid import uuid4
 
-from app.engine.ffmpeg import (
+from app.adapters.binary.ffmpeg import (
     FFmpegWrapper,
     FFmpegError,
     TranscodeProgress,
@@ -29,7 +28,8 @@ class VideoExtractAudioService:
 
         self._task_manager.register_handler(
             TASK_TYPE_VIDEO_EXTRACT_AUDIO,
-            self._handle_task
+            self._handle_task,
+            output_policy="results",
         )
 
         logger.info("VideoExtractAudioService initialized")
@@ -39,20 +39,14 @@ class VideoExtractAudioService:
         file_id: str,
         audio_format: str = "mp3",
         audio_bitrate: Optional[str] = None,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         """Submit an audio extraction task."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id": file_id,
             "audio_format": audio_format,
             "audio_bitrate": audio_bitrate,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_EXTRACT_AUDIO, params)
@@ -74,34 +68,22 @@ class VideoExtractAudioService:
     ) -> dict:
         """Execute audio extraction."""
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         audio_format = params.get("audio_format", "mp3")
         audio_bitrate = params.get("audio_bitrate")
 
         # Build output path
-        custom_output_dir = params.get("output_dir")
-        custom_output_filename = params.get("output_filename")
-        output_file_id = str(uuid4())
-
-        if custom_output_filename:
-            base_name = Path(custom_output_filename).stem
-            final_filename = f"{base_name}.{audio_format}"
-        else:
-            original_stem = Path(file_info.original_filename).stem
-            final_filename = f"{original_stem}_audio_{output_file_id[:8]}.{audio_format}"
-
-        output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / final_filename
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_audio",
+            ext=f".{audio_format}",
+        )
 
         def on_ffmpeg_progress(progress: TranscodeProgress):
             progress_callback(
                 progress.percent / 100,
-                f"Extracting audio... {progress.percent:.1f}% (speed: {progress.speed:.1f}x)"
+                f"task.progress.extracting_audio|{progress.percent:.1f}|{progress.speed:.1f}"
             )
 
         progress_callback(0.0, "task.progress.extract_audio_starting")

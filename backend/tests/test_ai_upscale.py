@@ -10,12 +10,18 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def realesrgan():
-    from app.engine.ai.image import get_upscaler
-    return get_upscaler("realesrgan")
+    """Real-ESRGAN wrapper wired through the DI container so _model_manager
+    is attached. Direct `RealESRGANWrapper()` instantiation would leave
+    _model_manager=None → RuntimeError on first acquire."""
+    from app.init.container import init_container
+    c = init_container()
+    w = c.upscalers()["realesrgan"]
+    w._model_manager = c.model_manager()
+    return w
 
 
 class TestRealESRGAN:
-    def test_get_upscaler_returns_instance(self, realesrgan):
+    def test_realesrgan_wrapper_instantiable(self, realesrgan):
         assert realesrgan is not None
 
     def test_enhance_small_image(self, realesrgan):
@@ -23,8 +29,8 @@ class TestRealESRGAN:
         from PIL import Image
         from app.init.configs import SETTINGS
 
-        # Check if model is downloaded
-        model_dir = SETTINGS.path.models / "image" / "realesrgan"
+        # Check if model is downloaded (models/realesrgan/*.pth)
+        model_dir = SETTINGS.path.models / "realesrgan"
         if not model_dir.exists() or not any(model_dir.glob("*.pth")):
             pytest.skip("Real-ESRGAN model not downloaded")
 

@@ -12,7 +12,7 @@ export interface HistoryEntry {
   fileId: string
   previewUrl: string
   outputFilename: string
-  taskType?: string
+  taskType: string
   meta?: Record<string, unknown>
 }
 

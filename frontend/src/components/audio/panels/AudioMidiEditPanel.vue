@@ -12,7 +12,6 @@ import { useMidiExport } from '@/composables/useMidiExport'
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
-  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -27,6 +26,14 @@ const midiExport = useMidiExport()
 
 // ── Tab state ──
 const activeTab = ref<'edit' | 'effects' | 'export'>('edit')
+// `as const` so `tab.id` keeps its literal type for `activeTab` assignment
+// (an inline template array widens it to `string`). labelKey resolves via t()
+// in the template, keeping locale reactivity.
+const tabs = [
+  { id: 'edit', labelKey: 'audio.midi.tab_edit' },
+  { id: 'effects', labelKey: 'audio.midi.tab_effects' },
+  { id: 'export', labelKey: 'audio.midi.tab_export' },
+] as const
 
 // ── MIDI file detection ──
 
@@ -71,27 +78,9 @@ const exportFormatOptions = [
   { value: 'aac', label: 'AAC' },
 ]
 
-const outputPath = ref('')
-
-const defaultOutputPath = computed(() => {
-  const stem = props.currentFileName?.replace(/\.[^.]+$/, '') || 'Untitled'
-  const ext = exportFormat.value
-  const dir = props.sourceDir || ''
-  return dir ? `${dir}/${stem}.${ext}` : `${stem}.${ext}`
+const defaultBaseName = computed(() => {
+  return props.currentFileName?.replace(/\.[^.]+$/, '') || 'Untitled'
 })
-
-// Update default path when format changes
-watch(exportFormat, () => { outputPath.value = '' })
-
-async function selectOutputFile() {
-  if (!window.electron?.saveFileDialog) return
-  const ext = exportFormat.value
-  const result = await window.electron.saveFileDialog({
-    defaultPath: outputPath.value || defaultOutputPath.value,
-    filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
-  })
-  if (result) outputPath.value = result
-}
 
 // ── Time signature options ──
 
@@ -203,27 +192,12 @@ async function execute() {
     await editor.saveToApi(fileId)
   }
 
-  let finalPath = outputPath.value || defaultOutputPath.value
-  if (!finalPath) return
-
-  // If no directory in path (e.g. sourceDir is empty), prompt user to pick
-  if (!finalPath.includes('/') && !finalPath.includes('\\')) {
-    if (!window.electron?.saveFileDialog) return
-    const ext = exportFormat.value
-    const result = await window.electron.saveFileDialog({
-      defaultPath: finalPath,
-      filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
-    })
-    if (!result) return
-    finalPath = result
-    outputPath.value = result
-  }
-
   const taskId = midiExport.exportMidi(
     editor.tracks.value,
     editor.tempo.value,
     exportFormat.value,
-    finalPath,
+    defaultBaseName.value,
+    fileId ?? undefined,
   )
   emit('submit', taskId)
 }
@@ -284,17 +258,13 @@ defineExpose({
       <!-- Tab navigation -->
       <div class="settings-tabs">
         <button
-          v-for="tab in [
-            { id: 'edit', label: t('audio.midi.tab_edit') },
-            { id: 'effects', label: t('audio.midi.tab_effects') },
-            { id: 'export', label: t('audio.midi.tab_export') },
-          ]"
+          v-for="tab in tabs"
           :key="tab.id"
           class="settings-tab"
           :class="{ 'is-active': activeTab === tab.id }"
           @click="activeTab = tab.id"
         >
-          {{ tab.label }}
+          {{ t(tab.labelKey) }}
         </button>
       </div>
 
@@ -430,13 +400,7 @@ defineExpose({
           <label>{{ t('audio.midi.export_format') }}</label>
           <AppSelect v-model="exportFormat" :options="exportFormatOptions" />
         </div>
-        <div class="form-group">
-          <label>{{ t('audio.midi.export_path') }}</label>
-          <div class="file-select" @click="selectOutputFile">
-            <span class="file-select-path">{{ outputPath || defaultOutputPath || '—' }}</span>
-            <i class="bi bi-folder2-open"></i>
-          </div>
-        </div>
+        <p class="form-hint">{{ t('audio.midi.export_to_results_hint') }}</p>
       </div>
   </div>
 </template>

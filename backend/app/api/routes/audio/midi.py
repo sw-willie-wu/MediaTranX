@@ -2,10 +2,10 @@
 MIDI editor API routes.
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
@@ -27,11 +27,8 @@ async def create_midi(
     service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
 ):
     """Create a new MIDI file from editor data, returns file_id."""
-    try:
-        file_id = service.create_midi(request.data)
-        return {"file_id": file_id}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    file_id = service.create_midi(request.data)
+    return {"file_id": file_id}
 
 
 @router.get("/midi/{file_id}")
@@ -40,12 +37,7 @@ async def read_midi(
     file_id: str,
     service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
 ):
-    try:
-        return service.read_midi(file_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.read_midi(file_id)
 
 
 @router.put("/midi/{file_id}")
@@ -55,12 +47,7 @@ async def save_midi(
     request: MidiSaveRequest,
     service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
 ):
-    try:
-        return service.save_midi(file_id, request.data)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.save_midi(file_id, request.data)
 
 
 @router.post("/midi/convert")
@@ -68,9 +55,11 @@ async def save_midi(
 async def convert_audio(
     file: UploadFile = File(...),
     format: str = Form("mp3"),
-    output_path: str = Form(...),
+    source_file_id: Optional[str] = Form(None),
     service: AudioMidiService = Depends(Provide[AppContainer.audio_midi]),
 ):
-    """Convert uploaded WAV to target format via FFmpeg."""
-    result = await service.convert_wav(file, format, output_path)
-    return result
+    """Convert uploaded audio to target format; register as Results output.
+
+    Returns `output_file_id` which the frontend can fetch via /files/{id}.
+    """
+    return await service.convert_wav(file, format, source_file_id)

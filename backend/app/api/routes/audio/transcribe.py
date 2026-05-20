@@ -3,14 +3,14 @@ import logging
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.llm.language_service import LanguageService
 
 if TYPE_CHECKING:
     from app.services.audio.transcribe_service import AudioTranscribeService
+    from app.services.llm.language_service import LanguageService
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +40,6 @@ class AudioTranscribeRequest(BaseModel):
     summarize_provider: Optional[str] = Field(default=None, description="Cloud service provider")
     summarize_conn_id: Optional[int] = Field(default=None, description="Cloud connection ID")
     summarize_remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
-    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 class AudioTranscribeResponse(BaseModel):
     task_id: str
@@ -62,10 +60,7 @@ async def get_transcribe_status(
     model_size: str = "medium",
     service: AudioTranscribeService = Depends(Provide[AppContainer.audio_transcribe]),
 ):
-    try:
-        return service.get_model_status(model_size)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.get_model_status(model_size)
 
 @router.post("/transcribe", response_model=AudioTranscribeResponse)
 @inject
@@ -73,36 +68,29 @@ async def transcribe_audio(
     request: AudioTranscribeRequest,
     service: AudioTranscribeService = Depends(Provide[AppContainer.audio_transcribe]),
 ):
-    try:
-        task_id = await service.submit_transcribe(
-            file_id=request.file_id,
-            language=request.language,
-            model_size=request.model_size,
-            output_format=request.output_format,
-            vocal_separation=request.vocal_separation,
-            align=request.align,
-            translate=request.translate,
-            target_lang=request.target_lang,
-            translate_model_family=request.translate_model_family,
-            translate_model_size=request.translate_model_size,
-            translate_quantization=request.translate_quantization,
-            translate_remote=request.translate_remote,
-            translate_provider=request.translate_provider,
-            translate_conn_id=request.translate_conn_id,
-            translate_remote_model=request.translate_remote_model,
-            summarize=request.summarize,
-            summarize_model_family=request.summarize_model_family,
-            summarize_model_size=request.summarize_model_size,
-            summarize_quantization=request.summarize_quantization,
-            summarize_remote=request.summarize_remote,
-            summarize_provider=request.summarize_provider,
-            summarize_conn_id=request.summarize_conn_id,
-            summarize_remote_model=request.summarize_remote_model,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
-        )
-        return AudioTranscribeResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_transcribe(
+        file_id=request.file_id,
+        language=request.language,
+        model_size=request.model_size,
+        output_format=request.output_format,
+        vocal_separation=request.vocal_separation,
+        align=request.align,
+        translate=request.translate,
+        target_lang=request.target_lang,
+        translate_model_family=request.translate_model_family,
+        translate_model_size=request.translate_model_size,
+        translate_quantization=request.translate_quantization,
+        translate_remote=request.translate_remote,
+        translate_provider=request.translate_provider,
+        translate_conn_id=request.translate_conn_id,
+        translate_remote_model=request.translate_remote_model,
+        summarize=request.summarize,
+        summarize_model_family=request.summarize_model_family,
+        summarize_model_size=request.summarize_model_size,
+        summarize_quantization=request.summarize_quantization,
+        summarize_remote=request.summarize_remote,
+        summarize_provider=request.summarize_provider,
+        summarize_conn_id=request.summarize_conn_id,
+        summarize_remote_model=request.summarize_remote_model,
+    )
+    return AudioTranscribeResponse(task_id=task_id)

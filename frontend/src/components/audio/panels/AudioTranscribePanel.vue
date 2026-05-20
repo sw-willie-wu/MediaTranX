@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useFilesStore } from '@/stores/files'
 import { useModelStore } from '@/stores/models'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import AppSelect from '@/components/common/AppSelect.vue'
@@ -16,7 +15,6 @@ import { useSettingsStore } from '@/stores/settings'
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
-  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -25,7 +23,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
-const filesStore = useFilesStore()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
 const { guardModelReady } = useModelGuard()
@@ -63,7 +60,6 @@ const targetLanguage = ref('zh-TW')
 const selectedTranslateModel = usePersistedModel('transcribe_translate_model')
 const summarizeEnabled = ref(false)
 const selectedSummarizeModel = usePersistedModel('transcribe_summarize_model')
-const outputPath = ref('')
 
 const rawLanguages = ref<{ value: string; label: string }[]>([])
 
@@ -133,54 +129,28 @@ async function loadTranslateLanguages() {
   } catch {}
 }
 
-// ── Output path ─────────────────────────────────────────────────
-const sourceBaseName = computed(() => {
-  const file = filesStore.currentFile
-  if (!file?.originalName) return 'output'
-  const name = file.originalName
-  const lastDot = name.lastIndexOf('.')
-  return lastDot > 0 ? name.substring(0, lastDot) : name
-})
-
-const defaultOutputName = computed(() => `${sourceBaseName.value}.${outputFormat.value}`)
-
-const displayOutputPath = computed(() => {
-  if (outputPath.value) {
-    const parts = outputPath.value.replace(/\\/g, '/').split('/')
-    return parts[parts.length - 1]
-  }
-  return defaultOutputName.value
-})
-
-async function selectOutputFile() {
-  if (window.electron?.saveFileDialog) {
-    const result = await window.electron.saveFileDialog({
-      title: t('audio.transcribe.select_output'),
-      defaultPath: defaultOutputName.value,
-      filters: [{ name: outputFormat.value.toUpperCase(), extensions: [outputFormat.value] }],
-    })
-    if (result) outputPath.value = result
-  }
-}
-
-// 切換檔案或格式時，重設為來源目錄的預設路徑
-function resetOutputPath() {
-  if (props.sourceDir) {
-    const stem = props.currentFileName.replace(/\.[^.]+$/, '')
-    outputPath.value = `${props.sourceDir}/${stem}.transcribe.${outputFormat.value}`
-  } else {
-    outputPath.value = ''
-  }
-}
-watch(() => props.fileId, resetOutputPath)
-watch(outputFormat, resetOutputPath)
-watch(() => props.sourceDir, resetOutputPath, { immediate: true })
 watch(translateEnabled, (val) => { if (val) loadTranslateLanguages() })
+
+// ── Demucs / wav2vec2 readiness ─────────────────────────────────
+const demucsReady = computed(() =>
+  modelStore.byCategory('separate').some(
+    m => m.family === 'demucs' && m.variant === 'htdemucs_6s' && m.downloaded
+  )
+)
+const alignReady = computed(() =>
+  modelStore.byCategory('alignment').some(m => m.downloaded)
+)
 
 // ── Submit ──────────────────────────────────────────────────────
 async function execute() {
   const whisperModel = modelStore.byCategory('stt').find(m => m.variant === modelSize.value)
   if (!await guardModelReady(whisperModel?.downloaded === true, 'audio')) return
+  if (vocalSeparation.value) {
+    if (!await guardModelReady(demucsReady.value, 'audio')) return
+  }
+  if (alignEnabled.value) {
+    if (!await guardModelReady(alignReady.value, 'audio')) return
+  }
   if (translateEnabled.value) {
     const tParsed = parseModelValue(selectedTranslateModel.value)
     const translateReady = tParsed.isRemote || localTranslateModelOptions.value.find(m => m.value === selectedTranslateModel.value)?.badge === 'ok'
@@ -232,17 +202,6 @@ async function execute() {
       body.summarize_model_family = smType
       body.summarize_model_size = smSize
       body.summarize_quantization = smQuant
-    }
-  }
-
-  if (outputPath.value) {
-    const path = outputPath.value.replace(/\\/g, '/')
-    const lastSlash = path.lastIndexOf('/')
-    if (lastSlash > 0) {
-      body.output_dir = path.substring(0, lastSlash)
-      body.output_filename = path.substring(lastSlash + 1)
-    } else {
-      body.output_filename = path
     }
   }
 
@@ -301,17 +260,6 @@ function getParams() {
     }
   }
 
-  if (outputPath.value) {
-    const path = outputPath.value.replace(/\\/g, '/')
-    const lastSlash = path.lastIndexOf('/')
-    if (lastSlash > 0) {
-      body.output_dir = path.substring(0, lastSlash)
-      body.output_filename = path.substring(lastSlash + 1)
-    } else {
-      body.output_filename = path
-    }
-  }
-
   return body
 }
 
@@ -343,14 +291,6 @@ onMounted(() => {
     <div class="form-group">
       <label>{{ $t('audio.transcribe.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
-    </div>
-
-    <div class="form-group">
-      <label>{{ $t('audio.transcribe.output_file') }}</label>
-      <div class="file-select" @click="selectOutputFile">
-        <span class="file-select-path">{{ displayOutputPath }}</span>
-        <i class="bi bi-folder2-open"></i>
-      </div>
     </div>
 
     <!-- 進階選項（可收合） -->

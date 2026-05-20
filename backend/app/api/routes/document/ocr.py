@@ -3,14 +3,14 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.llm.language_service import LanguageService
 
 if TYPE_CHECKING:
     from app.services.document.doc_ocr_service import DocumentOcrService
+    from app.services.llm.language_service import LanguageService
 
 router = APIRouter()
 
@@ -21,8 +21,6 @@ class DocumentOcrRequest(BaseModel):
     size: str = Field(default="4b")
     quantization: Optional[str] = Field(default=None)
     format: str = Field(default="md", description="Output format: txt or md")
-    output_dir: Optional[str] = Field(default=None)
-    output_filename: Optional[str] = Field(default=None)
     # Cloud model
     remote: bool = Field(default=False, description="Whether to use a cloud model")
     provider: Optional[str] = Field(default=None, description="Cloud provider")
@@ -38,33 +36,24 @@ async def ocr_document(
     language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
 ):
     """Submit document OCR task."""
-    try:
-        if request.remote and request.provider and request.remote_model:
-            task_id = await service.submit_remote(
-                file_id=request.file_id,
-                provider=request.provider,
-                conn_id=request.conn_id,
-                remote_model=request.remote_model,
-                format=request.format,
-                output_dir=request.output_dir,
-                output_filename=request.output_filename,
-            )
-        else:
-            model_family = request.model_family or language_service.get_default_vlm_model()
-            task_id = await service.submit(
-                file_id=request.file_id,
-                model_family=model_family,
-                size=request.size,
-                quantization=request.quantization,
-                format=request.format,
-                output_dir=request.output_dir,
-                output_filename=request.output_filename,
-            )
-        return {"task_id": task_id, "message": "OCR task submitted"}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    if request.remote and request.provider and request.remote_model:
+        task_id = await service.submit_remote(
+            file_id=request.file_id,
+            provider=request.provider,
+            conn_id=request.conn_id,
+            remote_model=request.remote_model,
+            format=request.format,
+        )
+    else:
+        model_family = request.model_family or language_service.get_default_vlm_model()
+        task_id = await service.submit(
+            file_id=request.file_id,
+            model_family=model_family,
+            size=request.size,
+            quantization=request.quantization,
+            format=request.format,
+        )
+    return {"task_id": task_id, "message": "OCR task submitted"}
 
 
 @router.get("/ocr/status")
@@ -77,8 +66,5 @@ async def get_ocr_status(
     language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
 ):
     """Query VLM OCR environment status."""
-    try:
-        effective_model_family = model_family or language_service.get_default_vlm_model()
-        return service.get_status(model_family=effective_model_family, size=size, quantization=quantization)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    effective_model_family = model_family or language_service.get_default_vlm_model()
+    return service.get_status(model_family=effective_model_family, size=size, quantization=quantization)

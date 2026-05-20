@@ -120,3 +120,53 @@ def process_gif_frames(
         processed = process_fn(frame, i, total)
         result.append((processed, duration))
     return result
+
+
+def apply_and_save(
+    raw: "PILImage.Image",
+    output_path,
+    frame_fn: Callable[["PILImage.Image"], "PILImage.Image"],
+    *,
+    on_progress=None,
+    preserve_alpha: bool = True,
+    static_save_kwargs=None,
+) -> None:
+    """Apply `frame_fn` to a still image or every frame of an animation, then save.
+
+    Detects animation via `animation_format(raw)`. If `preserve_alpha=True`,
+    wraps `frame_fn` with `image_alpha.preserve_alpha`. Progress callback
+    (optional) is invoked per frame as `((frame_idx + 1) / total, msg_key)` —
+    frame_idx is zero-based but we report frames *completed*, so the first
+    frame reports `1/total` and the last reports `1.0`.
+
+    Args:
+        raw: PIL Image (still or multi-frame)
+        output_path: destination path (str or Path)
+        frame_fn: per-frame transform `(PIL.Image) -> PIL.Image`
+        on_progress: optional `(float, str)` callback, called once per frame in animation path
+        preserve_alpha: when True, wrap `frame_fn` with `image_alpha.preserve_alpha`
+        static_save_kwargs: forwarded to `Image.save` for static path only
+    """
+    from app.utils.image_alpha import preserve_alpha as _preserve_alpha
+
+    effective_fn = (
+        (lambda img: _preserve_alpha(img, frame_fn)) if preserve_alpha else frame_fn
+    )
+
+    fmt = animation_format(raw)
+    if fmt:
+        total = getattr(raw, "n_frames", 1)
+
+        def _wrapped_frame(img: "PILImage.Image", idx: int, _total: int) -> "PILImage.Image":
+            if on_progress:
+                on_progress(
+                    (idx + 1) / max(total, 1),
+                    f"task.progress.processing_frame|{idx + 1}|{total}",
+                )
+            return effective_fn(img)
+
+        frames = process_gif_frames(raw, _wrapped_frame)
+        save_animated(frames, str(output_path), fmt)
+    else:
+        result = effective_fn(raw)
+        result.save(str(output_path), **(static_save_kwargs or {}))

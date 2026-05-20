@@ -57,17 +57,7 @@ export function useMultiSubmit(collection: ReturnType<typeof useMediaCollection>
         const latest = entry.historyStack.at(-1)
         const targetFileId = latest ? latest.fileId : entry.fileId
 
-        // 每個檔案用自己的 sourceDir 覆寫 output_dir/output_filename
         const perFileParams = { ...sharedParams, file_id: targetFileId }
-        if (entry.sourceDir && sharedParams.output_dir) {
-          const stem = entry.file.name.replace(/\.[^.]+$/, '')
-          const origFilename = sharedParams.output_filename as string | undefined
-          const ext = origFilename?.match(/\.([^.]+)$/)?.[1] ?? ''
-          if (ext) {
-            perFileParams.output_dir = entry.sourceDir
-            perFileParams.output_filename = `${stem}.${ext}`
-          }
-        }
 
         const { submitTask } = useSubmitTask()
         const taskId = await submitTask(

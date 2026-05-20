@@ -3,6 +3,7 @@ import { onMounted, onActivated, computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTaskStore } from '@/stores/tasks'
 import ProgressBar from '@/components/common/ProgressBar.vue'
+import { getTaskTypeLabel } from '@/utils/taskTypeLabel'
 
 const { t } = useI18n()
 const taskStore = useTaskStore()
@@ -59,7 +60,7 @@ onActivated(() => taskStore.refreshTasks())
     <div v-for="task in activeTasks" :key="task.taskId" class="task-card">
       <div class="task-header">
         <div class="task-title">
-          <span class="task-label">{{ task.label ?? task.taskType }}</span>
+          <span class="task-label">{{ task.label ?? getTaskTypeLabel(task.taskType) }}</span>
           <span v-if="task.fileName" class="task-filename">{{ task.fileName }}</span>
         </div>
         <span class="task-badge" :class="`badge-${task.status}`">

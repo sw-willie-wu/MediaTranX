@@ -10,12 +10,22 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def demucs():
-    from app.engine.ai.audio.demucs import get_demucs
-    return get_demucs()
+    """Register the wrapper with a ModelManager so `BaseWrapper.acquire()` works.
+
+    Post-`084e05e` (Wrapper Acquire Bridge) every wrapper that calls
+    `self.acquire(...)` needs `wrapper._model_manager` attached; otherwise
+    `BaseWrapper.acquire` raises RuntimeError.
+    """
+    from app.adapters.ai.wrapper.demucs import DemucsWrapper
+    from app.adapters.ai.model_manager import ModelManager
+    mm = ModelManager()
+    wrapper = DemucsWrapper()
+    mm.register_runtime(wrapper)
+    return wrapper
 
 
 class TestDemucsAvailability:
-    def test_get_demucs_returns_instance(self, demucs):
+    def test_demucs_wrapper_instantiable(self, demucs):
         assert demucs is not None
 
     def test_model_status_structure(self, demucs):

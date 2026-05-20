@@ -22,6 +22,46 @@ export default {
     save_as: '另存新檔',
   },
 
+  // ── 產出抽屜 ──────────────────────────────────────────────────────────
+  results: {
+    title: '產出',
+    empty: '尚無產出',
+    from_source: '來自 {name}',
+    preview: '預覽',
+    save_as: '另存新檔',
+    saving: '存檔中...',
+    browse_saved: '瀏覽檔案',
+    add_to_tool: '加入{tool}',
+    remove: '移除',
+    select_all: '全選',
+    clear: '清空',
+    confirm_clear: '確認清空所有產出？（相關暫存檔會一併刪除）',
+    group_time: '時間',
+    group_tool: '工具',
+    group_by_tool: '按工具分組',
+    batch_save: '全部另存',
+    batch_open: '在{tool}中開啟',
+    batch_open_disabled: '混合類型',
+    batch_delete: '刪除',
+    mixed_types_disabled: '混合類型時無法使用',
+    confirm_batch_delete: '確認刪除 {count} 筆產出？',
+  },
+  tool_labels: {
+    'audio.transcribe': '音訊轉寫',
+    'audio.separate': '音源分離',
+    'audio.lyrics': '歌詞對齊',
+    'audio.midi.render': 'MIDI 渲染',
+    'image.ocr': '圖片 OCR',
+    'document.ocr': '文件 OCR',
+    'document.ocr.remote': '文件 OCR（雲端）',
+    'image.ocr.remote': '圖片 OCR（雲端）',
+    'document.pdf_convert': 'PDF 轉檔',
+    'document.split': '文件分割',
+    'video.extract_audio': '提取音訊',
+    'video.subtitle': '字幕',
+    unknown: '未知工具',
+  },
+
   // ── 首頁 ──────────────────────────────────────────────────────────────
   home: {
     select_tool: '選擇工具',
@@ -36,7 +76,7 @@ export default {
 
   // ── 共用 ──────────────────────────────────────────────────────────────
   common: {
-    execute: '開始執行',
+    execute: '套用',
     processing: '處理中...',
     completed: '完成！',
     save: '儲存結果',
@@ -47,6 +87,9 @@ export default {
     remove_confirm: '確定要移除此檔案嗎？',
     remove_selected_confirm: '確定要移除 {count} 個檔案嗎？',
     remove_file: '移除檔案',
+    selected_count: '已選 {count} 項',
+    batch_save: '批次另存',
+    no_exportable: '沒有可匯出的項目',
     compare: '比對原圖與成果',
     original: '原圖',
     result: '成果',
@@ -82,6 +125,7 @@ export default {
   // ── Toast 通知 ─────────────────────────────────────────────────────────
   toast: {
     task_submitted: '{label}任務已提交',
+    task_completed: '{label}完成',
     submit_failed: '提交任務失敗',
     submit_error: '提交失敗',
     saved: '已儲存至指定位置',
@@ -90,6 +134,7 @@ export default {
     batch_save_failed: '批次儲存失敗',
     batch_submitted: '已提交 {count} 個任務',
     no_eligible_items: '沒有可提交的項目',
+    clear_temp_failed: '清除暫存失敗',
     installing: '安裝中...',
     install_failed: '安裝失敗',
     mark_area_first: '請先在圖片上標記要移除的區域',
@@ -101,7 +146,7 @@ export default {
   task: {
     progress: {
       // subtitle
-      extracting_audio: '正在從影片提取音訊...',
+      extracting_audio: '提取音訊 {0}% (速度 {1}x)',
       audio_extracted: '音訊提取完成，準備語音辨識...',
       aligning: '精準對齊中...',
       prepare_translate: '準備翻譯字幕...',
@@ -126,6 +171,10 @@ export default {
       upscale_frame: '超解析中 ({0}/{1})...',
       upscale_complete: '超解析完成',
       load_face_model: '正在載入人臉修復模型: {0}...',
+      face_detect: '偵測人臉中…',
+      face_restore: '人臉修復中 {0}/{1}…',
+      face_paste_back: '合成中…',
+      face_restore_complete: '人臉修復完成',
       registering: '正在註冊結果...',
       // ocr (image)
       ocr_prepare: '準備辨識...',
@@ -142,6 +191,7 @@ export default {
       recognition_complete: '語音辨識完成',
       align_complete: '對齊完成',
       prepare_translate_audio: '準備翻譯...',
+      generating: '產生中...',
       generating_summary: '正在生成摘要大綱...',
       summary_complete: '摘要完成',
       writing_file: '正在寫入檔案...',
@@ -161,6 +211,7 @@ export default {
       // cut
       cut_starting: '開始剪輯...',
       cut_processing: '剪輯中...',
+      cutting_video: '剪輯中 {0}% (速度 {1}x)',
       cut_complete: '剪輯完成',
       // doc ocr
       doc_ocr_connecting: '連接 {0}...',
@@ -200,6 +251,12 @@ export default {
       // summarize
       summarizing_chunk: '摘要分段 {0}/{1}...',
       merging_summary: '合併摘要...',
+      // video summary
+      summary_transcribing: '正在轉錄字幕…',
+      summary_chunk: '摘要中（區塊 {0}/{1}）',
+      summary_bullet_frame: '擷取重點影格 {0}/{1}',
+      summary_paragraph_frame: '擷取段落影格 {0}/{1}',
+      summary_packaging: '打包輸出檔…',
       // whisper
       init_ctranslate2: '正在初始化 CTranslate2...',
       loading_model_device: '正在載入模型 ({0})...',
@@ -230,6 +287,7 @@ export default {
       // video transcode
       transcode_starting: '開始轉檔...',
       transcoding: '轉檔中...',
+      transcoding_video: '轉檔中 {0}% (速度 {1}x)',
       processing: '處理中...',
       transcode_complete: '轉檔完成',
       extract_audio_starting: '開始提取音訊...',
@@ -238,7 +296,10 @@ export default {
       loading_image: '載入圖片...',
       calculating_crop: '計算裁切範圍...',
       cropping: '裁切中 ({0}/{1})...',
+      cropping_video: '裁切中 {0}% (速度 {1}x)',
+      processing_frame: '處理影格 {0}/{1}',
       saving_file: '儲存檔案...',
+      crop_starting: '開始裁切...',
       crop_complete: '裁切完成',
       // image remove object
       parsing_mask: '解析遮罩...',
@@ -392,9 +453,6 @@ export default {
       sharpen_hint: '補強邊緣銳利度，可改善油畫感',
       face_restore: '人臉修復',
       face_restore_hint: '超解析後對人臉進行修復增強',
-      fidelity: '自然度',
-      strong_restore: '強修復',
-      preserve_original: '保留原貌',
       face_scale: '修復放大倍率',
       task_label: '圖片 · 超解析',
     },
@@ -468,7 +526,9 @@ export default {
     functions: {
       transcode: '轉檔',
       cut: '剪輯',
+      crop: '畫面裁切',
       subtitle: '字幕',
+      summary: '影片摘要',
       interpolate: '補幀',
       enhance: '畫面強化',
     },
@@ -517,6 +577,17 @@ export default {
       task_label: '影片 · 剪輯',
     },
 
+    crop: {
+      title: '畫面裁切',
+      description: '拖曳選取要保留的畫面區域',
+      task_label: '畫面裁切',
+      aspect_ratio: '長寬比',
+      start_position: '起始位置',
+      crop_size: '裁切尺寸',
+      free: '自由',
+      square: '正方形',
+    },
+
     subtitle: {
       title: '字幕設定',
       language: '語言',
@@ -529,6 +600,8 @@ export default {
       task_label: '影片 · 字幕提取',
       task_label_with_translate: '影片 · 字幕提取 + 翻譯',
       start: '開始',
+      vocal_separation: '分離人聲',
+      vocal_separation_hint: '若影片配樂干擾辨識可開啟；會增加處理時間。',
     },
 
     translate: {
@@ -597,6 +670,24 @@ export default {
       output_format: '輸出格式',
       video_codec: '影像編碼',
       task_label: '影片 · 畫面強化',
+    },
+
+    summary: {
+      title: '影片摘要',
+      description: '使用 LLM 整理字幕為 Markdown 摘要，附關鍵影格；輸出為 ZIP 壓縮檔。',
+      whisper_model: '語音辨識模型',
+      vocal_separation: '分離人聲',
+      vocal_separation_hint: '若影片配樂干擾辨識可開啟；會增加處理時間。',
+      llm_model: '摘要模型（文字）',
+      llm_model_hint: '用於整理字幕為結構化摘要。建議 qwen3.5:9b。',
+      vlm_model: '影格選擇模型（視覺）',
+      vlm_model_hint: '選填。為每個段落挑選最具代表性的影格；與文字明顯不符的影格會被略過（該段不附圖）。留空則一律使用中點影格。',
+      vlm_none: '（不使用 VLM）',
+      mode: '摘要風格',
+      mode_bullets: '重點條列',
+      mode_narrative: '故事大綱',
+      select_model: '請選擇模型',
+      task_label: '影片摘要',
     },
   },
 
@@ -790,10 +881,12 @@ export default {
       effects_reverb_wet: '混合',
       export_format: '格式',
       export_path: '輸出路徑',
+      export_to_results_hint: '渲染完成後會出現在右側「產出」抽屜，可於該處儲存或開啟。',
       export_loading_samples: '載入樂器樣本中...',
       export_rendering: '渲染音訊中...',
       export_encoding: '編碼 WAV 中...',
       export_saving: '儲存檔案中...',
+      render_done: 'MIDI 渲染完成（可在產出抽屜查看）',
     },
   },
 
@@ -902,7 +995,10 @@ export default {
       temp_folder: '暫存資料夾',
       models_dir: 'AI 模型存放目錄',
       restart_required: '重新啟動後生效',
-      auto_clean_temp: '關閉時自動清理暫存檔',
+      temp_usage: '目前占用',
+      clear_temp: '清除暫存檔',
+      clearing: '清除中...',
+      confirm_clear_temp: '將清除所有暫存檔（包含尚未另存的產出），確定？',
       restart_section: '重新啟動',
       restart_app: '重新啟動應用程式',
     },
@@ -914,6 +1010,7 @@ export default {
       github: 'GitHub',
       feedback: '意見回饋',
       website: '官方網站',
+      components: '元件資訊',
       credits: '技術致謝',
       credits_intro: 'MediaTranX 建立在眾多卓越的開源技術之上：',
       credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, Llama-cpp-python 等。',
@@ -950,6 +1047,7 @@ export default {
       restart_to_apply: '請重新啟動應用程式以套用',
       restart_now: '立即重啟',
       reinstall_button: '重新安裝核心模組',
+      retry: '重試',
       incomplete_title: '核心模組未完整安裝',
       will_install: '將安裝 Torch {index} + llama-server',
       with_driver: '（驅動 {version}）',
@@ -1032,6 +1130,7 @@ export default {
       'video.cut': '影片 · 剪輯',
       'video.extract_audio': '影片 · 音軌提取',
       'video.subtitle_generate': '影片 · 字幕提取',
+      'video.summary': '影片 · 摘要',
       'audio.transcode': '音訊 · 轉檔',
       'audio.cut': '音訊 · 剪輯',
       'audio.volume': '音訊 · 音量調整',
@@ -1082,12 +1181,18 @@ export default {
     bsrgan: '盲超解析',
     real_cugan: '動漫風格超解析',
     waifu2x: '經典動漫超解析',
-    codeformer: 'VQ-GAN 人臉修復',
     gfpgan: 'GAN 人臉修復',
     mobilesam: '輕量物件分割（AI 移除用）',
     demucs: '音源分離（人聲/鼓/貝斯/吉他/鋼琴/其他）',
     rife: '影片補幀（Frame Interpolation）',
     basic_pitch: '音訊轉 MIDI',
+    qwen3: 'Qwen3 翻譯模型',
+    qwen3vl: 'Qwen3-VL 視覺語言模型（OCR）',
+    internvl2_5: 'InternVL2.5 視覺語言模型（OCR）',
+    gemma3: 'Gemma 3 文字模型',
+    gemma4: 'Gemma 4 多模態模型',
+    qwen3_5: 'Qwen3.5 多模態模型',
+    alignment: '強制對齊',
     whisper: {
       tiny: '極速語音辨識',
       base: '快速語音辨識',

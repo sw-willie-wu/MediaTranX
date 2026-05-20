@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
@@ -27,14 +27,9 @@ async def adjust_volume(
     request: AudioVolumeRequest,
     service: AudioVolumeService = Depends(Provide[AppContainer.audio_volume]),
 ):
-    try:
-        task_id = await service.submit_volume(
-            file_id=request.file_id,
-            volume_db=request.volume_db,
-            normalize=request.normalize,
-        )
-        return AudioVolumeResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_volume(
+        file_id=request.file_id,
+        volume_db=request.volume_db,
+        normalize=request.normalize,
+    )
+    return AudioVolumeResponse(task_id=task_id)

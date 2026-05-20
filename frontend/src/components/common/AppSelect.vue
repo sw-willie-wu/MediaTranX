@@ -11,7 +11,7 @@ export interface SelectOption {
 
 export interface SelectGroup {
   group: string
-  options: SelectOption[]
+  options: readonly SelectOption[]
 }
 
 export type SelectItem = SelectOption | SelectGroup
@@ -24,7 +24,7 @@ const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   modelValue: any
-  options: SelectItem[]
+  options: readonly SelectItem[]
   size?: 'default' | 'sm'
   placeholder?: string
   disabled?: boolean
@@ -54,7 +54,7 @@ const singleGroup = computed(() => {
 })
 
 /** 實際渲染的 options：單 group 時展平 */
-const renderOptions = computed<SelectItem[]>(() => {
+const renderOptions = computed<readonly SelectItem[]>(() => {
   if (singleGroup.value) {
     return (props.options[0] as SelectGroup).options
   }

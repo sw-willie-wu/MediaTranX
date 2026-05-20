@@ -53,6 +53,7 @@ dependencies = [
     "torchvision>=0.15.0",
     "torchaudio>=2.0.0",
     "opencc-python-reimplemented>=0.1.7",
+    "scenedetect>=0.6.7.1",
 ]
 
 [project.optional-dependencies]
@@ -68,6 +69,25 @@ asyncio_mode = "auto"
 markers = [
     "ai: tests requiring GPU and AI models (skip in CI)",
     "ffmpeg: tests requiring ffmpeg binary",
+]
+
+[tool.coverage.run]
+source = ["app"]
+# Exclude site-packages — coverage instrumentation breaks torch's _add_docstr (which
+# rejects re-docstring-ing). Keep tracing limited to first-party `app/` code.
+omit = [
+    "app/main.py",
+    "app/init/*",
+    "app/adapters/device.py",
+    "app/adapters/ai/wrapper/rife_arch.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
 ]
 
 [tool.uv]
@@ -122,4 +142,9 @@ demucs = { git = "https://github.com/facebookresearch/demucs" }
 torch = { index = "pytorch-cu124" }
 torchvision = { index = "pytorch-cu124" }
 torchaudio = { index = "pytorch-cu124" }
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.1.0",
+]
 # --- END AUTO-GENERATED ---

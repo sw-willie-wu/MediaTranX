@@ -1,14 +1,17 @@
 """
 Remote API connection management routes.
 """
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.init.container import AppContainer
-from app.services.setup.remote_service import RemoteService
+
+if TYPE_CHECKING:
+    from app.services.setup.remote_service import RemoteService
 
 router = APIRouter()
 
@@ -67,13 +70,10 @@ async def update_connection(
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
     """Update a connection."""
-    conn = service.update_connection(
+    return service.update_connection(
         conn_id,
         **data.model_dump(exclude_none=True),
     )
-    if not conn:
-        raise HTTPException(status_code=404, detail="Connection not found")
-    return conn
 
 
 @router.delete("/remote/connections/{conn_id}")
@@ -83,8 +83,7 @@ async def delete_connection(
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
     """Delete a connection."""
-    if not service.delete_connection(conn_id):
-        raise HTTPException(status_code=404, detail="Connection not found")
+    service.delete_connection(conn_id)
     return {"ok": True}
 
 
@@ -95,16 +94,11 @@ async def test_connection(
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
     """Test a connection."""
-    try:
-        return service.test_connection(
-            provider=data.provider,
-            endpoint=data.endpoint,
-            api_key=data.api_key,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.test_connection(
+        provider=data.provider,
+        endpoint=data.endpoint,
+        api_key=data.api_key,
+    )
 
 
 @router.get("/remote/models")
@@ -116,9 +110,4 @@ async def list_remote_models(
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
     """List available remote models."""
-    try:
-        return {"models": service.list_remote_models(provider, endpoint, api_key)}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return {"models": service.list_remote_models(provider, endpoint, api_key)}

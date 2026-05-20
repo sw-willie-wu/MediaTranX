@@ -38,7 +38,7 @@ const {
   canGoBack, canGoForward,
   textResultContent, textResultFileId,
   collection,
-  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, downloadFile, addMidiEntry,
+  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, handleDownloadBatch, downloadFile, addMidiEntry,
   goBack, goForward,
 } = useAudioWorkspace()
 
@@ -475,6 +475,7 @@ function registerTitlebar() {
         } else {
           await editor.saveToApi(fid)
         }
+        if (!fid) return
         const stem = currentFileName.value.replace(/\.[^.]+$/, '') || 'Untitled'
         downloadFile(fid, `${stem}.mid`, sourceDir.value)
       } else {
@@ -515,7 +516,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     :upload-label="$t('audio.upload_label')"
     :upload-hint="$t('audio.upload_hint')"
     upload-accept="audio/*"
-    hide-preview-tabs
     show-filmstrip
     :collection-size="filmstripItems.length"
     :active-file-name="currentFileName"
@@ -727,6 +727,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
         @remove-selected="ids => collection.removeEntries(ids)"
         @clear-selection="collection.clearSelection()"
         @select-all="collection.selectAll()"
+        @batch-save="handleDownloadBatch"
       />
     </template>
 
@@ -746,7 +747,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :duration="audioInfo?.duration"
-          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
           @update:trim-range="r => trimRange = r"
         />
@@ -765,7 +765,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="transcribePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
 
@@ -774,7 +773,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="separatePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
           @jump-to-midi="handleJumpToMidi"
         />
@@ -784,7 +782,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="lyricsPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
 
@@ -793,7 +790,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="midiEditPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
           @create-blank="createBlankMidi"
         />

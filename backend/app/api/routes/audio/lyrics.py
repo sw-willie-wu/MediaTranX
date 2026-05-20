@@ -6,7 +6,7 @@ import logging
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
@@ -33,8 +33,6 @@ class LyricsRequest(BaseModel):
     translate_conn_id: Optional[int] = Field(default=None, description="Cloud connection ID")
     translate_remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
     output_format: str = Field(default="lrc", description="Output format (lrc, txt)")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
-    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class LyricsResponse(BaseModel):
@@ -48,26 +46,19 @@ async def extract_lyrics(
     request: LyricsRequest,
     service: AudioLyricsService = Depends(Provide[AppContainer.audio_lyrics]),
 ):
-    try:
-        task_id = await service.submit_lyrics(
-            file_id=request.file_id,
-            whisper_size=request.whisper_size,
-            align=request.align,
-            translate=request.translate,
-            target_lang=request.target_lang,
-            translate_model_family=request.translate_model_family,
-            translate_model_size=request.translate_model_size,
-            translate_quantization=request.translate_quantization,
-            translate_remote=request.translate_remote,
-            translate_provider=request.translate_provider,
-            translate_conn_id=request.translate_conn_id,
-            translate_remote_model=request.translate_remote_model,
-            output_format=request.output_format,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
-        )
-        return LyricsResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_lyrics(
+        file_id=request.file_id,
+        whisper_size=request.whisper_size,
+        align=request.align,
+        translate=request.translate,
+        target_lang=request.target_lang,
+        translate_model_family=request.translate_model_family,
+        translate_model_size=request.translate_model_size,
+        translate_quantization=request.translate_quantization,
+        translate_remote=request.translate_remote,
+        translate_provider=request.translate_provider,
+        translate_conn_id=request.translate_conn_id,
+        translate_remote_model=request.translate_remote_model,
+        output_format=request.output_format,
+    )
+    return LyricsResponse(task_id=task_id)

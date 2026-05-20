@@ -1,8 +1,6 @@
 """Image cropping service."""
 import logging
-from pathlib import Path
 from typing import Callable, Optional
-from uuid import uuid4
 
 from PIL import Image
 
@@ -23,7 +21,8 @@ class ImageCropService:
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_CROP,
-            self._handle_task
+            self._handle_task,
+            output_policy="history",
         )
 
         logger.info("ImageCropService initialized")
@@ -35,12 +34,9 @@ class ImageCropService:
         y: int = 0,
         width: int = 0,
         height: int = 0,
-        output_dir: Optional[str] = None,
     ) -> str:
         """Submit an image crop task."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id": file_id,
@@ -48,7 +44,6 @@ class ImageCropService:
             "y": y,
             "width": width,
             "height": height,
-            "output_dir": output_dir,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_CROP, params)
@@ -70,13 +65,10 @@ class ImageCropService:
         progress_callback: Callable[[float, str], None]
     ) -> dict:
         """Execute image cropping."""
-        from app.utils.gif_utils import animation_format, process_gif_frames, save_animated, animation_ext
+        from app.utils.gif_utils import animation_format, apply_and_save, animation_ext
 
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         progress_callback(0.1, "task.progress.loading_image")
 
@@ -84,39 +76,32 @@ class ImageCropService:
             img_width, img_height = raw.size
             anim_fmt = animation_format(raw)
 
-            progress_callback(0.3, "task.progress.calculating_crop")
-            x = max(0, min(params["x"], img_width - 1))
-            y = max(0, min(params["y"], img_height - 1))
-            crop_width  = max(1, min(params["width"],  img_width  - x))
-            crop_height = max(1, min(params["height"], img_height - y))
-            box = (x, y, x + crop_width, y + crop_height)
-
-            if anim_fmt:
-                def _crop_frame(frame, idx, total):
-                    progress_callback(0.4 + idx / total * 0.4, f"task.progress.cropping|{idx + 1}|{total}")
-                    return frame.crop(box)
-                result_frames = process_gif_frames(raw, _crop_frame)
-            else:
-                img = raw.copy().crop(box)
+        progress_callback(0.3, "task.progress.calculating_crop")
+        x = max(0, min(params["x"], img_width - 1))
+        y = max(0, min(params["y"], img_height - 1))
+        crop_width  = max(1, min(params["width"],  img_width  - x))
+        crop_height = max(1, min(params["height"], img_height - y))
+        box = (x, y, x + crop_width, y + crop_height)
 
         progress_callback(0.7, "task.progress.saving_file")
 
         # Build output path
-        custom_output_dir = params.get("output_dir")
-        output_file_id = str(uuid4())
-        original_stem = Path(file_info.original_filename).stem
         ext = animation_ext(anim_fmt).lstrip(".") if anim_fmt else "png"
-        final_filename = f"{original_stem}_cropped_{output_file_id[:8]}.{ext}"
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_cropped",
+            ext=f".{ext}",
+        )
 
-        output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / final_filename
-
-        if anim_fmt:
-            save_animated(result_frames, output_path, anim_fmt)
-        else:
-            img.save(str(output_path), format="PNG")
-            img.close()
+        with Image.open(file_info.file_path) as raw:
+            apply_and_save(
+                raw,
+                output_path,
+                lambda frame: frame.crop(box),
+                on_progress=lambda p, msg: progress_callback(0.4 + p * 0.3, msg),
+                preserve_alpha=True,
+                static_save_kwargs={"format": "PNG"},
+            )
 
         # Register output file
         output_info = self._file_service.register_output(

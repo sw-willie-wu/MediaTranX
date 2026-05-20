@@ -1,13 +1,16 @@
 """
 Task history endpoints.
 """
+from __future__ import annotations
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
-from typing import Optional
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
+from typing import Optional, TYPE_CHECKING
 
 from app.init.container import AppContainer
-from app.services.tasks.history_service import TaskHistoryService
+
+if TYPE_CHECKING:
+    from app.services.tasks.history_service import TaskHistoryService
 
 router = APIRouter(prefix="/history")
 
@@ -36,21 +39,16 @@ async def save_history(
     history: TaskHistoryService = Depends(Provide[AppContainer.task_history]),
 ):
     """Save a frontend-only task to history."""
-    try:
-        history.save_frontend_task(
-            task_id=request.task_id,
-            task_type=request.task_type,
-            status=request.status,
-            label=request.label,
-            file_name=request.file_name,
-            error=request.error,
-            result=request.result,
-        )
-        return SaveHistoryResponse(status="saved", task_id=request.task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    history.save_frontend_task(
+        task_id=request.task_id,
+        task_type=request.task_type,
+        status=request.status,
+        label=request.label,
+        file_name=request.file_name,
+        error=request.error,
+        result=request.result,
+    )
+    return SaveHistoryResponse(status="saved", task_id=request.task_id)
 
 
 @router.get("")
@@ -72,8 +70,7 @@ async def delete_history_item(
     history: TaskHistoryService = Depends(Provide[AppContainer.task_history]),
 ):
     """Delete a single history entry."""
-    if not history.delete(task_id):
-        raise HTTPException(status_code=404, detail="History item not found")
+    history.delete(task_id)
     return {"status": "deleted", "task_id": task_id}
 
 

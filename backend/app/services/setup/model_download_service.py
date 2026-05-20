@@ -144,7 +144,7 @@ def _stream_download(
 # --- Format-specific downloaders ---
 
 def _download_whisper(size: str, progress_callback: Callable[[float, str], None], snapshot_download) -> None:
-    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG
+    from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PKG
 
     whisper_config = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("whisper", {})
     variants = whisper_config.get("variants", {})
@@ -173,7 +173,7 @@ def _download_whisper(size: str, progress_callback: Callable[[float, str], None]
 
 def _download_gguf(model_family: str, size: str, quant: str, progress_callback: Callable[[float, str], None]) -> None:
     """Download GGUF model (including mmproj for vision models)."""
-    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
+    from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
 
     config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get(model_family, {})
     specs = config.get("specs", {})
@@ -215,7 +215,7 @@ def _download_gguf(model_family: str, size: str, quant: str, progress_callback: 
 
 def _download_demucs(variant: str, progress_callback: Callable[[float, str], None]) -> None:
     """Download Demucs model checkpoint (direct from Facebook, avoids demucs package path issues)."""
-    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_DEMUCS
+    from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_DEMUCS
 
     family = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("demucs")
     if not family:
@@ -256,7 +256,7 @@ def _download_rife(variant: str, progress_callback: Callable[[float, str], None]
     """Download RIFE model checkpoint (extracts flownet.pkl from zip)"""
     import io
     import zipfile
-    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
+    from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PKG, SLOT_RIFE
 
     family = MODELS_REGISTRY.get(FORMAT_PKG, {}).get("rife")
     if not family:
@@ -305,7 +305,7 @@ def _download_rife(variant: str, progress_callback: Callable[[float, str], None]
 
 def _download_alignment(lang_code: str, progress_callback: Callable[[float, str], None]) -> None:
     """Download Wav2Vec2 alignment model (via transformers from HuggingFace)."""
-    from app.engine.ai.audio.wav2vec2 import LANG_MODELS
+    from app.adapters.ai.wrapper.wav2vec2 import LANG_MODELS
 
     if lang_code not in LANG_MODELS:
         raise ValueError(f"Unsupported language: {lang_code}")
@@ -345,7 +345,7 @@ def _download_alignment(lang_code: str, progress_callback: Callable[[float, str]
 
 def _download_pth_model(model_id: str, progress_callback: Callable[[float, str], None]) -> None:
     """Download PTH model (upscale / face_restore)."""
-    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_PTH
+    from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PTH
 
     pth_models = MODELS_REGISTRY.get(FORMAT_PTH, {})
 

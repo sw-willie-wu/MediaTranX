@@ -8,7 +8,7 @@ from typing import Optional, TYPE_CHECKING
 logger = logging.getLogger(__name__)
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
@@ -34,8 +34,6 @@ class SubtitleGenerateRequest(BaseModel):
         default="srt",
         description="Output format (srt, vtt)"
     )
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
-    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
     target_language: Optional[str] = Field(
         default=None,
         description="Translation target language (None=no translation, zh-TW, en, ja...)"
@@ -77,6 +75,10 @@ class SubtitleGenerateRequest(BaseModel):
         default=False,
         description="Enable precise alignment (Wav2Vec2 forced alignment)"
     )
+    vocal_separation: bool = Field(
+        default=False,
+        description="Enable Demucs vocal separation"
+    )
     # Translation options
     keep_names: bool = Field(
         default=True,
@@ -117,11 +119,8 @@ async def get_whisper_status(
     service: SubtitleService = Depends(Provide[AppContainer.video_subtitle]),
 ):
     """Query Whisper model status."""
-    try:
-        status = service.get_model_status(model_size)
-        return ModelStatusResponse(**status)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    status = service.get_model_status(model_size)
+    return ModelStatusResponse(**status)
 
 
 
@@ -152,32 +151,27 @@ async def generate_subtitle(
     - **min_silence_duration_ms**: Minimum silence duration (100-2000ms)
     - **vad_threshold**: VAD threshold (0.1-0.9)
     """
-    try:
-        task_id = await service.submit_subtitle_generate(
-            file_id=request.file_id,
-            language=request.language,
-            model_size=request.model_size,
-            output_format=request.output_format,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
-            target_language=request.target_language,
-            translate_model_size=request.translate_model_size,
-            translate_model_family=request.translate_model_family,
-            translate_quantization=request.translate_quantization,
-            word_timestamps=request.word_timestamps,
-            condition_on_previous_text=request.condition_on_previous_text,
-            min_silence_duration_ms=request.min_silence_duration_ms,
-            vad_threshold=request.vad_threshold,
-            keep_names=request.keep_names,
-            translate_style=request.translate_style,
-            glossary=request.glossary,
-            translate_remote=request.translate_remote,
-            translate_provider=request.translate_provider,
-            translate_conn_id=request.translate_conn_id,
-            translate_remote_model=request.translate_remote_model,
-        )
-        return SubtitleGenerateResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_subtitle_generate(
+        file_id=request.file_id,
+        language=request.language,
+        model_size=request.model_size,
+        output_format=request.output_format,
+        target_language=request.target_language,
+        translate_model_size=request.translate_model_size,
+        translate_model_family=request.translate_model_family,
+        translate_quantization=request.translate_quantization,
+        word_timestamps=request.word_timestamps,
+        condition_on_previous_text=request.condition_on_previous_text,
+        min_silence_duration_ms=request.min_silence_duration_ms,
+        vad_threshold=request.vad_threshold,
+        keep_names=request.keep_names,
+        translate_style=request.translate_style,
+        glossary=request.glossary,
+        translate_remote=request.translate_remote,
+        translate_provider=request.translate_provider,
+        translate_conn_id=request.translate_conn_id,
+        translate_remote_model=request.translate_remote_model,
+        vocal_separation=request.vocal_separation,
+        align=request.align,
+    )
+    return SubtitleGenerateResponse(task_id=task_id)

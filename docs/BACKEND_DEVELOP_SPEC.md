@@ -4,103 +4,351 @@
 
 ---
 
-## 1. 分層規則
+## 1. 後端架構與命名規範
+
+> 本章定義 `app/` 下各資料夾邊界、命名規範、層級依賴。新增/修改 code 前必須對照此章確認目標位置。
+
+### 1.1 目錄結構
 
 ```
 app/
-├── init/                      ← 啟動初始化（DLL 注入、日誌、相容層）
-├── api/
-│   ├── routes/                ← 路由層：參數驗證 → 呼叫 Service → 回傳 Response
-│   └── (Response models defined in route files directly)
-├── db/                        ← 資料庫層（SQLModel）
-│   ├── database.py            ← Engine 建立、migration
-│   ├── models/                ← ORM models（api_connection、task_history）
-│   └── dao/                   ← Data Access Objects
-├── services/                  ← 業務層：協調 FileService + TaskManager
-├── engine/                    ← 底層封裝
-│   ├── paths.py               ← 路徑管理
-│   ├── device.py              ← GPU/CPU 偵測
-│   ├── ffmpeg.py              ← FFmpegWrapper（cut / extract_audio / audio_convert / adjust_volume / transcode）
-│   └── ai/                    ← AI 模型
-│       ├── runtime/           ← Runtime 基礎類別（base、package、pth、llama_server）
-│       ├── image/             ← 影像模型（realesrgan、codeformer、mobilesam 等）
-│       ├── audio/             ← 語音模型（whisper、demucs、wav2vec2）
-│       ├── llama/             ← LLM（gemma、qwen3、vlm、translate prompt）
-│       ├── remote/            ← 遠端 API Provider（ollama、openai、gemini）
-│       ├── registry.py        ← 模型註冊表（含推理參數 inference config）
-│       └── model_manager.py   ← VRAM / Slot 管理
-├── workers/                   ← TaskManager、ProgressTracker
-├── schemas/                   ← 跨層共用 domain types（enum、dataclass）
-├── utils/                     ← 工具函數（inference、prompts、translate、summarize）
-└── exceptions.py              ← 自訂例外階層
+├── main.py                             # FastAPI app entry
+├── api/                                # HTTP routing + inline DTO
+│   └── routes/
+│       ├── audio/, image/, video/, document/
+│       ├── files/, llm/, health/
+│       └── setup/, tasks/
+├── adapters/                           # 外部系統 adapter（需跨層協調）
+│   ├── device.py                       # 硬體/OS 查詢
+│   ├── binary/                         # binary subprocess wrapper
+│   │   ├── ffmpeg.py
+│   │   └── llama_server.py
+│   └── ai/                             # AI domain adapter
+│       ├── model_manager.py            # VRAM slot + acquire 協調（單例）
+│       ├── registry.py                 # 靜態 model metadata
+│       ├── tile_inference.py           # PTH tensor tile/stitch helper
+│       ├── remote/                     # HTTP provider adapter
+│       │   ├── base.py
+│       │   └── openai.py, gemini.py, ollama.py
+│       └── wrapper/                    # AI model lifecycle wrapper 家族
+│           ├── base.py                 # BaseWrapper / PackageWrapper / PthWrapper
+│           ├── whisper.py, demucs.py, basic_pitch.py, wav2vec2.py
+│           ├── bsrgan.py, realesrgan.py, swinir.py, waifu2x.py, real_cugan.py
+│           ├── codeformer.py, gfpgan.py
+│           ├── mobilesam.py, rife.py
+│           └── llm.py                  # 包 binary/llama_server
+├── services/                           # DI business services
+│   ├── audio/, image/, video/, document/    # modality feature services
+│   └── files/, llm/, setup/, tasks/         # cross-cutting services
+├── pipeline/                           # 跨 service domain orchestration
+│   └── translate.py, transcribe.py, ocr.py
+├── utils/                              # 純技術 helper（技術中性 + 2+ 終端 consumer）
+├── workers/                            # async task infrastructure
+│   └── task_manager.py, progress_tracker.py, media_kind.py
+├── handler/                            # HTTP 層橫切 plumbing
+│   └── exceptions.py, error_responses.py, middleware.py
+├── schemas/                            # 跨層共用 domain model
+│   └── file.py, task.py
+├── init/                               # 應用 bootstrap
+│   └── container.py, configs/, logging_config.py, lifespan.py, compat.py, setup.py
+└── db/                                 # 資料持久層（SQLModel）
+    └── database.py, models/, dao/
 ```
 
-### 禁止事項
+### 1.2 各層責任邊界
 
-- **Route 不可**直接操作檔案、呼叫 AI 模型、import PIL/numpy/torch
-- **Service 不可**直接操作 VRAM 或啟動 subprocess，必須透過 Engine / Utils
-  - FFmpeg 操作：使用 `engine/ffmpeg.py` 的 `FFmpegWrapper.cut()` / `.extract_audio()` / `.audio_convert()` / `.adjust_volume()` / `.transcode()`
-  - 影片 Frame Pipe：使用 `utils/video_frames.py` 的 `FramePipe`
-- **Engine 不可**包含業務邏輯（不知道「壓縮」「轉檔」的概念，只提供技術能力）
-- **不可跨層跳躍**：Route → Engine ✗，必須經過 Service
-- **Workers 不可**依賴 API 層：Workers → `app.api.*` ✗
+#### 1.2.1 `api/` — HTTP routing
 
-### 跨層共用型別
+**責任**：FastAPI endpoint、request/response validation、呼叫 service。不含業務邏輯。
 
-跨層共用的 domain types 放在 `app/schemas/`（純 Python dataclass + enum），避免 workers/services 反向依賴 API 層：
+- 每個 concern 一個 folder（即使只 1 feature，保結構一致）
+- Folder 內每檔 = 一個 feature；Pydantic BaseModel inline 定義在該 feature 檔案頂部
+- **拆分原則**：
+  - **拆**：不同 feature / resource 的 endpoint 分檔（e.g. `files/upload.py` vs `files/download.py`）
+  - **不拆**：同 feature 的多個 endpoint（主任務 + 查詢 helper、同 resource CRUD）放一起（e.g. `audio/transcribe.py` 含 POST `/transcribe` + GET `/transcribe/languages` + GET `/transcribe/sizes`）
+
+#### 1.2.2 `schemas/` — 跨層共用 domain model
+
+**責任**：services 與 api 都會接觸的資料 shape。純 Python dataclass / enum，避免 services/workers 反向依賴 api 層。
+
+- 典型內容：`FileData`、`TaskState`、`TaskStatus` enum
+- **不放**：endpoint 專用 request/response DTO（inline 在 route 檔）
+
+API 層的 Pydantic models（`TaskResponse`、`FileInfo`）在對應 route 檔中定義，透過 `from_task_data()` / `from_file_data()` 由 schemas/ 的 domain model 轉換。
+
+#### 1.2.3 `services/` — DI 業務邏輯
+
+**責任**：DI singleton，每個 service = 一個內聚的業務邏輯。Endpoint 數量（0/1/N）不是分類依據。
+
+三類表現形式（全部走同一條規則）：
+- 對應 1 個 endpoint（e.g. `image/upscale_service`）
+- 對應多個 endpoint（e.g. `files/file_service` — 檔案管理多面向）
+- 0 個 endpoint，internal-only（e.g. `llm/chat_service` — 被其他 service 透過建構子注入）
+
+**單檔 vs subpackage 門檻**：
+- 單檔 `<feature>_service.py`：業務邏輯 < ~300 行
+- 子包 `<feature>_service/`：超過 300 行，或有明確不同主題的 helpers
+
+**Subpackage 內部組織**：
 
 ```
-app/schemas/
-  task.py   ← TaskStatus (enum) + TaskData (dataclass)
-  file.py   ← FileData (dataclass)
+services/video/summary_service/
+├── __init__.py              # re-export VideoSummaryService
+├── service.py               # 業務主軸（submit_ / _execute / 和其他 service 互動）
+├── parse.py                 # LLM 輸入輸出 plumbing（主題命名）
+├── markdown.py              # 最終 doc 組裝（主題命名）
+└── frame_picker.py          # 場景幀挑選（主題命名）
 ```
 
-API 層的 Pydantic models（`TaskResponse`、`FileInfo`）直接定義在對應的 route 檔案中（`routes/tasks/active.py`、`routes/files.py`），透過 `from_task_data()` / `from_file_data()` 轉換。
+- `service.py` = 業務類別本體
+- 其他檔 = **以關注點命名**
+- `__init__.py` 只 re-export class，不放邏輯
 
-### 資料庫層（app/db/）
+#### 1.2.4 `pipeline/` — 跨 service domain orchestration
+
+**責任**：跨 service 共用 + 具 domain 概念的 inference 編排。
+
+**判準（兩者皆需）**：
+- 2+ service 直接消費
+- 涉及 domain orchestration（「翻譯」「OCR」「轉錄」之類概念）
+
+現有 3 檔：
+- `translate.py` — SRT batch translate（transcribe / lyrics / subtitle / document_translate 4 service 共用）
+- `transcribe.py` — demucs → whisper → align 編排
+- `ocr.py` — VLM single-image OCR（image_ocr / doc_ocr 2 service 共用）
+
+只有 1 service consumer 的 helper 不是 pipeline，放進該 service 的 subpackage。
+
+#### 1.2.5 `adapters/` — 外部系統 adapter
+
+**責任**：包「不是我們寫的東西」—— binary、第三方 Python 套件、遠端 HTTP API、OS/硬體資源。**放這層的判準：需要跨層協調**（統一 VRAM slot、binary 路徑、硬體 cache）；只在一個 consumer 用且不涉協調的不是 adapter 而是 service-local helper。
+
+分三塊：
+
+| 塊 | 內容 |
+|---|---|
+| `device.py` | 硬體查詢（CUDA 偵測、compute type 選擇） |
+| `binary/` | binary subprocess wrapper：`ffmpeg.py`、`llama_server.py` |
+| `ai/` | AI domain adapter（見下） |
+
+**`adapters/ai/` 內部**：
+
+| 檔/包 | 責任 |
+|---|---|
+| `model_manager.py` | 單例；VRAM slot lock、evict、lazy runtime factory、`mm.acquire(slot, model_id, variant)` 公開入口 |
+| `registry.py` | 靜態 model metadata（name / size / VRAM / repo_id / file format / slot） |
+| `tile_inference.py` | PTH 家族共用 tensor tile/stitch helper |
+| `remote/` | HTTP provider adapter（openai、gemini、ollama；`base.py` 定抽象） |
+| `wrapper/` | AI model lifecycle wrapper 家族 |
+
+**`wrapper/` 只放 wrapper 本身 + 基類**：
+- `base.py` — `BaseWrapper` / `PackageWrapper` / `PthWrapper`（lifecycle 基類）
+- `whisper.py` / `bsrgan.py` / ... / `llm.py` — 具體 wrapper 實作
+- 不放非 wrapper 的 helpers（避免命名誤導）
+
+**`tile_inference.py` 為什麼在 `ai/` 頂層而不是 `wrapper/` 內？**
+放 `wrapper/` 內會被誤認是某個 model wrapper。`tile_inference` 不是 wrapper，是 wrapper 家族共用的 tensor helper，放 ai/ 頂層（和 `model_manager` / `registry` 同層）語義清楚。
+
+**`llama_server` 為什麼拆成 `binary/llama_server.py` + `ai/wrapper/llm.py`？**
+- `binary/llama_server.py` = 純 binary adapter（subprocess + HTTP），不知道 model registry / mmproj / VRAM slot
+- `ai/wrapper/llm.py`（`LlmWrapper`）= AI-domain lifecycle；繼承 wrapper base class，組合 `LlamaServer` 做為實作細節，知道 registry + load/unload 語義
+- 類比 ffmpeg：也是 binary subprocess wrapper，但不綁特定 domain，獨立在 `binary/`
+
+**Remote Provider 介面**（`adapters/ai/remote/`）：
+- 每個 Provider 實作 `connect()` / `list_models()` / `chat()`
+- `chat()` 支援 vision messages（各 provider 格式不同，內部轉換）
+- Model capabilities 從 API 偵測（Ollama `/api/show`、OpenAI 已知表、Gemini `supportedGenerationMethods`）
+- 錯誤統一拋 `RemoteApiError(code, detail)`
+
+#### 1.2.6 `utils/` — 純技術 helper
+
+**責任**：可被上層自由 import 的純函數 / 資料處理 / 技術 boilerplate。**無 DI、無 container、無 domain state**。
+
+**收錄條件（三者皆需）**：
+1. 純資料/技術處理，無業務邏輯
+2. **技術中性**（通用 format / algorithm，與特定 domain 解耦）
+3. 被 2+ 終端 consumer 使用（transitive 計算）
+
+**Transitive consumer 計算**：若 `utils/A.py` 被 `utils/B.py` import，A 的 consumer 數 = B 的終端 consumer + A 的直接終端 consumer。防止「A 只服務 B、B 只服務 1 個 service」的 loophole。
+
+**utils 內部可互相 import**，單向、無循環；高層 utils 組合低層 utils 是合法 composition。
+
+**不符合收錄條件時**：
+- 符合 (1)(3) 但高度 domain-specific、consumer 全在一個家族（如 PTH tensor tile）→ 放家族協調層（如 `adapters/ai/tile_inference.py`）
+- 符合 (1)(2) 但只 1 consumer → 放該 consumer 的 service subpackage
+- 只 1 consumer 的 workers helper → 放 `workers/`
+
+#### 1.2.7 `workers/` — async task infrastructure
+
+**責任**：任務排程與進度回報基礎設施，非 domain-specific。
+
+- `task_manager.py` — TaskManager（排程、狀態、錯誤捕獲）
+- `progress_tracker.py` — 進度查詢
+- `media_kind.py` — 檔案類型推斷（task_manager 用於 dispatch）
+
+#### 1.2.8 `handler/` — HTTP 層橫切 plumbing
+
+**責任**：攔截 request/response flow 的橫切關注，不屬特定 route。
+
+- `exceptions.py` — 自訂 exception 階層（services 拋、api 層攔）
+- `error_responses.py` — `ErrorResponse` DTO + exception → HTTP 映射
+- `middleware.py` — FastAPI middleware
+
+**自訂例外階層**（`handler/exceptions.py`）：
+
+```
+MediaTranXError
+├── ModelNotFoundError      # 模型未找到
+├── ModelLoadError          # 模型載入失敗
+├── InferenceError          # AI 推論錯誤
+├── TaskError               # 任務執行錯誤
+├── FileNotFoundError_      # 檔案未找到
+├── ConfigError             # 設定錯誤
+├── FFmpegError             # FFmpeg 執行失敗
+├── TaskCancelledError      # 任務被使用者取消
+└── RemoteApiError          # 雲端 API 錯誤（帶 error code 供前端 i18n）
+```
+
+`RemoteApiError` 帶 `code` 欄位（`gpu_oom`、`quota_exceeded` 等），TaskManager 存入 `error_code`，前端以 `t('tasks.errors.{code}')` 翻譯。
+
+#### 1.2.9 `init/` — 應用 bootstrap
+
+- `configs/` — `AppSettings` container + per-concern modules（`paths.py`、`db.py`、`server.py`）
+- `logging_config.py` — logging handler + format setup
+- `container.py` — DI `AppContainer` 定義 + `init_container()`
+- `lifespan.py` — FastAPI startup/shutdown hook（含 background warmup）
+- `compat.py`、`setup.py` — DLL 注入、sys.path 準備
+
+#### 1.2.10 `db/` — 資料持久層
 
 使用 SQLModel（Pydantic + SQLAlchemy），SQLite 儲存：
 
-- `db/database.py` — Engine 建立、WAL 模式、自動 migration（ALTER TABLE 補欄位）
-- `db/models/` — ORM models：`ApiConnection`（遠端 API 連線）、`TaskHistory`（任務歷史）
+- `db/database.py` — Engine 建立、WAL 模式、自動 migration
+- `db/models/` — ORM models：`ApiConnection`、`TaskHistory`
 - `db/dao/` — DAO pattern 封裝 CRUD，Service 不直接寫 SQL
 
 ```python
-# DAO 使用範例
 from app.db.dao.api_connection_dao import ApiConnectionDAO
 dao = ApiConnectionDAO()
 conn = dao.create(provider="ollama", name="Local", endpoint="http://localhost:11434")
 ```
 
-### 自訂例外（app/exceptions.py）
+### 1.3 命名規範
+
+#### 1.3.1 Service 檔/包
+
+| 形態 | 命名 | 範例 |
+|---|---|---|
+| 單檔 | `<feature>_service.py` | `cut_service.py` |
+| 子包 | `<feature>_service/` | `summary_service/` |
+
+兩者對外 import path 一致：`from app.services.<domain>.<feature>_service import <Feature>Service`。
+
+#### 1.3.2 Class 命名
+
+| 角色 | 格式 | 範例 |
+|---|---|---|
+| Service | `{Domain}{Feature}Service` 或 `{Feature}Service` | `ImageUpscaleService` |
+| Wrapper | `{Model}Wrapper` | `WhisperWrapper`、`BSRGANWrapper` |
+| Request/Response | `{Feature}Request` / `{Feature}Response` | `ImageUpscaleRequest` |
+| 例外 | 依業務含義 | `FileNotFoundError_`、`RemoteApiError` |
+
+#### 1.3.3 Subpackage 內部檔名
+
+- **以關注點命名**（反映「做什麼」）
+- **禁用** `helpers.py` / `utils.py` / `common.py`（role-based 無資訊量）
+- 範例：`summary_service/` 內 `parse.py`（LLM I/O）、`markdown.py`（doc 組裝）、`frame_picker.py`（場景幀選）
+
+#### 1.3.4 `_` prefix 規則
+
+`_` 只在**外部真正不該 read/write** 才加。預設不加。
+
+| 情境 | 加 `_` | 理由 |
+|---|---|---|
+| Class 內部 state（mutation 有 invariant） | ✓ | `_lock`、`_model`、`_runtimes` |
+| Module-private constant（防外部 `from x import _Y`） | ✓ | `_MAX_CHARS_PER_LINE`、`_PAUSE_THRESHOLD_S` |
+| Subclass override hook（Python template method） | ✓ | `_load_impl`、`_unload_impl`、`_resolve_model_path` |
+| Subpackage 內部檔案 | ✗ | package boundary 即 encapsulation（`frame_picker.py`） |
+| Subpackage 內部 module 裡的 function | ✗ | 同上 |
+| Instance field 外部會合理讀 | ✗ | 直接 public（`self.slot`） |
+| Cross-class contract method | ✗ | 該 public 就 public；`BaseWrapper.load/unload` 被 `ModelManager` 跨 class call，不裝私有 |
+
+#### 1.3.5 常數命名
+
+```python
+TASK_TYPE_IMAGE_UPSCALE = "image.upscale"
+TASK_TYPE_VIDEO_TRANSCODE = "video.transcode"
+```
+
+### 1.4 層級依賴規則
+
+導入方向：
 
 ```
-MediaTranXError
-├── ModelNotFoundError     ← 模型未找到
-├── ModelLoadError         ← 模型載入失敗
-├── InferenceError         ← AI 推論錯誤
-├── TaskError              ← 任務執行錯誤
-├── FileNotFoundError_     ← 檔案未找到
-├── ConfigError            ← 設定錯誤
-└── RemoteApiError         ← 雲端 API 錯誤（帶 error code 供前端 i18n）
+  api ──► services ──► pipeline ──► adapters ──► utils
+   │         │            │            │            ▲
+   │         └── workers ─┘            ▼            │
+   │                              (pure helpers)    │
+   ▼                                                │
+  handler, schemas, init (橫切 / bootstrap) ────────┘
 ```
 
-`RemoteApiError` 包含 `code` 欄位（如 `gpu_oom`、`quota_exceeded`），TaskManager 會存入 `error_code`，前端用 `t('tasks.errors.{code}')` 翻譯。
+**允許 import**：
 
-### 遠端 API Provider（engine/ai/remote/）
+| 層 | 可 import |
+|---|---|
+| `api/` | `services/`（via DI）、`schemas/`、`handler/` |
+| `services/` | `pipeline/`、`adapters/`、`utils/`、`workers/`（via DI）、`schemas/`、`db/` |
+| `pipeline/` | `adapters/`、`utils/`、`schemas/` |
+| `adapters/` | `utils/`、stdlib、第三方 |
+| `utils/` | stdlib、第三方、`utils/`（單向無循環）、`schemas/` |
+| `workers/` | `utils/`、`schemas/`、`services/`（via DI） |
+| `handler/` | `schemas/` |
+| `init/` | everything（bootstrap 角色） |
 
-```
-remote/
-├── base.py      ← RemoteProvider 抽象基底（connect、list_models、chat）
-├── ollama.py    ← OllamaProvider（/api/chat、/api/tags、/api/show）
-├── openai.py    ← OpenAIProvider（Chat Completions + Responses API）
-└── gemini.py    ← GeminiProvider（generateContent）
-```
+**禁止**：
+- Route 直接 import `adapters/`（須經 service）
+- Service 直接 import 其他 service 模組（須透過建構子注入）
+- `pipeline/` import `services/`（反向違規）
+- `utils/` import `services/` / `adapters/` / `pipeline/` / `workers/`
+- `workers/` import `api/`
+- `adapters/` 含業務邏輯（不知「壓縮」「轉檔」概念，只提供技術能力）
 
-- 每個 Provider 實作 `connect()`、`list_models()`、`chat()`
-- `chat()` 支援 vision messages（各 provider 格式不同，內部轉換）
-- 模型 capabilities 從 API 偵測（Ollama: `/api/show`、OpenAI: 已知表、Gemini: `supportedGenerationMethods`）
-- 錯誤統一拋 `RemoteApiError(code, detail)`
+**TYPE_CHECKING 例外**：route 檔案的 domain service import 放 `if TYPE_CHECKING:` 內（見 §3 Cold Start）。
+
+### 1.5 舊命名對照（遺留項）
+
+> **Status: 2026-04-19 — all entries completed during refactor waves A/B/C/D. Retained as historical mapping.**
+
+本次規範對現有程式碼的 rename / 搬家清單，實際執行透過重構 wave 分批推進。spec 先行定義目標狀態，code 尚未全部遷移：
+
+| 舊 | 新 |
+|---|---|
+| `app/engine/` | `app/adapters/` |
+| `app/engine/ai/runtime/{base,package,pth}.py` | `app/adapters/ai/wrapper/base.py`（合併） |
+| `app/engine/ai/{audio,image,video}/` | `app/adapters/ai/wrapper/`（扁平化） |
+| `app/engine/ai/remote/` | `app/adapters/ai/remote/` |
+| `app/engine/ffmpeg.py` | `app/adapters/binary/ffmpeg.py` |
+| `app/engine/ai/runtime/llama_server.py` | 拆：`app/adapters/binary/llama_server.py` + `app/adapters/ai/wrapper/llm.py` |
+| `app/engine/device.py` | `app/adapters/device.py` |
+| `app/engine/video/scene_detect.py` | `app/services/video/summary_service/scene_detect.py`（1 consumer） |
+| `BaseRuntime` / `PackageRuntime` / `PthRuntime` | `BaseWrapper` / `PackageWrapper` / `PthWrapper` |
+| `app/services/video/summary/` | `app/services/video/summary_service/`（補 `_service` 後綴） |
+| `app/services/video/_frame_picker.py` | `app/services/video/summary_service/frame_picker.py`（搬入 + 去 `_`） |
+| `app/services/document/translate_service.py` | `app/services/document/translate_service/service.py` |
+| `app/services/document/translate_text.py` | `app/services/document/translate_service/text.py` |
+| `app/utils/summarize.py` | `app/services/audio/transcribe_service/summarize.py`（1 consumer） |
+| `app/utils/text_chunking.py` | 留 utils/（2 subpackage consumer） |
+| `app/utils/media_kind.py` | `app/workers/media_kind.py`（1 consumer） |
+| `app/utils/midi.py` | 改名 `app/utils/midi_io.py`（shared util；`midi_to_json` + `json_to_midi` 兩 consumer：`audio_midi_service` + `separate_service/midi_compose.py`）。`separate_service/midi_compose.py` 只含 `merge_tracks_to_midi` + `transcribe_drums`。[^midi-c4] |
+| `ModelManager` 舊 `acquire(slot, required_vram_mb)` | 改 `_acquire_lock` 私有；公開 API 為 `acquire(slot, model_id, variant, on_progress)` |
+
+[^midi-c4]: C4 deviation — `merge_tracks_to_midi` 呼叫 `json_to_midi`，所以把 I/O 函數留在 shared util（符合 §1.2.6 的 2+ consumer 判準）比複製一份到 service-local 乾淨。只把真正 composition-specific 的函數搬進 service subpackage。
+
+命名大原則：
+1. **語義誠實**：`engine/` 太含糊改 `adapters/`；`runtime/` 除 LLM 外都只做 lifecycle 不做推論，改 `wrapper/`
+2. **按 domain 分區**：`ai/` 不管執行模型都收（in-process / binary / remote）；`binary/` 收跨 domain 的 binary adapter
+3. **Consumer 驅動 scope**：共用工具留 utils/、單一 consumer 進 service subpackage、家族內部共用留家族層
 
 ---
 
@@ -128,12 +376,12 @@ remote/
 
 為加速啟動（cold start 從 37 秒降至 ~8 秒），採用 **lazy container + TYPE_CHECKING** 模式，避免 module-level 觸發大量 import chain。
 
-### 3.1 Service / Engine 檔案
+### 3.1 Service / Adapter 檔案
 
 AI 套件（PIL、numpy、torch 等）在 Electron 啟動時由 `uv sync` 安裝完成，可直接 top-level import。這些檔案在容器首次 resolve 時才被載入，不影響啟動速度。
 
 ```python
-# ✓ 正確：Service / Engine 內直接 top-level import
+# ✓ 正確：Service / Adapter 內直接 top-level import
 from PIL import Image
 import numpy as np
 import torch
@@ -187,21 +435,21 @@ async def upscale_image(
     ...
 ```
 
-### 3.4 Engine `__init__.py`
+### 3.4 Adapter `__init__.py`
 
-Engine 的 `__init__.py` **不可**在 module level 直接 re-export wrapper class（會觸發整條 import chain）。消費者直接從具體模組 import。工廠函數內使用 lazy import：
+Adapter 的 `__init__.py` **不可**在 module level 直接 re-export wrapper class（會觸發整條 import chain）。消費者直接從具體模組 import。工廠函數內使用 lazy import：
 
 ```python
 # ✗ 禁止：__init__.py 中 eagerly re-export
 from .realesrgan import RealESRGANWrapper   # 觸發 torch import chain
 
 # ✓ 正確：消費者直接 import 具體模組
-from app.engine.ai.image.realesrgan import RealESRGANWrapper
+from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper
 
 # ✓ 正確：工廠函數使用 lazy import
 def get_upscaler(model_id: str):
     if model_id == "realesrgan":
-        from app.engine.ai.image.realesrgan import RealESRGANWrapper
+        from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper
         return RealESRGANWrapper(...)
 ```
 
@@ -259,9 +507,7 @@ class XxxService:
 
     async def submit_xxx(self, file_id: str, **params) -> str:
         """驗證輸入 → 提交任務 → 回傳 task_id"""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)  # raises FileNotFoundError_ → 404
 
         task_id = await self._task_manager.submit(TASK_TYPE_XXX, {
             "file_id": file_id,
@@ -320,22 +566,21 @@ class AppContainer(containers.DeclarativeContainer):
 - **progress_callback**：從 0.0 呼叫到 1.0，最終的結果由 TaskManager 自動 emit `stage="completed"`
 - **結果 dict**：必須包含 `output_file_id`，前端依此取得處理結果
 
-### 3.3 輸出路徑決定順序
+### 4.3 輸出路徑（temp-first policy）
 
-處理結果一律先存到暫存目錄，使用者確認後透過下載按鈕自行儲存到目標位置。
+Service **只**寫到 `FileService.output_dir`（預設 `temp/results/`），不接受 `output_dir` / `output_filename` 參數。使用者要把成果存出去時在前端透過 `useFileDownload.downloadFile`（單檔）或 `downloadBatch`（批次）自己選目的地。
 
 ```python
-# 1. 使用者指定的 output_dir（如有）
-# 2. FileService.output_dir（預設 temp/results）
-
-output_dir = Path(custom_output_dir) if custom_output_dir else self._file_service.output_dir
+output_path = self._file_service.output_dir / new_filename
 ```
+
+Results drawer 會讀取 `FileService.get_output_files()`（sidecar 持久化，見 §6.5–6.6），Settings 的「清除暫存」呼叫 `POST /files/cleanup` 一次清光。
 
 ---
 
 ## 5. Route 規範
 
-### 4.1 結構模板
+### 5.1 結構模板
 
 ```python
 """
@@ -375,27 +620,26 @@ async def do_action(
     service: XxxService = Depends(Provide[AppContainer.xxx_service]),
 ):
     """端點說明"""
-    try:
-        task_id = await service.submit_xxx(
-            file_id=request.file_id,
-            option=request.option,
-        )
-        return XxxResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_xxx(
+        file_id=request.file_id,
+        option=request.option,
+    )
+    return XxxResponse(task_id=task_id)
 ```
 
-### 4.2 規則
+### 5.2 規則
 
 - Request/Response 模型定義在 route 檔案內
 - `Field(...)` 表示必填，`Field(default=...)` 表示選填
-- 錯誤處理：`ValueError` → 404，其他 → 500
+- **錯誤處理**：Routes **不寫 try/except**；由全域 exception handler（`handler/error_responses.py`）統一處理：
+  - `FileNotFoundError_` / `ModelNotFoundError` → 404
+  - `ValueError` (參數驗證失敗) → 400
+  - `RemoteApiError` → 502
+  - `FFmpegError` / `MediaTranXError` / 其他 → 500
 - Route 內**不可**有業務邏輯，只做：驗證 → 呼叫 Service → 回傳
 - 新 route 必須在對應的 `routes/{domain}/__init__.py` 中 include
 
-### 4.3 路由註冊
+### 5.3 路由註冊
 
 ```python
 # routes/image/__init__.py
@@ -409,7 +653,7 @@ router.include_router(compress_router)
 
 ## 6. 任務系統規範
 
-### 5.1 任務狀態
+### 6.1 任務狀態
 
 ```
 PENDING → PROCESSING → COMPLETED
@@ -417,7 +661,7 @@ PENDING → PROCESSING → COMPLETED
                      → CANCELLED
 ```
 
-### 5.2 Progress Callback 使用
+### 6.2 Progress Callback 使用
 
 ```python
 def _execute(self, params, progress_callback):
@@ -435,7 +679,7 @@ def _execute(self, params, progress_callback):
 - 新增 key 時必須同步更新 `en.ts` 和 `zh-TW.ts` 的 `task.progress` 區塊
 - TaskManager 在 handler return 後自動 emit `stage="completed"` + `result`
 
-### 5.3 Progress i18n Key 命名慣例
+### 6.3 Progress i18n Key 命名慣例
 
 | 格式 | 範例 |
 |------|------|
@@ -443,15 +687,38 @@ def _execute(self, params, progress_callback):
 | 帶動態參數 | `f"task.progress.cropping\|{idx}\|{total}"` |
 | 分類前綴 | `loading_*`（載入模型）、`*_complete`（完成）、`*_starting`（開始） |
 
-### 5.4 前端 Polling
+### 6.4 前端 Polling
 
 前端透過 `GET /api/tasks/active` 每秒輪詢進行中的任務，ProgressTracker 儲存最新的 ProgressEvent 供查詢。
+
+### 6.5 Output Policy（Results Drawer 分流）
+
+`TaskManager.register_handler` 必須宣告產出歸屬：
+
+```python
+task_manager.register_handler("image.upscale", handler, output_policy="history")
+task_manager.register_handler("audio.transcribe", handler, output_policy="results")
+```
+
+| 值 | 語意 | 前端行為 |
+|----|------|---------|
+| `"history"` | 同類型單檔產出（in-place 迭代） | 進 filmstrip / historyStack |
+| `"results"` | 跨類型 or 多檔 or 新產物 | 進 Results Drawer（右上產出抽屜） |
+
+規則：
+- **輸出類型 ≠ 輸入類型** ⋁ **多檔產出** → 必須宣告 `"results"`
+- 若宣告 `"history"` 但 runtime 產出多檔 / 跨類型 → TaskManager 自動 downgrade 為 `"results"` + 發出 warning（提示開發者修正 register_handler）
+- MIDI 渲染這類「同類型但語意上是新產物」要顯式宣告 `"results"`
+
+### 6.6 Sidecar 持久化
+
+Results-policy 的產出會由 `FileService.tag_as_result` 寫入 sidecar `<file_id>.meta.json`，後端啟動時 `scan_output_dir()` 從 sidecar 還原 `_files`，讓 Drawer 跨 session 保留。`saved_path`（使用者另存位置）透過 `PATCH /files/{id}/saved-path` 寫入同一份 sidecar。
 
 ---
 
 ## 7. 日誌規範
 
-### 6.1 Logger 建立
+### 7.1 Logger 建立
 
 每個模組使用 `logging.getLogger(__name__)`：
 
@@ -459,7 +726,7 @@ def _execute(self, params, progress_callback):
 logger = logging.getLogger(__name__)
 ```
 
-### 6.2 日誌等級
+### 7.2 日誌等級
 
 | 等級 | 用途 |
 |------|------|
@@ -468,7 +735,7 @@ logger = logging.getLogger(__name__)
 | `WARNING` | 非致命異常（如模型未找到、fallback 行為） |
 | `ERROR` | 任務失敗、啟動失敗、不可恢復的錯誤 |
 
-### 6.3 日誌輸出
+### 7.3 日誌輸出
 
 | 環境 | 輸出位置 |
 |------|---------|
@@ -479,7 +746,7 @@ logger = logging.getLogger(__name__)
 
 ## 8. 路徑規範
 
-### 7.1 所有路徑透過 `PathSettings`（pydantic-settings）
+### 8.1 所有路徑透過 `PathSettings`（pydantic-settings）
 
 路徑由 Electron 透過 `MEDIATRANX_*` 環境變數注入，Python 的 `PathSettings` 讀取。Dev 模式下使用預設值（`core/backend/` 子目錄）。
 
@@ -493,40 +760,48 @@ settings = get_settings()
 path = Path(settings.path.models) / "image"
 ```
 
-### 7.2 路徑欄位
+### 8.2 路徑欄位
 
-| 欄位 | Dev 預設值 | Electron 覆蓋（env var） |
-|------|-----------|------------------------|
-| `path.data` | `core/backend/` | `MEDIATRANX_DATA` → `%APPDATA%/MediaTranX/` |
-| `path.venv` | `core/backend/.venv` | `MEDIATRANX_VENV` |
-| `path.bin` | `core/backend/bin` | `MEDIATRANX_BIN` |
-| `path.models` | `core/backend/models` | `MEDIATRANX_MODELS` |
-| `path.temp` | `core/backend/data/temp` | `MEDIATRANX_TEMP` |
-| `path.ffmpeg` | 衍生自 `bin/ffmpeg` | — |
-| `path.fluidsynth` | 衍生自 `bin/fluidsynth` | — |
-| `path.llama_bin` | 衍生自 `bin/llama` | — |
+Top-level（可 env override）：
 
-### 7.3 新增外部工具
+| 欄位 | Dev 預設值 | env var |
+|------|-----------|---------|
+| `path.root` | `.` (cwd) | `MEDIATRANX_PATH__ROOT` → `%APPDATA%/MediaTranX/` |
+| `path.models` | `models` | `MEDIATRANX_PATH__MODELS` |
+| `path.temp` | `temp` | `MEDIATRANX_PATH__TEMP` |
 
-1. 在 `PathSettings` 新增衍生 property（從 `bin` 計算）
+Computed fields（從 `root` 衍生，無 env override）：
+
+| 欄位 | 衍生 |
+|------|------|
+| `path.venv` | `root/.venv` |
+| `path.log` | `root/logs` |
+| `path.ffmpeg` | `root/bin/ffmpeg`（Win）/ `ffmpeg`（其他） |
+| `path.llama` | `root/bin/llama` |
+| `path.soundfonts` | `root/bin/soundfonts/musyngkite` |
+
+### 8.3 新增外部工具
+
+1. 在 `PathSettings` 新增 `@computed_field`（從 `root/bin` 計算）
 2. Dev 模式放 `bin/<tool>/`
-3. Electron 首次啟動時下載到 `{MEDIATRANX_BIN}/<tool>/`
+3. Electron 首次啟動時下載到 `<root>/bin/<tool>/`
 
 ---
 
 ## 9. LLM 推理參數化
 
-### 8.1 架構
+### 9.1 架構
 
 LLM 推理參數（temperature、top_k、top_p、max_tokens、prompt）不硬編碼在 service 中，統一由以下模組管理：
 
 ```
-registry.py          → 每個模型 family 的 inference config（per-task 採樣參數 + prompt builder）
-utils/inference.py   → get_inference_config()、calc_max_tokens()、calc_batch_size()
-utils/prompts.py     → get_prompt_builder()（per-model prompt builder dispatch）
+adapters/ai/registry.py          → 每個模型 family 的 inference config（per-task 採樣參數 + prompt builder）
+adapters/ai/inference_config.py  → get_inference_config()、get_remote_inference_config()（registry-backed 查詢）
+utils/inference.py               → calc_max_tokens()、calc_batch_size()、estimate_tokens()（純計算 helper）
+utils/prompts.py                 → get_prompt_builder()（per-model prompt builder dispatch）
 ```
 
-### 8.2 Registry inference config
+### 9.2 Registry inference config
 
 每個 GGUF model family 在 `registry.py` 定義 `inference` block（family level）和 n_ctx range（spec level）：
 
@@ -552,10 +827,11 @@ utils/prompts.py     → get_prompt_builder()（per-model prompt builder dispatc
 
 Remote providers 使用 `REMOTE_INFERENCE_DEFAULTS`（固定 temperature + max_tokens）。
 
-### 8.3 Service 呼叫流程
+### 9.3 Service 呼叫流程
 
 ```python
-from app.utils.inference import get_inference_config, calc_max_tokens, estimate_tokens
+from app.adapters.ai.inference_config import get_inference_config
+from app.utils.inference import calc_max_tokens, estimate_tokens
 from app.utils.prompts import get_prompt_builder
 
 config = get_inference_config(model_family, model_size, "translate")
@@ -571,7 +847,7 @@ elif result["mode"] == "completion":
     output = runtime.complete(prompt=result["prompt"], ...)
 ```
 
-### 8.4 Prompt builder
+### 9.4 Prompt builder
 
 每個模型 family 有對應的 prompt builder，處理 chat template 差異：
 
@@ -581,7 +857,7 @@ elif result["mode"] == "completion":
 | `qwen3` | 加 `/no_think` 後綴（thinking=False 時） |
 | `gemma` | 無 system role，合併到 user message |
 
-### 8.5 Thinking 控制
+### 9.5 Thinking 控制
 
 - Registry 定義預設值（`"thinking": False`）
 - API 請求可覆蓋（`thinking` 參數）
@@ -589,7 +865,7 @@ elif result["mode"] == "completion":
 - `thinking=True`：使用 default builder（不加 `/no_think`）
 - `_strip_thinking()` 永遠套用在 `chat()` 和 `complete()` 輸出，確保 `<think>` 標籤不出現在結果中
 
-### 8.6 命名規範
+### 9.6 命名規範
 
 模型 family 參數統一命名 `model_family`（如 `"qwen3"`、`"gemma4"`），禁止使用 `model_type` 或 `model_id`（避免與 VRAM slot type、完整 model identifier 混淆）。複合參數使用前綴：`translate_model_family`、`summarize_model_family`。
 
@@ -597,18 +873,19 @@ elif result["mode"] == "completion":
 
 ## 10. API 路由結構
 
-### 9.1 路由分類
+### 10.1 路由分類
 
 | 前綴 | 用途 | 檔案位置 |
 |------|------|---------|
 | `/api/setup/` | 設定頁面（config、models、remote connections） | `routes/setup/` |
-| `/api/llm/` | LLM 共用查詢（translate languages/styles/status/test） | `routes/llm.py` |
+| `/api/llm/` | LLM 共用查詢（translate languages/styles/status/test） | `routes/llm/` |
 | `/api/video/` | 影片工具（subtitle、transcode、interpolate、enhance） | `routes/video/` |
 | `/api/audio/` | 音訊工具（transcribe、separate、lyrics、midi） | `routes/audio/` |
 | `/api/image/` | 圖片工具（upscale、ocr、remove-bg、filter） | `routes/image/` |
 | `/api/document/` | 文件工具（translate、ocr、pdf-convert、split） | `routes/document/` |
-| `/api/files/` | 檔案管理（upload、download） | `routes/files.py` |
+| `/api/files/` | 檔案管理（upload、download、metadata） | `routes/files/` |
 | `/api/tasks/` | 任務管理（active、history） | `routes/tasks/` |
+| `/api/health/` | 健康檢查與裝置狀態 | `routes/health/` |
 
 LLM 共用查詢（語言列表、翻譯風格、模型狀態）放在 `/api/llm/`，不重複掛在各 domain router 下。實際執行翻譯/OCR/摘要仍在各 domain service 的 submit endpoint。
 
@@ -616,14 +893,14 @@ LLM 共用查詢（語言列表、翻譯風格、模型狀態）放在 `/api/llm
 
 ## 11. 錯誤處理規範
 
-### 8.1 Service 層
+### 11.1 Service 層
 
 ```python
-# submit 方法：驗證失敗拋 ValueError
-async def submit_xxx(self, file_id: str, ...) -> str:
-    file_info = self._file_service.get_file(file_id)
-    if file_info is None:
-        raise ValueError(f"File not found: {file_id}")
+# submit 方法：用 require_file 驗證；參數非法拋 ValueError
+async def submit_xxx(self, file_id: str, quality: int, ...) -> str:
+    file_info = self._file_service.require_file(file_id)  # FileNotFoundError_ → 404
+    if not 0 <= quality <= 100:
+        raise ValueError(f"quality must be 0-100, got {quality}")  # → 400
 
 # execute 方法：讓異常自然拋出，TaskManager 會捕獲並設定 FAILED 狀態
 def _execute(self, params, progress_callback):
@@ -631,83 +908,68 @@ def _execute(self, params, progress_callback):
     ...
 ```
 
-### 8.2 Route 層
+異常語意：
+- `FileNotFoundError_` — file_id 不存在於 FileService 登記；由 `FileService.require_file()` 自動拋出
+- `ModelNotFoundError` — 模型檔案不存在（未下載）
+- `ValueError` — 參數驗證失敗（如 quality 超範圍、unknown variant）
+- `RemoteApiError(code, detail)` — 遠端 API 呼叫失敗
+- `FFmpegError` — FFmpeg 執行失敗
+
+### 11.2 Route 層
+
+Routes **不寫 try/except**。全域 exception handler（`handler/error_responses.py`）自動映射：
+
+| 異常 | HTTP 狀態 |
+|---|---|
+| `FileNotFoundError_` | 404 |
+| `ModelNotFoundError` | 404 |
+| `ValueError` | 400 |
+| `RemoteApiError` | 502 |
+| `FFmpegError` | 500 |
+| `MediaTranXError` (基類) / 其他 | 500 |
 
 ```python
-try:
-    task_id = await service.submit_xxx(...)
+# Route 只做：呼叫 Service → 回傳
+@router.post("/action")
+@inject
+async def do_action(request: XxxRequest, service: XxxService = Depends(...)):
+    task_id = await service.submit_xxx(file_id=request.file_id, option=request.option)
     return XxxResponse(task_id=task_id)
-except ValueError as e:
-    raise HTTPException(status_code=404, detail=str(e))
-except Exception as e:
-    raise HTTPException(status_code=500, detail=str(e))
 ```
 
-### 8.3 Engine 層
+### 11.3 Adapter 層
 
-Engine 方法失敗時直接拋異常，由上層 Service/TaskManager 處理。不吞異常。
+Adapter 方法失敗時直接拋異常，由上層 Service/TaskManager 處理。不吞異常。
 
 ---
 
-## 12. 命名規範
-
-### 9.1 檔案命名
-
-| 位置 | 格式 | 範例 |
-|------|------|------|
-| Service | `{action}_service.py` | `compress_service.py` |
-| Route | `{action}.py` | `compress.py` |
-| Engine AI | `{model_name}.py` | `realesrgan.py` |
-
-### 9.2 Class 命名
-
-| 位置 | 格式 | 範例 |
-|------|------|------|
-| Service | `{Domain}{Action}Service` | `ImageCompressService` |
-| Route Request | `{Action}Request` | `ImageCompressRequest` |
-| Route Response | `{Action}Response` | `ImageCompressResponse` |
-
-### 9.3 常數命名
-
-```python
-TASK_TYPE_IMAGE_COMPRESS = "image.compress"
-TASK_TYPE_VIDEO_TRANSCODE = "video.transcode"
-```
-
-### 9.4 工廠函數
-
-```python
-def get_image_compress_service() -> ImageCompressService:
-    ...
-```
-
----
-
-## 13. 新增功能 Checklist
+## 12. 新增功能 Checklist
 
 新增一個處理功能時，按順序完成：
 
-1. [ ] **Service**：在 `services/{domain}/` 新增 `{action}_service.py`，遵循 §4 模板
+1. [ ] **Service**：在 `services/{domain}/` 新增 `{feature}_service.py`（或升子包 `{feature}_service/`），遵循 §4 模板
 2. [ ] **DI 註冊**：在 `app/init/container.py` 的 AppContainer 註冊 Singleton
-3. [ ] **Route**：在 `api/routes/{domain}/` 新增 `{action}.py`，遵循 §5 模板（DI injection）
+3. [ ] **Route**：在 `api/routes/{domain}/` 新增 `{feature}.py`（concern folder 內），遵循 §5 模板
 4. [ ] **註冊 Route**：在 `api/routes/{domain}/__init__.py` include 新 router
 5. [ ] **Import**：外部套件直接 top-level import
 6. [ ] **日誌**：Service 初始化和任務提交/完成有 `logger.info`
 7. [ ] **路徑**：所有路徑透過 `get_settings().path` 取得
-8. [ ] **文件**：更新 `docs/ARCHITECTURE.md` 和本文件的相關段落
+8. [ ] **命名**：遵循 §1.3（service 後綴、subpackage 內主題命名、`_` prefix 規則）
+9. [ ] **文件**：更新 `docs/ARCHITECTURE.md` 和本文件的相關段落
 
 ### 新增本地 AI 模型
 
-1. [ ] 在 `engine/ai/registry.py` 新增模型定義
-2. [ ] 在 `engine/ai/{category}/` 新增 Wrapper（繼承對應 Runtime）
-   - `image/` — PTHRuntime（torch state_dict 載入）
-   - `audio/` — PackageRuntime（第三方套件自帶載入）
-   - `llama/` — LlamaServerRuntime（llama-server subprocess）
-3. [ ] 在 Service 的 `_execute` 方法中透過 ModelManager 呼叫
+1. [ ] 在 `adapters/ai/registry.py` 新增模型定義
+2. [ ] 在 `adapters/ai/wrapper/` 新增 `{model}.py`，繼承對應基類（`BaseWrapper` / `PackageWrapper` / `PthWrapper`）
+   - Image PTH 模型：`PthWrapper`（torch state_dict 載入，VRAM-aware tile inference via `tile_inference.py`）
+   - Python 套件模型：`PackageWrapper`（第三方套件自帶載入，如 faster-whisper / demucs）
+   - LLM (GGUF)：繼承合適基類；包 `adapters/binary/llama_server.py`
+3. [ ] 在 `container.py` 加 `_lazy()` Singleton provider；於 `init_container()` 呼叫 `mm.register_runtime_provider(slot, provider)`（非 dispatcher slot）或 `mm.register_dispatcher(slot, dispatcher)`（如 upscale/face_restore）
+4. [ ] 在 Service 的 `_execute` 方法中透過 `mm.acquire(slot, model_id, variant)` 呼叫
 
 ### 新增遠端 API Provider
 
-1. [ ] 在 `engine/ai/remote/` 新增 `{provider}.py`，繼承 `RemoteProvider`
+1. [ ] 在 `adapters/ai/remote/` 新增 `{provider}.py`，繼承 `RemoteProvider`
 2. [ ] 實作 `connect()`、`list_models()`、`chat()`
 3. [ ] 在 `remote/__init__.py` 匯出
 4. [ ] 在 `services/setup/remote_service.py` 的 `_get_provider()` 加入分支

@@ -6,7 +6,7 @@ import logging
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
@@ -40,8 +40,6 @@ class AudioTranscodeRequest(BaseModel):
     audio_bitrate: str = Field(default="192k", description="Bitrate")
     sample_rate: Optional[int] = Field(default=None, description="Sample rate")
     channels: Optional[int] = Field(default=None, ge=1, le=2, description="Number of channels")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
-    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
 
 
 class AudioTranscodeResponse(BaseModel):
@@ -67,13 +65,8 @@ async def get_audio_info(
     service: AudioTranscodeService = Depends(Provide[AppContainer.audio_transcode]),
 ):
     """Get audio file info."""
-    try:
-        info = await service.get_audio_info(file_id)
-        return AudioInfoResponse(**info)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    info = await service.get_audio_info(file_id)
+    return AudioInfoResponse(**info)
 
 
 @router.post("/transcode", response_model=AudioTranscodeResponse)
@@ -83,23 +76,16 @@ async def transcode_audio(
     service: AudioTranscodeService = Depends(Provide[AppContainer.audio_transcode]),
 ):
     """Submit audio transcode task."""
-    try:
-        codec = _FORMAT_CODEC_MAP.get(request.output_format)
-        if not codec:
-            raise ValueError(f"Unsupported format: {request.output_format}")
+    codec = _FORMAT_CODEC_MAP.get(request.output_format)
+    if not codec:
+        raise ValueError(f"Unsupported format: {request.output_format}")
 
-        task_id = await service.submit_transcode(
-            file_id=request.file_id,
-            output_format=request.output_format,
-            audio_codec=codec,
-            audio_bitrate=request.audio_bitrate,
-            sample_rate=request.sample_rate,
-            channels=request.channels,
-            output_dir=request.output_dir,
-            output_filename=request.output_filename,
-        )
-        return AudioTranscodeResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_transcode(
+        file_id=request.file_id,
+        output_format=request.output_format,
+        audio_codec=codec,
+        audio_bitrate=request.audio_bitrate,
+        sample_rate=request.sample_rate,
+        channels=request.channels,
+    )
+    return AudioTranscodeResponse(task_id=task_id)

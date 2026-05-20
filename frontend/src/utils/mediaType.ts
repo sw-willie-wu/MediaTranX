@@ -43,16 +43,20 @@ const extMap: Record<string, ToolType> = {
 }
 
 export function detectMediaType(file: File): ToolType | null {
-  // 先用 MIME type 判斷
-  if (file.type && mimeTypeMap[file.type]) {
-    return mimeTypeMap[file.type]
-  }
-  // 用通用前綴判斷
-  if (file.type.startsWith('video/')) return 'video'
-  if (file.type.startsWith('audio/')) return 'audio'
-  if (file.type.startsWith('image/')) return 'image'
-  // 再用副檔名判斷
-  const ext = file.name.split('.').pop()?.toLowerCase()
+  return detectTypeByName(file.name, file.type)
+}
+
+/**
+ * Detect media type from a filename + optional mime type — same logic as
+ * detectMediaType but without needing a File instance. Useful for backend-
+ * sourced metadata (Results drawer entries) where we only have strings.
+ */
+export function detectTypeByName(filename: string, mimeType?: string): ToolType | null {
+  if (mimeType && mimeTypeMap[mimeType]) return mimeTypeMap[mimeType]
+  if (mimeType?.startsWith('video/')) return 'video'
+  if (mimeType?.startsWith('audio/')) return 'audio'
+  if (mimeType?.startsWith('image/')) return 'image'
+  const ext = filename.split('.').pop()?.toLowerCase()
   if (ext && extMap[ext]) return extMap[ext]
   return null
 }

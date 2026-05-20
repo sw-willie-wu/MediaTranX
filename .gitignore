@@ -27,6 +27,12 @@ output/
 /test_*.py
 /test_*.txt
 
+# Test artifacts
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
 # Build artifacts
 src/backend/static/
 

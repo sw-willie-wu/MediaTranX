@@ -5,6 +5,7 @@ import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import AppSelect from '@/components/common/AppSelect.vue'
+import AppToggle from '@/components/common/AppToggle.vue'
 import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
 import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
 import { apiFetch, getApiBase } from '@/composables/useApi'
@@ -28,7 +29,6 @@ const props = defineProps<{
     bitrate: number
     file_size: number
   } | null
-  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -69,7 +69,12 @@ watch(modelSizesWithBadge, (sizes) => {
 const language = ref('')
 const modelSize = usePersistedModel('subtitle_whisper_model', 'medium')
 const outputFormat = ref('srt')
-const outputPath = ref('')
+const vocalSeparation = ref(false)
+
+// Demucs model (for vocal separation guard)
+const demucsModel = computed(() =>
+  modelStore.byCategory('separate').find(m => m.family === 'demucs' && m.variant === 'htdemucs_6s')
+)
 
 const rawLanguages = ref<{ value: string; label: string }[]>([])
 
@@ -94,56 +99,25 @@ const outputFormats = computed(() => [
   { value: 'vtt', label: t('video.subtitle.vtt') },
 ])
 
-// ── 輸出路徑 ────────────────────────────────────────────────────
-const sourceBaseName = computed(() => {
-  const file = filesStore.currentFile
-  if (!file?.originalName) return 'output'
-  const name = file.originalName
-  const lastDot = name.lastIndexOf('.')
-  return lastDot > 0 ? name.substring(0, lastDot) : name
-})
-
-const defaultOutputName = computed(() => `${sourceBaseName.value}.${outputFormat.value}`)
-
-const displayOutputPath = computed(() => {
-  if (outputPath.value) {
-    const parts = outputPath.value.replace(/\\/g, '/').split('/')
-    return parts[parts.length - 1]
-  }
-  return defaultOutputName.value
-})
-
-async function selectOutputFile() {
-  if (window.electron?.saveFileDialog) {
-    const result = await window.electron.saveFileDialog({
-      title: t('video.subtitle.select_output'),
-      defaultPath: defaultOutputName.value,
-      filters: [{ name: t('video.subtitle.file_type'), extensions: [outputFormat.value] }],
-    })
-    if (result) outputPath.value = result
-  }
-}
-
-function resetOutputPath() {
-  if (props.sourceDir) {
-    const stem = sourceBaseName.value
-    outputPath.value = `${props.sourceDir}/${stem}.${outputFormat.value}`
-  } else {
-    outputPath.value = ''
-  }
-}
-watch(() => props.fileId, resetOutputPath)
-watch(outputFormat, resetOutputPath)
-watch(() => props.sourceDir, resetOutputPath, { immediate: true })
-
 // ── 子元件 refs ─────────────────────────────────────────────────
 const whisperAdvanced = ref<InstanceType<typeof WhisperAdvancedSettings> | null>(null)
 const translationOptions = ref<InstanceType<typeof TranslationOptionsPanel> | null>(null)
+
+// ── wav2vec2 (alignment) readiness ──────────────────────────────
+const alignReady = computed(() =>
+  modelStore.byCategory('alignment').some(m => m.downloaded)
+)
 
 // ── 提交 ────────────────────────────────────────────────────────
 async function submitGenerate() {
   const whisperModel = modelStore.byCategory('stt').find(m => m.variant === modelSize.value)
   if (!await guardModelReady(whisperModel?.downloaded === true, 'audio')) return
+  if (vocalSeparation.value) {
+    if (!await guardModelReady(demucsModel.value?.downloaded === true, 'audio')) return
+  }
+  if (whisperAdvanced.value?.align) {
+    if (!await guardModelReady(alignReady.value, 'audio')) return
+  }
   if (translationOptions.value?.enableTranslation) {
     const tParsed = parseModelValue(translationOptions.value.selectedTranslateModel)
     const tModel = translationOptions.value.selectedTranslateModel
@@ -162,6 +136,7 @@ async function submitGenerate() {
       file_id: props.fileId,
       model_size: modelSize.value,
       output_format: outputFormat.value,
+      vocal_separation: vocalSeparation.value,
     }
 
     if (language.value) body.language = language.value
@@ -192,17 +167,6 @@ async function submitGenerate() {
       body.condition_on_previous_text = whisperAdvanced.value.conditionOnPreviousText
       body.min_silence_duration_ms = whisperAdvanced.value.minSilenceDurationMs
       body.vad_threshold = whisperAdvanced.value.vadThreshold
-    }
-
-    if (outputPath.value) {
-      const path = outputPath.value.replace(/\\/g, '/')
-      const lastSlash = path.lastIndexOf('/')
-      if (lastSlash > 0) {
-        body.output_dir = path.substring(0, lastSlash)
-        body.output_filename = path.substring(lastSlash + 1)
-      } else {
-        body.output_filename = path
-      }
     }
 
     const response = await apiFetch('/video/subtitle/generate', {
@@ -270,16 +234,13 @@ onMounted(() => { loadLanguages(); modelStore.ensureLoaded() })
     </div>
 
     <div class="form-group">
-      <label>{{ $t('video.subtitle.output_format') }}</label>
-      <AppSelect v-model="outputFormat" :options="outputFormats" />
+      <AppToggle v-model="vocalSeparation">{{ $t('video.subtitle.vocal_separation') }}</AppToggle>
+      <small class="form-hint">{{ $t('video.subtitle.vocal_separation_hint') }}</small>
     </div>
 
     <div class="form-group">
-      <label>{{ $t('video.subtitle.file_type') }}</label>
-      <div class="file-select" @click="selectOutputFile">
-        <span class="file-select-path">{{ displayOutputPath }}</span>
-        <i class="bi bi-folder2-open"></i>
-      </div>
+      <label>{{ $t('video.subtitle.output_format') }}</label>
+      <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 
     <!-- Advanced options (collapsible) -->

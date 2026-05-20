@@ -20,7 +20,7 @@ const {
   hasFile, fileId, activeFileId, isUploading, currentFileName, hasResult,
   textResultContent, textResultFilename,
   collection,
-  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, handleTextDownload,
+  handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, handleDownloadBatch, handleTextDownload,
   sourceDir,
 } = useDocumentWorkspace()
 
@@ -187,7 +187,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     :upload-label="$t('document.upload_label')"
     :upload-hint="$t('document.upload_hint')"
     upload-accept=".pdf,.doc,.docx,.txt,.srt,.vtt,.md,.csv,.json"
-    hide-preview-tabs
     show-filmstrip
     :collection-size="filmstripItems.length"
     :active-file-name="currentFileName"
@@ -230,6 +229,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
         @remove-selected="ids => collection.removeEntries(ids)"
         @clear-selection="collection.clearSelection()"
         @select-all="collection.selectAll()"
+        @batch-save="handleDownloadBatch"
       />
     </template>
 
@@ -249,7 +249,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           :file-id="fileId"
           :current-file-name="currentFileName"
           :current-file-ext="currentFileExt"
-          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
 
@@ -259,7 +258,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           :file-id="fileId"
           :current-file-name="currentFileName"
           :current-file-ext="currentFileExt"
-          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
 
@@ -268,7 +266,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="splitPanelRef"
           :file-id="fileId"
           :current-file-name="currentFileName"
-          :source-dir="sourceDir"
           @submit="handlePanelSubmit"
         />
       </div>

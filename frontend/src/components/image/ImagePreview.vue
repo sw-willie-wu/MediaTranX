@@ -88,19 +88,52 @@ const { isReady: glReady, isSupported: glSupported, loadImage: glLoadImage, upda
 
 const webglActive = computed(() => !!props.filterPreview && glSupported.value)
 
+/** Detect transparent images (checkerboard background helps visualize alpha). */
+const hasAlpha = computed(() => {
+  const mode = props.imageInfo?.mode?.toUpperCase() ?? ''
+  if (mode.includes('A') || mode === 'LA') return true // RGBA / LA / PA
+  const ext = props.previewUrl?.split('?')[0].split('.').pop()?.toLowerCase() ?? ''
+  return ['png', 'webp', 'avif', 'gif', 'tiff', 'tif'].includes(ext)
+})
+
+/** Natural aspect ratio — used to constrain the checkerboard wrapper to
+ *  the displayed image size (object-fit: contain can letterbox the img box
+ *  if it's stretched, but aspect-ratio on the wrapper keeps box = image box). */
+const imgAspect = ref<string | null>(null)
+function updateImgAspect() {
+  const img = imgRef.value
+  if (img && img.naturalWidth && img.naturalHeight) {
+    imgAspect.value = `${img.naturalWidth} / ${img.naturalHeight}`
+  }
+}
+
+async function tryLoadGL(url: string): Promise<boolean> {
+  try {
+    await glLoadImage(url)
+    return true
+  } catch (e) {
+    console.warn('[ImagePreview] WebGL load failed, falling back to native img:', e)
+    return false
+  }
+}
+
 // When WebGL canvas mounts (v-if), load image and render
 watch(glCanvasRef, async (canvas) => {
   if (canvas && props.previewUrl && props.filterPreview) {
-    await glLoadImage(props.previewUrl)
-    if (props.filterPreview) glUpdateFilters(props.filterPreview)
+    if (await tryLoadGL(props.previewUrl) && props.filterPreview) {
+      glUpdateFilters(props.filterPreview)
+    }
   }
 })
 
 // Load image into WebGL texture when previewUrl changes while filter is active
 watch(() => props.previewUrl, async (url) => {
+  // Refresh aspect even if browser cache hit skips the <img> @load event
+  if (imgRef.value?.complete) updateImgAspect()
   if (url && props.filterPreview && glCanvasRef.value) {
-    await glLoadImage(url)
-    if (props.filterPreview) glUpdateFilters(props.filterPreview)
+    if (await tryLoadGL(url) && props.filterPreview) {
+      glUpdateFilters(props.filterPreview)
+    }
   }
 })
 
@@ -108,9 +141,9 @@ watch(() => props.previewUrl, async (url) => {
 watch(() => props.filterPreview, async (fp) => {
   if (fp && glCanvasRef.value) {
     if (!glReady.value && props.previewUrl) {
-      await glLoadImage(props.previewUrl)
+      await tryLoadGL(props.previewUrl)
     }
-    glUpdateFilters(fp)
+    if (glReady.value) glUpdateFilters(fp)
   }
 }, { deep: true })
 
@@ -159,6 +192,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
   window.removeEventListener('keyup', handleKeyUp)
+  glDispose()
 })
 
 defineExpose({
@@ -176,6 +210,7 @@ defineExpose({
 
 function handleImageLoad() {
   onImageLoad()
+  updateImgAspect()
   if (props.isAiRemoveMode) syncToImage()
   if (props.showCropOverlay) syncCropCanvas()
 }
@@ -227,13 +262,17 @@ function handleCropMouseUp(e: MouseEvent) {
       <!-- image-transform 包住圖片與暈影，讓 inset:0 的 overlay 只覆蓋圖片 -->
       <div
         class="image-transform"
-        :style="{ transform: `translate(${panX}px, ${panY}px) scale(${zoomLevel})` }"
+        :class="{ 'has-alpha': showCropOverlay && hasAlpha }"
+        :style="{
+          transform: `translate(${panX}px, ${panY}px) scale(${zoomLevel})`,
+          aspectRatio: showCropOverlay && hasAlpha ? imgAspect ?? undefined : undefined,
+        }"
       >
         <img
           ref="imgRef"
           :src="previewUrl ?? undefined"
           alt="原圖"
-          :style="{ filter: cssFilter || undefined, opacity: webglActive ? 0 : 1 }"
+          :style="{ filter: cssFilter || undefined, opacity: webglActive && glReady ? 0 : 1 }"
           @load="handleImageLoad"
         />
         <canvas
@@ -303,6 +342,19 @@ function handleCropMouseUp(e: MouseEvent) {
   max-height: 100%;
   transform-origin: center center;
   line-height: 0;           // 消除 inline-flex 底部間距
+
+  // 透明 PNG 的棋盤背景：透過 aspect-ratio 把 .image-transform 約束成
+  // 圖片自身的比例，所以它的 box = 顯示中的圖片區域，背景剛好覆蓋圖片
+  &.has-alpha {
+    background-color: var(--checkerboard-bg);
+    background-image:
+      linear-gradient(45deg, var(--checkerboard-square) 25%, transparent 25%),
+      linear-gradient(-45deg, var(--checkerboard-square) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, var(--checkerboard-square) 75%),
+      linear-gradient(-45deg, transparent 75%, var(--checkerboard-square) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, 8px 0;
+  }
 
   img {
     max-width: 100%;

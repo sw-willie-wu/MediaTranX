@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
@@ -8,7 +8,6 @@ const props = defineProps<{
   fileId: string | null
   currentFileName: string
   currentFileExt: string
-  sourceDir?: string
 }>()
 
 const emit = defineEmits<{
@@ -19,7 +18,6 @@ const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
 const outputFormat = ref('txt')
-const outputPath = ref('')
 
 const isPdf = computed(() => props.currentFileExt === 'pdf')
 
@@ -32,49 +30,6 @@ const outputFormatOptions = computed(() => {
   return opts
 })
 
-const extMap: Record<string, string> = { txt: 'txt', md: 'md', images: 'zip' }
-
-const defaultOutputName = computed(() => {
-  const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
-  return `${stem}_converted.${extMap[outputFormat.value] ?? 'txt'}`
-})
-
-const displayOutputPath = computed(() => {
-  if (outputPath.value) {
-    const parts = outputPath.value.replace(/\\/g, '/').split('/')
-    return parts[parts.length - 1]
-  }
-  return defaultOutputName.value
-})
-
-async function selectOutputFile() {
-  if ((window as any).electron?.saveFileDialog) {
-    const filterMap: Record<string, { name: string; extensions: string[] }> = {
-      txt:    { name: 'Plain Text', extensions: ['txt'] },
-      md:     { name: 'Markdown', extensions: ['md'] },
-      images: { name: t('document.pdf_convert.zip_type'), extensions: ['zip'] },
-    }
-    const result = await (window as any).electron.saveFileDialog({
-      title: t('document.pdf_convert.select_output'),
-      defaultPath: defaultOutputName.value,
-      filters: [filterMap[outputFormat.value]],
-    })
-    if (result) outputPath.value = result
-  }
-}
-
-function resetOutputPath() {
-  if (props.sourceDir) {
-    const stem = props.currentFileName.replace(/\.[^.]+$/, '') || 'output'
-    outputPath.value = `${props.sourceDir}/${stem}_converted.${extMap[outputFormat.value] ?? 'txt'}`
-  } else {
-    outputPath.value = ''
-  }
-}
-watch(() => props.fileId, resetOutputPath)
-watch(outputFormat, resetOutputPath)
-watch(() => props.sourceDir, resetOutputPath, { immediate: true })
-
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading  = computed(() => isProcessing.value)
 
@@ -84,16 +39,6 @@ async function execute() {
     file_id: props.fileId,
     output_format: outputFormat.value,
   }
-  if (outputPath.value) {
-    const path = outputPath.value.replace(/\\/g, '/')
-    const last = path.lastIndexOf('/')
-    if (last > 0) {
-      body.output_dir      = path.substring(0, last)
-      body.output_filename = path.substring(last + 1)
-    } else {
-      body.output_filename = path
-    }
-  }
   const taskId = await submitTask('/document/pdf-convert', body, t('document.pdf_convert.task_label'), 'document.pdf_convert', props.currentFileName)
   if (taskId) emit('submit', taskId)
 }
@@ -101,16 +46,6 @@ async function execute() {
 function getParams() {
   const body: Record<string, any> = {
     output_format: outputFormat.value,
-  }
-  if (outputPath.value) {
-    const path = outputPath.value.replace(/\\/g, '/')
-    const last = path.lastIndexOf('/')
-    if (last > 0) {
-      body.output_dir      = path.substring(0, last)
-      body.output_filename = path.substring(last + 1)
-    } else {
-      body.output_filename = path
-    }
   }
   return body
 }
@@ -128,19 +63,9 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
       <label>{{ $t('document.pdf_convert.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormatOptions" />
     </div>
-
-    <!-- 輸出檔案 -->
-    <div class="form-group">
-      <label>{{ $t('document.pdf_convert.output_file') }}</label>
-      <div class="file-select" @click="selectOutputFile">
-        <span class="file-select-path">{{ displayOutputPath }}</span>
-        <i class="bi bi-folder2-open"></i>
-      </div>
-    </div>
   </div>
 </template>
 
 <style lang="scss">
 @use '@/styles/tool-panels-shared';
 </style>
-

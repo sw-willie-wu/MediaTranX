@@ -13,6 +13,7 @@ from .exceptions import (
     FFmpegError,
     RemoteApiError,
     ModelNotFoundError,
+    NotFoundError,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,10 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(ModelNotFoundError)
     async def handle_model_not_found(request: Request, exc: ModelNotFoundError):
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(NotFoundError)
+    async def handle_generic_not_found(request: Request, exc: NotFoundError):
         return JSONResponse(status_code=404, content={"detail": str(exc)})
 
     @app.exception_handler(RemoteApiError)

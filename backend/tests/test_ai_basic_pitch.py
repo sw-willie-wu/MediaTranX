@@ -10,8 +10,18 @@ pytestmark = pytest.mark.ai
 
 @pytest.fixture
 def basic_pitch():
-    from app.engine.ai.audio.basic_pitch import get_basic_pitch
-    return get_basic_pitch()
+    """Register the wrapper with a ModelManager so `BaseWrapper.acquire()` works.
+
+    Post-`084e05e` (Wrapper Acquire Bridge) every wrapper that calls
+    `self.acquire(...)` needs `wrapper._model_manager` attached; otherwise
+    `BaseWrapper.acquire` raises RuntimeError.
+    """
+    from app.adapters.ai.wrapper.basic_pitch import BasicPitchWrapper
+    from app.adapters.ai.model_manager import ModelManager
+    mm = ModelManager()
+    wrapper = BasicPitchWrapper()
+    mm.register_runtime(wrapper)
+    return wrapper
 
 
 class TestBasicPitch:

@@ -27,7 +27,10 @@ const emit = defineEmits<{
   removeSelected: [ids: string[]]
   clearSelection: []
   selectAll: []
+  batchSave: []
 }>()
+
+const selectedCount = computed(() => props.selectedIds.size)
 
 // Ctrl+A → 全選, Delete → 移除
 function handleKeyDown(e: KeyboardEvent) {
@@ -307,6 +310,15 @@ onBeforeUnmount(() => {
     <div v-if="isDragSelecting && dragSelectStyle" class="filmstrip-drag-overlay" :style="dragSelectStyle" />
   </Teleport>
   <div class="app-filmstrip" :class="{ 'can-scroll-left': canScrollLeft, 'can-scroll-right': canScrollRight }">
+    <Transition name="fs-batch-bar">
+      <div v-if="selectedCount > 1" class="filmstrip-batch-bar">
+        <span class="fs-count">{{ t('common.selected_count', { count: selectedCount }) }}</span>
+        <button class="fs-bb-btn" @click="emit('batchSave')">
+          <i class="bi bi-download" />
+          {{ t('common.batch_save') }}
+        </button>
+      </div>
+    </Transition>
 
     <!-- Scroll track -->
     <div
@@ -545,6 +557,57 @@ onBeforeUnmount(() => {
 .filmstrip-track.is-drag-selecting {
   cursor: crosshair;
   user-select: none;
+}
+
+// ── Batch action bar ─────────────────────────────────────────
+.filmstrip-batch-bar {
+  position: absolute;
+  left: 8px;
+  bottom: calc(100% + 4px);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--panel-bg-hover);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.fs-count {
+  font-weight: 500;
+}
+.fs-bb-btn {
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--panel-bg-active);
+    color: var(--text-primary);
+  }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  i { margin-right: 3px; }
+}
+
+.fs-batch-bar-enter-active,
+.fs-batch-bar-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.fs-batch-bar-enter-from,
+.fs-batch-bar-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
 }
 
 </style>

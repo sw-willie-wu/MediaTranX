@@ -2,16 +2,14 @@
 import logging
 from pathlib import Path
 from typing import Callable, Optional
-from uuid import uuid4
 
-from app.engine.ffmpeg import FFmpegWrapper
+from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
 TASK_TYPE_AUDIO_TRANSCODE = "audio.transcode"
-DEFAULT_SAMPLE_RATE = 44100
 
 
 class AudioTranscodeService:
@@ -24,22 +22,21 @@ class AudioTranscodeService:
 
         self._task_manager.register_handler(
             TASK_TYPE_AUDIO_TRANSCODE,
-            self._handle_task
+            self._handle_task,
+            output_policy="history",
         )
 
         logger.info("AudioTranscodeService initialized")
 
     async def get_audio_info(self, file_id: str) -> dict:
         """Get audio file information."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         media_info = await self._ffmpeg.get_media_info(file_info.file_path)
         return {
             "duration": media_info.duration,
-            "sample_rate": DEFAULT_SAMPLE_RATE,  # TODO: get from ffprobe
-            "channels": 2,
+            "sample_rate": media_info.sample_rate or 44100,
+            "channels": media_info.channels or 2,
             "codec": media_info.audio_codec,
             "bitrate": media_info.bitrate,
             "file_size": media_info.file_size,
@@ -53,13 +50,9 @@ class AudioTranscodeService:
         audio_bitrate: str = "192k",
         sample_rate: Optional[int] = None,
         channels: Optional[int] = None,
-        output_dir: Optional[str] = None,
-        output_filename: Optional[str] = None,
     ) -> str:
         """Submit an audio transcoding task."""
-        file_info = self._file_service.get_file(file_id)
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id": file_id,
@@ -68,8 +61,6 @@ class AudioTranscodeService:
             "audio_bitrate": audio_bitrate,
             "sample_rate": sample_rate,
             "channels": channels,
-            "output_dir": output_dir,
-            "output_filename": output_filename,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_TRANSCODE, params)
@@ -92,26 +83,14 @@ class AudioTranscodeService:
     ) -> dict:
         """Execute audio transcoding."""
         file_id = params["file_id"]
-        file_info = self._file_service.get_file(file_id)
-
-        if file_info is None:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
 
         # Build output path
-        custom_output_filename = params.get("output_filename")
-        output_file_id = str(uuid4())
-
-        if custom_output_filename:
-            base_name = Path(custom_output_filename).stem
-            final_filename = f"{base_name}.{params['output_format']}"
-        else:
-            original_stem = Path(file_info.original_filename).stem
-            final_filename = f"{original_stem}_converted_{output_file_id[:8]}.{params['output_format']}"
-
-        # Determine output directory (custom dir takes priority over default)
-        output_dir = Path(params["output_dir"]) if params.get("output_dir") else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / final_filename
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_converted",
+            ext=f".{params['output_format']}",
+        )
 
         # Build extra_args (codec-specific parameters)
         codec = params["audio_codec"]

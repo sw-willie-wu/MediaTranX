@@ -46,7 +46,7 @@ class TestProgressTrackerThreadSafety:
 
 import asyncio
 from app.workers.task_manager import TaskManager
-from app.models.task import TaskData, TaskStatus
+from app.schemas.task import TaskData, TaskStatus
 
 
 class TestTaskManagerThreadSafety:
@@ -96,7 +96,12 @@ class TestTaskManagerThreadSafety:
         loop.close()
 
     def test_cancel_sets_flag(self):
-        """cancel() on a PROCESSING task adds to _cancelled_ids safely."""
+        """cancel() on a PROCESSING task adds to _cancelled_ids safely.
+
+        Post-audit `TaskManager.cancel` returns `None` and raises NotFoundError /
+        ValueError on bad inputs (per BACKEND_DEVELOP_SPEC §11). Successful path
+        is verified by `is_cancelled()` flipping to True.
+        """
         tracker = ProgressTracker()
         tm = TaskManager(progress_tracker=tracker)
 
@@ -104,18 +109,21 @@ class TestTaskManagerThreadSafety:
         tm._tasks["c1"] = task
 
         loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(tm.cancel("c1"))
-        assert result is True
+        loop.run_until_complete(tm.cancel("c1"))  # no return value
         assert tm.is_cancelled("c1")
         loop.close()
 
     def test_remove_completed_task(self):
-        """remove() deletes a terminal task from _tasks."""
+        """remove() deletes a terminal task from _tasks.
+
+        Post-audit `remove()` returns `None` and raises NotFoundError if missing;
+        success is verified by the task no longer being queryable.
+        """
         tracker = ProgressTracker()
         tm = TaskManager(progress_tracker=tracker)
 
         task = TaskData(task_id="r1", task_type="test", status=TaskStatus.COMPLETED, progress=1.0)
         tm._tasks["r1"] = task
 
-        assert tm.remove("r1") is True
+        tm.remove("r1")  # no return value
         assert tm.get_task("r1") is None

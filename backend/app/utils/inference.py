@@ -4,59 +4,20 @@ Inference parameter helper.
 Provides unified access to per-model, per-task inference config.
 All services should use this instead of hardcoding temperature/max_tokens.
 """
+import contextvars
 import logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-
-def get_inference_config(model_family: str, size: str, task: str) -> dict:
-    """
-    Get merged inference config for a local GGUF model.
-
-    Merges family-level inference params with size-level capacity params.
-
-    Returns dict with keys:
-        temperature, top_k, top_p, prompt_builder,
-        max_tokens_strategy, max_tokens_ratio, max_tokens_cap,
-        n_ctx, n_ctx_min, n_ctx_max
-    """
-    from app.engine.ai.registry import MODELS_REGISTRY, FORMAT_GGUF
-
-    family_config = MODELS_REGISTRY.get(FORMAT_GGUF, {}).get(model_family, {})
-    inference = family_config.get("inference", {}).get(task, {})
-    spec = family_config.get("specs", {}).get(size, {})
-
-    return {
-        # Sampling params (from family inference)
-        "temperature": inference.get("temperature", 0.1),
-        "top_k": inference.get("top_k", 40),
-        "top_p": inference.get("top_p", 0.9),
-        "prompt_builder": inference.get("prompt_builder", "default"),
-        "thinking": inference.get("thinking", False),
-        # Max tokens strategy (from family inference)
-        "max_tokens_strategy": inference.get("max_tokens_strategy", "input_ratio"),
-        "max_tokens_ratio": inference.get("max_tokens_ratio", 4),
-        "max_tokens_cap": inference.get("max_tokens_cap", 8192),
-        # Context size (from spec)
-        "n_ctx": spec.get("n_ctx_default", 4096),
-        "n_ctx_min": spec.get("n_ctx_min", 2048),
-        "n_ctx_max": spec.get("n_ctx_max", 8192),
-        "vram_per_ctx_token": spec.get("vram_per_ctx_token", 0.04),
-        "max_srt_batch": spec.get("max_srt_batch", 0),
-    }
-
-
-def get_remote_inference_config(task: str, provider: str = "openai") -> dict:
-    """
-    Get inference config for remote providers.
-
-    For Ollama, caller should override max_tokens after querying model ctx.
-    """
-    from app.engine.ai.registry import REMOTE_INFERENCE_DEFAULTS
-
-    defaults = REMOTE_INFERENCE_DEFAULTS.get(task, {"temperature": 0.1, "max_tokens": 8192})
-    return dict(defaults)
+# Shared single-poller coordination: set True (on the entering/call thread)
+# by whichever in-call watcher owns poll+kill for the current blocking call
+# (fake_progress when it has a cancellable, or cancel_guard). A nested guard
+# that sees this True is a pure pass-through → exactly one watcher per call.
+_in_call_cancel_owner: contextvars.ContextVar = contextvars.ContextVar(
+    "in_call_cancel_owner", default=False
+)
+_CANCEL_GUARD_TICK = 1.0  # seconds; ≥1.0 (no synchronous work on the call thread)
 
 
 def calc_max_tokens(config: dict, n_ctx: int, input_len: int) -> int:
@@ -75,6 +36,8 @@ def calc_max_tokens(config: dict, n_ctx: int, input_len: int) -> int:
         capped = min(raw, config.get("max_tokens_cap", n_ctx))
     elif strategy == "context_ratio":
         capped = int(n_ctx * config.get("max_tokens_ratio", 0.5))
+    elif strategy == "fixed":
+        capped = config.get("max_tokens_cap", 4096)
     else:
         capped = config.get("max_tokens_cap", 4096)
 
@@ -145,7 +108,7 @@ def estimate_tokens(text: str) -> int:
 
 
 def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
-                  duration: float = 30.0, runtime=None):
+                  duration: float = 30.0, cancellable=None):
     """
     Context manager that emits interpolated progress while waiting for a blocking call.
 
@@ -155,6 +118,11 @@ def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
 
     Progress interpolates from start_pct to (end_pct - 1%) over `duration` seconds,
     then stops. Real progress is reported by the caller after the `with` block.
+
+    Args:
+        cancellable: optional object with .kill_process() — invoked when the
+            on_progress callback raises (e.g. TaskCancelledError) to unblock
+            the in-flight llama-server HTTP call.
     """
     import threading
     from contextlib import contextmanager
@@ -181,9 +149,9 @@ def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
                     # TaskCancelledError from cancellable callback
                     cancelled_error[0] = e
                     # Kill llama-server to unblock the HTTP call in main thread
-                    if runtime is not None and hasattr(runtime, '_process') and runtime._process:
+                    if cancellable is not None:
                         try:
-                            runtime._process.kill()
+                            cancellable.kill_process()
                         except Exception:
                             pass
                     stop.set()
@@ -192,11 +160,77 @@ def fake_progress(on_progress, start_pct: float, end_pct: float, message: str,
 
         t = threading.Thread(target=_run, daemon=True)
         t.start()
+        # When this fake_progress owns a cancellable it is the single
+        # poll+kill owner for the wrapped blocking call — mark it so a nested
+        # cancel_guard (e.g. ChatSession self-guard) passes through.
+        _own_token = (
+            _in_call_cancel_owner.set(True) if cancellable is not None else None
+        )
         try:
             yield
         finally:
             stop.set()
+            if _own_token is not None:
+                _in_call_cancel_owner.reset(_own_token)
             # Re-raise cancel error caught in background thread
+            if cancelled_error[0] is not None:
+                raise cancelled_error[0]
+
+    return _ctx()
+
+
+def cancel_guard(on_progress, *, cancellable, progress: float, message: str):
+    """Pure cancel-watch (constant heartbeat, no progress animation) for
+    blocking calls that have NO enclosing fake_progress owner — e.g. the
+    one-shot summary chunk / VLM frame-select path.
+
+    A daemon watcher ticks every _CANCEL_GUARD_TICK calling
+    on_progress(progress, message) — a constant heartbeat at the caller's
+    stable phase pct (never 0.0). If on_progress raises (TaskCancelledError),
+    cancellable.kill_process() is invoked best-effort and the error re-raised.
+
+    Pass-through (no watcher, never raises by itself) when on_progress is
+    None, cancellable is None, OR an enclosing owner already set the shared
+    ContextVar (fake_progress-with-cancellable, or an outer cancel_guard) —
+    guaranteeing exactly one poll+kill watcher per in-flight call. The
+    ContextVar is set/reset on the entering (call) thread only; the watcher
+    thread never touches it (threading.Thread starts with a fresh context —
+    do NOT copy_context for the watcher).
+    """
+    import threading
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _ctx():
+        if (on_progress is None or cancellable is None
+                or _in_call_cancel_owner.get()):
+            yield
+            return
+        token = _in_call_cancel_owner.set(True)
+        stop = threading.Event()
+        cancelled_error = [None]
+
+        def _run():
+            while not stop.is_set():
+                try:
+                    on_progress(progress, message)
+                except Exception as e:
+                    cancelled_error[0] = e
+                    try:
+                        cancellable.kill_process()
+                    except Exception:
+                        pass
+                    stop.set()
+                    return
+                stop.wait(_CANCEL_GUARD_TICK)
+
+        t = threading.Thread(target=_run, daemon=True, name="cancel-guard")
+        t.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            _in_call_cancel_owner.reset(token)
             if cancelled_error[0] is not None:
                 raise cancelled_error[0]
 

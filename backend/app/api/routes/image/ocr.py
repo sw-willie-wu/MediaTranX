@@ -5,14 +5,14 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
-from app.services.llm.language_service import LanguageService
 
 if TYPE_CHECKING:
     from app.services.image.ocr_service import ImageOcrService
+    from app.services.llm.language_service import LanguageService
 
 router = APIRouter()
 
@@ -23,8 +23,6 @@ class ImageOcrRequest(BaseModel):
     size: str = Field(default="4b", description="Model size")
     quantization: Optional[str] = Field(default=None, description="Quantization format")
     format: str = Field(default="md", description="Output format: txt or md")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
-    output_filename: Optional[str] = Field(default=None, description="Custom output filename")
     # Cloud model
     remote: bool = Field(default=False, description="Whether to use a cloud model")
     provider: Optional[str] = Field(default=None, description="Cloud provider (ollama/openai/gemini)")
@@ -45,33 +43,24 @@ async def ocr_image(
     language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
 ):
     """Submit image OCR task."""
-    try:
-        if request.remote and request.provider and request.remote_model:
-            task_id = await service.submit_ocr_remote(
-                file_id=request.file_id,
-                provider=request.provider,
-                conn_id=request.conn_id,
-                remote_model=request.remote_model,
-                format=request.format,
-                output_dir=request.output_dir,
-                output_filename=request.output_filename,
-            )
-        else:
-            model_family = request.model_family or language_service.get_default_vlm_model()
-            task_id = await service.submit_ocr(
-                file_id=request.file_id,
-                model_family=model_family,
-                size=request.size,
-                quantization=request.quantization,
-                format=request.format,
-                output_dir=request.output_dir,
-                output_filename=request.output_filename,
-            )
-        return ImageOcrResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    if request.remote and request.provider and request.remote_model:
+        task_id = await service.submit_ocr_remote(
+            file_id=request.file_id,
+            provider=request.provider,
+            conn_id=request.conn_id,
+            remote_model=request.remote_model,
+            format=request.format,
+        )
+    else:
+        model_family = request.model_family or language_service.get_default_vlm_model()
+        task_id = await service.submit_ocr(
+            file_id=request.file_id,
+            model_family=model_family,
+            size=request.size,
+            quantization=request.quantization,
+            format=request.format,
+        )
+    return ImageOcrResponse(task_id=task_id)
 
 
 @router.get("/ocr/status")
@@ -84,8 +73,5 @@ async def get_ocr_status(
     language_service: LanguageService = Depends(Provide[AppContainer.language_service]),
 ):
     """Query VLM OCR environment status."""
-    try:
-        effective_model_family = model_family or language_service.get_default_vlm_model()
-        return service.get_status(model_family=effective_model_family, size=size, quantization=quantization)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    effective_model_family = model_family or language_service.get_default_vlm_model()
+    return service.get_status(model_family=effective_model_family, size=size, quantization=quantization)

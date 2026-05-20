@@ -6,13 +6,14 @@ import io
 import logging
 from pathlib import Path
 from typing import Callable, Optional
-from uuid import uuid4
 
 import cv2
 import numpy as np
 import torch
 from PIL import Image
 
+from app.adapters.ai.model_manager import ModelManager
+from app.adapters.ai.wrapper.mobilesam import MobileSAMWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -24,33 +25,31 @@ TASK_TYPE_IMAGE_REMOVE_OBJECT = "image.remove_object"
 class ImageRemoveObjectService:
     """AI object removal using MobileSAM segmentation and LaMa inpainting."""
 
-    def __init__(self, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, file_service: FileService, task_manager: TaskManager,
+                 model_manager: ModelManager, mobilesam: MobileSAMWrapper):
         self._file_service = file_service
         self._task_manager = task_manager
+        self._model_manager = model_manager
+        self._mobilesam = mobilesam
         self._lama_model = None
-        self._task_manager.register_handler(TASK_TYPE_IMAGE_REMOVE_OBJECT, self._handle_task)
+        self._task_manager.register_handler(
+            TASK_TYPE_IMAGE_REMOVE_OBJECT, self._handle_task,
+            output_policy="history",
+        )
         logger.info("ImageRemoveObjectService initialized")
 
     async def submit_remove_object(
         self,
         file_id: str,
         mask_data: str,
-        output_dir: Optional[str] = None,
     ) -> str:
-        file_info = self._file_service.get_file(file_id)
-        if not file_info:
-            raise ValueError(f"File not found: {file_id}")
+        file_info = self._file_service.require_file(file_id)
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_REMOVE_OBJECT, {
             "file_id": file_id,
             "mask_data": mask_data,
-            "output_dir": output_dir,
         })
         logger.info(f"Image remove-object task submitted: {task_id}")
         return task_id
-
-    def _get_mobilesam(self):
-        from app.engine.ai.image.mobilesam import get_mobilesam
-        return get_mobilesam()
 
     def _load_lama(self):
         if self._lama_model is not None:
@@ -160,7 +159,7 @@ class ImageRemoveObjectService:
         y2 = min(image_rgb.shape[0] - 1, int(ys.max()) + pad)
 
         box = np.array([x1, y1, x2, y2])
-        return self._get_mobilesam().predict_box(image_rgb, box)
+        return self._mobilesam.predict_box(image_rgb, box)
 
     def _handle_task(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
         return self._execute(params, progress_callback)
@@ -169,48 +168,37 @@ class ImageRemoveObjectService:
         file_id = params["file_id"]
         mask_data = params["mask_data"]
 
-        file_info = self._file_service.get_file(file_id)
+        file_info = self._file_service.require_file(file_id)
 
         with Image.open(file_info.file_path) as img:
             img = img.copy()
 
-        # Preserve alpha channel; inpaint only processes RGB
-        # Convert to RGBA uniformly to support P/PA/LA and all modes with transparency
-        img_rgba = img.convert("RGBA")
-        alpha_channel = img_rgba.split()[3]
-        has_alpha = alpha_channel.getextrema()[0] < 255
-        if not has_alpha:
-            alpha_channel = None
-        img_rgb = img_rgba.convert("RGB")
+        from app.utils.image_alpha import preserve_alpha
 
-        image_rgb = np.array(img_rgb)
-        h, w = image_rgb.shape[:2]
+        def _inpaint_rgb(img_rgb: Image.Image) -> Image.Image:
+            image_rgb = np.array(img_rgb)
+            h, w = image_rgb.shape[:2]
 
-        progress_callback(0.1, "task.progress.parsing_mask")
-        rough_mask = self._decode_mask(mask_data, w, h)
+            progress_callback(0.1, "task.progress.parsing_mask")
+            rough_mask = self._decode_mask(mask_data, w, h)
 
-        # === GPU queue pipeline ===
-        from app.init.container import get_container
-        manager = get_container().model_manager()
+            with self._model_manager.gpu_session():
+                # Slightly dilate brush mask (fill stroke gaps), send directly to LaMa (skip SAM to avoid oversized mask)
+                progress_callback(0.35, "task.progress.processing_mask")
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+                precise_mask = cv2.dilate(rough_mask, kernel, iterations=2)
 
-        with manager.gpu_session():
-            # Slightly dilate brush mask (fill stroke gaps), send directly to LaMa (skip SAM to avoid oversized mask)
-            progress_callback(0.35, "task.progress.processing_mask")
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-            precise_mask = cv2.dilate(rough_mask, kernel, iterations=2)
+                progress_callback(0.6, "task.progress.inpainting")
+                mask_pil = Image.fromarray(precise_mask).convert("L")
+                return self._run_inpaint(img_rgb, mask_pil)
 
-            progress_callback(0.6, "task.progress.inpainting")
-            mask_pil = Image.fromarray(precise_mask).convert("L")
-            result_img = self._run_inpaint(img_rgb, mask_pil)
+        result_img = preserve_alpha(img, _inpaint_rgb)
 
-        # Restore alpha channel
-        if alpha_channel is not None:
-            result_rgba = result_img.convert("RGBA")
-            result_rgba.putalpha(alpha_channel)
-            result_img = result_rgba
-
-        output_file_id = str(uuid4())
-        output_path = self._generate_output_path(file_info, params.get("output_dir"))
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=file_info.original_filename,
+            suffix="_removed",
+            ext=".png",
+        )
 
         progress_callback(0.9, "task.progress.saving_result")
         result_img.save(output_path, "PNG")
@@ -225,7 +213,3 @@ class ImageRemoveObjectService:
             "output_filename": output_info.filename,
         }
 
-    def _generate_output_path(self, file_info, custom_dir) -> Path:
-        output_dir = Path(custom_dir) if custom_dir else self._file_service.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        return output_dir / f"{Path(file_info.original_filename).stem}_removed_{uuid4().hex[:8]}.png"

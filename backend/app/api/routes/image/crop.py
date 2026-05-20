@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
@@ -23,7 +23,6 @@ class ImageCropRequest(BaseModel):
     y: int = Field(default=0, description="Crop start Y coordinate")
     width: int = Field(..., gt=0, description="Crop width")
     height: int = Field(..., gt=0, description="Crop height")
-    output_dir: Optional[str] = Field(default=None, description="Custom output directory")
 
 
 class ImageCropResponse(BaseModel):
@@ -39,17 +38,11 @@ async def crop_image(
     service: ImageCropService = Depends(Provide[AppContainer.image_crop]),
 ):
     """Submit image crop task."""
-    try:
-        task_id = await service.submit_crop(
-            file_id=request.file_id,
-            x=request.x,
-            y=request.y,
-            width=request.width,
-            height=request.height,
-            output_dir=request.output_dir,
-        )
-        return ImageCropResponse(task_id=task_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    task_id = await service.submit_crop(
+        file_id=request.file_id,
+        x=request.x,
+        y=request.y,
+        width=request.width,
+        height=request.height,
+    )
+    return ImageCropResponse(task_id=task_id)
