@@ -271,7 +271,7 @@ class VideoSummaryService:
             )
             # Note: deliberately bypasses get_prompt_builder("summarize", ...) because this task
             # uses dedicated structured prompts (hierarchical-markdown for bullets mode,
-            # JSON for narrative mode) — see video_summary.py for the templates.
+            # flat prose paragraphs for narrative mode) — see prompts.py for the templates.
             output_lang = _resolve_output_language(language, result.language)
             # Both modes feed a line-numbered transcript; the LLM cites
             # [L<n>] ranges and the service resolves them to real timestamps.
