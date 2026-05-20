@@ -88,11 +88,12 @@ def _make_svc_with_mocks(tmp_path):
 
     task_manager = MagicMock()
     chat_service = MagicMock()
-    # Default mock returns hierarchical-markdown for bullets mode
+    # Default mock returns hierarchical-markdown for bullets mode. The mock
+    # transcribe (fake_result) supplies 2 segments → cites reference lines L1/L2.
     chat_service.chat.return_value = (
         "## 主題\n"
-        "- **第一段：** 介紹內容 [00:00-00:05]\n"
-        "- **第二段：** 後續內容 [00:05-00:10]\n"
+        "- **第一段：** 介紹內容 [L1-L1]\n"
+        "- **第二段：** 後續內容 [L2-L2]\n"
     )
 
     svc = VideoSummaryService(
@@ -294,9 +295,10 @@ def _zip_jpgs(file_service):
 
 
 def test_bullets_over_K_caps_frames_by_original_index(tmp_path):
-    # 12 bullets, content 10s → K=8 → even_indices(12,8)=[0,2,3,5,6,8,9,11]
+    # 12 bullets, content 10s → K=8 → even_indices(12,8)=[0,2,3,5,6,8,9,11].
+    # _exec supplies only 1 transcript segment → every cite must be [L1-L1].
     md = "## 主題\n" + "".join(
-        f"- **重點{i}：** 內容{i} [00:{i:02d}-00:{i+1:02d}]\n" for i in range(12)
+        f"- **重點{i}：** 內容{i} [L1-L1]\n" for i in range(12)
     )
     svc, fs = _svc_with_chat(tmp_path, md)
 
@@ -322,8 +324,9 @@ def test_bullets_over_K_caps_frames_by_original_index(tmp_path):
 
 
 def test_bullets_under_K_all_framed(tmp_path):
+    # _exec supplies only 1 transcript segment → every cite must be [L1-L1].
     md = "## 主題\n" + "".join(
-        f"- **重點{i}：** 內容{i} [00:{i:02d}-00:{i+1:02d}]\n" for i in range(3)
+        f"- **重點{i}：** 內容{i} [L1-L1]\n" for i in range(3)
     )
     svc, fs = _svc_with_chat(tmp_path, md)
 
@@ -338,6 +341,49 @@ def test_bullets_under_K_all_framed(tmp_path):
     result = _exec(svc, FakeDetector)
     assert result["bullet_count"] == 3
     assert _zip_jpgs(fs) == [f"frames/bullet_{i:03d}.jpg" for i in range(3)]
+
+
+def test_execute_skips_bullet_with_unresolvable_cite(tmp_path):
+    """A bullet whose [L<a>-L<b>] cite is unusable (inverted) resolves to
+    time_range=None → skipped (no inline image), NOT counted as a failure;
+    the other bullets are still framed normally."""
+    md = (
+        "## 主題\n"
+        "- **正常一：** 內容 [L1-L1]\n"
+        "- **壞掉：** 內容 [L2-L1]\n"      # inverted → resolve_bullet_windows → None
+        "- **正常二：** 內容 [L2-L2]\n"
+    )
+    svc, fs = _svc_with_chat(tmp_path, md)
+
+    class FakeDetector:
+        def __init__(self, *a, **kw): pass
+        def detect_all(self, *a, **kw): return []
+        def detect_in_window(self, *a, **kw): return []
+        def extract_frame(self, input_path, output_path, timestamp):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"j")
+
+    # 2 transcript segments so [L2-L1] genuinely inverts (not clamp-collapsed).
+    fake = MagicMock(
+        segments=[MagicMock(start=0.0, end=5.0, text="一"),
+                  MagicMock(start=5.0, end=10.0, text="二")],
+        language="zh",
+    )
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync",
+               return_value=fake), \
+         patch("app.services.video.summary_service.service.SceneDetector",
+               FakeDetector):
+        result = svc._execute(
+            params={"file_id": "f1", "llm_model_family": "qwen3.5",
+                    "llm_model_size": "9b", "language": "zh-TW",
+                    "vlm_model_family": None, "vlm_model_size": None,
+                    "summary_mode": "bullets"},
+            progress_callback=lambda p, m: None,
+        )
+
+    assert result["bullet_count"] == 3   # every bullet still in the report text
+    # Only the 2 resolvable bullets got a frame; the inverted-cite one skipped.
+    assert _zip_jpgs(fs) == ["frames/bullet_000.jpg", "frames/bullet_002.jpg"]
 
 
 def test_candidate_frames_downscaled_final_frames_native(tmp_path):
