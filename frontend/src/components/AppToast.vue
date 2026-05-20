@@ -8,6 +8,7 @@ function iconFor(type: string, icon?: string) {
   switch (type) {
     case 'success': return 'bi-check-circle-fill'
     case 'error': return 'bi-exclamation-circle-fill'
+    case 'warning': return 'bi-exclamation-triangle-fill'
     default: return 'bi-info-circle-fill'
   }
 }
@@ -82,6 +83,7 @@ function iconFor(type: string, icon?: string) {
 .toast-info .toast-icon { color: var(--color-info); }
 .toast-success .toast-icon { color: var(--color-success); }
 .toast-error .toast-icon { color: var(--color-danger); }
+.toast-warning .toast-icon { color: var(--color-warning); }
 
 .toast-message {
   flex: 1;

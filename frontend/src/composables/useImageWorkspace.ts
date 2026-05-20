@@ -190,9 +190,12 @@ export function useImageWorkspace() {
         vh = srcH
       }
 
-      // Map crop coordinates from the current pixel grid back to original-image coordinates
-      const sx = vw / srcW
-      const sy = vh / srcH
+      // Map crop coordinates from the current pixel grid back to original-image
+      // coordinates. Explicit `: number` + `!` breaks a TS circular-inference
+      // (vw/vh are `let`s reassigned below in this loop; the `if` block above
+      // guarantees both are non-null here).
+      const sx: number = vw! / srcW
+      const sy: number = vh! / srcH
       vx += cropX * sx
       vy += cropY * sy
       vw = cropW * sx

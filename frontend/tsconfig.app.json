@@ -5,6 +5,11 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
 
+    // @vue/tsconfig pins lib to ES2020 and leaves newer built-ins to the
+    // project. The app runs in Electron (modern Chromium), so ES2022 built-ins
+    // (e.g. Array.prototype.at) are safe to assume.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+
     "paths": {
       "@/*": ["./src/*"]
     }

@@ -26,6 +26,14 @@ const midiExport = useMidiExport()
 
 // ── Tab state ──
 const activeTab = ref<'edit' | 'effects' | 'export'>('edit')
+// `as const` so `tab.id` keeps its literal type for `activeTab` assignment
+// (an inline template array widens it to `string`). labelKey resolves via t()
+// in the template, keeping locale reactivity.
+const tabs = [
+  { id: 'edit', labelKey: 'audio.midi.tab_edit' },
+  { id: 'effects', labelKey: 'audio.midi.tab_effects' },
+  { id: 'export', labelKey: 'audio.midi.tab_export' },
+] as const
 
 // ── MIDI file detection ──
 
@@ -250,17 +258,13 @@ defineExpose({
       <!-- Tab navigation -->
       <div class="settings-tabs">
         <button
-          v-for="tab in [
-            { id: 'edit', label: t('audio.midi.tab_edit') },
-            { id: 'effects', label: t('audio.midi.tab_effects') },
-            { id: 'export', label: t('audio.midi.tab_export') },
-          ]"
+          v-for="tab in tabs"
           :key="tab.id"
           class="settings-tab"
           :class="{ 'is-active': activeTab === tab.id }"
           @click="activeTab = tab.id"
         >
-          {{ tab.label }}
+          {{ t(tab.labelKey) }}
         </button>
       </div>
 
