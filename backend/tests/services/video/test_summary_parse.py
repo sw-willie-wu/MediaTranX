@@ -90,9 +90,9 @@ def _bullets_prompt_for(entries, **kwargs):
 
 
 def _narrative_prompt_for(entries, **kwargs):
-    """Narrative-mode prompt: transcript keeps the seconds format."""
+    """Narrative-mode prompt: transcript carries [L<n>] line numbers."""
     return build_summary_prompt(
-        format_transcript(entries), summary_mode="narrative", **kwargs
+        format_transcript_numbered(entries), summary_mode="narrative", **kwargs
     )
 
 
@@ -127,12 +127,16 @@ def test_build_summary_prompt_bullets_mode_asks_for_line_cites():
     assert "turning_points" not in prompt
 
 
-def test_build_summary_prompt_narrative_mode_asks_for_json():
+def test_build_summary_prompt_narrative_mode_asks_for_prose_with_line_cites():
     entries = [SubtitleEntry(start=0.0, end=2.0, text="hello")]
     prompt = _narrative_prompt_for(entries)
-    assert "JSON" in prompt
-    assert "narrative" in prompt
-    assert "turning_points" in prompt
+    # narrative mode is prose with line-number citations, never JSON output / timestamps
+    assert "turning_points" not in prompt
+    assert "[L<first>-L<last>]" in prompt
+    assert "[mm:ss-mm:ss]" not in prompt
+    # must not ask LLM to produce a JSON object (old prompt did)
+    assert '"narrative"' not in prompt
+    assert "Output JSON only" not in prompt
 
 
 # ---- bullets-mode markdown parser ([L<a>-L<b>] line citations) ----
@@ -419,7 +423,7 @@ def test_build_markdown_inserts_images_into_bullets_markdown():
     md = build_markdown(
         parsed,
         bullet_frames={0: "frames/b0.jpg", 1: "frames/b1.jpg"},
-        tp_frames={},
+        para_frames={},
         title="測試影片",
     )
     assert "# 測試影片" in md
@@ -431,37 +435,30 @@ def test_build_markdown_inserts_images_into_bullets_markdown():
     assert "  ![](frames/b0.jpg)" in md
 
 
-def test_build_markdown_renders_narrative_section_when_present():
-    result = SummaryChunkResult(
-        narrative_summary="整體而言這部影片...",
-        turning_points=[{"time": 15.0, "text": "關鍵轉折"}],
-    )
+def test_build_markdown_renders_narrative_paragraphs_with_images():
+    result = SummaryChunkResult(narrative_paragraphs=[
+        {"text": "第一段敘事。", "line_range": (1, 5), "time_range": (0.0, 5.0)},
+        {"text": "第二段敘事。", "line_range": (6, 9), "time_range": (5.0, 9.0)},
+    ])
     md = build_markdown(
         result,
         bullet_frames={},
-        tp_frames={0: "frames/tp_0.jpg"},
+        para_frames={0: "frames/para_000.jpg"},   # only para 0 has an image
         title="測試影片",
     )
-    assert "## 劇情摘要" in md
-    assert "整體而言這部影片..." in md
-    assert "關鍵轉折" in md
-    assert "frames/tp_0.jpg" in md
+    assert "# 測試影片" in md
+    assert "第一段敘事。" in md
+    assert "第二段敘事。" in md
+    assert "![](frames/para_000.jpg)" in md
+    # narrative mode has no headings / no turning-point section
+    assert "## " not in md.replace("# 測試影片", "")
+    assert "### " not in md
 
-
-def test_build_markdown_uses_english_headers_for_en_language():
-    result = SummaryChunkResult(
-        narrative_summary="overall narrative",
-        turning_points=[{"time": 2.0, "text": "turn"}],
-    )
-    md = build_markdown(result, {}, {}, title="test", language="en")
-    assert "## Narrative Summary" in md
-    assert "### Highlights" in md
-    assert "## 劇情摘要" not in md
 
 
 def test_build_markdown_handles_missing_bullet_frames_gracefully():
     parsed = parse_bullets_markdown("- **x：** desc [L1-L2]\n")
-    md = build_markdown(parsed, bullet_frames={}, tp_frames={}, title="T")
+    md = build_markdown(parsed, bullet_frames={}, para_frames={}, title="T")
     assert "**x：**" in md
     assert "![" not in md
 

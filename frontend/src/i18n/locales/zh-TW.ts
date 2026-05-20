@@ -255,7 +255,7 @@ export default {
       summary_transcribing: '正在轉錄字幕…',
       summary_chunk: '摘要中（區塊 {0}/{1}）',
       summary_bullet_frame: '擷取重點影格 {0}/{1}',
-      summary_tp_frame: '擷取轉折影格 {0}/{1}',
+      summary_paragraph_frame: '擷取段落影格 {0}/{1}',
       summary_packaging: '打包輸出檔…',
       // whisper
       init_ctranslate2: '正在初始化 CTranslate2...',

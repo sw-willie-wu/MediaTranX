@@ -1,6 +1,7 @@
 """Video summary markdown composition.
 
-Combines bullets / narrative result + per-item frame images into final markdown.
+Combines a bullets-mode hierarchical result or a narrative-mode paragraph
+result with per-item frame images into the final markdown.
 """
 from __future__ import annotations
 
@@ -9,24 +10,22 @@ from .parse import SummaryChunkResult
 
 def build_markdown(
     result: SummaryChunkResult,
-    bullet_frames: dict[int, str],  # bullet_items index -> relative image path
-    tp_frames: dict[int, str],      # turning_point index -> relative image path
+    bullet_frames: dict[int, str],   # bullet_items index -> relative image path
+    para_frames: dict[int, str],     # narrative_paragraphs index -> image path
     title: str,
-    language: str = "zh-TW",
+    language: str = "zh-TW",         # reserved; rendering is language-agnostic
 ) -> str:
-    """Compose final markdown with title + hierarchical bullets (with images) + narrative."""
-    if language.startswith("zh"):
-        h_narrative = "劇情摘要"
-        h_turning = "關鍵轉折"
-    else:
-        h_narrative = "Narrative Summary"
-        h_turning = "Highlights"
+    """Compose final markdown: title + (hierarchical bullets | flat paragraphs).
 
+    Bullets mode: each framed bullet gets an indented image line inserted right
+    after the bullet's markdown line. Narrative mode: each paragraph is plain
+    prose followed by its frame (when one was picked); no headings, no markers.
+    """
     lines: list[str] = [f"# {title}", ""]
 
     if result.bullets_markdown.strip():
-        # Split on newline, then insert image lines after each bullet_item's line.
-        # Process in reverse to keep earlier line_index valid.
+        # Insert image lines after each bullet_item's line. Process in reverse
+        # so earlier line_index values stay valid as we insert.
         md_lines = result.bullets_markdown.splitlines()
         for idx in range(len(result.bullet_items) - 1, -1, -1):
             item = result.bullet_items[idx]
@@ -34,36 +33,18 @@ def build_markdown(
             if not img:
                 continue
             insert_at = item["line_index"] + 1
-            # Indent image with 2 spaces so it renders as part of the bullet's block.
+            # Indent so the image renders inside the bullet's block.
             md_lines.insert(insert_at, f"  ![]({img})")
         lines.extend(md_lines)
         lines.append("")
 
-    if result.narrative_summary:
-        lines.append(f"## {h_narrative}")
-        lines.append("")
-        lines.append(result.narrative_summary)
-        lines.append("")
-
-        if result.turning_points:
-            lines.append(f"### {h_turning}")
+    if result.narrative_paragraphs:
+        for idx, para in enumerate(result.narrative_paragraphs):
+            lines.append(para["text"])
             lines.append("")
-            for i, tp in enumerate(result.turning_points):
-                ts = _fmt_timestamp(tp["time"])
-                lines.append(f"- **{ts}** — {tp['text']}")
-                img = tp_frames.get(i)
-                if img:
-                    lines.append("")
-                    lines.append(f"  ![]({img})")
-            lines.append("")
+            img = para_frames.get(idx)
+            if img:
+                lines.append(f"![]({img})")
+                lines.append("")
 
     return "\n".join(lines)
-
-
-def _fmt_timestamp(sec: float) -> str:
-    h = int(sec // 3600)
-    m = int((sec % 3600) // 60)
-    s = int(sec % 60)
-    if h > 0:
-        return f"{h:02d}:{m:02d}:{s:02d}"
-    return f"{m:02d}:{s:02d}"

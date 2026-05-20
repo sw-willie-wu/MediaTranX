@@ -255,7 +255,7 @@ export default {
       summary_transcribing: 'Transcribing subtitles...',
       summary_chunk: 'Summarizing (chunk {0}/{1})',
       summary_bullet_frame: 'Extracting bullet frame {0}/{1}',
-      summary_tp_frame: 'Extracting turning-point frame {0}/{1}',
+      summary_paragraph_frame: 'Extracting paragraph frame {0}/{1}',
       summary_packaging: 'Packaging output...',
       // whisper
       init_ctranslate2: 'Initializing CTranslate2...',
