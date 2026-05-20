@@ -315,13 +315,26 @@ def test_parse_narrative_paragraphs_cite_only_block_dropped():
     assert result.narrative_paragraphs[0]["line_range"] == (6, 10)
 
 
-def test_parse_narrative_paragraphs_does_not_strip_mid_block_bracket():
-    """段落中間合法出現的 [L..] 不該被剝；只剝段落末端的 cite。"""
+def test_parse_narrative_paragraphs_strips_all_cites_including_mid_block():
+    """Every [L..] in a paragraph is a citation (real qwen3.5 puts one after
+    each sub-claim) — strip them all; line_range = min/max over all."""
     raw = "提到 [L5-L9] 這個區段的內容很重要。 [L1-L20]"
     result = parse_narrative_paragraphs(raw)
     assert len(result.narrative_paragraphs) == 1
-    assert result.narrative_paragraphs[0]["line_range"] == (1, 20)
-    assert "[L5-L9]" in result.narrative_paragraphs[0]["text"]
+    p = result.narrative_paragraphs[0]
+    assert "[L" not in p["text"]
+    assert p["line_range"] == (1, 20)   # min/max over {5,9,1,20}
+
+
+def test_parse_narrative_strips_multiple_mid_paragraph_cites():
+    """Multiple cites scattered through one paragraph (the real-AI bug):
+    all stripped, line_range = min/max over all of them."""
+    raw = "第一個論點 [L1-L9]。第二個論點 [L18-L32]。結尾論點 [L40-L50]。"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 1
+    p = result.narrative_paragraphs[0]
+    assert "[L" not in p["text"]
+    assert p["line_range"] == (1, 50)
 
 
 # ---- merge ----

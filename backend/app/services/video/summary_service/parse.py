@@ -109,29 +109,29 @@ class SummaryChunkResult:
     # ^ each: {"text": str, "line_range": (a, b) | None, "time_range": (s, e) | None}
 
 
-# Match a line-citation tag at the end of a bullet line / narrative block.
+# Match a [L..] citation tag anywhere in a line or paragraph block.
 # Accepts a bracket whose body is ONLY `L<digits>` tokens joined by `-`, `,`
 # or whitespace — e.g. `[L1-L8]`, `[L5]`, `[L18-L20, L28-L30]`. The `L` prefix
 # keeps it distinctive, so a plain numeric bracket like `[80-120]` is never
-# matched. The match is still end-anchored (a trailing-punctuation lookahead
-# tolerates a sentence period after `]`), so:
-#   - parse_narrative_paragraphs (.search on a whole block) only ever matches
-#     the cite at the block's end, never one mid-paragraph;
-#   - the leading `\s*` is consumed so .sub leaves no stray space.
-_CITE_RE = re.compile(
-    r"\s*\[\s*L\d+(?:[\s,-]+L\d+)*\s*\](?=\s*[。．.,，、]*\s*$)"
-)
+# matched. Real LLM output (e.g. qwen3.5 narrative mode) places one cite after
+# each sub-claim mid-paragraph plus one at the end; this pattern matches ALL of
+# them so .sub strips every occurrence. The `(?:[\s,-]+L\d+)*` body is linear
+# (no catastrophic backtracking). The leading `\s*` is consumed so .sub leaves
+# no stray space.
+_CITE_RE = re.compile(r"\s*\[\s*L\d+(?:[\s,-]+L\d+)*\s*\]")
 _BULLET_LABEL_RE = re.compile(r"^\s*-\s*\*\*[^*]+\*\*")
 
 
-def _cite_range(cite_text: str) -> tuple[int, int]:
-    """Min/max over every L-number in a matched cite token.
+def _extract_line_range(text: str) -> tuple[int, int] | None:
+    """Min/max over every L-number in every [L..] citation in `text`.
 
-    `[L18-L20, L28-L30]` -> (18, 30); `[L5]` -> (5, 5). The cite_text is the
-    substring matched by _CITE_RE (which contains only L-numbers + separators).
+    `text` may be a single bullet line or a whole narrative paragraph block
+    (which can carry several cites). Returns None when there is no citation.
     """
-    nums = [int(n) for n in re.findall(r"L(\d+)", cite_text)]
-    return (min(nums), max(nums))
+    nums: list[int] = []
+    for m in _CITE_RE.finditer(text):
+        nums += [int(n) for n in re.findall(r"L(\d+)", m.group())]
+    return (min(nums), max(nums)) if nums else None
 
 
 def parse_bullets_markdown(raw: str) -> SummaryChunkResult:
@@ -153,14 +153,14 @@ def parse_bullets_markdown(raw: str) -> SummaryChunkResult:
     out_lines: list[str] = []
     for line in text.splitlines():
         is_bullet = _BULLET_LABEL_RE.match(line)
-        cite = _CITE_RE.search(line) if is_bullet else None
-        if cite:
+        line_range = _extract_line_range(line) if is_bullet else None
+        if line_range is not None:
             items.append({
                 "line_index": len(out_lines),
-                "line_range": _cite_range(cite.group()),
+                "line_range": line_range,
             })
-        # Strip the trailing [L<a>-L<b>] cite from the rendered line. Run on
-        # every line: the `L` prefix means legit bracketed content is untouched.
+        # Strip all [L<a>-L<b>] cites from the rendered line. Run on every
+        # line: the `L` prefix means legit bracketed content is untouched.
         line = _CITE_RE.sub("", line).rstrip()
         out_lines.append(line)
 
@@ -171,13 +171,15 @@ def parse_bullets_markdown(raw: str) -> SummaryChunkResult:
 
 
 def parse_narrative_paragraphs(raw: str) -> SummaryChunkResult:
-    """Parse narrative-mode LLM output: prose paragraphs each ending [L<a>-L<b>].
+    """Parse narrative-mode LLM output: prose paragraphs with [L<a>-L<b>] cites.
 
     The transcript fed to the LLM is line-numbered ([L<n>] text); the LLM
-    returns blank-line-separated prose paragraphs, each ending with a
-    `[L<first>-L<last>]` line-number citation. The cite is stripped from the
-    rendered text and recorded as ``line_range``. A paragraph with no trailing
-    cite is kept (text only, ``line_range=None`` -> no image downstream).
+    returns blank-line-separated prose paragraphs. Real LLM output (e.g.
+    qwen3.5) places one `[L<first>-L<last>]` cite after each sub-claim
+    mid-paragraph and/or at the end. ALL cites are stripped from the rendered
+    text; ``line_range`` = (min, max) over every L-number found in the block.
+    A paragraph with no cite is kept (text only, ``line_range=None`` -> no
+    image downstream).
     """
     text = raw.strip()
     text = re.sub(r"^```(?:markdown|md)?\s*", "", text, flags=re.IGNORECASE)
@@ -188,16 +190,10 @@ def parse_narrative_paragraphs(raw: str) -> SummaryChunkResult:
         block = block.strip()
         if not block:
             continue
-        # _CITE_RE is end-anchored (no MULTILINE) -> .search matches only a
-        # cite at the very end of the stripped block, never one mid-paragraph.
-        cite = _CITE_RE.search(block)
-        if cite:
-            line_range: tuple[int, int] | None = _cite_range(cite.group())
-            block = _CITE_RE.sub("", block).rstrip()
-        else:
-            line_range = None
+        line_range = _extract_line_range(block)
+        block = _CITE_RE.sub("", block).strip()
         if not block:
-            if cite:
+            if line_range is not None:
                 logger.warning(
                     "Narrative paragraph was a bare citation with no prose; dropped"
                 )
@@ -238,8 +234,8 @@ def resolve_line_windows(items: list[dict], entries: list[SubtitleEntry]) -> Non
         a, b = item["line_range"]
         ia = min(max(int(a), 1), n) - 1
         ib = min(max(int(b), 1), n) - 1
-        # Unreachable for parser-produced items (_cite_range yields min<=max);
-        # kept as a guard for hand-constructed `items`.
+        # Unreachable for parser-produced items (_extract_line_range yields
+        # min<=max); kept as a guard for hand-constructed `items`.
         if ia > ib:
             item["time_range"] = None
         else:
