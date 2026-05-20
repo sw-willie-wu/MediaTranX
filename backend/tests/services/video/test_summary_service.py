@@ -623,3 +623,46 @@ def test_candidate_frames_downscaled_final_frames_native(tmp_path):
     assert final, "expected final keyframe extraction"
     assert all(c["max_edge"] is None for c in final), \
         f"final keyframes must stay native (no max_edge): {final}"
+
+
+# ── summary-1.4.1: Bug B — scene detection progress event ─────────────
+def test_execute_emits_detecting_scenes_progress_before_frames(tmp_path):
+    """Bug B: detect_all() 前發出 summary_detecting_scenes 進度事件,
+    且排在第一個 bullet-frame 事件之前 —— 進度條在場景偵測階段不凍住。"""
+    svc, file_service = _make_svc_with_mocks(tmp_path)
+
+    class FakeDetector:
+        def __init__(self, *a, **kw): pass
+        def detect_in_window(self, *a, **kw): return []
+        def detect_all(self, *a, **kw): return []
+        def extract_frame(self, input_path, output_path, timestamp, max_edge=None):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"j")
+
+    fake_result = MagicMock(
+        segments=[MagicMock(start=0.0, end=5.0, text="一"),
+                  MagicMock(start=5.0, end=10.0, text="二")],
+        language="zh",
+    )
+    events: list[tuple[float, str]] = []
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync",
+               return_value=fake_result), \
+         patch("app.services.video.summary_service.service.SceneDetector",
+               FakeDetector):
+        svc._execute(
+            params={"file_id": "f1", "llm_model_family": "qwen3.5",
+                    "llm_model_size": "9b", "language": "zh-TW",
+                    "vlm_model_family": None, "vlm_model_size": None,
+                    "summary_mode": "bullets"},
+            progress_callback=lambda p, m: events.append((p, m)),
+        )
+
+    msgs = [m for _, m in events]
+    detect_evts = [i for i, m in enumerate(msgs)
+                   if m == "task.progress.summary_detecting_scenes"]
+    frame_evts = [i for i, m in enumerate(msgs)
+                  if m.startswith("task.progress.summary_bullet_frame")]
+    assert detect_evts, "expected a summary_detecting_scenes progress event"
+    assert frame_evts, "expected at least one bullet-frame progress event"
+    # ordering only — do NOT assert the literal pct value
+    assert detect_evts[0] < frame_evts[0]
