@@ -3,9 +3,11 @@ FFmpeg wrapper module.
 Provides video transcoding, progress parsing, and related utilities.
 """
 import asyncio
+import os
 import re
 import shutil
 import sys
+import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
@@ -23,6 +25,30 @@ def _run_sync(coro):
         return loop.run_until_complete(coro)
     finally:
         loop.close()
+
+
+_SCENE_TIME_RE = re.compile(r"lavfi\.scd\.time=([0-9.]+)")
+
+
+def _parse_scene_times(metadata_text: str) -> list[float]:
+    """Extract scene-change timestamps from ffmpeg ``metadata=print`` output.
+
+    The ``scdet`` filter sets a ``lavfi.scd.time=<seconds>`` metadata key on
+    each scene-change frame; ``metadata=mode=print:key=lavfi.scd.time`` writes
+    one such line per scene change. ffmpeg emits them in ascending order.
+    """
+    return [float(m) for m in _SCENE_TIME_RE.findall(metadata_text)]
+
+
+def _escape_filtergraph_path(path: Path) -> str:
+    """Escape a filesystem path for embedding in an ffmpeg filtergraph value.
+
+    ffmpeg filtergraph treats ``:`` ``\\`` ``'`` specially. Windows paths carry a
+    drive-letter ``:`` and ``\\`` separators, so a raw path breaks parsing.
+    Convert to forward slashes (as_posix) and backslash-escape the colon
+    (``C:\\a\\b.txt`` -> ``C\\:/a/b.txt``).
+    """
+    return path.as_posix().replace(":", "\\:")
 
 
 class VideoCodec(str, Enum):
@@ -875,3 +901,124 @@ class FFmpegWrapper:
     ) -> Path:
         """Sync version of transcode() for use in TaskManager handlers."""
         return _run_sync(self.transcode(input_path, output_path, options, on_progress))
+
+    async def detect_scenes(
+        self,
+        input_path: str | Path,
+        scene_threshold: float,
+        analyze_w: int,
+        on_progress: Optional[Callable[[float], None]] = None,
+    ) -> list[float]:
+        """Detect scene-change timestamps via the FFmpeg ``scdet`` filter.
+
+        Single decode pass, pure software (no ``-hwaccel``). Scene metadata is
+        written to a temp file; ``-progress pipe:1`` drives ``on_progress`` with
+        a 0..1 decode fraction. ``on_progress`` may raise (cooperative cancel) —
+        the subprocess is then killed and the temp file removed before re-raise.
+
+        See spec 2026-05-20-frame-picker-quality-and-scoring.md §13.
+        """
+        input_path = Path(input_path)
+        if not input_path.exists():
+            raise FFmpegError(f"Input file not found: {input_path}")
+
+        media_info = await self.get_media_info(input_path)
+        duration = media_info.duration
+
+        fd, scene_tmp = tempfile.mkstemp(suffix=".txt", prefix="scdet_")
+        os.close(fd)
+        scene_tmp_path = Path(scene_tmp)
+        try:
+            vf = (
+                f"scale='min({analyze_w},iw)':-2,"
+                f"scdet=threshold={scene_threshold},"
+                f"metadata=mode=print:file="
+                f"{_escape_filtergraph_path(scene_tmp_path)}:key=lavfi.scd.time"
+            )
+            args = [
+                self.ffmpeg_path,
+                "-hide_banner",
+                "-i", str(input_path),
+                "-an", "-sn",
+                "-vf", vf,
+                "-progress", "pipe:1",
+                "-nostats",
+                "-f", "null", "-",
+            ]
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            stderr_chunks: list[bytes] = []
+
+            async def read_progress() -> None:
+                # Parse only out_time_ms from -progress pipe:1; do NOT reuse
+                # _parse_progress (it writes instance-level self._progress_data,
+                # unsafe for a shared singleton wrapper).
+                while True:
+                    line = await proc.stdout.readline()
+                    if not line:
+                        break
+                    text = line.decode(errors="ignore").strip()
+                    key, _, value = text.partition("=")
+                    if key == "out_time_ms" and on_progress is not None:
+                        try:
+                            us = int(value)
+                        except ValueError:
+                            continue  # "N/A" early in the stream
+                        frac = (us / 1_000_000 / duration) if duration > 0 else 0.0
+                        on_progress(min(frac, 1.0))
+
+            async def drain_stderr() -> None:
+                # Drain stderr CONCURRENTLY with stdout. -nostats keeps it small
+                # but multi-minute 4K AV1 decode warnings can still overflow the
+                # 64KB pipe buffer and deadlock if read only after proc.wait().
+                while True:
+                    chunk = await proc.stderr.read(8192)
+                    if not chunk:
+                        break
+                    stderr_chunks.append(chunk)
+
+            prog_task = asyncio.ensure_future(read_progress())
+            err_task = asyncio.ensure_future(drain_stderr())
+            try:
+                await asyncio.gather(prog_task, err_task)
+                await proc.wait()
+            except BaseException:
+                # on_progress raised (cancel) or a read failed. Cancel any
+                # still-pending sibling task FIRST, then kill the subprocess,
+                # then drain both tasks' results/exceptions via
+                # return_exceptions=True so none is left as an orphan — even
+                # if proc.kill() itself were to raise.
+                for t in (prog_task, err_task):
+                    if not t.done():
+                        t.cancel()
+                proc.kill()
+                await proc.wait()
+                await asyncio.gather(prog_task, err_task, return_exceptions=True)
+                raise
+
+            if proc.returncode != 0:
+                stderr_text = b"".join(stderr_chunks).decode(errors="ignore")
+                raise FFmpegError(f"Scene detection failed: {stderr_text}")
+
+            metadata_text = scene_tmp_path.read_text(
+                encoding="utf-8", errors="ignore"
+            )
+            return _parse_scene_times(metadata_text)
+        finally:
+            scene_tmp_path.unlink(missing_ok=True)
+
+    def detect_scenes_sync(
+        self,
+        input_path: str | Path,
+        scene_threshold: float,
+        analyze_w: int,
+        on_progress: Optional[Callable[[float], None]] = None,
+    ) -> list[float]:
+        """Sync version of detect_scenes() for use in TaskManager handlers."""
+        return _run_sync(
+            self.detect_scenes(input_path, scene_threshold, analyze_w, on_progress)
+        )
