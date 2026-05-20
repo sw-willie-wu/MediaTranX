@@ -4,7 +4,6 @@ Data classes, token-budget chunking, LLM output parsing (bullets + narrative),
 and chunk merging. Markdown rendering is in `markdown.py`.
 """
 from __future__ import annotations
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -82,23 +81,13 @@ def _format_entry_line(e: SubtitleEntry) -> str:
     return f"[{e.start:.1f}-{e.end:.1f}] {e.text}"
 
 
-def format_transcript(entries: list[SubtitleEntry]) -> str:
-    """Format entries as LLM-facing transcript lines (seconds format).
-
-    Used by narrative mode (which asks the LLM for float-second timestamps)
-    and by :func:`chunk_entries_by_tokens` for token budgeting.
-    """
-    return "\n".join(_format_entry_line(e) for e in entries)
-
-
 def format_transcript_numbered(entries: list[SubtitleEntry], start_index: int = 1) -> str:
     """Format entries as LLM-facing lines prefixed with a global line number.
 
     Each line is ``[L<n>] <text>`` where ``n`` is a 1-based line number kept
     continuous across chunks (callers pass ``start_index`` = the running
-    offset). Unlike :func:`format_transcript` this carries no timestamps — the
-    bullets-mode LLM cites these line numbers and the service resolves them
-    back to real Whisper timestamps (see :func:`resolve_bullet_windows`).
+    offset). The LLM cites these line numbers and the service resolves them
+    back to real Whisper timestamps (see :func:`resolve_line_windows`).
     """
     return "\n".join(
         f"[L{start_index + i}] {e.text}" for i, e in enumerate(entries)
@@ -113,48 +102,11 @@ class SummaryChunkResult:
     # ^ each item dict, by lifecycle stage:
     #   parse_bullets_markdown -> {"line_index": int (0-based pos in bullets_markdown),
     #                              "line_range": (a, b) — 1-based global transcript lines}
-    #   merge_chunk_outputs    -> "line_index" offset; "line_range" passed through unchanged
-    #   resolve_bullet_windows -> adds "time_range": (start_sec, end_sec) | None
-    # Narrative mode (existing)
-    narrative_summary: str = ""
-    turning_points: list[dict] = field(default_factory=list)
-
-
-def parse_summary_json(raw: str) -> SummaryChunkResult:
-    """Parse narrative-mode LLM output (JSON) into SummaryChunkResult."""
-    text = raw.strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s*```\s*$", "", text)
-
-    try:
-        obj = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"LLM output is not valid JSON: {e}") from e
-
-    narrative_raw = obj.get("narrative", {}) or {}
-    if not isinstance(narrative_raw, dict):
-        logger.warning(f"Unexpected narrative shape {type(narrative_raw).__name__}; treating as empty")
-        narrative_raw = {}
-
-    tps_raw = narrative_raw.get("turning_points", []) or []
-    if not isinstance(tps_raw, list):
-        logger.warning(f"Unexpected turning_points shape {type(tps_raw).__name__}; treating as empty")
-        tps_raw = []
-
-    tps_clean: list[dict] = []
-    for t in tps_raw:
-        if not isinstance(t, dict):
-            continue
-        if not isinstance(t.get("time"), (int, float)):
-            continue
-        if not isinstance(t.get("text"), str):
-            continue
-        tps_clean.append(t)
-
-    return SummaryChunkResult(
-        narrative_summary=str(narrative_raw.get("summary", "")),
-        turning_points=tps_clean,
-    )
+    #   merge_chunk_outputs    -> "line_index" offset; "line_range" passed through
+    #   resolve_line_windows   -> adds "time_range": (start_sec, end_sec) | None
+    # Narrative mode
+    narrative_paragraphs: list[dict] = field(default_factory=list)
+    # ^ each: {"text": str, "line_range": (a, b) | None, "time_range": (s, e) | None}
 
 
 # Match a line-citation tag `[L<a>-L<b>]` at the end of a bullet line. `a`/`b`
@@ -202,21 +154,71 @@ def parse_bullets_markdown(raw: str) -> SummaryChunkResult:
     )
 
 
-def resolve_bullet_windows(items: list[dict], entries: list[SubtitleEntry]) -> None:
-    """Resolve each bullet_item's cited line range to a real time window.
+def parse_narrative_paragraphs(raw: str) -> SummaryChunkResult:
+    """Parse narrative-mode LLM output: prose paragraphs each ending [L<a>-L<b>].
+
+    The transcript fed to the LLM is line-numbered ([L<n>] text); the LLM
+    returns blank-line-separated prose paragraphs, each ending with a
+    `[L<first>-L<last>]` line-number citation. The cite is stripped from the
+    rendered text and recorded as ``line_range``. A paragraph with no trailing
+    cite is kept (text only, ``line_range=None`` -> no image downstream).
+    """
+    text = raw.strip()
+    text = re.sub(r"^```(?:markdown|md)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```\s*$", "", text)
+
+    paragraphs: list[dict] = []
+    for block in re.split(r"\n\s*\n", text):
+        block = block.strip()
+        if not block:
+            continue
+        # _CITE_RE is anchored with `$` (no MULTILINE) -> matches only a cite at
+        # the very end of the stripped block, never one mid-paragraph.
+        cite = _CITE_RE.search(block)
+        if cite:
+            line_range: tuple[int, int] | None = (
+                int(cite.group(1)), int(cite.group(2))
+            )
+            block = _CITE_RE.sub("", block).rstrip()
+        else:
+            line_range = None
+        if not block:
+            if cite:
+                logger.warning(
+                    "Narrative paragraph was a bare citation with no prose; dropped"
+                )
+            continue
+        paragraphs.append(
+            {"text": block, "line_range": line_range, "time_range": None}
+        )
+
+    if not paragraphs:
+        raise ValueError("LLM output produced no narrative paragraphs")
+
+    return SummaryChunkResult(narrative_paragraphs=paragraphs)
+
+
+def resolve_line_windows(items: list[dict], entries: list[SubtitleEntry]) -> None:
+    """Resolve each item's cited line range to a real time window.
 
     Sets ``item["time_range"]`` in place to ``(start_sec, end_sec)`` taken from
     the cited Whisper ``entries``, or ``None`` when the citation is unusable.
+
+    ``items`` are ``bullet_items`` or ``narrative_paragraphs``, both carrying
+    ``line_range``.
 
     ``items`` carry ``line_range = (a, b)`` — 1-based global transcript line
     numbers. ``entries`` MUST be the full global list those line numbers index
     into (not a per-chunk slice). Out-of-range indices are clamped into range;
     a citation still inverted after clamping (``a > b``) is dropped (``None``)
     rather than fabricating a window from self-evidently-garbage output.
+
+    A ``None`` ``line_range`` (a cite-less narrative paragraph) sets
+    ``time_range`` to ``None`` directly and is skipped without error.
     """
     n = len(entries)
     for item in items:
-        if n == 0:
+        if n == 0 or item["line_range"] is None:
             item["time_range"] = None
             continue
         a, b = item["line_range"]
@@ -229,18 +231,18 @@ def resolve_bullet_windows(items: list[dict], entries: list[SubtitleEntry]) -> N
 
 
 def merge_chunk_outputs(chunks: list[SummaryChunkResult]) -> SummaryChunkResult:
-    """Merge per-chunk results.
+    """Merge per-chunk results. Mode-agnostic - empty fields are no-ops.
 
-    For bullets mode: concatenate markdown blocks (separator = blank line),
-      offset bullet line_index accordingly so they remain valid in the merged text.
-    For narrative mode: concat turning_points, join summaries with blank lines.
+    Bullets: concatenate markdown blocks (blank-line separator), offset bullet
+      line_index so they stay valid in the merged text; line_range (a global
+      transcript cite) is passed through unchanged.
+    Narrative: concatenate narrative_paragraphs (line_range is global -> no
+      offset).
     """
     md_parts: list[str] = []
     merged_items: list[dict] = []
     line_offset = 0
-
-    all_tps: list[dict] = []
-    summaries: list[str] = []
+    merged_paragraphs: list[dict] = []
 
     for c in chunks:
         # --- bullets mode merge ---
@@ -255,13 +257,10 @@ def merge_chunk_outputs(chunks: list[SummaryChunkResult]) -> SummaryChunkResult:
             # +2 for the blank separator line we'll insert (\n\n joins → +2 lines).
             line_offset += c.bullets_markdown.count("\n") + 2
         # --- narrative mode merge ---
-        all_tps.extend(c.turning_points)
-        if c.narrative_summary.strip():
-            summaries.append(c.narrative_summary.strip())
+        merged_paragraphs.extend(c.narrative_paragraphs)
 
     return SummaryChunkResult(
         bullets_markdown="\n\n".join(md_parts),
         bullet_items=merged_items,
-        narrative_summary="\n\n".join(summaries),
-        turning_points=all_tps,
+        narrative_paragraphs=merged_paragraphs,
     )

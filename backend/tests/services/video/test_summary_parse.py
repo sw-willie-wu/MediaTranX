@@ -38,16 +38,6 @@ def test_chunk_single_oversize_entry_still_produces_one_chunk():
     assert chunks[0] == entries
 
 
-def test_format_transcript_joins_entries_with_newline():
-    # Unchanged: format_transcript stays the seconds format (narrative mode).
-    from app.services.video.summary_service.parse import format_transcript
-    entries = [
-        SubtitleEntry(start=1.0, end=2.0, text="x"),
-        SubtitleEntry(start=2.0, end=3.5, text="y"),
-    ]
-    assert format_transcript(entries) == "[1.0-2.0] x\n[2.0-3.5] y"
-
-
 # ---- format_transcript_numbered (bullets mode, [L<n>] line numbers) ----
 
 def test_format_transcript_numbered_single_chunk():
@@ -70,12 +60,11 @@ def test_format_transcript_numbered_offset_continues_across_chunks():
 
 from app.utils.prompts import build_summary_prompt
 from app.services.video.summary_service.parse import (
-    format_transcript,
     format_transcript_numbered,
-    parse_summary_json,
     parse_bullets_markdown,
+    parse_narrative_paragraphs,
     merge_chunk_outputs,
-    resolve_bullet_windows,
+    resolve_line_windows,
     SummaryChunkResult,
 )
 from app.services.video.summary_service.markdown import build_markdown
@@ -89,9 +78,9 @@ def _bullets_prompt_for(entries, **kwargs):
 
 
 def _narrative_prompt_for(entries, **kwargs):
-    """Narrative-mode prompt: transcript keeps the seconds format."""
+    """Narrative-mode prompt: transcript carries [L<n>] line numbers."""
     return build_summary_prompt(
-        format_transcript(entries), summary_mode="narrative", **kwargs
+        format_transcript_numbered(entries), summary_mode="narrative", **kwargs
     )
 
 
@@ -126,12 +115,16 @@ def test_build_summary_prompt_bullets_mode_asks_for_line_cites():
     assert "turning_points" not in prompt
 
 
-def test_build_summary_prompt_narrative_mode_asks_for_json():
+def test_build_summary_prompt_narrative_mode_asks_for_prose_with_line_cites():
     entries = [SubtitleEntry(start=0.0, end=2.0, text="hello")]
     prompt = _narrative_prompt_for(entries)
-    assert "JSON" in prompt
-    assert "narrative" in prompt
-    assert "turning_points" in prompt
+    # narrative mode is prose with line-number citations, never JSON output / timestamps
+    assert "turning_points" not in prompt
+    assert "[L<first>-L<last>]" in prompt
+    assert "[mm:ss-mm:ss]" not in prompt
+    # must not ask LLM to produce a JSON object (old prompt did)
+    assert '"narrative"' not in prompt
+    assert "Output JSON only" not in prompt
 
 
 # ---- bullets-mode markdown parser ([L<a>-L<b>] line citations) ----
@@ -201,92 +194,134 @@ def test_parse_bullets_markdown_line_index_points_to_correct_line():
     assert md_lines[result.bullet_items[1]["line_index"]].startswith("- **b")
 
 
-# ---- resolve_bullet_windows (line range -> real Whisper time window) ----
+# ---- resolve_line_windows (line range -> real Whisper time window) ----
 
 def _entries(n):
     return [SubtitleEntry(start=float(i), end=float(i) + 0.5, text=f"t{i}")
             for i in range(n)]
 
 
-def test_resolve_bullet_windows_basic():
+def test_resolve_line_windows_basic():
     entries = _entries(6)
     items = [{"line_index": 0, "line_range": (2, 5)}]
-    resolve_bullet_windows(items, entries)
+    resolve_line_windows(items, entries)
     # 1-based (2,5) -> 0-based idx 1..4
     assert items[0]["time_range"] == (entries[1].start, entries[4].end)
 
 
-def test_resolve_bullet_windows_single_line():
+def test_resolve_line_windows_single_line():
     entries = _entries(6)
     items = [{"line_index": 0, "line_range": (3, 3)}]
-    resolve_bullet_windows(items, entries)
+    resolve_line_windows(items, entries)
     assert items[0]["time_range"] == (entries[2].start, entries[2].end)
 
 
-def test_resolve_bullet_windows_clamps_out_of_range():
+def test_resolve_line_windows_clamps_out_of_range():
     entries = _entries(4)
     items = [{"line_index": 0, "line_range": (0, 999)}]
-    resolve_bullet_windows(items, entries)
+    resolve_line_windows(items, entries)
     # 0 -> clamp to 1 -> idx0 ; 999 -> clamp to 4 -> idx3
     assert items[0]["time_range"] == (entries[0].start, entries[3].end)
 
 
-def test_resolve_bullet_windows_inverted_is_dropped():
+def test_resolve_line_windows_inverted_is_dropped():
     entries = _entries(6)
     # (8,3): clamp -> (6,3) -> idx (5,2) still inverted -> None
     items = [{"line_index": 0, "line_range": (8, 3)}]
-    resolve_bullet_windows(items, entries)
+    resolve_line_windows(items, entries)
     assert items[0]["time_range"] is None
 
 
-def test_resolve_bullet_windows_single_entry():
+def test_resolve_line_windows_single_entry():
     entries = [SubtitleEntry(start=5.0, end=9.0, text="only")]
     items = [{"line_index": 0, "line_range": (3, 7)}]  # both clamp to 1 -> idx0
-    resolve_bullet_windows(items, entries)
+    resolve_line_windows(items, entries)
     assert items[0]["time_range"] == (5.0, 9.0)
 
 
-def test_resolve_bullet_windows_empty_entries():
+def test_resolve_line_windows_empty_entries():
     items = [{"line_index": 0, "line_range": (1, 2)}]
-    resolve_bullet_windows(items, [])
+    resolve_line_windows(items, [])
     assert items[0]["time_range"] is None
 
 
-def test_resolve_bullet_windows_empty_items_no_crash():
-    resolve_bullet_windows([], _entries(3))  # must not raise
+def test_resolve_line_windows_empty_items_no_crash():
+    resolve_line_windows([], _entries(3))  # must not raise
 
 
-# ---- narrative-mode JSON parser ----
-
-def test_parse_summary_json_strips_code_fence():
-    raw = """```json
-{"narrative": {"summary": "", "turning_points": []}}
-```"""
-    parsed = parse_summary_json(raw)
-    assert parsed.narrative_summary == ""
-    assert parsed.turning_points == []
+def test_resolve_line_windows_none_line_range_sets_none():
+    """A cite-less paragraph (line_range=None) -> time_range=None, no crash."""
+    entries = _entries(6)
+    items = [{"line_range": None}]
+    resolve_line_windows(items, entries)
+    assert items[0]["time_range"] is None
 
 
-def test_parse_summary_json_rejects_invalid():
+# ---- narrative-mode paragraph parser ----
+
+def test_parse_narrative_paragraphs_basic():
+    raw = (
+        "第一段敘事內容，連貫描述開頭。 [L1-L8]\n\n"
+        "第二段敘事內容，描述中段發展。 [L9-L20]\n"
+    )
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 2
+    p0, p1 = result.narrative_paragraphs
+    assert p0["text"] == "第一段敘事內容，連貫描述開頭。"
+    assert p0["line_range"] == (1, 8)
+    assert p0["time_range"] is None          # filled later by resolve_line_windows
+    assert p1["line_range"] == (9, 20)
+
+
+def test_parse_narrative_paragraphs_multiline_block():
+    """段落本身可跨多行；cite 在段落區塊末端。"""
+    raw = "這段有兩行。\n第二行接續。 [L3-L7]"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 1
+    assert result.narrative_paragraphs[0]["text"] == "這段有兩行。\n第二行接續。"
+    assert result.narrative_paragraphs[0]["line_range"] == (3, 7)
+
+
+def test_parse_narrative_paragraphs_keeps_block_without_cite():
+    """無 cite 的段落仍保留文字，line_range=None（後續無圖）。"""
+    raw = "有引用的段落。 [L1-L4]\n\n沒有引用的段落。"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 2
+    assert result.narrative_paragraphs[1]["text"] == "沒有引用的段落。"
+    assert result.narrative_paragraphs[1]["line_range"] is None
+
+
+def test_parse_narrative_paragraphs_strips_code_fence():
+    raw = "```\n敘事段落。 [L1-L2]\n```"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 1
+    p = result.narrative_paragraphs[0]
+    assert p["text"] == "敘事段落。"
+    assert p["line_range"] == (1, 2)
+    assert "```" not in p["text"]
+
+
+def test_parse_narrative_paragraphs_empty_raises():
     import pytest
     with pytest.raises(ValueError):
-        parse_summary_json("not json")
+        parse_narrative_paragraphs("   \n\n  ")
 
 
-def test_parse_summary_json_accepts_narrative():
-    raw = '{"narrative": {"summary": "s", "turning_points": [{"time": 5.0, "text": "tp"}]}}'
-    parsed = parse_summary_json(raw)
-    assert parsed.narrative_summary == "s"
-    assert parsed.turning_points[0]["text"] == "tp"
+def test_parse_narrative_paragraphs_cite_only_block_dropped():
+    """A block that is only a cite tag has no prose -> dropped."""
+    raw = "[L1-L5]\n\n正常段落。 [L6-L10]"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 1
+    assert result.narrative_paragraphs[0]["line_range"] == (6, 10)
 
 
-def test_parse_summary_json_drops_turning_points_missing_time():
-    raw = '{"narrative": {"summary": "s", "turning_points": [' \
-          '{"text": "no time"}, {"time": "str", "text": "bad"}, ' \
-          '{"time": 1.0, "text": "ok"}]}}'
-    parsed = parse_summary_json(raw)
-    assert len(parsed.turning_points) == 1
-    assert parsed.turning_points[0]["text"] == "ok"
+def test_parse_narrative_paragraphs_does_not_strip_mid_block_bracket():
+    """段落中間合法出現的 [L..] 不該被剝；只剝段落末端的 cite。"""
+    raw = "提到 [L5-L9] 這個區段的內容很重要。 [L1-L20]"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 1
+    assert result.narrative_paragraphs[0]["line_range"] == (1, 20)
+    assert "[L5-L9]" in result.narrative_paragraphs[0]["text"]
 
 
 # ---- merge ----
@@ -305,19 +340,16 @@ def test_merge_bullets_offsets_line_index_across_chunks():
     assert merged.bullet_items[1]["line_range"] == (6, 9)
 
 
-def test_merge_narrative_concats_summaries_and_tps():
-    c1 = SummaryChunkResult(
-        narrative_summary="開頭敘述。",
-        turning_points=[{"time": 5.0, "text": "T1"}],
-    )
-    c2 = SummaryChunkResult(
-        narrative_summary="後續敘述。",
-        turning_points=[{"time": 15.0, "text": "T2"}],
-    )
+def test_merge_narrative_paragraphs_concatenated():
+    c1 = SummaryChunkResult(narrative_paragraphs=[
+        {"text": "段一", "line_range": (1, 5), "time_range": None},
+    ])
+    c2 = SummaryChunkResult(narrative_paragraphs=[
+        {"text": "段二", "line_range": (6, 9), "time_range": None},
+    ])
     merged = merge_chunk_outputs([c1, c2])
-    assert "開頭敘述。" in merged.narrative_summary
-    assert "後續敘述。" in merged.narrative_summary
-    assert len(merged.turning_points) == 2
+    assert [p["text"] for p in merged.narrative_paragraphs] == ["段一", "段二"]
+    assert merged.narrative_paragraphs[1]["line_range"] == (6, 9)
 
 
 # ---- build_markdown ----
@@ -331,7 +363,7 @@ def test_build_markdown_inserts_images_into_bullets_markdown():
     md = build_markdown(
         parsed,
         bullet_frames={0: "frames/b0.jpg", 1: "frames/b1.jpg"},
-        tp_frames={},
+        para_frames={},
         title="測試影片",
     )
     assert "# 測試影片" in md
@@ -343,37 +375,30 @@ def test_build_markdown_inserts_images_into_bullets_markdown():
     assert "  ![](frames/b0.jpg)" in md
 
 
-def test_build_markdown_renders_narrative_section_when_present():
-    result = SummaryChunkResult(
-        narrative_summary="整體而言這部影片...",
-        turning_points=[{"time": 15.0, "text": "關鍵轉折"}],
-    )
+def test_build_markdown_renders_narrative_paragraphs_with_images():
+    result = SummaryChunkResult(narrative_paragraphs=[
+        {"text": "第一段敘事。", "line_range": (1, 5), "time_range": (0.0, 5.0)},
+        {"text": "第二段敘事。", "line_range": (6, 9), "time_range": (5.0, 9.0)},
+    ])
     md = build_markdown(
         result,
         bullet_frames={},
-        tp_frames={0: "frames/tp_0.jpg"},
+        para_frames={0: "frames/para_000.jpg"},   # only para 0 has an image
         title="測試影片",
     )
-    assert "## 劇情摘要" in md
-    assert "整體而言這部影片..." in md
-    assert "關鍵轉折" in md
-    assert "frames/tp_0.jpg" in md
+    assert "# 測試影片" in md
+    assert "第一段敘事。" in md
+    assert "第二段敘事。" in md
+    assert "![](frames/para_000.jpg)" in md
+    # narrative mode has no headings / no turning-point section
+    assert "## " not in md.replace("# 測試影片", "")
+    assert "### " not in md
 
-
-def test_build_markdown_uses_english_headers_for_en_language():
-    result = SummaryChunkResult(
-        narrative_summary="overall narrative",
-        turning_points=[{"time": 2.0, "text": "turn"}],
-    )
-    md = build_markdown(result, {}, {}, title="test", language="en")
-    assert "## Narrative Summary" in md
-    assert "### Highlights" in md
-    assert "## 劇情摘要" not in md
 
 
 def test_build_markdown_handles_missing_bullet_frames_gracefully():
     parsed = parse_bullets_markdown("- **x：** desc [L1-L2]\n")
-    md = build_markdown(parsed, bullet_frames={}, tp_frames={}, title="T")
+    md = build_markdown(parsed, bullet_frames={}, para_frames={}, title="T")
     assert "**x：**" in md
     assert "![" not in md
 

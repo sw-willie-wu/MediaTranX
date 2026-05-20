@@ -256,3 +256,133 @@ def test_pick_frame_timestamp_forwards_candidate_max_edge(tmp_path):
     )
     for call in detector.extract_frame.call_args_list:
         assert "max_edge" not in call.kwargs  # default → not forwarded
+
+
+# ── narrative-summary-redesign: VLM image-text gate ────────────────────
+def test_pick_returns_none_when_vlm_rejects_all(tmp_path):
+    """VLM 回 -1 表全部候選都不符 → pick_frame_timestamp 回 None。"""
+    detector = MagicMock()
+    detector.detect_in_window.return_value = [12.0, 15.0, 18.0]
+    detector.extract_frame = MagicMock()
+    vlm = MagicMock(return_value=-1)
+
+    result = pick_frame_timestamp(
+        detector=detector, vlm_callback=vlm, video_path=Path("x.mp4"),
+        window_start=10.0, window_end=20.0, context_text="不相符的文字",
+        temp_dir=tmp_path,
+    )
+    assert result is None
+    vlm.assert_called_once()
+
+
+def test_pick_uses_vlm_even_when_no_scenes(tmp_path):
+    """有 VLM 時，0 候選也走 VLM（中點當唯一候選）。回 0 → 接受中點。"""
+    detector = MagicMock()
+    detector.detect_in_window.return_value = []   # 0 candidates
+    detector.extract_frame = MagicMock()
+    vlm = MagicMock(return_value=0)
+
+    result = pick_frame_timestamp(
+        detector=detector, vlm_callback=vlm, video_path=Path("x.mp4"),
+        window_start=10.0, window_end=20.0, context_text="文字",
+        temp_dir=tmp_path,
+    )
+    assert result == 15.0                         # midpoint accepted
+    assert detector.extract_frame.call_count == 1  # 1 candidate frame extracted
+    vlm.assert_called_once()
+
+
+def test_pick_uses_vlm_even_when_no_scenes_can_reject(tmp_path):
+    """有 VLM、0 候選，VLM 回 -1 → 回 None。"""
+    detector = MagicMock()
+    detector.detect_in_window.return_value = []
+    detector.extract_frame = MagicMock()
+    vlm = MagicMock(return_value=-1)
+
+    result = pick_frame_timestamp(
+        detector=detector, vlm_callback=vlm, video_path=Path("x.mp4"),
+        window_start=10.0, window_end=20.0, context_text="文字",
+        temp_dir=tmp_path,
+    )
+    assert result is None
+
+
+def test_pick_vlm_negative_below_minus_one_treated_as_reject(tmp_path):
+    """VLM 回 < -1（如 -5）視為拒圖。"""
+    detector = MagicMock()
+    detector.detect_in_window.return_value = [12.0, 15.0]
+    detector.extract_frame = MagicMock()
+    vlm = MagicMock(return_value=-5)
+
+    result = pick_frame_timestamp(
+        detector=detector, vlm_callback=vlm, video_path=Path("x.mp4"),
+        window_start=10.0, window_end=20.0, context_text="文字",
+        temp_dir=tmp_path,
+    )
+    assert result is None
+
+
+def test_pick_vlm_skipped_when_temp_dir_missing(tmp_path):
+    """有 vlm_callback 但沒 temp_dir → VLM 把關靜默略過，走無-VLM 分支（一定回 float）。"""
+    detector = MagicMock()
+    detector.detect_in_window.return_value = [12.0, 15.0, 18.0]
+    vlm = MagicMock(return_value=-1)   # 即使會拒圖，沒 temp_dir 就不該被呼叫
+
+    result = pick_frame_timestamp(
+        detector=detector, vlm_callback=vlm, video_path=Path("x.mp4"),
+        window_start=10.0, window_end=20.0, context_text="文字",
+        temp_dir=None,
+    )
+    assert result == 15.0       # midpoint-nearest, no rejection possible
+    vlm.assert_not_called()
+
+
+# ── narrative-summary-redesign: _make_vlm_callback parsing ─────────────
+def _build_cb(chat_return: str):
+    """Build a real _make_vlm_callback closure over a fake chat service."""
+    from app.services.video.summary_service.service import VideoSummaryService
+    from unittest.mock import patch
+
+    class FakeChat:
+        def chat_with_images(self, **kw):
+            return chat_return
+
+    svc = VideoSummaryService.__new__(VideoSummaryService)
+    svc._chat_service = FakeChat()
+    # Full inference-config shape so calc_max_tokens inside the closure never
+    # KeyErrors regardless of which keys it reads.
+    cfg = {
+        "max_image_edge": 768, "temperature": 0.0, "top_k": 40, "top_p": 0.9,
+        "prompt_builder": "default", "thinking": False,
+        "max_tokens_strategy": "fixed", "max_tokens_ratio": 4,
+        "max_tokens_cap": 16, "n_ctx": 4096, "n_ctx_min": 2048,
+        "n_ctx_max": 8192, "vram_per_ctx_token": 0.04, "max_srt_batch": 0,
+    }
+    with patch(
+        "app.services.video.summary_service.service.get_inference_config",
+        lambda f, s, t: cfg,
+    ):
+        return svc._make_vlm_callback("qwen3vl", "8b")
+
+
+def test_vlm_callback_returns_minus_one_on_reject():
+    cb = _build_cb("-1")
+    assert cb("ctx", ["a.jpg", "b.jpg"]) == -1
+
+
+def test_vlm_callback_takes_last_number_token():
+    """Prompt 文字如「圖片 2 不符，答 -1」→ 取最後一個 token (-1)，不被前面的 2 搶。"""
+    cb = _build_cb("圖片 2 不符，答 -1")
+    assert cb("ctx", ["a.jpg", "b.jpg", "c.jpg"]) == -1
+
+
+def test_vlm_callback_plain_index_still_works():
+    cb = _build_cb("1")
+    assert cb("ctx", ["a.jpg", "b.jpg"]) == 1
+
+
+def test_vlm_callback_raises_on_no_digits():
+    import pytest
+    cb = _build_cb("no answer here")
+    with pytest.raises(ValueError, match="not a number"):
+        cb("ctx", ["a.jpg"])

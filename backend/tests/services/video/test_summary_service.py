@@ -156,10 +156,163 @@ def test_execute_produces_zip_with_md_and_frames(tmp_path):
 
     assert "output_file_id" in result
     assert result["bullet_count"] == 2
-    assert result["turning_point_count"] == 0
+    assert result["paragraph_count"] == 0
     assert progress_events[-1] == (1.0, "task.progress.summary_complete")
     zips = list(file_service.output_dir.glob("*_summary_*.zip"))
     assert len(zips) == 1
+
+
+def test_execute_narrative_mode_produces_paragraph_frames(tmp_path):
+    """narrative 模式：走段落取幀，產出 para_NNN.jpg，回傳 paragraph_count。"""
+    svc, file_service = _make_svc_with_mocks(tmp_path)
+    # narrative-mode LLM output: prose paragraphs each ending [L<a>-L<b>].
+    svc._chat_service.chat.return_value = (
+        "第一段敘事內容描述開頭。 [L1-L1]\n\n"
+        "第二段敘事內容描述後續。 [L2-L2]\n"
+    )
+
+    class FakeDetector:
+        def __init__(self, *a, **kw): pass
+        def detect_in_window(self, *a, **kw): return []
+        def detect_all(self, *a, **kw): return []
+        def extract_frame(self, input_path, output_path, timestamp, max_edge=None):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"fake-jpg")
+
+    fake_result = MagicMock(
+        segments=[
+            MagicMock(start=0.0, end=5.0, text="這是第一段測試"),
+            MagicMock(start=5.0, end=10.0, text="這是第二段內容"),
+        ],
+        language="zh",
+    )
+
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync",
+               return_value=fake_result), \
+         patch("app.services.video.summary_service.service.SceneDetector",
+               FakeDetector):
+        result = svc._execute(
+            params={
+                "file_id": "f1", "llm_model_family": "qwen3.5",
+                "llm_model_size": "9b", "language": "zh-TW",
+                "vlm_model_family": None, "vlm_model_size": None,
+                "summary_mode": "narrative",
+            },
+            progress_callback=lambda p, m: None,
+        )
+
+    assert "output_file_id" in result
+    assert result["paragraph_count"] == 2
+    assert result["bullet_count"] == 0
+    import zipfile
+    z = list(file_service.output_dir.glob("*_summary_*.zip"))[0]
+    with zipfile.ZipFile(z) as zf:
+        names = zf.namelist()
+    assert "summary.md" in names
+    jpgs = sorted(n for n in names if n.endswith(".jpg"))
+    assert jpgs == ["frames/para_000.jpg", "frames/para_001.jpg"]
+
+
+def test_execute_narrative_mode_cite_less_paragraph_skipped(tmp_path):
+    """A narrative paragraph with no [L] cite -> time_range None -> no image,
+    but it still counts in paragraph_count and the task completes."""
+    svc, file_service = _make_svc_with_mocks(tmp_path)
+    # Para 1 cites [L1-L1] (gets a frame); para 2 has no cite (no frame).
+    svc._chat_service.chat.return_value = (
+        "第一段有引用。 [L1-L1]\n\n"
+        "第二段沒有引用。\n"
+    )
+
+    class FakeDetector:
+        def __init__(self, *a, **kw): pass
+        def detect_in_window(self, *a, **kw): return []
+        def detect_all(self, *a, **kw): return []
+        def extract_frame(self, input_path, output_path, timestamp, max_edge=None):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"fake-jpg")
+
+    fake_result = MagicMock(
+        segments=[
+            MagicMock(start=0.0, end=5.0, text="這是第一段測試"),
+            MagicMock(start=5.0, end=10.0, text="這是第二段內容"),
+        ],
+        language="zh",
+    )
+
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync",
+               return_value=fake_result), \
+         patch("app.services.video.summary_service.service.SceneDetector",
+               FakeDetector):
+        result = svc._execute(
+            params={
+                "file_id": "f1", "llm_model_family": "qwen3.5",
+                "llm_model_size": "9b", "language": "zh-TW",
+                "vlm_model_family": None, "vlm_model_size": None,
+                "summary_mode": "narrative",
+            },
+            progress_callback=lambda p, m: None,
+        )
+
+    assert result["paragraph_count"] == 2   # both paragraphs in the report
+    import zipfile
+    z = list(file_service.output_dir.glob("*_summary_*.zip"))[0]
+    with zipfile.ZipFile(z) as zf:
+        jpgs = sorted(n for n in zf.namelist() if n.endswith(".jpg"))
+    assert jpgs == ["frames/para_000.jpg"]   # only the cited paragraph framed
+
+
+def test_execute_narrative_mode_vlm_rejects_skips_image(tmp_path):
+    """narrative + VLM 回 -1（拒圖）→ 該段無圖、任務正常完成、不計失敗。"""
+    svc, file_service = _make_svc_with_mocks(tmp_path)
+    svc._chat_service.chat.return_value = "唯一一段敘事。 [L1-L2]\n"
+    # VLM rejects every candidate.
+    svc._chat_service.chat_with_images = MagicMock(return_value="-1")
+
+    class FakeDetector:
+        def __init__(self, *a, **kw): pass
+        def detect_in_window(self, *a, **kw): return []
+        def detect_all(self, *a, **kw): return []
+        def extract_frame(self, input_path, output_path, timestamp, max_edge=None):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"fake-jpg")
+
+    cfg = {
+        "max_image_edge": 768, "temperature": 0.0, "top_k": 40, "top_p": 0.9,
+        "prompt_builder": "default", "thinking": False,
+        "max_tokens_strategy": "fixed", "max_tokens_ratio": 4,
+        "max_tokens_cap": 16, "n_ctx": 4096, "n_ctx_min": 2048,
+        "n_ctx_max": 8192, "vram_per_ctx_token": 0.04, "max_srt_batch": 0,
+    }
+    fake_result = MagicMock(
+        segments=[
+            MagicMock(start=0.0, end=5.0, text="一"),
+            MagicMock(start=5.0, end=10.0, text="二"),
+        ],
+        language="zh",
+    )
+
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync",
+               return_value=fake_result), \
+         patch("app.services.video.summary_service.service.SceneDetector",
+               FakeDetector), \
+         patch("app.services.video.summary_service.service.get_inference_config",
+               lambda f, s, t: cfg):
+        result = svc._execute(
+            params={
+                "file_id": "f1", "llm_model_family": "qwen3.5",
+                "llm_model_size": "9b", "language": "zh-TW",
+                "vlm_model_family": "qwen3vl", "vlm_model_size": "8b",
+                "summary_mode": "narrative",
+            },
+            progress_callback=lambda p, m: None,
+        )
+
+    assert result["paragraph_count"] == 1
+    import zipfile
+    z = list(file_service.output_dir.glob("*_summary_*.zip"))[0]
+    with zipfile.ZipFile(z) as zf:
+        jpgs = [n for n in zf.namelist() if n.endswith(".jpg")]
+    assert jpgs == []   # VLM rejected → no paragraph image
 
 
 # ── fix/video-summary-frame-ts-clamp: per-item resilience ──────────────
@@ -350,7 +503,7 @@ def test_execute_skips_bullet_with_unresolvable_cite(tmp_path):
     md = (
         "## 主題\n"
         "- **正常一：** 內容 [L1-L1]\n"
-        "- **壞掉：** 內容 [L2-L1]\n"      # inverted → resolve_bullet_windows → None
+        "- **壞掉：** 內容 [L2-L1]\n"      # inverted → resolve_line_windows → None
         "- **正常二：** 內容 [L2-L2]\n"
     )
     svc, fs = _svc_with_chat(tmp_path, md)
@@ -456,7 +609,7 @@ def test_candidate_frames_downscaled_final_frames_native(tmp_path):
     assert "output_file_id" in result
     cand = [c for c in SpyDetector.calls if c["name"].startswith("candidate_")]
     final = [c for c in SpyDetector.calls
-             if c["name"].startswith(("bullet_", "tp_"))]
+             if c["name"].startswith("bullet_")]
     assert cand, "expected candidate extractions (VLM branch must have run)"
     assert all(c["max_edge"] == 777 for c in cand), \
         f"candidate frames must carry family max_image_edge: {cand}"

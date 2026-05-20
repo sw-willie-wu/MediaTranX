@@ -40,7 +40,7 @@ class VideoSummaryRequest(BaseModel):
 
     summary_mode: str = Field(
         default="bullets",
-        description='Output mode: "bullets" (key-points + per-bullet frame) or "narrative" (prose summary + turning-point frames)',
+        description='Output mode: "bullets" (key-points + per-bullet frame) or "narrative" (flat prose paragraphs + per-paragraph frame)',
     )
 
 

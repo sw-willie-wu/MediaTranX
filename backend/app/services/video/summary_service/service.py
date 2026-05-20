@@ -28,12 +28,11 @@ from .parse import (
     chunk_entries_by_tokens,
     compute_bullet_target,
     even_indices,
-    format_transcript,
     format_transcript_numbered,
     merge_chunk_outputs,
     parse_bullets_markdown,
-    parse_summary_json,
-    resolve_bullet_windows,
+    parse_narrative_paragraphs,
+    resolve_line_windows,
 )
 from .markdown import build_markdown
 from app.workers.task_manager import TaskManager
@@ -41,6 +40,11 @@ from app.workers.task_manager import TaskManager
 logger = logging.getLogger(__name__)
 
 TASK_TYPE_VIDEO_SUMMARY = "video.summary"
+
+# Safety cap on how many narrative paragraphs get an inline frame. Narrative
+# mode frames every paragraph (no duration-scaled subsampling like bullets);
+# this only guards against a pathological LLM emitting hundreds of paragraphs.
+MAX_NARRATIVE_FRAMES = 50
 
 
 def _map_language_to_whisper(ui_language: str) -> Optional[str]:
@@ -257,7 +261,7 @@ class VideoSummaryService:
         chunk_results: list[SummaryChunkResult] = []
         # 1-based global transcript line number for the next chunk. Bullets mode
         # numbers transcript lines so the LLM cites [L<n>] ranges; the numbering
-        # must stay continuous across chunks for resolve_bullet_windows to map
+        # must stay continuous across chunks for resolve_line_windows to map
         # cites back onto the global `entries` list.
         line_offset = 1
         for i, chunk in enumerate(chunks):
@@ -267,15 +271,11 @@ class VideoSummaryService:
             )
             # Note: deliberately bypasses get_prompt_builder("summarize", ...) because this task
             # uses dedicated structured prompts (hierarchical-markdown for bullets mode,
-            # JSON for narrative mode) — see video_summary.py for the templates.
+            # flat prose paragraphs for narrative mode) — see prompts.py for the templates.
             output_lang = _resolve_output_language(language, result.language)
-            # Bullets mode: line-numbered transcript ([L<n>] text) so the LLM
-            # cites line numbers, not timestamps. Narrative mode keeps the
-            # seconds-format transcript (its prompt asks for float seconds).
-            if summary_mode == SUMMARY_MODE_NARRATIVE:
-                transcript = format_transcript(chunk)
-            else:
-                transcript = format_transcript_numbered(chunk, start_index=line_offset)
+            # Both modes feed a line-numbered transcript; the LLM cites
+            # [L<n>] ranges and the service resolves them to real timestamps.
+            transcript = format_transcript_numbered(chunk, start_index=line_offset)
             line_offset += len(chunk)
             prompt = build_summary_prompt(
                 transcript,
@@ -296,7 +296,7 @@ class VideoSummaryService:
             )
             try:
                 if summary_mode == SUMMARY_MODE_NARRATIVE:
-                    chunk_results.append(parse_summary_json(raw))
+                    chunk_results.append(parse_narrative_paragraphs(raw))
                 else:
                     chunk_results.append(parse_bullets_markdown(raw))
             except ValueError as e:
@@ -307,10 +307,12 @@ class VideoSummaryService:
 
         merged = merge_chunk_outputs(chunk_results)
 
-        # Resolve each bullet's cited transcript line range ([L<a>-L<b>]) to a
-        # real Whisper time window. `entries` is the full global list the line
-        # numbers index into. Unusable cites get time_range=None (skipped below).
-        resolve_bullet_windows(merged.bullet_items, entries)
+        # Resolve cited transcript line ranges ([L<a>-L<b>]) to real Whisper
+        # time windows. `entries` is the full global list the line numbers
+        # index into. Unusable cites get time_range=None (skipped below).
+        # Mode-agnostic: the inactive mode's list is empty → no-op.
+        resolve_line_windows(merged.bullet_items, entries)
+        resolve_line_windows(merged.narrative_paragraphs, entries)
 
         # Probe duration/fps once to clamp LLM-drifted frame timestamps.
         # Best-effort: the per-item try/except below is the actual guarantee
@@ -373,7 +375,7 @@ class VideoSummaryService:
                     f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
                 )
                 # Bullet whose line citation didn't resolve to a usable window
-                # (resolve_bullet_windows set time_range=None): deliberately skip
+                # (resolve_line_windows set time_range=None): deliberately skip
                 # — no inline image. This is NOT a failure, so it stays out of
                 # bullet_fail. progress_callback above already fired (keeps the
                 # cancel heartbeat / monotonic progress).
@@ -408,6 +410,8 @@ class VideoSummaryService:
                         scenes=global_scenes,
                         candidate_max_edge=cand_max_edge,
                     )
+                    if ts is None:
+                        continue  # VLM judged no candidate matches — no image
                     out = frames_dir / f"bullet_{orig_i:03d}.jpg"
                     detector.extract_frame(
                         input_path=video_path, output_path=out, timestamp=ts
@@ -422,21 +426,30 @@ class VideoSummaryService:
                     )
                     continue
 
-            # Step 5: turning-point frames (80% ~ 90%)
-            tp_frames: dict[int, str] = {}
-            tp_fail = 0
-            tp_sel = even_indices(len(merged.turning_points), bullet_cap)
-            for n_done, orig_i in enumerate(tp_sel):
-                tp = merged.turning_points[orig_i]
-                pct = 0.80 + 0.10 * (n_done / max(1, len(tp_sel)))
+            # Step 5: narrative paragraph frames (60% ~ <90%)
+            # Narrative mode frames EVERY paragraph (no bullet_cap subsampling);
+            # MAX_NARRATIVE_FRAMES is only a pathological-output safety cap.
+            # Empty in bullets mode (narrative_paragraphs == []) → loop no-ops.
+            para_frames: dict[int, str] = {}
+            para_fail = 0
+            para_sel = even_indices(
+                len(merged.narrative_paragraphs), MAX_NARRATIVE_FRAMES
+            )
+            for n_done, orig_i in enumerate(para_sel):
+                para = merged.narrative_paragraphs[orig_i]
+                pct = 0.60 + 0.30 * (n_done / max(1, len(para_sel)))
                 progress_callback(
                     pct,
-                    f"task.progress.summary_tp_frame|{n_done + 1}|{len(tp_sel)}",
+                    f"task.progress.summary_paragraph_frame|{n_done + 1}|{len(para_sel)}",
                 )
+                # Paragraph whose line citation didn't resolve to a usable
+                # window: skip (no image) — not a failure.
+                if para["time_range"] is None:
+                    continue
                 vlm_cb = (self._make_vlm_callback(
                     vlm_family, vlm_size, on_progress=progress_callback,
                     cancel_pct=pct,
-                    cancel_msg=f"task.progress.summary_tp_frame|{n_done + 1}|{len(tp_sel)}",
+                    cancel_msg=f"task.progress.summary_paragraph_frame|{n_done + 1}|{len(para_sel)}",
                 ) if vlm_family and vlm_size else None)
                 cand_max_edge = (
                     get_inference_config(
@@ -445,39 +458,41 @@ class VideoSummaryService:
                     if vlm_family and vlm_size else None
                 )
                 try:
-                    t = tp["time"]
+                    t_start, t_end = para["time_range"]
                     ts = pick_frame_timestamp(
                         detector=detector,
                         vlm_callback=vlm_cb,
                         video_path=video_path,
-                        window_start=max(0.0, t - 5.0),
-                        window_end=t + 5.0,
-                        context_text=tp["text"],
-                        temp_dir=work_dir / f"candidates_t{orig_i}",
+                        window_start=t_start,
+                        window_end=t_end,
+                        context_text=para["text"],
+                        temp_dir=work_dir / f"candidates_p{orig_i}",
                         duration=video_duration,
                         fps=video_fps,
                         scenes=global_scenes,
                         candidate_max_edge=cand_max_edge,
                     )
-                    out = frames_dir / f"tp_{orig_i:03d}.jpg"
+                    if ts is None:
+                        continue  # VLM judged no candidate matches — no image
+                    out = frames_dir / f"para_{orig_i:03d}.jpg"
                     detector.extract_frame(
                         input_path=video_path, output_path=out, timestamp=ts
                     )
-                    tp_frames[orig_i] = f"frames/tp_{orig_i:03d}.jpg"
+                    para_frames[orig_i] = f"frames/para_{orig_i:03d}.jpg"
                 except TaskCancelledError:
                     raise
                 except Exception as e:
-                    tp_fail += 1
+                    para_fail += 1
                     logger.warning(
-                        f"summary: turning-point {orig_i} frame failed ({e}); skipping image"
+                        f"summary: paragraph {orig_i} frame failed ({e}); skipping image"
                     )
                     continue
 
-            if bullet_fail or tp_fail:
+            if bullet_fail or para_fail:
                 logger.warning(
                     f"summary: frame extraction failed "
                     f"bullets={bullet_fail}/{len(merged.bullet_items)} "
-                    f"tp={tp_fail}/{len(merged.turning_points)} "
+                    f"paragraphs={para_fail}/{len(merged.narrative_paragraphs)} "
                     f"(report still produced without those inline images)"
                 )
 
@@ -486,7 +501,7 @@ class VideoSummaryService:
             md_text = build_markdown(
                 result=merged,
                 bullet_frames=bullet_frames,
-                tp_frames=tp_frames,
+                para_frames=para_frames,
                 title=stem,
                 language=language,
             )
@@ -514,7 +529,7 @@ class VideoSummaryService:
             "output_filename": output_info.filename,
             "output_size": output_info.file_size,
             "bullet_count": len(merged.bullet_items),
-            "turning_point_count": len(merged.turning_points),
+            "paragraph_count": len(merged.narrative_paragraphs),
         }
 
     def _make_vlm_callback(self, family: str, size: str, *,
@@ -537,7 +552,8 @@ class VideoSummaryService:
                 f"以下段落文字：\n{context_text}\n\n"
                 f"我提供 {len(frame_paths)} 張候選影格，請選出最能代表上述文字的一張。\n"
                 f"{indexed}\n\n"
-                f"只回答一個數字（0 到 {len(frame_paths) - 1}），不要多餘文字。"
+                f"若沒有任何一張與上述文字相符，回答 -1。\n"
+                f"只回答一個數字（-1 到 {len(frame_paths) - 1}），不要多餘文字。"
             )
             max_tokens = calc_max_tokens(cfg, n_ctx=cfg["n_ctx"], input_len=estimate_tokens(prompt))
             raw = self._chat_service.chat_with_images(
@@ -552,9 +568,12 @@ class VideoSummaryService:
                 cancel_msg=cancel_msg,
             )
             import re
-            m = re.search(r"\d+", raw)
-            if not m:
+            # Take the LAST integer token: a reasoning model puts its final
+            # answer last. The numeric-only Chinese prompt makes decimal /
+            # hyphenated-word false matches unlikely.
+            nums = re.findall(r"-?\d+", raw)
+            if not nums:
                 raise ValueError(f"VLM response not a number: {raw!r}")
-            return int(m.group())
+            return int(nums[-1])
 
         return _cb

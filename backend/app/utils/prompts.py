@@ -366,27 +366,20 @@ Rules:
 7. {language_directive}
 """
 
-_PROMPT_NARRATIVE = """Below is a subtitle transcript in format [start_sec-end_sec] text:
+_PROMPT_NARRATIVE = """Below is a subtitle transcript. Every line is prefixed with a line number in the form [L<n>]:
 
 {transcript}
 
-Analyze it and output a **JSON object** (no extra text, no markdown fence) with this structure:
-
-{{
-  "narrative": {{
-    "summary": "narrative summary (~200 words for English, ~200 characters for CJK)",
-    "turning_points": [
-      {{"time": sec(float), "text": "one-sentence description of this highlight/turn"}}
-    ]
-  }}
-}}
+Write a **flowing narrative summary** of the transcript as a sequence of prose paragraphs in chronological order.
 
 Rules:
-1. summary: a coherent, flowing narrative — not a bullet list
-2. 2~5 turning_points marking the most pivotal moments in the transcript
-3. All timestamps must fall within the transcript range
-4. Output JSON only, no other text
-5. {language_directive}
+1. Divide the transcript into a handful of coherent paragraphs (aim for 3~6), each covering one continuous topic or scene; do NOT micro-split a continuous topic.
+2. Each paragraph is plain prose — a few connected sentences. Do NOT use bullet points, headings, or bold labels.
+3. Every paragraph MUST end with a line-number citation `[L<first>-L<last>]`, where `<first>` and `<last>` are the line numbers of the FIRST and LAST transcript lines that paragraph covers. Copy the line numbers exactly as shown in the transcript (e.g. `[L12-L48]`). Do NOT write timestamps, do NOT write mm:ss, do NOT compute seconds — cite only line numbers.
+4. Separate paragraphs with a blank line.
+5. Every cited line number must be a line number that actually appears in the transcript above.
+6. Output prose only — no JSON, no code fences, no Markdown headings, no extra text.
+7. {language_directive}
 """
 
 
@@ -397,20 +390,18 @@ def build_summary_prompt(
 ) -> str:
     """Build a video-summary prompt for the given mode.
 
-    transcript: pre-formatted transcript lines (use video_summary.format_transcript).
-    summary_mode: "bullets" (hierarchical markdown) or "narrative" (JSON).
+    transcript: pre-formatted transcript lines (use format_transcript_numbered).
+    summary_mode: "bullets" (hierarchical markdown) or "narrative" (prose paragraphs).
     output_language: ISO-ish code (e.g. "zh-TW", "en", "ja"); None -> match transcript.
     """
     if output_language:
         name = LANG_NAMES_EN.get(output_language, output_language)
         directive = (
-            f'Write all natural-language fields ("text" and "summary") in '
-            f'{name} (matching the transcript language).'
+            f'Write the summary in {name} (matching the transcript language).'
         )
     else:
         directive = (
-            'Write all natural-language fields ("text" and "summary") in the '
-            'same language as the transcript above.'
+            'Write the summary in the same language as the transcript above.'
         )
     tmpl = _PROMPT_NARRATIVE if summary_mode == SUMMARY_MODE_NARRATIVE else _PROMPT_BULLETS
     return tmpl.format(transcript=transcript, language_directive=directive)
