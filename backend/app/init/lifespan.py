@@ -87,7 +87,6 @@ def _persist_terminal_history(history, file_service, task) -> None:
         status=task.status.value,
         created_at=task.created_at,
         completed_at=task.updated_at,
-        label=task.label,
         file_name=file_service.get_file_name(task.file_id),
         error=task.error,
         error_code=task.error_code,

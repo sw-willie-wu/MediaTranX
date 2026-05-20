@@ -82,20 +82,6 @@ class TaskManager:
             except Exception as e:
                 logger.warning(f"on_terminal callback error: {e}")
 
-    def register_task(self, task_id: str, task_type: str) -> None:
-        """
-        Manually register an externally managed task (for asyncio-based long tasks).
-        """
-        task = TaskData(
-            task_id=task_id,
-            task_type=task_type,
-            status=TaskStatus.PROCESSING,
-            progress=0.0,
-        )
-        with self._lock:
-            self._tasks[task_id] = task
-        logger.info(f"Task registered (external): {task_id} ({task_type})")
-
     def is_cancelled(self, task_id: str) -> bool:
         """Check whether a task has been requested to cancel."""
         with self._lock:
@@ -137,7 +123,6 @@ class TaskManager:
             task_type=task_type,
             status=TaskStatus.PENDING,
             progress=0.0,
-            label=params.get("label"),
             file_id=params.get("file_id"),
         )
         with self._lock:
