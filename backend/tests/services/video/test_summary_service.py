@@ -666,3 +666,33 @@ def test_execute_emits_detecting_scenes_progress_before_frames(tmp_path):
     assert frame_evts, "expected at least one bullet-frame progress event"
     # ordering only — do NOT assert the literal pct value
     assert detect_evts[0] < frame_evts[0]
+
+
+# ── perf/detect-all-ffmpeg-scene: progress mapping ─────────────────────
+from app.services.video.summary_service.service import _map_detect_progress
+
+
+class TestMapDetectProgress:
+    def test_fraction_zero_maps_to_detect_pct(self):
+        assert _map_detect_progress(0.0, detect_pct=0.58) == 0.58
+
+    def test_fraction_one_clamps_below_060(self):
+        # detect_pct 0.58: mapped would be 0.60, clamped to 0.60 - EPS.
+        result = _map_detect_progress(1.0, detect_pct=0.58)
+        assert 0.58 < result < 0.60
+
+    def test_high_detect_pct_never_regresses(self):
+        # detect_pct already above 0.60 - EPS: result must not drop below it
+        # (the L357 leading event already emitted detect_pct).
+        dp = 0.599
+        for f in (0.0, 0.5, 1.0):
+            assert _map_detect_progress(f, detect_pct=dp) >= dp
+
+    def test_monotonic_non_decreasing(self):
+        dp = 0.58
+        vals = [_map_detect_progress(f / 10, detect_pct=dp) for f in range(11)]
+        assert all(b >= a for a, b in zip(vals, vals[1:]))
+
+    def test_never_reaches_060(self):
+        for dp in (0.58, 0.59, 0.5999):
+            assert _map_detect_progress(1.0, detect_pct=dp) < 0.60
