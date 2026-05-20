@@ -1127,6 +1127,7 @@ export default {
       'video.cut': 'Video · Cut',
       'video.extract_audio': 'Video · Extract Audio',
       'video.subtitle_generate': 'Video · Subtitles',
+      'video.summary': 'Video · Summary',
       'audio.transcode': 'Audio · Transcode',
       'audio.cut': 'Audio · Cut',
       'audio.volume': 'Audio · Volume',
