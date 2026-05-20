@@ -33,7 +33,7 @@ from .parse import (
     merge_chunk_outputs,
     parse_bullets_markdown,
     parse_summary_json,
-    resolve_bullet_windows,
+    resolve_line_windows,
 )
 from .markdown import build_markdown
 from app.workers.task_manager import TaskManager
@@ -257,7 +257,7 @@ class VideoSummaryService:
         chunk_results: list[SummaryChunkResult] = []
         # 1-based global transcript line number for the next chunk. Bullets mode
         # numbers transcript lines so the LLM cites [L<n>] ranges; the numbering
-        # must stay continuous across chunks for resolve_bullet_windows to map
+        # must stay continuous across chunks for resolve_line_windows to map
         # cites back onto the global `entries` list.
         line_offset = 1
         for i, chunk in enumerate(chunks):
@@ -310,7 +310,7 @@ class VideoSummaryService:
         # Resolve each bullet's cited transcript line range ([L<a>-L<b>]) to a
         # real Whisper time window. `entries` is the full global list the line
         # numbers index into. Unusable cites get time_range=None (skipped below).
-        resolve_bullet_windows(merged.bullet_items, entries)
+        resolve_line_windows(merged.bullet_items, entries)
 
         # Probe duration/fps once to clamp LLM-drifted frame timestamps.
         # Best-effort: the per-item try/except below is the actual guarantee
@@ -373,7 +373,7 @@ class VideoSummaryService:
                     f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
                 )
                 # Bullet whose line citation didn't resolve to a usable window
-                # (resolve_bullet_windows set time_range=None): deliberately skip
+                # (resolve_line_windows set time_range=None): deliberately skip
                 # — no inline image. This is NOT a failure, so it stays out of
                 # bullet_fail. progress_callback above already fired (keeps the
                 # cancel heartbeat / monotonic progress).

@@ -75,7 +75,7 @@ from app.services.video.summary_service.parse import (
     parse_summary_json,
     parse_bullets_markdown,
     merge_chunk_outputs,
-    resolve_bullet_windows,
+    resolve_line_windows,
     SummaryChunkResult,
 )
 from app.services.video.summary_service.markdown import build_markdown
@@ -201,59 +201,59 @@ def test_parse_bullets_markdown_line_index_points_to_correct_line():
     assert md_lines[result.bullet_items[1]["line_index"]].startswith("- **b")
 
 
-# ---- resolve_bullet_windows (line range -> real Whisper time window) ----
+# ---- resolve_line_windows (line range -> real Whisper time window) ----
 
 def _entries(n):
     return [SubtitleEntry(start=float(i), end=float(i) + 0.5, text=f"t{i}")
             for i in range(n)]
 
 
-def test_resolve_bullet_windows_basic():
+def test_resolve_line_windows_basic():
     entries = _entries(6)
     items = [{"line_index": 0, "line_range": (2, 5)}]
-    resolve_bullet_windows(items, entries)
+    resolve_line_windows(items, entries)
     # 1-based (2,5) -> 0-based idx 1..4
     assert items[0]["time_range"] == (entries[1].start, entries[4].end)
 
 
-def test_resolve_bullet_windows_single_line():
+def test_resolve_line_windows_single_line():
     entries = _entries(6)
     items = [{"line_index": 0, "line_range": (3, 3)}]
-    resolve_bullet_windows(items, entries)
+    resolve_line_windows(items, entries)
     assert items[0]["time_range"] == (entries[2].start, entries[2].end)
 
 
-def test_resolve_bullet_windows_clamps_out_of_range():
+def test_resolve_line_windows_clamps_out_of_range():
     entries = _entries(4)
     items = [{"line_index": 0, "line_range": (0, 999)}]
-    resolve_bullet_windows(items, entries)
+    resolve_line_windows(items, entries)
     # 0 -> clamp to 1 -> idx0 ; 999 -> clamp to 4 -> idx3
     assert items[0]["time_range"] == (entries[0].start, entries[3].end)
 
 
-def test_resolve_bullet_windows_inverted_is_dropped():
+def test_resolve_line_windows_inverted_is_dropped():
     entries = _entries(6)
     # (8,3): clamp -> (6,3) -> idx (5,2) still inverted -> None
     items = [{"line_index": 0, "line_range": (8, 3)}]
-    resolve_bullet_windows(items, entries)
+    resolve_line_windows(items, entries)
     assert items[0]["time_range"] is None
 
 
-def test_resolve_bullet_windows_single_entry():
+def test_resolve_line_windows_single_entry():
     entries = [SubtitleEntry(start=5.0, end=9.0, text="only")]
     items = [{"line_index": 0, "line_range": (3, 7)}]  # both clamp to 1 -> idx0
-    resolve_bullet_windows(items, entries)
+    resolve_line_windows(items, entries)
     assert items[0]["time_range"] == (5.0, 9.0)
 
 
-def test_resolve_bullet_windows_empty_entries():
+def test_resolve_line_windows_empty_entries():
     items = [{"line_index": 0, "line_range": (1, 2)}]
-    resolve_bullet_windows(items, [])
+    resolve_line_windows(items, [])
     assert items[0]["time_range"] is None
 
 
-def test_resolve_bullet_windows_empty_items_no_crash():
-    resolve_bullet_windows([], _entries(3))  # must not raise
+def test_resolve_line_windows_empty_items_no_crash():
+    resolve_line_windows([], _entries(3))  # must not raise
 
 
 # ---- narrative-mode JSON parser ----

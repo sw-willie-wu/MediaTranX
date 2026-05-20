@@ -98,7 +98,7 @@ def format_transcript_numbered(entries: list[SubtitleEntry], start_index: int = 
     continuous across chunks (callers pass ``start_index`` = the running
     offset). Unlike :func:`format_transcript` this carries no timestamps — the
     bullets-mode LLM cites these line numbers and the service resolves them
-    back to real Whisper timestamps (see :func:`resolve_bullet_windows`).
+    back to real Whisper timestamps (see :func:`resolve_line_windows`).
     """
     return "\n".join(
         f"[L{start_index + i}] {e.text}" for i, e in enumerate(entries)
@@ -114,7 +114,7 @@ class SummaryChunkResult:
     #   parse_bullets_markdown -> {"line_index": int (0-based pos in bullets_markdown),
     #                              "line_range": (a, b) — 1-based global transcript lines}
     #   merge_chunk_outputs    -> "line_index" offset; "line_range" passed through unchanged
-    #   resolve_bullet_windows -> adds "time_range": (start_sec, end_sec) | None
+    #   resolve_line_windows   -> adds "time_range": (start_sec, end_sec) | None
     # Narrative mode (existing)
     narrative_summary: str = ""
     turning_points: list[dict] = field(default_factory=list)
@@ -202,11 +202,14 @@ def parse_bullets_markdown(raw: str) -> SummaryChunkResult:
     )
 
 
-def resolve_bullet_windows(items: list[dict], entries: list[SubtitleEntry]) -> None:
-    """Resolve each bullet_item's cited line range to a real time window.
+def resolve_line_windows(items: list[dict], entries: list[SubtitleEntry]) -> None:
+    """Resolve each item's cited line range to a real time window.
 
     Sets ``item["time_range"]`` in place to ``(start_sec, end_sec)`` taken from
     the cited Whisper ``entries``, or ``None`` when the citation is unusable.
+
+    ``items`` are ``bullet_items`` or ``narrative_paragraphs``, both carrying
+    ``line_range``.
 
     ``items`` carry ``line_range = (a, b)`` — 1-based global transcript line
     numbers. ``entries`` MUST be the full global list those line numbers index

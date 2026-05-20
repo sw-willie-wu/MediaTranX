@@ -350,7 +350,7 @@ def test_execute_skips_bullet_with_unresolvable_cite(tmp_path):
     md = (
         "## 主題\n"
         "- **正常一：** 內容 [L1-L1]\n"
-        "- **壞掉：** 內容 [L2-L1]\n"      # inverted → resolve_bullet_windows → None
+        "- **壞掉：** 內容 [L2-L1]\n"      # inverted → resolve_line_windows → None
         "- **正常二：** 內容 [L2-L2]\n"
     )
     svc, fs = _svc_with_chat(tmp_path, md)
