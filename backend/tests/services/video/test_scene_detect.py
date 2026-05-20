@@ -46,35 +46,53 @@ def test_extract_frame_invokes_ffmpeg(tmp_path):
     )
 
 
-# ── perf/video-summary-bullet-cap-scene-once: detect_all ───────────────
-def test_detect_all_one_pass_no_window_kwargs():
-    detector = SceneDetector(ffmpeg=MagicMock())
-    fake = [
-        (MagicMock(get_seconds=lambda: 5.0), MagicMock(get_seconds=lambda: 9.0)),
-        (MagicMock(get_seconds=lambda: 9.0), MagicMock(get_seconds=lambda: 20.0)),
-    ]
-    with patch("scenedetect.detect", return_value=fake) as m:
-        result = detector.detect_all(Path("dummy.mp4"))
-    assert m.called
-    _, kwargs = m.call_args
-    assert "start_time" not in kwargs and "end_time" not in kwargs
-    assert result == [5.0, 9.0]
+# ── perf/detect-all-ffmpeg-scene: detect_all delegates to FFmpeg ───────
+def test_detect_all_delegates_to_ffmpeg():
+    mock_ffmpeg = MagicMock()
+    mock_ffmpeg.detect_scenes_sync.return_value = [5.0, 9.0, 20.0]
+    detector = SceneDetector(ffmpeg=mock_ffmpeg)
+    result = detector.detect_all(Path("dummy.mp4"))
+    assert result == [5.0, 9.0, 20.0]
+    mock_ffmpeg.detect_scenes_sync.assert_called_once()
 
 
 def test_detect_all_is_cached():
-    detector = SceneDetector(ffmpeg=MagicMock())
-    fake = [(MagicMock(get_seconds=lambda: 1.0), MagicMock(get_seconds=lambda: 2.0))]
-    with patch("scenedetect.detect", return_value=fake) as m:
-        a = detector.detect_all(Path("dummy.mp4"))
-        b = detector.detect_all(Path("dummy.mp4"))
+    mock_ffmpeg = MagicMock()
+    mock_ffmpeg.detect_scenes_sync.return_value = [1.0]
+    detector = SceneDetector(ffmpeg=mock_ffmpeg)
+    a = detector.detect_all(Path("dummy.mp4"))
+    b = detector.detect_all(Path("dummy.mp4"))
     assert a == b == [1.0]
-    assert m.call_count == 1  # second call served from cache
+    assert mock_ffmpeg.detect_scenes_sync.call_count == 1  # 2nd call cached
 
 
 def test_detect_all_returns_empty_on_error():
-    detector = SceneDetector(ffmpeg=MagicMock())
-    with patch("scenedetect.detect", side_effect=RuntimeError("bad")):
-        assert detector.detect_all(Path("dummy.mp4")) == []
+    mock_ffmpeg = MagicMock()
+    mock_ffmpeg.detect_scenes_sync.side_effect = RuntimeError("bad")
+    detector = SceneDetector(ffmpeg=mock_ffmpeg)
+    assert detector.detect_all(Path("dummy.mp4")) == []
+
+
+def test_detect_all_reraises_cancellation():
+    from app.handler.exceptions import TaskCancelledError
+    mock_ffmpeg = MagicMock()
+    mock_ffmpeg.detect_scenes_sync.side_effect = TaskCancelledError("cancel")
+    detector = SceneDetector(ffmpeg=mock_ffmpeg)
+    with pytest.raises(TaskCancelledError):
+        detector.detect_all(Path("dummy.mp4"))
+
+
+def test_detect_all_forwards_on_progress():
+    mock_ffmpeg = MagicMock()
+    mock_ffmpeg.detect_scenes_sync.return_value = []
+    detector = SceneDetector(ffmpeg=mock_ffmpeg)
+
+    def cb(_frac):
+        pass
+
+    detector.detect_all(Path("dummy.mp4"), on_progress=cb)
+    _, kwargs = mock_ffmpeg.detect_scenes_sync.call_args
+    assert kwargs["on_progress"] is cb
 
 
 def test_extract_frame_forwards_max_edge_when_set(tmp_path):
