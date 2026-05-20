@@ -102,3 +102,20 @@ async def test_history_policy_downgrades_on_multi_output(tm, fs, caplog):
     assert fs.get_file("a").metadata["show_in_results"] is True
     assert fs.get_file("b").metadata["show_in_results"] is True
     assert "downgrade" in caplog.text.lower() or "results" in caplog.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_submit_captures_file_id_on_taskdata(tm):
+    """submit() should copy params['file_id'] onto TaskData for response-time
+    file-name resolution."""
+    tm.register_handler("audio.transcribe", lambda params, cb: {}, output_policy="history")
+    task_id = await tm.submit("audio.transcribe", {"file_id": "in-42"})
+    assert tm.get_task(task_id).file_id == "in-42"
+
+
+@pytest.mark.asyncio
+async def test_submit_without_file_id_leaves_taskdata_file_id_none(tm):
+    """A task whose params carry no file_id keeps TaskData.file_id == None."""
+    tm.register_handler("llm.chat", lambda params, cb: {}, output_policy="history")
+    task_id = await tm.submit("llm.chat", {"prompt": "hi"})
+    assert tm.get_task(task_id).file_id is None

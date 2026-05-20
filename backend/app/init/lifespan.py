@@ -74,6 +74,27 @@ def _warmup_domain_services(container) -> None:
     LOGGER.info(f"Domain services warmed up in background ({elapsed:.1f}s)")
 
 
+def _persist_terminal_history(history, file_service, task) -> None:
+    """Persist a terminated task to history, resolving its input file name.
+
+    Module-level (not a lifespan closure) so it is unit-testable. Does NOT
+    swallow exceptions — the ``_on_terminal`` caller wraps it in try/except.
+    """
+    result = task.result if isinstance(task.result, dict) else None
+    history.save(
+        task_id=task.task_id,
+        task_type=task.task_type,
+        status=task.status.value,
+        created_at=task.created_at,
+        completed_at=task.updated_at,
+        label=task.label,
+        file_name=file_service.get_file_name(task.file_id),
+        error=task.error,
+        error_code=task.error_code,
+        result=result,
+    )
+
+
 def build_lifespan():
     """Build a lifespan context manager for the FastAPI app."""
 
@@ -86,21 +107,11 @@ def build_lifespan():
         container = get_container()
         history = container.task_history()
         tm = container.task_manager()
+        file_service = container.file_service()
 
         def _on_terminal(task):
             try:
-                result = task.result if isinstance(task.result, dict) else None
-                history.save(
-                    task_id=task.task_id,
-                    task_type=task.task_type,
-                    status=task.status.value,
-                    created_at=task.created_at,
-                    completed_at=task.updated_at,
-                    label=task.label,
-                    error=task.error,
-                    error_code=task.error_code,
-                    result=result,
-                )
+                _persist_terminal_history(history, file_service, task)
             except Exception as e:
                 LOGGER.warning(f"Failed to save task history: {e}")
 

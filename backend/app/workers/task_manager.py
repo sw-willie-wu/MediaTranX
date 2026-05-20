@@ -138,6 +138,7 @@ class TaskManager:
             status=TaskStatus.PENDING,
             progress=0.0,
             label=params.get("label"),
+            file_id=params.get("file_id"),
         )
         with self._lock:
             self._tasks[task_id] = task
