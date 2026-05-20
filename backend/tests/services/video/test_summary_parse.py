@@ -74,6 +74,7 @@ from app.services.video.summary_service.parse import (
     format_transcript_numbered,
     parse_summary_json,
     parse_bullets_markdown,
+    parse_narrative_paragraphs,
     merge_chunk_outputs,
     resolve_line_windows,
     SummaryChunkResult,
@@ -256,6 +257,81 @@ def test_resolve_line_windows_empty_items_no_crash():
     resolve_line_windows([], _entries(3))  # must not raise
 
 
+def test_resolve_line_windows_none_line_range_sets_none():
+    """A cite-less paragraph (line_range=None) -> time_range=None, no crash."""
+    entries = _entries(6)
+    items = [{"line_range": None}]
+    resolve_line_windows(items, entries)
+    assert items[0]["time_range"] is None
+
+
+# ---- narrative-mode paragraph parser ----
+
+def test_parse_narrative_paragraphs_basic():
+    raw = (
+        "第一段敘事內容，連貫描述開頭。 [L1-L8]\n\n"
+        "第二段敘事內容，描述中段發展。 [L9-L20]\n"
+    )
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 2
+    p0, p1 = result.narrative_paragraphs
+    assert p0["text"] == "第一段敘事內容，連貫描述開頭。"
+    assert p0["line_range"] == (1, 8)
+    assert p0["time_range"] is None          # filled later by resolve_line_windows
+    assert p1["line_range"] == (9, 20)
+
+
+def test_parse_narrative_paragraphs_multiline_block():
+    """段落本身可跨多行；cite 在段落區塊末端。"""
+    raw = "這段有兩行。\n第二行接續。 [L3-L7]"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 1
+    assert result.narrative_paragraphs[0]["text"] == "這段有兩行。\n第二行接續。"
+    assert result.narrative_paragraphs[0]["line_range"] == (3, 7)
+
+
+def test_parse_narrative_paragraphs_keeps_block_without_cite():
+    """無 cite 的段落仍保留文字，line_range=None（後續無圖）。"""
+    raw = "有引用的段落。 [L1-L4]\n\n沒有引用的段落。"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 2
+    assert result.narrative_paragraphs[1]["text"] == "沒有引用的段落。"
+    assert result.narrative_paragraphs[1]["line_range"] is None
+
+
+def test_parse_narrative_paragraphs_strips_code_fence():
+    raw = "```\n敘事段落。 [L1-L2]\n```"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 1
+    p = result.narrative_paragraphs[0]
+    assert p["text"] == "敘事段落。"
+    assert p["line_range"] == (1, 2)
+    assert "```" not in p["text"]
+
+
+def test_parse_narrative_paragraphs_empty_raises():
+    import pytest
+    with pytest.raises(ValueError):
+        parse_narrative_paragraphs("   \n\n  ")
+
+
+def test_parse_narrative_paragraphs_cite_only_block_dropped():
+    """A block that is only a cite tag has no prose -> dropped."""
+    raw = "[L1-L5]\n\n正常段落。 [L6-L10]"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 1
+    assert result.narrative_paragraphs[0]["line_range"] == (6, 10)
+
+
+def test_parse_narrative_paragraphs_does_not_strip_mid_block_bracket():
+    """段落中間合法出現的 [L..] 不該被剝；只剝段落末端的 cite。"""
+    raw = "提到 [L5-L9] 這個區段的內容很重要。 [L1-L20]"
+    result = parse_narrative_paragraphs(raw)
+    assert len(result.narrative_paragraphs) == 1
+    assert result.narrative_paragraphs[0]["line_range"] == (1, 20)
+    assert "[L5-L9]" in result.narrative_paragraphs[0]["text"]
+
+
 # ---- narrative-mode JSON parser ----
 
 def test_parse_summary_json_strips_code_fence():
@@ -303,6 +379,18 @@ def test_merge_bullets_offsets_line_index_across_chunks():
     # line_range is a global transcript cite — NOT offset by merge
     assert merged.bullet_items[0]["line_range"] == (1, 5)
     assert merged.bullet_items[1]["line_range"] == (6, 9)
+
+
+def test_merge_narrative_paragraphs_concatenated():
+    c1 = SummaryChunkResult(narrative_paragraphs=[
+        {"text": "段一", "line_range": (1, 5), "time_range": None},
+    ])
+    c2 = SummaryChunkResult(narrative_paragraphs=[
+        {"text": "段二", "line_range": (6, 9), "time_range": None},
+    ])
+    merged = merge_chunk_outputs([c1, c2])
+    assert [p["text"] for p in merged.narrative_paragraphs] == ["段一", "段二"]
+    assert merged.narrative_paragraphs[1]["line_range"] == (6, 9)
 
 
 def test_merge_narrative_concats_summaries_and_tps():
