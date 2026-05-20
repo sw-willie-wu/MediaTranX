@@ -3,7 +3,7 @@
  */
 import { reactive } from 'vue'
 
-export type ToastType = 'info' | 'success' | 'error'
+export type ToastType = 'info' | 'success' | 'error' | 'warning'
 
 export interface ToastAction {
   label: string

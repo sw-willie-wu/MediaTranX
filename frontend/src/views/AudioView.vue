@@ -475,6 +475,7 @@ function registerTitlebar() {
         } else {
           await editor.saveToApi(fid)
         }
+        if (!fid) return
         const stem = currentFileName.value.replace(/\.[^.]+$/, '') || 'Untitled'
         downloadFile(fid, `${stem}.mid`, sourceDir.value)
       } else {
