@@ -187,6 +187,17 @@ class FileService:
         for the raise-on-missing path)."""
         return self._files.get(file_id)
 
+    def get_file_name(self, file_id: Optional[str]) -> Optional[str]:
+        """Resolve a file_id to its original filename, or None.
+
+        Shared resolve helper for task responses / history persistence:
+        a ``None`` file_id or an unregistered file both yield ``None`` (no raise).
+        """
+        if not file_id:
+            return None
+        fd = self.get_file(file_id)
+        return fd.original_filename if fd else None
+
     def list_files(self) -> list[FileData]:
         """Return all registered files (avoids route-layer access to _files dict)."""
         return list(self._files.values())

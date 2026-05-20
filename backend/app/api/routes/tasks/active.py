@@ -14,6 +14,7 @@ from app.schemas.task import TaskData, TaskStatus
 
 if TYPE_CHECKING:
     from app.workers.task_manager import TaskManager
+    from app.services.files.file_service import FileService
 
 
 def _serialize_dt(v: datetime) -> str:
@@ -30,6 +31,8 @@ class TaskResponse(BaseModel):
     result: Optional[Any] = None
     error: Optional[str] = None
     error_code: Optional[str] = None
+    file_id: Optional[str] = None
+    file_name: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -37,7 +40,12 @@ class TaskResponse(BaseModel):
     _serialize_updated_at = field_serializer("updated_at")(_serialize_dt)
 
     @classmethod
-    def from_task_data(cls, t: TaskData) -> "TaskResponse":
+    def from_task_data(cls, t: TaskData, file_service: Optional["FileService"] = None) -> "TaskResponse":
+        """Build a response from internal task state.
+
+        ``file_service`` (optional) resolves ``t.file_id`` to a human-readable
+        ``file_name``; omitted -> ``file_name`` stays None.
+        """
         return cls(
             task_id=t.task_id,
             task_type=t.task_type,
@@ -47,6 +55,8 @@ class TaskResponse(BaseModel):
             result=t.result,
             error=t.error,
             error_code=getattr(t, 'error_code', None),
+            file_id=t.file_id,
+            file_name=file_service.get_file_name(t.file_id) if file_service else None,
             created_at=t.created_at,
             updated_at=t.updated_at,
         )
@@ -58,18 +68,22 @@ router = APIRouter()
 @inject
 async def list_tasks(
     task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
+    file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """List all tasks."""
-    return [TaskResponse.from_task_data(t) for t in task_manager.get_all_tasks()]
+    return [TaskResponse.from_task_data(t, file_service)
+            for t in task_manager.get_all_tasks()]
 
 
 @router.get("/active", response_model=List[TaskResponse])
 @inject
 async def list_active_tasks(
     task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
+    file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """List active (in-progress) tasks."""
-    return [TaskResponse.from_task_data(t) for t in task_manager.get_active_tasks()]
+    return [TaskResponse.from_task_data(t, file_service)
+            for t in task_manager.get_active_tasks()]
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
@@ -77,9 +91,10 @@ async def list_active_tasks(
 async def get_task(
     task_id: str,
     task_manager: TaskManager = Depends(Provide[AppContainer.task_manager]),
+    file_service: FileService = Depends(Provide[AppContainer.file_service]),
 ):
     """Get task status."""
-    return TaskResponse.from_task_data(task_manager.require_task(task_id))
+    return TaskResponse.from_task_data(task_manager.require_task(task_id), file_service)
 
 
 @router.post("/{task_id}/cancel")
