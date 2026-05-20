@@ -537,7 +537,8 @@ class VideoSummaryService:
                 f"以下段落文字：\n{context_text}\n\n"
                 f"我提供 {len(frame_paths)} 張候選影格，請選出最能代表上述文字的一張。\n"
                 f"{indexed}\n\n"
-                f"只回答一個數字（0 到 {len(frame_paths) - 1}），不要多餘文字。"
+                f"若沒有任何一張與上述文字相符，回答 -1。\n"
+                f"只回答一個數字（-1 到 {len(frame_paths) - 1}），不要多餘文字。"
             )
             max_tokens = calc_max_tokens(cfg, n_ctx=cfg["n_ctx"], input_len=estimate_tokens(prompt))
             raw = self._chat_service.chat_with_images(
@@ -552,9 +553,12 @@ class VideoSummaryService:
                 cancel_msg=cancel_msg,
             )
             import re
-            m = re.search(r"\d+", raw)
-            if not m:
+            # Take the LAST integer token: a reasoning model puts its final
+            # answer last. The numeric-only Chinese prompt makes decimal /
+            # hyphenated-word false matches unlikely.
+            nums = re.findall(r"-?\d+", raw)
+            if not nums:
                 raise ValueError(f"VLM response not a number: {raw!r}")
-            return int(m.group())
+            return int(nums[-1])
 
         return _cb

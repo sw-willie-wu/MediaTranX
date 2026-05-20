@@ -335,3 +335,54 @@ def test_pick_vlm_skipped_when_temp_dir_missing(tmp_path):
     )
     assert result == 15.0       # midpoint-nearest, no rejection possible
     vlm.assert_not_called()
+
+
+# ── narrative-summary-redesign: _make_vlm_callback parsing ─────────────
+def _build_cb(chat_return: str):
+    """Build a real _make_vlm_callback closure over a fake chat service."""
+    from app.services.video.summary_service.service import VideoSummaryService
+    from unittest.mock import patch
+
+    class FakeChat:
+        def chat_with_images(self, **kw):
+            return chat_return
+
+    svc = VideoSummaryService.__new__(VideoSummaryService)
+    svc._chat_service = FakeChat()
+    # Full inference-config shape so calc_max_tokens inside the closure never
+    # KeyErrors regardless of which keys it reads.
+    cfg = {
+        "max_image_edge": 768, "temperature": 0.0, "top_k": 40, "top_p": 0.9,
+        "prompt_builder": "default", "thinking": False,
+        "max_tokens_strategy": "fixed", "max_tokens_ratio": 4,
+        "max_tokens_cap": 16, "n_ctx": 4096, "n_ctx_min": 2048,
+        "n_ctx_max": 8192, "vram_per_ctx_token": 0.04, "max_srt_batch": 0,
+    }
+    with patch(
+        "app.services.video.summary_service.service.get_inference_config",
+        lambda f, s, t: cfg,
+    ):
+        return svc._make_vlm_callback("qwen3vl", "8b")
+
+
+def test_vlm_callback_returns_minus_one_on_reject():
+    cb = _build_cb("-1")
+    assert cb("ctx", ["a.jpg", "b.jpg"]) == -1
+
+
+def test_vlm_callback_takes_last_number_token():
+    """Prompt 文字如「圖片 2 不符，答 -1」→ 取最後一個 token (-1)，不被前面的 2 搶。"""
+    cb = _build_cb("圖片 2 不符，答 -1")
+    assert cb("ctx", ["a.jpg", "b.jpg", "c.jpg"]) == -1
+
+
+def test_vlm_callback_plain_index_still_works():
+    cb = _build_cb("1")
+    assert cb("ctx", ["a.jpg", "b.jpg"]) == 1
+
+
+def test_vlm_callback_raises_on_no_digits():
+    import pytest
+    cb = _build_cb("no answer here")
+    with pytest.raises(ValueError, match="not a number"):
+        cb("ctx", ["a.jpg"])
