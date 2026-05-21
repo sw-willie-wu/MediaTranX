@@ -40,17 +40,6 @@ def _parse_scene_times(metadata_text: str) -> list[float]:
     return [float(m) for m in _SCENE_TIME_RE.findall(metadata_text)]
 
 
-def _escape_filtergraph_path(path: Path) -> str:
-    """Escape a filesystem path for embedding in an ffmpeg filtergraph value.
-
-    ffmpeg filtergraph treats ``:`` ``\\`` ``'`` specially. Windows paths carry a
-    drive-letter ``:`` and ``\\`` separators, so a raw path breaks parsing.
-    Convert to forward slashes (as_posix) and backslash-escape the colon
-    (``C:\\a\\b.txt`` -> ``C\\:/a/b.txt``).
-    """
-    return path.as_posix().replace(":", "\\:")
-
-
 class VideoCodec(str, Enum):
     """Video codec."""
     H264 = "libx264"
@@ -916,6 +905,12 @@ class FFmpegWrapper:
         a 0..1 decode fraction. ``on_progress`` may raise (cooperative cancel) —
         the subprocess is then killed and the temp file removed before re-raise.
 
+        Cooperative cancellation is only possible when ``on_progress`` is
+        supplied AND raises on cancel: ``detect_scenes`` itself has no task
+        context to poll. With ``on_progress=None`` the scan runs to completion
+        uninterruptibly. The production caller (``SceneDetector.detect_all`` via
+        the summary service) always supplies a cancel-aware callback.
+
         See spec 2026-05-20-frame-picker-quality-and-scoring.md §13.
         """
         input_path = Path(input_path)
@@ -929,11 +924,15 @@ class FFmpegWrapper:
         os.close(fd)
         scene_tmp_path = Path(scene_tmp)
         try:
+            # The metadata filter's file= value is embedded inside the ffmpeg
+            # filtergraph, which treats ':' '\\' specially — a Windows absolute
+            # path (drive colon, backslashes) cannot be escaped reliably there.
+            # Instead run ffmpeg with cwd set to the temp dir and pass only the
+            # bare filename (mkstemp names are [A-Za-z0-9_]. — filtergraph-safe).
             vf = (
                 f"scale='min({analyze_w},iw)':-2,"
                 f"scdet=threshold={scene_threshold},"
-                f"metadata=mode=print:file="
-                f"{_escape_filtergraph_path(scene_tmp_path)}:key=lavfi.scd.time"
+                f"metadata=mode=print:file={scene_tmp_path.name}:key=lavfi.scd.time"
             )
             args = [
                 self.ffmpeg_path,
@@ -947,29 +946,37 @@ class FFmpegWrapper:
             ]
             proc = await asyncio.create_subprocess_exec(
                 *args,
+                cwd=str(scene_tmp_path.parent),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
 
             stderr_chunks: list[bytes] = []
+            last_frac = -1.0
 
             async def read_progress() -> None:
-                # Parse only out_time_ms from -progress pipe:1; do NOT reuse
+                # Parse the decode position from -progress pipe:1; do NOT reuse
                 # _parse_progress (it writes instance-level self._progress_data,
-                # unsafe for a shared singleton wrapper).
+                # unsafe for a shared singleton wrapper). Accept both out_time_us
+                # (canonical) and out_time_ms (legacy misnomer — also microseconds);
+                # a build may emit one or both. Dedupe on the fraction so a block
+                # carrying both keys does not fire on_progress twice.
+                nonlocal last_frac
                 while True:
                     line = await proc.stdout.readline()
                     if not line:
                         break
                     text = line.decode(errors="ignore").strip()
                     key, _, value = text.partition("=")
-                    if key == "out_time_ms" and on_progress is not None:
+                    if key in ("out_time_us", "out_time_ms") and on_progress is not None:
                         try:
                             us = int(value)
                         except ValueError:
                             continue  # "N/A" early in the stream
-                        frac = (us / 1_000_000 / duration) if duration > 0 else 0.0
-                        on_progress(min(frac, 1.0))
+                        frac = min((us / 1_000_000 / duration) if duration > 0 else 0.0, 1.0)
+                        if frac != last_frac:
+                            last_frac = frac
+                            on_progress(frac)
 
             async def drain_stderr() -> None:
                 # Drain stderr CONCURRENTLY with stdout. -nostats keeps it small

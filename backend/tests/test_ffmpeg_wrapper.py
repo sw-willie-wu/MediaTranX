@@ -194,22 +194,6 @@ class TestParseSceneTimes:
         assert _parse_scene_times("frame:1  pts:1  pts_time:1.5\n") == []
 
 
-# ── _escape_filtergraph_path helper ─────────────────────────────────────────
-
-from app.adapters.binary.ffmpeg import _escape_filtergraph_path
-
-
-class TestEscapeFiltergraphPath:
-    def test_escapes_drive_colon_and_backslashes(self):
-        # Path normalises separators to forward slashes via as_posix();
-        # the drive-letter colon must be backslash-escaped for filtergraph.
-        result = _escape_filtergraph_path(Path("C:/Users/x/Temp/scdet_ab.txt"))
-        assert result == "C\\:/Users/x/Temp/scdet_ab.txt"
-
-    def test_plain_relative_path_unchanged(self):
-        assert _escape_filtergraph_path(Path("scdet_ab.txt")) == "scdet_ab.txt"
-
-
 # ── detect_scenes ───────────────────────────────────────────────────────────
 
 import os
@@ -227,7 +211,7 @@ def _fake_proc(progress_lines, stderr_bytes=b"", returncode=0):
     """Build an AsyncMock subprocess: stdout yields progress_lines then EOF."""
     proc = AsyncMock()
     proc.stdout.readline = AsyncMock(side_effect=[*progress_lines, b""])
-    proc.stderr.read = AsyncMock(side_effect=[stderr_bytes, b""] if stderr_bytes else [b""])
+    proc.stderr.read = AsyncMock(side_effect=[stderr_bytes, b""] if stderr_bytes else [b"", b""])
     proc.wait = AsyncMock(return_value=returncode)
     proc.returncode = returncode
     proc.kill = MagicMock()
@@ -284,6 +268,9 @@ class TestDetectScenes:
         assert "scdet=threshold=10.0" in vf
         assert "scale='min(640,iw)':-2" in vf
         assert "metadata=mode=print" in vf and "key=lavfi.scd.time" in vf
+        # bare filename only (no path) — escaping-free; ffmpeg cwd is the temp dir
+        assert "file=scdet.txt" in vf
+        assert spy.call_args.kwargs["cwd"] == str(tmp_path)
         assert "-progress" in args and "pipe:1" in args
         assert "-nostats" in args
         assert "-an" in args and "-sn" in args  # audio/subtitle skipped
@@ -311,6 +298,30 @@ class TestDetectScenes:
                                   on_progress=seen.append)
 
         assert seen == [0.5]
+
+    async def test_progress_accepts_us_key_and_dedupes(self, tmp_path):
+        # A -progress block carries both out_time_us and out_time_ms (same
+        # microsecond value). on_progress must fire once per distinct fraction.
+        w = _make_wrapper()
+        video = tmp_path / "in.mp4"
+        video.write_bytes(b"x")
+        scene_file = tmp_path / "scdet.txt"
+        scene_file.write_text("", encoding="utf-8")
+        real_fd = os.open(str(scene_file), os.O_RDONLY)
+        proc = _fake_proc([b"out_time_us=50000000\n", b"out_time_ms=50000000\n",
+                           b"progress=end\n"])
+        seen = []
+
+        with patch.object(w, "get_media_info",
+                           new=AsyncMock(return_value=MagicMock(duration=100.0))), \
+             patch("app.adapters.binary.ffmpeg.tempfile.mkstemp",
+                   return_value=(real_fd, str(scene_file))), \
+             patch("app.adapters.binary.ffmpeg.asyncio.create_subprocess_exec",
+                   new=AsyncMock(return_value=proc)):
+            await w.detect_scenes(video, scene_threshold=10.0, analyze_w=640,
+                                  on_progress=seen.append)
+
+        assert seen == [0.5]  # not [0.5, 0.5] — both keys, deduped
 
     async def test_non_zero_exit_raises(self, tmp_path):
         w = _make_wrapper()
