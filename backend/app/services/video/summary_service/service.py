@@ -2,6 +2,7 @@
 from __future__ import annotations
 import logging
 import shutil
+import threading
 import zipfile
 from pathlib import Path
 from typing import Callable, Optional
@@ -45,26 +46,6 @@ TASK_TYPE_VIDEO_SUMMARY = "video.summary"
 # mode frames every paragraph (no duration-scaled subsampling like bullets);
 # this only guards against a pathological LLM emitting hundreds of paragraphs.
 MAX_NARRATIVE_FRAMES = 50
-
-# Progress-band epsilon: keeps the scene-detect band strictly below the
-# frame loop's 0.60 start. See spec §13.4.
-_DETECT_PROGRESS_EPS = 0.005
-
-
-def _map_detect_progress(
-    f: float, detect_pct: float, eps: float = _DETECT_PROGRESS_EPS
-) -> float:
-    """Map a 0..1 scene-detection decode fraction into the progress band.
-
-    The band runs from ``detect_pct`` (the scene-detect start, in [0.58, 0.60))
-    up to just below the frame loop's 0.60 start. The upper bound is
-    ``max(detect_pct, 0.60 - eps)`` rather than a flat ``0.60 - eps`` so that a
-    large chunk count (``detect_pct`` already > 0.60 - eps) never makes the
-    mapped value regress below the leading ``detect_pct`` event. See spec §13.4.
-    """
-    upper = max(detect_pct, 0.60 - eps)
-    mapped = detect_pct + (0.60 - detect_pct) * f
-    return min(mapped, upper)
 
 
 def _map_language_to_whisper(ui_language: str) -> Optional[str]:
@@ -173,6 +154,78 @@ class VideoSummaryService:
         self,
         params: dict,
         progress_callback: Callable[[float, str], None],
+    ) -> dict:
+        """Run the summary pipeline with scene detection parallelized.
+
+        detect_all() only needs the video file — no data dependency on Whisper
+        or the LLM, and it is CPU-bound FFmpeg software decode that does not
+        contend with the GPU. So it runs in a background thread spawned here at
+        task start and is joined at the frame-picking merge point. The whole
+        rest of the pipeline runs inside the try whose finally guarantees the
+        thread is cancelled + joined on every exit path. See spec 2026-05-22 §3.
+        """
+        file_id = params["file_id"]
+        file_info = self._file_service.require_file(file_id)
+        video_path = Path(file_info.file_path)
+
+        detector = SceneDetector(ffmpeg=self._ffmpeg)
+        detect_cancel = threading.Event()
+        detect_holder: dict = {}
+
+        def _detect_on_progress(_fraction: float) -> None:
+            # Background thread's detect_all on_progress: NOT a progress
+            # reporter (the bar is driven solely by the main thread) — its only
+            # job is to raise on cancel so detect_scenes kills its FFmpeg
+            # subprocess (spec 2026-05-22 §3.4). Called every ~0.5-0.7s.
+            if detect_cancel.is_set():
+                raise TaskCancelledError("summary scene-detect cancelled")
+
+        def _detect_worker() -> None:
+            try:
+                detect_holder["scenes"] = detector.detect_all(
+                    video_path, on_progress=_detect_on_progress
+                )
+            except TaskCancelledError:
+                pass  # main thread owns cancel semantics; nothing to store
+            except Exception as e:  # defensive — detect_all already best-efforts to []
+                logger.warning(f"summary: background scene-detect failed ({e})")
+                detect_holder["scenes"] = []
+
+        detect_thread = threading.Thread(
+            target=_detect_worker, name="summary-detect", daemon=True
+        )
+        detect_thread.start()
+        try:
+            return self._run_summary_pipeline(
+                params, progress_callback, detector, detect_thread, detect_holder
+            )
+        finally:
+            # Reap the background detect thread on EVERY exit path (success,
+            # cancel, error). On success it is already joined at the merge
+            # loop, so this join is a no-op. On cancel/error: set() before
+            # join() so detect's next on_progress tick (~0.5-0.7s apart) raises
+            # and detect_scenes kills its FFmpeg subprocess — the normal cancel
+            # path reaps in ~1s.
+            #
+            # The join timeout bounds the rare degenerate case: if FFmpeg's
+            # -progress output STALLS past the timeout (no tick → cancel is
+            # never observed), join() returns with the thread + its ffmpeg.exe
+            # still running. That is a *bounded, self-resolving* orphan — a
+            # scdet pass is a finite CPU-only scan that exits on its own (no
+            # VRAM / handle leak, unlike a pinned model). daemon=True
+            # guarantees it cannot block Python process exit. 30s is generous
+            # against the ~1s normal path while not holding the task's
+            # terminal state long on a stall.
+            detect_cancel.set()
+            detect_thread.join(timeout=30.0)
+
+    def _run_summary_pipeline(
+        self,
+        params: dict,
+        progress_callback: Callable[[float, str], None],
+        detector,
+        detect_thread: threading.Thread,
+        detect_holder: dict,
     ) -> dict:
         file_id = params["file_id"]
         llm_family = params["llm_model_family"]
@@ -359,34 +412,14 @@ class VideoSummaryService:
         )
 
         try:
-            detector = SceneDetector(ffmpeg=self._ffmpeg)
-
-            # Scene-detect ONCE over the whole video (cached); pick_frame_timestamp
-            # filters this list in-memory per window instead of decoding the
-            # source video ~N times. Best-effort: [] → midpoint fallback.
-            #
-            # detect_all() runs a single FFmpeg scdet pass that reports a 0..1
-            # decode fraction via on_progress. detect_pct is the scene-detect
-            # band start: clamped >= the chunk loop's last pct (0.15 + 0.45·(N-1)/N,
-            # exceeds 0.58 only at N >= 23 chunks) so progress stays monotonic and
-            # below the frame loop's 0.60 start.
-            detect_pct = max(
-                0.58,
-                0.15 + 0.45 * ((len(chunks) - 1) / max(1, len(chunks))),
-            )
-            # Leading event: bridges the gap between detect_all() spawning
-            # ffmpeg (get_media_info + process spawn) and the first -progress
-            # chunk, so the bar does not briefly freeze. _on_detect then takes
-            # over with smooth per-chunk updates. See spec §13.4.
-            progress_callback(detect_pct, "task.progress.summary_detecting_scenes")
-
-            def _on_detect(f: float) -> None:
-                progress_callback(
-                    _map_detect_progress(f, detect_pct),
-                    "task.progress.summary_detecting_scenes",
-                )
-
-            global_scenes = detector.detect_all(video_path, on_progress=_on_detect)
+            # Step 3.5: join the background scene-detect thread (started at the
+            # top of _execute). It usually finished during Whisper+LLM. If not,
+            # poll-join in 0.5s ticks so the bar still gets a cancel heartbeat;
+            # the bar holds at 0.60 showing summary_detecting_scenes until done.
+            while detect_thread.is_alive():
+                detect_thread.join(timeout=0.5)
+                progress_callback(0.60, "task.progress.summary_detecting_scenes")
+            global_scenes = detect_holder.get("scenes", [])
 
             # vlm_cb is (re)built per loop iteration so the cancel heartbeat
             # carries that iteration's live pct/message (shape (a)). The build

@@ -625,74 +625,161 @@ def test_candidate_frames_downscaled_final_frames_native(tmp_path):
         f"final keyframes must stay native (no max_edge): {final}"
 
 
-# ── summary-1.4.1: Bug B — scene detection progress event ─────────────
-def test_execute_emits_detecting_scenes_progress_before_frames(tmp_path):
-    """Bug B: detect_all() 前發出 summary_detecting_scenes 進度事件,
-    且排在第一個 bullet-frame 事件之前 —— 進度條在場景偵測階段不凍住。"""
+# ── summary-hang-fix: detect_all parallelization ───────────────────────
+import threading
+import time as _time
+from app.handler.exceptions import TaskCancelledError
+
+
+def test_execute_detect_runs_and_scenes_reach_frame_picking(tmp_path):
+    """Background detect_all result reaches frame picking via the holder.
+
+    The fake detects scenes at [2.0, 4.0]. With no VLM, pick_frame_timestamp
+    picks the scene nearest the bullet-0 window midpoint (window [0,5), mid
+    2.5 → scene 2.0). If global_scenes were dropped, bullet 0 would fall back
+    to the bare midpoint 2.5 — so a 2.0 extraction proves the background
+    scenes actually reached the picker, not just that detect_all ran.
+    """
     svc, file_service = _make_svc_with_mocks(tmp_path)
 
     class FakeDetector:
-        def __init__(self, *a, **kw): pass
-        def detect_in_window(self, *a, **kw): return []
-        def detect_all(self, *a, **kw): return []
-        def extract_frame(self, input_path, output_path, timestamp, max_edge=None):
+        calls = 0
+        extract_ts: list[float] = []
+
+        def __init__(self, *a, **kw):
+            pass
+
+        def detect_all(self, *a, **kw):
+            FakeDetector.calls += 1
+            return [2.0, 4.0]
+
+        def extract_frame(self, input_path, output_path, timestamp):
+            FakeDetector.extract_ts.append(timestamp)
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(b"j")
+            output_path.write_bytes(b"fake-jpg")
 
     fake_result = MagicMock(
-        segments=[MagicMock(start=0.0, end=5.0, text="一"),
-                  MagicMock(start=5.0, end=10.0, text="二")],
+        segments=[
+            MagicMock(start=0.0, end=5.0, text="這是第一段測試"),
+            MagicMock(start=5.0, end=10.0, text="這是第二段內容"),
+        ],
+        language="zh",
+    )
+
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync",
+               return_value=fake_result), \
+         patch("app.services.video.summary_service.service.SceneDetector", FakeDetector):
+        result = svc._execute(
+            params={
+                "file_id": "f1", "llm_model_family": "qwen3.5",
+                "llm_model_size": "9b", "language": "zh-TW",
+                "vlm_model_family": None, "vlm_model_size": None,
+                "summary_mode": "bullets",
+            },
+            progress_callback=lambda p, m: None,
+        )
+    assert "output_file_id" in result
+    assert FakeDetector.calls == 1  # detected exactly once, in the background thread
+    # Scene 2.0 (from the background detect) reached pick_frame_timestamp:
+    # bullet-0 window [0,5) midpoint 2.5 → nearest scene 2.0.
+    assert 2.0 in FakeDetector.extract_ts
+
+
+def test_execute_emits_detecting_scenes_when_detect_slow(tmp_path):
+    """When detect outlasts Whisper+LLM, the merge poll loop emits
+    summary_detecting_scenes until the background thread finishes."""
+    svc, file_service = _make_svc_with_mocks(tmp_path)
+    release = threading.Event()
+
+    class SlowDetector:
+        def __init__(self, *a, **kw):
+            pass
+
+        def detect_all(self, *a, **kw):
+            release.wait(timeout=5.0)  # block until the test releases
+            return []
+
+        def extract_frame(self, input_path, output_path, timestamp):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"x")
+
+    fake_result = MagicMock(
+        segments=[MagicMock(start=0.0, end=5.0, text="第一段")],
         language="zh",
     )
     events: list[tuple[float, str]] = []
+
+    def on_progress(p, m):
+        events.append((p, m))
+        if m == "task.progress.summary_detecting_scenes":
+            release.set()  # unblock detect once the merge loop is reached
+
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync",
+               return_value=fake_result), \
+         patch("app.services.video.summary_service.service.SceneDetector", SlowDetector):
+        svc._execute(
+            params={
+                "file_id": "f1", "llm_model_family": "qwen3.5",
+                "llm_model_size": "9b", "language": "zh-TW",
+                "vlm_model_family": None, "vlm_model_size": None,
+                "summary_mode": "bullets",
+            },
+            progress_callback=on_progress,
+        )
+    assert any(m == "task.progress.summary_detecting_scenes" for _, m in events)
+
+
+def test_execute_cancel_propagates_to_background_detect(tmp_path):
+    """Cancel in the main thread → outer finally sets the event → the
+    background detect's on_progress raises → detect_all is interrupted."""
+    svc, file_service = _make_svc_with_mocks(tmp_path)
+
+    class CancellableDetector:
+        cancelled = False
+
+        def __init__(self, *a, **kw):
+            pass
+
+        def detect_all(self, video_path, on_progress=None):
+            try:
+                for _ in range(10000):
+                    if on_progress is not None:
+                        on_progress(0.0)  # raises once detect_cancel is set
+                    _time.sleep(0.005)
+            except TaskCancelledError:
+                CancellableDetector.cancelled = True
+                raise
+            return []
+
+        def extract_frame(self, input_path, output_path, timestamp):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"x")
+
+    fake_result = MagicMock(
+        segments=[MagicMock(start=0.0, end=5.0, text="第一段")],
+        language="zh",
+    )
+
+    calls = {"n": 0}
+
+    def on_progress(p, m):
+        calls["n"] += 1
+        if calls["n"] >= 2:  # simulate a user cancel early in the run
+            raise TaskCancelledError("cancelled")
+
     with patch("app.services.video.summary_service.service.transcribe_audio_sync",
                return_value=fake_result), \
          patch("app.services.video.summary_service.service.SceneDetector",
-               FakeDetector):
-        svc._execute(
-            params={"file_id": "f1", "llm_model_family": "qwen3.5",
+               CancellableDetector):
+        with pytest.raises(TaskCancelledError):
+            svc._execute(
+                params={
+                    "file_id": "f1", "llm_model_family": "qwen3.5",
                     "llm_model_size": "9b", "language": "zh-TW",
                     "vlm_model_family": None, "vlm_model_size": None,
-                    "summary_mode": "bullets"},
-            progress_callback=lambda p, m: events.append((p, m)),
-        )
-
-    msgs = [m for _, m in events]
-    detect_evts = [i for i, m in enumerate(msgs)
-                   if m == "task.progress.summary_detecting_scenes"]
-    frame_evts = [i for i, m in enumerate(msgs)
-                  if m.startswith("task.progress.summary_bullet_frame")]
-    assert detect_evts, "expected a summary_detecting_scenes progress event"
-    assert frame_evts, "expected at least one bullet-frame progress event"
-    # ordering only — do NOT assert the literal pct value
-    assert detect_evts[0] < frame_evts[0]
-
-
-# ── perf/detect-all-ffmpeg-scene: progress mapping ─────────────────────
-from app.services.video.summary_service.service import _map_detect_progress
-
-
-class TestMapDetectProgress:
-    def test_fraction_zero_maps_to_detect_pct(self):
-        assert _map_detect_progress(0.0, detect_pct=0.58) == 0.58
-
-    def test_fraction_one_clamps_below_060(self):
-        # detect_pct 0.58: mapped would be 0.60, clamped to 0.60 - EPS.
-        result = _map_detect_progress(1.0, detect_pct=0.58)
-        assert 0.58 < result < 0.60
-
-    def test_high_detect_pct_never_regresses(self):
-        # detect_pct already above 0.60 - EPS: result must not drop below it
-        # (the L357 leading event already emitted detect_pct).
-        dp = 0.599
-        for f in (0.0, 0.5, 1.0):
-            assert _map_detect_progress(f, detect_pct=dp) >= dp
-
-    def test_monotonic_non_decreasing(self):
-        dp = 0.58
-        vals = [_map_detect_progress(f / 10, detect_pct=dp) for f in range(11)]
-        assert all(b >= a for a, b in zip(vals, vals[1:]))
-
-    def test_never_reaches_060(self):
-        for dp in (0.58, 0.59, 0.5999):
-            assert _map_detect_progress(1.0, detect_pct=dp) < 0.60
+                    "summary_mode": "bullets",
+                },
+                progress_callback=on_progress,
+            )
+    # The background detect thread was signalled and interrupted, not orphaned.
+    assert CancellableDetector.cancelled is True
