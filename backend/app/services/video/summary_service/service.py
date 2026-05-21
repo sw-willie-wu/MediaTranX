@@ -46,6 +46,26 @@ TASK_TYPE_VIDEO_SUMMARY = "video.summary"
 # this only guards against a pathological LLM emitting hundreds of paragraphs.
 MAX_NARRATIVE_FRAMES = 50
 
+# Progress-band epsilon: keeps the scene-detect band strictly below the
+# frame loop's 0.60 start. See spec §13.4.
+_DETECT_PROGRESS_EPS = 0.005
+
+
+def _map_detect_progress(
+    f: float, detect_pct: float, eps: float = _DETECT_PROGRESS_EPS
+) -> float:
+    """Map a 0..1 scene-detection decode fraction into the progress band.
+
+    The band runs from ``detect_pct`` (the scene-detect start, in [0.58, 0.60))
+    up to just below the frame loop's 0.60 start. The upper bound is
+    ``max(detect_pct, 0.60 - eps)`` rather than a flat ``0.60 - eps`` so that a
+    large chunk count (``detect_pct`` already > 0.60 - eps) never makes the
+    mapped value regress below the leading ``detect_pct`` event. See spec §13.4.
+    """
+    upper = max(detect_pct, 0.60 - eps)
+    mapped = detect_pct + (0.60 - detect_pct) * f
+    return min(mapped, upper)
+
 
 def _map_language_to_whisper(ui_language: str) -> Optional[str]:
     """Map UI language ('zh-TW', 'en', ...) to Whisper language code ('zh', 'en', ...)."""
@@ -345,17 +365,28 @@ class VideoSummaryService:
             # filters this list in-memory per window instead of decoding the
             # source video ~N times. Best-effort: [] → midpoint fallback.
             #
-            # detect_all() is a CPU-bound, whole-video blocking pass with no
-            # progress of its own — emit one event first so the bar isn't
-            # frozen here. Clamp to >= the chunk loop's last pct (which is
-            # 0.15 + 0.45·(N-1)/N and exceeds 0.58 only at N >= 23 chunks) so
-            # progress stays monotonic and below the frame loop's 0.60 start.
+            # detect_all() runs a single FFmpeg scdet pass that reports a 0..1
+            # decode fraction via on_progress. detect_pct is the scene-detect
+            # band start: clamped >= the chunk loop's last pct (0.15 + 0.45·(N-1)/N,
+            # exceeds 0.58 only at N >= 23 chunks) so progress stays monotonic and
+            # below the frame loop's 0.60 start.
             detect_pct = max(
                 0.58,
                 0.15 + 0.45 * ((len(chunks) - 1) / max(1, len(chunks))),
             )
+            # Leading event: bridges the gap between detect_all() spawning
+            # ffmpeg (get_media_info + process spawn) and the first -progress
+            # chunk, so the bar does not briefly freeze. _on_detect then takes
+            # over with smooth per-chunk updates. See spec §13.4.
             progress_callback(detect_pct, "task.progress.summary_detecting_scenes")
-            global_scenes = detector.detect_all(video_path)
+
+            def _on_detect(f: float) -> None:
+                progress_callback(
+                    _map_detect_progress(f, detect_pct),
+                    "task.progress.summary_detecting_scenes",
+                )
+
+            global_scenes = detector.detect_all(video_path, on_progress=_on_detect)
 
             # vlm_cb is (re)built per loop iteration so the cancel heartbeat
             # carries that iteration's live pct/message (shape (a)). The build

@@ -54,6 +54,7 @@ dependencies = [
     "torchaudio>=2.0.0",
     "opencc-python-reimplemented>=0.1.7",
     "scenedetect>=0.6.7.1",
+    "opencv-python",
 ]
 
 [project.optional-dependencies]

@@ -3,9 +3,11 @@ FFmpeg wrapper module.
 Provides video transcoding, progress parsing, and related utilities.
 """
 import asyncio
+import os
 import re
 import shutil
 import sys
+import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
@@ -23,6 +25,19 @@ def _run_sync(coro):
         return loop.run_until_complete(coro)
     finally:
         loop.close()
+
+
+_SCENE_TIME_RE = re.compile(r"lavfi\.scd\.time=([0-9.]+)")
+
+
+def _parse_scene_times(metadata_text: str) -> list[float]:
+    """Extract scene-change timestamps from ffmpeg ``metadata=print`` output.
+
+    The ``scdet`` filter sets a ``lavfi.scd.time=<seconds>`` metadata key on
+    each scene-change frame; ``metadata=mode=print:key=lavfi.scd.time`` writes
+    one such line per scene change. ffmpeg emits them in ascending order.
+    """
+    return [float(m) for m in _SCENE_TIME_RE.findall(metadata_text)]
 
 
 class VideoCodec(str, Enum):
@@ -875,3 +890,142 @@ class FFmpegWrapper:
     ) -> Path:
         """Sync version of transcode() for use in TaskManager handlers."""
         return _run_sync(self.transcode(input_path, output_path, options, on_progress))
+
+    async def detect_scenes(
+        self,
+        input_path: str | Path,
+        scene_threshold: float,
+        analyze_w: int,
+        on_progress: Optional[Callable[[float], None]] = None,
+    ) -> list[float]:
+        """Detect scene-change timestamps via the FFmpeg ``scdet`` filter.
+
+        Single decode pass, pure software (no ``-hwaccel``). Scene metadata is
+        written to a temp file; ``-progress pipe:1`` drives ``on_progress`` with
+        a 0..1 decode fraction. ``on_progress`` may raise (cooperative cancel) —
+        the subprocess is then killed and the temp file removed before re-raise.
+
+        Cooperative cancellation is only possible when ``on_progress`` is
+        supplied AND raises on cancel: ``detect_scenes`` itself has no task
+        context to poll. With ``on_progress=None`` the scan runs to completion
+        uninterruptibly. The production caller (``SceneDetector.detect_all`` via
+        the summary service) always supplies a cancel-aware callback.
+
+        See spec 2026-05-20-frame-picker-quality-and-scoring.md §13.
+        """
+        input_path = Path(input_path)
+        if not input_path.exists():
+            raise FFmpegError(f"Input file not found: {input_path}")
+
+        media_info = await self.get_media_info(input_path)
+        duration = media_info.duration
+
+        fd, scene_tmp = tempfile.mkstemp(suffix=".txt", prefix="scdet_")
+        os.close(fd)
+        scene_tmp_path = Path(scene_tmp)
+        try:
+            # The metadata filter's file= value is embedded inside the ffmpeg
+            # filtergraph, which treats ':' '\\' specially — a Windows absolute
+            # path (drive colon, backslashes) cannot be escaped reliably there.
+            # Instead run ffmpeg with cwd set to the temp dir and pass only the
+            # bare filename (mkstemp names are [A-Za-z0-9_]. — filtergraph-safe).
+            vf = (
+                f"scale='min({analyze_w},iw)':-2,"
+                f"scdet=threshold={scene_threshold},"
+                f"metadata=mode=print:file={scene_tmp_path.name}:key=lavfi.scd.time"
+            )
+            args = [
+                self.ffmpeg_path,
+                "-hide_banner",
+                "-i", str(input_path),
+                "-an", "-sn",
+                "-vf", vf,
+                "-progress", "pipe:1",
+                "-nostats",
+                "-f", "null", "-",
+            ]
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                cwd=str(scene_tmp_path.parent),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            stderr_chunks: list[bytes] = []
+            last_frac = -1.0
+
+            async def read_progress() -> None:
+                # Parse the decode position from -progress pipe:1; do NOT reuse
+                # _parse_progress (it writes instance-level self._progress_data,
+                # unsafe for a shared singleton wrapper). Accept both out_time_us
+                # (canonical) and out_time_ms (legacy misnomer — also microseconds);
+                # a build may emit one or both. Dedupe on the fraction so a block
+                # carrying both keys does not fire on_progress twice.
+                nonlocal last_frac
+                while True:
+                    line = await proc.stdout.readline()
+                    if not line:
+                        break
+                    text = line.decode(errors="ignore").strip()
+                    key, _, value = text.partition("=")
+                    if key in ("out_time_us", "out_time_ms") and on_progress is not None:
+                        try:
+                            us = int(value)
+                        except ValueError:
+                            continue  # "N/A" early in the stream
+                        frac = min((us / 1_000_000 / duration) if duration > 0 else 0.0, 1.0)
+                        if frac != last_frac:
+                            last_frac = frac
+                            on_progress(frac)
+
+            async def drain_stderr() -> None:
+                # Drain stderr CONCURRENTLY with stdout. -nostats keeps it small
+                # but multi-minute 4K AV1 decode warnings can still overflow the
+                # 64KB pipe buffer and deadlock if read only after proc.wait().
+                while True:
+                    chunk = await proc.stderr.read(8192)
+                    if not chunk:
+                        break
+                    stderr_chunks.append(chunk)
+
+            prog_task = asyncio.ensure_future(read_progress())
+            err_task = asyncio.ensure_future(drain_stderr())
+            try:
+                await asyncio.gather(prog_task, err_task)
+                await proc.wait()
+            except BaseException:
+                # on_progress raised (cancel) or a read failed. Cancel any
+                # still-pending sibling task FIRST, then kill the subprocess,
+                # then drain both tasks' results/exceptions via
+                # return_exceptions=True so none is left as an orphan — even
+                # if proc.kill() itself were to raise.
+                for t in (prog_task, err_task):
+                    if not t.done():
+                        t.cancel()
+                proc.kill()
+                await proc.wait()
+                await asyncio.gather(prog_task, err_task, return_exceptions=True)
+                raise
+
+            if proc.returncode != 0:
+                stderr_text = b"".join(stderr_chunks).decode(errors="ignore")
+                raise FFmpegError(f"Scene detection failed: {stderr_text}")
+
+            metadata_text = scene_tmp_path.read_text(
+                encoding="utf-8", errors="ignore"
+            )
+            return _parse_scene_times(metadata_text)
+        finally:
+            scene_tmp_path.unlink(missing_ok=True)
+
+    def detect_scenes_sync(
+        self,
+        input_path: str | Path,
+        scene_threshold: float,
+        analyze_w: int,
+        on_progress: Optional[Callable[[float], None]] = None,
+    ) -> list[float]:
+        """Sync version of detect_scenes() for use in TaskManager handlers."""
+        return _run_sync(
+            self.detect_scenes(input_path, scene_threshold, analyze_w, on_progress)
+        )
