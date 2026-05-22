@@ -386,3 +386,90 @@ def test_vlm_callback_raises_on_no_digits():
     cb = _build_cb("no answer here")
     with pytest.raises(ValueError, match="not a number"):
         cb("ctx", ["a.jpg"])
+
+
+# ── summary-hang-fix: VLM candidate cap ────────────────────────────────
+from app.services.video.summary_service.frame_picker import MAX_VLM_CANDIDATES
+
+
+def test_pick_vlm_caps_candidates_to_max(tmp_path):
+    """VLM path: >MAX candidates → subsampled before extraction + VLM call."""
+    detector = MagicMock()
+    detector.extract_frame = MagicMock()
+    vlm = MagicMock(return_value=0)
+    scenes = [float(i) for i in range(1, 21)]  # 20 candidates in [0,100)
+
+    pick_frame_timestamp(
+        detector=detector, vlm_callback=vlm, video_path=Path("x.mp4"),
+        window_start=0.0, window_end=100.0, context_text="t",
+        temp_dir=tmp_path, scenes=scenes,
+    )
+    assert MAX_VLM_CANDIDATES == 8
+    # 20 candidates capped to 8 → 8 extracts, 8 images to the VLM.
+    assert detector.extract_frame.call_count == 8
+    ctx, frame_paths = vlm.call_args[0]
+    assert len(frame_paths) == 8
+
+
+def test_pick_vlm_no_cap_when_under_max(tmp_path):
+    """VLM path: <=MAX candidates → all kept."""
+    detector = MagicMock()
+    detector.extract_frame = MagicMock()
+    vlm = MagicMock(return_value=0)
+    scenes = [1.0, 2.0, 3.0, 4.0, 5.0]  # 5 < 8
+
+    pick_frame_timestamp(
+        detector=detector, vlm_callback=vlm, video_path=Path("x.mp4"),
+        window_start=0.0, window_end=100.0, context_text="t",
+        temp_dir=tmp_path, scenes=scenes,
+    )
+    assert detector.extract_frame.call_count == 5
+    _, frame_paths = vlm.call_args[0]
+    assert len(frame_paths) == 5
+
+
+def test_pick_vlm_custom_max_candidates(tmp_path):
+    """max_candidates param overrides the default cap."""
+    detector = MagicMock()
+    detector.extract_frame = MagicMock()
+    vlm = MagicMock(return_value=0)
+    scenes = [float(i) for i in range(1, 21)]
+
+    pick_frame_timestamp(
+        detector=detector, vlm_callback=vlm, video_path=Path("x.mp4"),
+        window_start=0.0, window_end=100.0, context_text="t",
+        temp_dir=tmp_path, scenes=scenes, max_candidates=4,
+    )
+    assert detector.extract_frame.call_count == 4
+
+
+def test_pick_vlm_capped_index_maps_to_sampled_timestamp(tmp_path):
+    """VLM idx indexes the SAMPLED list; returned ts is that sampled candidate.
+
+    20 candidates 1.0..20.0; even_indices(20, 8) → [0,3,5,8,11,14,16,19]
+    → sampled timestamps [1,4,6,9,12,15,17,20]; idx 2 → 6.0.
+    """
+    detector = MagicMock()
+    detector.extract_frame = MagicMock()
+    vlm = MagicMock(return_value=2)
+    scenes = [float(i) for i in range(1, 21)]
+
+    result = pick_frame_timestamp(
+        detector=detector, vlm_callback=vlm, video_path=Path("x.mp4"),
+        window_start=0.0, window_end=100.0, context_text="t",
+        temp_dir=tmp_path, scenes=scenes,
+    )
+    assert result == 6.0
+
+
+def test_pick_non_vlm_not_capped():
+    """Non-VLM path keeps ALL candidates (cheap O(n) min, no cap applied)."""
+    detector = MagicMock()
+    scenes = [float(i) for i in range(1, 21)]  # 1.0..20.0
+    result = pick_frame_timestamp(
+        detector=detector, vlm_callback=None, video_path=Path("x.mp4"),
+        window_start=0.0, window_end=100.0, context_text="t",
+        scenes=scenes,
+    )
+    # mid = 50.0; nearest of 1..20 → 20.0
+    assert result == 20.0
