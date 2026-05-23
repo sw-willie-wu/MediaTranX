@@ -385,3 +385,59 @@ class TestDetectScenes:
             result = w.detect_scenes_sync(video, scene_threshold=10.0, analyze_w=640)
 
         assert result == [3.0]
+
+
+class TestDetectScenesThreads:
+    """`-threads N` cap dav1d/decoder threads so background detect doesn't
+    starve concurrent Whisper. See spec 2026-05-24."""
+
+    async def test_default_threads_4_before_input(self, tmp_path):
+        w = _make_wrapper()
+        video = tmp_path / "in.mp4"
+        video.write_bytes(b"x")
+        scene_file = tmp_path / "scdet.txt"
+        scene_file.write_text("", encoding="utf-8")
+        real_fd = os.open(str(scene_file), os.O_RDONLY)
+        try:
+            # AsyncMock (not MagicMock): `await asyncio.create_subprocess_exec(...)`
+            # in ffmpeg.py — sync MagicMock return isn't awaitable.
+            spy = AsyncMock(return_value=_fake_proc([b""]))
+            with patch.object(FFmpegWrapper, "get_media_info",
+                              new=AsyncMock(return_value=MagicMock(duration=100.0))), \
+                 patch("app.adapters.binary.ffmpeg.tempfile.mkstemp",
+                       return_value=(real_fd, str(scene_file))), \
+                 patch("app.adapters.binary.ffmpeg.asyncio.create_subprocess_exec", new=spy):
+                await w.detect_scenes(video, scene_threshold=10.0, analyze_w=640)
+            args = list(spy.call_args[0])
+            # -threads must appear, value "4" (default), and BEFORE -i
+            assert "-threads" in args, args
+            assert args.index("-threads") < args.index("-i"), args
+            assert args[args.index("-threads") + 1] == "4", args
+        finally:
+            try:
+                os.close(real_fd)
+            except OSError:
+                pass
+
+    async def test_custom_threads_value(self, tmp_path):
+        w = _make_wrapper()
+        video = tmp_path / "in.mp4"
+        video.write_bytes(b"x")
+        scene_file = tmp_path / "scdet.txt"
+        scene_file.write_text("", encoding="utf-8")
+        real_fd = os.open(str(scene_file), os.O_RDONLY)
+        try:
+            spy = AsyncMock(return_value=_fake_proc([b""]))
+            with patch.object(FFmpegWrapper, "get_media_info",
+                              new=AsyncMock(return_value=MagicMock(duration=100.0))), \
+                 patch("app.adapters.binary.ffmpeg.tempfile.mkstemp",
+                       return_value=(real_fd, str(scene_file))), \
+                 patch("app.adapters.binary.ffmpeg.asyncio.create_subprocess_exec", new=spy):
+                await w.detect_scenes(video, scene_threshold=10.0, analyze_w=640, threads=2)
+            args = list(spy.call_args[0])
+            assert args[args.index("-threads") + 1] == "2", args
+        finally:
+            try:
+                os.close(real_fd)
+            except OSError:
+                pass

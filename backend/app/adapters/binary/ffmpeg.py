@@ -897,6 +897,7 @@ class FFmpegWrapper:
         scene_threshold: float,
         analyze_w: int,
         on_progress: Optional[Callable[[float], None]] = None,
+        threads: int = 4,
     ) -> list[float]:
         """Detect scene-change timestamps via the FFmpeg ``scdet`` filter.
 
@@ -937,6 +938,7 @@ class FFmpegWrapper:
             args = [
                 self.ffmpeg_path,
                 "-hide_banner",
+                "-threads", str(threads),
                 "-i", str(input_path),
                 "-an", "-sn",
                 "-vf", vf,
@@ -1024,8 +1026,9 @@ class FFmpegWrapper:
         scene_threshold: float,
         analyze_w: int,
         on_progress: Optional[Callable[[float], None]] = None,
+        threads: int = 4,
     ) -> list[float]:
         """Sync version of detect_scenes() for use in TaskManager handlers."""
         return _run_sync(
-            self.detect_scenes(input_path, scene_threshold, analyze_w, on_progress)
+            self.detect_scenes(input_path, scene_threshold, analyze_w, on_progress, threads)
         )

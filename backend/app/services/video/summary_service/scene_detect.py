@@ -16,6 +16,15 @@ SCENE_THRESHOLD = 10.0
 # Downscale width for scene analysis (px). See spec §13.7.
 ANALYZE_W = 640
 
+# ── perf tuning (separate from filter-algorithm knobs above) ─────────────
+# Cap FFmpeg decoder threads so background detect (parallel with Whisper)
+# does not starve Whisper. dav1d unbounded (`-threads 0` / nproc) heavily
+# contends with Whisper on 4K AV1 (dev e2e: Whisper 720s vs ~177s clean).
+# Implemented via `-threads N` before -i; dav1d wrapper translates to
+# Dav1dSettings.n_threads. OS thread count is slightly above N (tile workers).
+# See spec 2026-05-24-summary-threads-cap-and-progress.md.
+DETECT_THREAD_CAP = 4
+
 
 class SceneDetector:
     """Detect scene change timestamps; extract frames via FFmpeg.
@@ -59,6 +68,7 @@ class SceneDetector:
                 scene_threshold=scene_threshold,
                 analyze_w=ANALYZE_W,
                 on_progress=on_progress,
+                threads=DETECT_THREAD_CAP,
             )
         except TaskCancelledError:
             raise

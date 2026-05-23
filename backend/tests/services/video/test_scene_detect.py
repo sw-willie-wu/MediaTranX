@@ -128,3 +128,33 @@ def test_extract_frame_omits_max_edge_kwarg_when_none(tmp_path):
     # test_extract_frame_invokes_ffmpeg exact 3-kwarg contract green).
     _, kwargs = mock_ffmpeg.extract_frame_sync.call_args
     assert "max_edge" not in kwargs
+
+
+# ── 1.4.1 follow-up: detect threads cap ─────────────────────────────────
+from app.services.video.summary_service.scene_detect import DETECT_THREAD_CAP
+
+
+def test_detect_all_passes_default_thread_cap_to_ffmpeg():
+    """detect_all forwards threads=DETECT_THREAD_CAP (=4) to detect_scenes_sync."""
+    ffmpeg = MagicMock()
+    ffmpeg.detect_scenes_sync.return_value = []
+    d = SceneDetector(ffmpeg=ffmpeg)
+    d.detect_all(Path("v.mp4"))
+
+    assert DETECT_THREAD_CAP == 4
+    kw = ffmpeg.detect_scenes_sync.call_args.kwargs
+    assert kw.get("threads") == 4, ffmpeg.detect_scenes_sync.call_args
+
+
+def test_detect_all_uses_monkey_patched_thread_cap(monkeypatch):
+    """Overriding DETECT_THREAD_CAP propagates to the ffmpeg call."""
+    from app.services.video.summary_service import scene_detect as sd
+
+    ffmpeg = MagicMock()
+    ffmpeg.detect_scenes_sync.return_value = []
+    monkeypatch.setattr(sd, "DETECT_THREAD_CAP", 2)
+    d = sd.SceneDetector(ffmpeg=ffmpeg)
+    d.detect_all(Path("v.mp4"))
+
+    kw = ffmpeg.detect_scenes_sync.call_args.kwargs
+    assert kw.get("threads") == 2
