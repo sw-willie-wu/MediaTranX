@@ -783,3 +783,110 @@ def test_execute_cancel_propagates_to_background_detect(tmp_path):
             )
     # The background detect thread was signalled and interrupted, not orphaned.
     assert CancellableDetector.cancelled is True
+
+
+# ── 1.4.1 follow-up: progress band reallocation ────────────────────────
+def test_execute_progress_bands_use_new_layout(tmp_path):
+    """Progress events fall in the redesigned bands:
+      audio: 0.02 / 0.05 (unchanged)
+      Whisper: 0.05 → 0.50 (45%)
+      LLM chunks: start at 0.50 + 0.20·(i/N)
+      bullet frames: start at 0.70 + 0.25·(n/N)
+      packaging: 0.95
+      complete: 1.00
+    """
+    svc, file_service = _make_svc_with_mocks(tmp_path)
+
+    class FakeDetector:
+        def __init__(self, *a, **kw): pass
+        def detect_all(self, *a, **kw): return []
+        def extract_frame(self, input_path, output_path, timestamp):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"j")
+
+    fake_result = MagicMock(
+        segments=[MagicMock(start=0.0, end=5.0, text="一"),
+                  MagicMock(start=5.0, end=10.0, text="二")],
+        language="zh",
+    )
+    events: list[tuple[float, str]] = []
+
+    def _whisper_with_progress(*a, on_progress=None, **kw):
+        # Drive Whisper progress 0 → 1 so we can verify the 0.05→0.50 mapping
+        if on_progress is not None:
+            for p in (0.0, 0.5, 1.0):
+                on_progress(p, "task.progress.recognizing_pct|50%")
+        return fake_result
+
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync",
+               side_effect=_whisper_with_progress), \
+         patch("app.services.video.summary_service.service.SceneDetector",
+               FakeDetector):
+        svc._execute(
+            params={"file_id": "f1", "llm_model_family": "qwen3.5",
+                    "llm_model_size": "9b", "language": "zh-TW",
+                    "vlm_model_family": None, "vlm_model_size": None,
+                    "summary_mode": "bullets"},
+            progress_callback=lambda p, m: events.append((p, m)),
+        )
+
+    # Audio band unchanged
+    assert (0.02, "task.progress.extract_audio_starting") in events
+    assert (0.05, "task.progress.audio_extracted") in events
+    # Whisper progress 0 → 1 mapped to 0.05 → 0.50
+    whisper_pcts = [p for (p, m) in events if m == "task.progress.recognizing_pct|50%"]
+    assert whisper_pcts, "expected whisper progress events"
+    assert 0.05 <= min(whisper_pcts) <= 0.05 + 1e-9
+    assert 0.50 - 1e-9 <= max(whisper_pcts) <= 0.50
+    # LLM chunk loop start at 0.50 (mock returns 1 chunk → first chunk pct == 0.50)
+    chunk_pcts = [p for (p, m) in events if m.startswith("task.progress.summary_chunk|")]
+    assert chunk_pcts and 0.50 - 1e-9 <= min(chunk_pcts) <= 0.50 + 1e-9
+    # Bullet frame loop start at 0.70 (first bullet pct == 0.70)
+    bullet_pcts = [p for (p, m) in events if m.startswith("task.progress.summary_bullet_frame|")]
+    assert bullet_pcts and 0.70 - 1e-9 <= min(bullet_pcts) <= 0.70 + 1e-9
+    # Packaging at 0.95
+    assert (0.95, "task.progress.summary_packaging") in events
+    # Complete at 1.0 (existing invariant)
+    assert events[-1] == (1.0, "task.progress.summary_complete")
+
+
+def test_execute_merge_poll_holds_at_070(tmp_path):
+    """When detect outlasts Whisper+LLM, the merge poll loop emits
+    summary_detecting_scenes at pct=0.70 (new band, was 0.60)."""
+    svc, file_service = _make_svc_with_mocks(tmp_path)
+    release = threading.Event()
+
+    class SlowDetector:
+        def __init__(self, *a, **kw): pass
+        def detect_all(self, *a, **kw):
+            release.wait(timeout=5.0)
+            return []
+        def extract_frame(self, input_path, output_path, timestamp):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"j")
+
+    fake_result = MagicMock(
+        segments=[MagicMock(start=0.0, end=5.0, text="一")],
+        language="zh",
+    )
+    detect_events: list[float] = []
+
+    def on_progress(p, m):
+        if m == "task.progress.summary_detecting_scenes":
+            detect_events.append(p)
+            release.set()
+
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync",
+               return_value=fake_result), \
+         patch("app.services.video.summary_service.service.SceneDetector",
+               SlowDetector):
+        svc._execute(
+            params={"file_id": "f1", "llm_model_family": "qwen3.5",
+                    "llm_model_size": "9b", "language": "zh-TW",
+                    "vlm_model_family": None, "vlm_model_size": None,
+                    "summary_mode": "bullets"},
+            progress_callback=on_progress,
+        )
+    assert detect_events, "expected merge-poll summary_detecting_scenes event"
+    assert all(abs(p - 0.70) < 1e-9 for p in detect_events), \
+        f"merge-poll pct must be 0.70 (was 0.60 pre-1.4.1-followup), got {detect_events}"
