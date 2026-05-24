@@ -1,9 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1a1727"></stop>
-      <stop offset="100%" stop-color="#46406a"></stop>
-    </linearGradient>
     <linearGradient id="audio" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#f1eaff"></stop>
       <stop offset="100%" stop-color="#a89cc8"></stop>
@@ -13,9 +9,6 @@
       <stop offset="100%" stop-color="#c8a87a"></stop>
     </linearGradient>
   </defs>
-
-  
-  <rect x="0" y="0" width="512" height="512" rx="112" ry="112" fill="url(#bg)"></rect>
 
   
   <g transform="rotate(-45 256 256)">
@@ -69,7 +62,4 @@
 
   
   <circle cx="256" cy="256" r="13" fill="#ffffff"></circle>
-
-  
-  <rect x="2" y="2" width="508" height="508" rx="110" ry="110" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="2"></rect>
 </svg>
