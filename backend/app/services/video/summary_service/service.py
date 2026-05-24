@@ -249,7 +249,7 @@ class VideoSummaryService:
             )
             progress_callback(0.05, "task.progress.audio_extracted")
 
-            # Step 1b: transcribe (0.05 ~ 0.15)
+            # Step 1b: transcribe (0.05 ~ 0.50)
             opts = TranscribeOptions(
                 language=_map_language_to_whisper(language),
                 model_size=params.get("whisper_model_size", "medium"),
@@ -262,8 +262,8 @@ class VideoSummaryService:
             )
 
             def _t_progress(p: float, m: str) -> None:
-                # Map [0,1] from whisper to [0.05, 0.15] of overall progress.
-                progress_callback(0.05 + p * 0.10, m)
+                # Map [0,1] from whisper to [0.05, 0.50] of overall progress.
+                progress_callback(0.05 + p * 0.45, m)
 
             result = transcribe_audio_sync(
                 temp_audio, opts,
@@ -290,7 +290,7 @@ class VideoSummaryService:
         content_sec = max(e.end for e in entries)
         bullet_cap = compute_bullet_target(content_sec)
 
-        # Step 2: chunk + LLM (15% ~ 60%)
+        # Step 2: chunk + LLM (50% ~ 70%)
         cfg = get_inference_config(llm_family, llm_size, "summarize")
         n_ctx = cfg["n_ctx"]
         # Budget the input with two upper bounds:
@@ -338,7 +338,7 @@ class VideoSummaryService:
         # cites back onto the global `entries` list.
         line_offset = 1
         for i, chunk in enumerate(chunks):
-            pct = 0.15 + 0.45 * (i / max(1, len(chunks)))
+            pct = 0.50 + 0.20 * (i / max(1, len(chunks)))
             progress_callback(
                 pct, f"task.progress.summary_chunk|{i + 1}|{len(chunks)}"
             )
@@ -415,10 +415,10 @@ class VideoSummaryService:
             # Step 3.5: join the background scene-detect thread (started at the
             # top of _execute). It usually finished during Whisper+LLM. If not,
             # poll-join in 0.5s ticks so the bar still gets a cancel heartbeat;
-            # the bar holds at 0.60 showing summary_detecting_scenes until done.
+            # the bar holds at 0.70 showing summary_detecting_scenes until done.
             while detect_thread.is_alive():
                 detect_thread.join(timeout=0.5)
-                progress_callback(0.60, "task.progress.summary_detecting_scenes")
+                progress_callback(0.70, "task.progress.summary_detecting_scenes")
             global_scenes = detect_holder.get("scenes", [])
 
             # vlm_cb is (re)built per loop iteration so the cancel heartbeat
@@ -426,7 +426,7 @@ class VideoSummaryService:
             # is cheap (a get_inference_config registry lookup, no model load).
             vlm_cb = None
 
-            # Step 4: bullet frames (60% ~ 80%)
+            # Step 4: bullet frames (70% ~ 95%)
             # Iterate over merged.bullet_items (each carries time_range + line_index for image insertion).
             # Per-item resilience: a single frame-extraction failure (e.g. an
             # LLM-drifted timestamp ffmpeg can't decode) must NOT abort the
@@ -444,7 +444,7 @@ class VideoSummaryService:
             bullet_sel = even_indices(len(merged.bullet_items), bullet_cap)
             for n_done, orig_i in enumerate(bullet_sel):
                 item = merged.bullet_items[orig_i]
-                pct = 0.60 + 0.20 * (n_done / max(1, len(bullet_sel)))
+                pct = 0.70 + 0.25 * (n_done / max(1, len(bullet_sel)))
                 progress_callback(
                     pct,
                     f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
@@ -501,7 +501,7 @@ class VideoSummaryService:
                     )
                     continue
 
-            # Step 5: narrative paragraph frames (60% ~ <90%)
+            # Step 5: narrative paragraph frames (70% ~ 95%)
             # Narrative mode frames EVERY paragraph (no bullet_cap subsampling);
             # MAX_NARRATIVE_FRAMES is only a pathological-output safety cap.
             # Empty in bullets mode (narrative_paragraphs == []) → loop no-ops.
@@ -512,7 +512,7 @@ class VideoSummaryService:
             )
             for n_done, orig_i in enumerate(para_sel):
                 para = merged.narrative_paragraphs[orig_i]
-                pct = 0.60 + 0.30 * (n_done / max(1, len(para_sel)))
+                pct = 0.70 + 0.25 * (n_done / max(1, len(para_sel)))
                 progress_callback(
                     pct,
                     f"task.progress.summary_paragraph_frame|{n_done + 1}|{len(para_sel)}",
@@ -571,8 +571,8 @@ class VideoSummaryService:
                     f"(report still produced without those inline images)"
                 )
 
-            # Step 6: build markdown + zip (90% ~ 95%)
-            progress_callback(0.92, "task.progress.summary_packaging")
+            # Step 6: build markdown + zip (95%)
+            progress_callback(0.95, "task.progress.summary_packaging")
             md_text = build_markdown(
                 result=merged,
                 bullet_frames=bullet_frames,
