@@ -13,6 +13,14 @@ import os
 import sys
 from typing import Optional
 
+# Bootstrap: when run as a script (`python scripts/_remote_*.py`), sys.path[0]
+# is the scripts/ directory and `app` (which lives at core/backend/app/) is not
+# importable. Walk up one level so `from app.* import ...` works regardless of
+# cwd. Idempotent — no-op if a parent has already done it.
+_BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
 
 def resolve_provider(
     provider_name: str,

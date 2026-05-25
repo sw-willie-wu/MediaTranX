@@ -21,6 +21,12 @@ import os
 import sys
 from pathlib import Path
 
+# Bootstrap: make `app` importable when this file is run directly as a script
+# (sys.path[0] is scripts/ by default; app lives one level up).
+_BACKEND_DIR = str(Path(__file__).resolve().parent.parent)
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
 
 async def _run_remote_summary(clip_path: Path, mode: str,
                               llm_model: str, vlm_model: str,
