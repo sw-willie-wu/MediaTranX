@@ -164,6 +164,21 @@ class OllamaProvider(RemoteProvider):
             logger.warning(f"Failed to query model ctx for {model_name}: {e}")
         return 8192  # Conservative fallback
 
+    def get_summary_chunking_hints(self, model: str) -> dict:
+        """Query Ollama /api/show for the model's actual num_ctx.
+
+        Falls back to base default on any network error. model_cap = 75% of
+        n_ctx, capped at 16000 (the largest chunk size we've validated for
+        coherence; beyond this LLMs start losing track of structural prompts),
+        floored at 6000 (parity with the old hardcoded default).
+        """
+        try:
+            n_ctx = self.get_model_ctx(model)
+            model_cap = max(6000, min(int(n_ctx * 0.75), 16000))
+            return {"n_ctx": n_ctx, "model_cap": model_cap}
+        except Exception:
+            return super().get_summary_chunking_hints(model)
+
     def chat(
         self,
         model: str,

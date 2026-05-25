@@ -368,17 +368,32 @@ class VideoSummaryService:
         bullet_cap = compute_bullet_target(content_sec)
 
         # Step 2: chunk + LLM (50% ~ 70%)
+        # Resolve LLM provider early — chunking budget depends on it for remote
+        # (Ollama queries /api/show; OpenAI/Gemini use 128k/24k defaults).
+        llm_prov = None
+        llm_model_id = None
+        if params.get("llm_remote"):
+            llm_prov = self._remote_service.get_provider_for_connection(
+                params.get("llm_conn_id"), params.get("llm_provider"),
+            )
+            if llm_prov is None:
+                raise RuntimeError(
+                    f"Remote LLM provider unavailable: "
+                    f"provider={params.get('llm_provider')!r}, "
+                    f"conn_id={params.get('llm_conn_id')!r}"
+                )
+            llm_model_id = params.get("llm_remote_model")
+
         # Resolve cfg + n_ctx + model_cap. Local reads cfg from the family/size
-        # registry; remote reads from REMOTE_INFERENCE_DEFAULTS["summarize"]
-        # (no per-model n_ctx — pick a safe Ollama-friendly default).
+        # registry; remote uses provider-aware chunking hints (Ollama queries
+        # /api/show for real n_ctx; OpenAI/Gemini use conservative 128k/24k).
+        # Replaces old hardcoded 32768/6000 that wasted cloud provider capacity.
         if params.get("llm_remote"):
             from app.adapters.ai.inference_config import get_remote_inference_config
             cfg = get_remote_inference_config("summarize")
-            # REMOTE_INFERENCE_DEFAULTS["summarize"] = {"temperature": 0.3,
-            # "max_tokens": 4096}. No n_ctx field; assume 32k (Ollama default
-            # for qwen3.5:9b et al). Sweet-spot model_cap=6000.
-            n_ctx = 32768
-            model_cap = 6000
+            hints = llm_prov.get_summary_chunking_hints(llm_model_id)
+            n_ctx = hints["n_ctx"]
+            model_cap = hints["model_cap"]
         else:
             cfg = get_inference_config(llm_family, llm_size, "summarize")
             n_ctx = cfg["n_ctx"]
@@ -419,21 +434,6 @@ class VideoSummaryService:
             f"input_budget={input_budget}, num_chunks={len(chunks)}, "
             f"num_entries={len(entries)}"
         )
-
-        # Resolve LLM provider — either local (family/size) or remote.
-        llm_prov = None
-        llm_model_id = None
-        if params.get("llm_remote"):
-            llm_prov = self._remote_service.get_provider_for_connection(
-                params.get("llm_conn_id"), params.get("llm_provider"),
-            )
-            if llm_prov is None:
-                raise RuntimeError(
-                    f"Remote LLM provider unavailable: "
-                    f"provider={params.get('llm_provider')!r}, "
-                    f"conn_id={params.get('llm_conn_id')!r}"
-                )
-            llm_model_id = params.get("llm_remote_model")
 
         chunk_results = self._run_llm_chunk_loop(
             params=params, chunks=chunks, entries=entries,

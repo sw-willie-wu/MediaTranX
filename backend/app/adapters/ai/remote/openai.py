@@ -142,6 +142,17 @@ class OpenAIProvider(RemoteProvider):
             logger.error(f"Failed to list OpenAI models: {e}")
             return []
 
+    def get_summary_chunking_hints(self, model: str) -> dict:
+        """Most current OpenAI text models have >=128k context (gpt-4o-mini,
+        gpt-4o, o4-mini, gpt-5 family). Use 128k / 24k as the conservative
+        default — older models (gpt-3.5-turbo at 16k) would have a chunk
+        truncated server-side, which is a graceful degradation.
+
+        Per-model tier lookup is out of scope; the OpenAI API doesn't expose
+        a stable context-window field on /v1/models.
+        """
+        return {"n_ctx": 128000, "model_cap": 24000}
+
     def chat(
         self,
         model: str,

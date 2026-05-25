@@ -139,6 +139,14 @@ class GeminiProvider(RemoteProvider):
             logger.error(f"Failed to list Gemini models: {e}")
             return []
 
+    def get_summary_chunking_hints(self, model: str) -> dict:
+        """Gemini 1.5+ has 128k+ context (1.5-flash: 1M, 2.0-flash: 1M,
+        2.5-flash: 1M). Use 128k / 24k — going larger doesn't help (output
+        is still capped at 8192) and risks single-chunk latency exceeding our
+        900s HTTP timeout on slower models.
+        """
+        return {"n_ctx": 128000, "model_cap": 24000}
+
     def _convert_to_gemini_contents(self, messages: list[dict]) -> list[dict]:
         """Convert OpenAI-shape messages to Gemini's contents shape.
 

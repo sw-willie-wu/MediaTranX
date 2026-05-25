@@ -159,6 +159,22 @@ class RemoteProvider(ABC):
             abort_hook=abort_hook, task=task,
         )
 
+    def get_summary_chunking_hints(self, model: str) -> dict:
+        """Return chunking-budget hints for the summarize task on this provider/model.
+
+        Returns dict with keys:
+            n_ctx: Total context window the model accepts (tokens).
+            model_cap: Upper bound on a single chunk's input tokens. Distinct
+                from n_ctx because we want to leave headroom for output + prompt
+                overhead, and keep chunk size in a coherence sweet-spot.
+
+        Default: conservative cross-provider safe values usable when a subclass
+        doesn't know better. Subclasses SHOULD override using provider-specific
+        knowledge (e.g. /api/show for Ollama, hardcoded tier lookup for cloud
+        APIs).
+        """
+        return {"n_ctx": 32768, "model_cap": 6000}
+
     def is_available(self) -> bool:
         """Check if provider is available (defaults to calling connect)."""
         try:

@@ -120,3 +120,12 @@ def test_subclass_with_both_classvars_passes():
     inst = _Good("http://x")
     assert inst.PROVIDER_NAME == "good"
     assert inst.IMAGE_PREP_MODE == "raw"
+
+
+# --- get_summary_chunking_hints ---
+
+def test_get_summary_chunking_hints_default():
+    """Base default returns conservative 32k/6k."""
+    p = _StubProvider("http://x")
+    hints = p.get_summary_chunking_hints("any-model")
+    assert hints == {"n_ctx": 32768, "model_cap": 6000}
