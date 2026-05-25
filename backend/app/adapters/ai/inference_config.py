@@ -46,13 +46,16 @@ def get_inference_config(model_family: str, size: str, task: str) -> dict:
     }
 
 
-def get_remote_inference_config(task: str, provider: str = "openai") -> dict:
+def get_remote_inference_config(task: str) -> dict:
     """
     Get inference config for remote providers.
 
-    For Ollama, caller should override max_tokens after querying model ctx.
+    For Ollama, caller should override max_tokens after querying model ctx
+    (see OllamaProvider.get_model_ctx).
     """
     from app.adapters.ai.registry import REMOTE_INFERENCE_DEFAULTS
 
-    defaults = REMOTE_INFERENCE_DEFAULTS.get(task, {"temperature": 0.1, "max_tokens": 8192})
+    defaults = REMOTE_INFERENCE_DEFAULTS.get(
+        task, {"temperature": 0.1, "max_tokens": 8192}
+    )
     return dict(defaults)
