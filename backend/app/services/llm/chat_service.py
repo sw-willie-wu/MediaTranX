@@ -32,18 +32,22 @@ class LocalChatSession:
         self._cancel_pct = cancel_pct
         self._cancel_msg = cancel_msg
 
-    def _guard(self):
-        """Single poll+kill watcher for the wrapped blocking call.
+    def _guard(self, pct: Optional[float] = None, msg: Optional[str] = None):
+        """Single-poller cancel watcher. Per-call (pct, msg) override the
+        session defaults set at __init__. Either-None means "use default".
 
-        nullcontext when no on_progress (legacy behaviour); otherwise
-        cancel_guard, which itself passes through if an enclosing
-        fake_progress(cancellable=) already owns poll+kill (shared ContextVar)
-        — exactly one watcher per call.
+        Required by the VLM frame-pick loop pattern: one open session
+        across many per-item calls, each item carries its own cancel_pct
+        and cancel_msg for monotonic progress reporting and i18n labels.
+        See spec §F3 step 1.
         """
         if self._on_progress is None:
             return nullcontext()
-        return cancel_guard(self._on_progress, cancellable=self,
-                            progress=self._cancel_pct, message=self._cancel_msg)
+        return cancel_guard(
+            self._on_progress, cancellable=self,
+            progress=pct if pct is not None else self._cancel_pct,
+            message=msg if msg is not None else self._cancel_msg,
+        )
 
     def chat(
         self,
@@ -54,8 +58,10 @@ class LocalChatSession:
         top_k: int = 40,
         top_p: float = 0.9,
         stop: Optional[list[str]] = None,
+        cancel_pct: Optional[float] = None,        # per-call override
+        cancel_msg: Optional[str] = None,          # per-call override
     ) -> str:
-        with self._guard():
+        with self._guard(cancel_pct, cancel_msg):
             return self._runtime.chat(
                 messages=messages, max_tokens=max_tokens, temperature=temperature,
                 top_k=top_k, top_p=top_p, stop=stop,
@@ -70,8 +76,10 @@ class LocalChatSession:
         top_k: int = 40,
         top_p: float = 0.9,
         stop: Optional[list[str]] = None,
+        cancel_pct: Optional[float] = None,
+        cancel_msg: Optional[str] = None,
     ) -> str:
-        with self._guard():
+        with self._guard(cancel_pct, cancel_msg):
             return self._runtime.complete(
                 prompt=prompt, max_tokens=max_tokens, temperature=temperature,
                 top_k=top_k, top_p=top_p, stop=stop,
@@ -86,6 +94,8 @@ class LocalChatSession:
         temperature: float,
         top_k: int = 40,
         top_p: float = 0.9,
+        cancel_pct: Optional[float] = None,
+        cancel_msg: Optional[str] = None,
     ) -> str:
         """Send a prompt + images to the loaded VLM via OpenAI-compat multimodal messages.
 
@@ -101,7 +111,7 @@ class LocalChatSession:
                 "image_url": {"url": f"data:{mime};base64,{b64}"},
             })
         messages = [{"role": "user", "content": content}]
-        with self._guard():
+        with self._guard(cancel_pct, cancel_msg):
             return self._runtime.chat(
                 messages=messages, max_tokens=max_tokens, temperature=temperature,
                 top_k=top_k, top_p=top_p, stop=None,
