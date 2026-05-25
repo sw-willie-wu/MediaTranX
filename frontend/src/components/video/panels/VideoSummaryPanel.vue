@@ -80,7 +80,9 @@ const localLlmOptions = computed(() => {
     badge: opt.downloaded ? 'ok' as const : 'err' as const,
   }))
 })
-const { mergedOptions: llmOptions } = useModelOptions('text', localLlmOptions)
+const { mergedOptions: llmOptions } = useModelOptions(
+  'text', localLlmOptions, { providers: ['ollama'] },
+)
 
 // VLM (vision-capable) selector — with "none" option for fallback
 const localVlmOptions = computed(() => {
@@ -100,7 +102,9 @@ const localVlmOptions = computed(() => {
     badge: opt.downloaded ? 'ok' as const : 'err' as const,
   }))
 })
-const { mergedOptions: vlmOptionsBase } = useModelOptions('vision', localVlmOptions)
+const { mergedOptions: vlmOptionsBase } = useModelOptions(
+  'vision', localVlmOptions, { providers: ['ollama'] },
+)
 const vlmOptions = computed(() => [
   { value: '', label: t('video.summary.vlm_none') },
   ...vlmOptionsBase.value,
@@ -155,21 +159,45 @@ async function execute() {
     if (!await guardModelReady(!!llmLocal?.downloaded, 'llm')) return
   }
 
-  const [llmFamily, llmSize] = llmModel.value.split(':')
+  // Guard: check VLM is downloaded (skip for remote models)
+  const vlmParsed = vlmModel.value ? parseModelValue(vlmModel.value) : null
+  if (vlmParsed && !vlmParsed.isRemote) {
+    const vlmLocal = localVlmOptions.value.find(m => m.value === vlmModel.value)
+    if (!await guardModelReady(!!vlmLocal?.downloaded, 'llm')) return
+  }
+
   const params: Record<string, unknown> = {
     file_id: props.fileId,
-    llm_model_family: llmFamily,
-    llm_model_size: llmSize,
     language: props.language ?? 'zh-TW',
     whisper_model_size: whisperModelSize.value,
     vocal_separation: vocalSeparation.value,
     summary_mode: summaryMode.value,
   }
 
-  if (vlmModel.value) {
-    const [vlmFamily, vlmSize] = vlmModel.value.split(':')
-    params.vlm_model_family = vlmFamily
-    params.vlm_model_size = vlmSize
+  // LLM branch: remote vs local
+  if (llmParsed.isRemote) {
+    params.llm_remote = true
+    params.llm_provider = llmParsed.provider!
+    params.llm_conn_id = llmParsed.connId!
+    params.llm_remote_model = llmParsed.modelId
+  } else {
+    const [llmFamily, llmSize] = llmModel.value.split(':')
+    params.llm_model_family = llmFamily
+    params.llm_model_size = llmSize
+  }
+
+  // VLM branch (optional): remote vs local
+  if (vlmParsed) {
+    if (vlmParsed.isRemote) {
+      params.vlm_remote = true
+      params.vlm_provider = vlmParsed.provider!
+      params.vlm_conn_id = vlmParsed.connId!
+      params.vlm_remote_model = vlmParsed.modelId
+    } else {
+      const [vlmFamily, vlmSize] = vlmModel.value.split(':')
+      params.vlm_model_family = vlmFamily
+      params.vlm_model_size = vlmSize
+    }
   }
 
   if (whisperAdvanced.value) {
