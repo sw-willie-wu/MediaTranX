@@ -6,6 +6,7 @@ import asyncio
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -897,7 +898,7 @@ class FFmpegWrapper:
         scene_threshold: float,
         analyze_w: int,
         on_progress: Optional[Callable[[float], None]] = None,
-        threads: int = 4,
+        threads: int = 0,
     ) -> list[float]:
         """Detect scene-change timestamps via the FFmpeg ``scdet`` filter.
 
@@ -946,11 +947,20 @@ class FFmpegWrapper:
                 "-nostats",
                 "-f", "null", "-",
             ]
+            # BELOW_NORMAL_PRIORITY_CLASS lets the OS scheduler yield CPU to
+            # NORMAL-priority Whisper / llama-server whenever they need it,
+            # while detect can still saturate idle cores. Pairs with
+            # `-threads 0` (default) which lets dav1d use nproc. See spec
+            # 2026-05-25-detect-priority-class.md.
+            extra: dict = {}
+            if sys.platform == "win32":
+                extra["creationflags"] = subprocess.BELOW_NORMAL_PRIORITY_CLASS
             proc = await asyncio.create_subprocess_exec(
                 *args,
                 cwd=str(scene_tmp_path.parent),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **extra,
             )
 
             stderr_chunks: list[bytes] = []
@@ -1026,7 +1036,7 @@ class FFmpegWrapper:
         scene_threshold: float,
         analyze_w: int,
         on_progress: Optional[Callable[[float], None]] = None,
-        threads: int = 4,
+        threads: int = 0,
     ) -> list[float]:
         """Sync version of detect_scenes() for use in TaskManager handlers."""
         return _run_sync(

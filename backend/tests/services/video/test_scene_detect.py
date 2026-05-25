@@ -130,31 +130,16 @@ def test_extract_frame_omits_max_edge_kwarg_when_none(tmp_path):
     assert "max_edge" not in kwargs
 
 
-# ── 1.4.1 follow-up: detect threads cap ─────────────────────────────────
-from app.services.video.summary_service.scene_detect import DETECT_THREAD_CAP
+# ── 2026-05-25: drop static cap, OS scheduler does balancing via priority ──
+def test_detect_all_does_not_pass_threads_kwarg():
+    """detect_all forwards no `threads=` to ffmpeg (let ffmpeg/dav1d auto-pick).
 
-
-def test_detect_all_passes_default_thread_cap_to_ffmpeg():
-    """detect_all forwards threads=DETECT_THREAD_CAP (=4) to detect_scenes_sync."""
+    See spec 2026-05-25-detect-priority-class.md §AC#2 — DETECT_THREAD_CAP
+    was removed in favor of Windows BELOW_NORMAL priority + unbounded threads.
+    """
     ffmpeg = MagicMock()
     ffmpeg.detect_scenes_sync.return_value = []
     d = SceneDetector(ffmpeg=ffmpeg)
     d.detect_all(Path("v.mp4"))
-
-    assert DETECT_THREAD_CAP == 4
     kw = ffmpeg.detect_scenes_sync.call_args.kwargs
-    assert kw.get("threads") == 4, ffmpeg.detect_scenes_sync.call_args
-
-
-def test_detect_all_uses_monkey_patched_thread_cap(monkeypatch):
-    """Overriding DETECT_THREAD_CAP propagates to the ffmpeg call."""
-    from app.services.video.summary_service import scene_detect as sd
-
-    ffmpeg = MagicMock()
-    ffmpeg.detect_scenes_sync.return_value = []
-    monkeypatch.setattr(sd, "DETECT_THREAD_CAP", 2)
-    d = sd.SceneDetector(ffmpeg=ffmpeg)
-    d.detect_all(Path("v.mp4"))
-
-    kw = ffmpeg.detect_scenes_sync.call_args.kwargs
-    assert kw.get("threads") == 2
+    assert "threads" not in kw, f"threads kwarg should not be passed (got {kw})"
