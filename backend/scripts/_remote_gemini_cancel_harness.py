@@ -2,11 +2,18 @@
 
 V1 fake_progress + V2 in-session _guard + V3' mid-handshake abort.
 
-Usage:
+Usage (preferred — uses DB):
+    $env:MTX_REMOTE_CONN_ID = "<gemini conn id from UI Settings>"
+    uv run --project core/backend python core/backend/scripts/_remote_gemini_cancel_harness.py
+
+Usage (fallback — env-var override):
+    $env:MTX_GEMINI_API_KEY = "AIza..."
     uv run --project core/backend python core/backend/scripts/_remote_gemini_cancel_harness.py
 
 Env:
-    MTX_GEMINI_API_KEY, MTX_GEMINI_ENDPOINT,
+    MTX_REMOTE_CONN_ID    (preferred — looks up endpoint + api_key from DB)
+    MTX_GEMINI_API_KEY    (fallback when MTX_REMOTE_CONN_ID not set)
+    MTX_GEMINI_ENDPOINT   (only used with env-var fallback)
     MTX_GEMINI_MODEL=gemini-2.5-flash
 
 Asserts:
@@ -19,10 +26,8 @@ import sys
 import threading
 import time
 
-ENDPOINT = os.environ.get(
-    "MTX_GEMINI_ENDPOINT", "https://generativelanguage.googleapis.com"
-)
-API_KEY = os.environ.get("MTX_GEMINI_API_KEY")
+from _remote_smoke_helpers import resolve_provider
+
 MODEL = os.environ.get("MTX_GEMINI_MODEL", "gemini-2.5-flash")
 
 LONG_PROMPT = (
@@ -31,13 +36,20 @@ LONG_PROMPT = (
 )
 
 
+def _get_prov():
+    return resolve_provider(
+        "gemini",
+        "https://generativelanguage.googleapis.com",
+        "MTX_GEMINI_API_KEY",
+    )
+
+
 def variant_1():
-    from app.adapters.ai.remote.gemini import GeminiProvider
     from app.services._remote_chat import RemoteChatSession
     from app.utils.inference import fake_progress
     from app.handler.exceptions import TaskCancelledError
 
-    prov = GeminiProvider(ENDPOINT, API_KEY)
+    prov = _get_prov()
     ev = threading.Event()
 
     def on_progress(progress, message):
@@ -68,11 +80,10 @@ def variant_1():
 
 
 def variant_2():
-    from app.adapters.ai.remote.gemini import GeminiProvider
     from app.services._remote_chat import RemoteChatSession
     from app.handler.exceptions import TaskCancelledError
 
-    prov = GeminiProvider(ENDPOINT, API_KEY)
+    prov = _get_prov()
     ev = threading.Event()
 
     def on_progress(progress, message):
@@ -98,11 +109,10 @@ def variant_2():
 
 
 def variant_3():
-    from app.adapters.ai.remote.gemini import GeminiProvider
     from app.services._remote_chat import RemoteChatSession
     from app.handler.exceptions import RemoteApiError
 
-    prov = GeminiProvider(ENDPOINT, API_KEY)
+    prov = _get_prov()
     sess = RemoteChatSession(prov, MODEL)
     threading.Thread(target=sess.kill_process, daemon=True).start()
 
@@ -118,9 +128,6 @@ def variant_3():
 
 
 if __name__ == "__main__":
-    if not API_KEY:
-        print("ERROR: MTX_GEMINI_API_KEY not set", file=sys.stderr)
-        sys.exit(2)
     results = []
     for name, fn in (("V1", variant_1), ("V2", variant_2), ("V3'", variant_3)):
         try:

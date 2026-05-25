@@ -1,12 +1,17 @@
 """Ad-hoc smoke for OpenAI Responses API (o4-mini; blocking + streaming).
 
-Usage:
+Usage (preferred — uses DB):
+    $env:MTX_REMOTE_CONN_ID = "<openai conn id from UI Settings>"
+    uv run --project core/backend python core/backend/scripts/_remote_openai_responses_smoke.py
+
+Usage (fallback — env-var override):
     $env:MTX_OPENAI_API_KEY = "sk-..."
     uv run --project core/backend python core/backend/scripts/_remote_openai_responses_smoke.py
 
 Env:
-    MTX_OPENAI_API_KEY (required)
-    MTX_OPENAI_ENDPOINT (default: https://api.openai.com)
+    MTX_REMOTE_CONN_ID         (preferred — looks up endpoint + api_key from DB)
+    MTX_OPENAI_API_KEY         (fallback when MTX_REMOTE_CONN_ID not set)
+    MTX_OPENAI_ENDPOINT        (only used with env-var fallback; default: https://api.openai.com)
     MTX_OPENAI_REASONING_MODEL (default: o4-mini)
 """
 from __future__ import annotations
@@ -14,14 +19,17 @@ import os
 import sys
 import time
 
-ENDPOINT = os.environ.get("MTX_OPENAI_ENDPOINT", "https://api.openai.com")
-API_KEY = os.environ.get("MTX_OPENAI_API_KEY")
+from _remote_smoke_helpers import resolve_provider
+
 MODEL = os.environ.get("MTX_OPENAI_REASONING_MODEL", "o4-mini")
 
 
+def _get_prov():
+    return resolve_provider("openai", "https://api.openai.com", "MTX_OPENAI_API_KEY")
+
+
 def smoke_blocking():
-    from app.adapters.ai.remote.openai import OpenAIProvider
-    prov = OpenAIProvider(ENDPOINT, API_KEY)
+    prov = _get_prov()
     t0 = time.monotonic()
     result = prov.chat(
         model=MODEL,
@@ -34,8 +42,7 @@ def smoke_blocking():
 
 
 def smoke_streaming():
-    from app.adapters.ai.remote.openai import OpenAIProvider
-    prov = OpenAIProvider(ENDPOINT, API_KEY)
+    prov = _get_prov()
     t0 = time.monotonic()
     result = prov.chat(
         model=MODEL,
@@ -48,9 +55,6 @@ def smoke_streaming():
 
 
 if __name__ == "__main__":
-    if not API_KEY:
-        print("ERROR: MTX_OPENAI_API_KEY not set", file=sys.stderr)
-        sys.exit(2)
     passes = []
     for fn in (smoke_blocking, smoke_streaming):
         try:

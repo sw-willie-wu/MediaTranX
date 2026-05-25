@@ -4,11 +4,18 @@ V1 fake_progress + V2 in-session _guard across both endpoints.
 V3 (pre-connection on HTTPS) replaced with V3' mid-handshake abort
 (spec §6.3).
 
-Usage:
+Usage (preferred — uses DB):
+    $env:MTX_REMOTE_CONN_ID = "<openai conn id from UI Settings>"
+    uv run --project core/backend python core/backend/scripts/_remote_openai_cancel_harness.py
+
+Usage (fallback — env-var override):
+    $env:MTX_OPENAI_API_KEY = "sk-..."
     uv run --project core/backend python core/backend/scripts/_remote_openai_cancel_harness.py
 
 Env:
-    MTX_OPENAI_API_KEY, MTX_OPENAI_ENDPOINT,
+    MTX_REMOTE_CONN_ID         (preferred — looks up endpoint + api_key from DB)
+    MTX_OPENAI_API_KEY         (fallback when MTX_REMOTE_CONN_ID not set)
+    MTX_OPENAI_ENDPOINT        (only used with env-var fallback)
     MTX_OPENAI_TEXT_MODEL=gpt-4o-mini, MTX_OPENAI_REASONING_MODEL=o4-mini
 
 Asserts:
@@ -21,8 +28,8 @@ import sys
 import threading
 import time
 
-ENDPOINT = os.environ.get("MTX_OPENAI_ENDPOINT", "https://api.openai.com")
-API_KEY = os.environ.get("MTX_OPENAI_API_KEY")
+from _remote_smoke_helpers import resolve_provider
+
 TEXT_MODEL = os.environ.get("MTX_OPENAI_TEXT_MODEL", "gpt-4o-mini")
 REASONING_MODEL = os.environ.get("MTX_OPENAI_REASONING_MODEL", "o4-mini")
 
@@ -32,13 +39,16 @@ LONG_PROMPT = (
 )
 
 
+def _get_prov():
+    return resolve_provider("openai", "https://api.openai.com", "MTX_OPENAI_API_KEY")
+
+
 def variant_1_outer_fake_progress(model: str, label: str) -> tuple[bool, float]:
-    from app.adapters.ai.remote.openai import OpenAIProvider
     from app.services._remote_chat import RemoteChatSession
     from app.utils.inference import fake_progress
     from app.handler.exceptions import TaskCancelledError
 
-    prov = OpenAIProvider(ENDPOINT, API_KEY)
+    prov = _get_prov()
     ev = threading.Event()
 
     def on_progress(progress, message):
@@ -73,12 +83,10 @@ def variant_1_outer_fake_progress(model: str, label: str) -> tuple[bool, float]:
 
 
 def variant_2_in_session_guard(model: str, label: str) -> tuple[bool, float]:
-    from app.adapters.ai.remote.openai import OpenAIProvider
     from app.services._remote_chat import RemoteChatSession
-    from app.utils.inference import fake_progress
     from app.handler.exceptions import TaskCancelledError
 
-    prov = OpenAIProvider(ENDPOINT, API_KEY)
+    prov = _get_prov()
     ev = threading.Event()
 
     def on_progress(progress, message):
@@ -111,11 +119,10 @@ def variant_3_mid_handshake(model: str, label: str) -> tuple[bool, float]:
 
     Wall-clock <5s expected.
     """
-    from app.adapters.ai.remote.openai import OpenAIProvider
     from app.services._remote_chat import RemoteChatSession
     from app.handler.exceptions import RemoteApiError
 
-    prov = OpenAIProvider(ENDPOINT, API_KEY)
+    prov = _get_prov()
     sess = RemoteChatSession(prov, model)
 
     # Fire kill_pending IMMEDIATELY in a background thread (0ms delay)
@@ -133,10 +140,6 @@ def variant_3_mid_handshake(model: str, label: str) -> tuple[bool, float]:
 
 
 if __name__ == "__main__":
-    if not API_KEY:
-        print("ERROR: MTX_OPENAI_API_KEY not set", file=sys.stderr)
-        sys.exit(2)
-
     results = []
     for label, model in (("chat-completions", TEXT_MODEL),
                           ("responses", REASONING_MODEL)):

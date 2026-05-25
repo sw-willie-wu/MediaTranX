@@ -1,23 +1,26 @@
 """Ad-hoc smoke for Gemini chat (text + vision; blocking + streaming).
 
-Usage:
+Usage (preferred — uses DB):
+    $env:MTX_REMOTE_CONN_ID = "<gemini conn id from UI Settings>"
+    uv run --project core/backend python core/backend/scripts/_remote_gemini_chat_smoke.py
+
+Usage (fallback — env-var override):
     $env:MTX_GEMINI_API_KEY = "AIza..."
     uv run --project core/backend python core/backend/scripts/_remote_gemini_chat_smoke.py
 
 Env:
-    MTX_GEMINI_API_KEY (required)
-    MTX_GEMINI_ENDPOINT (default: https://generativelanguage.googleapis.com)
-    MTX_GEMINI_MODEL (default: gemini-2.5-flash)
+    MTX_REMOTE_CONN_ID    (preferred — looks up endpoint + api_key from DB)
+    MTX_GEMINI_API_KEY    (fallback when MTX_REMOTE_CONN_ID not set)
+    MTX_GEMINI_ENDPOINT   (only used with env-var fallback; default: https://generativelanguage.googleapis.com)
+    MTX_GEMINI_MODEL      (default: gemini-2.5-flash)
 """
 from __future__ import annotations
 import os
 import sys
 import time
 
-ENDPOINT = os.environ.get(
-    "MTX_GEMINI_ENDPOINT", "https://generativelanguage.googleapis.com"
-)
-API_KEY = os.environ.get("MTX_GEMINI_API_KEY")
+from _remote_smoke_helpers import resolve_provider
+
 MODEL = os.environ.get("MTX_GEMINI_MODEL", "gemini-2.5-flash")
 
 
@@ -30,9 +33,16 @@ def _make_test_image_part():
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+def _get_prov():
+    return resolve_provider(
+        "gemini",
+        "https://generativelanguage.googleapis.com",
+        "MTX_GEMINI_API_KEY",
+    )
+
+
 def smoke_text_blocking():
-    from app.adapters.ai.remote.gemini import GeminiProvider
-    prov = GeminiProvider(ENDPOINT, API_KEY)
+    prov = _get_prov()
     t0 = time.monotonic()
     result = prov.chat(
         model=MODEL,
@@ -44,8 +54,7 @@ def smoke_text_blocking():
 
 
 def smoke_text_streaming():
-    from app.adapters.ai.remote.gemini import GeminiProvider
-    prov = GeminiProvider(ENDPOINT, API_KEY)
+    prov = _get_prov()
     t0 = time.monotonic()
     result = prov.chat(
         model=MODEL,
@@ -58,8 +67,7 @@ def smoke_text_streaming():
 
 
 def smoke_vision_streaming():
-    from app.adapters.ai.remote.gemini import GeminiProvider
-    prov = GeminiProvider(ENDPOINT, API_KEY)
+    prov = _get_prov()
     b64 = _make_test_image_part()
     messages = [{
         "role": "user",
@@ -79,9 +87,6 @@ def smoke_vision_streaming():
 
 
 if __name__ == "__main__":
-    if not API_KEY:
-        print("ERROR: MTX_GEMINI_API_KEY not set", file=sys.stderr)
-        sys.exit(2)
     passes = []
     for fn in (smoke_text_blocking, smoke_text_streaming, smoke_vision_streaming):
         try:
