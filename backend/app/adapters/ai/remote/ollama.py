@@ -295,6 +295,100 @@ class OllamaProvider(RemoteProvider):
                 except Exception:
                     pass
 
+    def chat_with_images(
+        self,
+        model: str,
+        prompt: str,
+        images: list,                          # list of Path | str
+        *,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+        abort_hook: Optional[Callable] = None,
+    ) -> str:
+        """Ollama multimodal chat. Always uses streaming (stream:true,
+        timeout=30), regardless of abort_hook presence.
+
+        Future callers without abort_hook still get streaming semantics
+        — documented as forward-compat note (spec §F1 MINOR-H).
+
+        Spec §F1.
+        """
+        return self._chat_with_images_streaming(
+            model, prompt, images, max_tokens, temperature, abort_hook,
+        )
+
+    def _chat_with_images_streaming(
+        self, model: str, prompt: str, images: list,
+        max_tokens: int, temperature: float,
+        abort_hook: Optional[Callable],
+    ) -> str:
+        from pathlib import Path
+        import base64
+
+        # Encode each image as raw base64 (Ollama-native; NO data: prefix).
+        images_b64: list[str] = []
+        for img_path in images:
+            p = Path(img_path)
+            images_b64.append(base64.b64encode(p.read_bytes()).decode("ascii"))
+
+        payload = {
+            "model": model,
+            "stream": True,
+            "messages": [{
+                "role": "user",
+                "content": prompt,
+                "images": images_b64,
+            }],
+            "options": {
+                "num_predict": max_tokens,
+                "temperature": temperature,
+            },
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.endpoint}/api/chat",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        from app.handler.exceptions import RemoteApiError
+        resp = None
+        try:
+            resp = urllib.request.urlopen(req, timeout=30)
+            if abort_hook is not None:
+                abort_hook(resp)
+            parts: list[str] = []
+            for raw in resp:
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                msg = obj.get("message", {})
+                if isinstance(msg, dict):
+                    delta = msg.get("content", "")
+                    if delta:
+                        parts.append(delta)
+                if obj.get("done") is True:
+                    break
+            return "".join(parts).strip()
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            raise self._parse_error(e.code, body)
+        except urllib.error.URLError as e:
+            raise RemoteApiError("connection_failed", f"Ollama: {e}")
+        except OSError as e:
+            raise RemoteApiError("connection_failed", f"Ollama: {e}")
+        finally:
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
+
     @staticmethod
     def _parse_error(status: int, body: str):
         """Parse Ollama API error and return a RemoteApiError."""
