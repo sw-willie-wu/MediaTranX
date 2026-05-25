@@ -910,3 +910,96 @@ def test_execute_merge_poll_holds_at_070(tmp_path):
     assert detect_events, "expected merge-poll summary_detecting_scenes event"
     assert all(abs(p - 0.70) < 1e-9 for p in detect_events), \
         f"merge-poll pct must be 0.70 (was 0.60 pre-1.4.1-followup), got {detect_events}"
+
+
+# ── Task 8: submit_summary remote LLM/VLM params + validation ─────────
+def _make_video_summary_service_for_submit_tests():
+    """Build a VideoSummaryService with all deps mocked enough that
+    submit_summary's path runs without touching real resources."""
+    from unittest.mock import MagicMock, AsyncMock
+    from app.services.video.summary_service import VideoSummaryService
+
+    file_svc = MagicMock()
+    file_svc.require_file = MagicMock(return_value=MagicMock(file_path="/tmp/x.mp4"))
+    tm = MagicMock()
+    tm.submit = AsyncMock(return_value="task-123")
+
+    return VideoSummaryService(
+        ffmpeg=MagicMock(),
+        file_service=file_svc,
+        task_manager=tm,
+        chat_service=MagicMock(),
+        model_manager=MagicMock(),
+        remote_service=MagicMock(),
+        whisper=MagicMock(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_submit_summary_remote_llm_requires_provider_conn_model():
+    """llm_remote=True with missing provider / conn / remote_model → ValueError."""
+    svc = _make_video_summary_service_for_submit_tests()
+    with pytest.raises(ValueError, match="llm_provider"):
+        await svc.submit_summary(
+            file_id="f1",
+            llm_remote=True,  # missing llm_provider/conn_id/remote_model
+        )
+
+
+@pytest.mark.asyncio
+async def test_submit_summary_local_llm_requires_family_size():
+    """No llm_remote AND missing llm_model_family/_size → ValueError."""
+    svc = _make_video_summary_service_for_submit_tests()
+    with pytest.raises(ValueError, match="llm_model"):
+        await svc.submit_summary(file_id="f1")  # nothing set
+
+
+@pytest.mark.asyncio
+async def test_submit_summary_mixed_local_and_remote_rejected():
+    """Both local (model_family+size) AND remote (llm_remote+...) populated → ValueError."""
+    svc = _make_video_summary_service_for_submit_tests()
+    with pytest.raises(ValueError, match="exactly one"):
+        await svc.submit_summary(
+            file_id="f1",
+            llm_model_family="gemma4", llm_model_size="4b",
+            llm_remote=True, llm_provider="ollama",
+            llm_conn_id=1, llm_remote_model="qwen3.5:9b",
+        )
+
+
+@pytest.mark.asyncio
+async def test_submit_summary_vlm_both_absent_accepted():
+    """VLM is wholly optional — neither local nor remote VLM is fine
+    (midpoint-nearest fallback)."""
+    svc = _make_video_summary_service_for_submit_tests()
+    # local LLM, no VLM at all
+    task_id = await svc.submit_summary(
+        file_id="f1",
+        llm_model_family="gemma4", llm_model_size="4b",
+    )
+    assert task_id  # not raised
+
+
+@pytest.mark.asyncio
+async def test_submit_summary_remote_llm_conn_id_zero_not_reported_as_missing():
+    """conn_id=0 is a valid (if unlikely) DB ID — guard uses `is not None`
+    and the missing-field reporter must match the guard's contract.
+
+    Previously reported `llm_conn_id` as missing even when conn_id=0 was
+    explicitly supplied, because `not 0 == True`. Fix uses `v is None` for
+    `_conn_id` fields.
+    """
+    svc = _make_video_summary_service_for_submit_tests()
+    # conn_id=0 + only llm_remote_model missing → "missing" list should
+    # contain ONLY llm_remote_model, not llm_conn_id.
+    with pytest.raises(ValueError) as exc_info:
+        await svc.submit_summary(
+            file_id="f1",
+            llm_remote=True,
+            llm_provider="ollama",
+            llm_conn_id=0,
+            # llm_remote_model intentionally missing
+        )
+    msg = str(exc_info.value)
+    assert "llm_remote_model" in msg
+    assert "llm_conn_id" not in msg  # the regression we're guarding against

@@ -108,11 +108,21 @@ class VideoSummaryService:
     async def submit_summary(
         self,
         file_id: str,
-        llm_model_family: str,
-        llm_model_size: str,
+        # LLM — either local (family+size) OR remote (remote+provider+conn_id+remote_model)
+        llm_model_family: Optional[str] = None,        # MODIFIED: was required
+        llm_model_size: Optional[str] = None,          # MODIFIED: was required
+        llm_remote: bool = False,                      # NEW
+        llm_provider: Optional[str] = None,            # NEW
+        llm_conn_id: Optional[int] = None,             # NEW
+        llm_remote_model: Optional[str] = None,        # NEW
         language: str = "zh-TW",
+        # VLM — wholly optional; if present, either local OR remote
         vlm_model_family: Optional[str] = None,
         vlm_model_size: Optional[str] = None,
+        vlm_remote: bool = False,                      # NEW
+        vlm_provider: Optional[str] = None,            # NEW
+        vlm_conn_id: Optional[int] = None,             # NEW
+        vlm_remote_model: Optional[str] = None,        # NEW
         whisper_model_size: str = "medium",
         vocal_separation: bool = False,
         align: bool = False,
@@ -122,16 +132,83 @@ class VideoSummaryService:
         vad_threshold: float = 0.3,
         summary_mode: str = "bullets",
     ) -> str:
-        """Submit a summary task."""
+        """Submit a summary task.
+
+        LLM is required: caller must supply EITHER local (model_family +
+        model_size) OR remote (llm_remote=True + provider + conn_id +
+        remote_model). Mixed combinations raise ValueError.
+
+        VLM is fully optional: same local-OR-remote rule when present,
+        but both absent is valid (→ midpoint-nearest fallback in
+        frame_picker).
+        """
+        # ---- LLM validation ----
+        llm_has_local = bool(llm_model_family and llm_model_size)
+        llm_has_remote = bool(
+            llm_remote and llm_provider and llm_conn_id is not None and llm_remote_model
+        )
+        if llm_remote and not llm_has_remote:
+            missing = [
+                k for k, v in (
+                    ("llm_provider", llm_provider),
+                    ("llm_conn_id", llm_conn_id),
+                    ("llm_remote_model", llm_remote_model),
+                ) if (v is None if k.endswith("_conn_id") else not v)
+            ]
+            raise ValueError(
+                f"llm_remote=True but missing: {', '.join(missing)}"
+            )
+        if not llm_has_local and not llm_has_remote:
+            raise ValueError(
+                "LLM is required: pass either llm_model_family+llm_model_size "
+                "(local) or llm_remote=True with llm_provider+llm_conn_id+"
+                "llm_remote_model (remote)"
+            )
+        if llm_has_local and llm_has_remote:
+            raise ValueError(
+                "LLM must specify exactly one of local (llm_model_family+"
+                "llm_model_size) or remote (llm_remote+llm_provider+...)"
+            )
+
+        # ---- VLM validation (optional) ----
+        vlm_has_local = bool(vlm_model_family and vlm_model_size)
+        vlm_has_remote = bool(
+            vlm_remote and vlm_provider and vlm_conn_id is not None and vlm_remote_model
+        )
+        if vlm_remote and not vlm_has_remote:
+            missing = [
+                k for k, v in (
+                    ("vlm_provider", vlm_provider),
+                    ("vlm_conn_id", vlm_conn_id),
+                    ("vlm_remote_model", vlm_remote_model),
+                ) if (v is None if k.endswith("_conn_id") else not v)
+            ]
+            raise ValueError(
+                f"vlm_remote=True but missing: {', '.join(missing)}"
+            )
+        if vlm_has_local and vlm_has_remote:
+            raise ValueError(
+                "VLM must specify exactly one of local or remote (or omit "
+                "both for midpoint-nearest fallback)"
+            )
+
         file_info = self._file_service.require_file(file_id)
 
         params = {
             "file_id": file_id,
             "llm_model_family": llm_model_family,
             "llm_model_size": llm_model_size,
+            "llm_remote": llm_remote,
+            "llm_provider": llm_provider,
+            "llm_conn_id": llm_conn_id,
+            "llm_remote_model": llm_remote_model,
             "language": language,
             "vlm_model_family": vlm_model_family,
             "vlm_model_size": vlm_model_size,
+            "vlm_remote": vlm_remote,
+            "vlm_provider": vlm_provider,
+            "vlm_conn_id": vlm_conn_id,
+            "vlm_remote_model": vlm_remote_model,
             "whisper_model_size": whisper_model_size,
             "vocal_separation": vocal_separation,
             "align": align,
