@@ -8,6 +8,12 @@ pyvenv.cfg
 __pycache__/
 *.pyc
 
+# Allow our committed dev scripts (Scripts/ above is the venv binary dir
+# on Windows; on case-insensitive filesystems it also catches our
+# real scripts/ dir under backend/. Add an explicit un-ignore.)
+!backend/scripts/
+!backend/scripts/**
+
 # Node
 node_modules/
 dist/
