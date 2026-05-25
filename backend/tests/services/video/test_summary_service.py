@@ -17,6 +17,22 @@ def _media_info(duration: float = 120.0, fps: float = 30.0) -> MediaInfo:
     )
 
 
+def test_video_summary_service_requires_remote_service():
+    """VideoSummaryService now requires remote_service injection."""
+    from unittest.mock import MagicMock
+
+    # Build with NO remote_service → should raise TypeError
+    with pytest.raises(TypeError, match="remote_service"):
+        VideoSummaryService(
+            ffmpeg=MagicMock(),
+            file_service=MagicMock(),
+            task_manager=MagicMock(),
+            chat_service=MagicMock(),
+            model_manager=MagicMock(),
+            whisper=MagicMock(),
+        )
+
+
 def test_service_registers_handler():
     ffmpeg = MagicMock()
     file_service = MagicMock()
@@ -29,6 +45,7 @@ def test_service_registers_handler():
         task_manager=task_manager,
         chat_service=chat_service,
         model_manager=MagicMock(),
+        remote_service=MagicMock(name="RemoteService"),
         whisper=MagicMock(),
         demucs=MagicMock(),
         alignment_engine=MagicMock(),
@@ -53,6 +70,7 @@ async def test_submit_summary_validates_file_exists():
         task_manager=task_manager,
         chat_service=MagicMock(),
         model_manager=MagicMock(),
+        remote_service=MagicMock(name="RemoteService"),
         whisper=MagicMock(),
         demucs=MagicMock(),
         alignment_engine=MagicMock(),
@@ -102,6 +120,7 @@ def _make_svc_with_mocks(tmp_path):
         task_manager=task_manager,
         chat_service=chat_service,
         model_manager=MagicMock(),
+        remote_service=MagicMock(name="RemoteService"),
         whisper=MagicMock(),
         demucs=MagicMock(),
         alignment_engine=MagicMock(),
@@ -421,7 +440,8 @@ def _svc_with_chat(tmp_path, chat_markdown):
     chat_service.chat.return_value = chat_markdown
     svc = VideoSummaryService(
         ffmpeg=ffmpeg, file_service=file_service, task_manager=MagicMock(),
-        chat_service=chat_service, model_manager=MagicMock(), whisper=MagicMock(),
+        chat_service=chat_service, model_manager=MagicMock(),
+        remote_service=MagicMock(name="RemoteService"), whisper=MagicMock(),
         demucs=MagicMock(), alignment_engine=MagicMock(),
     )
     return svc, file_service

@@ -82,6 +82,7 @@ class VideoSummaryService:
         task_manager: TaskManager,
         chat_service,
         model_manager,
+        remote_service,
         whisper: WhisperWrapper,
         demucs: DemucsWrapper = None,
         alignment_engine: AlignmentEngine = None,
@@ -91,6 +92,7 @@ class VideoSummaryService:
         self._task_manager = task_manager
         self._chat_service = chat_service
         self._model_manager = model_manager
+        self._remote_service = remote_service
         self._whisper = whisper
         self._demucs = demucs
         self._alignment_engine = alignment_engine
