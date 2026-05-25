@@ -10,7 +10,7 @@ import json
 import logging
 import urllib.error
 import urllib.request
-from typing import Optional
+from typing import Callable, Optional
 
 from .base import RemoteProvider, RemoteModel
 
@@ -60,6 +60,9 @@ class GeminiProvider(RemoteProvider):
     - Model listing (GET /v1beta/models)
     - Text chat (POST /v1beta/models/{model}:generateContent)
     """
+
+    PROVIDER_NAME = "gemini"
+    IMAGE_PREP_MODE = "recompress"
 
     def __init__(self, endpoint: str = DEFAULT_GEMINI_ENDPOINT, api_key: Optional[str] = None):
         super().__init__(endpoint, api_key)
@@ -136,39 +139,54 @@ class GeminiProvider(RemoteProvider):
             logger.error(f"Failed to list Gemini models: {e}")
             return []
 
-    def chat(
-        self,
-        model: str,
-        messages: list[dict],
-        max_tokens: int = 2048,
-        temperature: float = 0.1,
-    ) -> str:
-        """Gemini generateContent"""
-        # Convert messages to Gemini format
+    def _convert_to_gemini_contents(self, messages: list[dict]) -> list[dict]:
+        """Convert OpenAI-shape messages to Gemini's contents shape.
+
+        Used by both blocking and streaming chat paths.
+        """
         contents = []
         for msg in messages:
             role = "user" if msg["role"] == "user" else "model"
             parts = []
             content = msg.get("content", "")
-
             if isinstance(content, str):
                 parts.append({"text": content})
             elif isinstance(content, list):
-                # Support multi-part content (text + image)
                 for part in content:
                     if part.get("type") == "text":
                         parts.append({"text": part["text"]})
                     elif part.get("type") == "image":
-                        # Custom format: {"type": "image", "mime_type": ..., "data": base64}
+                        # build_vision_chat_messages produces type:"image",
+                        # mime_type, data. Wire shape uses inline_data.
                         parts.append({
                             "inline_data": {
                                 "mime_type": part["mime_type"],
                                 "data": part["data"],
                             }
                         })
-
             contents.append({"role": role, "parts": parts})
+        return contents
 
+    def chat(
+        self,
+        model: str,
+        messages: list[dict],
+        *,
+        max_tokens: int = 2048,
+        temperature: float = 0.1,
+        abort_hook: Optional[Callable] = None,
+    ) -> str:
+        """Gemini chat — dispatch by abort_hook presence."""
+        if abort_hook is None:
+            return self._chat_blocking(model, messages, max_tokens, temperature)
+        return self._chat_streaming(model, messages, max_tokens, temperature, abort_hook)
+
+    def _chat_blocking(
+        self, model: str, messages: list[dict],
+        max_tokens: int, temperature: float,
+    ) -> str:
+        """Blocking generateContent (preserved behaviour for 5 legacy callers)."""
+        contents = self._convert_to_gemini_contents(messages)
         payload = {
             "contents": contents,
             "generationConfig": {
@@ -176,7 +194,6 @@ class GeminiProvider(RemoteProvider):
                 "temperature": temperature,
             },
         }
-
         url = self._api_url(f"/v1beta/models/{model}:generateContent")
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
@@ -184,7 +201,6 @@ class GeminiProvider(RemoteProvider):
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-
         try:
             with urllib.request.urlopen(req, timeout=300) as resp:
                 result = json.loads(resp.read())
@@ -199,6 +215,80 @@ class GeminiProvider(RemoteProvider):
         except (urllib.error.URLError, OSError) as e:
             from app.handler.exceptions import RemoteApiError
             raise RemoteApiError("connection_failed", f"Gemini: {e}")
+
+    def _chat_streaming(
+        self, model: str, messages: list[dict],
+        max_tokens: int, temperature: float,
+        abort_hook: Callable,
+    ) -> str:
+        """streamGenerateContent?alt=sse — SSE parser + cancel-on-socket-close."""
+        contents = self._convert_to_gemini_contents(messages)
+        payload = {
+            "contents": contents,
+            "generationConfig": {
+                "maxOutputTokens": max_tokens,
+                "temperature": temperature,
+            },
+        }
+        url = self._api_url(
+            f"/v1beta/models/{model}:streamGenerateContent?alt=sse"
+        )
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+            },
+            method="POST",
+        )
+
+        from app.handler.exceptions import RemoteApiError
+        resp = None
+        try:
+            resp = urllib.request.urlopen(req, timeout=30)
+            abort_hook(resp)
+            parts: list[str] = []
+            for raw in resp:
+                line = raw.strip()
+                if not line.startswith(b"data: "):
+                    continue
+                payload_s = line[6:].decode("utf-8", errors="replace").strip()
+                if not payload_s:
+                    continue
+                try:
+                    obj = json.loads(payload_s)
+                except json.JSONDecodeError:
+                    continue
+                cands = obj.get("candidates", [])
+                if not cands:
+                    continue
+                cand0 = cands[0]
+                for p in cand0.get("content", {}).get("parts", []):
+                    t = p.get("text", "")
+                    if t:
+                        parts.append(t)
+                fr = cand0.get("finishReason")
+                if fr in ("SAFETY", "RECITATION", "BLOCKLIST",
+                          "PROHIBITED_CONTENT", "SPII",
+                          "IMAGE_SAFETY", "OTHER"):
+                    raise RemoteApiError(
+                        "safety_blocked",
+                        f"Gemini blocked: finishReason={fr}, "
+                        f"partial_output={''.join(parts)[:200]!r}",
+                    )
+            return "".join(parts).strip()
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            raise self._parse_error(e.code, body)
+        except urllib.error.URLError as e:
+            raise RemoteApiError("connection_failed", f"Gemini: {e}")
+        except OSError as e:
+            raise RemoteApiError("connection_failed", f"Gemini: {e}")
+        finally:
+            if resp is not None:
+                try: resp.close()
+                except Exception: pass
 
     @staticmethod
     def _parse_error(status: int, body: str):

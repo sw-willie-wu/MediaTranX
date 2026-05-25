@@ -1,4 +1,6 @@
 """Unit tests for app.adapters.ai.remote.base — RemoteModel + abstract base."""
+import pytest
+
 from app.adapters.ai.remote.base import RemoteModel, RemoteProvider
 
 
@@ -26,7 +28,10 @@ def test_remote_model_optional_fields_default_none():
 
 class _StubProvider(RemoteProvider):
     """Concrete subclass for testing base behavior."""
-    def __init__(self, endpoint: str, api_key=None, connect_result: bool | Exception = True):
+    PROVIDER_NAME = "stub"
+    IMAGE_PREP_MODE = "raw"
+
+    def __init__(self, endpoint: str, api_key=None, connect_result: "bool | Exception" = True):
         super().__init__(endpoint, api_key)
         self._connect_result = connect_result
 
@@ -38,7 +43,7 @@ class _StubProvider(RemoteProvider):
     def list_models(self):
         return []
 
-    def chat(self, model, messages, max_tokens=2048, temperature=0.1):
+    def chat(self, model, messages, *, max_tokens=2048, temperature=0.1, abort_hook=None):
         return ""
 
 
@@ -65,3 +70,53 @@ def test_is_available_returns_false_when_connect_returns_false():
 def test_is_available_returns_false_when_connect_raises():
     p = _StubProvider("https://x", connect_result=RuntimeError("boom"))
     assert p.is_available() is False
+
+
+# --- ClassVar enforcement via __init_subclass__ ---
+
+def test_subclass_missing_provider_name_raises():
+    """Subclass without PROVIDER_NAME ClassVar must fail at class-creation time."""
+    with pytest.raises(TypeError, match="PROVIDER_NAME"):
+        class _NoName(RemoteProvider):
+            IMAGE_PREP_MODE = "raw"
+            def connect(self): return True
+            def list_models(self): return []
+            def chat(self, model, messages, *, max_tokens=2048,
+                     temperature=0.1, abort_hook=None): return ""
+
+
+def test_subclass_missing_image_prep_mode_raises():
+    """Subclass without IMAGE_PREP_MODE ClassVar must fail."""
+    with pytest.raises(TypeError, match="IMAGE_PREP_MODE"):
+        class _NoMode(RemoteProvider):
+            PROVIDER_NAME = "x"
+            def connect(self): return True
+            def list_models(self): return []
+            def chat(self, model, messages, *, max_tokens=2048,
+                     temperature=0.1, abort_hook=None): return ""
+
+
+def test_subclass_invalid_image_prep_mode_raises():
+    """IMAGE_PREP_MODE not in {'raw','recompress'} must fail."""
+    with pytest.raises(TypeError, match="IMAGE_PREP_MODE"):
+        class _BadMode(RemoteProvider):
+            PROVIDER_NAME = "x"
+            IMAGE_PREP_MODE = "invalid"
+            def connect(self): return True
+            def list_models(self): return []
+            def chat(self, model, messages, *, max_tokens=2048,
+                     temperature=0.1, abort_hook=None): return ""
+
+
+def test_subclass_with_both_classvars_passes():
+    """Valid declaration of both ClassVars works."""
+    class _Good(RemoteProvider):
+        PROVIDER_NAME = "good"
+        IMAGE_PREP_MODE = "raw"
+        def connect(self): return True
+        def list_models(self): return []
+        def chat(self, model, messages, *, max_tokens=2048,
+                 temperature=0.1, abort_hook=None): return ""
+    inst = _Good("http://x")
+    assert inst.PROVIDER_NAME == "good"
+    assert inst.IMAGE_PREP_MODE == "raw"
