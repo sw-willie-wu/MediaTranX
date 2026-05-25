@@ -774,7 +774,17 @@ class VideoSummaryService:
                     summary_mode=summary_mode,
                 )
                 prompt_tokens = estimate_tokens(prompt)
-                max_tokens = calc_max_tokens(cfg, n_ctx, prompt_tokens)
+                # Remote: use REMOTE_INFERENCE_DEFAULTS["summarize"]["max_tokens"]
+                # directly (4096) — cloud models have hard per-model completion caps
+                # (gpt-4o-mini=16384, gemini-2.5-flash=8192) and calc_max_tokens'
+                # input_ratio strategy can request 90k+ on a 22k-token prompt,
+                # which OpenAI rejects with HTTP 400 invalid_params. Mirrors the
+                # already-correct VLM frame_select branch in _make_vlm_callback.
+                # Local: dynamic input_ratio is fine (registry has explicit caps).
+                if params.get("llm_remote"):
+                    max_tokens = cfg["max_tokens"]
+                else:
+                    max_tokens = calc_max_tokens(cfg, n_ctx, prompt_tokens)
                 # LLM call telemetry: provider + model + tokens + duration
                 if params.get("llm_remote"):
                     _llm_tag = f"remote[{params.get('llm_provider')}:{llm_model_id}]"
