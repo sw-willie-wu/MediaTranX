@@ -370,89 +370,81 @@ class VideoSummaryService:
         bullet_cap = compute_bullet_target(content_sec)
 
         # Step 2: chunk + LLM (50% ~ 70%)
-        cfg = get_inference_config(llm_family, llm_size, "summarize")
-        n_ctx = cfg["n_ctx"]
-        # Budget the input with two upper bounds:
-        #   (a) context-fit: n_ctx - output_cap - prompt_overhead
-        #   (b) model-size cap: bigger model → bigger chunk.
-        #
-        # Piecewise scaling by parameter count:
-        #   ≤ 5B: 4000 tokens — small models struggle with structural JSON on
-        #                        long inputs; keep chunks moderate.
-        #   6~15B: 6000 tokens — sweet spot (tested: qwen3.5:9b handles ~6300
-        #                        tokens ≈ 10min transcript cleanly in ~2 min).
-        #   ≥ 16B: 16000 tokens — large models are designed for long contexts
-        #                         (32k+ native); smaller chunks waste capability
-        #                         AND force unnecessary merges that hurt summary
-        #                         coherence. At 27B, 16k input takes ~200s —
-        #                         well under the 900s HTTP timeout.
-        PROMPT_OVERHEAD = 600  # template/instruction tokens
-        output_cap = cfg.get("max_tokens_cap", 4096)
-
-        # Extract param count from variant name ("e2b", "4b", "9b", "26b", "27b"...)
-        import re as _re
-        _m = _re.search(r"(\d+)", llm_size)
-        size_b = int(_m.group(1)) if _m else 9
-        if size_b <= 5:
-            model_cap = 4000
-        elif size_b <= 15:
+        # Resolve cfg + n_ctx + model_cap. Local reads cfg from the family/size
+        # registry; remote reads from REMOTE_INFERENCE_DEFAULTS["summarize"]
+        # (no per-model n_ctx — pick a safe Ollama-friendly default).
+        if params.get("llm_remote"):
+            from app.adapters.ai.inference_config import get_remote_inference_config
+            cfg = get_remote_inference_config("summarize")
+            # REMOTE_INFERENCE_DEFAULTS["summarize"] = {"temperature": 0.3,
+            # "max_tokens": 4096}. No n_ctx field; assume 32k (Ollama default
+            # for qwen3.5:9b et al). Sweet-spot model_cap=6000.
+            n_ctx = 32768
             model_cap = 6000
         else:
-            model_cap = 16000
+            cfg = get_inference_config(llm_family, llm_size, "summarize")
+            n_ctx = cfg["n_ctx"]
+            # Budget the input with two upper bounds:
+            #   (a) context-fit: n_ctx - output_cap - prompt_overhead
+            #   (b) model-size cap: bigger model → bigger chunk.
+            #
+            # Piecewise scaling by parameter count:
+            #   ≤ 5B: 4000 tokens — small models struggle with structural JSON on
+            #                        long inputs; keep chunks moderate.
+            #   6~15B: 6000 tokens — sweet spot (tested: qwen3.5:9b handles ~6300
+            #                        tokens ≈ 10min transcript cleanly in ~2 min).
+            #   ≥ 16B: 16000 tokens — large models are designed for long contexts
+            #                         (32k+ native); smaller chunks waste capability
+            #                         AND force unnecessary merges that hurt summary
+            #                         coherence. At 27B, 16k input takes ~200s —
+            #                         well under the 900s HTTP timeout.
+            import re as _re
+            _m = _re.search(r"(\d+)", llm_size)
+            size_b = int(_m.group(1)) if _m else 9
+            if size_b <= 5:
+                model_cap = 4000
+            elif size_b <= 15:
+                model_cap = 6000
+            else:
+                model_cap = 16000
 
+        PROMPT_OVERHEAD = 600  # template/instruction tokens
+        output_cap = cfg.get("max_tokens_cap", cfg.get("max_tokens", 4096))
         context_cap = max(1024, n_ctx - output_cap - PROMPT_OVERHEAD)
         input_budget = min(context_cap, model_cap)
 
         chunks = chunk_entries_by_tokens(entries, max_input_tokens=input_budget)
         logger.info(
-            f"Video summary chunking: model={llm_family}:{llm_size} (~{size_b}B), "
+            f"Video summary chunking: "
+            f"{'remote' if params.get('llm_remote') else f'{llm_family}:{llm_size}'} "
             f"n_ctx={n_ctx}, context_cap={context_cap}, model_cap={model_cap}, "
-            f"input_budget={input_budget}, num_chunks={len(chunks)}, num_entries={len(entries)}"
+            f"input_budget={input_budget}, num_chunks={len(chunks)}, "
+            f"num_entries={len(entries)}"
         )
 
-        chunk_results: list[SummaryChunkResult] = []
-        # 1-based global transcript line number for the next chunk. Bullets mode
-        # numbers transcript lines so the LLM cites [L<n>] ranges; the numbering
-        # must stay continuous across chunks for resolve_line_windows to map
-        # cites back onto the global `entries` list.
-        line_offset = 1
-        for i, chunk in enumerate(chunks):
-            pct = 0.50 + 0.20 * (i / max(1, len(chunks)))
-            progress_callback(
-                pct, f"task.progress.summary_chunk|{i + 1}|{len(chunks)}"
+        # Resolve LLM provider — either local (family/size) or remote.
+        llm_prov = None
+        llm_model_id = None
+        if params.get("llm_remote"):
+            llm_prov = self._remote_service.get_provider_for_connection(
+                params.get("llm_conn_id"), params.get("llm_provider"),
             )
-            # Note: deliberately bypasses get_prompt_builder("summarize", ...) because this task
-            # uses dedicated structured prompts (hierarchical-markdown for bullets mode,
-            # flat prose paragraphs for narrative mode) — see prompts.py for the templates.
-            output_lang = _resolve_output_language(language, result.language)
-            # Both modes feed a line-numbered transcript; the LLM cites
-            # [L<n>] ranges and the service resolves them to real timestamps.
-            transcript = format_transcript_numbered(chunk, start_index=line_offset)
-            line_offset += len(chunk)
-            prompt = build_summary_prompt(
-                transcript,
-                output_language=output_lang,
-                summary_mode=summary_mode,
-            )
-            prompt_tokens = estimate_tokens(prompt)
-            max_tokens = calc_max_tokens(cfg, n_ctx, prompt_tokens)
-            raw = self._chat_service.chat(
-                prompt=prompt,
-                model_family=llm_family,
-                model_size=llm_size,
-                max_tokens=max_tokens,
-                temperature=cfg["temperature"],
-                on_progress=progress_callback,
-                cancel_pct=pct,
-                cancel_msg=f"task.progress.summary_chunk|{i + 1}|{len(chunks)}",
-            )
-            try:
-                if summary_mode == SUMMARY_MODE_NARRATIVE:
-                    chunk_results.append(parse_narrative_paragraphs(raw))
-                else:
-                    chunk_results.append(parse_bullets_markdown(raw))
-            except ValueError as e:
-                logger.warning(f"Chunk {i} parse failed: {e}; skipping")
+            if llm_prov is None:
+                raise RuntimeError(
+                    f"Remote LLM provider unavailable: "
+                    f"provider={params.get('llm_provider')!r}, "
+                    f"conn_id={params.get('llm_conn_id')!r}"
+                )
+            llm_model_id = params.get("llm_remote_model")
+
+        chunk_results = self._run_llm_chunk_loop(
+            params=params, chunks=chunks, entries=entries,
+            result_lang_code=result.language,
+            progress_callback=progress_callback, cfg=cfg, n_ctx=n_ctx,
+            llm_family=llm_family, llm_size=llm_size,
+            llm_prov=llm_prov, llm_model_id=llm_model_id,
+            summary_mode=summary_mode, language=language,
+        )
 
         if not chunk_results:
             raise RuntimeError("All chunks failed to produce a usable summary")
@@ -685,6 +677,74 @@ class VideoSummaryService:
             "bullet_count": len(merged.bullet_items),
             "paragraph_count": len(merged.narrative_paragraphs),
         }
+
+    def _run_llm_chunk_loop(
+        self,
+        params: dict,
+        chunks: list,
+        entries: list,
+        result_lang_code: str,
+        progress_callback: Callable,
+        cfg: dict,
+        n_ctx: int,
+        llm_family: Optional[str],
+        llm_size: Optional[str],
+        llm_prov,
+        llm_model_id: Optional[str],
+        summary_mode: str,
+        language: str,
+    ) -> list:
+        """LLM chunk loop. Opens one chat_service.session() over the whole
+        loop (local OR remote based on llm_prov), yields chunk results.
+
+        Spec §F4 step 3.
+        """
+        chunk_results: list = []
+        line_offset = 1
+        with self._chat_service.session(
+            model_family=llm_family, model_size=llm_size,
+            remote_provider=llm_prov, remote_model=llm_model_id,
+            on_load_progress=progress_callback,
+            on_progress=progress_callback,
+            cancel_pct=0.50,
+            cancel_msg="task.progress.generating",
+        ) as llm_session:
+            for i, chunk in enumerate(chunks):
+                pct = 0.50 + 0.20 * (i / max(1, len(chunks)))
+                progress_callback(
+                    pct, f"task.progress.summary_chunk|{i + 1}|{len(chunks)}"
+                )
+                # Note: deliberately bypasses get_prompt_builder("summarize", ...) because
+                # this task uses dedicated structured prompts (hierarchical-markdown for
+                # bullets mode, flat prose paragraphs for narrative mode) — see prompts.py.
+                output_lang = _resolve_output_language(language, result_lang_code)
+                # Both modes feed a line-numbered transcript; the LLM cites
+                # [L<n>] ranges and the service resolves them to real timestamps.
+                transcript = format_transcript_numbered(chunk, start_index=line_offset)
+                line_offset += len(chunk)
+                prompt = build_summary_prompt(
+                    transcript,
+                    output_language=output_lang,
+                    summary_mode=summary_mode,
+                )
+                prompt_tokens = estimate_tokens(prompt)
+                max_tokens = calc_max_tokens(cfg, n_ctx, prompt_tokens)
+                raw = llm_session.chat(
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=cfg["temperature"],
+                    cancel_pct=pct,
+                    cancel_msg=f"task.progress.summary_chunk|{i + 1}|{len(chunks)}",
+                )
+                try:
+                    if summary_mode == SUMMARY_MODE_NARRATIVE:
+                        chunk_results.append(parse_narrative_paragraphs(raw))
+                    else:
+                        chunk_results.append(parse_bullets_markdown(raw))
+                except ValueError as e:
+                    logger.warning(f"Chunk {i} parse failed: {e}; skipping")
+
+        return chunk_results
 
     def _make_vlm_callback(self, family: str, size: str, *,
                            on_progress=None, cancel_pct: float = 0.0,
