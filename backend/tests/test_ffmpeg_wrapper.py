@@ -1,5 +1,7 @@
 """Tests for FFmpegWrapper — adapters/binary/ffmpeg.py."""
 import pytest
+import subprocess
+import sys
 from fractions import Fraction
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -388,10 +390,15 @@ class TestDetectScenes:
 
 
 class TestDetectScenesThreads:
-    """`-threads N` cap dav1d/decoder threads so background detect doesn't
-    starve concurrent Whisper. See spec 2026-05-24."""
+    """`threads=None` (sentinel) auto-picks by media_info.duration:
+    >=1200s -> unbounded (0), <1200s -> cap=4. Windows BELOW_NORMAL
+    priority applies to both. See spec 2026-05-25-detect-priority-class.md §11."""
 
-    async def test_default_threads_4_before_input(self, tmp_path):
+    async def test_auto_pick_unbounded_for_long_video(self, tmp_path):
+        """threads=None default + duration >= 1200s -> -threads 0.
+
+        Long videos benefit from saturating dav1d (detect_all is the long pole)
+        so detect finishes during Whisper+LLM phase. See spec §11.3."""
         w = _make_wrapper()
         video = tmp_path / "in.mp4"
         video.write_bytes(b"x")
@@ -399,17 +406,44 @@ class TestDetectScenesThreads:
         scene_file.write_text("", encoding="utf-8")
         real_fd = os.open(str(scene_file), os.O_RDONLY)
         try:
-            # AsyncMock (not MagicMock): `await asyncio.create_subprocess_exec(...)`
-            # in ffmpeg.py — sync MagicMock return isn't awaitable.
             spy = AsyncMock(return_value=_fake_proc([b""]))
             with patch.object(FFmpegWrapper, "get_media_info",
-                              new=AsyncMock(return_value=MagicMock(duration=100.0))), \
+                              new=AsyncMock(return_value=MagicMock(duration=1500.0))), \
                  patch("app.adapters.binary.ffmpeg.tempfile.mkstemp",
                        return_value=(real_fd, str(scene_file))), \
                  patch("app.adapters.binary.ffmpeg.asyncio.create_subprocess_exec", new=spy):
                 await w.detect_scenes(video, scene_threshold=10.0, analyze_w=640)
             args = list(spy.call_args[0])
-            # -threads must appear, value "4" (default), and BEFORE -i
+            assert "-threads" in args, args
+            assert args.index("-threads") < args.index("-i"), args
+            assert args[args.index("-threads") + 1] == "0", args
+        finally:
+            try:
+                os.close(real_fd)
+            except OSError:
+                pass
+
+    async def test_auto_pick_capped_for_short_video(self, tmp_path):
+        """threads=None default + duration < 1200s -> -threads 4.
+
+        Short videos: dav1d work is small enough that 4T finishes quickly;
+        unbounded 12T saturates RAM bandwidth and slows concurrent llama-server
+        CPU bursts. See spec §11.2."""
+        w = _make_wrapper()
+        video = tmp_path / "in.mp4"
+        video.write_bytes(b"x")
+        scene_file = tmp_path / "scdet.txt"
+        scene_file.write_text("", encoding="utf-8")
+        real_fd = os.open(str(scene_file), os.O_RDONLY)
+        try:
+            spy = AsyncMock(return_value=_fake_proc([b""]))
+            with patch.object(FFmpegWrapper, "get_media_info",
+                              new=AsyncMock(return_value=MagicMock(duration=600.0))), \
+                 patch("app.adapters.binary.ffmpeg.tempfile.mkstemp",
+                       return_value=(real_fd, str(scene_file))), \
+                 patch("app.adapters.binary.ffmpeg.asyncio.create_subprocess_exec", new=spy):
+                await w.detect_scenes(video, scene_threshold=10.0, analyze_w=640)
+            args = list(spy.call_args[0])
             assert "-threads" in args, args
             assert args.index("-threads") < args.index("-i"), args
             assert args[args.index("-threads") + 1] == "4", args
@@ -436,6 +470,61 @@ class TestDetectScenesThreads:
                 await w.detect_scenes(video, scene_threshold=10.0, analyze_w=640, threads=2)
             args = list(spy.call_args[0])
             assert args[args.index("-threads") + 1] == "2", args
+        finally:
+            try:
+                os.close(real_fd)
+            except OSError:
+                pass
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="creationflags is Windows-only")
+    async def test_below_normal_priority_on_windows(self, tmp_path):
+        """detect_scenes launches its FFmpeg subprocess with
+        BELOW_NORMAL_PRIORITY_CLASS so the OS scheduler yields CPU to
+        NORMAL-priority Whisper / llama-server. Spec §AC#1."""
+        w = _make_wrapper()
+        video = tmp_path / "in.mp4"
+        video.write_bytes(b"x")
+        scene_file = tmp_path / "scdet.txt"
+        scene_file.write_text("", encoding="utf-8")
+        real_fd = os.open(str(scene_file), os.O_RDONLY)
+        try:
+            spy = AsyncMock(return_value=_fake_proc([b""]))
+            with patch.object(FFmpegWrapper, "get_media_info",
+                              new=AsyncMock(return_value=MagicMock(duration=100.0))), \
+                 patch("app.adapters.binary.ffmpeg.tempfile.mkstemp",
+                       return_value=(real_fd, str(scene_file))), \
+                 patch("app.adapters.binary.ffmpeg.asyncio.create_subprocess_exec", new=spy):
+                await w.detect_scenes(video, scene_threshold=10.0, analyze_w=640)
+            kwargs = spy.call_args.kwargs
+            assert "creationflags" in kwargs, kwargs
+            # Exact equality — flag is set as the ONLY creationflag (no OR with others).
+            assert kwargs["creationflags"] == subprocess.BELOW_NORMAL_PRIORITY_CLASS, \
+                hex(kwargs["creationflags"])
+        finally:
+            try:
+                os.close(real_fd)
+            except OSError:
+                pass
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="non-Windows path")
+    async def test_no_creationflags_on_posix(self, tmp_path):
+        """On POSIX the spec deliberately does NOT pass creationflags so we
+        stay portable and avoid relying on Python's silent no-op. Spec §AC#7."""
+        w = _make_wrapper()
+        video = tmp_path / "in.mp4"
+        video.write_bytes(b"x")
+        scene_file = tmp_path / "scdet.txt"
+        scene_file.write_text("", encoding="utf-8")
+        real_fd = os.open(str(scene_file), os.O_RDONLY)
+        try:
+            spy = AsyncMock(return_value=_fake_proc([b""]))
+            with patch.object(FFmpegWrapper, "get_media_info",
+                              new=AsyncMock(return_value=MagicMock(duration=100.0))), \
+                 patch("app.adapters.binary.ffmpeg.tempfile.mkstemp",
+                       return_value=(real_fd, str(scene_file))), \
+                 patch("app.adapters.binary.ffmpeg.asyncio.create_subprocess_exec", new=spy):
+                await w.detect_scenes(video, scene_threshold=10.0, analyze_w=640)
+            assert "creationflags" not in spy.call_args.kwargs, spy.call_args.kwargs
         finally:
             try:
                 os.close(real_fd)

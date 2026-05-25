@@ -6,6 +6,7 @@ import asyncio
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -25,6 +26,14 @@ def _run_sync(coro):
         return loop.run_until_complete(coro)
     finally:
         loop.close()
+
+
+# detect_scenes auto-pick threshold: videos >= this many seconds get
+# unbounded dav1d threads (detect is the long pole, saturate to finish
+# during Whisper); shorter videos get -threads 4 to keep RAM bandwidth
+# headroom for concurrent llama-server. See spec
+# 2026-05-25-detect-priority-class.md §11.
+DURATION_THRESHOLD_S = 1200
 
 
 _SCENE_TIME_RE = re.compile(r"lavfi\.scd\.time=([0-9.]+)")
@@ -897,7 +906,7 @@ class FFmpegWrapper:
         scene_threshold: float,
         analyze_w: int,
         on_progress: Optional[Callable[[float], None]] = None,
-        threads: int = 4,
+        threads: int | None = None,
     ) -> list[float]:
         """Detect scene-change timestamps via the FFmpeg ``scdet`` filter.
 
@@ -920,6 +929,10 @@ class FFmpegWrapper:
 
         media_info = await self.get_media_info(input_path)
         duration = media_info.duration
+
+        # Auto-pick decoder threads when not explicitly set. See spec §11.3.
+        if threads is None:
+            threads = 0 if duration >= DURATION_THRESHOLD_S else 4
 
         fd, scene_tmp = tempfile.mkstemp(suffix=".txt", prefix="scdet_")
         os.close(fd)
@@ -946,11 +959,20 @@ class FFmpegWrapper:
                 "-nostats",
                 "-f", "null", "-",
             ]
+            # BELOW_NORMAL_PRIORITY_CLASS lets the OS scheduler yield CPU to
+            # NORMAL-priority Whisper / llama-server whenever they need it,
+            # while detect can still saturate idle cores. Pairs with
+            # `-threads 0` (default) which lets dav1d use nproc. See spec
+            # 2026-05-25-detect-priority-class.md.
+            extra: dict = {}
+            if sys.platform == "win32":
+                extra["creationflags"] = subprocess.BELOW_NORMAL_PRIORITY_CLASS
             proc = await asyncio.create_subprocess_exec(
                 *args,
                 cwd=str(scene_tmp_path.parent),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **extra,
             )
 
             stderr_chunks: list[bytes] = []
@@ -1026,7 +1048,7 @@ class FFmpegWrapper:
         scene_threshold: float,
         analyze_w: int,
         on_progress: Optional[Callable[[float], None]] = None,
-        threads: int = 4,
+        threads: int | None = None,
     ) -> list[float]:
         """Sync version of detect_scenes() for use in TaskManager handlers."""
         return _run_sync(
