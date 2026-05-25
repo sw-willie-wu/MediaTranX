@@ -237,7 +237,10 @@ class OpenAIProvider(RemoteProvider):
         from app.handler.exceptions import RemoteApiError
         resp = None
         try:
-            resp = urllib.request.urlopen(req, timeout=30)
+            # 180s socket timeout: cloud TTFT on large summarize chunks (~9k+
+            # tokens with thinking) routinely exceeds 30s; cancel still works
+            # via abort_hook → resp.close() from another thread, not timeout.
+            resp = urllib.request.urlopen(req, timeout=180)
             abort_hook(resp)
             parts: list[str] = []
             for raw in resp:
@@ -379,7 +382,10 @@ class OpenAIProvider(RemoteProvider):
         from app.handler.exceptions import RemoteApiError
         resp = None
         try:
-            resp = urllib.request.urlopen(req, timeout=30)
+            # 180s socket timeout: cloud TTFT on large summarize chunks (~9k+
+            # tokens with thinking) routinely exceeds 30s; cancel still works
+            # via abort_hook → resp.close() from another thread, not timeout.
+            resp = urllib.request.urlopen(req, timeout=180)
             abort_hook(resp)
 
             current_event: Optional[str] = None

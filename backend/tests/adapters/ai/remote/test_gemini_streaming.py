@@ -46,7 +46,7 @@ def test_streaming_parses_sse_data_lines():
             abort_hook=lambda r: None,
         )
     assert result == "Hello world"
-    assert captured["timeout"] == 30
+    assert captured["timeout"] == 180
     assert "alt=sse" in captured["url"]
     assert "streamGenerateContent" in captured["url"]
     assert ":streamGenerateContent" in captured["url"]

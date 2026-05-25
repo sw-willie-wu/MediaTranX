@@ -52,7 +52,7 @@ def test_chat_completions_streaming_parses_data_lines():
     assert result == "Hello world"
     assert captured["data"]["stream"] is True
     assert captured["data"]["max_tokens"] == 100  # legacy param for gpt-4o-mini
-    assert captured["timeout"] == 30
+    assert captured["timeout"] == 180
 
 
 def test_chat_completions_streaming_uses_max_completion_tokens_for_new_models():
