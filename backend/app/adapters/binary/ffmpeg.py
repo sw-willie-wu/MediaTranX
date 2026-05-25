@@ -28,6 +28,14 @@ def _run_sync(coro):
         loop.close()
 
 
+# detect_scenes auto-pick threshold: videos >= this many seconds get
+# unbounded dav1d threads (detect is the long pole, saturate to finish
+# during Whisper); shorter videos get -threads 4 to keep RAM bandwidth
+# headroom for concurrent llama-server. See spec
+# 2026-05-25-detect-priority-class.md §11.
+DURATION_THRESHOLD_S = 1200
+
+
 _SCENE_TIME_RE = re.compile(r"lavfi\.scd\.time=([0-9.]+)")
 
 
@@ -898,7 +906,7 @@ class FFmpegWrapper:
         scene_threshold: float,
         analyze_w: int,
         on_progress: Optional[Callable[[float], None]] = None,
-        threads: int = 0,
+        threads: int | None = None,
     ) -> list[float]:
         """Detect scene-change timestamps via the FFmpeg ``scdet`` filter.
 
@@ -921,6 +929,10 @@ class FFmpegWrapper:
 
         media_info = await self.get_media_info(input_path)
         duration = media_info.duration
+
+        # Auto-pick decoder threads when not explicitly set. See spec §11.3.
+        if threads is None:
+            threads = 0 if duration >= DURATION_THRESHOLD_S else 4
 
         fd, scene_tmp = tempfile.mkstemp(suffix=".txt", prefix="scdet_")
         os.close(fd)
@@ -1036,7 +1048,7 @@ class FFmpegWrapper:
         scene_threshold: float,
         analyze_w: int,
         on_progress: Optional[Callable[[float], None]] = None,
-        threads: int = 0,
+        threads: int | None = None,
     ) -> list[float]:
         """Sync version of detect_scenes() for use in TaskManager handlers."""
         return _run_sync(

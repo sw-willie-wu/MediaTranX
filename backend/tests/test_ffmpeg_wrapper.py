@@ -390,14 +390,15 @@ class TestDetectScenes:
 
 
 class TestDetectScenesThreads:
-    """`-threads 0` (ffmpeg auto / dav1d nproc) is the new default; Windows
-    BELOW_NORMAL priority does the balancing instead of static thread cap.
-    See spec 2026-05-25-detect-priority-class.md."""
+    """`threads=None` (sentinel) auto-picks by media_info.duration:
+    >=1200s -> unbounded (0), <1200s -> cap=4. Windows BELOW_NORMAL
+    priority applies to both. See spec 2026-05-25-detect-priority-class.md §11."""
 
-    async def test_default_threads_0_before_input(self, tmp_path):
-        """`-threads 0` (ffmpeg auto / dav1d nproc) is the new default —
-        BELOW_NORMAL priority does the balancing instead of static cap.
-        See spec 2026-05-25-detect-priority-class.md."""
+    async def test_auto_pick_unbounded_for_long_video(self, tmp_path):
+        """threads=None default + duration >= 1200s -> -threads 0.
+
+        Long videos benefit from saturating dav1d (detect_all is the long pole)
+        so detect finishes during Whisper+LLM phase. See spec §11.3."""
         w = _make_wrapper()
         video = tmp_path / "in.mp4"
         video.write_bytes(b"x")
@@ -405,20 +406,47 @@ class TestDetectScenesThreads:
         scene_file.write_text("", encoding="utf-8")
         real_fd = os.open(str(scene_file), os.O_RDONLY)
         try:
-            # AsyncMock (not MagicMock): `await asyncio.create_subprocess_exec(...)`
-            # in ffmpeg.py — sync MagicMock return isn't awaitable.
             spy = AsyncMock(return_value=_fake_proc([b""]))
             with patch.object(FFmpegWrapper, "get_media_info",
-                              new=AsyncMock(return_value=MagicMock(duration=100.0))), \
+                              new=AsyncMock(return_value=MagicMock(duration=1500.0))), \
                  patch("app.adapters.binary.ffmpeg.tempfile.mkstemp",
                        return_value=(real_fd, str(scene_file))), \
                  patch("app.adapters.binary.ffmpeg.asyncio.create_subprocess_exec", new=spy):
                 await w.detect_scenes(video, scene_threshold=10.0, analyze_w=640)
             args = list(spy.call_args[0])
-            # -threads must appear, value "0" (default 4 -> 0), and BEFORE -i
             assert "-threads" in args, args
             assert args.index("-threads") < args.index("-i"), args
             assert args[args.index("-threads") + 1] == "0", args
+        finally:
+            try:
+                os.close(real_fd)
+            except OSError:
+                pass
+
+    async def test_auto_pick_capped_for_short_video(self, tmp_path):
+        """threads=None default + duration < 1200s -> -threads 4.
+
+        Short videos: dav1d work is small enough that 4T finishes quickly;
+        unbounded 12T saturates RAM bandwidth and slows concurrent llama-server
+        CPU bursts. See spec §11.2."""
+        w = _make_wrapper()
+        video = tmp_path / "in.mp4"
+        video.write_bytes(b"x")
+        scene_file = tmp_path / "scdet.txt"
+        scene_file.write_text("", encoding="utf-8")
+        real_fd = os.open(str(scene_file), os.O_RDONLY)
+        try:
+            spy = AsyncMock(return_value=_fake_proc([b""]))
+            with patch.object(FFmpegWrapper, "get_media_info",
+                              new=AsyncMock(return_value=MagicMock(duration=600.0))), \
+                 patch("app.adapters.binary.ffmpeg.tempfile.mkstemp",
+                       return_value=(real_fd, str(scene_file))), \
+                 patch("app.adapters.binary.ffmpeg.asyncio.create_subprocess_exec", new=spy):
+                await w.detect_scenes(video, scene_threshold=10.0, analyze_w=640)
+            args = list(spy.call_args[0])
+            assert "-threads" in args, args
+            assert args.index("-threads") < args.index("-i"), args
+            assert args[args.index("-threads") + 1] == "4", args
         finally:
             try:
                 os.close(real_fd)
