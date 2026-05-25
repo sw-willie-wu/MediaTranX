@@ -17,7 +17,7 @@ from app.utils.inference import cancel_guard
 logger = logging.getLogger(__name__)
 
 
-class ChatSession:
+class LocalChatSession:
     """Bound to a single LlmWrapper.acquire() block.
 
     Methods reuse the loaded model — caller does NOT need to reload between
@@ -160,7 +160,7 @@ class ChatService:
         on_progress: Optional[Callable] = None,
         cancel_pct: float = 0.0,
         cancel_msg: str = "task.progress.generating",
-    ) -> Iterator[ChatSession]:
+    ) -> Iterator[LocalChatSession]:
         """Hold an LLM loaded for the duration of the block.
 
         Inside the `with`, call session.chat / .complete / .chat_with_images
@@ -176,8 +176,8 @@ class ChatService:
         with self._llama_runtime.acquire(
             model_family, variant, on_progress=on_load_progress,
         ):
-            yield ChatSession(self._llama_runtime, on_progress=on_progress,
-                              cancel_pct=cancel_pct, cancel_msg=cancel_msg)
+            yield LocalChatSession(self._llama_runtime, on_progress=on_progress,
+                                   cancel_pct=cancel_pct, cancel_msg=cancel_msg)
 
     def chat(
         self,
@@ -223,3 +223,11 @@ class ChatService:
                 prompt=prompt, images=images,
                 max_tokens=max_tokens, temperature=temperature,
             )
+
+
+# Backward-compat alias — keeps existing
+# `from app.services.llm.chat_service import ChatSession` imports working.
+# Used by pipeline/ocr.py:18, document/translate_service/text.py:17,
+# tests/services/test_chat_service_cancel.py. Deprecated; remove after
+# follow-up A refactor (project_unified_capabilities).
+ChatSession = LocalChatSession
