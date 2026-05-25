@@ -81,7 +81,7 @@ const localLlmOptions = computed(() => {
   }))
 })
 const { mergedOptions: llmOptions } = useModelOptions(
-  'text', localLlmOptions, { providers: ['ollama'] },
+  'text', localLlmOptions, { providers: ['ollama', 'openai', 'gemini'] },
 )
 
 // VLM (vision-capable) selector — with "none" option for fallback
@@ -103,7 +103,7 @@ const localVlmOptions = computed(() => {
   }))
 })
 const { mergedOptions: vlmOptionsBase } = useModelOptions(
-  'vision', localVlmOptions, { providers: ['ollama'] },
+  'vision', localVlmOptions, { providers: ['ollama', 'openai', 'gemini'] },
 )
 const vlmOptions = computed(() => [
   { value: '', label: t('video.summary.vlm_none') },
