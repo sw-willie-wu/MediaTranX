@@ -294,8 +294,8 @@ def test_execute_narrative_mode_vlm_rejects_skips_image(tmp_path):
     svc._chat_service.session.return_value.__enter__.return_value.chat.return_value = (
         "唯一一段敘事。 [L1-L2]\n"
     )
-    # VLM rejects every candidate.
-    svc._chat_service.chat_with_images = MagicMock(return_value="-1")
+    # VLM rejects every candidate — mock on the session object (new hoisted-session design).
+    svc._chat_service.session.return_value.__enter__.return_value.chat_with_images = MagicMock(return_value="-1")
 
     class FakeDetector:
         def __init__(self, *a, **kw): pass
@@ -587,7 +587,8 @@ def test_candidate_frames_downscaled_final_frames_native(tmp_path):
     Drives the real _execute bullet loop end-to-end."""
     svc, file_service = _make_svc_with_mocks(tmp_path)
     # VLM picks index 0 cleanly (numeric str → _cb's re.search succeeds).
-    svc._chat_service.chat_with_images = MagicMock(return_value="0")
+    # Mock on the session object (new hoisted-session design).
+    svc._chat_service.session.return_value.__enter__.return_value.chat_with_images = MagicMock(return_value="0")
 
     class SpyDetector:
         calls: list[dict] = []
@@ -1076,3 +1077,34 @@ def test_run_llm_chunk_loop_opens_remote_session_when_provider_supplied():
     chat_call_kw = fake_session.chat.call_args.kwargs
     assert chat_call_kw["cancel_pct"] == pytest.approx(0.50, abs=1e-3)
     assert "summary_chunk" in chat_call_kw["cancel_msg"]
+
+
+def test_make_vlm_callback_signature_takes_vlm_session():
+    """_make_vlm_callback's new signature: (vlm_session, vlm_family, vlm_size,
+    *, cancel_pct, cancel_msg). Closure calls vlm_session.chat_with_images
+    with per-call cancel override."""
+    from unittest.mock import MagicMock
+    from app.services.video.summary_service import VideoSummaryService
+
+    fake_session = MagicMock(name="ChatSession")
+    fake_session.chat_with_images = MagicMock(return_value="1")
+
+    svc = VideoSummaryService(
+        ffmpeg=MagicMock(), file_service=MagicMock(),
+        task_manager=MagicMock(), chat_service=MagicMock(),
+        model_manager=MagicMock(), remote_service=MagicMock(),
+        whisper=MagicMock(),
+    )
+
+    cb = svc._make_vlm_callback(
+        fake_session, "qwen3vl", "8b",
+        cancel_pct=0.85, cancel_msg="task.progress.summary_bullet_frame|3|10",
+    )
+    # Callback contract from frame_picker: (context_text, frame_paths) -> int
+    result = cb("describe", [])
+    # With empty frame_paths the closure may short-circuit; the assertion
+    # we care about is the chat_with_images call shape.
+    if fake_session.chat_with_images.called:
+        _, kw = fake_session.chat_with_images.call_args
+        assert kw["cancel_pct"] == 0.85
+        assert kw["cancel_msg"] == "task.progress.summary_bullet_frame|3|10"

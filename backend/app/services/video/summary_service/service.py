@@ -309,8 +309,6 @@ class VideoSummaryService:
         file_id = params["file_id"]
         llm_family = params["llm_model_family"]
         llm_size = params["llm_model_size"]
-        vlm_family = params.get("vlm_model_family")
-        vlm_size = params.get("vlm_model_size")
         language = params.get("language", "zh-TW")
         summary_mode = params.get("summary_mode", "bullets")
 
@@ -492,147 +490,183 @@ class VideoSummaryService:
                 progress_callback(0.70, "task.progress.summary_detecting_scenes")
             global_scenes = detect_holder.get("scenes", [])
 
-            # vlm_cb is (re)built per loop iteration so the cancel heartbeat
-            # carries that iteration's live pct/message (shape (a)). The build
-            # is cheap (a get_inference_config registry lookup, no model load).
-            vlm_cb = None
+            # ---- VLM provider resolution + session hoist (Task 10) ----
+            # Resolve VLM provider — local (family/size), remote (vlm_remote+...),
+            # or absent (midpoint-nearest fallback throughout the loops).
+            vlm_family = params.get("vlm_model_family")
+            vlm_size = params.get("vlm_model_size")
+            vlm_prov = None
+            vlm_model_id = None
+            if params.get("vlm_remote"):
+                vlm_prov = self._remote_service.get_provider_for_connection(
+                    params.get("vlm_conn_id"), params.get("vlm_provider"),
+                )
+                if vlm_prov is None:
+                    raise RuntimeError(
+                        f"Remote VLM provider unavailable: "
+                        f"provider={params.get('vlm_provider')!r}, "
+                        f"conn_id={params.get('vlm_conn_id')!r}"
+                    )
+                vlm_model_id = params.get("vlm_remote_model")
 
-            # Step 4: bullet frames (70% ~ 95%)
-            # Iterate over merged.bullet_items (each carries time_range + line_index for image insertion).
-            # Per-item resilience: a single frame-extraction failure (e.g. an
-            # LLM-drifted timestamp ffmpeg can't decode) must NOT abort the
-            # whole job — the summary text is already generated. Skip the inline
-            # image for that item and continue. progress_callback stays OUTSIDE
-            # the try so cooperative TaskCancelledError still propagates.
-            # Deterministic frame cap: only ``bullet_cap`` evenly-spaced bullets
-            # get an inline frame. Keys/filenames use the ORIGINAL index into
-            # merged.bullet_items because build_markdown iterates the full list
-            # and does bullet_frames.get(idx) — keying by subset position would
-            # paste images onto the wrong bullets.
-            bullet_frames: dict[int, str] = {}
-            bullet_fail = 0
-            md_lines = merged.bullets_markdown.splitlines()
-            bullet_sel = even_indices(len(merged.bullet_items), bullet_cap)
-            for n_done, orig_i in enumerate(bullet_sel):
-                item = merged.bullet_items[orig_i]
-                pct = 0.70 + 0.25 * (n_done / max(1, len(bullet_sel)))
-                progress_callback(
-                    pct,
-                    f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
-                )
-                # Bullet whose line citation didn't resolve to a usable window
-                # (resolve_line_windows set time_range=None): deliberately skip
-                # — no inline image. This is NOT a failure, so it stays out of
-                # bullet_fail. progress_callback above already fired (keeps the
-                # cancel heartbeat / monotonic progress).
-                if item["time_range"] is None:
-                    continue
-                vlm_cb = (self._make_vlm_callback(
-                    vlm_family, vlm_size, on_progress=progress_callback,
-                    cancel_pct=pct,
-                    cancel_msg=f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
-                ) if vlm_family and vlm_size else None)
-                cand_max_edge = (
-                    get_inference_config(
-                        vlm_family, vlm_size, "frame_select"
-                    )["max_image_edge"]
-                    if vlm_family and vlm_size else None
-                )
-                try:
-                    t_start, t_end = item["time_range"]
-                    # Use the bullet's own markdown line as VLM context (label + description).
-                    line_i = item["line_index"]
-                    context_text = md_lines[line_i] if 0 <= line_i < len(md_lines) else ""
-                    ts = pick_frame_timestamp(
-                        detector=detector,
-                        vlm_callback=vlm_cb,
-                        video_path=video_path,
-                        window_start=t_start,
-                        window_end=t_end,
-                        context_text=context_text,
-                        temp_dir=work_dir / f"candidates_b{orig_i}",
-                        duration=video_duration,
-                        fps=video_fps,
-                        scenes=global_scenes,
-                        candidate_max_edge=cand_max_edge,
-                    )
-                    if ts is None:
-                        continue  # VLM judged no candidate matches — no image
-                    out = frames_dir / f"bullet_{orig_i:03d}.jpg"
-                    detector.extract_frame(
-                        input_path=video_path, output_path=out, timestamp=ts
-                    )
-                    bullet_frames[orig_i] = f"frames/bullet_{orig_i:03d}.jpg"
-                except TaskCancelledError:
-                    raise
-                except Exception as e:
-                    bullet_fail += 1
-                    logger.warning(
-                        f"summary: bullet {orig_i} frame failed ({e}); skipping image"
-                    )
-                    continue
+            vlm_chosen = (vlm_prov is not None) or bool(vlm_family and vlm_size)
 
-            # Step 5: narrative paragraph frames (70% ~ 95%)
-            # Narrative mode frames EVERY paragraph (no bullet_cap subsampling);
-            # MAX_NARRATIVE_FRAMES is only a pathological-output safety cap.
-            # Empty in bullets mode (narrative_paragraphs == []) → loop no-ops.
-            para_frames: dict[int, str] = {}
-            para_fail = 0
-            para_sel = even_indices(
-                len(merged.narrative_paragraphs), MAX_NARRATIVE_FRAMES
-            )
-            for n_done, orig_i in enumerate(para_sel):
-                para = merged.narrative_paragraphs[orig_i]
-                pct = 0.70 + 0.25 * (n_done / max(1, len(para_sel)))
-                progress_callback(
-                    pct,
-                    f"task.progress.summary_paragraph_frame|{n_done + 1}|{len(para_sel)}",
+            # candidate_max_edge: local reads cfg["max_image_edge"]; remote has no
+            # such key in REMOTE_INFERENCE_DEFAULTS → None (no client-side downscale;
+            # Ollama handles its own image preprocessing).
+            cand_max_edge = None
+            if vlm_chosen and not (vlm_prov is not None):
+                cand_max_edge = get_inference_config(
+                    vlm_family, vlm_size, "frame_select"
+                )["max_image_edge"]
+
+            # Wrap the entire VLM phase (bullet + narrative loops) in the session.
+            # Per-iter `_make_vlm_callback` calls inside the loops capture
+            # `vlm_session` via closure.
+            if vlm_chosen:
+                vlm_session_cm = self._chat_service.session(
+                    model_family=vlm_family, model_size=vlm_size,
+                    remote_provider=vlm_prov, remote_model=vlm_model_id,
+                    on_load_progress=progress_callback,
+                    on_progress=progress_callback,
+                    cancel_pct=0.70,
+                    cancel_msg="task.progress.generating",
                 )
-                # Paragraph whose line citation didn't resolve to a usable
-                # window: skip (no image) — not a failure.
-                if para["time_range"] is None:
-                    continue
-                vlm_cb = (self._make_vlm_callback(
-                    vlm_family, vlm_size, on_progress=progress_callback,
-                    cancel_pct=pct,
-                    cancel_msg=f"task.progress.summary_paragraph_frame|{n_done + 1}|{len(para_sel)}",
-                ) if vlm_family and vlm_size else None)
-                cand_max_edge = (
-                    get_inference_config(
-                        vlm_family, vlm_size, "frame_select"
-                    )["max_image_edge"]
-                    if vlm_family and vlm_size else None
+            else:
+                from contextlib import nullcontext
+                vlm_session_cm = nullcontext(None)
+
+            with vlm_session_cm as vlm_session:
+                # Step 4: bullet frames (70% ~ 95%)
+                # Iterate over merged.bullet_items (each carries time_range + line_index for image insertion).
+                # Per-item resilience: a single frame-extraction failure (e.g. an
+                # LLM-drifted timestamp ffmpeg can't decode) must NOT abort the
+                # whole job — the summary text is already generated. Skip the inline
+                # image for that item and continue. progress_callback stays OUTSIDE
+                # the try so cooperative TaskCancelledError still propagates.
+                # Deterministic frame cap: only ``bullet_cap`` evenly-spaced bullets
+                # get an inline frame. Keys/filenames use the ORIGINAL index into
+                # merged.bullet_items because build_markdown iterates the full list
+                # and does bullet_frames.get(idx) — keying by subset position would
+                # paste images onto the wrong bullets.
+                bullet_frames: dict[int, str] = {}
+                bullet_fail = 0
+                md_lines = merged.bullets_markdown.splitlines()
+                bullet_sel = even_indices(len(merged.bullet_items), bullet_cap)
+                for n_done, orig_i in enumerate(bullet_sel):
+                    item = merged.bullet_items[orig_i]
+                    pct = 0.70 + 0.25 * (n_done / max(1, len(bullet_sel)))
+                    progress_callback(
+                        pct,
+                        f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
+                    )
+                    # Bullet whose line citation didn't resolve to a usable window
+                    # (resolve_line_windows set time_range=None): deliberately skip
+                    # — no inline image. This is NOT a failure, so it stays out of
+                    # bullet_fail. progress_callback above already fired (keeps the
+                    # cancel heartbeat / monotonic progress).
+                    if item["time_range"] is None:
+                        continue
+                    vlm_cb = (
+                        self._make_vlm_callback(
+                            vlm_session, vlm_family, vlm_size,
+                            cancel_pct=pct,
+                            cancel_msg=f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
+                        )
+                        if vlm_chosen else None
+                    )
+                    try:
+                        t_start, t_end = item["time_range"]
+                        # Use the bullet's own markdown line as VLM context (label + description).
+                        line_i = item["line_index"]
+                        context_text = md_lines[line_i] if 0 <= line_i < len(md_lines) else ""
+                        ts = pick_frame_timestamp(
+                            detector=detector,
+                            vlm_callback=vlm_cb,
+                            video_path=video_path,
+                            window_start=t_start,
+                            window_end=t_end,
+                            context_text=context_text,
+                            temp_dir=work_dir / f"candidates_b{orig_i}",
+                            duration=video_duration,
+                            fps=video_fps,
+                            scenes=global_scenes,
+                            candidate_max_edge=cand_max_edge,
+                        )
+                        if ts is None:
+                            continue  # VLM judged no candidate matches — no image
+                        out = frames_dir / f"bullet_{orig_i:03d}.jpg"
+                        detector.extract_frame(
+                            input_path=video_path, output_path=out, timestamp=ts
+                        )
+                        bullet_frames[orig_i] = f"frames/bullet_{orig_i:03d}.jpg"
+                    except TaskCancelledError:
+                        raise
+                    except Exception as e:
+                        bullet_fail += 1
+                        logger.warning(
+                            f"summary: bullet {orig_i} frame failed ({e}); skipping image"
+                        )
+                        continue
+
+                # Step 5: narrative paragraph frames (70% ~ 95%)
+                # Narrative mode frames EVERY paragraph (no bullet_cap subsampling);
+                # MAX_NARRATIVE_FRAMES is only a pathological-output safety cap.
+                # Empty in bullets mode (narrative_paragraphs == []) → loop no-ops.
+                para_frames: dict[int, str] = {}
+                para_fail = 0
+                para_sel = even_indices(
+                    len(merged.narrative_paragraphs), MAX_NARRATIVE_FRAMES
                 )
-                try:
-                    t_start, t_end = para["time_range"]
-                    ts = pick_frame_timestamp(
-                        detector=detector,
-                        vlm_callback=vlm_cb,
-                        video_path=video_path,
-                        window_start=t_start,
-                        window_end=t_end,
-                        context_text=para["text"],
-                        temp_dir=work_dir / f"candidates_p{orig_i}",
-                        duration=video_duration,
-                        fps=video_fps,
-                        scenes=global_scenes,
-                        candidate_max_edge=cand_max_edge,
+                for n_done, orig_i in enumerate(para_sel):
+                    para = merged.narrative_paragraphs[orig_i]
+                    pct = 0.70 + 0.25 * (n_done / max(1, len(para_sel)))
+                    progress_callback(
+                        pct,
+                        f"task.progress.summary_paragraph_frame|{n_done + 1}|{len(para_sel)}",
                     )
-                    if ts is None:
-                        continue  # VLM judged no candidate matches — no image
-                    out = frames_dir / f"para_{orig_i:03d}.jpg"
-                    detector.extract_frame(
-                        input_path=video_path, output_path=out, timestamp=ts
+                    # Paragraph whose line citation didn't resolve to a usable
+                    # window: skip (no image) — not a failure.
+                    if para["time_range"] is None:
+                        continue
+                    vlm_cb = (
+                        self._make_vlm_callback(
+                            vlm_session, vlm_family, vlm_size,
+                            cancel_pct=pct,
+                            cancel_msg=f"task.progress.summary_paragraph_frame|{n_done + 1}|{len(para_sel)}",
+                        )
+                        if vlm_chosen else None
                     )
-                    para_frames[orig_i] = f"frames/para_{orig_i:03d}.jpg"
-                except TaskCancelledError:
-                    raise
-                except Exception as e:
-                    para_fail += 1
-                    logger.warning(
-                        f"summary: paragraph {orig_i} frame failed ({e}); skipping image"
-                    )
-                    continue
+                    try:
+                        t_start, t_end = para["time_range"]
+                        ts = pick_frame_timestamp(
+                            detector=detector,
+                            vlm_callback=vlm_cb,
+                            video_path=video_path,
+                            window_start=t_start,
+                            window_end=t_end,
+                            context_text=para["text"],
+                            temp_dir=work_dir / f"candidates_p{orig_i}",
+                            duration=video_duration,
+                            fps=video_fps,
+                            scenes=global_scenes,
+                            candidate_max_edge=cand_max_edge,
+                        )
+                        if ts is None:
+                            continue  # VLM judged no candidate matches — no image
+                        out = frames_dir / f"para_{orig_i:03d}.jpg"
+                        detector.extract_frame(
+                            input_path=video_path, output_path=out, timestamp=ts
+                        )
+                        para_frames[orig_i] = f"frames/para_{orig_i:03d}.jpg"
+                    except TaskCancelledError:
+                        raise
+                    except Exception as e:
+                        para_fail += 1
+                        logger.warning(
+                            f"summary: paragraph {orig_i} frame failed ({e}); skipping image"
+                        )
+                        continue
 
             if bullet_fail or para_fail:
                 logger.warning(
@@ -746,21 +780,51 @@ class VideoSummaryService:
 
         return chunk_results
 
-    def _make_vlm_callback(self, family: str, size: str, *,
-                           on_progress=None, cancel_pct: float = 0.0,
-                           cancel_msg: str = "task.progress.summary_bullet_frame"):
-        """Build a VLM callback: (context_text, frame_paths) -> chosen_index.
+    def _make_vlm_callback(
+        self,
+        vlm_session,                             # NEW (positional)
+        vlm_family: Optional[str],               # kept for cfg lookup (local case)
+        vlm_size: Optional[str],
+        *,
+        cancel_pct: float,
+        cancel_msg: str,
+    ):
+        """Build a VLM callback for frame_picker.pick_frame_timestamp.
 
-        In v1, if `chat_with_images` isn't available on ChatService, the callback
-        raises RuntimeError which `pick_frame_timestamp` catches and falls back to
-        midpoint-nearest. This keeps the feature shippable without VLM support
-        while leaving the hook for later.
+        Closes over `vlm_session` (hoisted out of the per-item loop).
+        Per-iter `cancel_pct` / `cancel_msg` captured at construction and
+        forwarded to vlm_session.chat_with_images() as per-call cancel
+        overrides (Task 5/6 plumbing).
+
+        cfg resolution:
+        - LOCAL (vlm_family + vlm_size set): get_inference_config(...) →
+          dict with temperature, max_tokens_strategy, max_tokens_ratio,
+          max_tokens_cap, n_ctx, max_image_edge — use calc_max_tokens()
+          as today.
+        - REMOTE (vlm_family is None, vlm_size is None): The remote
+          frame_select cfg is the static REMOTE_INFERENCE_DEFAULTS[
+          "frame_select"] = {"temperature": 0.0, "max_tokens": 16}.
+          Use the fixed max_tokens=16 directly — DO NOT route through
+          calc_max_tokens(), which would compute a much larger cap from
+          the assumed n_ctx fallback (MAJOR plan-review fix).
+
+        Spec §F4 step 4, MAJOR-NEW-1 / MINOR-V4-1 / MINOR-V4-2.
         """
-        cfg = get_inference_config(family, size, "frame_select")
+        from app.adapters.ai.inference_config import (
+            get_inference_config, get_remote_inference_config,
+        )
+        from app.utils.inference import calc_max_tokens, estimate_tokens
+
+        # Local cfg has all the fields; remote cfg has only temperature + max_tokens.
+        is_remote = (vlm_family is None or vlm_size is None)
+        if is_remote:
+            cfg = get_remote_inference_config("frame_select")
+        else:
+            cfg = get_inference_config(vlm_family, vlm_size, "frame_select")
 
         def _cb(context_text: str, frame_paths: list) -> int:
-            if not hasattr(self._chat_service, "chat_with_images"):
-                raise RuntimeError("VLM chat_with_images not available; falling back")
+            """frame_picker contract: (context_text, frame_paths) -> chosen_index."""
+            # Prompt — copied verbatim from current service.py:625-632.
             indexed = "\n".join(f"{i}. (圖片 {i})" for i in range(len(frame_paths)))
             prompt = (
                 f"以下段落文字：\n{context_text}\n\n"
@@ -769,22 +833,27 @@ class VideoSummaryService:
                 f"若沒有任何一張與上述文字相符，回答 -1。\n"
                 f"只回答一個數字（-1 到 {len(frame_paths) - 1}），不要多餘文字。"
             )
-            max_tokens = calc_max_tokens(cfg, n_ctx=cfg["n_ctx"], input_len=estimate_tokens(prompt))
-            raw = self._chat_service.chat_with_images(
+
+            # max_tokens: local uses calc_max_tokens, remote uses cfg["max_tokens"] directly.
+            if is_remote:
+                max_tokens = cfg["max_tokens"]      # 16 (numeric-only response)
+            else:
+                max_tokens = calc_max_tokens(
+                    cfg, n_ctx=cfg["n_ctx"],
+                    input_len=estimate_tokens(prompt),
+                )
+
+            raw = vlm_session.chat_with_images(
                 prompt=prompt,
                 images=frame_paths,
-                model_family=family,
-                model_size=size,
                 max_tokens=max_tokens,
                 temperature=cfg["temperature"],
-                on_progress=on_progress,
                 cancel_pct=cancel_pct,
                 cancel_msg=cancel_msg,
             )
+
+            # Parse — copied verbatim from current service.py:645-652.
             import re
-            # Take the LAST integer token: a reasoning model puts its final
-            # answer last. The numeric-only Chinese prompt makes decimal /
-            # hyphenated-word false matches unlikely.
             nums = re.findall(r"-?\d+", raw)
             if not nums:
                 raise ValueError(f"VLM response not a number: {raw!r}")
