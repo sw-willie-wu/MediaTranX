@@ -211,3 +211,103 @@ def test_blocking_no_regression():
     assert ":generateContent" in captured["url"]
     assert "streamGenerateContent" not in captured["url"]
     assert captured["timeout"] == 300
+
+
+# --- task hint: thinkingConfig ---
+
+def test_streaming_thinking_budget_zero_when_task_is_frame_select():
+    """task='frame_select' must set generationConfig.thinkingConfig.thinkingBudget=0."""
+    from app.adapters.ai.remote.gemini import GeminiProvider
+
+    lines = [
+        b'data: {"candidates":[{"content":{"parts":[{"text":"2"}]}}]}\n',
+    ]
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["data"] = json.loads(req.data.decode("utf-8"))
+        return _make_sse_response(*lines)
+
+    with patch(
+        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        side_effect=fake_urlopen,
+    ):
+        prov = GeminiProvider(
+            "https://generativelanguage.googleapis.com", "AIza-test",
+        )
+        prov.chat(
+            model="gemini-2.5-flash",
+            messages=[{"role": "user", "content": "pick a frame"}],
+            max_tokens=16, temperature=0.0,
+            abort_hook=lambda r: None,
+            task="frame_select",
+        )
+    gen_cfg = captured["data"]["generationConfig"]
+    assert "thinkingConfig" in gen_cfg, "thinkingConfig missing when task=frame_select"
+    assert gen_cfg["thinkingConfig"] == {"thinkingBudget": 0}
+
+
+def test_streaming_no_thinking_config_without_task_hint():
+    """No task hint must NOT add thinkingConfig to generationConfig."""
+    from app.adapters.ai.remote.gemini import GeminiProvider
+
+    lines = [
+        b'data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}\n',
+    ]
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["data"] = json.loads(req.data.decode("utf-8"))
+        return _make_sse_response(*lines)
+
+    with patch(
+        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        side_effect=fake_urlopen,
+    ):
+        prov = GeminiProvider(
+            "https://generativelanguage.googleapis.com", "AIza-test",
+        )
+        prov.chat(
+            model="gemini-2.5-flash",
+            messages=[{"role": "user", "content": "summarize"}],
+            max_tokens=4096, temperature=0.3,
+            abort_hook=lambda r: None,
+            # task=None (default)
+        )
+    gen_cfg = captured["data"]["generationConfig"]
+    assert "thinkingConfig" not in gen_cfg, "thinkingConfig must not appear when task=None"
+
+
+def test_blocking_thinking_budget_zero_when_task_is_frame_select():
+    """Blocking path also sends thinkingConfig.thinkingBudget=0 for frame_select."""
+    from app.adapters.ai.remote.gemini import GeminiProvider
+
+    body = json.dumps({
+        "candidates": [{"content": {"parts": [{"text": "1"}]}}]
+    }).encode("utf-8")
+    resp = MagicMock(name="HTTPResponse")
+    resp.read = MagicMock(return_value=body)
+    resp.__enter__ = MagicMock(return_value=resp)
+    resp.__exit__ = MagicMock(return_value=False)
+
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["data"] = json.loads(req.data.decode("utf-8"))
+        return resp
+
+    with patch(
+        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        side_effect=fake_urlopen,
+    ):
+        prov = GeminiProvider(
+            "https://generativelanguage.googleapis.com", "AIza-test",
+        )
+        prov.chat(
+            model="gemini-2.5-flash",
+            messages=[{"role": "user", "content": "pick"}],
+            max_tokens=16, temperature=0.0,
+            task="frame_select",  # no abort_hook → blocking path
+        )
+    gen_cfg = captured["data"]["generationConfig"]
+    assert gen_cfg["thinkingConfig"] == {"thinkingBudget": 0}

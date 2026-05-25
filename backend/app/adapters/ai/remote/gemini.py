@@ -167,6 +167,25 @@ class GeminiProvider(RemoteProvider):
             contents.append({"role": role, "parts": parts})
         return contents
 
+    def _build_generation_config(
+        self, max_tokens: int, temperature: float, task: Optional[str]
+    ) -> dict:
+        """Build generationConfig dict, injecting thinkingConfig when needed.
+
+        When task="frame_select", sets thinkingBudget=0 to disable Gemini
+        2.5+ implicit thinking. Without this, thinking tokens silently
+        consume the entire max_tokens budget (e.g., max_tokens=16 → 22
+        thinking tokens + 0 visible output tokens), causing empty responses
+        for frame_select. Production bug, 2026-05.
+        """
+        cfg: dict = {"maxOutputTokens": max_tokens, "temperature": temperature}
+        if task == "frame_select":
+            # Disable implicit thinking on Gemini 2.5+ — frame_select expects a
+            # single numeric token, and thinking would silently consume the
+            # entire max_tokens budget (production bug, 2026-05).
+            cfg["thinkingConfig"] = {"thinkingBudget": 0}
+        return cfg
+
     def chat(
         self,
         model: str,
@@ -175,24 +194,24 @@ class GeminiProvider(RemoteProvider):
         max_tokens: int = 2048,
         temperature: float = 0.1,
         abort_hook: Optional[Callable] = None,
+        task: Optional[str] = None,
     ) -> str:
         """Gemini chat — dispatch by abort_hook presence."""
         if abort_hook is None:
-            return self._chat_blocking(model, messages, max_tokens, temperature)
-        return self._chat_streaming(model, messages, max_tokens, temperature, abort_hook)
+            return self._chat_blocking(model, messages, max_tokens, temperature, task=task)
+        return self._chat_streaming(model, messages, max_tokens, temperature, abort_hook, task=task)
 
     def _chat_blocking(
         self, model: str, messages: list[dict],
         max_tokens: int, temperature: float,
+        *,
+        task: Optional[str] = None,
     ) -> str:
         """Blocking generateContent (preserved behaviour for 5 legacy callers)."""
         contents = self._convert_to_gemini_contents(messages)
         payload = {
             "contents": contents,
-            "generationConfig": {
-                "maxOutputTokens": max_tokens,
-                "temperature": temperature,
-            },
+            "generationConfig": self._build_generation_config(max_tokens, temperature, task),
         }
         url = self._api_url(f"/v1beta/models/{model}:generateContent")
         data = json.dumps(payload).encode("utf-8")
@@ -220,15 +239,14 @@ class GeminiProvider(RemoteProvider):
         self, model: str, messages: list[dict],
         max_tokens: int, temperature: float,
         abort_hook: Callable,
+        *,
+        task: Optional[str] = None,
     ) -> str:
         """streamGenerateContent?alt=sse — SSE parser + cancel-on-socket-close."""
         contents = self._convert_to_gemini_contents(messages)
         payload = {
             "contents": contents,
-            "generationConfig": {
-                "maxOutputTokens": max_tokens,
-                "temperature": temperature,
-            },
+            "generationConfig": self._build_generation_config(max_tokens, temperature, task),
         }
         url = self._api_url(
             f"/v1beta/models/{model}:streamGenerateContent?alt=sse"

@@ -65,7 +65,7 @@ def test_abort_hook_stashes_response_then_clears_on_return():
     session, prov = _make_session()
     captured_hook = {}
 
-    def fake_chat(model, messages, max_tokens, temperature, abort_hook):
+    def fake_chat(model, messages, max_tokens, temperature, abort_hook, **kwargs):
         captured_hook["fn"] = abort_hook
         fake_resp = MagicMock(name="resp")
         abort_hook(fake_resp)

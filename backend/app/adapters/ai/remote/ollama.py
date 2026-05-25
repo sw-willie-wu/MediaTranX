@@ -172,6 +172,7 @@ class OllamaProvider(RemoteProvider):
         max_tokens: int = 2048,
         temperature: float = 0.1,
         abort_hook: Optional[Callable] = None,
+        task: Optional[str] = None,
     ) -> str:
         """Ollama chat completion.
 
@@ -184,6 +185,9 @@ class OllamaProvider(RemoteProvider):
           timeout=30, stream=True, hook receives HTTPResponse so the
           caller can close the socket from another thread to interrupt
           the read). Used by RemoteChatSession for video summary remote.
+
+        task: accepted for interface symmetry; Ollama has no built-in
+        thinking budget to suppress, so this kwarg is ignored.
 
         Spec §F1.
         """

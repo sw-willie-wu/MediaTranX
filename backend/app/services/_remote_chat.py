@@ -94,13 +94,14 @@ class RemoteChatSession:
         stop: Optional[list[str]] = None,
         cancel_pct: Optional[float] = None,         # per-call override
         cancel_msg: Optional[str] = None,
+        task: Optional[str] = None,
     ) -> str:
         with self._guard(cancel_pct, cancel_msg):
             try:
                 return self._prov.chat(
                     model=self._model, messages=messages,
                     max_tokens=max_tokens, temperature=temperature,
-                    abort_hook=self._set_current,
+                    abort_hook=self._set_current, task=task,
                 )
             finally:
                 self._current_response = None
@@ -122,13 +123,14 @@ class RemoteChatSession:
         top_p: float = 0.9,
         cancel_pct: Optional[float] = None,
         cancel_msg: Optional[str] = None,
+        task: Optional[str] = None,
     ) -> str:
         with self._guard(cancel_pct, cancel_msg):
             try:
                 return self._prov.chat_with_images(
                     model=self._model, prompt=prompt, images=images,
                     max_tokens=max_tokens, temperature=temperature,
-                    abort_hook=self._set_current,
+                    abort_hook=self._set_current, task=task,
                 )
             finally:
                 self._current_response = None

@@ -34,8 +34,8 @@ def smoke_blocking():
     result = prov.chat(
         model=MODEL,
         messages=[{"role": "user", "content": "What is 2+2? One number only."}],
-        max_tokens=50,  # reasoning models need headroom for thinking tokens
-        temperature=0.0,
+        max_tokens=16,  # matches production frame_select budget; task hint disables reasoning
+        temperature=0.0, task="frame_select",
     )
     print(f"[responses-blocking] {time.monotonic() - t0:.2f}s | {result!r}")
     return "4" in result
@@ -47,8 +47,8 @@ def smoke_streaming():
     result = prov.chat(
         model=MODEL,
         messages=[{"role": "user", "content": "What is 2+2? One number only."}],
-        max_tokens=50, temperature=0.0,
-        abort_hook=lambda r: None,
+        max_tokens=16, temperature=0.0,  # matches production frame_select budget
+        abort_hook=lambda r: None, task="frame_select",
     )
     print(f"[responses-streaming] {time.monotonic() - t0:.2f}s | {result!r}")
     return "4" in result

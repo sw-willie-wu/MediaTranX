@@ -47,7 +47,7 @@ def smoke_text_blocking():
     result = prov.chat(
         model=MODEL,
         messages=[{"role": "user", "content": "Say 'PONG' and nothing else."}],
-        max_tokens=10, temperature=0.0,
+        max_tokens=10, temperature=0.0, task="frame_select",
     )
     print(f"[text-blocking] {time.monotonic() - t0:.2f}s | {result!r}")
     return "pong" in result.lower()
@@ -60,7 +60,7 @@ def smoke_text_streaming():
         model=MODEL,
         messages=[{"role": "user", "content": "Say 'PONG' and nothing else."}],
         max_tokens=10, temperature=0.0,
-        abort_hook=lambda r: None,
+        abort_hook=lambda r: None, task="frame_select",
     )
     print(f"[text-streaming] {time.monotonic() - t0:.2f}s | {result!r}")
     return "pong" in result.lower()
@@ -80,7 +80,7 @@ def smoke_vision_streaming():
     result = prov.chat(
         model=MODEL, messages=messages,
         max_tokens=10, temperature=0.0,
-        abort_hook=lambda r: None,
+        abort_hook=lambda r: None, task="frame_select",
     )
     print(f"[vision-streaming] {time.monotonic() - t0:.2f}s | {result!r}")
     return "green" in result.lower()

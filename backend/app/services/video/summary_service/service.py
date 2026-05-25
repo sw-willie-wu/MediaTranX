@@ -850,6 +850,7 @@ class VideoSummaryService:
                 temperature=cfg["temperature"],
                 cancel_pct=cancel_pct,
                 cancel_msg=cancel_msg,
+                task="frame_select",
             )
 
             # Parse — copied verbatim from current service.py:645-652.

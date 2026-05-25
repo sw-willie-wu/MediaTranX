@@ -94,6 +94,7 @@ class RemoteProvider(ABC):
         max_tokens: int = 2048,
         temperature: float = 0.1,
         abort_hook: Optional[Callable] = None,
+        task: Optional[str] = None,
     ) -> str:
         """Text conversation.
 
@@ -107,6 +108,10 @@ class RemoteProvider(ABC):
                 opened. Used by RemoteChatSession to stash the response
                 for cross-thread close (cancel). If None, the provider
                 may use a faster blocking code path.
+            task: Optional hint to the provider for provider-specific
+                tuning (e.g., disable thinking for ``frame_select`` task).
+                Providers MAY use this; subclasses that don't need it
+                should accept and ignore the kwarg.
 
         Returns:
             Model response text.
@@ -122,6 +127,7 @@ class RemoteProvider(ABC):
         max_tokens: int = 4096,
         temperature: float = 0.7,
         abort_hook: Optional[Callable] = None,
+        task: Optional[str] = None,
     ) -> str:
         """Multimodal chat — default implementation usable by all subclasses.
 
@@ -150,7 +156,7 @@ class RemoteProvider(ABC):
         return self.chat(
             model=model, messages=messages,
             max_tokens=max_tokens, temperature=temperature,
-            abort_hook=abort_hook,
+            abort_hook=abort_hook, task=task,
         )
 
     def is_available(self) -> bool:

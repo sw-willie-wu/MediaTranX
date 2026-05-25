@@ -229,3 +229,71 @@ def test_kill_process_closes_openai_response():
     t.join(timeout=3.0)
     assert not t.is_alive()
     resp.close.assert_called()
+
+
+# --- task kwarg forwarding ---
+
+def test_task_kwarg_forwards_to_provider_chat():
+    """RemoteChatSession.chat(task='frame_select') must propagate task to provider."""
+    from unittest.mock import MagicMock as _MagicMock
+    from app.services._remote_chat import RemoteChatSession
+
+    prov = _MagicMock()
+    prov.chat.return_value = "2"
+    sess = RemoteChatSession(prov, "test-model")
+
+    sess.chat(
+        messages=[{"role": "user", "content": "pick"}],
+        max_tokens=16, temperature=0.0,
+        task="frame_select",
+    )
+    call_kwargs = prov.chat.call_args
+    assert call_kwargs.kwargs.get("task") == "frame_select", (
+        f"task kwarg not forwarded to provider.chat(); got: {call_kwargs.kwargs}"
+    )
+
+
+def test_task_kwarg_forwards_to_provider_chat_with_images(tmp_path):
+    """RemoteChatSession.chat_with_images(task='frame_select') must propagate task to provider."""
+    from unittest.mock import MagicMock as _MagicMock
+    from app.services._remote_chat import RemoteChatSession
+
+    prov = _MagicMock()
+    prov.chat_with_images.return_value = "1"
+    prov.IMAGE_PREP_MODE = "raw"
+    prov.PROVIDER_NAME = "ollama"
+    sess = RemoteChatSession(prov, "test-model")
+
+    p = tmp_path / "frame.png"
+    p.write_bytes(b"\x89PNG")
+
+    sess.chat_with_images(
+        prompt="pick frame",
+        images=[str(p)],
+        max_tokens=16, temperature=0.0,
+        task="frame_select",
+    )
+    call_kwargs = prov.chat_with_images.call_args
+    assert call_kwargs.kwargs.get("task") == "frame_select", (
+        f"task kwarg not forwarded to provider.chat_with_images(); got: {call_kwargs.kwargs}"
+    )
+
+
+def test_task_kwarg_defaults_to_none_when_not_passed():
+    """When task is omitted, provider receives task=None (default)."""
+    from unittest.mock import MagicMock as _MagicMock
+    from app.services._remote_chat import RemoteChatSession
+
+    prov = _MagicMock()
+    prov.chat.return_value = "OK"
+    sess = RemoteChatSession(prov, "test-model")
+
+    sess.chat(
+        messages=[{"role": "user", "content": "summarize"}],
+        max_tokens=4096, temperature=0.3,
+        # no task kwarg
+    )
+    call_kwargs = prov.chat.call_args
+    assert call_kwargs.kwargs.get("task") is None, (
+        f"task should be None when not passed; got: {call_kwargs.kwargs.get('task')}"
+    )
