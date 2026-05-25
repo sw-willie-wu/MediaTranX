@@ -10,7 +10,7 @@ import json
 import logging
 import urllib.error
 import urllib.request
-from typing import Optional
+from typing import Callable, Optional
 
 from .base import RemoteProvider, RemoteModel
 
@@ -165,16 +165,35 @@ class OllamaProvider(RemoteProvider):
         self,
         model: str,
         messages: list[dict],
+        *,
         max_tokens: int = 2048,
         temperature: float = 0.1,
+        abort_hook: Optional[Callable] = None,
     ) -> str:
-        """
-        Ollama chat completion
+        """Ollama chat completion.
 
-        Args:
-            model: Model name (e.g. "llama3.2:3b")
-            messages: [{"role": "user", "content": "..."}]
+        Dual-path:
+        - abort_hook is None → _chat_blocking (legacy single-read,
+          timeout=300, stream=False). Used by the 5 existing prov.chat
+          callers (subtitle / transcribe / lyrics / doc translate /
+          doc ocr); byte-identical behaviour preserved.
+        - abort_hook is not None → _chat_streaming (NDJSON line-by-line,
+          timeout=30, stream=True, hook receives HTTPResponse so the
+          caller can close the socket from another thread to interrupt
+          the read). Used by RemoteChatSession for video summary remote.
+
+        Spec §F1.
         """
+        if abort_hook is None:
+            return self._chat_blocking(model, messages, max_tokens, temperature)
+        return self._chat_streaming(model, messages, max_tokens, temperature, abort_hook)
+
+    def _chat_blocking(
+        self, model: str, messages: list[dict],
+        max_tokens: int, temperature: float,
+    ) -> str:
+        """Legacy path. Single .read(), stream=False, 300s socket timeout.
+        Preserved verbatim for existing callers."""
         payload = {
             "model": model,
             "messages": messages,
@@ -184,7 +203,6 @@ class OllamaProvider(RemoteProvider):
                 "temperature": temperature,
             },
         }
-
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             f"{self.endpoint}/api/chat",
@@ -192,7 +210,6 @@ class OllamaProvider(RemoteProvider):
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-
         try:
             with urllib.request.urlopen(req, timeout=300) as resp:
                 result = json.loads(resp.read())
@@ -207,6 +224,76 @@ class OllamaProvider(RemoteProvider):
         except OSError as e:
             from app.handler.exceptions import RemoteApiError
             raise RemoteApiError("connection_failed", f"Ollama: {e}")
+
+    def _chat_streaming(
+        self, model: str, messages: list[dict],
+        max_tokens: int, temperature: float,
+        abort_hook: Callable,
+    ) -> str:
+        """Streamable + cancellable path. stream=True, 30s socket timeout
+        per recv; abort_hook(resp) called immediately after urlopen returns
+        so the caller can stash for cross-thread close."""
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+            "options": {
+                "num_predict": max_tokens,
+                "temperature": temperature,
+            },
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.endpoint}/api/chat",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        from app.handler.exceptions import RemoteApiError
+        resp = None
+        try:
+            resp = urllib.request.urlopen(req, timeout=30)
+            # Hook BEFORE entering the read loop — gives the cancel
+            # watcher a closable response to act on for the rest of the
+            # call. If the hook itself raises (e.g. cancel was pre-queued
+            # via RemoteChatSession._kill_pending), the OSError propagates
+            # and is wrapped below.
+            abort_hook(resp)
+            parts: list[str] = []
+            for raw in resp:
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                msg = obj.get("message", {})
+                if isinstance(msg, dict):
+                    delta = msg.get("content", "")
+                    if delta:
+                        parts.append(delta)
+                if obj.get("done") is True:
+                    break
+            return "".join(parts).strip()
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            raise self._parse_error(e.code, body)
+        except urllib.error.URLError as e:
+            raise RemoteApiError("connection_failed", f"Ollama: {e}")
+        except OSError as e:
+            # Includes cross-thread socket-close (cancel-induced) AND real
+            # network failures. cancel_guard.finally translates to
+            # TaskCancelledError when cancel was signalled. Provider has
+            # no visibility into RemoteChatSession._kill_pending, so it
+            # ALWAYS raises connection_failed here (spec §F1, MAJOR-C).
+            raise RemoteApiError("connection_failed", f"Ollama: {e}")
+        finally:
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
 
     @staticmethod
     def _parse_error(status: int, body: str):
