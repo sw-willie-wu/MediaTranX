@@ -8,7 +8,7 @@ import pytest
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 from ag_ui.core import UserMessage, SystemMessage, Tool
-from app.services.agent.agent_service import AgentService, AgentError
+from app.services.agent.agent_service import AgentService, AgentError, _msg_to_dict, _tool_to_dict
 from app.services.agent._ag_ui_compat import RunAgentInput
 
 
@@ -86,6 +86,46 @@ class FakeRemoteService:
         return self.provider_map.get((conn_id, provider_name))
 
 
+# ── _msg_to_dict / _tool_to_dict module-level helper tests ──────────
+
+class TestMsgToDict:
+    def test_plain_dict_passthrough(self):
+        d = {"role": "user", "content": "hi"}
+        result = _msg_to_dict(d)
+        assert result == {"role": "user", "content": "hi"}
+
+    def test_strips_id_from_plain_dict(self):
+        d = {"role": "user", "content": "hi", "id": "sdk-internal-123"}
+        result = _msg_to_dict(d)
+        assert "id" not in result
+        assert result["content"] == "hi"
+
+    def test_pydantic_model_normalized(self):
+        msg = UserMessage(id="m0", content="hello")
+        result = _msg_to_dict(msg)
+        assert result["role"] == "user"
+        assert result["content"] == "hello"
+        assert "id" not in result
+
+    def test_system_message_normalized(self):
+        msg = SystemMessage(id="s0", content="system prompt")
+        result = _msg_to_dict(msg)
+        assert result["role"] == "system"
+        assert "id" not in result
+
+
+class TestToolToDict:
+    def test_plain_dict_passthrough(self):
+        d = {"name": "navigate_to", "description": "nav", "parameters": {}}
+        assert _tool_to_dict(d) == d
+
+    def test_pydantic_tool_normalized(self):
+        t = Tool(name="go", description="nav", parameters={})
+        result = _tool_to_dict(t)
+        assert result["name"] == "go"
+        assert isinstance(result, dict)
+
+
 # ── _resolve_model_choice tests ─────────────────────────────────────
 
 class TestResolveModelChoice:
@@ -103,35 +143,69 @@ class TestResolveModelChoice:
             "model_family": "qwen3vl", "model_size": "8b", "quantization": "Q4_K_M",
         }
 
+    # ── Remote choice: Phase-1 guard (Critical fix) ─────────────────────
+
+    def test_remote_choice_rejected_with_friendly_error(self):
+        """Phase 1: any remote: choice → agent.error.model_unavailable with message."""
+        with pytest.raises(AgentError) as exc_info:
+            self.svc._resolve_model_choice("remote:openai:3:gpt-4o-mini")
+        assert exc_info.value.code == "agent.error.model_unavailable"
+        assert "future update" in exc_info.value.message
+
+    @pytest.mark.skip(reason="Wave 4 — remote streaming with tool calling not yet implemented")
     def test_remote_standard(self):
+        """Wave 4 TODO: remote:openai:3:gpt-4o-mini → {remote_provider, remote_model}."""
         prov = MagicMock()
         self.remote.provider_map[(3, "openai")] = prov
         result = self.svc._resolve_model_choice("remote:openai:3:gpt-4o-mini")
         assert result == {"remote_provider": prov, "remote_model": "gpt-4o-mini"}
 
+    @pytest.mark.skip(reason="Wave 4 — remote streaming with tool calling not yet implemented")
     def test_remote_model_id_with_colon(self):
-        """Model id like 'qwen3:8b-instruct' has colons inside."""
+        """Wave 4 TODO: model id like 'qwen3:8b-instruct' has colons inside."""
         prov = MagicMock()
         self.remote.provider_map[(5, "ollama")] = prov
         result = self.svc._resolve_model_choice("remote:ollama:5:qwen3:8b-instruct")
         assert result == {"remote_provider": prov, "remote_model": "qwen3:8b-instruct"}
 
+    @pytest.mark.skip(reason="Wave 4 — remote streaming with tool calling not yet implemented")
     def test_remote_missing_provider(self):
-        # provider not registered
+        """Wave 4 TODO: provider not registered → model_unavailable."""
         with pytest.raises(AgentError, match="agent.error.model_unavailable"):
             self.svc._resolve_model_choice("remote:openai:999:foo")
+
+    @pytest.mark.skip(reason="Wave 4 — remote streaming with tool calling not yet implemented")
+    def test_invalid_remote_format(self):
+        """Wave 4 TODO: too-short remote: string → no_model."""
+        with pytest.raises(AgentError, match="agent.error.no_model"):
+            self.svc._resolve_model_choice("remote:openai")  # missing parts
+
+    @pytest.mark.skip(reason="Wave 4 — remote streaming with tool calling not yet implemented")
+    def test_invalid_remote_conn_id(self):
+        """Wave 4 TODO: non-numeric conn_id → no_model."""
+        with pytest.raises(AgentError, match="agent.error.no_model"):
+            self.svc._resolve_model_choice("remote:openai:abc:foo")  # conn_id NaN
+
+    # ── Local empty-fragment validation (Important 1) ────────────────────
+
+    def test_local_empty_size(self):
+        """'qwen3:' — family present but empty size → no_model."""
+        with pytest.raises(AgentError, match="agent.error.no_model"):
+            self.svc._resolve_model_choice("qwen3:")
+
+    def test_local_empty_family(self):
+        """':8b' — missing family → no_model."""
+        with pytest.raises(AgentError, match="agent.error.no_model"):
+            self.svc._resolve_model_choice(":8b")
+
+    def test_local_empty_size_with_quant(self):
+        """'qwen3::Q4_K_M' — empty size segment → no_model."""
+        with pytest.raises(AgentError, match="agent.error.no_model"):
+            self.svc._resolve_model_choice("qwen3::Q4_K_M")
 
     def test_invalid_no_colon(self):
         with pytest.raises(AgentError, match="agent.error.no_model"):
             self.svc._resolve_model_choice("qwen3")  # no :
-
-    def test_invalid_remote_format(self):
-        with pytest.raises(AgentError, match="agent.error.no_model"):
-            self.svc._resolve_model_choice("remote:openai")  # missing parts
-
-    def test_invalid_remote_conn_id(self):
-        with pytest.raises(AgentError, match="agent.error.no_model"):
-            self.svc._resolve_model_choice("remote:openai:abc:foo")  # conn_id NaN
 
 
 # ── run() happy path tests ───────────────────────────────────────────
@@ -274,6 +348,23 @@ class TestRunErrors:
         events = [e async for e in svc.run(inp)]
         assert any("RUN_ERROR" in e and "agent.error.no_model" in e for e in events)
         # RUN_FINISHED still emitted (finally block)
+        assert "RUN_FINISHED" in events[-1]
+
+    async def test_empty_messages_rejected(self):
+        """input.messages=[] → RunErrorEvent(agent.error.internal, 'empty messages list')."""
+        chat = FakeChatService([])
+        svc = AgentService(chat_service=chat, remote_service=FakeRemoteService())
+        inp = _make_input(
+            messages=[],  # override default
+            state={"agent_model_choice": "qwen3:8b"},
+        )
+        # Override messages to be truly empty (default helper provides one)
+        inp.messages = []
+        events = [e async for e in svc.run(inp)]
+        assert any(
+            "RUN_ERROR" in e and "agent.error.internal" in e and "empty messages list" in e
+            for e in events
+        )
         assert "RUN_FINISHED" in events[-1]
 
     async def test_unknown_exception_emits_internal_error(self):

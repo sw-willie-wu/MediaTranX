@@ -22,6 +22,13 @@ from app.services.agent._system_prompt import AGENT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
+# Agent inference constants.
+# NOTE: Agent path intentionally bypasses get_inference_config() because tool
+# calling requires specific sampling settings for reliable JSON grammar output.
+# Qwen3 / Gemma4 tool tests (SPIKE-B/D) confirmed 0.1 / 4096 as stable floor.
+AGENT_DEFAULT_TEMPERATURE = 0.1
+AGENT_DEFAULT_MAX_TOKENS = 4096
+
 
 class AgentError(Exception):
     """Typed error for agent service; .code is an i18n key."""
@@ -29,6 +36,33 @@ class AgentError(Exception):
         self.code = code
         self.message = message
         super().__init__(message or code)
+
+
+def _msg_to_dict(m) -> dict:
+    """Normalise a message to a plain dict for session.stream().
+
+    ag-ui SDK may pass Pydantic model objects (UserMessage / SystemMessage /
+    etc.) or plain dicts.  Downstream session.stream() expects plain dicts
+    with at least {"role": ..., "content": ...}.
+
+    Strips any SDK-internal "id" field to avoid sending unknown keys to
+    llama-server or remote APIs.
+    """
+    if isinstance(m, dict):
+        d = {k: v for k, v in m.items() if k != "id"}
+        return d
+    # Pydantic model: use model_dump() then drop None values and the
+    # SDK-internal "id" that llama-server / remote APIs don't understand.
+    d = m.model_dump(exclude_none=True, by_alias=False)
+    d.pop("id", None)
+    return d
+
+
+def _tool_to_dict(t) -> dict:
+    """Normalise a Tool to a plain dict for session.stream()."""
+    if isinstance(t, dict):
+        return t
+    return t.model_dump(exclude_none=True, by_alias=False)
 
 
 class AgentService:
@@ -60,19 +94,12 @@ class AgentService:
 
             session_kwargs = self._resolve_model_choice(choice)
 
-            # Normalise messages: ag-ui SDK may pass Pydantic model objects
-            # (UserMessage / SystemMessage / etc.) or plain dicts.  Downstream
-            # session.stream() (LocalChatSession / RemoteChatSession) expects
-            # plain dicts with at least {"role": ..., "content": ...}.
-            def _msg_to_dict(m) -> dict:
-                if isinstance(m, dict):
-                    return m
-                # Pydantic model: use model_dump() then drop None values that
-                # llama-server / remote APIs don't understand (name, encrypted_value…)
-                d = m.model_dump(exclude_none=True, by_alias=False)
-                return d
-
             messages: list[dict] = [_msg_to_dict(m) for m in input.messages]
+
+            # Guard: frontend always pushes a user message before calling run(),
+            # but defend against empty list to avoid a silent system-only request.
+            if not messages:
+                raise AgentError("agent.error.internal", "empty messages list")
 
             # Prepend system prompt (M22) if no system message in input
             if not any(m.get("role") == "system" for m in messages):
@@ -81,18 +108,13 @@ class AgentService:
                     "content": AGENT_SYSTEM_PROMPT,
                 })
 
-            # Normalise tools: ag-ui Tool objects → plain dicts
-            def _tool_to_dict(t) -> dict:
-                if isinstance(t, dict):
-                    return t
-                return t.model_dump(exclude_none=True, by_alias=False)
-
             tools: list[dict] = [_tool_to_dict(t) for t in (input.tools or [])]
 
             with self._chat.session(**session_kwargs) as session:
                 async for chunk in session.stream(
                     messages=messages, tools=tools,
-                    max_tokens=4096, temperature=0.1,
+                    max_tokens=AGENT_DEFAULT_MAX_TOKENS,
+                    temperature=AGENT_DEFAULT_TEMPERATURE,
                 ):
                     if chunk["type"] == "delta":
                         yield encoder.encode(TextMessageChunkEvent(
@@ -112,6 +134,10 @@ class AgentService:
                         break
         except asyncio.CancelledError:
             if session is not None:
+                # Intentional belt-and-braces: LocalChatSession.stream()'s finally
+                # ALSO calls kill_process() on consumer abandon (Task 1.3 fix-of-fix).
+                # Idempotent. Removing either is a leak — both are needed because
+                # cancel paths differ for direct CancelledError vs await q.get() abort.
                 session.kill_process()
             raise
         except AgentError as e:
@@ -132,29 +158,29 @@ class AgentService:
         Local: "qwen3:8b"           → {model_family:'qwen3', model_size:'8b'}
                "qwen3vl:8b:Q4_K_M"  → {model_family:'qwen3vl', model_size:'8b',
                                         quantization:'Q4_K_M'}
-        Remote: "remote:openai:3:gpt-4o-mini" →
-                {remote_provider:<RemoteProvider>, remote_model:'gpt-4o-mini'}
+        Remote: guarded in Phase 1 — streaming with tool calling is a Wave 4
+                deliverable (spec §5.3.3).  The frontend SettingsAgent dropdown
+                also filters remote tools-capable models out (plan M3).
         """
         if choice.startswith("remote:"):
-            parts = choice.split(":")
-            if len(parts) < 4:
-                raise AgentError("agent.error.no_model")
-            provider_name, conn_id_str, model_id = parts[1], parts[2], ":".join(parts[3:])
-            try:
-                conn_id = int(conn_id_str)
-            except ValueError:
-                raise AgentError("agent.error.no_model")
-            prov = self._remote.get_provider_for_connection(conn_id, provider_name)
-            if prov is None:
-                raise AgentError("agent.error.model_unavailable")
-            return {"remote_provider": prov, "remote_model": model_id}
+            # Phase 1: remote streaming not yet implemented (Wave 4 deliverable).
+            # Defensive backend guard; frontend SettingsAgent dropdown also filters
+            # remote tools-capable models out in Phase 1 (plan M3).
+            raise AgentError(
+                "agent.error.model_unavailable",
+                "Remote tool agents are coming in a future update.",
+            )
 
         # Local "family:size[:quant]"
         if ":" not in choice:
             raise AgentError("agent.error.no_model")
         family, rest = choice.split(":", 1)
+        if not family or not rest:
+            raise AgentError("agent.error.no_model")
         if ":" in rest:
             size, quant = rest.split(":", 1)
+            if not size:
+                raise AgentError("agent.error.no_model")
             return {"model_family": family, "model_size": size,
                     "quantization": quant}
         return {"model_family": family, "model_size": rest}
