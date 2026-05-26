@@ -336,3 +336,19 @@ def test_get_openai_provider_returns_new_instance_when_key_changes():
     p1 = get_openai_provider(api_key="sk-A")
     p2 = get_openai_provider(api_key="sk-B")
     assert p1 is not p2
+
+
+# ─── get_summary_chunking_hints ───
+
+def test_get_summary_chunking_hints_returns_128k_24k():
+    """OpenAI returns 128k/24k regardless of model name."""
+    p = OpenAIProvider("https://api.openai.com", "sk-test")
+    hints = p.get_summary_chunking_hints("gpt-4o-mini")
+    assert hints == {"n_ctx": 128000, "model_cap": 24000}
+
+
+def test_get_summary_chunking_hints_consistent_across_models():
+    """Same hints returned for o4-mini and gpt-5 (all >= 128k)."""
+    p = OpenAIProvider("https://api.openai.com", "sk-test")
+    assert p.get_summary_chunking_hints("o4-mini") == {"n_ctx": 128000, "model_cap": 24000}
+    assert p.get_summary_chunking_hints("gpt-5") == {"n_ctx": 128000, "model_cap": 24000}

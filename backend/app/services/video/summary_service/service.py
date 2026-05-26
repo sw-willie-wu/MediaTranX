@@ -368,17 +368,32 @@ class VideoSummaryService:
         bullet_cap = compute_bullet_target(content_sec)
 
         # Step 2: chunk + LLM (50% ~ 70%)
+        # Resolve LLM provider early — chunking budget depends on it for remote
+        # (Ollama queries /api/show; OpenAI/Gemini use 128k/24k defaults).
+        llm_prov = None
+        llm_model_id = None
+        if params.get("llm_remote"):
+            llm_prov = self._remote_service.get_provider_for_connection(
+                params.get("llm_conn_id"), params.get("llm_provider"),
+            )
+            if llm_prov is None:
+                raise RuntimeError(
+                    f"Remote LLM provider unavailable: "
+                    f"provider={params.get('llm_provider')!r}, "
+                    f"conn_id={params.get('llm_conn_id')!r}"
+                )
+            llm_model_id = params.get("llm_remote_model")
+
         # Resolve cfg + n_ctx + model_cap. Local reads cfg from the family/size
-        # registry; remote reads from REMOTE_INFERENCE_DEFAULTS["summarize"]
-        # (no per-model n_ctx — pick a safe Ollama-friendly default).
+        # registry; remote uses provider-aware chunking hints (Ollama queries
+        # /api/show for real n_ctx; OpenAI/Gemini use conservative 128k/24k).
+        # Replaces old hardcoded 32768/6000 that wasted cloud provider capacity.
         if params.get("llm_remote"):
             from app.adapters.ai.inference_config import get_remote_inference_config
             cfg = get_remote_inference_config("summarize")
-            # REMOTE_INFERENCE_DEFAULTS["summarize"] = {"temperature": 0.3,
-            # "max_tokens": 4096}. No n_ctx field; assume 32k (Ollama default
-            # for qwen3.5:9b et al). Sweet-spot model_cap=6000.
-            n_ctx = 32768
-            model_cap = 6000
+            hints = llm_prov.get_summary_chunking_hints(llm_model_id)
+            n_ctx = hints["n_ctx"]
+            model_cap = hints["model_cap"]
         else:
             cfg = get_inference_config(llm_family, llm_size, "summarize")
             n_ctx = cfg["n_ctx"]
@@ -408,32 +423,26 @@ class VideoSummaryService:
 
         PROMPT_OVERHEAD = 600  # template/instruction tokens
         output_cap = cfg.get("max_tokens_cap", cfg.get("max_tokens", 4096))
+        # For small-context models (e.g. Ollama gpt-oss:120b at n_ctx=8192),
+        # the configured output cap (8192) equals or exceeds n_ctx itself,
+        # collapsing context_cap to the 1024 floor and forcing degenerate
+        # tiny chunks. Cap output_cap to at most half of n_ctx so input
+        # always has matching breathing room.
+        output_cap = min(output_cap, max(1024, n_ctx // 2))
         context_cap = max(1024, n_ctx - output_cap - PROMPT_OVERHEAD)
         input_budget = min(context_cap, model_cap)
 
         chunks = chunk_entries_by_tokens(entries, max_input_tokens=input_budget)
+        if params.get("llm_remote"):
+            _llm_tag = f"remote[{params.get('llm_provider')}:{llm_model_id}]"
+        else:
+            _llm_tag = f"local[{llm_family}:{llm_size}]"
         logger.info(
-            f"Video summary chunking: "
-            f"{'remote' if params.get('llm_remote') else f'{llm_family}:{llm_size}'} "
+            f"Video summary chunking: {_llm_tag} "
             f"n_ctx={n_ctx}, context_cap={context_cap}, model_cap={model_cap}, "
             f"input_budget={input_budget}, num_chunks={len(chunks)}, "
             f"num_entries={len(entries)}"
         )
-
-        # Resolve LLM provider — either local (family/size) or remote.
-        llm_prov = None
-        llm_model_id = None
-        if params.get("llm_remote"):
-            llm_prov = self._remote_service.get_provider_for_connection(
-                params.get("llm_conn_id"), params.get("llm_provider"),
-            )
-            if llm_prov is None:
-                raise RuntimeError(
-                    f"Remote LLM provider unavailable: "
-                    f"provider={params.get('llm_provider')!r}, "
-                    f"conn_id={params.get('llm_conn_id')!r}"
-                )
-            llm_model_id = params.get("llm_remote_model")
 
         chunk_results = self._run_llm_chunk_loop(
             params=params, chunks=chunks, entries=entries,
@@ -511,11 +520,16 @@ class VideoSummaryService:
 
             vlm_chosen = (vlm_prov is not None) or bool(vlm_family and vlm_size)
 
-            # candidate_max_edge: local reads cfg["max_image_edge"]; remote has no
-            # such key in REMOTE_INFERENCE_DEFAULTS → None (no client-side downscale;
-            # Ollama handles its own image preprocessing).
-            cand_max_edge = None
-            if vlm_chosen and not (vlm_prov is not None):
+            # candidate_max_edge: local reads cfg["max_image_edge"] from the
+            # GGUF model's frame_select inference profile. Remote defaults to
+            # 1024 — ffmpeg pre-downscale saves IO + CPU encode (4K→1024 JPG
+            # encode is ~5x cheaper) AND shrinks the API payload (4K base64
+            # ~400KB/frame; 1024 ~60KB). At 1024px the VLM's pick-one-of-N
+            # quality is indistinguishable from 4K for this task. Was None
+            # pre-2026-05-26 and bottlenecked ffmpeg at ~8s/bullet.
+            REMOTE_CAND_MAX_EDGE = 1024
+            cand_max_edge = REMOTE_CAND_MAX_EDGE if vlm_prov is not None else None
+            if vlm_chosen and vlm_prov is None:
                 cand_max_edge = get_inference_config(
                     vlm_family, vlm_size, "frame_select"
                 )["max_image_edge"]
@@ -572,6 +586,8 @@ class VideoSummaryService:
                             vlm_session, vlm_family, vlm_size,
                             cancel_pct=pct,
                             cancel_msg=f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
+                            vlm_provider_name=params.get("vlm_provider"),
+                            vlm_model_id=vlm_model_id,
                         )
                         if vlm_chosen else None
                     )
@@ -634,6 +650,8 @@ class VideoSummaryService:
                             vlm_session, vlm_family, vlm_size,
                             cancel_pct=pct,
                             cancel_msg=f"task.progress.summary_paragraph_frame|{n_done + 1}|{len(para_sel)}",
+                            vlm_provider_name=params.get("vlm_provider"),
+                            vlm_model_id=vlm_model_id,
                         )
                         if vlm_chosen else None
                     )
@@ -762,13 +780,38 @@ class VideoSummaryService:
                     summary_mode=summary_mode,
                 )
                 prompt_tokens = estimate_tokens(prompt)
-                max_tokens = calc_max_tokens(cfg, n_ctx, prompt_tokens)
+                # Remote: use REMOTE_INFERENCE_DEFAULTS["summarize"]["max_tokens"]
+                # as the upper-bound output target (avoids cloud per-model hard
+                # caps like gpt-4o-mini's 16384). But ALSO bound by available
+                # context — small-context Ollama models (gpt-oss:120b at 8k)
+                # silently return empty when prompt+num_predict>n_ctx. Take the
+                # min so we never ask for more than the model can fit.
+                # Local: dynamic input_ratio is fine (registry has explicit caps,
+                # calc_max_tokens already does the n_ctx-aware clamp internally).
+                if params.get("llm_remote"):
+                    available = max(256, n_ctx - prompt_tokens - 200)  # 200 safety
+                    max_tokens = min(cfg["max_tokens"], available)
+                else:
+                    max_tokens = calc_max_tokens(cfg, n_ctx, prompt_tokens)
+                # LLM call telemetry: provider + model + tokens + duration
+                if params.get("llm_remote"):
+                    _llm_tag = f"remote[{params.get('llm_provider')}:{llm_model_id}]"
+                else:
+                    _llm_tag = f"local[{llm_family}:{llm_size}]"
+                import time as _time
+                _t0 = _time.monotonic()
                 raw = llm_session.chat(
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=max_tokens,
                     temperature=cfg["temperature"],
                     cancel_pct=pct,
                     cancel_msg=f"task.progress.summary_chunk|{i + 1}|{len(chunks)}",
+                )
+                _elapsed = _time.monotonic() - _t0
+                logger.info(
+                    f"LLM chunk {i + 1}/{len(chunks)}: {_llm_tag} "
+                    f"prompt_tokens~={prompt_tokens} max_tokens={max_tokens} "
+                    f"elapsed={_elapsed:.2f}s output_len={len(raw)}"
                 )
                 try:
                     if summary_mode == SUMMARY_MODE_NARRATIVE:
@@ -788,6 +831,8 @@ class VideoSummaryService:
         *,
         cancel_pct: float,
         cancel_msg: str,
+        vlm_provider_name: Optional[str] = None,   # remote provider string (telemetry)
+        vlm_model_id: Optional[str] = None,        # remote model id (telemetry)
     ):
         """Build a VLM callback for frame_picker.pick_frame_timestamp.
 
@@ -843,6 +888,13 @@ class VideoSummaryService:
                     input_len=estimate_tokens(prompt),
                 )
 
+            # VLM call telemetry: provider + model + image count + duration + choice
+            if is_remote:
+                _vlm_tag = f"remote[{vlm_provider_name}:{vlm_model_id}]"
+            else:
+                _vlm_tag = f"local[{vlm_family}:{vlm_size}]"
+            import time as _time
+            _t0 = _time.monotonic()
             raw = vlm_session.chat_with_images(
                 prompt=prompt,
                 images=frame_paths,
@@ -850,13 +902,24 @@ class VideoSummaryService:
                 temperature=cfg["temperature"],
                 cancel_pct=cancel_pct,
                 cancel_msg=cancel_msg,
+                task="frame_select",
             )
+            _elapsed = _time.monotonic() - _t0
 
             # Parse — copied verbatim from current service.py:645-652.
             import re
             nums = re.findall(r"-?\d+", raw)
             if not nums:
+                logger.info(
+                    f"VLM pick: {_vlm_tag} n_frames={len(frame_paths)} "
+                    f"elapsed={_elapsed:.2f}s choice=PARSE_FAIL raw={raw!r}"
+                )
                 raise ValueError(f"VLM response not a number: {raw!r}")
-            return int(nums[-1])
+            choice = int(nums[-1])
+            logger.info(
+                f"VLM pick: {_vlm_tag} n_frames={len(frame_paths)} "
+                f"elapsed={_elapsed:.2f}s choice={choice}"
+            )
+            return choice
 
         return _cb

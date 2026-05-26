@@ -1115,6 +1115,14 @@ export default {
       cancelled: 'Cancelled',
       clear: 'Clear',
       empty: 'No history yet',
+      completed_at: 'Finished at',
+      duration: 'Total',
+      // Duration unit suffixes — used by formatDuration() to build a
+      // localized XhYmZs string. Keep the same key names across
+      // locales (h/m/s) so the format function maps cleanly.
+      duration_h: 'h',
+      duration_m: 'm',
+      duration_s: 's',
     },
 
     types: {

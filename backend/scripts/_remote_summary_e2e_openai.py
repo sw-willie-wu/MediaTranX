@@ -1,26 +1,23 @@
-"""Ad-hoc real-AI smoke: full VideoSummaryService remote path against a
-running Ollama instance + a real (short) test video.
+"""Ad-hoc real-AI smoke: full VideoSummaryService remote path against
+OpenAI + a real (short) test video.
 
 Usage:
-    uv run --project core/backend python core/backend/scripts/_remote_summary_e2e.py path/to/clip.mp4
+    uv run --project core/backend python core/backend/scripts/_remote_summary_e2e_openai.py path/to/clip.mp4
 
 Environment:
-    MTX_REMOTE_LLM_MODEL (default: gpt-oss:120b)
-    MTX_REMOTE_VLM_MODEL (default: qwen3.5:122b)
-    MTX_REMOTE_CONN_ID   (default: 1) — Ollama connection ID from RemoteService DB
+    MTX_OPENAI_LLM_MODEL  (default: gpt-4o-mini)
+    MTX_OPENAI_VLM_MODEL  (default: gpt-4o-mini)
+    MTX_REMOTE_CONN_ID    (default: 1) — OpenAI connection ID from RemoteService DB
 
 Prereqs:
-- Ollama running with both LLM and VLM models pulled.
-- A short video clip (~10-30s; longer is fine but takes minutes).
-- Active Ollama connection registered in the app DB at MTX_REMOTE_CONN_ID
-  (auto-created when the app inits with a fresh DB and the user adds a
-  connection via UI; for this smoke we expect at least one is_active=True
-  ollama connection to exist at the given conn_id).
+- Active OpenAI connection registered in the app DB at MTX_REMOTE_CONN_ID
+  (seed via UI or via /api/setup endpoints before running this).
+- A short video clip (~10-30s).
 
-Runs both bullets-mode and narrative-mode summaries. Prints task IDs
-and asserts both submit without exception.
+Runs both bullets-mode and narrative-mode submits. Asserts both return a
+task_id without exception. Does not wait for task completion.
 
-Spec: Testing §Real-AI smoke.
+Spec §6.3 / §6.4 AC#8.
 """
 from __future__ import annotations
 import asyncio
@@ -36,26 +33,22 @@ if _BACKEND_DIR not in sys.path:
 
 
 async def _run_remote_summary(clip_path: Path, mode: str,
-                                llm_model: str, vlm_model: str,
-                                conn_id: int) -> str:
-    """Returns the task id."""
-    # Heavy: this brings up the container, registers wrappers, opens the DB.
-    # Acceptable for an ad-hoc smoke; the harness is not in the unit suite.
+                              llm_model: str, vlm_model: str,
+                              conn_id: int) -> str:
     from app.init.container import init_container
 
     container = init_container()
     file_service = container.file_service()
     video_summary = container.video_summary()
 
-    # Register the file (file_service.register_local_file is the real API).
     file_info = file_service.register_local_file(str(clip_path))
     file_id = file_info.file_id
 
     task_id = await video_summary.submit_summary(
         file_id=file_id,
-        llm_remote=True, llm_provider="ollama", llm_conn_id=conn_id,
+        llm_remote=True, llm_provider="openai", llm_conn_id=conn_id,
         llm_remote_model=llm_model,
-        vlm_remote=True, vlm_provider="ollama", vlm_conn_id=conn_id,
+        vlm_remote=True, vlm_provider="openai", vlm_conn_id=conn_id,
         vlm_remote_model=vlm_model,
         summary_mode=mode,
         whisper_model_size="medium",
@@ -73,10 +66,10 @@ def main() -> int:
         print(f"file not found: {clip}", file=sys.stderr)
         return 2
 
-    llm_model = os.environ.get("MTX_REMOTE_LLM_MODEL", "gpt-oss:120b")
-    vlm_model = os.environ.get("MTX_REMOTE_VLM_MODEL", "qwen3.5:122b")
+    llm_model = os.environ.get("MTX_OPENAI_LLM_MODEL", "gpt-4o-mini")
+    vlm_model = os.environ.get("MTX_OPENAI_VLM_MODEL", "gpt-4o-mini")
     conn_id = int(os.environ.get("MTX_REMOTE_CONN_ID", "1"))
-    print(f"[setup] llm={llm_model} vlm={vlm_model} conn_id={conn_id}")
+    print(f"[setup] provider=openai llm={llm_model} vlm={vlm_model} conn_id={conn_id}")
 
     for mode in ("bullets", "narrative"):
         try:

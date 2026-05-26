@@ -60,6 +60,7 @@ class LocalChatSession:
         stop: Optional[list[str]] = None,
         cancel_pct: Optional[float] = None,        # per-call override
         cancel_msg: Optional[str] = None,          # per-call override
+        task: Optional[str] = None,                # accepted for symmetry; local path ignores
     ) -> str:
         with self._guard(cancel_pct, cancel_msg):
             return self._runtime.chat(
@@ -78,6 +79,7 @@ class LocalChatSession:
         stop: Optional[list[str]] = None,
         cancel_pct: Optional[float] = None,
         cancel_msg: Optional[str] = None,
+        task: Optional[str] = None,                # accepted for symmetry; local path ignores
     ) -> str:
         with self._guard(cancel_pct, cancel_msg):
             return self._runtime.complete(
@@ -96,6 +98,7 @@ class LocalChatSession:
         top_p: float = 0.9,
         cancel_pct: Optional[float] = None,
         cancel_msg: Optional[str] = None,
+        task: Optional[str] = None,                # accepted for symmetry; local path ignores
     ) -> str:
         """Send a prompt + images to the loaded VLM via OpenAI-compat multimodal messages.
 

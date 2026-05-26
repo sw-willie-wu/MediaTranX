@@ -18,6 +18,51 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
 
+# num_ctx bounds for the `options.num_ctx` we send to Ollama in every chat
+# request. Background: Ollama's own default when modelfile doesn't set
+# PARAMETER num_ctx is 2048-4096; requests that need more get silently
+# truncated. So we must send something. But going TOO high (e.g. auto-
+# bumping to 16k+ on a 120B model) pushes Ollama to reload-up with a bigger
+# KV cache, which can OOM the server — particularly on a shared DGX with
+# multiple concurrent loaded models (e.g. one 120B LLM + one 120B-class VLM
+# each reserving 20-30GB of KV cache @ 16k can exceed 80GB-per-card limits).
+#
+# Trade-off picked: cap at 8192 by default — matches the chunking-hints
+# fallback used in summary_service so input_budget never asks for more than
+# we ourselves announced. Users on bigger DGX with budget for larger KV
+# cache can override via env: `MTX_OLLAMA_MAX_NUM_CTX=32768`.
+import os as _os
+_NUM_CTX_FLOOR = 4096
+_NUM_CTX_CAP = int(_os.environ.get("MTX_OLLAMA_MAX_NUM_CTX", "8192"))
+
+
+def _estimate_messages_tokens(messages: list[dict]) -> int:
+    """Rough token estimate: total char count / 3. Conservative for mixed
+    English/Chinese transcript content; only used to size num_ctx (over-
+    estimating is harmless, under-estimating causes silent truncation)."""
+    total_chars = 0
+    for msg in messages:
+        c = msg.get("content", "")
+        if isinstance(c, str):
+            total_chars += len(c)
+        elif isinstance(c, list):
+            for part in c:
+                if isinstance(part, dict):
+                    total_chars += len(part.get("text", "") or "")
+    return total_chars // 3
+
+
+def _compute_num_ctx(messages: list[dict], max_tokens: int) -> int:
+    """Bound (prompt_estimate + max_tokens + safety) between FLOOR (so we
+    don't ever request less than Ollama's typical default) and CAP (so we
+    don't trigger reload-up on the server that may OOM a shared DGX).
+
+    Prompts that genuinely need more than CAP will see Ollama truncate
+    silently — user should raise MTX_OLLAMA_MAX_NUM_CTX OR use a smaller
+    model in that case."""
+    needed = _estimate_messages_tokens(messages) + max_tokens + 500  # 500 safety
+    return max(_NUM_CTX_FLOOR, min(needed, _NUM_CTX_CAP))
+
 
 class OllamaProvider(RemoteProvider):
     """
@@ -28,6 +73,9 @@ class OllamaProvider(RemoteProvider):
     - Model listing (GET /api/tags)
     - Text chat (POST /api/chat)
     """
+
+    PROVIDER_NAME = "ollama"
+    IMAGE_PREP_MODE = "raw"
 
     def __init__(self, endpoint: str = DEFAULT_OLLAMA_ENDPOINT, api_key: Optional[str] = None):
         super().__init__(endpoint, api_key)
@@ -117,7 +165,21 @@ class OllamaProvider(RemoteProvider):
         except Exception:
             pass
 
-        # Fallback: infer from name and families
+        # Fallback: infer from name and families.
+        #
+        # Trade-off note: bare substring match on "vl" produces FALSE
+        # POSITIVES on names containing "vllm" (vLLM inference engine
+        # suffix, e.g. gpt-oss-120b-vllm has no vision). A regex word-
+        # bound match removes those — but ALSO removes TRUE POSITIVES
+        # where the proxy aliases a real vision model with -vllm suffix
+        # (qwen3.5-122b-vllm IS multimodal in user's deployment).
+        #
+        # Without /api/show capabilities to disambiguate, name-pattern
+        # alone can't tell vision-served-via-vllm from text-served-via-
+        # vllm. Choose false-positive over false-negative: user can
+        # untoggle wrong models in Settings; user can't easily make a
+        # silent-text-tagged vision model appear in VLM dropdown.
+        # Known-bad text-only models (gpt-oss) should be untoggled in UI.
         caps = ["text"]
         name_lower = model_name.lower()
         if any(kw in name_lower for kw in ["vl", "vision", "llava", "bakllava", "moondream"]):
@@ -161,6 +223,21 @@ class OllamaProvider(RemoteProvider):
             logger.warning(f"Failed to query model ctx for {model_name}: {e}")
         return 8192  # Conservative fallback
 
+    def get_summary_chunking_hints(self, model: str) -> dict:
+        """Query Ollama /api/show for the model's actual num_ctx.
+
+        Falls back to base default on any network error. model_cap = 75% of
+        n_ctx, capped at 16000 (the largest chunk size we've validated for
+        coherence; beyond this LLMs start losing track of structural prompts),
+        floored at 6000 (parity with the old hardcoded default).
+        """
+        try:
+            n_ctx = self.get_model_ctx(model)
+            model_cap = max(6000, min(int(n_ctx * 0.75), 16000))
+            return {"n_ctx": n_ctx, "model_cap": model_cap}
+        except Exception:
+            return super().get_summary_chunking_hints(model)
+
     def chat(
         self,
         model: str,
@@ -169,6 +246,7 @@ class OllamaProvider(RemoteProvider):
         max_tokens: int = 2048,
         temperature: float = 0.1,
         abort_hook: Optional[Callable] = None,
+        task: Optional[str] = None,
     ) -> str:
         """Ollama chat completion.
 
@@ -181,6 +259,9 @@ class OllamaProvider(RemoteProvider):
           timeout=30, stream=True, hook receives HTTPResponse so the
           caller can close the socket from another thread to interrupt
           the read). Used by RemoteChatSession for video summary remote.
+
+        task: accepted for interface symmetry; Ollama has no built-in
+        thinking budget to suppress, so this kwarg is ignored.
 
         Spec §F1.
         """
@@ -201,6 +282,13 @@ class OllamaProvider(RemoteProvider):
             "options": {
                 "num_predict": max_tokens,
                 "temperature": temperature,
+                # Tell Ollama how much context this request needs. Without it,
+                # Ollama uses modelfile / OLLAMA_CONTEXT_LENGTH default (often
+                # 4096) and silently truncates anything bigger. With it,
+                # Ollama loads the model with at least num_ctx slots; first
+                # request that exceeds the loaded size reloads (slow once,
+                # cached after) — NUM_PARALLEL=1 makes this safe.
+                "num_ctx": _compute_num_ctx(messages, max_tokens),
             },
         }
         data = json.dumps(payload).encode("utf-8")
@@ -213,6 +301,13 @@ class OllamaProvider(RemoteProvider):
         try:
             with urllib.request.urlopen(req, timeout=300) as resp:
                 result = json.loads(resp.read())
+                # See _chat_streaming for the proxy error-wrapping rationale.
+                if result.get("done_reason") == "error" or "error" in result:
+                    err_msg = result.get("error") or result.get("detail") or str(result)
+                    from app.handler.exceptions import RemoteApiError
+                    raise RemoteApiError(
+                        "remote_error", f"Ollama proxy error: {err_msg[:300]}"
+                    )
                 content = result.get("message", {}).get("content", "")
                 return content.strip()
         except urllib.error.HTTPError as e:
@@ -240,6 +335,10 @@ class OllamaProvider(RemoteProvider):
             "options": {
                 "num_predict": max_tokens,
                 "temperature": temperature,
+                # See _chat_blocking comment — num_ctx prevents silent
+                # truncation when modelfile / env default is smaller than
+                # the request needs.
+                "num_ctx": _compute_num_ctx(messages, max_tokens),
             },
         }
         data = json.dumps(payload).encode("utf-8")
@@ -252,7 +351,14 @@ class OllamaProvider(RemoteProvider):
         from app.handler.exceptions import RemoteApiError
         resp = None
         try:
-            resp = urllib.request.urlopen(req, timeout=30)
+            # 600s per-recv timeout. Self-hosted big models (gpt-oss-120b,
+            # qwen3.5-122b) on LAN proxy show high prefill-TTFT variance —
+            # observed chunks ranging 49-117s, with occasional outliers
+            # exceeding 180s. Cloud providers (OpenAI/Gemini) stay at 180s
+            # since their TTFT is more predictable. Cancel still works via
+            # abort_hook -> cross-thread resp.close(), not timeout polling,
+            # so a long ceiling doesn't impede user cancel responsiveness.
+            resp = urllib.request.urlopen(req, timeout=600)
             # Hook BEFORE entering the read loop — gives the cancel
             # watcher a closable response to act on for the rest of the
             # call. If the hook itself raises (e.g. cancel was pre-queued
@@ -268,6 +374,18 @@ class OllamaProvider(RemoteProvider):
                     obj = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                # LiteLLM / OpenAI-compat proxies (e.g. the ttl-test-ollama
+                # gateway) wrap upstream failures as a 200 OK NDJSON line:
+                #   {"done":true, "done_reason":"error",
+                #    "error":"backend returned 400", "detail":"..."}
+                # Vanilla Ollama never emits done_reason="error" (it uses
+                # "stop"|"length"|"load"|"unload"). Surface it so the LLM
+                # chunk loop sees a real exception instead of silent "".
+                if obj.get("done_reason") == "error" or "error" in obj:
+                    err_msg = obj.get("error") or obj.get("detail") or str(obj)
+                    raise RemoteApiError(
+                        "remote_error", f"Ollama proxy error: {err_msg[:300]}"
+                    )
                 msg = obj.get("message", {})
                 if isinstance(msg, dict):
                     delta = msg.get("content", "")
@@ -287,100 +405,6 @@ class OllamaProvider(RemoteProvider):
             # TaskCancelledError when cancel was signalled. Provider has
             # no visibility into RemoteChatSession._kill_pending, so it
             # ALWAYS raises connection_failed here (spec §F1, MAJOR-C).
-            raise RemoteApiError("connection_failed", f"Ollama: {e}")
-        finally:
-            if resp is not None:
-                try:
-                    resp.close()
-                except Exception:
-                    pass
-
-    def chat_with_images(
-        self,
-        model: str,
-        prompt: str,
-        images: list,                          # list of Path | str
-        *,
-        max_tokens: int = 4096,
-        temperature: float = 0.7,
-        abort_hook: Optional[Callable] = None,
-    ) -> str:
-        """Ollama multimodal chat. Always uses streaming (stream:true,
-        timeout=30), regardless of abort_hook presence.
-
-        Future callers without abort_hook still get streaming semantics
-        — documented as forward-compat note (spec §F1 MINOR-H).
-
-        Spec §F1.
-        """
-        return self._chat_with_images_streaming(
-            model, prompt, images, max_tokens, temperature, abort_hook,
-        )
-
-    def _chat_with_images_streaming(
-        self, model: str, prompt: str, images: list,
-        max_tokens: int, temperature: float,
-        abort_hook: Optional[Callable],
-    ) -> str:
-        from pathlib import Path
-        import base64
-
-        # Encode each image as raw base64 (Ollama-native; NO data: prefix).
-        images_b64: list[str] = []
-        for img_path in images:
-            p = Path(img_path)
-            images_b64.append(base64.b64encode(p.read_bytes()).decode("ascii"))
-
-        payload = {
-            "model": model,
-            "stream": True,
-            "messages": [{
-                "role": "user",
-                "content": prompt,
-                "images": images_b64,
-            }],
-            "options": {
-                "num_predict": max_tokens,
-                "temperature": temperature,
-            },
-        }
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            f"{self.endpoint}/api/chat",
-            data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        from app.handler.exceptions import RemoteApiError
-        resp = None
-        try:
-            resp = urllib.request.urlopen(req, timeout=30)
-            if abort_hook is not None:
-                abort_hook(resp)
-            parts: list[str] = []
-            for raw in resp:
-                line = raw.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                msg = obj.get("message", {})
-                if isinstance(msg, dict):
-                    delta = msg.get("content", "")
-                    if delta:
-                        parts.append(delta)
-                if obj.get("done") is True:
-                    break
-            return "".join(parts).strip()
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            raise self._parse_error(e.code, body)
-        except urllib.error.URLError as e:
-            raise RemoteApiError("connection_failed", f"Ollama: {e}")
-        except OSError as e:
             raise RemoteApiError("connection_failed", f"Ollama: {e}")
         finally:
             if resp is not None:

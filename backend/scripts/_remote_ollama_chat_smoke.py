@@ -23,6 +23,13 @@ from __future__ import annotations
 import os
 import sys
 import time
+from pathlib import Path as _Path
+
+# Bootstrap: make `app` importable when this file is run directly as a script
+# (sys.path[0] is scripts/ by default; app lives one level up).
+_BACKEND_DIR = str(_Path(__file__).resolve().parent.parent)
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
 
 
 def main() -> int:
