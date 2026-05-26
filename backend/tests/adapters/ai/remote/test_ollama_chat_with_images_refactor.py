@@ -89,16 +89,19 @@ def test_ollama_chat_with_images_wire_shape_matches_legacy(tmp_path):
 
     expected_b64_a = base64.b64encode(b"AAAA").decode("ascii")
     expected_b64_b = base64.b64encode(b"BBBB").decode("ascii")
-    assert captured["data"] == {
-        "model": "qwen3vl",
-        "stream": True,
-        "messages": [{
-            "role": "user",
-            "content": "describe",
-            "images": [expected_b64_a, expected_b64_b],
-        }],
-        "options": {"num_predict": 42, "temperature": 0.3},
-    }
+    # num_ctx is auto-computed from messages+max_tokens; spot-check the rest
+    # of the wire shape and that num_ctx is present + at least the floor.
+    body = captured["data"]
+    assert body["model"] == "qwen3vl"
+    assert body["stream"] is True
+    assert body["messages"] == [{
+        "role": "user",
+        "content": "describe",
+        "images": [expected_b64_a, expected_b64_b],
+    }]
+    assert body["options"]["num_predict"] == 42
+    assert body["options"]["temperature"] == 0.3
+    assert body["options"]["num_ctx"] >= 4096
 
 
 def test_ollama_chat_with_images_does_not_invoke_pil(tmp_path):

@@ -18,6 +18,39 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
 
+# Floor for the num_ctx we send to Ollama. Ollama's own default when modelfile
+# doesn't set PARAMETER num_ctx is 2048 (older) / 4096 (newer); requests that
+# need more get silently truncated. We never want to request less than this.
+_NUM_CTX_FLOOR = 4096
+
+
+def _estimate_messages_tokens(messages: list[dict]) -> int:
+    """Rough token estimate: total char count / 3. Conservative for mixed
+    English/Chinese transcript content; only used to size num_ctx (over-
+    estimating is harmless, under-estimating causes silent truncation)."""
+    total_chars = 0
+    for msg in messages:
+        c = msg.get("content", "")
+        if isinstance(c, str):
+            total_chars += len(c)
+        elif isinstance(c, list):
+            for part in c:
+                if isinstance(part, dict):
+                    total_chars += len(part.get("text", "") or "")
+    return total_chars // 3
+
+
+def _compute_num_ctx(messages: list[dict], max_tokens: int) -> int:
+    """Round (prompt_estimate + max_tokens + safety) up to next power of two
+    so chunks of similar size hit the same num_ctx and don't yo-yo Ollama's
+    model reload (slot is sized at first request; smaller subsequent requests
+    reuse, bigger ones force reload)."""
+    needed = _estimate_messages_tokens(messages) + max_tokens + 500  # 500 safety
+    if needed <= _NUM_CTX_FLOOR:
+        return _NUM_CTX_FLOOR
+    # next pow2 >= needed; bit_length on (needed-1) handles the edge case
+    return 1 << (needed - 1).bit_length()
+
 
 class OllamaProvider(RemoteProvider):
     """
@@ -223,6 +256,13 @@ class OllamaProvider(RemoteProvider):
             "options": {
                 "num_predict": max_tokens,
                 "temperature": temperature,
+                # Tell Ollama how much context this request needs. Without it,
+                # Ollama uses modelfile / OLLAMA_CONTEXT_LENGTH default (often
+                # 4096) and silently truncates anything bigger. With it,
+                # Ollama loads the model with at least num_ctx slots; first
+                # request that exceeds the loaded size reloads (slow once,
+                # cached after) — NUM_PARALLEL=1 makes this safe.
+                "num_ctx": _compute_num_ctx(messages, max_tokens),
             },
         }
         data = json.dumps(payload).encode("utf-8")
@@ -262,6 +302,10 @@ class OllamaProvider(RemoteProvider):
             "options": {
                 "num_predict": max_tokens,
                 "temperature": temperature,
+                # See _chat_blocking comment — num_ctx prevents silent
+                # truncation when modelfile / env default is smaller than
+                # the request needs.
+                "num_ctx": _compute_num_ctx(messages, max_tokens),
             },
         }
         data = json.dumps(payload).encode("utf-8")
