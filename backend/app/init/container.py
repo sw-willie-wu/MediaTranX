@@ -145,6 +145,13 @@ class AppContainer(containers.DeclarativeContainer):
         model_manager=model_manager,
     )
 
+    # ── Agent Service ──
+    agent_service = providers.Singleton(
+        _lazy("app.services.agent.agent_service", "AgentService"),
+        chat_service=chat_service,
+        remote_service=remote_service,
+    )
+
     # ── Task History ──
     task_history = providers.Singleton(TaskHistoryService)
 
