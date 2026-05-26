@@ -231,13 +231,22 @@ class LocalChatSession:
                         # so _parse_openai_compat_chunk produces nothing.  Safe to fall through.
                     parsed = _parse_openai_compat_chunk(raw_chunk)
                     for p in parsed:
-                        loop.call_soon_threadsafe(q.put_nowait, p)
-                loop.call_soon_threadsafe(
-                    q.put_nowait, {"type": "done", "usage": usage}
-                )
-                loop.call_soon_threadsafe(q.put_nowait, SENTINEL_END)
+                        # Use run_coroutine_threadsafe + blocking put() for backpressure:
+                        # put_nowait raises QueueFull inside the event-loop callback (the
+                        # producer thread can't catch it), silently dropping tokens when the
+                        # consumer is slow.  put() waits instead of dropping.
+                        asyncio.run_coroutine_threadsafe(q.put(p), loop).result()
+                asyncio.run_coroutine_threadsafe(
+                    q.put({"type": "done", "usage": usage}), loop
+                ).result()
+                asyncio.run_coroutine_threadsafe(q.put(SENTINEL_END), loop).result()
             except Exception as exc:
-                loop.call_soon_threadsafe(q.put_nowait, (SENTINEL_ERR, exc))
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        q.put((SENTINEL_ERR, exc)), loop
+                    ).result(timeout=5.0)
+                except Exception:
+                    pass  # loop shut down or queue abandoned — consumer already gone
 
         threading.Thread(target=producer, daemon=True, name="llm-stream-producer").start()
 
@@ -250,7 +259,12 @@ class LocalChatSession:
                     raise item[1]
                 yield item
         finally:
-            pass  # producer self-cleans when llama-server socket closes
+            # Generator-cleanup contract: if consumer abandons (async for ... break,
+            # task cancellation, exception), kill_process() closes the HTTP socket
+            # so the producer thread exits promptly instead of leaking until natural
+            # stream completion.  Idempotent: safe to call twice (e.g. from
+            # AgentService.run's cancel hook AND here).
+            self.kill_process()
 
     def kill_process(self) -> None:
         """Best-effort cancellation: stop the underlying llama-server.

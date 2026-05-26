@@ -126,7 +126,10 @@ async def test_kill_during_stream_propagates():
 
     assert len(chunks) == 1
     assert chunks[0] == {"type": "delta", "message_id": "msg1", "text": "first"}
-    rt._model.stop.assert_called_once()
+    # kill_process() is called TWICE: once explicitly by the consumer inside the loop
+    # and once by stream()'s finally block when the generator exits.  Both calls are
+    # idempotent (documented in kill_process() docstring). Accept ≥1 call.
+    rt._model.stop.assert_called()
 
 
 # ---------------------------------------------------------------------------
@@ -228,3 +231,111 @@ async def test_stream_does_not_use_guard():
 
     # _guard() (and thus cancel_guard) should never have been entered
     assert on_progress_calls == []
+
+
+# ---------------------------------------------------------------------------
+# Regression: consumer break → kill_process() called (producer cleanup)
+# ---------------------------------------------------------------------------
+
+async def test_stream_break_kills_producer():
+    """If the consumer breaks out of the async-for early, kill_process() must be
+    called so the producer thread's HTTP socket is closed promptly.
+
+    We verify via _stream_kill_pending=True after the generator is explicitly
+    closed.  Python's async-generator finalizer is GC-driven and may not have
+    fired by the time the `async for` body exits, so we explicitly call
+    `gen.aclose()` to guarantee the finally block runs before the assertion.
+    The production path is safe: CPython's reference-counting GC closes the
+    generator (and fires the finalizer) as soon as the local variable goes out
+    of scope, which is effectively immediate.
+
+    The producer thread must exit before the test returns so we don't leave
+    pending run_coroutine_threadsafe() work on the teardown loop.  We capture
+    the thread reference and join it (via run_in_executor) after aclose().
+    """
+    import asyncio
+
+    rt = MagicMock()
+    block_after_first = threading.Event()
+    producer_thread_ref: list[threading.Thread] = []
+
+    def slow_iter():
+        yield {"id": "msg1", "choices": [{"delta": {"content": "chunk0"}}]}
+        # Block here — producer should be killed before it ever resumes
+        block_after_first.wait(timeout=5.0)
+        # After kill unblocks: raise immediately, producer exits via exception path
+        raise OSError("socket closed by kill")
+
+    rt.chat_stream.return_value = slow_iter()
+    rt._model = MagicMock()
+    rt._model.stop = MagicMock(side_effect=lambda timeout=2.0: block_after_first.set())
+
+    # Patch Thread to capture the producer thread reference
+    original_thread_start = threading.Thread.start
+
+    def patched_start(self_thread):
+        producer_thread_ref.append(self_thread)
+        original_thread_start(self_thread)
+
+    sess = LocalChatSession(rt, on_progress=None)
+    assert sess._stream_kill_pending is False
+
+    threading.Thread.start = patched_start
+    try:
+        gen = sess.stream(messages=[], max_tokens=100, temperature=0.1)
+        async for chunk in gen:  # noqa: F841
+            break  # consumer exits immediately after first chunk
+        await gen.aclose()  # flush async-gen finalizer → runs finally: kill_process()
+    finally:
+        threading.Thread.start = original_thread_start
+
+    # Wait for the producer thread to exit (it raises OSError → SENTINEL_ERR path → done)
+    if producer_thread_ref:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, lambda: producer_thread_ref[0].join(timeout=5.0))
+
+    # The finally block in stream() must have called kill_process()
+    assert sess._stream_kill_pending is True
+    rt._model.stop.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# Regression: fast producer + slow consumer → no dropped chunks (backpressure)
+# ---------------------------------------------------------------------------
+
+async def test_stream_queue_backpressure_no_drop():
+    """Fast producer (100 chunks) + slow consumer → ALL chunks delivered, none dropped.
+
+    With the old put_nowait approach a QueueFull exception inside the event-loop
+    callback would silently discard tokens.  With run_coroutine_threadsafe +
+    blocking put() the producer is paused until the consumer drains space.
+    """
+    import asyncio
+
+    NUM_CHUNKS = 100
+
+    rt = MagicMock()
+
+    def fast_iter():
+        for i in range(NUM_CHUNKS):
+            yield {"id": f"msg{i}", "choices": [{"delta": {"content": f"tok{i}"}}]}
+        # Final usage chunk (empty choices — produces no parsed event)
+        yield {"usage": {"prompt_tokens": 1, "completion_tokens": NUM_CHUNKS}, "choices": []}
+
+    rt.chat_stream.return_value = fast_iter()
+    rt._model = MagicMock()
+
+    sess = LocalChatSession(rt, on_progress=None)
+
+    collected = []
+    async for item in sess.stream(messages=[], max_tokens=1000, temperature=0.1):
+        if item.get("type") == "delta":
+            collected.append(item)
+        # Yield control to the event loop between each chunk to let the producer
+        # fill the queue. asyncio.sleep(0) is enough — it yields one scheduler tick.
+        await asyncio.sleep(0)
+
+    assert len(collected) == NUM_CHUNKS, (
+        f"Expected {NUM_CHUNKS} delta chunks, got {len(collected)} "
+        "(token drop detected — likely put_nowait QueueFull regression)"
+    )
