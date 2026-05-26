@@ -377,6 +377,123 @@ describe('useAgent.runLoop', () => {
     expect(messages.value.find(m => m.role === 'assistant')).toBeDefined()
   })
 
+  // ─── Scenario 9: toolCalls preserved in round-2 wire payload ────────────────
+
+  it('round-2 wire payload preserves assistant.toolCalls (not dropped)', async () => {
+    let capturedRound2Messages: any[] | null = null
+    let round = 0
+    const fakeStreamRun = vi.fn(async (opts: any) => {
+      round++
+      if (round === 2) {
+        // Capture the messages array passed to round 2
+        capturedRound2Messages = opts.messages
+      }
+      if (round === 1) {
+        return {
+          id: 'm1',
+          role: 'assistant' as const,
+          content: '',
+          toolCalls: [{
+            id: 'tc1',
+            type: 'function' as const,
+            function: { name: 'navigate_to', arguments: '{"route":"/video"}' },
+          }],
+        }
+      }
+      return { id: 'm2', role: 'assistant' as const, content: 'done', toolCalls: [] }
+    })
+    const fakeTools = {
+      TOOLS: [{ name: 'navigate_to', description: '', parameters: {} }],
+      dispatch: vi.fn(async () => ({ ok: true })),
+    }
+
+    const { sendUserText } = useAgent({ streamRunFn: fakeStreamRun, tools: fakeTools })
+    await sendUserText('go to video')
+
+    // Round 2 must have been called
+    expect(fakeStreamRun).toHaveBeenCalledTimes(2)
+    expect(capturedRound2Messages).not.toBeNull()
+
+    // Find the assistant entry in the round-2 wire payload
+    const wireAssistant = capturedRound2Messages!.find((m: any) => m.role === 'assistant')
+    expect(wireAssistant).toBeDefined()
+    // toolCalls must NOT be dropped
+    expect(Array.isArray(wireAssistant.toolCalls)).toBe(true)
+    expect(wireAssistant.toolCalls).toHaveLength(1)
+    expect(wireAssistant.toolCalls[0].id).toBe('tc1')
+  })
+
+  // ─── Scenario 10: RUN_ERROR produces exactly 1 assistant message ─────────────
+
+  it('RUN_ERROR does not duplicate assistant message', async () => {
+    const fakeStreamRun = vi.fn(async (opts: any) => {
+      // Fire the RUN_ERROR callback (as the SSE parser would)
+      opts.onError?.({ code: 'agent.error.no_model', message: 'no model configured' })
+      // Then return an empty/partial assembled assistant message (streamRun resolved normally)
+      return { id: 'm1', role: 'assistant' as const, content: '', toolCalls: [] }
+    })
+
+    const { sendUserText, messages } = useAgent({ streamRunFn: fakeStreamRun })
+    await sendUserText('hello')
+
+    const assistantMessages = messages.value.filter(m => m.role === 'assistant')
+    // Must be exactly 1 — the formatted error one, NOT an extra empty follow-up
+    expect(assistantMessages).toHaveLength(1)
+    const msg = assistantMessages[0] as any
+    expect(msg.content).toBe('[agent.error.no_model] no model configured')
+  })
+
+  // ─── Scenario 11: cancelRun during confirm → outerStop → no round 2 ──────────
+
+  it('cancelRun during confirm wait sets outerStop → loop exits, no round 2 streamRun', async () => {
+    const settings = useAgentSettingsStore()
+    settings.setPolicy('ask_all')
+
+    const fakeStreamRun = vi.fn(async () => ({
+      id: 'm1',
+      role: 'assistant' as const,
+      content: '',
+      toolCalls: [{
+        id: 'tc1',
+        type: 'function' as const,
+        function: { name: 'navigate_to', arguments: '{}' },
+      }],
+    }))
+    const fakeTools = {
+      TOOLS: [],
+      dispatch: vi.fn(async () => ({ ok: true })),
+    }
+
+    const store = useAgentStore()
+    const { sendUserText, cancelRun, messages } = useAgent({
+      streamRunFn: fakeStreamRun,
+      tools: fakeTools,
+    })
+
+    // Poll for pending confirm card, then call cancelRun()
+    const canceller = async () => {
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 1))
+        if (store.pendingConfirms.size > 0) {
+          cancelRun()
+          break
+        }
+      }
+    }
+
+    await Promise.all([sendUserText('do the action'), canceller()])
+
+    // streamRun was called exactly ONCE — no round 2
+    expect(fakeStreamRun).toHaveBeenCalledTimes(1)
+    // dispatch was never called (confirm was rejected via cancelRun)
+    expect(fakeTools.dispatch).not.toHaveBeenCalled()
+    // user_cancelled tool result is present
+    const toolMessages = messages.value.filter(m => m.role === 'tool')
+    expect(toolMessages.length).toBeGreaterThanOrEqual(1)
+    const content = JSON.parse((toolMessages[0] as any).content)
+    expect(content.user_cancelled).toBe(true)
+  })
+
   // ─── Non-abort error ─────────────────────────────────────────────────────────
 
   it('non-abort error from streamRun → internal error assistant message + loop breaks', async () => {

@@ -85,6 +85,7 @@ export function useAgent(deps: UseAgentDeps = {}) {
   function cancelRun() {
     abortCtl?.abort()
     store.resolveAllPendingConfirms(false)   // m4: reject all waiting confirm cards
+    outerStop = true   // spec §3.4: cancel → loop break, not just current SSE
   }
 
   // ─── Run loop ────────────────────────────────────────────────────
@@ -113,12 +114,33 @@ export function useAgent(deps: UseAgentDeps = {}) {
           runId: crypto.randomUUID(),
           messages: messages.value
             .filter(m => m.role !== 'tool_confirm')
-            .map(m => ({
-              id: m.id ?? crypto.randomUUID(),
-              role: m.role as string,
-              content: (m.role === 'assistant' || m.role === 'user') ? (m as any).content : (m.role === 'tool' ? (m as any).content : ''),
-              ...(m.role === 'tool' ? { toolCallId: (m as any).toolCallId } : {}),
-            })),
+            .map(m => {
+              if (m.role === 'assistant') {
+                return {
+                  id: m.id ?? crypto.randomUUID(),
+                  role: 'assistant' as const,
+                  content: (m as any).content ?? '',
+                  toolCalls: (m as any).toolCalls ?? [],
+                }
+              }
+              if (m.role === 'tool') {
+                return {
+                  id: m.id ?? crypto.randomUUID(),
+                  role: 'tool' as const,
+                  toolCallId: (m as any).toolCallId,
+                  content: (m as any).content,
+                }
+              }
+              if (m.role === 'user') {
+                return {
+                  id: m.id ?? crypto.randomUUID(),
+                  role: 'user' as const,
+                  content: (m as any).content,
+                }
+              }
+              // unreachable per filter above (tool_confirm filtered out)
+              return { id: (m as any).id ?? crypto.randomUUID(), role: (m as any).role as string, content: '' }
+            }),
           tools: tools.TOOLS,
           state: { agent_model_choice: settings.modelChoice },
           signal: abortCtl.signal,
@@ -140,10 +162,12 @@ export function useAgent(deps: UseAgentDeps = {}) {
           },
         })
 
-        // M16: clean return → commit transient to messages
-        messages.value.push(assistantMsg)
+        // M16: clean return → commit transient to messages (unless RUN_ERROR set outerStop)
+        if (!outerStop) {
+          messages.value.push(assistantMsg)
+        }
         store.clearTransient()
-        unprocessedToolCalls = [...(assistantMsg.toolCalls ?? [])]
+        unprocessedToolCalls = outerStop ? [] : [...(assistantMsg.toolCalls ?? [])]
 
         if (outerStop) break  // RUN_ERROR set outerStop above
 
