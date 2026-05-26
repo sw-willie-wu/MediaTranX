@@ -153,10 +153,20 @@ class OllamaProvider(RemoteProvider):
         except Exception:
             pass
 
-        # Fallback: infer from name and families
+        # Fallback: infer from name and families.
+        # NOTE: bare substring match on "vl" produces false positives — it
+        # matches the "vl" inside "vllm" (a popular inference engine name
+        # used as a suffix on OpenAI-compat proxies, e.g. gpt-oss-120b-vllm,
+        # qwen3.5-122b-vllm — neither has vision). Require "vl" to appear
+        # as a separator-bounded token instead (matches qwen-vl, qwen3-vl-8b,
+        # paligemma-vl-mix; rejects gpt-oss-120b-vllm).
+        import re as _re
         caps = ["text"]
         name_lower = model_name.lower()
-        if any(kw in name_lower for kw in ["vl", "vision", "llava", "bakllava", "moondream"]):
+        has_vl_token = bool(_re.search(r"(?:^|[-_/.:])vl(?:$|[-_/.:0-9])", name_lower))
+        if has_vl_token or any(
+            kw in name_lower for kw in ("vision", "llava", "bakllava", "moondream")
+        ):
             caps.append("vision")
         if any(kw in name_lower for kw in ["embed", "nomic-embed", "mxbai-embed"]):
             caps.append("embedding")
