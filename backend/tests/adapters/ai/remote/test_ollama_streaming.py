@@ -239,3 +239,186 @@ def test_chat_with_images_multiple_images_preserved_order(tmp_path):
     for i, b64 in enumerate(images_b64):
         decoded = base64.b64decode(b64)
         assert decoded.endswith(bytes([i] * 64))
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Proxy error formatting — LiteLLM-style upstream failures are wrapped in a
+# 200-OK NDJSON frame {done_reason:"error", error:"...", detail:"..."}.
+# Previously `obj.get("error") or obj.get("detail")` discarded `detail` when
+# `error` was a truthy short string ("backend returned 500"), leaving the
+# actual upstream body invisible. Now both are surfaced.
+# ───────────────────────────────────────────────────────────────────────────
+
+
+def test_proxy_error_frame_with_error_and_detail_surfaces_both():
+    """error + detail both present → message contains both, joined by ': '."""
+    from app.adapters.ai.remote.ollama import OllamaProvider
+    from app.handler.exceptions import RemoteApiError
+
+    body = _ndjson_response_bytes({
+        "done": True, "done_reason": "error",
+        "error": "backend returned 500",
+        "detail": "vLLM: tokens exceed available KV cache",
+    })
+    fake_resp = _make_fake_urlopen_response(body)
+
+    prov = OllamaProvider("http://localhost:11434", None)
+    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+        with pytest.raises(RemoteApiError) as excinfo:
+            prov.chat(
+                model="m", messages=[{"role": "user", "content": "x"}],
+                max_tokens=10, temperature=0.0,
+                abort_hook=lambda r: None,
+            )
+    assert excinfo.value.code == "remote_error"
+    detail = excinfo.value.detail
+    assert "backend returned 500" in detail
+    assert "vLLM: tokens exceed" in detail
+    # joined with ": " separator
+    assert "backend returned 500: vLLM" in detail
+
+
+def test_proxy_error_frame_with_only_detail_surfaces_detail():
+    """error absent, detail present → detail still surfaced (not lost)."""
+    from app.adapters.ai.remote.ollama import OllamaProvider
+    from app.handler.exceptions import RemoteApiError
+
+    body = _ndjson_response_bytes({
+        "done": True, "done_reason": "error",
+        "detail": "upstream model exploded",
+    })
+    fake_resp = _make_fake_urlopen_response(body)
+
+    prov = OllamaProvider("http://localhost:11434", None)
+    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+        with pytest.raises(RemoteApiError) as excinfo:
+            prov.chat(
+                model="m", messages=[{"role": "user", "content": "x"}],
+                max_tokens=10, temperature=0.0,
+                abort_hook=lambda r: None,
+            )
+    assert "upstream model exploded" in excinfo.value.detail
+
+
+def test_proxy_error_frame_blocking_path_also_surfaces_detail():
+    """Same fix on the non-streaming (legacy) path — abort_hook=None branch."""
+    from app.adapters.ai.remote.ollama import OllamaProvider
+    from app.handler.exceptions import RemoteApiError
+
+    body = json.dumps({
+        "done": True, "done_reason": "error",
+        "error": "backend returned 500",
+        "detail": "vLLM context overflow",
+    }).encode("utf-8")
+    fake_resp = MagicMock(name="HTTPResponse")
+    fake_resp.read = MagicMock(return_value=body)
+    fake_resp.__enter__ = MagicMock(return_value=fake_resp)
+    fake_resp.__exit__ = MagicMock(return_value=False)
+
+    prov = OllamaProvider("http://localhost:11434", None)
+    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+        with pytest.raises(RemoteApiError) as excinfo:
+            prov.chat(
+                model="m", messages=[{"role": "user", "content": "x"}],
+                max_tokens=10, temperature=0.0,
+                abort_hook=None,  # blocking path
+            )
+    assert "backend returned 500" in excinfo.value.detail
+    assert "vLLM context overflow" in excinfo.value.detail
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Pre-flight VLM log — failed VLM picks previously emitted zero telemetry
+# (the success-time log in summary_service never fired). Now we log before
+# the HTTP call so failed paths still leave a paper trail with the model
+# name, image count, and chosen num_ctx.
+# ───────────────────────────────────────────────────────────────────────────
+
+
+def test_chat_with_ollama_native_images_emits_preflight_log(caplog):
+    """Ollama-native shape {'images': [...]} on the message → INFO log fires
+    with model + image count + num_ctx before the HTTP request."""
+    import logging
+    from app.adapters.ai.remote.ollama import OllamaProvider
+
+    body = _ndjson_response_bytes(
+        {"message": {"content": "ok"}}, {"done": True},
+    )
+    fake_resp = _make_fake_urlopen_response(body)
+
+    messages = [{
+        "role": "user",
+        "content": "describe",
+        "images": ["b64-image-1", "b64-image-2", "b64-image-3"],
+    }]
+
+    prov = OllamaProvider("http://localhost:11434", None)
+    with caplog.at_level(logging.INFO, logger="app.adapters.ai.remote.ollama"):
+        with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+            prov.chat(
+                model="qwen3.5-vllm", messages=messages,
+                max_tokens=200, temperature=0.0,
+                abort_hook=lambda r: None,
+            )
+    log_text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "Ollama VLM chat" in log_text
+    assert "model=qwen3.5-vllm" in log_text
+    assert "images=3" in log_text
+    assert "max_tokens=200" in log_text
+
+
+def test_chat_with_openai_compat_image_url_emits_preflight_log(caplog):
+    """OpenAI-compat shape (content list with type=image_url) also detected
+    — LiteLLM gateways may route the OpenAI shape through OllamaProvider."""
+    import logging
+    from app.adapters.ai.remote.ollama import OllamaProvider
+
+    body = _ndjson_response_bytes(
+        {"message": {"content": "ok"}}, {"done": True},
+    )
+    fake_resp = _make_fake_urlopen_response(body)
+
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "describe"},
+            {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}},
+            {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}},
+        ],
+    }]
+
+    prov = OllamaProvider("http://localhost:11434", None)
+    with caplog.at_level(logging.INFO, logger="app.adapters.ai.remote.ollama"):
+        with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+            prov.chat(
+                model="m", messages=messages,
+                max_tokens=100, temperature=0.0,
+                abort_hook=lambda r: None,
+            )
+    log_text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "Ollama VLM chat" in log_text
+    assert "images=2" in log_text
+
+
+def test_text_only_chat_does_not_emit_vlm_preflight_log(caplog):
+    """No images in messages → no VLM telemetry line (avoid spamming logs
+    for the LLM chunk loop, which fires this hot path multiple times)."""
+    import logging
+    from app.adapters.ai.remote.ollama import OllamaProvider
+
+    body = _ndjson_response_bytes(
+        {"message": {"content": "ok"}}, {"done": True},
+    )
+    fake_resp = _make_fake_urlopen_response(body)
+
+    prov = OllamaProvider("http://localhost:11434", None)
+    with caplog.at_level(logging.INFO, logger="app.adapters.ai.remote.ollama"):
+        with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+            prov.chat(
+                model="m",
+                messages=[{"role": "user", "content": "plain text only"}],
+                max_tokens=50, temperature=0.0,
+                abort_hook=lambda r: None,
+            )
+    for r in caplog.records:
+        assert "Ollama VLM chat" not in r.getMessage()

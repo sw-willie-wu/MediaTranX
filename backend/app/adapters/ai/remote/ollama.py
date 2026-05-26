@@ -52,6 +52,43 @@ def _estimate_messages_tokens(messages: list[dict]) -> int:
     return total_chars // 3
 
 
+def _format_proxy_error(obj: dict) -> str:
+    """Combine `error` (short proxy status code) with `detail` (upstream body)
+    when both present, so diagnostic info isn't lost.
+
+    LiteLLM-style proxies wrap upstream failures as:
+        {"done_reason":"error", "error":"backend returned 500",
+         "detail":"... upstream model errored: tokens exceed ctx ..."}
+    Earlier `obj.get("error") or obj.get("detail")` swallowed `detail` because
+    `error` is a truthy short string — making proxy 500s impossible to debug
+    from logs alone. Truncated to keep log lines reasonable.
+    """
+    parts = [str(x) for x in (obj.get("error"), obj.get("detail")) if x]
+    return ": ".join(parts)[:300] if parts else str(obj)[:300]
+
+
+def _count_images(messages: list[dict]) -> int:
+    """Count image attachments across both shapes we send to Ollama proxies.
+
+    - Ollama-native:    {"content": "...", "images": [b64, b64, ...]}
+    - OpenAI-compat:    {"content": [{"type":"image_url", ...}, ...]}
+
+    Defensive on both — LiteLLM-style gateways accept the OpenAI shape and we
+    might route summary VLM calls through OllamaProvider regardless.
+    """
+    n = 0
+    for m in messages:
+        imgs = m.get("images")
+        if isinstance(imgs, list):
+            n += len(imgs)
+        c = m.get("content")
+        if isinstance(c, list):
+            for p in c:
+                if isinstance(p, dict) and p.get("type") in ("image_url", "image"):
+                    n += 1
+    return n
+
+
 def _compute_num_ctx(messages: list[dict], max_tokens: int) -> int:
     """Bound (prompt_estimate + max_tokens + safety) between FLOOR (so we
     don't ever request less than Ollama's typical default) and CAP (so we
@@ -265,6 +302,20 @@ class OllamaProvider(RemoteProvider):
 
         Spec §F1.
         """
+        # Pre-flight log for vision (VLM) calls — the existing telemetry log
+        # in summary_service only fires on success, leaving failed VLM picks
+        # (e.g. proxy 500) with zero telemetry. frame_picker only reports
+        # "VLM pick failed" without model / payload context, so re-running
+        # to diagnose is blind. Log model + image count + chosen num_ctx
+        # before the HTTP call so failures still leave a paper trail.
+        img_count = _count_images(messages)
+        if img_count > 0:
+            logger.info(
+                "Ollama VLM chat: model=%s images=%d num_ctx=%d max_tokens=%d",
+                model, img_count,
+                _compute_num_ctx(messages, max_tokens), max_tokens,
+            )
+
         if abort_hook is None:
             return self._chat_blocking(model, messages, max_tokens, temperature)
         return self._chat_streaming(model, messages, max_tokens, temperature, abort_hook)
@@ -303,10 +354,10 @@ class OllamaProvider(RemoteProvider):
                 result = json.loads(resp.read())
                 # See _chat_streaming for the proxy error-wrapping rationale.
                 if result.get("done_reason") == "error" or "error" in result:
-                    err_msg = result.get("error") or result.get("detail") or str(result)
                     from app.handler.exceptions import RemoteApiError
                     raise RemoteApiError(
-                        "remote_error", f"Ollama proxy error: {err_msg[:300]}"
+                        "remote_error",
+                        f"Ollama proxy error: {_format_proxy_error(result)}",
                     )
                 content = result.get("message", {}).get("content", "")
                 return content.strip()
@@ -382,9 +433,9 @@ class OllamaProvider(RemoteProvider):
                 # "stop"|"length"|"load"|"unload"). Surface it so the LLM
                 # chunk loop sees a real exception instead of silent "".
                 if obj.get("done_reason") == "error" or "error" in obj:
-                    err_msg = obj.get("error") or obj.get("detail") or str(obj)
                     raise RemoteApiError(
-                        "remote_error", f"Ollama proxy error: {err_msg[:300]}"
+                        "remote_error",
+                        f"Ollama proxy error: {_format_proxy_error(obj)}",
                     )
                 msg = obj.get("message", {})
                 if isinstance(msg, dict):
