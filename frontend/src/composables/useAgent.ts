@@ -13,6 +13,9 @@
  *   runLoop can break.
  * - useActivePanel is Task 3.1/3.2. Until then, accept activePanelRef as
  *   injectable dep with a default of () => null.
+ * - Singleton pattern: all callers (ChatBubble, AgentRunBanner, etc.) share
+ *   the same instance so cancelRun() and isRunning are always in sync.
+ *   Tests call _resetAgent() in beforeEach for isolation.
  */
 
 import { ref, computed } from 'vue'
@@ -48,9 +51,37 @@ export interface UseAgentDeps {
   activePanelRef?: () => { schema: any } | null
 }
 
-// ─── Composable ───────────────────────────────────────────────────────────────
+// ─── Module-level singleton ────────────────────────────────────────────────────
 
-export function useAgent(deps: UseAgentDeps = {}) {
+let _instance: ReturnType<typeof _createAgent> | null = null
+
+/**
+ * Reset the singleton — for tests only.
+ * Call in beforeEach to get a fresh instance per test.
+ */
+export function _resetAgent(): void {
+  _instance = null
+}
+
+// ─── Singleton accessor ────────────────────────────────────────────────────────
+
+/**
+ * Returns the shared agent instance.
+ * First caller may pass deps (e.g. in tests); subsequent callers get the
+ * cached instance (deps ignored with a console.warn).
+ */
+export function useAgent(deps: UseAgentDeps = {}): ReturnType<typeof _createAgent> {
+  if (!_instance) {
+    _instance = _createAgent(deps)
+  } else if (Object.keys(deps).length > 0) {
+    console.warn('[useAgent] called with deps but instance already exists; ignoring deps')
+  }
+  return _instance
+}
+
+// ─── Internal factory ─────────────────────────────────────────────────────────
+
+function _createAgent(deps: UseAgentDeps = {}) {
   const settings = useAgentSettingsStore()
   const store    = useAgentStore()
   const tools    = deps.tools ?? { TOOLS: [], dispatch: async () => ({ error: 'agent.error.tools_not_wired' }) }

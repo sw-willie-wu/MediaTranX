@@ -15,7 +15,7 @@
 
 import { setActivePinia, createPinia } from 'pinia'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { useAgent } from '@/composables/useAgent'
+import { useAgent, _resetAgent } from '@/composables/useAgent'
 import { useAgentStore } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
 
@@ -36,6 +36,7 @@ Object.defineProperty(globalThis, 'localStorage', {
 beforeEach(() => {
   localStorageStub.clear()
   setActivePinia(createPinia())
+  _resetAgent()   // reset singleton so each test gets a fresh instance
 })
 
 // ─── Scenario 1 ───────────────────────────────────────────────────────────────
