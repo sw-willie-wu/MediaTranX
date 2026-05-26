@@ -6,15 +6,66 @@ that reuse the loaded model.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
+import threading
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
-from typing import Callable, Iterator, Optional
+from typing import AsyncIterator, Callable, Iterator, Optional
 
 from app.utils.inference import cancel_guard
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_openai_compat_chunk(raw_chunk: dict) -> list[dict]:
+    """Parse one OpenAI chat completions SSE chunk into 0..N typed events.
+
+    A single chunk can produce:
+    - 0 events: empty choices (e.g. usage-only final chunk) or finish_reason chunks
+    - 1 'delta' event: text content delta
+    - 1+ 'tool_call' events: one per tool_call delta in the chunk
+
+    Returns:
+        List of dicts matching the stream() yield types:
+        - {'type': 'delta', 'message_id': str, 'text': str}
+        - {'type': 'tool_call', 'id': str, 'name': str,
+           'parent_message_id': str, 'args_delta': str}
+
+    Notes:
+    - message_id comes from chunk['id'] (OpenAI assigns per response).
+    - tool_call.id is only present on the FIRST chunk for a given tool call;
+      later chunks identify by index only (id defaults to '').  The frontend
+      AgUiSSEParser accumulates across multiple chunks by remembering the
+      first id for each index.
+    """
+    out: list[dict] = []
+    chunk_id = raw_chunk.get("id", "")
+    choices = raw_chunk.get("choices", [])
+    if not choices:
+        return out
+    delta = choices[0].get("delta", {})
+
+    # Text content delta
+    if delta.get("content"):
+        out.append({
+            "type": "delta",
+            "message_id": chunk_id,
+            "text": delta["content"],
+        })
+
+    # Tool call deltas (0..N per chunk)
+    for tc_delta in delta.get("tool_calls", []):
+        out.append({
+            "type": "tool_call",
+            "id": tc_delta.get("id", ""),
+            "name": tc_delta.get("function", {}).get("name", ""),
+            "parent_message_id": chunk_id,
+            "args_delta": tc_delta.get("function", {}).get("arguments", ""),
+        })
+
+    return out
 
 
 class LocalChatSession:
@@ -31,6 +82,7 @@ class LocalChatSession:
         self._on_progress = on_progress
         self._cancel_pct = cancel_pct
         self._cancel_msg = cancel_msg
+        self._stream_kill_pending: bool = False  # race flag for stream() producer
 
     def _guard(self, pct: Optional[float] = None, msg: Optional[str] = None):
         """Single-poller cancel watcher. Per-call (pct, msg) override the
@@ -120,6 +172,86 @@ class LocalChatSession:
                 top_k=top_k, top_p=top_p, stop=None,
             )
 
+    async def stream(
+        self,
+        messages: list[dict],
+        *,
+        tools: list[dict] | None = None,
+        max_tokens: int,
+        temperature: float,
+    ) -> AsyncIterator[dict]:
+        """Yield dicts from the LLM stream via a producer-thread + asyncio.Queue bridge.
+
+        Yields one of:
+        - {'type': 'delta', 'message_id': str, 'text': str}
+        - {'type': 'tool_call', 'id': str, 'name': str,
+           'parent_message_id': str, 'args_delta': str}
+        - {'type': 'done', 'usage': {'prompt_tokens': int, 'completion_tokens': int}}
+
+        Cancel-pass-through mode (spec §5.3.2 / §9): does NOT install its own
+        cancel_guard watcher.  The calling AgentService (Task 1.4) owns the
+        cancel hook via session.kill_process().  on_progress=None for the
+        agent path; cancel_guard auto-resolves to nullcontext per _guard().
+
+        Race protection: _stream_kill_pending is reset to False at the top of
+        each call so sequential streams don't carry stale state.  The producer
+        thread checks the flag immediately after stream start (and again after
+        the first urlopen returns) — mirrors remote_chat.py:67-84 pattern.
+        """
+        loop = asyncio.get_running_loop()
+        q: asyncio.Queue = asyncio.Queue(maxsize=64)
+        SENTINEL_END = object()
+        SENTINEL_ERR = object()
+        # Reset per-call so a prior kill doesn't block the next stream()
+        self._stream_kill_pending = False
+
+        def producer() -> None:
+            try:
+                if self._stream_kill_pending:
+                    raise OSError("cancel_pre_stream: killed before producer started")
+                stream_iter = self._runtime.chat_stream(
+                    messages=messages,
+                    tools=tools,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                # Re-check race AFTER urlopen returns (m12)
+                if self._stream_kill_pending:
+                    raise OSError("cancel_pre_first_chunk")
+
+                # B3 fix: capture usage IN-LOOP.  With stream_options.include_usage=true,
+                # the OpenAI-compat last data chunk (before [DONE]) carries `usage` at
+                # the top level — it does NOT contain a `choices` delta.  Skip it from
+                # delta yield, store the usage block.
+                usage: dict | None = None
+                for raw_chunk in stream_iter:
+                    if raw_chunk.get("usage"):
+                        usage = raw_chunk["usage"]
+                        # Don't `continue` — usage chunk in OpenAI SSE has empty choices,
+                        # so _parse_openai_compat_chunk produces nothing.  Safe to fall through.
+                    parsed = _parse_openai_compat_chunk(raw_chunk)
+                    for p in parsed:
+                        loop.call_soon_threadsafe(q.put_nowait, p)
+                loop.call_soon_threadsafe(
+                    q.put_nowait, {"type": "done", "usage": usage}
+                )
+                loop.call_soon_threadsafe(q.put_nowait, SENTINEL_END)
+            except Exception as exc:
+                loop.call_soon_threadsafe(q.put_nowait, (SENTINEL_ERR, exc))
+
+        threading.Thread(target=producer, daemon=True, name="llm-stream-producer").start()
+
+        try:
+            while True:
+                item = await q.get()
+                if item is SENTINEL_END:
+                    return
+                if isinstance(item, tuple) and item[0] is SENTINEL_ERR:
+                    raise item[1]
+                yield item
+        finally:
+            pass  # producer self-cleans when llama-server socket closes
+
     def kill_process(self) -> None:
         """Best-effort cancellation: stop the underlying llama-server.
 
@@ -127,7 +259,11 @@ class LocalChatSession:
         state, immediate Windows terminate unblocks the HTTP call). Used by
         `fake_progress(cancellable=...)`. No-op if the runtime isn't loaded
         yet; never raises.
+
+        Additionally for stream() callers: sets _stream_kill_pending so a
+        not-yet-started producer thread's race check will raise immediately.
         """
+        self._stream_kill_pending = True   # race flag for stream() producer
         model = getattr(self._runtime, "_model", None)
         if model is None:
             return
