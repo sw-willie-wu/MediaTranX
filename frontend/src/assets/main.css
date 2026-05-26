@@ -2,4 +2,25 @@
 
 #app {
   font-weight: normal;
+  /*
+   * Paint the gradient on the Vue root, not just on body.
+   *
+   * Original setup had `body { background: var(--bg-color) fixed }` — relying
+   * on body to cover the viewport while #app stayed transparent. That works in
+   * a normal browser tab, but in Electron with `frame: false` and Windows 11's
+   * DWM compositor we hit a known rendering quirk: `background-attachment:
+   * fixed` paints in viewport coordinates, and certain frameless-window
+   * regions (notably near the right/bottom edges when content tall enough to
+   * trigger scrollbar reservation) intermittently fail to flush — leaking the
+   * Electron window's `backgroundColor` (#2f2b47) AND the desktop beneath
+   * through transparent #app/.app-wrapper layers.
+   *
+   * Carrying the gradient on #app sidesteps both: every viewport pixel is
+   * covered by an opaque DOM element painted in flow order (not attachment-
+   * fixed coordinates), so the compositor never sees a transparent surface
+   * to bleed through. min-height: 100vh ensures it covers the viewport even
+   * before content renders.
+   */
+  background: var(--bg-color);
+  min-height: 100vh;
 }
