@@ -1128,6 +1128,17 @@ export default {
       prefix: 'Agent: ',
       queued: 'Waiting…',
       cancelled: 'Cancelled',
+      act: {
+        navigate_to: 'Navigating to {route}',
+        select_subfunction: 'Selecting {name}',
+        load_file: 'Loading file {file_id}',
+        open_dropdown: 'Opening {field}',
+        set_field: 'Setting {field} = {value}',
+        click_execute: 'Submitting task...',
+        click_action: 'Invoking {name}',
+        list_files: 'Listing files...',
+        get_task_status: 'Checking task {task_id}',
+      },
     },
     bubble: {
       title: 'Agent Chat',

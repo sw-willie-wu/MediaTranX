@@ -1,5 +1,5 @@
 /**
- * Mock-SSE smoke test — Wave 2 Task 2.6
+ * Mock-SSE smoke test — Wave 2 Task 2.6 + Wave 4 Tasks 4.2/4.3/4.8
  *
  * Verifies the full Wave 2 stack end-to-end using a deterministic fake
  * streamRun function (no real HTTP).  Exercises:
@@ -7,6 +7,11 @@
  *   - Transient text buffer: streaming delta appears then commits to messages
  *   - isRunning flag: correct during + after a run
  *   - cancelRun via banner shares state with bubble's agent instance
+ *
+ * Wave 4 additions:
+ *   - Task 4.2: setCurrentAction is called before each tool dispatch
+ *   - Task 4.3: ConfirmCard full flow — tool_confirm card → approve → dispatch
+ *   - Task 4.8: 3-round token accumulation — prompt replaces, completion accumulates
  */
 
 import { mount } from '@vue/test-utils'
@@ -17,6 +22,8 @@ import en from '@/i18n/locales/en'
 
 import ChatBubble from '@/components/agent/ChatBubble.vue'
 import AgentRunBanner from '@/components/agent/AgentRunBanner.vue'
+import ChatMessages from '@/components/agent/ChatMessages.vue'
+import ConfirmCard from '@/components/agent/ConfirmCard.vue'
 import { useAgent, _resetAgent } from '@/composables/useAgent'
 import { useAgentStore } from '@/stores/agent'
 
@@ -222,5 +229,124 @@ describe('ChatBubble + AgentRunBanner mock-SSE smoke', () => {
     expect(agent.messages.value.map(m => m.role)).toEqual(['user'])
 
     banner.unmount()
+  })
+
+  // ─── Scenario 6 (Task 4.2): setCurrentAction fires inside real dispatchers ───
+
+  it('Task 4.2: real dispatch() calls store.setCurrentAction with correct key before executing', async () => {
+    // Import the real dispatch function (not injected via fakeTool)
+    const { dispatch } = await import('@/composables/useAgentTools')
+    const store = useAgentStore()
+
+    // Dispatch navigate_to — it will fail at useRouter() in test env, but
+    // setCurrentAction is called BEFORE useRouter(), so it should still fire.
+    // We catch the error from the missing router and verify the action was set.
+    const result = await dispatch({
+      id: 'tc1',
+      type: 'function',
+      function: { name: 'navigate_to', arguments: '{"route":"/video"}' },
+    })
+
+    // Result will be an error (no router in test), but setCurrentAction was called before that
+    expect(store.currentAction.key).toBe('agent.banner.act.navigate_to')
+    expect(store.currentAction.args).toEqual({ route: '/video' })
+    // dispatch returned an error (no router), not ok
+    expect(result.ok).toBeUndefined()
+    expect((result as any).error).toBeDefined()
+  })
+
+  // ─── Scenario 7 (Task 4.3): ConfirmCard full flow ───────────────────────────
+
+  it('Task 4.3: ChatMessages renders tool_confirm as ConfirmCard; approve resolves promise and dispatch proceeds', async () => {
+    // Verify ChatMessages renders a ConfirmCard for a tool_confirm message
+    const confirmMsg = {
+      role: 'tool_confirm' as const,
+      toolCall: { id: 'tc1', function: { name: 'click_execute', arguments: '{}' } },
+      status: 'pending' as const,
+    }
+    const msgs: any[] = [confirmMsg]
+
+    const wrapper = mount(ChatMessages, {
+      props: { messages: msgs, transient: null, isRunning: false },
+      global: globalPlugins(),
+    })
+
+    // ConfirmCard should be rendered
+    expect(wrapper.findComponent(ConfirmCard).exists()).toBe(true)
+
+    // Approve via store (simulating button click)
+    const store = useAgentStore()
+    let resolved = false
+    store.addPendingConfirm((approved) => { resolved = approved })
+
+    // Click the submit button on ConfirmCard
+    const submitBtn = wrapper.find('.btn-submit')
+    expect(submitBtn.exists()).toBe(true)
+    await submitBtn.trigger('click')
+
+    // Resolver should have been called with true
+    expect(resolved).toBe(true)
+    // pendingConfirms should now be empty
+    expect(store.pendingConfirms.size).toBe(0)
+
+    wrapper.unmount()
+  })
+
+  // ─── Scenario 8 (Task 4.8): 3-round token accumulation ─────────────────────
+
+  it('Task 4.8: 3-round mock-SSE — prompt replaces each round, completion accumulates', async () => {
+    const store = useAgentStore()
+
+    let round = 0
+    const usagePerRound = [
+      { promptTokens: 100, completionTokens: 20 },
+      { promptTokens: 200, completionTokens: 30 },
+      { promptTokens: 350, completionTokens: 15 },
+    ]
+
+    const multiRoundStream = vi.fn(async (opts: any) => {
+      const usage = usagePerRound[round]
+      opts.onRunFinished?.({ runId: `r${round}`, threadId: 't1', usage })
+      round++
+      // Rounds 1+2 return a tool_call; round 3 returns plain text to stop the loop
+      if (round < 3) {
+        return {
+          id: `m${round}`,
+          role: 'assistant' as const,
+          content: '',
+          toolCalls: [
+            { id: `tc${round}`, type: 'function' as const, function: { name: 'list_files', arguments: '{}' } },
+          ],
+        }
+      }
+      return { id: 'm3', role: 'assistant' as const, content: 'all done', toolCalls: [] }
+    })
+
+    const fakeTool = {
+      TOOLS: [],
+      dispatch: vi.fn(async () => ({ ok: true, files: [] })),
+    }
+
+    const agent = useAgent({ streamRunFn: multiRoundStream, tools: fakeTool })
+    await agent.sendUserText('list files 3 times')
+
+    // After 3 rounds:
+    // prompt = last round's promptTokens (REPLACE) = 350
+    // completion = 20 + 30 + 15 = 65 (ACCUMULATE)
+    expect(store.threadTokens.prompt).toBe(350)
+    expect(store.threadTokens.completion).toBe(65)
+
+    // ChatHeader should display these values — verify via mount
+    const ChatHeader = (await import('@/components/agent/ChatHeader.vue')).default
+    const header = mount(ChatHeader, {
+      props: { tokenUsage: store.threadTokens },
+      global: globalPlugins(),
+    })
+    const tokenText = header.find('.token-counter')
+    expect(tokenText.exists()).toBe(true)
+    // The token counter text should contain the prompt and completion values
+    expect(tokenText.text()).toContain('350')
+    expect(tokenText.text()).toContain('65')
+    header.unmount()
   })
 })

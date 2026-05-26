@@ -1128,6 +1128,17 @@ export default {
       prefix: 'Agent：',
       queued: '等待中…',
       cancelled: '已中斷',
+      act: {
+        navigate_to: '正在前往 {route}',
+        select_subfunction: '正在選擇 {name}',
+        load_file: '正在載入檔案 {file_id}',
+        open_dropdown: '正在展開 {field}',
+        set_field: '正在設定 {field} = {value}',
+        click_execute: '正在送出任務…',
+        click_action: '正在執行 {name}',
+        list_files: '正在列出檔案…',
+        get_task_status: '正在查詢任務 {task_id}',
+      },
     },
     bubble: {
       title: 'Agent 對話',

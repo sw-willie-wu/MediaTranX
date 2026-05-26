@@ -18,6 +18,7 @@ import { useActivePanel } from '@/composables/useActivePanel'
 import { useActiveView } from '@/composables/useActiveView'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
+import { useAgentStore } from '@/stores/agent'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -148,6 +149,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
   navigate_to: async ({ route }: { route: string }): Promise<ToolResult> => {
     try {
+      useAgentStore().setCurrentAction('agent.banner.act.navigate_to', { route })
       const router = useRouter()
       await router.push(route)
       return { ok: true }
@@ -158,6 +160,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
   select_subfunction: async ({ name }: { name: string }): Promise<ToolResult> => {
     try {
+      useAgentStore().setCurrentAction('agent.banner.act.select_subfunction', { name })
       const view = _getActiveView()
       if (!view || !view.setCurrentFunction) {
         return { error: 'agent.error.view_not_introspectable' }
@@ -171,6 +174,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
   load_file: async ({ file_id }: { file_id: string }): Promise<ToolResult> => {
     try {
+      useAgentStore().setCurrentAction('agent.banner.act.load_file', { file_id })
       const filesStore = useFilesStore()
       // setCurrentFile is the available API in the store
       if (typeof filesStore.setCurrentFile !== 'function') {
@@ -192,6 +196,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
   list_files: async (): Promise<ToolResult> => {
     try {
+      useAgentStore().setCurrentAction('agent.banner.act.list_files', {})
       const filesStore = useFilesStore()
       const files = filesStore.allFiles.map(f => ({
         id: f.id,
@@ -207,6 +212,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
   open_dropdown: async ({ field }: { field: string }): Promise<ToolResult> => {
     try {
+      useAgentStore().setCurrentAction('agent.banner.act.open_dropdown', { field })
       const ap = _getActivePanel()
       if (!ap) return { error: 'agent.error.panel_not_active' }
       if (!ap.isMounted) return { error: 'agent.error.panel_not_active' }
@@ -219,6 +225,8 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
   set_field: async ({ field, value }: { field: string; value: unknown }): Promise<ToolResult> => {
     try {
+      const displayValue = value !== null && typeof value === 'object' ? JSON.stringify(value) : String(value)
+      useAgentStore().setCurrentAction('agent.banner.act.set_field', { field, value: displayValue })
       const ap = _getActivePanel()
       if (!ap) return { error: 'agent.error.panel_not_supported' }
       if (!ap.isMounted) return { error: 'agent.error.panel_not_active' }
@@ -256,6 +264,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
   click_execute: async (): Promise<ToolResult> => {
     try {
+      useAgentStore().setCurrentAction('agent.banner.act.click_execute', {})
       const ap = _getActivePanel()
       if (!ap) return { error: 'agent.error.panel_not_supported' }
       if (!ap.isMounted) return { error: 'agent.error.panel_not_active' }
@@ -282,6 +291,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
   click_action: async ({ name }: { name: string }): Promise<ToolResult> => {
     try {
+      useAgentStore().setCurrentAction('agent.banner.act.click_action', { name })
       const ap = _getActivePanel()
       if (!ap) return { error: 'agent.error.panel_not_supported' }
       if (!ap.isMounted) return { error: 'agent.error.panel_not_active' }
@@ -309,6 +319,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
   get_task_status: async ({ task_id }: { task_id: string }): Promise<ToolResult> => {
     try {
+      useAgentStore().setCurrentAction('agent.banner.act.get_task_status', { task_id })
       const tasksStore = useTaskStore()
       const task = tasksStore.tasks.get(task_id)
       if (!task) {
