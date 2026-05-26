@@ -128,6 +128,23 @@ function formatDate(iso: string): string {
   })
 }
 
+/** Human duration between created_at and completed_at.
+ *  <60s → "12s" / <60m → "3m12s" / ≥1h → "1h23m" (no seconds at hours scale).
+ *  Returns '' when timestamps are missing/invalid so caller can hide gracefully. */
+function formatDuration(start: string | null, end: string | null): string {
+  if (!start || !end) return ''
+  const ms = new Date(end).getTime() - new Date(start).getTime()
+  if (!Number.isFinite(ms) || ms < 0) return ''
+  const totalSec = Math.round(ms / 1000)
+  if (totalSec < 60) return `${totalSec}s`
+  const m = Math.floor(totalSec / 60)
+  const s = totalSec % 60
+  if (m < 60) return s ? `${m}m${s}s` : `${m}m`
+  const h = Math.floor(m / 60)
+  const mm = m % 60
+  return mm ? `${h}h${mm}m` : `${h}h`
+}
+
 onMounted(() => fetchHistory())
 onActivated(() => fetchHistory())
 </script>
@@ -175,7 +192,16 @@ onActivated(() => fetchHistory())
         </div>
       </div>
       <div class="task-footer">
-        <span class="task-time">{{ formatDate(item.completed_at) }}</span>
+        <div class="task-times">
+          <span class="task-time">
+            <span class="time-label">{{ $t('tasks.history.completed_at') }}</span>
+            {{ formatDate(item.completed_at) }}
+          </span>
+          <span v-if="formatDuration(item.created_at, item.completed_at)" class="task-time">
+            <span class="time-label">{{ $t('tasks.history.duration') }}</span>
+            {{ formatDuration(item.created_at, item.completed_at) }}
+          </span>
+        </div>
         <button class="remove-btn show-on-hover" @click="deleteItem(item.task_id)">
           <i class="bi bi-trash3"></i>
         </button>
@@ -357,9 +383,21 @@ onActivated(() => fetchHistory())
   justify-content: space-between;
 }
 
+.task-times {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .task-time {
   font-size: 0.72rem;
   color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.time-label {
+  margin-right: 0.25rem;
   opacity: 0.7;
 }
 

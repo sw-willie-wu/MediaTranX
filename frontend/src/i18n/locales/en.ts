@@ -1115,6 +1115,8 @@ export default {
       cancelled: 'Cancelled',
       clear: 'Clear',
       empty: 'No history yet',
+      completed_at: 'Completed',
+      duration: 'Duration',
     },
 
     types: {

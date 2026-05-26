@@ -1115,6 +1115,8 @@ export default {
       cancelled: '已取消',
       clear: '清空',
       empty: '尚無歷史紀錄',
+      completed_at: '完成時間',
+      duration: '花費時間',
     },
 
     types: {
