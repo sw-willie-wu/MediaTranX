@@ -339,13 +339,14 @@ class OllamaProvider(RemoteProvider):
         from app.handler.exceptions import RemoteApiError
         resp = None
         try:
-            # 180s per-recv timeout. Original spec assumed Ollama at localhost
-            # (sub-second TTFT), but LAN / proxy / remote Ollama plus large
-            # models (gpt-oss-120b, qwen3.5-122b) easily exceed 30s for either
-            # initial model reload OR per-chunk prefill on a new prompt.
-            # Mirrors the 30->180 fix done for OpenAI/Gemini (93427c2).
-            # Cancel still works via abort_hook -> resp.close() cross-thread.
-            resp = urllib.request.urlopen(req, timeout=180)
+            # 600s per-recv timeout. Self-hosted big models (gpt-oss-120b,
+            # qwen3.5-122b) on LAN proxy show high prefill-TTFT variance —
+            # observed chunks ranging 49-117s, with occasional outliers
+            # exceeding 180s. Cloud providers (OpenAI/Gemini) stay at 180s
+            # since their TTFT is more predictable. Cancel still works via
+            # abort_hook -> cross-thread resp.close(), not timeout polling,
+            # so a long ceiling doesn't impede user cancel responsiveness.
+            resp = urllib.request.urlopen(req, timeout=600)
             # Hook BEFORE entering the read loop — gives the cancel
             # watcher a closable response to act on for the rest of the
             # call. If the hook itself raises (e.g. cancel was pre-queued
