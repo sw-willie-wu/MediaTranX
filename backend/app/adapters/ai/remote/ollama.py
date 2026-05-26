@@ -154,19 +154,23 @@ class OllamaProvider(RemoteProvider):
             pass
 
         # Fallback: infer from name and families.
-        # NOTE: bare substring match on "vl" produces false positives — it
-        # matches the "vl" inside "vllm" (a popular inference engine name
-        # used as a suffix on OpenAI-compat proxies, e.g. gpt-oss-120b-vllm,
-        # qwen3.5-122b-vllm — neither has vision). Require "vl" to appear
-        # as a separator-bounded token instead (matches qwen-vl, qwen3-vl-8b,
-        # paligemma-vl-mix; rejects gpt-oss-120b-vllm).
-        import re as _re
+        #
+        # Trade-off note: bare substring match on "vl" produces FALSE
+        # POSITIVES on names containing "vllm" (vLLM inference engine
+        # suffix, e.g. gpt-oss-120b-vllm has no vision). A regex word-
+        # bound match removes those — but ALSO removes TRUE POSITIVES
+        # where the proxy aliases a real vision model with -vllm suffix
+        # (qwen3.5-122b-vllm IS multimodal in user's deployment).
+        #
+        # Without /api/show capabilities to disambiguate, name-pattern
+        # alone can't tell vision-served-via-vllm from text-served-via-
+        # vllm. Choose false-positive over false-negative: user can
+        # untoggle wrong models in Settings; user can't easily make a
+        # silent-text-tagged vision model appear in VLM dropdown.
+        # Known-bad text-only models (gpt-oss) should be untoggled in UI.
         caps = ["text"]
         name_lower = model_name.lower()
-        has_vl_token = bool(_re.search(r"(?:^|[-_/.:])vl(?:$|[-_/.:0-9])", name_lower))
-        if has_vl_token or any(
-            kw in name_lower for kw in ("vision", "llava", "bakllava", "moondream")
-        ):
+        if any(kw in name_lower for kw in ["vl", "vision", "llava", "bakllava", "moondream"]):
             caps.append("vision")
         if any(kw in name_lower for kw in ["embed", "nomic-embed", "mxbai-embed"]):
             caps.append("embedding")
