@@ -196,8 +196,8 @@ class ChatService:
                     "non-empty remote_model"
                 )
             # Lazy import — avoids a startup-time cycle and keeps
-            # _remote_chat off the cold-start path for local-only users.
-            from app.services._remote_chat import RemoteChatSession
+            # remote_chat off the cold-start path for local-only users.
+            from app.services.llm.remote_chat import RemoteChatSession
             yield RemoteChatSession(
                 remote_provider, remote_model,
                 on_progress=on_progress,

@@ -87,7 +87,7 @@ def test_session_yields_remote_chat_session_when_provider_supplied():
     """session(remote_provider=..., remote_model=...) yields a RemoteChatSession
     and does NOT call llama_runtime.acquire."""
     from app.services.llm.chat_service import ChatService
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
 
     rt = MagicMock(name="LlamaRuntime")
     prov = MagicMock(name="OllamaProvider")

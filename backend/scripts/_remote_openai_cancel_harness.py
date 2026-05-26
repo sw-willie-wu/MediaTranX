@@ -44,7 +44,7 @@ def _get_prov():
 
 
 def variant_1_outer_fake_progress(model: str, label: str) -> tuple[bool, float]:
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
     from app.utils.inference import fake_progress
     from app.handler.exceptions import TaskCancelledError
 
@@ -83,7 +83,7 @@ def variant_1_outer_fake_progress(model: str, label: str) -> tuple[bool, float]:
 
 
 def variant_2_in_session_guard(model: str, label: str) -> tuple[bool, float]:
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
     from app.handler.exceptions import TaskCancelledError
 
     prov = _get_prov()
@@ -119,7 +119,7 @@ def variant_3_mid_handshake(model: str, label: str) -> tuple[bool, float]:
 
     Wall-clock <5s expected.
     """
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
     from app.handler.exceptions import RemoteApiError
 
     prov = _get_prov()

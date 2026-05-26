@@ -1,7 +1,7 @@
 """Unit tests for RemoteChatSession (remote-provider adapter)."""
 from unittest.mock import MagicMock
 
-from app.services._remote_chat import RemoteChatSession
+from app.services.llm.remote_chat import RemoteChatSession
 
 
 def test_chat_forwards_to_provider():
