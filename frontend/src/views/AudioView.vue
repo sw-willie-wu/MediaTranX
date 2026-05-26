@@ -29,6 +29,7 @@ import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTaskStore } from '@/stores/tasks'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 import { apiFetch } from '@/composables/useApi'
+import { useViewHost } from '@/composables/useViewHost'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -135,6 +136,12 @@ const subFunctions = computed(() => [
 ])
 
 const currentFunction = ref('transcode')
+
+useViewHost('audio', {
+  currentFunction,
+  setCurrentFunction: (id) => { currentFunction.value = id },
+})
+
 const volumeGainPreview = ref(1)
 const trimRange = ref<{ start: number; end: number } | null>(null)
 
@@ -765,6 +772,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="transcribePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 

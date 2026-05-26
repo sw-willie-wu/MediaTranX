@@ -15,6 +15,7 @@ import VideoSummaryPanel from '@/components/video/panels/VideoSummaryPanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTitlebar } from '@/composables/useTitlebar'
+import { useViewHost } from '@/composables/useViewHost'
 
 const { t } = useI18n()
 
@@ -70,6 +71,11 @@ const subFunctions = computed(() => [
 ])
 
 const currentFunction = ref('transcode')
+
+useViewHost('video', {
+  currentFunction,
+  setCurrentFunction: (id) => { currentFunction.value = id },
+})
 
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
 
@@ -270,6 +276,7 @@ onUnmounted(() => { clearActions() })
           ref="transcodePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -305,6 +312,7 @@ onUnmounted(() => { clearActions() })
             @submit="handlePanelSubmit"
           />
         </div>
+        <!-- Note: SubtitlePanel does not accept :isMultiSelect (m16 — subtitle panel hardcodes false internally) -->
 
         <VideoInterpolatePanel
           v-else-if="currentFunction === 'interpolate'"

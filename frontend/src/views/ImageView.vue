@@ -17,6 +17,7 @@ import type { FilterPreview } from '@/components/image/panels/filterTypes'
 import { useImageWorkspace } from '@/composables/useImageWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
+import { useViewHost } from '@/composables/useViewHost'
 
 const {
   hasFile, fileId, isUploading, currentFileName, imageInfo, isLoadingInfo,
@@ -61,6 +62,11 @@ const subFunctions = computed(() => [
 
 const currentFunction     = ref('convert')
 const filterPreviewParams = ref<FilterPreview | null>(null)
+
+useViewHost('image', {
+  currentFunction,
+  setCurrentFunction: (id) => { currentFunction.value = id },
+})
 
 // ── Per-entry panel settings cache ───────────────────────────────────────────
 interface EntryPanelSettings {
@@ -438,6 +444,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :image-info="imageInfo"
+          :is-multi-select="isMultiSelect"
           @submit="onPanelSubmit"
         />
 
@@ -446,6 +453,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="upscalePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="onPanelSubmit"
         />
 

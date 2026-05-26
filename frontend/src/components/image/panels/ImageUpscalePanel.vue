@@ -8,11 +8,13 @@ import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -121,6 +123,75 @@ async function execute() {
 
   if (taskId) emit('submit', taskId)
 }
+
+// ── Agent panel registration ──────────────────────────────────────────────────
+const agentSchema = {
+  panelId: 'image.upscale',
+  fields: [
+    { name: 'upscale_model', type: 'enum' as const,
+      options: () => upscaleOptions.value.map(o => o.value) },
+    { name: 'upscale_scale', type: 'number' as const,
+      min: 2, max: () => maxScale.value, step: 1 },
+    { name: 'sharpen', type: 'bool' as const },
+    { name: 'face_restore', type: 'bool' as const },
+    { name: 'face_restore_model', type: 'enum' as const,
+      options: () => faceOptions.value.map(o => o.value),
+      visibleWhen: () => faceRestore.value },
+    { name: 'face_restore_upscale', type: 'number' as const,
+      min: 1, max: 4, step: 1,
+      visibleWhen: () => faceRestore.value },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.upscale.execute' },
+}
+
+useAgentPanelHost('image.upscale', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    upscale_model: selectedModelId.value,
+    upscale_scale: upscaleScale.value,
+    sharpen: sharpen.value,
+    face_restore: faceRestore.value,
+    face_restore_model: selectedFaceModelId.value,
+    face_restore_upscale: faceRestoreUpscale.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'upscale_model':
+        selectedModelId.value = value as string
+        return value
+      case 'upscale_scale': {
+        const clamped = Math.min(Math.max(Number(value), 2), maxScale.value)
+        upscaleScale.value = clamped
+        return clamped
+      }
+      case 'sharpen':
+        sharpen.value = !!value
+        return sharpen.value
+      case 'face_restore':
+        faceRestore.value = !!value
+        return faceRestore.value
+      case 'face_restore_model':
+        selectedFaceModelId.value = value as string
+        return value
+      case 'face_restore_upscale': {
+        const clamped = Math.min(Math.max(Number(value), 1), 4)
+        faceRestoreUpscale.value = clamped
+        return clamped
+      }
+      default:
+        throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {
+    // no-op — programmatic open_dropdown is educational only
+  },
+  execute: async () => {
+    await execute()
+    return {}
+  },
+})
 
 defineExpose({ execute, isDisabled, isLoading, upscaleScale, getParams })
 </script>
