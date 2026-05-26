@@ -30,14 +30,12 @@ function onTabsWheel(e: WheelEvent) {
 const downloadingTaskId = ref<Record<string, string>>({})
 
 // ── Remote connections ──
-interface RemoteConnection {
-  id: number
-  provider: string
-  name: string
-  endpoint: string
-  api_key?: string
-  enabled: boolean
-}
+// Source-of-truth is the store; this component just reads + dispatches actions.
+import { storeToRefs } from 'pinia'
+import { useRemoteModelStore, type RemoteConnection } from '@/stores/remoteModels'
+const remoteModelStore = useRemoteModelStore()
+const { connections } = storeToRefs(remoteModelStore)
+
 interface RemoteModel {
   id: string
   name: string
@@ -45,7 +43,6 @@ interface RemoteModel {
   capabilities?: string[]
 }
 
-const connections = ref<RemoteConnection[]>([])
 const showAddForm = ref(false)
 const providerOptions = [
   { value: 'ollama', label: 'Ollama' },
@@ -69,43 +66,17 @@ const editConn = ref({ name: '', endpoint: '', api_key: '' })
 const showEditKey = ref(false)
 const showNewKey = ref(false)
 
-import { useRemoteModelStore } from '@/stores/remoteModels'
-const remoteModelStore = useRemoteModelStore()
-
-
-async function loadConnections() {
-  try {
-    const res = await apiFetch('/setup/remote/connections')
-    if (res.ok) {
-      const data = await res.json()
-      connections.value = data.connections
-      // Re-sync the global remote-models store so dropdowns in other tools
-      // reflect connection add/toggle/edit/delete immediately. Without this,
-      // changes only appear after navigating into a panel whose onMounted
-      // calls remoteStore.fetchAll() — the bug user hit when toggling
-      // providers in Settings.
-      await remoteModelStore.fetchAll()
-    }
-  } catch (e) { console.error('Failed to load connections', e) }
-}
-
 async function addConnection() {
-  const res = await apiFetch('/setup/remote/connections', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(newConn.value),
-  })
-  if (res.ok) {
+  const ok = await remoteModelStore.addConnection(newConn.value)
+  if (ok) {
     showAddForm.value = false
     newConn.value = { provider: 'ollama', name: '', endpoint: _DEFAULT_ENDPOINTS['ollama'], api_key: '' }
     testResult.value = null
-    await loadConnections()
   }
 }
 
 async function deleteConnection(id: number) {
-  const res = await apiFetch(`/setup/remote/connections/${id}`, { method: 'DELETE' })
-  if (res.ok) await loadConnections()
+  await remoteModelStore.deleteConnection(id)
 }
 
 function startEdit(conn: RemoteConnection) {
@@ -118,27 +89,12 @@ function cancelEdit() {
 }
 
 async function saveEdit(id: number) {
-  const res = await apiFetch(`/setup/remote/connections/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(editConn.value),
-  })
-  if (res.ok) {
-    editingConnId.value = null
-    // Endpoint or api_key may have changed → stale model cache for this
-    // conn id would be served by fetchAll. Invalidate first.
-    remoteModelStore.clearConnCache(id)
-    await loadConnections()
-  }
+  const ok = await remoteModelStore.updateConnection(id, editConn.value)
+  if (ok) editingConnId.value = null
 }
 
 async function toggleConnection(conn: RemoteConnection) {
-  await apiFetch(`/setup/remote/connections/${conn.id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled: !conn.enabled }),
-  })
-  await loadConnections()
+  await remoteModelStore.toggleConnection(conn.id, !conn.enabled)
 }
 
 async function toggleExpand(conn: RemoteConnection) {
@@ -248,7 +204,7 @@ watch(
 
 onMounted(() => {
   modelStore.fetchModels()
-  loadConnections()
+  remoteModelStore.fetchAll()
 })
 </script>
 
