@@ -79,6 +79,12 @@ async function loadConnections() {
     if (res.ok) {
       const data = await res.json()
       connections.value = data.connections
+      // Re-sync the global remote-models store so dropdowns in other tools
+      // reflect connection add/toggle/edit/delete immediately. Without this,
+      // changes only appear after navigating into a panel whose onMounted
+      // calls remoteStore.fetchAll() — the bug user hit when toggling
+      // providers in Settings.
+      await remoteModelStore.fetchAll()
     }
   } catch (e) { console.error('Failed to load connections', e) }
 }
@@ -119,6 +125,9 @@ async function saveEdit(id: number) {
   })
   if (res.ok) {
     editingConnId.value = null
+    // Endpoint or api_key may have changed → stale model cache for this
+    // conn id would be served by fetchAll. Invalidate first.
+    remoteModelStore.clearConnCache(id)
     await loadConnections()
   }
 }
