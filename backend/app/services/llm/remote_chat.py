@@ -158,9 +158,9 @@ class RemoteChatSession:
 
         Routing:
         - Providers that expose chat_completions_stream() → Chat Completions path
-          (currently: OpenAI with gpt-4o / gpt-4o-mini).
+          (OpenAI: Task 4.5; Ollama: Task 4.7).
         - Providers lacking that method → raises NotImplementedError
-          (Gemini / Ollama — streaming tool-calling deferred to Wave 4.6/4.7).
+          (Gemini — streaming tool-calling deferred to Wave 4.6).
 
         Cancel-pass-through: does NOT install its own cancel_guard.  The
         calling AgentService owns the cancel hook via kill_process().
@@ -170,8 +170,8 @@ class RemoteChatSession:
         if not hasattr(self._prov, "chat_completions_stream"):
             raise NotImplementedError(
                 f"{type(self._prov).__name__} does not yet implement "
-                "chat_completions_stream(); use an OpenAI Chat Completions "
-                "model (gpt-4o, gpt-4o-mini) for the agent in Phase 1."
+                "chat_completions_stream(); use an OpenAI or Ollama model "
+                "for the agent (Gemini streaming tool-calling is Wave 4.6)."
             )
 
         loop = asyncio.get_running_loop()

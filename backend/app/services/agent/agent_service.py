@@ -144,7 +144,7 @@ class AgentService:
             yield encoder.encode(RunErrorEvent(code=e.code, message=e.message))
         except NotImplementedError as e:
             # Provider does not yet support streaming tool calling
-            # (Gemini / Ollama — Wave 4.6/4.7 deliverable).
+            # (Gemini — Wave 4.6 deliverable; Ollama done in Wave 4.7).
             yield encoder.encode(RunErrorEvent(
                 code="agent.error.tools_not_supported",
                 message=str(e),
@@ -168,10 +168,11 @@ class AgentService:
                 "remote:<provider>:<conn_id>:<model_id_with:colons>"
                 → {remote_provider, remote_model}
 
-        Remote routing (Wave 4 Task 4.5):
-        - OpenAI providers that expose chat_completions_stream() are supported.
-        - Gemini / Ollama streaming tool-calling is deferred (Wave 4.6/4.7);
-          RemoteChatSession.stream() will raise NotImplementedError for those,
+        Remote routing (Wave 4 Tasks 4.5 / 4.7):
+        - OpenAI (Task 4.5) and Ollama (Task 4.7) providers that expose
+          chat_completions_stream() are fully supported.
+        - Gemini streaming tool-calling is deferred (Wave 4.6);
+          RemoteChatSession.stream() will raise NotImplementedError for Gemini,
           which AgentService.run() catches as agent.error.tools_not_supported.
         """
         if choice.startswith("remote:"):
