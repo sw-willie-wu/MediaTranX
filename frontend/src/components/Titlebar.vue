@@ -15,6 +15,13 @@ const isMaximized = ref(false)
 const { t } = useI18n()
 const { activeFileName, canUndo, canRedo, canSave, canSaveAs, undo, redo, save, saveAs, extraActions } = useTitlebar()
 
+// preload (electron/preload.cjs) injects `window.electron` synchronously
+// before Vue mounts, so a one-shot check at script setup is sufficient —
+// no reactivity needed. In a regular browser this stays false and the
+// min/max/close trio collapses out of the DOM. Native browser chrome
+// already provides those controls, so duplicating them just looks broken.
+const isElectron = !!window.electron
+
 const isToolPage = computed(() => !!toolTitleKeys[route.path])
 
 // 工具頁路徑
@@ -107,7 +114,7 @@ onMounted(async () => {
     <!-- 右側：視窗控制 -->
     <div class="titlebar-right">
       <TitlebarResultsButton />
-      <div class="window-controls">
+      <div v-if="isElectron" class="window-controls">
         <button class="window-btn" @click="minimize" :title="$t('titlebar.minimize')">
           <IconMinimize />
         </button>
