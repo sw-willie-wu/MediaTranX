@@ -18,10 +18,22 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
 
-# Floor for the num_ctx we send to Ollama. Ollama's own default when modelfile
-# doesn't set PARAMETER num_ctx is 2048 (older) / 4096 (newer); requests that
-# need more get silently truncated. We never want to request less than this.
+# num_ctx bounds for the `options.num_ctx` we send to Ollama in every chat
+# request. Background: Ollama's own default when modelfile doesn't set
+# PARAMETER num_ctx is 2048-4096; requests that need more get silently
+# truncated. So we must send something. But going TOO high (e.g. auto-
+# bumping to 16k+ on a 120B model) pushes Ollama to reload-up with a bigger
+# KV cache, which can OOM the server — particularly on a shared DGX with
+# multiple concurrent loaded models (e.g. one 120B LLM + one 120B-class VLM
+# each reserving 20-30GB of KV cache @ 16k can exceed 80GB-per-card limits).
+#
+# Trade-off picked: cap at 8192 by default — matches the chunking-hints
+# fallback used in summary_service so input_budget never asks for more than
+# we ourselves announced. Users on bigger DGX with budget for larger KV
+# cache can override via env: `MTX_OLLAMA_MAX_NUM_CTX=32768`.
+import os as _os
 _NUM_CTX_FLOOR = 4096
+_NUM_CTX_CAP = int(_os.environ.get("MTX_OLLAMA_MAX_NUM_CTX", "8192"))
 
 
 def _estimate_messages_tokens(messages: list[dict]) -> int:
@@ -41,15 +53,15 @@ def _estimate_messages_tokens(messages: list[dict]) -> int:
 
 
 def _compute_num_ctx(messages: list[dict], max_tokens: int) -> int:
-    """Round (prompt_estimate + max_tokens + safety) up to next power of two
-    so chunks of similar size hit the same num_ctx and don't yo-yo Ollama's
-    model reload (slot is sized at first request; smaller subsequent requests
-    reuse, bigger ones force reload)."""
+    """Bound (prompt_estimate + max_tokens + safety) between FLOOR (so we
+    don't ever request less than Ollama's typical default) and CAP (so we
+    don't trigger reload-up on the server that may OOM a shared DGX).
+
+    Prompts that genuinely need more than CAP will see Ollama truncate
+    silently — user should raise MTX_OLLAMA_MAX_NUM_CTX OR use a smaller
+    model in that case."""
     needed = _estimate_messages_tokens(messages) + max_tokens + 500  # 500 safety
-    if needed <= _NUM_CTX_FLOOR:
-        return _NUM_CTX_FLOOR
-    # next pow2 >= needed; bit_length on (needed-1) handles the edge case
-    return 1 << (needed - 1).bit_length()
+    return max(_NUM_CTX_FLOOR, min(needed, _NUM_CTX_CAP))
 
 
 class OllamaProvider(RemoteProvider):
