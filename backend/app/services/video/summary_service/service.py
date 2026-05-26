@@ -423,6 +423,12 @@ class VideoSummaryService:
 
         PROMPT_OVERHEAD = 600  # template/instruction tokens
         output_cap = cfg.get("max_tokens_cap", cfg.get("max_tokens", 4096))
+        # For small-context models (e.g. Ollama gpt-oss:120b at n_ctx=8192),
+        # the configured output cap (8192) equals or exceeds n_ctx itself,
+        # collapsing context_cap to the 1024 floor and forcing degenerate
+        # tiny chunks. Cap output_cap to at most half of n_ctx so input
+        # always has matching breathing room.
+        output_cap = min(output_cap, max(1024, n_ctx // 2))
         context_cap = max(1024, n_ctx - output_cap - PROMPT_OVERHEAD)
         input_budget = min(context_cap, model_cap)
 
@@ -775,14 +781,16 @@ class VideoSummaryService:
                 )
                 prompt_tokens = estimate_tokens(prompt)
                 # Remote: use REMOTE_INFERENCE_DEFAULTS["summarize"]["max_tokens"]
-                # directly (4096) — cloud models have hard per-model completion caps
-                # (gpt-4o-mini=16384, gemini-2.5-flash=8192) and calc_max_tokens'
-                # input_ratio strategy can request 90k+ on a 22k-token prompt,
-                # which OpenAI rejects with HTTP 400 invalid_params. Mirrors the
-                # already-correct VLM frame_select branch in _make_vlm_callback.
-                # Local: dynamic input_ratio is fine (registry has explicit caps).
+                # as the upper-bound output target (avoids cloud per-model hard
+                # caps like gpt-4o-mini's 16384). But ALSO bound by available
+                # context — small-context Ollama models (gpt-oss:120b at 8k)
+                # silently return empty when prompt+num_predict>n_ctx. Take the
+                # min so we never ask for more than the model can fit.
+                # Local: dynamic input_ratio is fine (registry has explicit caps,
+                # calc_max_tokens already does the n_ctx-aware clamp internally).
                 if params.get("llm_remote"):
-                    max_tokens = cfg["max_tokens"]
+                    available = max(256, n_ctx - prompt_tokens - 200)  # 200 safety
+                    max_tokens = min(cfg["max_tokens"], available)
                 else:
                     max_tokens = calc_max_tokens(cfg, n_ctx, prompt_tokens)
                 # LLM call telemetry: provider + model + tokens + duration
