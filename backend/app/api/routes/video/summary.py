@@ -16,14 +16,25 @@ router = APIRouter()
 
 class VideoSummaryRequest(BaseModel):
     file_id: str = Field(..., description="Input video file ID")
-    llm_model_family: str = Field(..., description="Text-capable LLM family (e.g. qwen3.5)")
-    llm_model_size: str = Field(..., description="LLM model size (e.g. 9b)")
+
+    # LLM — either local (family+size) OR remote (full tuple). Validation
+    # in the service layer raises ValueError → HTTP 400.
+    llm_model_family: Optional[str] = Field(default=None)        # MODIFIED
+    llm_model_size: Optional[str] = Field(default=None)          # MODIFIED
+    llm_remote: bool = Field(default=False)                      # NEW
+    llm_provider: Optional[str] = Field(default=None)            # NEW
+    llm_conn_id: Optional[int] = Field(default=None)             # NEW
+    llm_remote_model: Optional[str] = Field(default=None)        # NEW
+
     language: str = Field(default="zh-TW", description="Content language hint")
-    vlm_model_family: Optional[str] = Field(
-        default=None,
-        description="Vision-capable model family (optional; enables VLM frame selection)",
-    )
+
+    # VLM — wholly optional; if present, either local OR remote.
+    vlm_model_family: Optional[str] = Field(default=None)
     vlm_model_size: Optional[str] = Field(default=None)
+    vlm_remote: bool = Field(default=False)                      # NEW
+    vlm_provider: Optional[str] = Field(default=None)            # NEW
+    vlm_conn_id: Optional[int] = Field(default=None)             # NEW
+    vlm_remote_model: Optional[str] = Field(default=None)        # NEW
 
     # Whisper options
     whisper_model_size: str = Field(default="medium", description="Whisper model size")
@@ -59,9 +70,17 @@ async def summarize_video(
         file_id=request.file_id,
         llm_model_family=request.llm_model_family,
         llm_model_size=request.llm_model_size,
+        llm_remote=request.llm_remote,                       # NEW
+        llm_provider=request.llm_provider,                   # NEW
+        llm_conn_id=request.llm_conn_id,                     # NEW
+        llm_remote_model=request.llm_remote_model,           # NEW
         language=request.language,
         vlm_model_family=request.vlm_model_family,
         vlm_model_size=request.vlm_model_size,
+        vlm_remote=request.vlm_remote,                       # NEW
+        vlm_provider=request.vlm_provider,                   # NEW
+        vlm_conn_id=request.vlm_conn_id,                     # NEW
+        vlm_remote_model=request.vlm_remote_model,           # NEW
         whisper_model_size=request.whisper_model_size,
         vocal_separation=request.vocal_separation,
         align=request.align,

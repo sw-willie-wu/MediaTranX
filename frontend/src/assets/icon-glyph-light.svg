@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="audio" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c6fad"></stop>
+      <stop offset="100%" stop-color="#3d3460"></stop>
+    </linearGradient>
+    <linearGradient id="film" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#c8a06a"></stop>
+      <stop offset="100%" stop-color="#846032"></stop>
+    </linearGradient>
+  </defs>
+
+  
+  <g transform="rotate(-45 256 256)">
+    <rect x="88" y="224" width="336" height="64" rx="8" fill="url(#film)"></rect>
+    <rect x="107.15" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="107.15" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="131.46" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="131.46" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="155.77" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="155.77" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="180.08" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="180.08" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="204.38" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="204.38" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="228.69" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="228.69" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="253.00" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="253.00" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="277.31" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="277.31" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="301.62" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="301.62" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="325.92" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="325.92" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="350.23" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="350.23" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="374.54" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="374.54" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="398.85" y="227" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="398.85" y="279" width="6" height="6" rx="1.5" fill="#1a172a" opacity="0.85"></rect>
+    <rect x="102" y="240" width="72.5" height="32" rx="2.5" fill="#1a172a" opacity="0.65"></rect>
+    <rect x="180.5" y="240" width="72.5" height="32" rx="2.5" fill="#1a172a" opacity="0.65"></rect>
+    <rect x="259" y="240" width="72.5" height="32" rx="2.5" fill="#1a172a" opacity="0.65"></rect>
+    <rect x="337.5" y="240" width="72.5" height="32" rx="2.5" fill="#1a172a" opacity="0.65"></rect>
+  </g>
+
+  
+  <g transform="rotate(45 256 256)">
+    <rect x="87" y="245" width="18" height="22" rx="9" fill="url(#audio)"></rect>
+    <rect x="119" y="238" width="18" height="36" rx="9" fill="url(#audio)"></rect>
+    <rect x="151" y="231" width="18" height="50" rx="9" fill="url(#audio)"></rect>
+    <rect x="183" y="224" width="18" height="64" rx="9" fill="url(#audio)"></rect>
+    <rect x="215" y="217" width="18" height="78" rx="9" fill="url(#audio)"></rect>
+    <rect x="247" y="210" width="18" height="92" rx="9" fill="url(#audio)"></rect>
+    <rect x="279" y="217" width="18" height="78" rx="9" fill="url(#audio)"></rect>
+    <rect x="311" y="224" width="18" height="64" rx="9" fill="url(#audio)"></rect>
+    <rect x="343" y="231" width="18" height="50" rx="9" fill="url(#audio)"></rect>
+    <rect x="375" y="238" width="18" height="36" rx="9" fill="url(#audio)"></rect>
+    <rect x="407" y="245" width="18" height="22" rx="9" fill="url(#audio)"></rect>
+  </g>
+
+  <circle cx="256" cy="256" r="13" fill="#ffffff"></circle>
+</svg>

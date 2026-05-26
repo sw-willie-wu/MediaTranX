@@ -254,6 +254,7 @@ export default {
       // video summary
       summary_transcribing: 'Transcribing subtitles...',
       summary_chunk: 'Summarizing (chunk {0}/{1})',
+      summary_detecting_scenes: 'Detecting scenes...',
       summary_bullet_frame: 'Extracting bullet frame {0}/{1}',
       summary_paragraph_frame: 'Extracting paragraph frame {0}/{1}',
       summary_packaging: 'Packaging output...',
@@ -1114,6 +1115,14 @@ export default {
       cancelled: 'Cancelled',
       clear: 'Clear',
       empty: 'No history yet',
+      completed_at: 'Finished at',
+      duration: 'Total',
+      // Duration unit suffixes — used by formatDuration() to build a
+      // localized XhYmZs string. Keep the same key names across
+      // locales (h/m/s) so the format function maps cleanly.
+      duration_h: 'h',
+      duration_m: 'm',
+      duration_s: 's',
     },
 
     types: {

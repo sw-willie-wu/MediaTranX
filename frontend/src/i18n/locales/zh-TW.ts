@@ -254,6 +254,7 @@ export default {
       // video summary
       summary_transcribing: '正在轉錄字幕…',
       summary_chunk: '摘要中（區塊 {0}/{1}）',
+      summary_detecting_scenes: '偵測場景中…',
       summary_bullet_frame: '擷取重點影格 {0}/{1}',
       summary_paragraph_frame: '擷取段落影格 {0}/{1}',
       summary_packaging: '打包輸出檔…',
@@ -1114,6 +1115,14 @@ export default {
       cancelled: '已取消',
       clear: '清空',
       empty: '尚無歷史紀錄',
+      completed_at: '完成於',
+      duration: '總時間',
+      // Duration unit suffixes — used by formatDuration() to build a
+      // localized X時Y分Z秒 string. Keep the same key names across
+      // locales (h/m/s) so the format function maps cleanly.
+      duration_h: '時',
+      duration_m: '分',
+      duration_s: '秒',
     },
 
     types: {

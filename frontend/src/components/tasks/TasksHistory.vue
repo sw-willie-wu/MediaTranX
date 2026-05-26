@@ -128,6 +128,38 @@ function formatDate(iso: string): string {
   })
 }
 
+/** Human duration between created_at and completed_at, localized.
+ *  <60s → "30s" / "30秒"
+ *  <60m → "5m30s" / "5分30秒"
+ *  ≥1h  → "1h23m45s" / "1時23分45秒" (full triple when hours present)
+ *  Zero-valued lower units are omitted (e.g. "5m" not "5m0s").
+ *  Returns '' when timestamps are missing/invalid so caller can hide gracefully.
+ *  Unit suffixes come from i18n: tasks.history.duration_{h,m,s}. */
+function formatDuration(start: string | null, end: string | null): string {
+  if (!start || !end) return ''
+  const ms = new Date(end).getTime() - new Date(start).getTime()
+  if (!Number.isFinite(ms) || ms < 0) return ''
+  const totalSec = Math.round(ms / 1000)
+  const sH = t('tasks.history.duration_h')
+  const sM = t('tasks.history.duration_m')
+  const sS = t('tasks.history.duration_s')
+
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+
+  if (h > 0) {
+    let out = `${h}${sH}`
+    if (m) out += `${m}${sM}`
+    if (s) out += `${s}${sS}`
+    return out
+  }
+  if (m > 0) {
+    return s ? `${m}${sM}${s}${sS}` : `${m}${sM}`
+  }
+  return `${s}${sS}`
+}
+
 onMounted(() => fetchHistory())
 onActivated(() => fetchHistory())
 </script>
@@ -175,7 +207,16 @@ onActivated(() => fetchHistory())
         </div>
       </div>
       <div class="task-footer">
-        <span class="task-time">{{ formatDate(item.completed_at) }}</span>
+        <div class="task-times">
+          <span class="task-time">
+            <span class="time-label">{{ $t('tasks.history.completed_at') }}</span>
+            {{ formatDate(item.completed_at) }}
+          </span>
+          <span v-if="formatDuration(item.created_at, item.completed_at)" class="task-time">
+            <span class="time-label">{{ $t('tasks.history.duration') }}</span>
+            {{ formatDuration(item.created_at, item.completed_at) }}
+          </span>
+        </div>
         <button class="remove-btn show-on-hover" @click="deleteItem(item.task_id)">
           <i class="bi bi-trash3"></i>
         </button>
@@ -357,9 +398,21 @@ onActivated(() => fetchHistory())
   justify-content: space-between;
 }
 
+.task-times {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .task-time {
   font-size: 0.72rem;
   color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.time-label {
+  margin-right: 0.25rem;
   opacity: 0.7;
 }
 

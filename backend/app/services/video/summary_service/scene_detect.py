@@ -3,50 +3,72 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Callable, Optional
 
 from app.adapters.binary.ffmpeg import FFmpegWrapper
+from app.handler.exceptions import TaskCancelledError
 
 logger = logging.getLogger(__name__)
 
+# scdet threshold, 0-100 percentage scale (FFmpeg scdet default 10.0).
+# Calibrated value — see spec §13.7.
+SCENE_THRESHOLD = 10.0
+# Downscale width for scene analysis (px). See spec §13.7.
+ANALYZE_W = 640
+
 
 class SceneDetector:
-    """Detect scene change timestamps using PySceneDetect; extract frames via FFmpeg.
+    """Detect scene change timestamps; extract frames via FFmpeg.
 
-    PySceneDetect pulls in OpenCV at import time, so the ``scenedetect`` package
-    is imported lazily inside ``detect_in_window`` to keep cold-start fast (per
-    BACKEND_DEVELOP_SPEC §3.2).
+    ``detect_all`` runs a single FFmpeg ``scdet`` pass (see spec §13).
+    ``detect_in_window`` is the legacy per-window fallback and still uses
+    PySceneDetect — ``scenedetect`` pulls in OpenCV at import time, so it is
+    imported lazily inside that method to keep cold-start fast.
     """
 
     def __init__(self, ffmpeg: FFmpegWrapper):
         self._ffmpeg = ffmpeg
         self._all_cache: dict[str, list[float]] = {}
 
-    def detect_all(self, video_path: Path, threshold: float = 27.0) -> list[float]:
+    def detect_all(
+        self,
+        video_path: Path,
+        scene_threshold: float = SCENE_THRESHOLD,
+        on_progress: Optional[Callable[[float], None]] = None,
+    ) -> list[float]:
         """Return ALL scene-change start timestamps for the whole video.
 
-        One full-video pass (no start/end), cached per path so callers can
-        replace ~N per-window decodes with a single decode + in-memory filter.
-        Same lazy-import + ``except → []`` contract as :meth:`detect_in_window`.
+        One full-video FFmpeg ``scdet`` pass (see :meth:`FFmpegWrapper.detect_scenes`),
+        cached per path so callers can replace ~N per-window decodes with a single
+        decode + in-memory filter.
+
+        ``on_progress`` (a 0..1 decode fraction callback) is passed straight
+        through to ``detect_scenes`` — it is NOT the service-layer
+        ``progress_callback(pct, msg)``; the caller wraps that mapping itself.
+
+        Best-effort: any failure is logged and yields ``[]`` (callers fall back
+        to midpoint sampling). ``TaskCancelledError`` is re-raised — it must not
+        be swallowed into ``[]``. See spec §13.
         """
         key = str(video_path)
         if key in self._all_cache:
             return self._all_cache[key]
-        # Lazy import — scenedetect transitively loads cv2 which is heavy.
-        import scenedetect
-        from scenedetect import ContentDetector
-
         try:
-            scenes = scenedetect.detect(
-                str(video_path), ContentDetector(threshold=threshold)
+            out = self._ffmpeg.detect_scenes_sync(
+                video_path,
+                scene_threshold=scene_threshold,
+                analyze_w=ANALYZE_W,
+                on_progress=on_progress,
             )
+        except TaskCancelledError:
+            raise
         except Exception as e:
             logger.warning(
-                f"PySceneDetect detect_all failed on {video_path.name}: {e}"
+                f"FFmpeg detect_all failed on {video_path.name}: {e}"
             )
             self._all_cache[key] = []
             return []
 
-        out = [s[0].get_seconds() for s in scenes]
         self._all_cache[key] = out
         return out
 

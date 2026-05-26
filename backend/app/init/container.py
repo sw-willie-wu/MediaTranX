@@ -269,6 +269,7 @@ class AppContainer(containers.DeclarativeContainer):
         task_manager=task_manager,
         chat_service=chat_service,
         model_manager=model_manager,
+        remote_service=remote_service,
         whisper=whisper_wrapper,
         demucs=demucs_wrapper,
         alignment_engine=alignment_engine,

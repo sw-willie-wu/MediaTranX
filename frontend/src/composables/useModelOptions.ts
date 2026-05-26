@@ -13,16 +13,30 @@ import { useI18n } from 'vue-i18n'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import type { SelectOption, SelectGroup, SelectItem } from '@/components/common/AppSelect.vue'
 
+export interface UseModelOptionsOptions {
+  /** Optional remote-provider whitelist. When set, only remote entries
+   * whose `.provider` is in this array appear in mergedOptions.
+   * Local entries are not filtered. Default: include all providers. */
+  providers?: string[]
+}
+
 export function useModelOptions(
   capability: string,
   localOptions: Ref<SelectOption[]>,
+  options: UseModelOptionsOptions = {},
 ) {
   const { t } = useI18n()
   const remoteStore = useRemoteModelStore()
 
   const mergedOptions = computed<SelectItem[]>(() => {
     // 取得符合 capability 且啟用的雲端模型
-    const remoteModels = remoteStore.byCapability(capability)
+    let remoteModels = remoteStore.byCapability(capability)
+
+    // Optional provider whitelist — applied only to remote entries.
+    if (options.providers && options.providers.length > 0) {
+      const allowed = new Set(options.providers)
+      remoteModels = remoteModels.filter(m => allowed.has(m.provider))
+    }
 
     // 沒有雲端模型：直接回傳本地（平鋪，AppSelect 會自動處理單 group）
     if (remoteModels.length === 0) {

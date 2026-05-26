@@ -168,7 +168,7 @@ class DocumentOcrService:
         # Fuse the system role into the user prompt so the helper (which emits
         # a single user message per provider) can carry it across all providers.
         combined_prompt = f"{sys_prompt}\n\n{user_prompt}"
-        messages = build_vision_chat_messages(provider_name, combined_prompt, image_b64, mime)
+        messages = build_vision_chat_messages(provider_name, combined_prompt, [(image_b64, mime)])
 
         remote_config = get_remote_inference_config("ocr")
         return prov.chat(

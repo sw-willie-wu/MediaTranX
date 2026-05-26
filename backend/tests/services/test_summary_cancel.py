@@ -39,27 +39,35 @@ def test_bulletloop_shape_reraises():
 
 
 def test_make_vlm_callback_threads_params():
-    """_make_vlm_callback must forward on_progress/cancel_pct/cancel_msg into
-    the one-shot chat_with_images so the VLM call is guarded."""
+    """_make_vlm_callback must forward cancel_pct/cancel_msg into
+    vlm_session.chat_with_images so the VLM call is guarded.
+
+    New signature (Task 10): (vlm_session, vlm_family, vlm_size, *,
+    cancel_pct, cancel_msg). on_progress is no longer a parameter —
+    the session's _guard already owns it. cancel_pct/cancel_msg are
+    forwarded as per-call overrides to chat_with_images().
+    """
     from app.services.video.summary_service.service import VideoSummaryService
+    from unittest.mock import MagicMock
     captured = {}
 
-    class FakeChat:
+    class FakeSession:
         def chat_with_images(self, **kw):
             captured.update(kw)
             return "0"
 
     svc = VideoSummaryService.__new__(VideoSummaryService)
-    svc._chat_service = FakeChat()
-    cb = lambda p, m: None
+    fake_session = FakeSession()
     vlm = svc._make_vlm_callback(
-        "qwen3vl", "8b", on_progress=cb, cancel_pct=0.7,
+        fake_session, "qwen3vl", "8b",
+        cancel_pct=0.7,
         cancel_msg="task.progress.summary_bullet_frame|1|40",
     )
     vlm("ctx", ["a.jpg", "b.jpg"])
-    assert captured["on_progress"] is cb
     assert captured["cancel_pct"] == 0.7
     assert captured["cancel_msg"] == "task.progress.summary_bullet_frame|1|40"
+    # on_progress is no longer forwarded per-call (session's _guard owns it).
+    assert "on_progress" not in captured
 
 
 def test_chunktext_valueerror_shape_does_not_swallow_cancel():

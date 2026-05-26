@@ -100,34 +100,68 @@ def prepare_image_for_remote_vlm(
     return image_b64, mime_type
 
 
+def read_image_raw_b64(path: str) -> tuple[str, str]:
+    """Raw base64 of file bytes — no PIL roundtrip, no recompress.
+
+    For providers (Ollama) that expect the source bytes verbatim and
+    handle their own preprocessing server-side. MIME is inferred from
+    file extension only (see spec §7.10 known limitation).
+    """
+    p = Path(path)
+    suffix = p.suffix.lower()
+    mime = _MIME_BY_EXT.get(suffix, "image/png")
+    b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+    return b64, mime
+
+
 def build_vision_chat_messages(
     provider: str,
     prompt: str,
-    image_b64: str,
-    mime_type: str,
+    parts: list[tuple[str, str]],
 ) -> list[dict]:
-    """Build a single-image remote VLM chat message, dispatching per provider.
+    """Build a multi-image remote VLM chat message, dispatching per provider.
+
+    Args:
+        provider: "ollama" | "gemini" | "openai" (and unknown → openai shape).
+        prompt: User prompt text (single text part).
+        parts: List of (base64_str, mime_type) tuples — one per image.
+
+    Returns:
+        Messages list (single-user-message wrapping prompt + all images).
 
     Each remote provider expects a different shape:
-    - ollama: `content` is a plain string; image carried in a sibling `images: [b64]`.
-    - gemini: `content` is a list with an `inline_data` entry (`type="image"`).
-    - openai-compatible (default): `content` is a list with `image_url` + data URI.
+    - ollama: content is a plain string; images carried as sibling 'images' list of raw b64.
+    - gemini: content is a list with type='image' entries (provider's chat() converts
+      to inline_data on the wire).
+    - openai-compatible (default): content is a list with image_url + data: URI entries.
     """
     if provider == "ollama":
-        return [{"role": "user", "content": prompt, "images": [image_b64]}]
+        return [{
+            "role": "user",
+            "content": prompt,
+            "images": [b for b, _ in parts],
+        }]
     if provider == "gemini":
         return [{
             "role": "user",
             "content": [
                 {"type": "text", "text": prompt},
-                {"type": "image", "mime_type": mime_type, "data": image_b64},
+                *(
+                    {"type": "image", "mime_type": m, "data": b}
+                    for b, m in parts
+                ),
             ],
         }]
+    # openai-compatible (default)
     return [{
         "role": "user",
         "content": [
             {"type": "text", "text": prompt},
-            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_b64}"}},
+            *(
+                {"type": "image_url",
+                 "image_url": {"url": f"data:{m};base64,{b}"}}
+                for b, m in parts
+            ),
         ],
     }]
 

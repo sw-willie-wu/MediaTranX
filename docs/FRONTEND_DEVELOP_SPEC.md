@@ -22,6 +22,20 @@
 
 定義於 `src/assets/base.css`。**所有顏色、背景、邊框都必須使用 CSS 變數，禁止寫死 hex 色值（主題切換會失效）。**
 
+### 例外（允許 hardcode 色值的場景）
+
+下列情境因技術或語意原因允許直接寫死色值，不視為違規：
+
+| 場景 | 允許值 | 理由 |
+|---|---|---|
+| 半透明浮層按鈕的 glassmorphism 背景 | `rgba(0, 0, 0, 0.35)` / `rgba(0, 0, 0, 0.55)` | 浮於不確定背景上的對比保險層 |
+| 圖片疊加元件（ComparisonSlider、toolbar-btn 等） | 固定 hex / rgba | 浮於使用者圖片之上，必須維持任何圖片上的可見性、不受主題切換影響 |
+| Canvas 程式繪製（`useCanvasMask.ts` 等 `.ts` composable 的 `ctx.fillStyle` / `ctx.strokeStyle`） | 任何色值 | 非 CSS、無法使用 CSS 變數 |
+| 文字在 `--color-primary` 主色按鈕/Tab/active 上 | `#fff` / `white` | `--color-primary` 兩主題都是紫色 `#7c6fad`，白字維持對比；用 `--text-primary` 在淺色主題會變深色撞背景。已在 `tool-panels-shared.scss`、`settings-shared.scss` 等基礎共用樣式建立慣例 |
+| Titlebar close 按鈕 hover/active | `#e81123` / `#f1707a` | Windows 平台 close button 紅色標準，跨主題一致以符合作業系統慣例 |
+
+新增屬上述類別的色值無需 token，直接寫死即可；**不屬於上述類別的色值必須改用 CSS 變數**，新增 token 到 `base.css` 的 `:root` 與 `[data-theme="light"]` 兩個 block。
+
 ### 品牌色
 | 變數 | 值 | 用途 |
 |---|---|---|
@@ -786,7 +800,7 @@ watch(value, v => emit('update:value', v))
 - ❌ 不得在 scoped style 中重複定義 `.btn-primary`、`.btn-secondary` 的 `background`、`color`、`border`、`cursor`（僅可新增 modifier 覆蓋尺寸/形狀）
 - ❌ Settings 元件不得自訂按鈕 class（`.browse-btn`、`.restart-btn` 等），一律使用 `btn-secondary` / `btn-primary` / `btn-success`
 - ❌ Settings 元件不得使用 `form-control`，一律使用 `form-input`
-- ❌ 禁止寫死 hex 色值（`#ffffff`、`rgba(...)` 等），必須使用 CSS 變數（主題切換會失效）
+- ❌ 禁止寫死 hex 色值（`#ffffff`、`rgba(...)` 等），必須使用 CSS 變數（主題切換會失效）— 例外清單見 §2「Design Tokens」
 - ❌ 禁止在 settings slot 內放執行按鈕（統一走 ToolLayout 底部）
 - ❌ 禁止使用 `alert()`、`confirm()`（使用 Toast 或 Modal）
 - ❌ 禁止對未完成功能顯示正常可用的 UI（必須加 `comingSoon` 標記）

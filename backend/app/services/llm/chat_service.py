@@ -17,7 +17,7 @@ from app.utils.inference import cancel_guard
 logger = logging.getLogger(__name__)
 
 
-class ChatSession:
+class LocalChatSession:
     """Bound to a single LlmWrapper.acquire() block.
 
     Methods reuse the loaded model — caller does NOT need to reload between
@@ -32,18 +32,22 @@ class ChatSession:
         self._cancel_pct = cancel_pct
         self._cancel_msg = cancel_msg
 
-    def _guard(self):
-        """Single poll+kill watcher for the wrapped blocking call.
+    def _guard(self, pct: Optional[float] = None, msg: Optional[str] = None):
+        """Single-poller cancel watcher. Per-call (pct, msg) override the
+        session defaults set at __init__. Either-None means "use default".
 
-        nullcontext when no on_progress (legacy behaviour); otherwise
-        cancel_guard, which itself passes through if an enclosing
-        fake_progress(cancellable=) already owns poll+kill (shared ContextVar)
-        — exactly one watcher per call.
+        Required by the VLM frame-pick loop pattern: one open session
+        across many per-item calls, each item carries its own cancel_pct
+        and cancel_msg for monotonic progress reporting and i18n labels.
+        See spec §F3 step 1.
         """
         if self._on_progress is None:
             return nullcontext()
-        return cancel_guard(self._on_progress, cancellable=self,
-                            progress=self._cancel_pct, message=self._cancel_msg)
+        return cancel_guard(
+            self._on_progress, cancellable=self,
+            progress=pct if pct is not None else self._cancel_pct,
+            message=msg if msg is not None else self._cancel_msg,
+        )
 
     def chat(
         self,
@@ -54,8 +58,11 @@ class ChatSession:
         top_k: int = 40,
         top_p: float = 0.9,
         stop: Optional[list[str]] = None,
+        cancel_pct: Optional[float] = None,        # per-call override
+        cancel_msg: Optional[str] = None,          # per-call override
+        task: Optional[str] = None,                # accepted for symmetry; local path ignores
     ) -> str:
-        with self._guard():
+        with self._guard(cancel_pct, cancel_msg):
             return self._runtime.chat(
                 messages=messages, max_tokens=max_tokens, temperature=temperature,
                 top_k=top_k, top_p=top_p, stop=stop,
@@ -70,8 +77,11 @@ class ChatSession:
         top_k: int = 40,
         top_p: float = 0.9,
         stop: Optional[list[str]] = None,
+        cancel_pct: Optional[float] = None,
+        cancel_msg: Optional[str] = None,
+        task: Optional[str] = None,                # accepted for symmetry; local path ignores
     ) -> str:
-        with self._guard():
+        with self._guard(cancel_pct, cancel_msg):
             return self._runtime.complete(
                 prompt=prompt, max_tokens=max_tokens, temperature=temperature,
                 top_k=top_k, top_p=top_p, stop=stop,
@@ -86,6 +96,9 @@ class ChatSession:
         temperature: float,
         top_k: int = 40,
         top_p: float = 0.9,
+        cancel_pct: Optional[float] = None,
+        cancel_msg: Optional[str] = None,
+        task: Optional[str] = None,                # accepted for symmetry; local path ignores
     ) -> str:
         """Send a prompt + images to the loaded VLM via OpenAI-compat multimodal messages.
 
@@ -101,7 +114,7 @@ class ChatSession:
                 "image_url": {"url": f"data:{mime};base64,{b64}"},
             })
         messages = [{"role": "user", "content": content}]
-        with self._guard():
+        with self._guard(cancel_pct, cancel_msg):
             return self._runtime.chat(
                 messages=messages, max_tokens=max_tokens, temperature=temperature,
                 top_k=top_k, top_p=top_p, stop=None,
@@ -153,31 +166,57 @@ class ChatService:
     def session(
         self,
         *,
-        model_family: str,
-        model_size: str,
+        model_family: Optional[str] = None,           # MODIFIED: was required
+        model_size: Optional[str] = None,             # MODIFIED: was required
         quantization: Optional[str] = None,
+        remote_provider=None,                         # NEW
+        remote_model: Optional[str] = None,           # NEW
         on_load_progress: Optional[Callable] = None,
         on_progress: Optional[Callable] = None,
         cancel_pct: float = 0.0,
         cancel_msg: str = "task.progress.generating",
-    ) -> Iterator[ChatSession]:
-        """Hold an LLM loaded for the duration of the block.
+    ) -> Iterator:
+        """Hold an LLM loaded (local) OR open a remote-provider session
+        for the duration of the block.
 
-        Inside the `with`, call session.chat / .complete / .chat_with_images
-        repeatedly without reloading the model.
+        Dispatch is determined by `remote_provider`:
+        - remote_provider is not None → yield RemoteChatSession (no local
+          model acquire). `remote_model` is required.
+        - remote_provider is None → yield LocalChatSession via
+          llama_runtime.acquire(). `model_family` + `model_size` are
+          required (legacy invariant).
 
-        Maps `model_family` → ModelManager's `model_id` and
-        `f"{model_size}:{quantization}"` → `variant` (LlmWrapper._resolve_model_path
-        parses the colon to split size + quant). Plain `model_size` (no `:`)
-        when quantization is None — `_resolve_gguf_path` picks the default
-        quant from the registry's `default_variant` table.
+        See spec core/.claude/specs/2026-05-25-video-summary-remote-line.md
+        §F3.
         """
+        if remote_provider is not None:
+            if not remote_model:
+                raise ValueError(
+                    "ChatService.session(remote_provider=...) requires a "
+                    "non-empty remote_model"
+                )
+            # Lazy import — avoids a startup-time cycle and keeps
+            # remote_chat off the cold-start path for local-only users.
+            from app.services.llm.remote_chat import RemoteChatSession
+            yield RemoteChatSession(
+                remote_provider, remote_model,
+                on_progress=on_progress,
+                cancel_pct=cancel_pct, cancel_msg=cancel_msg,
+            )
+            return
+
+        # Local path
+        if not model_family or not model_size:
+            raise ValueError(
+                "ChatService.session() requires either remote_provider+remote_model "
+                "or both model_family and model_size"
+            )
         variant = f"{model_size}:{quantization}" if quantization else model_size
         with self._llama_runtime.acquire(
             model_family, variant, on_progress=on_load_progress,
         ):
-            yield ChatSession(self._llama_runtime, on_progress=on_progress,
-                              cancel_pct=cancel_pct, cancel_msg=cancel_msg)
+            yield LocalChatSession(self._llama_runtime, on_progress=on_progress,
+                                   cancel_pct=cancel_pct, cancel_msg=cancel_msg)
 
     def chat(
         self,
@@ -187,14 +226,22 @@ class ChatService:
         max_tokens: int = 4096,
         temperature: float = 0.1,
         *,
+        remote_provider=None,                         # NEW
+        remote_model: Optional[str] = None,           # NEW
         on_progress: Optional[Callable] = None,
         cancel_pct: float = 0.0,
         cancel_msg: str = "task.progress.generating",
     ) -> str:
-        """One-shot chat (backward-compat). Opens its own session for the single call."""
-        with self.session(model_family=model_family, model_size=model_size,
-                          on_progress=on_progress, cancel_pct=cancel_pct,
-                          cancel_msg=cancel_msg) as session:
+        """One-shot chat (backward-compat). Opens its own session for the
+        single call. When remote_provider is supplied the local model
+        defaults are inert (dispatch short-circuits to remote).
+        """
+        with self.session(
+            model_family=model_family, model_size=model_size,
+            remote_provider=remote_provider, remote_model=remote_model,
+            on_progress=on_progress, cancel_pct=cancel_pct,
+            cancel_msg=cancel_msg,
+        ) as session:
             return session.chat(
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens, temperature=temperature,
@@ -205,21 +252,36 @@ class ChatService:
         prompt: str,
         images: list[Path | str],
         *,
-        model_family: str,
-        model_size: str,
+        model_family: Optional[str] = None,
+        model_size: Optional[str] = None,
         quantization: Optional[str] = None,
         max_tokens: int,
         temperature: float,
+        remote_provider=None,                         # NEW
+        remote_model: Optional[str] = None,           # NEW
         on_progress: Optional[Callable] = None,
         cancel_pct: float = 0.0,
         cancel_msg: str = "task.progress.generating",
     ) -> str:
-        """One-shot VLM chat. Backward-compat shape for callers that don't need a session."""
+        """One-shot VLM chat. Backward-compat shape; opens a session
+        per call. Supports local OR remote dispatch via the same
+        ChatService.session() rules."""
         with self.session(
-            model_family=model_family, model_size=model_size, quantization=quantization,
-            on_progress=on_progress, cancel_pct=cancel_pct, cancel_msg=cancel_msg,
+            model_family=model_family, model_size=model_size,
+            quantization=quantization,
+            remote_provider=remote_provider, remote_model=remote_model,
+            on_progress=on_progress, cancel_pct=cancel_pct,
+            cancel_msg=cancel_msg,
         ) as session:
             return session.chat_with_images(
                 prompt=prompt, images=images,
                 max_tokens=max_tokens, temperature=temperature,
             )
+
+
+# Backward-compat alias — keeps existing
+# `from app.services.llm.chat_service import ChatSession` imports working.
+# Used by pipeline/ocr.py:18, document/translate_service/text.py:17,
+# tests/services/test_chat_service_cancel.py. Deprecated; remove after
+# follow-up A refactor (project_unified_capabilities).
+ChatSession = LocalChatSession

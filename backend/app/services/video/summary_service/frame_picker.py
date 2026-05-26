@@ -16,11 +16,18 @@ from typing import Callable, Optional
 
 from app.handler.exceptions import TaskCancelledError
 
+from .parse import even_indices
+
 logger = logging.getLogger(__name__)
 
 # vlm_callback signature:
 #   (context_text: str, frame_paths: list[Path]) -> int (index of chosen frame)
 VLMCallback = Callable[[str, list[Path]], int]
+
+# Max candidate frames fed to a single VLM call. Large narrative windows hold
+# dozens of scene-change candidates; sending them all in one chat_with_images
+# call blows past the 900s HTTP timeout. See spec 2026-05-22 §2.
+MAX_VLM_CANDIDATES = 8
 
 
 def _clamp_ts(t: float, duration: Optional[float], fps: Optional[float]) -> float:
@@ -54,6 +61,7 @@ def pick_frame_timestamp(
     fps: Optional[float] = None,
     scenes: Optional[list[float]] = None,
     candidate_max_edge: Optional[int] = None,
+    max_candidates: int = MAX_VLM_CANDIDATES,
 ) -> Optional[float]:
     """Return a single representative timestamp for [window_start, window_end].
 
@@ -72,6 +80,11 @@ def pick_frame_timestamp(
     item is routed through the VLM (a window with no scene candidate uses its
     midpoint as the sole candidate). Without a VLM the legacy heuristic is used
     and a float is always returned.
+
+    ``max_candidates``: on the VLM path, the candidate list is subsampled
+    (evenly spaced) to at most this many frames before extraction so a single
+    ``chat_with_images`` call never processes dozens of images. Only affects
+    the VLM path; the non-VLM heuristic always sees every candidate.
     """
     mid = (window_start + window_end) / 2
 
@@ -92,6 +105,12 @@ def pick_frame_timestamp(
         if len(candidates) == 1:
             return _clamp_ts(candidates[0], duration, fps)
         return _clamp_ts(min(candidates, key=lambda t: abs(t - mid)), duration, fps)
+
+    # VLM path: cap candidate count so one chat_with_images call never
+    # processes dozens of images (a large narrative window otherwise blows
+    # past the 900s HTTP timeout — see spec 2026-05-22 §2). even_indices is a
+    # no-op when len(candidates) <= max_candidates.
+    candidates = [candidates[i] for i in even_indices(len(candidates), max_candidates)]
 
     # VLM path: extract each candidate, ask VLM to choose one or reject all.
     temp_dir.mkdir(parents=True, exist_ok=True)
