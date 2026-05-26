@@ -5,9 +5,12 @@ import Titlebar from './components/Titlebar.vue'
 import MainSidebar from './components/MainSidebar.vue'
 import AppToast from './components/AppToast.vue'
 import AppConfirmDialog from './components/common/AppConfirmDialog.vue'
+import AgentRunBanner from './components/agent/AgentRunBanner.vue'
+import ChatBubble from './components/agent/ChatBubble.vue'
 import { useTheme } from './composables/useTheme'
 import { useRemoteModelStore } from './stores/remoteModels'
 import { useResultsStore } from './stores/results'
+import { useAgentStore } from './stores/agent'
 
 const router = useRouter()
 
@@ -20,6 +23,9 @@ remoteModelStore.fetchAll()
 
 // Results drawer store
 const resultsStore = useResultsStore()
+
+// Agent store (for banner visibility)
+const agentStore = useAgentStore()
 
 function removeSplash() {
   const overlay = document.getElementById('splash-overlay')
@@ -48,8 +54,9 @@ onMounted(async () => {
 <template>
   <div class="app-wrapper app-enter">
     <Titlebar />
+    <AgentRunBanner v-if="agentStore.isRunning" />
     <MainSidebar />
-    <div class="app-content">
+    <div class="app-content" :class="{ 'is-agent-running': agentStore.isRunning }">
       <RouterView v-slot="{ Component }">
         <KeepAlive>
           <component :is="Component" :key="$route.fullPath" />
@@ -58,6 +65,7 @@ onMounted(async () => {
     </div>
     <AppToast />
     <AppConfirmDialog />
+    <ChatBubble />
   </div>
 </template>
 
@@ -71,6 +79,10 @@ onMounted(async () => {
   padding-top: 40px;
   margin-left: var(--main-sidebar-width);
   min-height: 100vh;
+
+  &.is-agent-running {
+    padding-top: 72px; /* 40px titlebar + 32px agent banner */
+  }
 }
 
 // 全域樣式：玻璃面板

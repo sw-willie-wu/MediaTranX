@@ -976,6 +976,7 @@ export default {
       general: '一般',
       system: '系統資訊',
       models: 'AI 模型管理',
+      agent: 'Agent',
       about: '關於',
     },
 
@@ -1094,6 +1095,56 @@ export default {
       edit: '編輯',
       refresh: '重新整理模型',
       delete: '刪除',
+    },
+
+    agent: {
+      title: 'Agent 設定',
+      model: {
+        label: '模型',
+        placeholder: '選擇支援 tools 的模型…',
+      },
+      policy: {
+        label: '確認策略',
+        auto: '自動（建議）',
+        ask_all: '全部都問',
+        custom: '自訂白名單',
+      },
+      whitelist: {
+        label: '個別工具策略',
+        state_auto: '自動',
+        state_ask: '詢問',
+        state_deny: '拒絕',
+      },
+      clear_history: {
+        label: '清空對話',
+        confirm: '確定清空所有對話？此操作無法復原。',
+      },
+    },
+  },
+
+  // ── Agent ──────────────────────────────────────────────────────────────
+  agent: {
+    banner: {
+      prefix: 'Agent：',
+      queued: '等待中…',
+      cancelled: '已中斷',
+    },
+    bubble: {
+      title: 'Agent 對話',
+      placeholder: '請告訴 Agent 你想做什麼…',
+      empty: '尚無對話',
+      thinking: '思考中…',
+      token_count: '輸入: {prompt} / 輸出: {completion}',
+    },
+    confirm: {
+      title: '確認動作',
+      cancel: '取消',
+      submit: '送出',
+    },
+    error: {
+      no_model: '尚未設定 Agent 模型',
+      internal: '內部錯誤',
+      context_full: '對話過長，請清除後重新開始。',
     },
   },
 

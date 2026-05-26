@@ -976,6 +976,7 @@ export default {
       general: 'General',
       system: 'System Info',
       models: 'AI Models',
+      agent: 'Agent',
       about: 'About',
     },
 
@@ -1094,6 +1095,56 @@ export default {
       edit: 'Edit',
       refresh: 'Refresh Models',
       delete: 'Delete',
+    },
+
+    agent: {
+      title: 'Agent settings',
+      model: {
+        label: 'Model',
+        placeholder: 'Select a tool-capable model…',
+      },
+      policy: {
+        label: 'Confirmation policy',
+        auto: 'Auto (recommended)',
+        ask_all: 'Ask for everything',
+        custom: 'Custom whitelist',
+      },
+      whitelist: {
+        label: 'Per-tool policy',
+        state_auto: 'Auto',
+        state_ask: 'Ask',
+        state_deny: 'Deny',
+      },
+      clear_history: {
+        label: 'Clear chat history',
+        confirm: 'Clear all messages? This cannot be undone.',
+      },
+    },
+  },
+
+  // ── Agent ──────────────────────────────────────────────────────────────
+  agent: {
+    banner: {
+      prefix: 'Agent: ',
+      queued: 'Waiting…',
+      cancelled: 'Cancelled',
+    },
+    bubble: {
+      title: 'Agent Chat',
+      placeholder: 'Ask agent to do something…',
+      empty: 'No messages yet',
+      thinking: 'Thinking…',
+      token_count: 'in: {prompt} / out: {completion}',
+    },
+    confirm: {
+      title: 'Confirm action',
+      cancel: 'Cancel',
+      submit: 'Submit',
+    },
+    error: {
+      no_model: 'No agent model configured',
+      internal: 'Internal error',
+      context_full: 'Conversation too long. Please clear and start over.',
     },
   },
 
