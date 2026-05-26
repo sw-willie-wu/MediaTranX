@@ -1115,8 +1115,14 @@ export default {
       cancelled: '已取消',
       clear: '清空',
       empty: '尚無歷史紀錄',
-      completed_at: '完成時間',
-      duration: '花費時間',
+      completed_at: '完成於',
+      duration: '總時間',
+      // Duration unit suffixes — used by formatDuration() to build a
+      // localized X時Y分Z秒 string. Keep the same key names across
+      // locales (h/m/s) so the format function maps cleanly.
+      duration_h: '時',
+      duration_m: '分',
+      duration_s: '秒',
     },
 
     types: {

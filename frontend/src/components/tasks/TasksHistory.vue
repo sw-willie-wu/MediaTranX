@@ -128,21 +128,36 @@ function formatDate(iso: string): string {
   })
 }
 
-/** Human duration between created_at and completed_at.
- *  <60s → "12s" / <60m → "3m12s" / ≥1h → "1h23m" (no seconds at hours scale).
- *  Returns '' when timestamps are missing/invalid so caller can hide gracefully. */
+/** Human duration between created_at and completed_at, localized.
+ *  <60s → "30s" / "30秒"
+ *  <60m → "5m30s" / "5分30秒"
+ *  ≥1h  → "1h23m45s" / "1時23分45秒" (full triple when hours present)
+ *  Zero-valued lower units are omitted (e.g. "5m" not "5m0s").
+ *  Returns '' when timestamps are missing/invalid so caller can hide gracefully.
+ *  Unit suffixes come from i18n: tasks.history.duration_{h,m,s}. */
 function formatDuration(start: string | null, end: string | null): string {
   if (!start || !end) return ''
   const ms = new Date(end).getTime() - new Date(start).getTime()
   if (!Number.isFinite(ms) || ms < 0) return ''
   const totalSec = Math.round(ms / 1000)
-  if (totalSec < 60) return `${totalSec}s`
-  const m = Math.floor(totalSec / 60)
+  const sH = t('tasks.history.duration_h')
+  const sM = t('tasks.history.duration_m')
+  const sS = t('tasks.history.duration_s')
+
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
   const s = totalSec % 60
-  if (m < 60) return s ? `${m}m${s}s` : `${m}m`
-  const h = Math.floor(m / 60)
-  const mm = m % 60
-  return mm ? `${h}h${mm}m` : `${h}h`
+
+  if (h > 0) {
+    let out = `${h}${sH}`
+    if (m) out += `${m}${sM}`
+    if (s) out += `${s}${sS}`
+    return out
+  }
+  if (m > 0) {
+    return s ? `${m}${sM}${s}${sS}` : `${m}${sM}`
+  }
+  return `${s}${sS}`
 }
 
 onMounted(() => fetchHistory())
