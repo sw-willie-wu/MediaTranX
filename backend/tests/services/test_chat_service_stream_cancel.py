@@ -339,3 +339,77 @@ async def test_stream_queue_backpressure_no_drop():
         f"Expected {NUM_CHUNKS} delta chunks, got {len(collected)} "
         "(token drop detected — likely put_nowait QueueFull regression)"
     )
+    # Warm-pool regression guard: clean completion must NOT kill the producer.
+    rt._model.stop.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Regression: clean stream exit must NOT kill the warm-pool
+# ---------------------------------------------------------------------------
+
+async def test_stream_clean_exit_does_not_kill_producer():
+    """After a clean stream completes (all chunks consumed to SENTINEL_END),
+    kill_process() / model.stop() must NOT be called.
+
+    This is the key regression test for the warm-pool fix: the old unconditional
+    finally: kill_process() would call LlamaServer.stop() on every clean exit,
+    leaving LlmWrapper._model pointing at a dead server.  The next session's
+    mm.acquire() would see is_loaded()==True (lying) and yield a broken runtime.
+    """
+    rt = MagicMock()
+    rt.chat_stream.return_value = iter([
+        {"id": "m1", "choices": [{"delta": {"content": "tok1"}}]},
+        {"id": "m1", "choices": [{"delta": {"content": "tok2"}}]},
+        {"usage": {"prompt_tokens": 2, "completion_tokens": 2}, "choices": []},
+    ])
+    rt._model = MagicMock()
+
+    sess = LocalChatSession(rt, on_progress=None)
+    chunks = [c async for c in sess.stream(messages=[], max_tokens=100, temperature=0.1)]
+
+    assert len(chunks) == 3  # 2 deltas + 1 done
+    # Clean exit: warm-pool must be untouched
+    rt._model.stop.assert_not_called()
+    assert sess._stream_kill_pending is False
+
+
+# ---------------------------------------------------------------------------
+# Regression: two sequential streams on the same session (agent multi-turn)
+# ---------------------------------------------------------------------------
+
+async def test_two_sequential_streams_share_warm_pool():
+    """Agent multi-turn pattern: same LocalChatSession, two sequential streams.
+
+    Both streams must complete successfully.  model.stop() must NEVER be called
+    between or after the streams — the warm-pool must survive the full session.
+
+    This tests the exact regression scenario from the bug report:
+    Round 1 unconditionally killed llama-server → Round 2 hit
+    RuntimeError("LlamaServer not started; call start() first").
+    """
+    rt = MagicMock()
+    rt._model = MagicMock()
+
+    def make_iter(text: str):
+        return iter([
+            {"id": "m1", "choices": [{"delta": {"content": text}}]},
+            {"usage": {"prompt_tokens": 1, "completion_tokens": 1}, "choices": []},
+        ])
+
+    sess = LocalChatSession(rt, on_progress=None)
+
+    # Round 1
+    rt.chat_stream.return_value = make_iter("round-one")
+    chunks1 = [c async for c in sess.stream(messages=[], max_tokens=100, temperature=0.1)]
+
+    # model.stop() must NOT have been called after round 1
+    rt._model.stop.assert_not_called()
+
+    # Round 2 — same session, new chat_stream
+    rt.chat_stream.return_value = make_iter("round-two")
+    chunks2 = [c async for c in sess.stream(messages=[], max_tokens=100, temperature=0.1)]
+
+    assert any(c.get("text") == "round-one" for c in chunks1)
+    assert any(c.get("text") == "round-two" for c in chunks2)
+    # Warm-pool untouched across both rounds
+    rt._model.stop.assert_not_called()

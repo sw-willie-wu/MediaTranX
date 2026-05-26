@@ -250,10 +250,12 @@ class LocalChatSession:
 
         threading.Thread(target=producer, daemon=True, name="llm-stream-producer").start()
 
+        sentinel_end_reached = False
         try:
             while True:
                 item = await q.get()
                 if item is SENTINEL_END:
+                    sentinel_end_reached = True
                     return
                 if isinstance(item, tuple) and item[0] is SENTINEL_ERR:
                     raise item[1]
@@ -264,7 +266,18 @@ class LocalChatSession:
             # so the producer thread exits promptly instead of leaking until natural
             # stream completion.  Idempotent: safe to call twice (e.g. from
             # AgentService.run's cancel hook AND here).
-            self.kill_process()
+            #
+            # WARM-POOL SAFETY: do NOT kill on clean SENTINEL_END exit.  If we
+            # called kill_process() here unconditionally, LlamaServer.stop() would
+            # clear _process/_port while LlmWrapper._model still references the
+            # (now-dead) server.  wrapper.is_loaded() would return True (lying),
+            # so the next ChatService.session() → mm.acquire() → _ensure_runtime
+            # would see needs_reload=False and yield a broken runtime whose very
+            # next .stream()/.chat() call raises
+            # RuntimeError("LlamaServer not started; call start() first").
+            # Result: every multi-turn agent conversation breaks on round 2.
+            if not sentinel_end_reached:
+                self.kill_process()
 
     def kill_process(self) -> None:
         """Best-effort cancellation: stop the underlying llama-server.
