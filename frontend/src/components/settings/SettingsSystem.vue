@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/stores/settings'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const { t } = useI18n()
 
@@ -9,6 +10,33 @@ const settingsStore = useSettingsStore()
 
 onMounted(() => {
   if (!settingsStore.deviceInfo) settingsStore.loadDeviceInfo()
+})
+
+useAgentPanelHost('settings.system', {
+  agentSchema: {
+    panelId: 'settings.system',
+    fields: [],
+    actions: [
+      { name: 'restart_backend', label: 'Restart Backend' },
+      { name: 'browse_data_dir', label: 'Browse Data Directory' },
+    ],
+    execute: null,
+  },
+  getCurrentValues: () => ({}),
+  setField: (_field: string, _value: unknown) => {
+    throw new Error('agent.error.no_execute_on_settings')
+  },
+  openField: (_field: string) => {},
+  execute: () => { throw new Error('agent.error.no_execute_on_settings') },
+  invokeAction: (name: string) => {
+    if (name === 'restart_backend') {
+      ;(window as any).electron?.restart()
+      return { ok: true }
+    }
+    // browse_data_dir: not implemented in this panel
+    return null
+  },
+  isMultiSelect: () => false,
 })
 
 function formatVram(bytes: number | null): string {

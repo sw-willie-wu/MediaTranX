@@ -5,8 +5,9 @@ import { useAgentSettingsStore } from '@/stores/agentSettings'
 import { useModelStore } from '@/stores/models'
 import { useModelOptions } from '@/composables/useModelOptions'
 import { useAgent } from '@/composables/useAgent'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 import AppSelect from '@/components/common/AppSelect.vue'
-import type { SelectOption } from '@/components/common/AppSelect.vue'
+import type { SelectOption, SelectItem } from '@/components/common/AppSelect.vue'
 import type { AgentPolicy } from '@/stores/agentSettings'
 
 const { t } = useI18n()
@@ -82,6 +83,59 @@ function clearHistory() {
     agent.clearHistory()
   }
 }
+
+// ── Agent panel host (settings.agent) ────────────────────────────────────────
+
+const POLICY_VALUES = ['auto', 'ask_all', 'custom'] as const
+
+useAgentPanelHost('settings.agent', {
+  agentSchema: {
+    panelId: 'settings.agent',
+    fields: [
+      {
+        name: 'model',
+        type: 'enum',
+        options: () => mergedOptions.value
+          .filter((o): o is SelectOption => 'value' in o)
+          .map(o => o.value),
+      },
+      {
+        name: 'policy',
+        type: 'enum',
+        options: () => [...POLICY_VALUES],
+      },
+    ],
+    actions: [
+      { name: 'clear_history', label: 'Clear History' },
+    ],
+    execute: null,
+  },
+  getCurrentValues: () => ({
+    model: settings.modelChoice,
+    policy: settings.policy,
+  }),
+  setField: (field: string, value: unknown) => {
+    if (field === 'model') {
+      setModel(value as string)
+      return settings.modelChoice
+    }
+    if (field === 'policy') {
+      setPolicy(value as AgentPolicy)
+      return settings.policy
+    }
+    throw new Error(`Unknown field: ${field}`)
+  },
+  openField: (_field: string) => {},
+  execute: () => { throw new Error('agent.error.no_execute_on_settings') },
+  invokeAction: (name: string) => {
+    if (name === 'clear_history') {
+      agent.clearHistory()
+      return { ok: true }
+    }
+    throw new Error(`Unknown action: ${name}`)
+  },
+  isMultiSelect: () => false,
+})
 </script>
 
 <template>

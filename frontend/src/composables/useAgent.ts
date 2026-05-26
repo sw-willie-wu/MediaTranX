@@ -22,6 +22,7 @@ import { ref, computed } from 'vue'
 import { streamRun, type AssistantMessage } from '@/composables/useAgentSSE'
 import { useAgentStore, type TransientBuffer } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
+import { useAgentTools } from '@/composables/useAgentTools'
 
 // ─── Public types ──────────────────────────────────────────────────────────────
 
@@ -84,7 +85,7 @@ export function useAgent(deps: UseAgentDeps = {}): ReturnType<typeof _createAgen
 function _createAgent(deps: UseAgentDeps = {}) {
   const settings = useAgentSettingsStore()
   const store    = useAgentStore()
-  const tools    = deps.tools ?? { TOOLS: [], dispatch: async () => ({ error: 'agent.error.tools_not_wired' }) }
+  const tools    = deps.tools ?? useAgentTools()
   const runStream = deps.streamRunFn ?? streamRun
   const getActivePanel = deps.activePanelRef ?? (() => null)
 

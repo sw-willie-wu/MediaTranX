@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useConfirm } from '@/composables/useConfirm'
 import { apiFetch } from '@/composables/useApi'
 import AppIcon from '@/assets/icon.svg'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const { t } = useI18n()
 const { confirm } = useConfirm()
@@ -91,6 +92,22 @@ function restartApp() {
 onMounted(() => {
   loadEnvInfo()
   electron?.onReinstallProgress(handleReinstallProgress)
+})
+
+useAgentPanelHost('settings.about', {
+  agentSchema: {
+    panelId: 'settings.about',
+    fields: [],
+    actions: [],
+    execute: null,
+  },
+  getCurrentValues: () => ({}),
+  setField: (_field: string, _value: unknown) => {
+    throw new Error('agent.error.no_execute_on_settings')
+  },
+  openField: (_field: string) => {},
+  execute: () => { throw new Error('agent.error.no_execute_on_settings') },
+  isMultiSelect: () => false,
 })
 </script>
 
