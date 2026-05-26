@@ -48,10 +48,16 @@ describe('shouldConfirm — policy: auto', () => {
     expect(store.shouldConfirm({ name: 'navigate_to' })).toBe(false)
   })
 
-  it('returns true for non-whitelisted tool', () => {
+  it('returns false for non-whitelisted, non-alwaysAsk tool (auto = approve by default)', () => {
     const store = useAgentSettingsStore()
     store.setPolicy('auto')
-    expect(store.shouldConfirm({ name: 'unknown_tool' })).toBe(true)
+    expect(store.shouldConfirm({ name: 'unknown_tool' })).toBe(false)
+  })
+
+  it('returns true for alwaysAsk tool under auto policy', () => {
+    const store = useAgentSettingsStore()
+    store.setPolicy('auto')
+    expect(store.shouldConfirm({ name: 'click_execute' })).toBe(true)
   })
 })
 
@@ -65,8 +71,8 @@ describe('shouldConfirm — policy: ask_all', () => {
   it('returns true for any tool', () => {
     const store = useAgentSettingsStore()
     store.setPolicy('ask_all')
-    expect(store.shouldConfirm({ name: 'execute' })).toBe(true)
-    expect(store.shouldConfirm({ name: 'add_file' })).toBe(true)
+    expect(store.shouldConfirm({ name: 'click_execute' })).toBe(true)
+    expect(store.shouldConfirm({ name: 'click_action' })).toBe(true)
     expect(store.shouldConfirm({ name: 'some_random' })).toBe(true)
   })
 })
@@ -81,30 +87,30 @@ describe('shouldConfirm — policy: custom', () => {
   it('returns true for tool in alwaysAsk', () => {
     const store = useAgentSettingsStore()
     store.setPolicy('custom')
-    expect(store.shouldConfirm({ name: 'add_file' })).toBe(true)
+    expect(store.shouldConfirm({ name: 'click_action' })).toBe(true)
   })
 
-  it('returns false for tool in neither list (custom → auto-deny, no prompt)', () => {
+  it('returns true for tool in neither list (custom → deny-by-default = ASK)', () => {
     const store = useAgentSettingsStore()
     store.setPolicy('custom')
     // Remove from whitelist and not in alwaysAsk
     store.removeFromWhitelist('navigate_to')
-    expect(store.shouldConfirm({ name: 'navigate_to' })).toBe(false)
+    expect(store.shouldConfirm({ name: 'navigate_to' })).toBe(true)
   })
 
-  it('uses panelSchema.execute.requiresConfirm for "execute" tool when not in any list', () => {
+  it('uses panelSchema.execute.requiresConfirm for "click_execute" tool when not in any list', () => {
     const store = useAgentSettingsStore()
     store.setPolicy('custom')
-    // 'execute' is in alwaysAsk by default, remove it to test panel fallback
-    store.removeFromAlwaysAsk('execute')
+    // 'click_execute' is in alwaysAsk by default, remove it to test panel fallback
+    store.removeFromAlwaysAsk('click_execute')
     // Also ensure it's not in autoWhitelist
-    expect(store.autoWhitelist.has('execute')).toBe(false)
+    expect(store.autoWhitelist.has('click_execute')).toBe(false)
 
     const schema = { execute: { requiresConfirm: true } }
-    expect(store.shouldConfirm({ name: 'execute' }, schema)).toBe(true)
+    expect(store.shouldConfirm({ name: 'click_execute' }, schema)).toBe(true)
 
     const schema2 = { execute: { requiresConfirm: false } }
-    expect(store.shouldConfirm({ name: 'execute' }, schema2)).toBe(false)
+    expect(store.shouldConfirm({ name: 'click_execute' }, schema2)).toBe(false)
   })
 })
 
@@ -136,9 +142,9 @@ describe('Set mutators — reassign-Set pattern (m2)', () => {
   it('removeFromAlwaysAsk creates a new Set instance', () => {
     const store = useAgentSettingsStore()
     const before = store.alwaysAsk
-    store.removeFromAlwaysAsk('execute')
+    store.removeFromAlwaysAsk('click_execute')
     expect(store.alwaysAsk).not.toBe(before)
-    expect(store.alwaysAsk.has('execute')).toBe(false)
+    expect(store.alwaysAsk.has('click_execute')).toBe(false)
   })
 })
 
@@ -157,7 +163,7 @@ describe('hydrate — from stored data', () => {
       policy: 'ask_all',
       modelChoice: 'gpt-4o',
       autoWhitelist: ['navigate_to'],
-      alwaysAsk: ['execute'],
+      alwaysAsk: ['click_execute'],
       userRemovedTools: [],
     }))
     const store = useAgentSettingsStore()
@@ -188,8 +194,8 @@ describe('m3 migration: union(stored, DEFAULTS) - userRemovedTools', () => {
     // User previously removed 'navigate_to' from the whitelist
     localStorage.setItem(AGENT_SETTINGS_KEY, JSON.stringify({
       policy: 'auto',
-      autoWhitelist: ['get_panel_state'],  // navigate_to is absent
-      alwaysAsk: ['execute', 'add_file'],
+      autoWhitelist: ['set_field'],  // navigate_to is absent
+      alwaysAsk: ['click_execute', 'click_action'],
       userRemovedTools: ['navigate_to'],
     }))
     const store = useAgentSettingsStore()
@@ -198,11 +204,11 @@ describe('m3 migration: union(stored, DEFAULTS) - userRemovedTools', () => {
   })
 
   it('adds new default tools not tracked in userRemovedTools', () => {
-    // Simulate a user who stored settings before 'set_view_function' was a default
+    // Simulate a user who stored settings before 'list_files' was a default
     localStorage.setItem(AGENT_SETTINGS_KEY, JSON.stringify({
       policy: 'auto',
-      autoWhitelist: ['navigate_to', 'get_panel_state'],
-      alwaysAsk: ['execute', 'add_file'],
+      autoWhitelist: ['navigate_to', 'set_field'],
+      alwaysAsk: ['click_execute', 'click_action'],
       userRemovedTools: [],
     }))
     const store = useAgentSettingsStore()

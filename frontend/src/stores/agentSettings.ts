@@ -22,21 +22,21 @@ import { ref, watch } from 'vue'
 
 // ─── Default whitelists ───────────────────────────────────────────────────────
 
-/** 預設自動批准的 7 個工具 */
+/** 預設自動批准的 7 個工具（§6.7 / §7 Tool inventory） */
 export const DEFAULT_AUTO_WHITELIST: ReadonlySet<string> = new Set([
   'navigate_to',
-  'get_panel_state',
+  'select_subfunction',
+  'load_file',
+  'open_dropdown',
   'set_field',
-  'open_field',
-  'get_view_state',
-  'set_view_function',
-  'invoke_action',
+  'list_files',
+  'get_task_status',
 ])
 
-/** 預設永遠詢問的 2 個工具 */
+/** 預設永遠詢問的 2 個工具（§6.7 / §7 Tool inventory） */
 export const DEFAULT_ALWAYS_ASK: ReadonlySet<string> = new Set([
-  'execute',
-  'add_file',
+  'click_execute',
+  'click_action',
 ])
 
 export const AGENT_SETTINGS_KEY = 'agent_settings'
@@ -177,15 +177,15 @@ export const useAgentSettingsStore = defineStore('agentSettings', () => {
   /**
    * Determines whether a tool call needs explicit user confirmation.
    *
-   * Decision matrix:
+   * Decision matrix (§8.1):
    *   policy === 'ask_all'  → always true
-   *   policy === 'auto'     → false if in autoWhitelist, else true
-   *   policy === 'custom'   → false if in autoWhitelist
-   *                           true  if in alwaysAsk
-   *                           false otherwise (neither list → auto-deny without prompt)
+   *   policy === 'auto'     → alwaysAsk.has(name) ? true : false
+   *   policy === 'custom'   → alwaysAsk.has(name)      → true
+   *                           autoWhitelist.has(name)  → false
+   *                           otherwise                → true  (deny-by-default = ASK)
    *
-   * Note: 'custom' panels with `execute` tool use panelSchema.execute.requiresConfirm
-   * as an override when the tool name is 'execute'.
+   * Note: 'custom' panels with `click_execute` tool use panelSchema.execute.requiresConfirm
+   * as an override when the tool name is 'click_execute'.
    */
   function shouldConfirm(toolCall: ToolCallLike, panelSchema?: PanelSchemaLike): boolean {
     const name = toolCall.name
@@ -193,20 +193,21 @@ export const useAgentSettingsStore = defineStore('agentSettings', () => {
     if (policy.value === 'ask_all') return true
 
     if (policy.value === 'auto') {
-      return !autoWhitelist.value.has(name)
+      // Only alwaysAsk tools require confirmation; everything else is auto-approved
+      return alwaysAsk.value.has(name)
     }
 
     // policy === 'custom'
-    if (autoWhitelist.value.has(name)) return false
     if (alwaysAsk.value.has(name)) return true
+    if (autoWhitelist.value.has(name)) return false
 
-    // 'execute' tool: defer to panel schema if available
-    if (name === 'execute' && panelSchema?.execute != null) {
+    // 'click_execute' tool: defer to panel schema if available
+    if (name === 'click_execute' && panelSchema?.execute != null) {
       return panelSchema.execute.requiresConfirm
     }
 
-    // Not in either list → auto-deny (no confirm prompt)
-    return false
+    // Not in either list → deny-by-default = ASK (confirm required)
+    return true
   }
 
   return {

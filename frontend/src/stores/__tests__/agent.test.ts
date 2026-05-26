@@ -47,28 +47,28 @@ describe('useAgentStore', () => {
   it('addUsage: prompt REPLACES, completion ACCUMULATES', () => {
     const store = useAgentStore()
 
-    store.addUsage({ prompt_tokens: 100, completion_tokens: 50 })
+    store.addUsage({ promptTokens: 100, completionTokens: 50 })
     expect(store.threadTokens.prompt).toBe(100)
     expect(store.threadTokens.completion).toBe(50)
 
     // Second call: prompt replaces (200 > 100 because full history re-sent),
     // completion accumulates (50 + 30 = 80)
-    store.addUsage({ prompt_tokens: 200, completion_tokens: 30 })
+    store.addUsage({ promptTokens: 200, completionTokens: 30 })
     expect(store.threadTokens.prompt).toBe(200)      // REPLACE
     expect(store.threadTokens.completion).toBe(80)   // ACCUMULATE
   })
 
-  it('addUsage: missing prompt_tokens keeps previous prompt value', () => {
+  it('addUsage: missing promptTokens keeps previous prompt value', () => {
     const store = useAgentStore()
-    store.addUsage({ prompt_tokens: 100, completion_tokens: 10 })
-    store.addUsage({ completion_tokens: 20 })  // no prompt_tokens
+    store.addUsage({ promptTokens: 100, completionTokens: 10 })
+    store.addUsage({ completionTokens: 20 })  // no promptTokens
     expect(store.threadTokens.prompt).toBe(100)     // unchanged
     expect(store.threadTokens.completion).toBe(30)  // accumulated
   })
 
-  it('addUsage: missing completion_tokens adds zero', () => {
+  it('addUsage: missing completionTokens adds zero', () => {
     const store = useAgentStore()
-    store.addUsage({ prompt_tokens: 50 })
+    store.addUsage({ promptTokens: 50 })
     expect(store.threadTokens.completion).toBe(0)
   })
 
@@ -81,7 +81,7 @@ describe('useAgentStore', () => {
 
   it('resetTokens() zeroes both prompt and completion', () => {
     const store = useAgentStore()
-    store.addUsage({ prompt_tokens: 100, completion_tokens: 200 })
+    store.addUsage({ promptTokens: 100, completionTokens: 200 })
     store.resetTokens()
     expect(store.threadTokens.prompt).toBe(0)
     expect(store.threadTokens.completion).toBe(0)

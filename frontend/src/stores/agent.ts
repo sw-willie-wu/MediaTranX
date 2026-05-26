@@ -13,8 +13,8 @@ export interface ActionKey {
 }
 
 export interface TokenUsage {
-  prompt_tokens?: number
-  completion_tokens?: number
+  promptTokens?: number
+  completionTokens?: number
 }
 
 export interface TransientBuffer {
@@ -31,7 +31,7 @@ export const useAgentStore = defineStore('agent', () => {
   const pendingConfirms = ref<Set<ConfirmResolver>>(new Set())
 
   // M21 B4 aggregation rule:
-  //   prompt  = REPLACE  (each round re-sends full history, so prompt_tokens
+  //   prompt  = REPLACE  (each round re-sends full history, so promptTokens
   //                       already includes all prior turns)
   //   completion = ACCUMULATE (only the new completion is sent each round)
   const threadTokens = ref<{ prompt: number; completion: number }>({ prompt: 0, completion: 0 })
@@ -55,8 +55,8 @@ export const useAgentStore = defineStore('agent', () => {
   function addUsage(usage: TokenUsage | undefined) {
     if (!usage) return
     threadTokens.value = {
-      prompt: usage.prompt_tokens ?? threadTokens.value.prompt,               // REPLACE
-      completion: threadTokens.value.completion + (usage.completion_tokens ?? 0), // ACCUMULATE
+      prompt: usage.promptTokens ?? threadTokens.value.prompt,               // REPLACE
+      completion: threadTokens.value.completion + (usage.completionTokens ?? 0), // ACCUMULATE
     }
   }
 
