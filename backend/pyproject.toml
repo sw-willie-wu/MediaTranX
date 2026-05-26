@@ -55,6 +55,7 @@ dependencies = [
     "opencc-python-reimplemented>=0.1.7",
     "scenedetect>=0.6.7.1",
     "opencv-python",
+    "ag-ui-protocol==0.1.18",
 ]
 
 [project.optional-dependencies]
