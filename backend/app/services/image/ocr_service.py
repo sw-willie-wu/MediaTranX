@@ -181,7 +181,7 @@ class ImageOcrService:
             prompt = "Please perform OCR on this image. Extract all text content as plain text. Output only the extracted text, no explanations."
 
         progress_callback(0.2, "task.progress.recognizing")
-        messages = build_vision_chat_messages(provider, prompt, image_b64, mime_type)
+        messages = build_vision_chat_messages(provider, prompt, [(image_b64, mime_type)])
 
         from app.adapters.ai.inference_config import get_remote_inference_config
         remote_config = get_remote_inference_config("ocr")

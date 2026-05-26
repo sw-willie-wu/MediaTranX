@@ -129,3 +129,9 @@ def test_chatservice_oneshot_forwards_params():
     assert captured.get("cancel_pct") == 0.2
     assert captured.get("cancel_msg") == "z"
     assert "on_progress" in captured
+
+
+def test_chat_session_alias_resolves_to_local_chat_session():
+    """Backward-compat: existing imports of ChatSession get LocalChatSession."""
+    from app.services.llm.chat_service import ChatSession, LocalChatSession
+    assert ChatSession is LocalChatSession

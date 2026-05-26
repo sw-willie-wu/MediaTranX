@@ -870,7 +870,13 @@ MODELS_REGISTRY = {
 # ═══════════════════════════════════════════════════════════
 REMOTE_INFERENCE_DEFAULTS = {
     "translate":    {"temperature": 0.1, "max_tokens": 16384},
-    "summarize":    {"temperature": 0.3, "max_tokens": 4096},
+    # 8192: safe LCM across providers — gemini-2.5-flash hard cap is 8192,
+    # gpt-4o-mini accepts up to 16384, Ollama unbounded. 4096 was the
+    # original spec value (worked for Ollama qwen3.5:9b narrative) but cuts
+    # close for bullets-mode on 50min+ videos where 30+ bullets × ~150
+    # tokens each plus citations approaches 4k. Provider-aware caps are a
+    # follow-up.
+    "summarize":    {"temperature": 0.3, "max_tokens": 8192},
     "ocr":          {"temperature": 0.0, "max_tokens": 32768},
     "frame_select": {"temperature": 0.0, "max_tokens": 16},
 }

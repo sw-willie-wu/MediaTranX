@@ -339,16 +339,19 @@ def test_pick_vlm_skipped_when_temp_dir_missing(tmp_path):
 
 # ── narrative-summary-redesign: _make_vlm_callback parsing ─────────────
 def _build_cb(chat_return: str):
-    """Build a real _make_vlm_callback closure over a fake chat service."""
+    """Build a real _make_vlm_callback closure over a fake session.
+
+    Updated for Task 10: new signature is (vlm_session, vlm_family, vlm_size,
+    *, cancel_pct, cancel_msg). The session object owns chat_with_images.
+    """
     from app.services.video.summary_service.service import VideoSummaryService
     from unittest.mock import patch
 
-    class FakeChat:
+    class FakeSession:
         def chat_with_images(self, **kw):
             return chat_return
 
     svc = VideoSummaryService.__new__(VideoSummaryService)
-    svc._chat_service = FakeChat()
     # Full inference-config shape so calc_max_tokens inside the closure never
     # KeyErrors regardless of which keys it reads.
     cfg = {
@@ -362,7 +365,10 @@ def _build_cb(chat_return: str):
         "app.services.video.summary_service.service.get_inference_config",
         lambda f, s, t: cfg,
     ):
-        return svc._make_vlm_callback("qwen3vl", "8b")
+        return svc._make_vlm_callback(
+            FakeSession(), "qwen3vl", "8b",
+            cancel_pct=0.0, cancel_msg="task.progress.summary_bullet_frame|1|1",
+        )
 
 
 def test_vlm_callback_returns_minus_one_on_reject():

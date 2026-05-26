@@ -10,7 +10,7 @@ import json
 import logging
 import urllib.error
 import urllib.request
-from typing import Optional
+from typing import Callable, Optional
 
 from .base import RemoteProvider, RemoteModel
 
@@ -60,6 +60,14 @@ _HIDDEN_MODELS = {"babbage-002", "davinci-002", "dall-e-2", "dall-e-3",
 _HIDDEN_KEYWORDS = ["-preview", "transcribe", "tts", "instruct", "diarize"]
 
 
+# Minimum max_output_tokens for o-series Responses API calls with reasoning.
+# Even at effort="low", o4-mini consumes ~64-100 reasoning tokens before producing
+# any visible output. A budget below this yields an empty response (production bug
+# 2026-05). The frame_select task only needs a single digit as output, so 200 is
+# a conservative ceiling that always succeeds while adding negligible latency.
+_REASONING_MIN_TOKENS = 200
+
+
 class OpenAIProvider(RemoteProvider):
     """
     OpenAI REST API Provider
@@ -69,6 +77,9 @@ class OpenAIProvider(RemoteProvider):
     - Model listing (GET /v1/models)
     - Text chat (POST /v1/chat/completions)
     """
+
+    PROVIDER_NAME = "openai"
+    IMAGE_PREP_MODE = "recompress"
 
     def __init__(self, endpoint: str = DEFAULT_OPENAI_ENDPOINT, api_key: Optional[str] = None):
         super().__init__(endpoint, api_key)
@@ -131,20 +142,51 @@ class OpenAIProvider(RemoteProvider):
             logger.error(f"Failed to list OpenAI models: {e}")
             return []
 
+    def get_summary_chunking_hints(self, model: str) -> dict:
+        """Most current OpenAI text models have >=128k context (gpt-4o-mini,
+        gpt-4o, o4-mini, gpt-5 family). Use 128k / 24k as the conservative
+        default — older models (gpt-3.5-turbo at 16k) would have a chunk
+        truncated server-side, which is a graceful degradation.
+
+        Per-model tier lookup is out of scope; the OpenAI API doesn't expose
+        a stable context-window field on /v1/models.
+        """
+        return {"n_ctx": 128000, "model_cap": 24000}
+
     def chat(
         self,
         model: str,
         messages: list[dict],
+        *,
         max_tokens: int = 2048,
         temperature: float = 0.1,
+        abort_hook: Optional[Callable] = None,
+        task: Optional[str] = None,
     ) -> str:
-        """OpenAI chat -- auto-select Chat Completions or Responses API."""
-        if self._needs_responses_api(model):
-            return self._chat_responses(model, messages, max_tokens)
-        return self._chat_completions(model, messages, max_tokens, temperature)
+        """OpenAI chat — 4-path dispatcher:
+        abort_hook=None + non-Responses → _chat_completions (blocking)
+        abort_hook=None + Responses     → _chat_responses (blocking)
+        abort_hook set  + non-Responses → _chat_completions_streaming
+        abort_hook set  + Responses     → _chat_responses_streaming
 
-    def _chat_completions(self, model: str, messages: list[dict], max_tokens: int, temperature: float) -> str:
-        """POST /v1/chat/completions"""
+        task: forwarded to Responses paths to set reasoning.effort="low".
+        Chat Completions paths accept it but ignore it (no thinking on
+        gpt-4o / gpt-3.5 series).
+        """
+        if abort_hook is None:
+            if self._needs_responses_api(model):
+                return self._chat_responses(model, messages, max_tokens, task=task)
+            return self._chat_completions(model, messages, max_tokens, temperature)
+        if self._needs_responses_api(model):
+            return self._chat_responses_streaming(
+                model, messages, max_tokens, abort_hook, task=task,
+            )
+        return self._chat_completions_streaming(
+            model, messages, max_tokens, temperature, abort_hook,
+        )
+
+    def _chat_completions(self, model: str, messages: list[dict], max_tokens: int, temperature: float, *, task: Optional[str] = None) -> str:
+        """POST /v1/chat/completions (blocking). task kwarg accepted but ignored — no thinking on these models."""
         # GPT-5+ uses max_completion_tokens, older models use max_tokens
         token_key = "max_completion_tokens" if self._is_new_model(model) else "max_tokens"
         payload = {
@@ -164,10 +206,79 @@ class OpenAIProvider(RemoteProvider):
             from app.handler.exceptions import RemoteApiError
             raise RemoteApiError("connection_failed", f"OpenAI: {e}")
 
-    def _chat_responses(self, model: str, messages: list[dict], max_tokens: int) -> str:
-        """POST /v1/responses (for GPT-5.2 Pro and other pro/thinking models)."""
-        # Responses API uses different content type format:
-        # text -> input_text, image_url -> input_image
+    def _chat_completions_streaming(
+        self, model: str, messages: list[dict],
+        max_tokens: int, temperature: float,
+        abort_hook: Callable,
+        *,
+        task: Optional[str] = None,
+    ) -> str:
+        """POST /v1/chat/completions with stream:true (SSE). task kwarg accepted but ignored — no thinking on these models."""
+        token_key = "max_completion_tokens" if self._is_new_model(model) else "max_tokens"
+        payload = {
+            "model": model,
+            "messages": messages,
+            token_key: max_tokens,
+            "temperature": temperature,
+            "stream": True,
+        }
+        body = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        req = urllib.request.Request(
+            f"{self.endpoint}/v1/chat/completions",
+            data=body, headers=headers, method="POST",
+        )
+
+        from app.handler.exceptions import RemoteApiError
+        resp = None
+        try:
+            # 180s socket timeout: cloud TTFT on large summarize chunks (~9k+
+            # tokens with thinking) routinely exceeds 30s; cancel still works
+            # via abort_hook → resp.close() from another thread, not timeout.
+            resp = urllib.request.urlopen(req, timeout=180)
+            abort_hook(resp)
+            parts: list[str] = []
+            for raw in resp:
+                line = raw.strip()
+                if not line.startswith(b"data: "):
+                    continue
+                payload_s = line[6:].decode("utf-8", errors="replace").strip()
+                if payload_s == "[DONE]":
+                    break
+                try:
+                    obj = json.loads(payload_s)
+                except json.JSONDecodeError:
+                    continue
+                choices = obj.get("choices", [])
+                if not choices:
+                    continue
+                delta = choices[0].get("delta", {}).get("content", "")
+                if delta:
+                    parts.append(delta)
+            return "".join(parts).strip()
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            raise self._parse_error(e.code, body)
+        except urllib.error.URLError as e:
+            raise RemoteApiError("connection_failed", f"OpenAI: {e}")
+        except OSError as e:
+            raise RemoteApiError("connection_failed", f"OpenAI: {e}")
+        finally:
+            if resp is not None:
+                try: resp.close()
+                except Exception: pass
+
+    def _convert_to_responses_input(self, messages: list[dict]) -> list[dict]:
+        """Convert Chat Completions message shape to Responses API input shape.
+
+        text → input_text, image_url → input_image. Used by both blocking
+        _chat_responses and streaming _chat_responses_streaming.
+        """
         converted = []
         for msg in messages:
             content = msg.get("content", "")
@@ -191,23 +302,39 @@ class OpenAIProvider(RemoteProvider):
                 converted.append({"role": msg["role"], "content": parts})
             else:
                 converted.append(msg)
+        return converted
 
+    def _chat_responses(self, model: str, messages: list[dict], max_tokens: int, *, task: Optional[str] = None) -> str:
+        """POST /v1/responses (blocking).
+
+        When task="frame_select", sets reasoning.effort="low" and bumps
+        max_output_tokens to _REASONING_MIN_TOKENS if needed. Even at
+        effort="low", o4-mini consumes ~64-100 reasoning tokens before any
+        visible output — a budget below _REASONING_MIN_TOKENS yields empty
+        responses (production bug, 2026-05).
+        """
+        effective_tokens = max_tokens
+        if task == "frame_select":
+            effective_tokens = max(max_tokens, _REASONING_MIN_TOKENS)
         payload = {
             "model": model,
-            "input": converted,
-            "max_output_tokens": max_tokens,
+            "input": self._convert_to_responses_input(messages),
+            "max_output_tokens": effective_tokens,
         }
+        if task == "frame_select":
+            # "low" is the minimum effort level accepted by the Responses API
+            # (valid values: "low" | "medium" | "high"; "minimal" is not a valid value).
+            payload["reasoning"] = {"effort": "low"}
         try:
-            with self._make_request("/v1/responses", method="POST", data=payload, timeout=600) as resp:
+            with self._make_request("/v1/responses", method="POST",
+                                    data=payload, timeout=600) as resp:
                 result = json.loads(resp.read())
-                # Responses API has a different response format
                 output = result.get("output", [])
                 for item in output:
                     if item.get("type") == "message":
                         for content in item.get("content", []):
                             if content.get("type") == "output_text":
                                 return content.get("text", "").strip()
-                # fallback
                 return result.get("output_text", "").strip()
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
@@ -215,6 +342,121 @@ class OpenAIProvider(RemoteProvider):
         except (urllib.error.URLError, OSError) as e:
             from app.handler.exceptions import RemoteApiError
             raise RemoteApiError("connection_failed", f"OpenAI: {e}")
+
+    def _chat_responses_streaming(
+        self, model: str, messages: list[dict],
+        max_tokens: int, abort_hook: Callable,
+        *,
+        task: Optional[str] = None,
+    ) -> str:
+        """POST /v1/responses with stream:true (SSE event:/data: pairs).
+
+        When task="frame_select", sets reasoning.effort="low" and bumps
+        max_output_tokens to _REASONING_MIN_TOKENS if needed (same as
+        blocking path — see _chat_responses docstring).
+        """
+        effective_tokens = max_tokens
+        if task == "frame_select":
+            effective_tokens = max(max_tokens, _REASONING_MIN_TOKENS)
+        payload = {
+            "model": model,
+            "input": self._convert_to_responses_input(messages),
+            "max_output_tokens": effective_tokens,
+            "stream": True,
+        }
+        if task == "frame_select":
+            # "low" is the minimum effort level accepted by the Responses API
+            # (valid values: "low" | "medium" | "high"; "minimal" is not a valid value).
+            payload["reasoning"] = {"effort": "low"}
+        body = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        req = urllib.request.Request(
+            f"{self.endpoint}/v1/responses",
+            data=body, headers=headers, method="POST",
+        )
+
+        from app.handler.exceptions import RemoteApiError
+        resp = None
+        try:
+            # 180s socket timeout: cloud TTFT on large summarize chunks (~9k+
+            # tokens with thinking) routinely exceeds 30s; cancel still works
+            # via abort_hook → resp.close() from another thread, not timeout.
+            resp = urllib.request.urlopen(req, timeout=180)
+            abort_hook(resp)
+
+            current_event: Optional[str] = None
+            parts: list[str] = []
+            refusal_parts: list[str] = []
+            for raw in resp:
+                line = raw.rstrip(b"\r\n")
+                if not line:
+                    current_event = None
+                    continue
+                if line.startswith(b"event: "):
+                    current_event = line[7:].decode("ascii", errors="replace").strip()
+                    continue
+                if not line.startswith(b"data: "):
+                    continue
+                payload_s = line[6:].decode("utf-8", errors="replace").strip()
+                if not payload_s:
+                    continue
+
+                if current_event == "response.output_text.delta":
+                    try: obj = json.loads(payload_s)
+                    except json.JSONDecodeError: continue
+                    d = obj.get("delta", "")
+                    if d: parts.append(d)
+                elif current_event == "response.refusal.delta":
+                    try: obj = json.loads(payload_s)
+                    except json.JSONDecodeError: continue
+                    d = obj.get("delta", "")
+                    if d: refusal_parts.append(d)
+                elif current_event == "response.completed":
+                    break
+                elif current_event == "response.failed":
+                    try:
+                        obj = json.loads(payload_s)
+                        msg = obj.get("response", {}).get("error", {}).get(
+                            "message", payload_s
+                        )
+                    except (json.JSONDecodeError, AttributeError):
+                        msg = payload_s
+                    raise RemoteApiError(
+                        "remote_error", f"OpenAI Responses failed: {msg[:200]}"
+                    )
+                elif current_event == "error":
+                    # ResponseErrorEvent — literal "error" (no "response." prefix),
+                    # per OpenAI SDK src/openai/types/responses/response_error_event.py
+                    try:
+                        obj = json.loads(payload_s)
+                        msg = obj.get("message", payload_s)
+                    except json.JSONDecodeError:
+                        msg = payload_s
+                    raise RemoteApiError(
+                        "remote_error", f"OpenAI Responses error: {msg[:200]}"
+                    )
+                # 其他 event 一律忽略
+            if refusal_parts:
+                raise RemoteApiError(
+                    "refused",
+                    f"OpenAI Responses refused: {''.join(refusal_parts)[:200]}",
+                )
+            return "".join(parts).strip()
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            raise self._parse_error(e.code, body)
+        except urllib.error.URLError as e:
+            raise RemoteApiError("connection_failed", f"OpenAI: {e}")
+        except OSError as e:
+            raise RemoteApiError("connection_failed", f"OpenAI: {e}")
+        finally:
+            if resp is not None:
+                try: resp.close()
+                except Exception: pass
 
     @staticmethod
     def _parse_error(status: int, body: str):

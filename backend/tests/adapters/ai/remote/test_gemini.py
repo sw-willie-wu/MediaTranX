@@ -272,3 +272,19 @@ def test_get_gemini_provider_singleton():
     assert p1 is p2
     p3 = get_gemini_provider(api_key="B")
     assert p1 is not p3
+
+
+# ─── get_summary_chunking_hints ───
+
+def test_get_summary_chunking_hints_returns_128k_24k():
+    """Gemini returns 128k/24k regardless of model name."""
+    p = GeminiProvider("https://generativelanguage.googleapis.com", "AIza-test")
+    hints = p.get_summary_chunking_hints("gemini-2.5-flash")
+    assert hints == {"n_ctx": 128000, "model_cap": 24000}
+
+
+def test_get_summary_chunking_hints_consistent_across_models():
+    """Same hints returned for all Gemini model variants."""
+    p = GeminiProvider("https://generativelanguage.googleapis.com", "AIza-test")
+    assert p.get_summary_chunking_hints("gemini-1.5-pro") == {"n_ctx": 128000, "model_cap": 24000}
+    assert p.get_summary_chunking_hints("gemini-2.0-flash") == {"n_ctx": 128000, "model_cap": 24000}

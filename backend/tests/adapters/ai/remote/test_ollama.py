@@ -239,3 +239,43 @@ def test_get_ollama_provider_singleton():
     assert p1 is p2
     p3 = get_ollama_provider("http://b:11434")
     assert p1 is not p3
+
+
+# ─── get_summary_chunking_hints ───
+
+def test_get_summary_chunking_hints_queries_model_ctx(monkeypatch):
+    """Ollama hints derive from /api/show num_ctx via get_model_ctx."""
+    p = OllamaProvider("http://localhost:11434", None)
+    monkeypatch.setattr(p, "get_model_ctx", lambda model: 65536)
+    hints = p.get_summary_chunking_hints("qwen3.5:9b")
+    # 65536 * 0.75 = 49152, capped at 16000
+    assert hints == {"n_ctx": 65536, "model_cap": 16000}
+
+
+def test_get_summary_chunking_hints_falls_back_on_error(monkeypatch):
+    """Network failure on get_model_ctx falls back to base 32k/6k default."""
+    p = OllamaProvider("http://localhost:11434", None)
+
+    def _raise(model):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(p, "get_model_ctx", _raise)
+    hints = p.get_summary_chunking_hints("qwen3.5:9b")
+    assert hints == {"n_ctx": 32768, "model_cap": 6000}
+
+
+def test_get_summary_chunking_hints_caps_model_cap_at_16k(monkeypatch):
+    """Even with huge n_ctx, model_cap stays at the 16k coherence ceiling."""
+    p = OllamaProvider("http://localhost:11434", None)
+    monkeypatch.setattr(p, "get_model_ctx", lambda model: 200000)
+    hints = p.get_summary_chunking_hints("any:huge")
+    assert hints == {"n_ctx": 200000, "model_cap": 16000}
+
+
+def test_get_summary_chunking_hints_floors_model_cap_at_6k(monkeypatch):
+    """Small n_ctx still gives at least 6000 model_cap (parity with old hardcoded)."""
+    p = OllamaProvider("http://localhost:11434", None)
+    monkeypatch.setattr(p, "get_model_ctx", lambda model: 4096)
+    hints = p.get_summary_chunking_hints("tiny")
+    # min(int(4096*0.75), 16000) = 3072; max(6000, 3072) = 6000
+    assert hints == {"n_ctx": 4096, "model_cap": 6000}
