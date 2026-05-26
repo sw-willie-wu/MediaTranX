@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
-from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -123,16 +122,15 @@ MINIMAL_CHUNKS = [
 # App builder helper
 # ---------------------------------------------------------------------------
 
-def _build_app_with_fake_chat(
-    fake_chat: FakeChatService,
-) -> tuple[FastAPI, AppContainer]:
-    """Build a minimal FastAPI app with real AgentService + fake chat_service.
+@contextmanager
+def _build_app_with_fake_chat(fake_chat):
+    """Context manager: build a minimal FastAPI app with real AgentService + fake chat_service.
 
     The key difference from test_agent_route.py (which overrides agent_service):
     here we override *chat_service* so the real AgentService runs end-to-end.
 
-    Returns (app, container) — caller must call container.unwire() +
-    reset_override() in a try/finally.
+    Yields (app, container, fake_chat) and guarantees teardown (unwire +
+    reset_override) in its own finally block — no leak even if wire() raises.
     """
     container = AppContainer()
 
@@ -153,13 +151,12 @@ def _build_app_with_fake_chat(
     app.include_router(agent_router, prefix="/agent")
     container.wire(modules=["app.api.routes.agent.run"])
 
-    return app, container
-
-
-def _teardown(container: AppContainer) -> None:
-    container.unwire()
-    container.chat_service.reset_override()
-    container.agent_service.reset_override()
+    try:
+        yield app, container, fake_chat
+    finally:
+        container.unwire()
+        container.chat_service.reset_override()
+        container.agent_service.reset_override()
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +206,7 @@ def _parse_sse(body: str) -> list[tuple[str, dict]]:
         try:
             payload = json.loads(data_str)
         except json.JSONDecodeError:
-            continue
+            pytest.fail(f"Malformed SSE data line: {line!r}")
         event_type = payload.get("type", "UNKNOWN")
         result.append((event_type, payload))
     return result
@@ -233,8 +230,7 @@ class TestAgentE2EFakeLLM:
         - RUN_FINISHED carries usage with promptTokens / completionTokens
         """
         fake_chat = FakeChatService(TEXT_CHUNKS)
-        app, container = _build_app_with_fake_chat(fake_chat)
-        try:
+        with _build_app_with_fake_chat(fake_chat) as (app, container, fake_chat):
             client = TestClient(app)
             resp = client.post("/agent/run", json=_body())
 
@@ -249,9 +245,9 @@ class TestAgentE2EFakeLLM:
             # Last event must be RUN_FINISHED
             assert types[-1] == "RUN_FINISHED"
 
-            # At least two TEXT_MESSAGE_CHUNK events
+            # TEXT_CHUNKS has exactly 2 delta entries → exactly 2 TEXT_MESSAGE_CHUNK events
             text_events = [(t, d) for t, d in events if t == "TEXT_MESSAGE_CHUNK"]
-            assert len(text_events) >= 2
+            assert len(text_events) == 2
 
             # Verify camelCase wire fields on first text event
             _, first_text_data = text_events[0]
@@ -269,9 +265,6 @@ class TestAgentE2EFakeLLM:
             assert "usage" in finished_data
             assert finished_data["usage"]["promptTokens"] == 50
             assert finished_data["usage"]["completionTokens"] == 2
-
-        finally:
-            _teardown(container)
 
     # ── Happy path: tool call ────────────────────────────────────────────
 
@@ -297,8 +290,7 @@ class TestAgentE2EFakeLLM:
             },
         }
         fake_chat = FakeChatService(TOOL_CHUNKS)
-        app, container = _build_app_with_fake_chat(fake_chat)
-        try:
+        with _build_app_with_fake_chat(fake_chat) as (app, container, fake_chat):
             client = TestClient(app)
             resp = client.post(
                 "/agent/run",
@@ -317,9 +309,6 @@ class TestAgentE2EFakeLLM:
             assert "parentMessageId" in tool_data
             assert "/video" in tool_data.get("delta", "")
 
-        finally:
-            _teardown(container)
-
     # ── System prompt prepend ────────────────────────────────────────────
 
     def test_system_prompt_prepended_to_messages(self):
@@ -331,8 +320,7 @@ class TestAgentE2EFakeLLM:
         from app.services.agent._system_prompt import AGENT_SYSTEM_PROMPT
 
         fake_chat = FakeChatService(MINIMAL_CHUNKS)
-        app, container = _build_app_with_fake_chat(fake_chat)
-        try:
+        with _build_app_with_fake_chat(fake_chat) as (app, container, fake_chat):
             client = TestClient(app)
             resp = client.post("/agent/run", json=_body(text="do something"))
             assert resp.status_code == 200
@@ -347,9 +335,6 @@ class TestAgentE2EFakeLLM:
             assert received[1]["role"] == "user"
             assert received[1]["content"] == "do something"
 
-        finally:
-            _teardown(container)
-
     # ── Error path: no model choice ──────────────────────────────────────
 
     def test_error_path_no_model_emits_run_error(self):
@@ -361,8 +346,7 @@ class TestAgentE2EFakeLLM:
         - RUN_FINISHED still emitted via finally block (spec §9)
         """
         fake_chat = FakeChatService([])  # session never opened
-        app, container = _build_app_with_fake_chat(fake_chat)
-        try:
+        with _build_app_with_fake_chat(fake_chat) as (app, container, fake_chat):
             body = _body()
             body["state"] = {}  # no agent_model_choice
             client = TestClient(app)
@@ -378,9 +362,6 @@ class TestAgentE2EFakeLLM:
 
             # RUN_FINISHED always emitted (finally block guarantee)
             assert types[-1] == "RUN_FINISHED"
-
-        finally:
-            _teardown(container)
 
     # ── Cancel: kill_process spy ─────────────────────────────────────────
 
@@ -428,20 +409,7 @@ class TestAgentE2EFakeLLM:
                     pass
 
         cancel_chat = CancelFakeChatService()
-        container = AppContainer()
-        container.chat_service.override(cancel_chat)
-        real_agent = AgentService(
-            chat_service=cancel_chat,
-            remote_service=RemoteService(),
-        )
-        container.agent_service.override(real_agent)
-
-        from app.api.routes.agent import router as agent_router
-        app = FastAPI()
-        app.include_router(agent_router, prefix="/agent")
-        container.wire(modules=["app.api.routes.agent.run"])
-
-        try:
+        with _build_app_with_fake_chat(cancel_chat) as (app, container, _):
             client = TestClient(app, raise_server_exceptions=False)
             # CancelledError is re-raised inside the generator; StreamingResponse
             # closes the stream. TestClient still returns a 200 with partial body.
@@ -449,22 +417,19 @@ class TestAgentE2EFakeLLM:
             # Response is 200 (headers sent before body) or 500 — either way
             # the kill_process spy must have fired.
             assert kill_spy[0] is True, "kill_process() was not called on cancel"
-        finally:
-            container.unwire()
-            container.chat_service.reset_override()
-            container.agent_service.reset_override()
 
     # ── Multi-round warm-pool ────────────────────────────────────────────
 
     def test_two_sequential_rounds_both_succeed(self):
-        """Two sequential POSTs on same TestClient both return 200 + RUN_FINISHED.
+        """Two sequential POSTs both return 200 + RUN_FINISHED, and AgentService
+        does not call kill_process between rounds on a clean exit.
 
-        Simulates warm-pool sanity: session is not killed between rounds
-        (FakeSession.kill_called should be False after round 1 clean exit).
+        Verifies AgentService doesn't call kill_process on clean exit; round 2
+        reuses container/router state correctly (fresh FakeChatSession per call,
+        but no state pollution from round 1).
         """
         fake_chat = FakeChatService(TEXT_CHUNKS)
-        app, container = _build_app_with_fake_chat(fake_chat)
-        try:
+        with _build_app_with_fake_chat(fake_chat) as (app, container, fake_chat):
             client = TestClient(app)
 
             # Round 1
@@ -496,26 +461,19 @@ class TestAgentE2EFakeLLM:
             assert "RUN_FINISHED" in resp2.text
             events2 = _parse_sse(resp2.text)
             assert events2[-1][0] == "RUN_FINISHED"
-            # Second round should have its own TEXT_MESSAGE_CHUNKs
+            # TEXT_CHUNKS has exactly 2 delta entries → exactly 2 TEXT_MESSAGE_CHUNK events
             text_types2 = [t for t, _ in events2 if t == "TEXT_MESSAGE_CHUNK"]
-            assert len(text_types2) >= 2
-
-        finally:
-            _teardown(container)
+            assert len(text_types2) == 2
 
     # ── No-cache SSE headers ─────────────────────────────────────────────
 
     def test_sse_no_cache_headers_present(self):
         """Real route sets Cache-Control: no-cache + X-Accel-Buffering: no."""
         fake_chat = FakeChatService(MINIMAL_CHUNKS)
-        app, container = _build_app_with_fake_chat(fake_chat)
-        try:
+        with _build_app_with_fake_chat(fake_chat) as (app, container, fake_chat):
             client = TestClient(app)
             resp = client.post("/agent/run", json=_body())
 
             assert resp.status_code == 200
             assert resp.headers.get("cache-control") == "no-cache"
             assert resp.headers.get("x-accel-buffering") == "no"
-
-        finally:
-            _teardown(container)
