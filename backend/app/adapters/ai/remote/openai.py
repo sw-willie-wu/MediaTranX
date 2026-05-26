@@ -10,7 +10,7 @@ import json
 import logging
 import urllib.error
 import urllib.request
-from typing import Callable, Optional
+from typing import Callable, Iterator, Optional
 
 from .base import RemoteProvider, RemoteModel
 
@@ -272,6 +272,110 @@ class OpenAIProvider(RemoteProvider):
             if resp is not None:
                 try: resp.close()
                 except Exception: pass
+
+    def chat_completions_stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        abort_hook: Optional[Callable] = None,
+    ) -> Iterator[dict]:
+        """Synchronous generator yielding raw OpenAI Chat Completions SSE chunks.
+
+        Yields raw chunk dicts (same shape as LlamaServer.chat_stream).
+        Caller parses delta/tool_calls via _parse_openai_compat_chunk
+        (chat_service.py).  Used by RemoteChatSession.stream() for the agent
+        tool-calling path.
+
+        Args:
+            tools: Tool list forwarded as-is; omitted (empty list) when None.
+            abort_hook: Invoked exactly once immediately after urlopen returns.
+                Lets RemoteChatSession stash the response for cross-thread close.
+        """
+        # Chat Completions does not support reasoning models — callers should
+        # call chat() directly for o-series / gpt-5 (which routes to Responses).
+        token_key = "max_completion_tokens" if self._is_new_model(model) else "max_tokens"
+        payload: dict = {
+            "model": model,
+            "messages": messages,
+            "tools": tools or [],
+            "tool_choice": "auto" if tools else "none",
+            token_key: max_tokens,
+            "temperature": temperature,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        body = json.dumps(payload).encode("utf-8")
+        headers: dict = {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        req = urllib.request.Request(
+            f"{self.endpoint}/v1/chat/completions",
+            data=body, headers=headers, method="POST",
+        )
+
+        from app.handler.exceptions import RemoteApiError
+
+        resp = None
+        try:
+            # 180s socket timeout: cancel arrives via abort_hook → resp.close()
+            # from another thread, not timeout.
+            resp = urllib.request.urlopen(req, timeout=180)
+        except urllib.error.HTTPError as e:
+            body_err = e.read().decode("utf-8", errors="replace")[:200]
+            raise self._parse_error(e.code, body_err)
+        except (urllib.error.URLError, OSError) as e:
+            raise RemoteApiError("connection_failed", f"OpenAI: {e}")
+
+        if abort_hook is not None:
+            abort_hook(resp)
+
+        try:
+            for raw_line in resp:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:"):].strip()
+                if data == "[DONE]":
+                    return
+                try:
+                    yield json.loads(data)
+                except json.JSONDecodeError:
+                    logger.warning("chat_completions_stream: malformed SSE chunk: %r", data[:120])
+        finally:
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
+
+    def chat_responses_stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        abort_hook: Optional[Callable] = None,
+    ) -> Iterator[dict]:
+        """OpenAI Responses API streaming with tool calling.
+
+        Not implemented in Phase 1 (Wave 4 Task 4.5).  Responses-API tool
+        calling uses different event types (response.function_call.delta, etc.)
+        that require a dedicated parser.  Use a Chat Completions model
+        (gpt-4o, gpt-4o-mini) for the agent in Phase 1.
+        """
+        raise NotImplementedError(
+            "OpenAI Responses streaming + tool calling deferred to follow-up; "
+            "use a chat-completions model (gpt-4o, gpt-4o-mini) for agent in Phase 1."
+        )
 
     def _convert_to_responses_input(self, messages: list[dict]) -> list[dict]:
         """Convert Chat Completions message shape to Responses API input shape.

@@ -143,46 +143,35 @@ class TestResolveModelChoice:
             "model_family": "qwen3vl", "model_size": "8b", "quantization": "Q4_K_M",
         }
 
-    # ── Remote choice: Phase-1 guard (Critical fix) ─────────────────────
+    # ── Remote choice: Wave 4 Task 4.5 — remote streaming unguarded ─────
 
-    def test_remote_choice_rejected_with_friendly_error(self):
-        """Phase 1: any remote: choice → agent.error.model_unavailable with message."""
-        with pytest.raises(AgentError) as exc_info:
-            self.svc._resolve_model_choice("remote:openai:3:gpt-4o-mini")
-        assert exc_info.value.code == "agent.error.model_unavailable"
-        assert "future update" in exc_info.value.message
-
-    @pytest.mark.skip(reason="Wave 4 — remote streaming with tool calling not yet implemented")
     def test_remote_standard(self):
-        """Wave 4 TODO: remote:openai:3:gpt-4o-mini → {remote_provider, remote_model}."""
+        """remote:openai:3:gpt-4o-mini → {remote_provider, remote_model}."""
         prov = MagicMock()
         self.remote.provider_map[(3, "openai")] = prov
         result = self.svc._resolve_model_choice("remote:openai:3:gpt-4o-mini")
         assert result == {"remote_provider": prov, "remote_model": "gpt-4o-mini"}
 
-    @pytest.mark.skip(reason="Wave 4 — remote streaming with tool calling not yet implemented")
     def test_remote_model_id_with_colon(self):
-        """Wave 4 TODO: model id like 'qwen3:8b-instruct' has colons inside."""
+        """model id like 'qwen3:8b-instruct' has colons inside — must be preserved."""
         prov = MagicMock()
         self.remote.provider_map[(5, "ollama")] = prov
         result = self.svc._resolve_model_choice("remote:ollama:5:qwen3:8b-instruct")
         assert result == {"remote_provider": prov, "remote_model": "qwen3:8b-instruct"}
 
-    @pytest.mark.skip(reason="Wave 4 — remote streaming with tool calling not yet implemented")
     def test_remote_missing_provider(self):
-        """Wave 4 TODO: provider not registered → model_unavailable."""
-        with pytest.raises(AgentError, match="agent.error.model_unavailable"):
+        """Provider not registered → model_unavailable."""
+        with pytest.raises(AgentError) as exc_info:
             self.svc._resolve_model_choice("remote:openai:999:foo")
+        assert exc_info.value.code == "agent.error.model_unavailable"
 
-    @pytest.mark.skip(reason="Wave 4 — remote streaming with tool calling not yet implemented")
     def test_invalid_remote_format(self):
-        """Wave 4 TODO: too-short remote: string → no_model."""
+        """Too-short remote: string → no_model."""
         with pytest.raises(AgentError, match="agent.error.no_model"):
-            self.svc._resolve_model_choice("remote:openai")  # missing parts
+            self.svc._resolve_model_choice("remote:openai")  # missing conn_id + model
 
-    @pytest.mark.skip(reason="Wave 4 — remote streaming with tool calling not yet implemented")
     def test_invalid_remote_conn_id(self):
-        """Wave 4 TODO: non-numeric conn_id → no_model."""
+        """Non-numeric conn_id → no_model."""
         with pytest.raises(AgentError, match="agent.error.no_model"):
             self.svc._resolve_model_choice("remote:openai:abc:foo")  # conn_id NaN
 
@@ -333,6 +322,24 @@ class TestRunHappyPath:
             "model_family": "qwen3vl", "model_size": "8b", "quantization": "Q4_K_M",
         }
 
+    async def test_session_kwargs_remote(self):
+        """Remote choice forwards remote_provider + remote_model to session()."""
+        chunks = [{"type": "done"}]
+        remote = FakeRemoteService()
+        prov = MagicMock()
+        remote.provider_map[(3, "openai")] = prov
+        chat = FakeChatService(chunks)
+        svc = AgentService(chat_service=chat, remote_service=remote)
+        inp = _make_input(
+            messages=[UserMessage(id="m0", content="hi")],
+            state={"agent_model_choice": "remote:openai:3:gpt-4o-mini"},
+        )
+        _ = [e async for e in svc.run(inp)]
+        assert chat.session_kwargs == {
+            "remote_provider": prov,
+            "remote_model": "gpt-4o-mini",
+        }
+
 
 # ── Error path tests ────────────────────────────────────────────────
 
@@ -363,6 +370,33 @@ class TestRunErrors:
         events = [e async for e in svc.run(inp)]
         assert any(
             "RUN_ERROR" in e and "agent.error.internal" in e and "empty messages list" in e
+            for e in events
+        )
+        assert "RUN_FINISHED" in events[-1]
+
+    async def test_not_implemented_emits_tools_not_supported(self):
+        """NotImplementedError from session.stream → agent.error.tools_not_supported."""
+        class NoStreamSession:
+            async def stream(self, **kwargs):
+                raise NotImplementedError("Provider does not implement streaming")
+                yield  # make it a generator
+
+            def kill_process(self):
+                pass
+
+        class NoStreamChat:
+            @contextmanager
+            def session(self, **kwargs):
+                yield NoStreamSession()
+
+        svc = AgentService(chat_service=NoStreamChat(), remote_service=FakeRemoteService())
+        inp = _make_input(
+            messages=[UserMessage(id="m0", content="hi")],
+            state={"agent_model_choice": "qwen3:8b"},
+        )
+        events = [e async for e in svc.run(inp)]
+        assert any(
+            "RUN_ERROR" in e and "agent.error.tools_not_supported" in e
             for e in events
         )
         assert "RUN_FINISHED" in events[-1]

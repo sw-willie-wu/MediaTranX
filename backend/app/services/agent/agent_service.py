@@ -142,6 +142,13 @@ class AgentService:
             raise
         except AgentError as e:
             yield encoder.encode(RunErrorEvent(code=e.code, message=e.message))
+        except NotImplementedError as e:
+            # Provider does not yet support streaming tool calling
+            # (Gemini / Ollama — Wave 4.6/4.7 deliverable).
+            yield encoder.encode(RunErrorEvent(
+                code="agent.error.tools_not_supported",
+                message=str(e),
+            ))
         except Exception as e:
             logger.exception("Agent run failed")
             yield encoder.encode(RunErrorEvent(
@@ -155,21 +162,38 @@ class AgentService:
     def _resolve_model_choice(self, choice: str) -> dict:
         """Mirror frontend parseModelValue (useModelOptions.ts:84).
 
-        Local: "qwen3:8b"           → {model_family:'qwen3', model_size:'8b'}
-               "qwen3vl:8b:Q4_K_M"  → {model_family:'qwen3vl', model_size:'8b',
-                                        quantization:'Q4_K_M'}
-        Remote: guarded in Phase 1 — streaming with tool calling is a Wave 4
-                deliverable (spec §5.3.3).  The frontend SettingsAgent dropdown
-                also filters remote tools-capable models out (plan M3).
+        Local:  "qwen3:8b"               → {model_family, model_size}
+                "qwen3vl:8b:Q4_K_M"      → {model_family, model_size, quantization}
+        Remote: "remote:<provider>:<conn_id>:<model_id>"
+                "remote:<provider>:<conn_id>:<model_id_with:colons>"
+                → {remote_provider, remote_model}
+
+        Remote routing (Wave 4 Task 4.5):
+        - OpenAI providers that expose chat_completions_stream() are supported.
+        - Gemini / Ollama streaming tool-calling is deferred (Wave 4.6/4.7);
+          RemoteChatSession.stream() will raise NotImplementedError for those,
+          which AgentService.run() catches as agent.error.tools_not_supported.
         """
         if choice.startswith("remote:"):
-            # Phase 1: remote streaming not yet implemented (Wave 4 deliverable).
-            # Defensive backend guard; frontend SettingsAgent dropdown also filters
-            # remote tools-capable models out in Phase 1 (plan M3).
-            raise AgentError(
-                "agent.error.model_unavailable",
-                "Remote tool agents are coming in a future update.",
-            )
+            # "remote:<provider>:<conn_id>:<model_id>" — model_id may itself
+            # contain colons (e.g. "qwen3:8b-instruct" for Ollama).
+            parts = choice.split(":", 3)   # ["remote", provider, conn_id, model_id]
+            if len(parts) < 4:
+                raise AgentError("agent.error.no_model")
+            _, provider, conn_id_str, model_id = parts
+            if not provider or not conn_id_str or not model_id:
+                raise AgentError("agent.error.no_model")
+            try:
+                conn_id = int(conn_id_str)
+            except ValueError:
+                raise AgentError("agent.error.no_model")
+            prov = self._remote.get_provider_for_connection(conn_id, provider)
+            if prov is None:
+                raise AgentError(
+                    "agent.error.model_unavailable",
+                    f"No active connection found for provider '{provider}' (conn_id={conn_id}).",
+                )
+            return {"remote_provider": prov, "remote_model": model_id}
 
         # Local "family:size[:quant]"
         if ":" not in choice:
