@@ -61,7 +61,7 @@ def variant_1_outer_fake_progress() -> tuple[bool, float]:
     """fake_progress(cancellable=session) wraps the call. Cancel via
     setting the task id in _cancelled_ids and firing on_progress."""
     from app.adapters.ai.remote.ollama import OllamaProvider
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
     from app.utils.inference import fake_progress
     from app.handler.exceptions import TaskCancelledError
 
@@ -100,7 +100,7 @@ def variant_2_in_session_guard() -> tuple[bool, float]:
     """No outer fake_progress -- RemoteChatSession's own _guard() owns
     poll+kill via cancel_guard."""
     from app.adapters.ai.remote.ollama import OllamaProvider
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
     from app.handler.exceptions import TaskCancelledError
 
     prov = OllamaProvider(DEFAULT_ENDPOINT, None)
@@ -133,7 +133,7 @@ def variant_3_pre_connection() -> tuple[bool, float]:
     """Non-listening port: connect stalls. Cancel takes effect when
     urlopen's 30s socket timeout expires."""
     from app.adapters.ai.remote.ollama import OllamaProvider
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
     from app.handler.exceptions import TaskCancelledError
 
     # Non-listening port -- connect should hang or fail.

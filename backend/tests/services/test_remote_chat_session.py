@@ -10,7 +10,7 @@ import pytest
 
 
 def _make_session(*, on_progress=None, cancel_pct=0.0, cancel_msg="default"):
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
     prov = MagicMock(name="RemoteProvider")
     return RemoteChatSession(
         prov, "model-x",
@@ -135,7 +135,7 @@ def test_per_call_cancel_pct_msg_override_chat():
         on_progress=on_progress, cancel_pct=0.5, cancel_msg="default",
     )
     prov.chat = MagicMock(return_value="x")
-    with patch("app.services._remote_chat.cancel_guard") as cg:
+    with patch("app.services.llm.remote_chat.cancel_guard") as cg:
         cg.return_value.__enter__ = MagicMock(return_value=None)
         cg.return_value.__exit__ = MagicMock(return_value=False)
         session.chat(
@@ -158,7 +158,7 @@ def test_per_call_cancel_pct_msg_override_chat_with_images(tmp_path):
         on_progress=on_progress, cancel_pct=0.5, cancel_msg="default",
     )
     prov.chat_with_images = MagicMock(return_value="d")
-    with patch("app.services._remote_chat.cancel_guard") as cg:
+    with patch("app.services.llm.remote_chat.cancel_guard") as cg:
         cg.return_value.__enter__ = MagicMock(return_value=None)
         cg.return_value.__exit__ = MagicMock(return_value=False)
         session.chat_with_images(

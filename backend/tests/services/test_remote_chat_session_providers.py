@@ -28,7 +28,7 @@ def _make_sse_response(*lines: bytes):
 
 def test_remote_chat_session_with_openai_chat_completions():
     from app.adapters.ai.remote.openai import OpenAIProvider
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
 
     lines = [
         b'data: {"choices":[{"delta":{"content":"OK"}}]}\n',
@@ -50,7 +50,7 @@ def test_remote_chat_session_with_openai_chat_completions():
 
 def test_remote_chat_session_with_gemini():
     from app.adapters.ai.remote.gemini import GeminiProvider
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
 
     lines = [
         b'data: {"candidates":[{"content":{"parts":[{"text":"OK"}]}}]}\n',
@@ -76,7 +76,7 @@ def test_remote_chat_session_with_gemini():
 def test_chat_with_images_openai_uses_image_url_data_uri(tmp_path):
     """OpenAI IMAGE_PREP_MODE='recompress' → PIL roundtrip → JPEG quality 85."""
     from app.adapters.ai.remote.openai import OpenAIProvider
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
     from PIL import Image
 
     # Create a real 16x16 PNG
@@ -116,7 +116,7 @@ def test_chat_with_images_openai_uses_image_url_data_uri(tmp_path):
 
 def test_chat_with_images_gemini_uses_inline_data(tmp_path):
     from app.adapters.ai.remote.gemini import GeminiProvider
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
     from PIL import Image
 
     img = Image.new("RGB", (16, 16), color="blue")
@@ -157,7 +157,7 @@ def test_chat_with_images_gemini_uses_inline_data(tmp_path):
 def test_chat_with_images_ollama_uses_raw_b64(tmp_path):
     """Ollama IMAGE_PREP_MODE='raw' → no PIL → source bytes preserved."""
     from app.adapters.ai.remote.ollama import OllamaProvider
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
 
     raw = b"BINARY_BYTES_NOT_A_VALID_IMAGE_AT_ALL"
     p = tmp_path / "frame.png"
@@ -190,7 +190,7 @@ def test_chat_with_images_ollama_uses_raw_b64(tmp_path):
 
 def test_kill_process_closes_openai_response():
     from app.adapters.ai.remote.openai import OpenAIProvider
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
 
     resp = MagicMock(name="HTTPResponse")
     iter_started = threading.Event()
@@ -236,7 +236,7 @@ def test_kill_process_closes_openai_response():
 def test_task_kwarg_forwards_to_provider_chat():
     """RemoteChatSession.chat(task='frame_select') must propagate task to provider."""
     from unittest.mock import MagicMock as _MagicMock
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
 
     prov = _MagicMock()
     prov.chat.return_value = "2"
@@ -256,7 +256,7 @@ def test_task_kwarg_forwards_to_provider_chat():
 def test_task_kwarg_forwards_to_provider_chat_with_images(tmp_path):
     """RemoteChatSession.chat_with_images(task='frame_select') must propagate task to provider."""
     from unittest.mock import MagicMock as _MagicMock
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
 
     prov = _MagicMock()
     prov.chat_with_images.return_value = "1"
@@ -282,7 +282,7 @@ def test_task_kwarg_forwards_to_provider_chat_with_images(tmp_path):
 def test_task_kwarg_defaults_to_none_when_not_passed():
     """When task is omitted, provider receives task=None (default)."""
     from unittest.mock import MagicMock as _MagicMock
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
 
     prov = _MagicMock()
     prov.chat.return_value = "OK"

@@ -45,7 +45,7 @@ def _get_prov():
 
 
 def variant_1():
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
     from app.utils.inference import fake_progress
     from app.handler.exceptions import TaskCancelledError
 
@@ -80,7 +80,7 @@ def variant_1():
 
 
 def variant_2():
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
     from app.handler.exceptions import TaskCancelledError
 
     prov = _get_prov()
@@ -109,7 +109,7 @@ def variant_2():
 
 
 def variant_3():
-    from app.services._remote_chat import RemoteChatSession
+    from app.services.llm.remote_chat import RemoteChatSession
     from app.handler.exceptions import RemoteApiError
 
     prov = _get_prov()
