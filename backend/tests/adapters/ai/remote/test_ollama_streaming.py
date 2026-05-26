@@ -60,7 +60,7 @@ def test_chat_streaming_sends_stream_true_and_returns_concatenated_content():
         )
     assert result == "Hello world"
     assert captured["data"]["stream"] is True
-    assert captured["timeout"] == 30
+    assert captured["timeout"] == 180
 
 
 def test_chat_blocking_legacy_path_unchanged():
@@ -180,7 +180,7 @@ def test_chat_with_images_sends_messages_with_base64_images_array(tmp_path):
     import base64
     decoded = base64.b64decode(b64)
     assert decoded.startswith(b"\x89PNG")
-    assert captured["timeout"] == 30
+    assert captured["timeout"] == 180
 
 
 def test_chat_with_images_calls_abort_hook(tmp_path):
