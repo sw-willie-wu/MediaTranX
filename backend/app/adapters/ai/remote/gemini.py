@@ -10,7 +10,8 @@ import json
 import logging
 import urllib.error
 import urllib.request
-from typing import Callable, Optional
+import uuid
+from typing import Callable, Iterator, Optional
 
 from .base import RemoteProvider, RemoteModel
 
@@ -49,6 +50,153 @@ _HIDDEN_KEYWORDS = [
     "computer-use", "deep-research",
     "robotics", "veo", "lyria",
 ]
+
+# ── Gemini ↔ OpenAI conversion helpers ─────────────────────────────────────
+
+_GEMINI_TYPES = {
+    "object": "OBJECT",
+    "array": "ARRAY",
+    "string": "STRING",
+    "number": "NUMBER",
+    "integer": "INTEGER",
+    "boolean": "BOOLEAN",
+}
+
+
+def _convert_jsonschema_to_gemini(schema: dict) -> dict:
+    """Recursively convert a JSONSchema dict to Gemini's restricted subset.
+
+    - Type names are uppercased (e.g. "object" → "OBJECT").
+    - Nested ``properties`` and ``items`` are recursively converted.
+    - Unsupported combiners (``oneOf``, ``anyOf``, ``allOf``) are dropped
+      with a warning; Gemini's function-declaration schema does not support
+      them.
+    - Unrecognised keys (``title``, ``examples``, ``$schema``, …) are
+      silently dropped to keep the declaration clean.
+    """
+    result: dict = {}
+    t = schema.get("type")
+    if t and t in _GEMINI_TYPES:
+        result["type"] = _GEMINI_TYPES[t]
+    if "description" in schema:
+        result["description"] = schema["description"]
+    if "enum" in schema:
+        result["enum"] = schema["enum"]
+    if "required" in schema:
+        result["required"] = schema["required"]
+    if "properties" in schema:
+        result["properties"] = {
+            k: _convert_jsonschema_to_gemini(v)
+            for k, v in schema["properties"].items()
+        }
+    if "items" in schema:
+        result["items"] = _convert_jsonschema_to_gemini(schema["items"])
+    for unsupported in ("oneOf", "anyOf", "allOf"):
+        if unsupported in schema:
+            logger.warning("Gemini tools: dropping unsupported '%s' from schema", unsupported)
+    return result
+
+
+def _to_gemini_tools(tools: list[dict]) -> list[dict]:
+    """Convert OpenAI-flat tool definitions to a Gemini ``functionDeclarations`` block.
+
+    Input shape (each tool)::
+
+        {"name": str, "description": str, "parameters": {JSONSchema}}
+
+    Output shape::
+
+        [{"functionDeclarations": [{"name": str, "description": str,
+                                    "parameters": {GeminiSchema}}, ...]}]
+
+    Returns an empty list when ``tools`` is falsy.
+    """
+    if not tools:
+        return []
+    declarations = []
+    for t in tools:
+        declarations.append({
+            "name": t["name"],
+            "description": t.get("description", ""),
+            "parameters": _convert_jsonschema_to_gemini(t.get("parameters", {})),
+        })
+    return [{"functionDeclarations": declarations}]
+
+
+def _to_gemini_messages(messages: list[dict]) -> tuple[str | None, list[dict]]:
+    """Convert OpenAI-shaped messages to Gemini ``contents`` + optional ``systemInstruction``.
+
+    OpenAI role mapping:
+    - ``system``    → extracted as the system instruction (not placed in contents)
+    - ``user``      → ``role="user"``, text parts
+    - ``assistant`` → ``role="model"``, optional text + optional functionCall parts
+    - ``tool``      → ``role="function"``, functionResponse part
+                      (the tool name is looked up from the preceding assistant message)
+
+    Returns ``(system_instruction_text | None, contents_list)``.
+    """
+    # Build a lookup: toolCallId → function name from all prior assistant messages.
+    tool_call_id_to_name: dict[str, str] = {}
+    for m in messages:
+        if m.get("role") == "assistant":
+            for tc in m.get("toolCalls") or m.get("tool_calls") or []:
+                tc_id = tc.get("id", "")
+                name = (tc.get("function") or {}).get("name", "")
+                if tc_id and name:
+                    tool_call_id_to_name[tc_id] = name
+
+    contents: list[dict] = []
+    system_instruction: str | None = None
+
+    for m in messages:
+        role = m.get("role")
+
+        if role == "system":
+            system_instruction = m.get("content", "")
+            continue
+
+        if role == "user":
+            contents.append({
+                "role": "user",
+                "parts": [{"text": m.get("content", "")}],
+            })
+
+        elif role == "assistant":
+            parts: list[dict] = []
+            if m.get("content"):
+                parts.append({"text": m["content"]})
+            for tc in m.get("toolCalls") or m.get("tool_calls") or []:
+                fn = tc.get("function") or {}
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+                parts.append({"functionCall": {
+                    "name": fn.get("name", ""),
+                    "args": args,
+                }})
+            if parts:
+                contents.append({"role": "model", "parts": parts})
+
+        elif role == "tool":
+            tc_id = m.get("toolCallId") or m.get("tool_call_id") or ""
+            tool_name = tool_call_id_to_name.get(tc_id, "unknown_tool")
+            raw_content = m.get("content", "{}")
+            try:
+                response = json.loads(raw_content)
+                if not isinstance(response, dict):
+                    response = {"content": response}
+            except (json.JSONDecodeError, TypeError):
+                response = {"content": raw_content}
+            contents.append({
+                "role": "function",
+                "parts": [{"functionResponse": {
+                    "name": tool_name,
+                    "response": response,
+                }}],
+            })
+
+    return system_instruction, contents
 
 
 class GeminiProvider(RemoteProvider):
@@ -318,6 +466,171 @@ class GeminiProvider(RemoteProvider):
             if resp is not None:
                 try: resp.close()
                 except Exception: pass
+
+    def chat_completions_stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        abort_hook: Optional[Callable] = None,
+    ) -> Iterator[dict]:
+        """Yield OpenAI-compat normalised chunks translated from Gemini's
+        ``streamGenerateContent?alt=sse`` response.
+
+        Each yielded chunk matches the shape expected by
+        ``_parse_openai_compat_chunk`` in ``chat_service.py``:
+
+        Text delta::
+
+            {"id": "<run_id>", "choices": [{"delta": {"content": "<text>"}}]}
+
+        Tool-call delta::
+
+            {"id": "<run_id>", "choices": [{"delta": {"tool_calls": [
+                {"index": int, "id": str, "function": {"name": str,
+                                                        "arguments": str}}
+            ]}}]}
+
+        Final usage chunk (when Gemini returns ``usageMetadata``)::
+
+            {"choices": [], "usage": {"prompt_tokens": int,
+                                       "completion_tokens": int,
+                                       "total_tokens": int}}
+
+        This method does NOT raise ``RemoteApiError`` for safety finish reasons
+        (that is only needed for the legacy ``chat()`` path which accumulates
+        a string result).  The caller — ``RemoteChatSession.stream()`` — handles
+        stream closure naturally.
+
+        Args:
+            tools:      Optional OpenAI-flat tool definitions; forwarded as
+                        Gemini ``functionDeclarations``.
+            abort_hook: Invoked exactly once immediately after ``urlopen``
+                        returns (before reading any lines).  Lets
+                        ``RemoteChatSession`` stash the response object so
+                        ``kill_process()`` can close it from another thread.
+        """
+        system_instruction, contents = _to_gemini_messages(messages)
+        gemini_tools = _to_gemini_tools(tools) if tools else []
+
+        payload: dict = {
+            "contents": contents,
+            "generationConfig": {
+                "maxOutputTokens": max_tokens,
+                "temperature": temperature,
+            },
+        }
+        if system_instruction:
+            payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+        if gemini_tools:
+            payload["tools"] = gemini_tools
+
+        url = self._api_url(
+            f"/v1beta/models/{model}:streamGenerateContent?alt=sse"
+        )
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+            },
+            method="POST",
+        )
+
+        resp = None
+        try:
+            # 180s socket timeout: cancel arrives via abort_hook → resp.close()
+            # from another thread, not timeout.
+            resp = urllib.request.urlopen(req, timeout=180)
+        except urllib.error.HTTPError as e:
+            body_err = e.read().decode("utf-8", errors="replace")[:200]
+            raise self._parse_error(e.code, body_err)
+        except (urllib.error.URLError, OSError) as e:
+            from app.handler.exceptions import RemoteApiError
+            raise RemoteApiError("connection_failed", f"Gemini: {e}")
+
+        if abort_hook is not None:
+            abort_hook(resp)
+
+        # Synthetic message id — Gemini has no equivalent of OpenAI's chunk.id
+        msg_id = f"gemini-{uuid.uuid4().hex[:8]}"
+        # tool_call_index advances per functionCall part so multiple tool calls
+        # in the same stream get distinct indices (matching OpenAI's model).
+        tool_call_index = 0
+        # Map index → synthetic id (first chunk for each call carries an id;
+        # subsequent argument-fragment chunks reference the same index).
+        tool_call_ids: dict[int, str] = {}
+        accumulated_usage: dict | None = None
+
+        try:
+            for raw_line in resp:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:"):].strip()
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "chat_completions_stream: malformed Gemini SSE chunk: %r",
+                        data[:120],
+                    )
+                    continue
+
+                # Capture usage metadata (emitted on the final chunk by Gemini)
+                if "usageMetadata" in chunk:
+                    meta = chunk["usageMetadata"]
+                    accumulated_usage = {
+                        "prompt_tokens": meta.get("promptTokenCount", 0),
+                        "completion_tokens": meta.get("candidatesTokenCount", 0),
+                        "total_tokens": meta.get("totalTokenCount", 0),
+                    }
+
+                for candidate in chunk.get("candidates", []):
+                    parts = candidate.get("content", {}).get("parts", [])
+                    for part in parts:
+                        if "text" in part:
+                            yield {
+                                "id": msg_id,
+                                "choices": [{"delta": {"content": part["text"]}}],
+                            }
+                        elif "functionCall" in part:
+                            fc = part["functionCall"]
+                            if tool_call_index not in tool_call_ids:
+                                tool_call_ids[tool_call_index] = (
+                                    f"gemini-tc-{uuid.uuid4().hex[:8]}"
+                                )
+                            tc_id = tool_call_ids[tool_call_index]
+                            # Gemini delivers the full args dict in one part, so
+                            # we serialise it once as a complete JSON string — the
+                            # OpenAI-compat parser accumulates args_delta strings.
+                            args_json = json.dumps(fc.get("args") or {})
+                            yield {
+                                "id": msg_id,
+                                "choices": [{"delta": {"tool_calls": [{
+                                    "index": tool_call_index,
+                                    "id": tc_id,
+                                    "function": {
+                                        "name": fc.get("name", ""),
+                                        "arguments": args_json,
+                                    },
+                                }]}}],
+                            }
+                            tool_call_index += 1
+
+            # Emit final usage chunk so RemoteChatSession.stream() can capture it
+            if accumulated_usage is not None:
+                yield {"choices": [], "usage": accumulated_usage}
+        finally:
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
 
     @staticmethod
     def _parse_error(status: int, body: str):
