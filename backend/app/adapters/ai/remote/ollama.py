@@ -275,6 +275,13 @@ class OllamaProvider(RemoteProvider):
         try:
             with urllib.request.urlopen(req, timeout=300) as resp:
                 result = json.loads(resp.read())
+                # See _chat_streaming for the proxy error-wrapping rationale.
+                if result.get("done_reason") == "error" or "error" in result:
+                    err_msg = result.get("error") or result.get("detail") or str(result)
+                    from app.handler.exceptions import RemoteApiError
+                    raise RemoteApiError(
+                        "remote_error", f"Ollama proxy error: {err_msg[:300]}"
+                    )
                 content = result.get("message", {}).get("content", "")
                 return content.strip()
         except urllib.error.HTTPError as e:
@@ -334,6 +341,18 @@ class OllamaProvider(RemoteProvider):
                     obj = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                # LiteLLM / OpenAI-compat proxies (e.g. the ttl-test-ollama
+                # gateway) wrap upstream failures as a 200 OK NDJSON line:
+                #   {"done":true, "done_reason":"error",
+                #    "error":"backend returned 400", "detail":"..."}
+                # Vanilla Ollama never emits done_reason="error" (it uses
+                # "stop"|"length"|"load"|"unload"). Surface it so the LLM
+                # chunk loop sees a real exception instead of silent "".
+                if obj.get("done_reason") == "error" or "error" in obj:
+                    err_msg = obj.get("error") or obj.get("detail") or str(obj)
+                    raise RemoteApiError(
+                        "remote_error", f"Ollama proxy error: {err_msg[:300]}"
+                    )
                 msg = obj.get("message", {})
                 if isinstance(msg, dict):
                     delta = msg.get("content", "")
