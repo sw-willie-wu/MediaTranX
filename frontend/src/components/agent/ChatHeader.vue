@@ -9,7 +9,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'close'): void
   (e: 'clear'): void
 }>()
 
@@ -28,11 +27,8 @@ const settingsStore = useAgentSettingsStore()
       <span v-if="props.tokenUsage.prompt > 0 || props.tokenUsage.completion > 0" class="token-counter">
         {{ $t('agent.bubble.token_count', { prompt: props.tokenUsage.prompt, completion: props.tokenUsage.completion }) }}
       </span>
-      <button class="header-btn" :title="$t('common.close')" @click="emit('clear')">
+      <button class="header-btn" :title="$t('agent.bubble.clear')" @click="emit('clear')">
         <i class="bi bi-trash3"></i>
-      </button>
-      <button class="header-btn" :title="$t('common.close')" @click="emit('close')">
-        <i class="bi bi-x-lg"></i>
       </button>
     </div>
   </div>

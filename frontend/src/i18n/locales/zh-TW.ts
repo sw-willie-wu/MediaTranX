@@ -1159,6 +1159,7 @@ export default {
       empty: '尚無對話',
       thinking: '思考中…',
       token_count: '輸入: {prompt} / 輸出: {completion}',
+      clear: '清除對話紀錄',
     },
     confirm: {
       title: '確認動作',

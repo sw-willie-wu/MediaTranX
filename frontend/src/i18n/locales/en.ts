@@ -1159,6 +1159,7 @@ export default {
       empty: 'No messages yet',
       thinking: 'Thinking…',
       token_count: 'in: {prompt} / out: {completion}',
+      clear: 'Clear chat history',
     },
     confirm: {
       title: 'Confirm action',
