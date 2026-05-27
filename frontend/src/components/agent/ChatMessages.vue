@@ -2,6 +2,7 @@
 import { ref, watch, nextTick } from 'vue'
 import type { Message } from '@/composables/useAgent'
 import type { TransientBuffer } from '@/stores/agent'
+import { toolResultPreview } from '@/composables/agentMessagePreview'
 import UserMessage from './UserMessage.vue'
 import AssistantMessage from './AssistantMessage.vue'
 import ToolCallCard from './ToolCallCard.vue'
@@ -25,24 +26,6 @@ function scrollToBottom() {
 
 watch(() => props.messages.length, scrollToBottom)
 watch(() => props.transient?.text, scrollToBottom)
-
-// Tool call result preview: first line of content
-function toolResultPreview(content: string): string {
-  try {
-    const parsed = JSON.parse(content)
-    if (parsed && typeof parsed === 'object') {
-      if (parsed.error) return `✗ ${parsed.error}`
-      if (parsed.user_cancelled) return '✗ cancelled'
-      if (parsed.skipped) return `✗ skipped: ${parsed.skipped}`
-      const keys = Object.keys(parsed)
-      if (keys.length > 0) return `✓ ${JSON.stringify(parsed[keys[0]]).slice(0, 60)}`
-      return '✓ ok'
-    }
-    return `✓ ${String(content).slice(0, 60)}`
-  } catch {
-    return String(content).slice(0, 60)
-  }
-}
 
 function toolCallIdToName(toolCallId: string, messages: Message[]): string {
   for (const m of messages) {
@@ -74,10 +57,22 @@ function toolCallIdToName(toolCallId: string, messages: Message[]): string {
       />
 
       <!-- Tool result (inline preview) -->
-      <div v-else-if="msg.role === 'tool'" class="tool-result-row">
-        <span class="tool-result-name">{{ toolCallIdToName((msg as any).toolCallId, messages) }}</span>
-        <span class="tool-result-preview">{{ toolResultPreview((msg as any).content) }}</span>
-      </div>
+      <!-- v-for over a single-item array lets us call toolResultPreview() once per row -->
+      <template v-else-if="msg.role === 'tool'">
+        <div
+          v-for="preview in [toolResultPreview((msg as any).content)]"
+          :key="`tool-${idx}`"
+          class="tool-result-row"
+        >
+          <span class="tool-result-name">{{ toolCallIdToName((msg as any).toolCallId, messages) }}</span>
+          <span
+            v-if="preview.icon"
+            class="tool-result-icon"
+            :class="`tool-result-icon--${preview.status}`"
+          >{{ preview.icon }}</span>
+          <span class="tool-result-text">{{ preview.text }}</span>
+        </div>
+      </template>
 
       <!-- Confirm card (pending only) -->
       <ConfirmCard
@@ -158,11 +153,22 @@ function toolCallIdToName(toolCallId: string, messages: Message[]): string {
   white-space: nowrap;
 }
 
-.tool-result-preview {
+.tool-result-text {
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+// UX-1: differentiate success (✓) vs error (✗) tool-result icons so users
+// can tell at a glance which tool calls succeeded vs failed. Matches the
+// same pattern as ToolCallCard.vue's .text-danger / .text-success classes.
+.tool-result-icon {
+  font-weight: 600;
+  flex-shrink: 0;
+
+  &--success { color: var(--color-success); }
+  &--error   { color: var(--color-danger); }
 }
 
 .thinking-row {
