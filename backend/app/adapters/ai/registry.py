@@ -536,7 +536,7 @@ MODELS_REGISTRY = {
         "qwen3.5": {
             "slot": SLOT_LLM,
             "label": "Qwen3.5",
-            "capabilities": ["text", "vision"],
+            "capabilities": ["text", "vision", "tools"],
             "description": "models.qwen3_5",
             "inference": {
                 "translate": {
