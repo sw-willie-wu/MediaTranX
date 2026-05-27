@@ -12,6 +12,11 @@ export interface ViewHandle {
   currentFunction: Ref<string>
   /** Switch to a different function/tab */
   setCurrentFunction: (id: string) => void
+  /**
+   * Bug #22: return the list of valid subfunction IDs for this view.
+   * Optional — views that don't declare it are treated as "allow any".
+   */
+  validSubfunctions?: () => string[]
 }
 
 const _registry = new Map<string, ViewHandle>()

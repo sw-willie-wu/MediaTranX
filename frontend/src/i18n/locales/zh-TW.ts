@@ -125,7 +125,7 @@ export default {
   // ── 面板執行按鈕 ──────────────────────────────────────────────────────
   panel: {
     upscale:    { execute: '放大' },                 // Phase 1 debt
-    convert:    { execute: '轉檔' },                 // Phase 1 debt
+    transcode:  { execute: '轉檔' },                 // renamed from convert (Bug #22)
     adjust:     { execute: '套用調整' },             // Phase 2.A new
     filter:     { execute: '套用濾鏡' },             // Phase 2.A new
     remove_bg:  { execute: '去除背景' },             // Phase 2.A new
@@ -381,7 +381,7 @@ export default {
     loading: '讀取圖片資訊...',
 
     functions: {
-      convert: '轉檔',
+      transcode: '轉檔',
       remove_bg: '去背',
       ai_remove: '物件移除',
       upscale: '超解析',
@@ -1184,6 +1184,7 @@ export default {
       file_not_found: '找不到檔案 {file_id}',
       view_not_introspectable: '目前畫面無法被檢視',
       no_execute_on_settings: '無法從設定頁面提交任務',
+      invalid_subfunction: '此頁面沒有「{name}」子功能',
     },
     tool: {
       navigate_to: '切換頁面',

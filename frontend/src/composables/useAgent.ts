@@ -24,7 +24,9 @@ import { useAgentStore, type TransientBuffer } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
 import { useAgentTools } from '@/composables/useAgentTools'
 import { useActivePanel, type ActivePanelEntry } from '@/composables/useActivePanel'
+import { useActiveView } from '@/composables/useActiveView'
 import type { PanelAgentSchema } from '@/stores/panelRegistry'
+import type { ViewHandle } from '@/stores/viewRegistry'
 
 // i18n.global.t is the standard pattern for non-setup contexts (see
 // useSubmitTask / useMediaCollection).  We resolve it lazily on first error
@@ -35,7 +37,7 @@ let _t: ((k: string) => string) | null = null
 function translate(key: string): string {
   if (_t === null) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+       
       // @ts-ignore — require() is available in Vitest (node) + Vite (cjs interop); not in browser lib types
       const mod = require('@/i18n')
       _t = (mod.default ?? mod).global.t
@@ -62,7 +64,7 @@ export type Message =
  */
 export interface ToolsApi {
   TOOLS: Array<{ name: string; description: string; parameters: object }>
-  getTools: (activePanelSchema?: PanelAgentSchema | null) => Array<{ name: string; description: string; parameters: object }>
+  getTools: (activePanelSchema?: PanelAgentSchema | null, activeViewHandle?: ViewHandle | null) => Array<{ name: string; description: string; parameters: object }>
   dispatch(toolCall: { id: string; function: { name: string; arguments: string } }): Promise<{ ok?: boolean; error?: string; [k: string]: any }>
 }
 
@@ -111,16 +113,19 @@ function _createAgent(deps: UseAgentDeps = {}) {
   const tools    = deps.tools ?? useAgentTools()
   const runStream = deps.streamRunFn ?? streamRun
 
-  // C1: useActivePanel() calls useRoute() which requires setup context.
-  // Production callers (ChatBubble/AgentRunBanner/SettingsAgent) are all
-  // <script setup> — safe. Node-env tests (useAgent.test.ts) build factory
-  // outside setup — guard with getCurrentInstance() + try/catch so apComputed
-  // stays null in tests, falling back to () => null behavior (Phase 1 status quo).
+  // C1: useActivePanel() / useActiveView() call useRoute() which requires setup
+  // context. Production callers (ChatBubble/AgentRunBanner/SettingsAgent) are
+  // all <script setup> — safe. Node-env tests (useAgent.test.ts) build factory
+  // outside setup — guard with getCurrentInstance() + try/catch so apComputed /
+  // avComputed stay null in tests, falling back to () => null behavior.
   let apComputed: ReturnType<typeof useActivePanel> | null = null
+  let avComputed: ReturnType<typeof useActiveView> | null = null
   if (deps.activePanelRef === undefined && getCurrentInstance() !== null) {
     try { apComputed = useActivePanel() } catch { apComputed = null }
+    try { avComputed = useActiveView() } catch { avComputed = null }
   }
   const getActivePanel = deps.activePanelRef ?? (() => apComputed?.value ?? null)
+  const getActiveView = () => avComputed?.value ?? null
 
   const threadId = ref<string>(crypto.randomUUID())
   const messages = ref<Message[]>([])
@@ -206,7 +211,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
               // unreachable per filter above (tool_confirm filtered out)
               return { id: (m as any).id ?? crypto.randomUUID(), role: (m as any).role as string, content: '' }
             }),
-          tools: tools.getTools(getActivePanel()?.schema ?? null),
+          tools: tools.getTools(getActivePanel()?.schema ?? null, getActiveView()),
           state: { agent_model_choice: settings.modelChoice },
           signal: abortCtl.signal,
           onTextChunk: (e) => {

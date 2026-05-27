@@ -75,6 +75,7 @@ const currentFunction = ref('transcode')
 useViewHost('video', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
+  validSubfunctions: () => ['transcode', 'cut', 'crop', 'subtitle', 'summary', 'interpolate', 'enhance'],
 })
 
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')

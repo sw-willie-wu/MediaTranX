@@ -140,6 +140,7 @@ const currentFunction = ref('transcode')
 useViewHost('audio', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
+  validSubfunctions: () => ['transcode', 'cut', 'volume', 'midi-edit', 'transcribe', 'separate', 'lyrics'],
 })
 
 const volumeGainPreview = ref(1)

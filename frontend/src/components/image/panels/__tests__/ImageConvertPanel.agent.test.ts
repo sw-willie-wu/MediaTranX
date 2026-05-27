@@ -2,7 +2,7 @@
  * Smoke test — ImageConvertPanel agent schema (Wave 3 Task 3.4)
  *
  * Verifies:
- *   - After mount, panelRegistry.get('image.convert') returns a handle
+ *   - After mount, panelRegistry.get('image.transcode') returns a handle
  *   - getCurrentValues() returns an object with all schema field names
  *   - setField('quality', 75) returns 75 (within range)
  *   - setField('quality', 200) returns 100 (clamped, R-5)
@@ -27,7 +27,7 @@ function makeImageConvertPanelStub() {
   ]
 
   const agentSchema = {
-    panelId: 'image.convert',
+    panelId: 'image.transcode',
     fields: [
       { name: 'output_format', type: 'enum' as const,
         options: () => convertFormats.map(f => f.value) },
@@ -47,7 +47,7 @@ function makeImageConvertPanelStub() {
         visibleWhen: () => convertResizeMode.value === 'custom' },
     ],
     actions: [],
-    execute: { requiresConfirm: true, label: 'panel.convert.execute' },
+    execute: { requiresConfirm: true, label: 'panel.transcode.execute' },
   }
 
   const handleWithoutMounted: Omit<PanelHandle, 'isMounted'> = {
@@ -95,7 +95,7 @@ function makeImageConvertPanelStub() {
 
   return defineComponent({
     setup() {
-      useAgentPanelHost('image.convert', handleWithoutMounted)
+      useAgentPanelHost('image.transcode', handleWithoutMounted)
       return {}
     },
     template: '<div></div>',
@@ -107,12 +107,12 @@ beforeEach(() => { panelRegistry._clearAll() })
 describe('ImageConvertPanel agent schema smoke', () => {
   it('mount → panelRegistry.get returns a handle', () => {
     mount(makeImageConvertPanelStub())
-    expect(panelRegistry.get('image.convert')).toBeDefined()
+    expect(panelRegistry.get('image.transcode')).toBeDefined()
   })
 
   it('getCurrentValues() returns all schema field names', () => {
     mount(makeImageConvertPanelStub())
-    const handle = panelRegistry.get('image.convert')!
+    const handle = panelRegistry.get('image.transcode')!
     const values = handle.getCurrentValues()
     for (const field of handle.agentSchema.fields) {
       expect(values).toHaveProperty(field.name)
@@ -121,13 +121,13 @@ describe('ImageConvertPanel agent schema smoke', () => {
 
   it('setField quality = 75 → returns 75', () => {
     mount(makeImageConvertPanelStub())
-    const handle = panelRegistry.get('image.convert')!
+    const handle = panelRegistry.get('image.transcode')!
     expect(handle.setField('quality', 75)).toBe(75)
   })
 
   it('setField quality > 100 → clamped to 100 (R-5)', () => {
     mount(makeImageConvertPanelStub())
-    const handle = panelRegistry.get('image.convert')!
+    const handle = panelRegistry.get('image.transcode')!
     expect(handle.setField('quality', 200)).toBe(100)
   })
 })

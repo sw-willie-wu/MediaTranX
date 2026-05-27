@@ -125,7 +125,7 @@ export default {
   // ── Panel execute buttons ──────────────────────────────────────────────
   panel: {
     upscale:    { execute: 'Upscale' },              // Phase 1 debt
-    convert:    { execute: 'Convert' },              // Phase 1 debt
+    transcode:  { execute: 'Convert' },              // renamed from convert (Bug #22)
     adjust:     { execute: 'Apply Adjustments' },    // Phase 2.A new
     filter:     { execute: 'Apply Filter' },         // Phase 2.A new
     remove_bg:  { execute: 'Remove Background' },    // Phase 2.A new
@@ -381,7 +381,7 @@ export default {
     loading: 'Loading image info...',
 
     functions: {
-      convert: 'Convert',
+      transcode: 'Transcode',
       remove_bg: 'Remove BG',
       ai_remove: 'Object Remove',
       upscale: 'Upscale',
@@ -1184,6 +1184,7 @@ export default {
       file_not_found: 'File {file_id} not found',
       view_not_introspectable: 'Current view cannot be introspected',
       no_execute_on_settings: 'Cannot submit tasks from the settings page',
+      invalid_subfunction: 'Subfunction "{name}" is not available in this view',
     },
     tool: {
       navigate_to: 'Navigate',

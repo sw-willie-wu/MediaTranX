@@ -50,7 +50,7 @@ const cropPanelRef     = ref<InstanceType<typeof ImageCropPanel>     | null>(nul
 const ocrPanelRef      = ref<InstanceType<typeof ImageOcrPanel>      | null>(null)
 
 const subFunctions = computed(() => [
-  { id: 'convert',   name: t('image.functions.convert'),   icon: 'bi-arrow-repeat',         group: t('image.group.edit') },
+  { id: 'transcode', name: t('image.functions.transcode'), icon: 'bi-arrow-repeat',         group: t('image.group.edit') },
   { id: 'adjust',    name: t('image.functions.adjust'),    icon: 'bi-sliders',              group: t('image.group.edit') },
   { id: 'filter',    name: t('image.functions.filter'),    icon: 'bi-palette-fill',         group: t('image.group.edit') },
   { id: 'crop',      name: t('image.functions.crop'),      icon: 'bi-crop',                 group: t('image.group.edit') },
@@ -60,12 +60,13 @@ const subFunctions = computed(() => [
   { id: 'ocr',       name: t('image.functions.ocr'),       icon: 'bi-type',                 group: t('image.group.ai') },
 ])
 
-const currentFunction     = ref('convert')
+const currentFunction     = ref('transcode')
 const filterPreviewParams = ref<FilterPreview | null>(null)
 
 useViewHost('image', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
+  validSubfunctions: () => ['transcode', 'adjust', 'filter', 'crop', 'remove-bg', 'ai-remove', 'upscale', 'ocr'],
 })
 
 // ── Per-entry panel settings cache ───────────────────────────────────────────
@@ -219,7 +220,7 @@ const executeDisabled = computed(() => {
 
 const executeLoading = computed(() => {
   if (collection.activeEntry.value?.status === 'processing') return true
-  if (currentFunction.value === 'convert')   return convertPanelRef.value?.isLoading   ?? false
+  if (currentFunction.value === 'transcode') return convertPanelRef.value?.isLoading   ?? false
   if (currentFunction.value === 'upscale')   return upscalePanelRef.value?.isLoading   ?? false
   if (currentFunction.value === 'remove-bg') return removeBgPanelRef.value?.isLoading  ?? false
   if (currentFunction.value === 'ai-remove') return aiRemovePanelRef.value?.isLoading  ?? false
@@ -241,7 +242,7 @@ function handleExecute() {
 
 function handleSingleExecute() {
   switch (currentFunction.value) {
-    case 'convert':   convertPanelRef.value?.execute();  break
+    case 'transcode': convertPanelRef.value?.execute();  break
     case 'upscale':   upscalePanelRef.value?.execute();  break
     case 'remove-bg': removeBgPanelRef.value?.execute(); break
     case 'ai-remove': aiRemovePanelRef.value?.execute(); break
@@ -255,7 +256,7 @@ function handleSingleExecute() {
 function handleMultiExecute() {
   const noop = () => {}
   switch (currentFunction.value) {
-    case 'convert':
+    case 'transcode':
       submitToAll('/image/convert',   () => convertPanelRef.value!.getParams(),  t('image.convert.task_label'),    'image.convert',    noop); break
     case 'upscale':
       submitToAll('/image/upscale',   () => upscalePanelRef.value!.getParams(),  t('image.upscale.task_label'),    'image.upscale',    noop); break
@@ -439,7 +440,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     <template #settings>
       <div class="settings-form">
         <ImageConvertPanel
-          v-if="currentFunction === 'convert'"
+          v-if="currentFunction === 'transcode'"
           ref="convertPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"

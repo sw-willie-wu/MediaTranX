@@ -18,6 +18,7 @@ const activeTab = ref((route.query.tab as string) || 'general')
 useViewHost('settings', {
   currentFunction: activeTab,
   setCurrentFunction: (id) => { activeTab.value = id },
+  validSubfunctions: () => ['general', 'system', 'models', 'agent', 'about'],
 })
 
 const tabs = computed(() => [

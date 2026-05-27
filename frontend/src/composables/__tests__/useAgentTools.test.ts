@@ -51,12 +51,16 @@ function makeRouter(initialPath = '/image') {
   return router
 }
 
-function makeViewHandle(initialFn: string): ViewHandle {
+function makeViewHandle(initialFn: string, validSubfunctions?: string[]): ViewHandle {
   const currentFunction = ref(initialFn)
-  return {
+  const handle: ViewHandle = {
     currentFunction,
     setCurrentFunction: (id: string) => { currentFunction.value = id },
   }
+  if (validSubfunctions !== undefined) {
+    handle.validSubfunctions = () => validSubfunctions
+  }
+  return handle
 }
 
 function makeSchema(panelId: string, executeNull = true): PanelAgentSchema {
@@ -162,7 +166,7 @@ describe('dispatch: select_subfunction', () => {
   it('calls setCurrentFunction on the active view', async () => {
     const router = makeRouter('/image')
     await router.isReady()
-    const vh = makeViewHandle('convert')
+    const vh = makeViewHandle('transcode')
     viewRegistry.register('image', vh)
 
     const result = await withContext(router, d => d(tc('select_subfunction', { name: 'upscale' })))
@@ -175,6 +179,45 @@ describe('dispatch: select_subfunction', () => {
     // viewRegistry is empty
     const result = await withContext(router, d => d(tc('select_subfunction', { name: 'upscale' })))
     expect(result.error).toBe('agent.error.view_not_introspectable')
+  })
+
+  // Bug #22: validation + dynamic enum tests
+  it('Bug #22: returns invalid_subfunction with allowed list when name not in validSubfunctions', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    const vh = makeViewHandle('transcode', ['transcode', 'upscale', 'remove-bg', 'ai-remove', 'adjust', 'filter', 'crop', 'ocr'])
+    viewRegistry.register('image', vh)
+
+    const result = await withContext(router, d => d(tc('select_subfunction', { name: 'convert' })))
+    expect(result.error).toBe('agent.error.invalid_subfunction')
+    expect(result.name).toBe('convert')
+    expect(result.allowed).toContain('transcode')
+    expect(result.allowed).not.toContain('convert')
+    // currentFunction should NOT have changed
+    expect(vh.currentFunction.value).toBe('transcode')
+  })
+
+  it('Bug #22: view without validSubfunctions passes any name through (backward compat)', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    // makeViewHandle without second arg → no validSubfunctions
+    const vh = makeViewHandle('transcode')
+    viewRegistry.register('image', vh)
+
+    const result = await withContext(router, d => d(tc('select_subfunction', { name: 'anything_goes' })))
+    expect(result.ok).toBe(true)
+    expect(vh.currentFunction.value).toBe('anything_goes')
+  })
+
+  it('Bug #22: valid name in validSubfunctions list succeeds', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    const vh = makeViewHandle('transcode', ['transcode', 'upscale', 'ocr'])
+    viewRegistry.register('image', vh)
+
+    const result = await withContext(router, d => d(tc('select_subfunction', { name: 'ocr' })))
+    expect(result.ok).toBe(true)
+    expect(vh.currentFunction.value).toBe('ocr')
   })
 })
 
@@ -553,6 +596,74 @@ describe('getTools (Phase 2.A dynamic field enum)', () => {
 
   it('TOOLS const equals getTools(null)', () => {
     expect(TOOLS).toEqual(getTools(null))
+  })
+
+  // Bug #22: select_subfunction dynamic enum via activeViewHandle
+  it('Bug #22: select_subfunction.name is free string when activeViewHandle is null', () => {
+    const tools = getTools(null, null)
+    const selectSub = tools.find(t => t.name === 'select_subfunction')!
+    const params = selectSub.parameters as any
+    expect(params.properties.name).toEqual({ type: 'string' })
+    expect(params.properties.name.enum).toBeUndefined()
+  })
+
+  it('Bug #22: select_subfunction.name becomes enum when view has validSubfunctions', () => {
+    const fakeViewHandle: ViewHandle = {
+      currentFunction: ref('transcode'),
+      setCurrentFunction: (_id: string) => {},
+      validSubfunctions: () => ['transcode', 'upscale', 'ocr'],
+    }
+    const tools = getTools(null, fakeViewHandle)
+    const selectSub = tools.find(t => t.name === 'select_subfunction')!
+    const params = selectSub.parameters as any
+    expect(params.properties.name).toEqual({
+      type: 'string',
+      enum: ['transcode', 'upscale', 'ocr'],
+    })
+  })
+
+  it('Bug #22: select_subfunction.name is free string when view has empty validSubfunctions', () => {
+    const fakeViewHandle: ViewHandle = {
+      currentFunction: ref('transcode'),
+      setCurrentFunction: (_id: string) => {},
+      validSubfunctions: () => [],
+    }
+    const tools = getTools(null, fakeViewHandle)
+    const selectSub = tools.find(t => t.name === 'select_subfunction')!
+    const params = selectSub.parameters as any
+    expect(params.properties.name).toEqual({ type: 'string' })
+    expect(params.properties.name.enum).toBeUndefined()
+  })
+
+  it('Bug #22: select_subfunction.name is free string when view has no validSubfunctions method', () => {
+    const fakeViewHandle: ViewHandle = {
+      currentFunction: ref('transcode'),
+      setCurrentFunction: (_id: string) => {},
+      // no validSubfunctions property
+    }
+    const tools = getTools(null, fakeViewHandle)
+    const selectSub = tools.find(t => t.name === 'select_subfunction')!
+    const params = selectSub.parameters as any
+    expect(params.properties.name).toEqual({ type: 'string' })
+    expect(params.properties.name.enum).toBeUndefined()
+  })
+
+  it('Bug #22: getTools with both panel schema and view handle produces correct tool array length', () => {
+    const panel: PanelAgentSchema = {
+      panelId: 'image.transcode',
+      fields: [{ name: 'output_format', type: 'enum', options: () => ['png', 'jpg'] }],
+      actions: [],
+      execute: { requiresConfirm: true },
+    }
+    const fakeViewHandle: ViewHandle = {
+      currentFunction: ref('transcode'),
+      setCurrentFunction: (_id: string) => {},
+      validSubfunctions: () => ['transcode', 'upscale'],
+    }
+    const tools = getTools(panel, fakeViewHandle)
+    expect(tools).toHaveLength(9)
+    const names = tools.map(t => t.name)
+    expect(names).toEqual(['navigate_to', 'select_subfunction', 'load_file', 'list_files', 'open_dropdown', 'set_field', 'click_execute', 'click_action', 'get_task_status'])
   })
 })
 

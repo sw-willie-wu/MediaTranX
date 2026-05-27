@@ -24,7 +24,7 @@ import { getCurrentInstance } from 'vue'
 import { useRouter, type Router } from 'vue-router'
 import { useActivePanel } from '@/composables/useActivePanel'
 import { useActiveView, deriveViewId } from '@/composables/useActiveView'
-import { viewRegistry } from '@/stores/viewRegistry'
+import { viewRegistry, type ViewHandle } from '@/stores/viewRegistry'
 import { panelRegistry, type PanelAgentSchema } from '@/stores/panelRegistry'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
@@ -171,17 +171,42 @@ const _NON_SET_FIELD_TOOLS: ToolDefinition[] = [
 ]
 
 /**
- * Build the 9-tool array with a dynamic set_field definition.
+ * Build the 9-tool array with dynamic set_field and select_subfunction definitions.
  *
  * When activePanelSchema is provided and has fields, set_field.field becomes
  * an enum of panel field names — enabling OpenAI strict-mode constrained
  * decoding and Gemini/Ollama schema-respecting models to self-correct (§5.3.1,
  * Appendix D).
  *
+ * Bug #22: When activeViewHandle is provided and declares validSubfunctions(),
+ * select_subfunction.parameters.name becomes a dynamic enum of the valid IDs,
+ * preventing the model from guessing wrong subfunction names (e.g. "transcode"
+ * for Image domain when it was "convert").
+ *
  * Order: navigate, select, load, list, open_dropdown, set_field, click_exec,
  *        click_action, get_status.
  */
-export function getTools(activePanelSchema?: PanelAgentSchema | null): ToolDefinition[] {
+export function getTools(
+  activePanelSchema?: PanelAgentSchema | null,
+  activeViewHandle?: ViewHandle | null,
+): ToolDefinition[] {
+  // Bug #22: dynamic enum for select_subfunction.name
+  const subfnEnum = activeViewHandle?.validSubfunctions?.() ?? []
+  const selectSubfunctionDef: ToolDefinition = {
+    name: 'select_subfunction',
+    description:
+      'Select a sub-function within the current view (e.g. "upscale", "transcode"). For settings, also selects tab.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: subfnEnum.length > 0
+          ? { type: 'string', enum: subfnEnum }
+          : { type: 'string' },
+      },
+      required: ['name'],
+    },
+  }
+
   const setFieldDef: ToolDefinition = {
     name: 'set_field',
     description: 'Set a field on the active panel. Field name & valid values are in state.panel_schema.',
@@ -208,11 +233,19 @@ export function getTools(activePanelSchema?: PanelAgentSchema | null): ToolDefin
       required: ['field', 'value'],
     },
   }
-  // Maintain original order: first 5 non-set_field tools, then set_field, then last 3
+
+  // Build tool list: replace the static select_subfunction + set_field placeholders
+  // with their dynamic equivalents.
+  // Original _NON_SET_FIELD_TOOLS order: [navigate, select_subfunction, load, list, open_dropdown, click_exec, click_action, get_status]
+  // Index 0=navigate, 1=select_subfunction, 2=load, 3=list, 4=open_dropdown, 5=click_exec, 6=click_action, 7=get_status
   return [
-    ..._NON_SET_FIELD_TOOLS.slice(0, 5),
-    setFieldDef,
-    ..._NON_SET_FIELD_TOOLS.slice(5),
+    _NON_SET_FIELD_TOOLS[0],  // navigate_to
+    selectSubfunctionDef,     // dynamic select_subfunction (Bug #22)
+    _NON_SET_FIELD_TOOLS[2],  // load_file
+    _NON_SET_FIELD_TOOLS[3],  // list_files
+    _NON_SET_FIELD_TOOLS[4],  // open_dropdown
+    setFieldDef,              // dynamic set_field
+    ..._NON_SET_FIELD_TOOLS.slice(5), // click_execute, click_action, get_task_status
   ]
 }
 
@@ -291,6 +324,12 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
       const view = await _getActiveView()
       if (!view || !view.setCurrentFunction) {
         return { error: 'agent.error.view_not_introspectable' }
+      }
+      // Bug #22: validate name against view's declared valid subfunction list.
+      // Views without validSubfunctions (backward compat) pass through unchecked.
+      const allowed = view.validSubfunctions?.() ?? []
+      if (allowed.length > 0 && !allowed.includes(name)) {
+        return { error: 'agent.error.invalid_subfunction', name, allowed }
       }
       view.setCurrentFunction(name)
       return { ok: true }

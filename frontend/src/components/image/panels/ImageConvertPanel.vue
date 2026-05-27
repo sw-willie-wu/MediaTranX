@@ -76,7 +76,7 @@ async function execute() {
 
 // ── Agent panel registration ──────────────────────────────────────────────────
 const agentSchema = {
-  panelId: 'image.convert',
+  panelId: 'image.transcode',
   fields: [
     { name: 'output_format', type: 'enum' as const,
       options: () => convertFormats.map(f => f.value) },
@@ -96,10 +96,10 @@ const agentSchema = {
       visibleWhen: () => convertResizeMode.value === 'custom' },
   ],
   actions: [],
-  execute: { requiresConfirm: true, label: 'panel.convert.execute' },
+  execute: { requiresConfirm: true, label: 'panel.transcode.execute' },
 }
 
-useAgentPanelHost('image.convert', {
+useAgentPanelHost('image.transcode', {
   agentSchema,
   isMultiSelect: () => props.isMultiSelect ?? false,
   getCurrentValues: () => ({
