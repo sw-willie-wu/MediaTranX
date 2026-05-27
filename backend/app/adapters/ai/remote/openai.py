@@ -298,11 +298,22 @@ class OpenAIProvider(RemoteProvider):
         # Chat Completions does not support reasoning models — callers should
         # call chat() directly for o-series / gpt-5 (which routes to Responses).
         token_key = "max_completion_tokens" if self._is_new_model(model) else "max_tokens"
+        # Same wire-format wrapping as LlamaServer.chat_stream: AG-UI passes a
+        # flat `{name, description, parameters}` tool shape; OpenAI requires
+        # the nested `{type: "function", function: {...}}` envelope.  Wrap any
+        # flat entry on the way out; pass already-nested tools through so
+        # callers that built the OpenAI shape directly still work.
+        wire_tools: list[dict] = []
+        for t in tools or []:
+            if "type" in t and "function" in t:
+                wire_tools.append(t)
+            else:
+                wire_tools.append({"type": "function", "function": t})
         payload: dict = {
             "model": model,
             "messages": messages,
-            "tools": tools or [],
-            "tool_choice": "auto" if tools else "none",
+            "tools": wire_tools,
+            "tool_choice": "auto" if wire_tools else "none",
             token_key: max_tokens,
             "temperature": temperature,
             "stream": True,
