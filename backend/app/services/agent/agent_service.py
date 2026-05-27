@@ -46,15 +46,23 @@ def _msg_to_dict(m) -> dict:
     with at least {"role": ..., "content": ...}.
 
     Strips any SDK-internal "id" field to avoid sending unknown keys to
-    llama-server or remote APIs.
+    llama-server or remote APIs.  Also strips empty `tool_calls` (or
+    camelCase `toolCalls`) on assistant messages — OpenAI returns 400
+    `Invalid 'messages[N].tool_calls': empty array` if the key is present
+    with `[]` (must be omitted entirely or have ≥1 entry).
     """
     if isinstance(m, dict):
         d = {k: v for k, v in m.items() if k != "id"}
-        return d
-    # Pydantic model: use model_dump() then drop None values and the
-    # SDK-internal "id" that llama-server / remote APIs don't understand.
-    d = m.model_dump(exclude_none=True, by_alias=False)
-    d.pop("id", None)
+    else:
+        # Pydantic model: use model_dump() then drop None values and the
+        # SDK-internal "id" that llama-server / remote APIs don't understand.
+        d = m.model_dump(exclude_none=True, by_alias=False)
+        d.pop("id", None)
+    if d.get("role") == "assistant":
+        if not d.get("tool_calls"):
+            d.pop("tool_calls", None)
+        if not d.get("toolCalls"):
+            d.pop("toolCalls", None)
     return d
 
 
