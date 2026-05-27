@@ -24,6 +24,25 @@ import { useAgentStore, type TransientBuffer } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
 import { useAgentTools } from '@/composables/useAgentTools'
 
+// i18n.global.t is the standard pattern for non-setup contexts (see
+// useSubmitTask / useMediaCollection).  We resolve it lazily on first error
+// instead of importing `@/i18n` at module-load time so this composable stays
+// importable from node-env tests that don't need full i18n bootstrap (and so
+// we don't trigger `resolveLocale()` -> navigator.language at import time).
+let _t: ((k: string) => string) | null = null
+function translate(key: string): string {
+  if (_t === null) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require('@/i18n')
+      _t = (mod.default ?? mod).global.t
+    } catch {
+      _t = (k: string) => k   // fallback: identity
+    }
+  }
+  return _t!(key)
+}
+
 // ─── Public types ──────────────────────────────────────────────────────────────
 
 export type Message =
@@ -188,8 +207,13 @@ function _createAgent(deps: UseAgentDeps = {}) {
           },
           onRunFinished: (e) => store.addUsage(e.usage),
           onError: (e) => {
-            // RUN_ERROR from backend — record as assistant message and stop the loop
-            messages.value.push({ role: 'assistant', content: `[${e.code}] ${e.message}` })
+            // RUN_ERROR from backend — record as assistant message and stop the loop.
+            // e.code is an i18n key (e.g. "agent.error.no_model"); fall back to the
+            // raw code when no translation exists so unknown codes still surface.
+            const translated = translate(e.code)
+            const friendly = translated === e.code ? e.code : translated
+            const suffix = e.message ? ` (${e.message})` : ''
+            messages.value.push({ role: 'assistant', content: `${friendly}${suffix}` })
             outerStop = true
           },
         })
