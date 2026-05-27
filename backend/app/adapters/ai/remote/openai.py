@@ -154,6 +154,42 @@ def _strictify_schema(schema: dict) -> dict:
     return s
 
 
+def _to_openai_strict_tools(flat_tools: list[dict]) -> list[dict]:
+    """Wrap AG-UI flat tool defs into OpenAI strict function shape.
+
+    AG-UI flat shape:     {name, description, parameters}
+    OpenAI strict shape:  {type:"function", function:{...strict schema..., strict:true}}
+
+    Agent path only sends flat tools (RemoteChatSession.stream → frontend
+    AG-UI TOOLS); accepting caller-built nested shapes would risk silently
+    shipping non-strict tools.  We therefore only accept flat shape and
+    raise on anything else to fail loudly.
+    """
+    wire: list[dict] = []
+    for t in flat_tools:
+        if "type" in t or "function" in t:
+            raise ValueError(
+                "_to_openai_strict_tools: nested OpenAI shape not accepted; "
+                "agent path must send AG-UI flat shape {name, description, parameters}"
+            )
+        if "name" not in t:
+            raise ValueError("_to_openai_strict_tools: tool missing 'name'")
+        if "description" not in t:
+            raise ValueError(f"_to_openai_strict_tools: tool {t['name']!r} missing 'description'")
+        if "parameters" not in t:
+            raise ValueError(f"_to_openai_strict_tools: tool {t['name']!r} missing 'parameters'")
+        wire.append({
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": _strictify_schema(t["parameters"]),
+                "strict": True,
+            },
+        })
+    return wire
+
+
 # Minimum max_output_tokens for o-series Responses API calls with reasoning.
 # Even at effort="low", o4-mini consumes ~64-100 reasoning tokens before producing
 # any visible output. A budget below this yields an empty response (production bug

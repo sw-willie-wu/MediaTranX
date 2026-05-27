@@ -232,3 +232,73 @@ class TestStrictifySchemaIdempotency:
         # Second pass MUST NOT raise (would happen without self-recognition)
         twice = _strictify_schema(once)
         assert once == twice
+
+
+class TestToOpenAIStrictTools:
+    """Wraps AG-UI flat shape into OpenAI nested strict shape."""
+
+    def test_empty_input_returns_empty(self):
+        from app.adapters.ai.remote.openai import _to_openai_strict_tools
+
+        assert _to_openai_strict_tools([]) == []
+
+    def test_wraps_flat_with_strict_true(self):
+        from app.adapters.ai.remote.openai import _to_openai_strict_tools
+
+        result = _to_openai_strict_tools([
+            {
+                "name": "navigate_to",
+                "description": "Navigate to a route.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"route": {"type": "string"}},
+                    "required": ["route"],
+                },
+            }
+        ])
+        assert len(result) == 1
+        assert result[0]["type"] == "function"
+        fn = result[0]["function"]
+        assert fn["name"] == "navigate_to"
+        assert fn["description"] == "Navigate to a route."
+        assert fn["strict"] is True
+        # parameters went through _strictify_schema
+        assert fn["parameters"]["additionalProperties"] is False
+        assert fn["parameters"]["required"] == ["route"]
+
+    def test_includes_description(self):
+        from app.adapters.ai.remote.openai import _to_openai_strict_tools
+
+        result = _to_openai_strict_tools([
+            {"name": "x", "description": "DESC", "parameters": {"type": "object"}}
+        ])
+        assert result[0]["function"]["description"] == "DESC"
+
+    def test_raises_on_caller_built_nested_shape(self):
+        from app.adapters.ai.remote.openai import _to_openai_strict_tools
+
+        # Even if the caller built {"type":"function","function":{...}}, refuse it
+        # — agent path is flat-only.  Accepting nested risks silently shipping
+        # tools without strict:true.
+        with pytest.raises(ValueError, match="nested OpenAI shape not accepted"):
+            _to_openai_strict_tools([
+                {"type": "function", "function": {"name": "x", "description": "y", "parameters": {"type": "object"}, "strict": True}}
+            ])
+
+    def test_raises_on_missing_name(self):
+        from app.adapters.ai.remote.openai import _to_openai_strict_tools
+
+        with pytest.raises(ValueError, match="missing 'name'"):
+            _to_openai_strict_tools([{"description": "d", "parameters": {"type": "object"}}])
+
+    def test_raises_on_missing_description(self):
+        from app.adapters.ai.remote.openai import _to_openai_strict_tools
+
+        with pytest.raises(ValueError, match="missing 'description'"):
+            _to_openai_strict_tools([{"name": "x", "parameters": {"type": "object"}}])
+
+    def test_raises_on_missing_parameters(self):
+        from app.adapters.ai.remote.openai import _to_openai_strict_tools
+
+        with pytest.raises(ValueError, match="missing 'parameters'"):
+            _to_openai_strict_tools([{"name": "x", "description": "d"}])
