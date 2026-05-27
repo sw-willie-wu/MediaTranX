@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterator, Optional
 
 from .base import BaseWrapper
 from app.adapters.binary.llama_server import LlamaServer
@@ -92,6 +92,30 @@ class LlmWrapper(BaseWrapper):
             temperature=temperature, top_k=top_k, top_p=top_p, stop=stop,
         )
         return self._strip_thinking(content)
+
+    def chat_stream(
+        self,
+        messages: list[dict],
+        *,
+        tools: list[dict] | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+    ) -> Iterator[dict]:
+        """Streaming chat completion — raw OpenAI-compat SSE chunks.
+
+        Thin proxy to LlamaServer.chat_stream(); parsing of delta/tool_call
+        semantics and cancel coordination live in ChatService.stream().
+        Used by the agent path (LocalChatSession.stream → ChatService producer
+        thread → this method).
+        """
+        if self._model is None:
+            raise RuntimeError("LlmWrapper not loaded; call acquire() first")
+        return self._model.chat_stream(
+            messages=messages,
+            tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
 
     def kill_process(self) -> None:
         """Best-effort cancellation hook for fake_progress(cancellable=...).

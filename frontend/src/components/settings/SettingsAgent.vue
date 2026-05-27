@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
 import { useModelStore } from '@/stores/models'
@@ -15,11 +15,18 @@ const settings = useAgentSettingsStore()
 const modelStore = useModelStore()
 const agent = useAgent()
 
-// Local tool-capable model options
+// Ensure model registry is loaded so the tool-capable model picker can populate
+// (registry is otherwise lazy-loaded by AI 模型管理 tab only).
+onMounted(() => { void modelStore.ensureLoaded() })
+
+// Local tool-capable model options. The agent service expects the colon form
+// "family:size[:quant]" (spec §5.2 n8) — registry `m.id` is dash-separated
+// (e.g. "qwen3-8b-Q4_K_M") and cannot be reused as-is, so build the value
+// from `family` + `variant` (variant already has the "size:quant" shape).
 const localToolModels = computed<SelectOption[]>(() =>
   modelStore.byCategory('llm')
     .filter(m => m.capabilities?.includes('tools'))
-    .map(m => ({ value: m.id, label: m.label }))
+    .map(m => ({ value: `${m.family}:${m.variant}`, label: m.label }))
 )
 
 const { mergedOptions } = useModelOptions('tools', localToolModels)

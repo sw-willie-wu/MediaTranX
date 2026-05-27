@@ -33,6 +33,16 @@ Object.defineProperty(globalThis, 'localStorage', {
   configurable: true,
 })
 
+// Minimal navigator stub — required by @/i18n's resolveLocale() (called at
+// module init via useAgent → i18n.global.t for error formatting).
+if (typeof (globalThis as any).navigator === 'undefined') {
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { language: 'en-US' },
+    writable: true,
+    configurable: true,
+  })
+}
+
 beforeEach(() => {
   localStorageStub.clear()
   setActivePinia(createPinia())
@@ -441,7 +451,12 @@ describe('useAgent.runLoop', () => {
     // Must be exactly 1 — the formatted error one, NOT an extra empty follow-up
     expect(assistantMessages).toHaveLength(1)
     const msg = assistantMessages[0] as any
-    expect(msg.content).toBe('[agent.error.no_model] no model configured')
+    // useAgent now formats RUN_ERROR via i18n: either translated text or raw
+    // code when no translation, followed by the backend message in parens.
+    // Both `agent.error.no_model` (raw code if i18n absent) and the en/zh-TW
+    // translations are acceptable; the backend message must always be there.
+    expect(msg.content).toMatch(/no model configured/)
+    expect(msg.content).toMatch(/agent\.error\.no_model|No agent model configured|尚未設定/)
   })
 
   // ─── Scenario 11: cancelRun during confirm → outerStop → no round 2 ──────────

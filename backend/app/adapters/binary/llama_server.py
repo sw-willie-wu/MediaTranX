@@ -310,11 +310,23 @@ class LlamaServer:
         if not self._port:
             raise RuntimeError("LlamaServer not started; call start() first")
 
+        # AG-UI Tool is flat `{name, description, parameters}` (Wave 0 SPIKE
+        # finding); the OpenAI /v1/chat/completions wire expects the nested
+        # `{type:"function", function:{...}}` form. Wrap any flat entry on the
+        # way out; pass already-nested tools through unchanged so callers that
+        # already construct the OpenAI shape (existing tests) still work.
+        wire_tools: list[dict] = []
+        for t in tools or []:
+            if "type" in t and "function" in t:
+                wire_tools.append(t)
+            else:
+                wire_tools.append({"type": "function", "function": t})
+
         payload = {
             "model": "local",
             "messages": messages,
-            "tools": tools or [],
-            "tool_choice": "auto" if tools else "none",
+            "tools": wire_tools,
+            "tool_choice": "auto" if wire_tools else "none",
             "max_tokens": max_tokens,
             "temperature": temperature,
             "stream": True,

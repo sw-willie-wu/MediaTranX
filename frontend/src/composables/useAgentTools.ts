@@ -5,20 +5,51 @@
  *
  * Design notes:
  * - All store / router / registry access is done lazily inside each dispatcher
- *   function, NOT at module-level or composable-call time.  This makes the
- *   composable safe to call from any context (setup, outside setup, tests) and
- *   avoids "no active component instance" errors from useRouter / useRoute.
+ *   function (NOT at module-level or composable-call time).  This keeps the
+ *   composable safe to call from any context — setup, outside setup, vitest
+ *   node env — and avoids "no active component instance" errors from
+ *   useRouter / useRoute.
+ * - `useRouter()` itself uses `inject()` and therefore needs an active setup
+ *   context, so the router is reached via dynamic `import('@/router')` from
+ *   inside each dispatcher.  The module is loaded once at app boot, so the
+ *   dynamic import is essentially free at call time.  This also stops the
+ *   `createWebHashHistory()` side-effect from firing at module-load time in
+ *   node-env tests that don't need the router at all.
  * - Each dispatcher returns a ToolResult: { ok: true, ... } | { error: string, ... }
  * - dispatch() itself is a pure stateless function exported alongside the
  *   composable so tests can call it directly without Vue setup context.
  */
 
-import { useRouter } from 'vue-router'
+import { getCurrentInstance } from 'vue'
+import { useRouter, type Router } from 'vue-router'
 import { useActivePanel } from '@/composables/useActivePanel'
 import { useActiveView } from '@/composables/useActiveView'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useAgentStore } from '@/stores/agent'
+
+/**
+ * Resolve a Router instance.
+ *
+ * When called from inside an active Vue setup() (e.g. the test harness which
+ * mounts a component with a memory-history router as a plugin), prefer
+ * `useRouter()` so test-injected routers and their spies are honoured.
+ *
+ * When called outside setup (the production path: dispatchers run from the
+ * useAgent runLoop, which is plain async code) `useRouter()` would log a
+ * "inject() can only be used inside setup()" warning AND return `undefined`,
+ * so we fall back to a dynamic import of the global singleton.  The dynamic
+ * import keeps `createWebHashHistory()` off the module-load path of files
+ * that only need the dispatchers (e.g. node-env tests that don't navigate).
+ */
+async function resolveRouter(): Promise<Router> {
+  if (getCurrentInstance() !== null) {
+    const r = useRouter()
+    if (r) return r
+  }
+  const mod = await import('@/router')
+  return mod.default
+}
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -150,7 +181,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
   navigate_to: async ({ route }: { route: string }): Promise<ToolResult> => {
     try {
       useAgentStore().setCurrentAction('agent.banner.act.navigate_to', { route })
-      const router = useRouter()
+      const router = await resolveRouter()
       await router.push(route)
       return { ok: true }
     } catch (e: any) {
@@ -345,9 +376,23 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
 // ─── Public dispatch function ─────────────────────────────────────────────────
 
+// Required-field schema derived from TOOLS so dispatch() can short-circuit
+// when a model emits a tool call with missing arguments (bug #15 model-quality
+// case observed live with qwen3:8b emitting navigate_to({}) — would otherwise
+// fall through to router.push(undefined) and a cryptic vue-router error).
+const REQUIRED_BY_TOOL: Record<string, readonly string[]> = Object.fromEntries(
+  TOOLS.map(t => [
+    t.name,
+    Array.isArray((t.parameters as any)?.required)
+      ? ((t.parameters as any).required as string[])
+      : [],
+  ]),
+)
+
 /**
- * Dispatch a tool call to the appropriate handler.
- * Must be called within a Vue component setup context (for router/stores).
+ * Dispatch a tool call to the appropriate handler.  Safe to call from any
+ * execution context; all store / router access inside the dispatchers is
+ * lazy (see header note).
  */
 export function dispatch(tc: ToolCall): Promise<ToolResult> {
   const fn = dispatchers[tc.function.name]
@@ -355,11 +400,33 @@ export function dispatch(tc: ToolCall): Promise<ToolResult> {
     return Promise.resolve({ error: 'agent.error.unknown_tool', tool: tc.function.name })
   }
 
+  // Defense-in-depth: empty / whitespace `arguments` is treated as "{}"
+  // (the SSE assembler already normalizes the wire path; this covers
+  // direct callers / tests that bypass the assembler).
   let args: any
-  try {
-    args = JSON.parse(tc.function.arguments)
-  } catch (e: any) {
-    return Promise.resolve({ error: 'agent.error.tool_failed', detail: 'arguments not valid JSON' })
+  const raw = (tc.function.arguments ?? '').trim()
+  if (!raw) {
+    args = {}
+  } else {
+    try {
+      args = JSON.parse(raw)
+    } catch (e: any) {
+      return Promise.resolve({ error: 'agent.error.tool_failed', detail: 'arguments not valid JSON' })
+    }
+  }
+
+  // Surface missing-required errors back to the model with a clear typed code
+  // (agent.error.invalid_field) instead of dispatching and crashing the
+  // dispatcher with whatever the dependency throws on an undefined.
+  const required = REQUIRED_BY_TOOL[tc.function.name] ?? []
+  for (const field of required) {
+    if (args == null || args[field] === undefined || args[field] === '') {
+      return Promise.resolve({
+        error: 'agent.error.invalid_field',
+        field,
+        detail: `tool ${tc.function.name} requires field "${field}"`,
+      })
+    }
   }
 
   return fn(args).catch((e: any) => ({
