@@ -451,7 +451,7 @@ MODELS_REGISTRY = {
         "gemma4": {
             "slot": SLOT_LLM,
             "label": "Gemma4",
-            "capabilities": ["text", "vision"],
+            "capabilities": ["text", "vision", "tools"],
             "description": "models.gemma4",
             "inference": {
                 "translate": {
@@ -482,11 +482,13 @@ MODELS_REGISTRY = {
                     "n_ctx_min": 2048, "n_ctx_max": 131072, "n_ctx_default": 8192, "vram_per_ctx_token": 0.02, "max_srt_batch": 15,
                     "vram_overhead_mb": 500,
                     "variants": {
+                        # HF repo paths are case-sensitive — must use uppercase E2B
+                        # (matches the repo's actual filenames). Lowercase forms 404.
                         "Q8_0": {
                             "repo_id": "ggml-org/gemma-4-E2B-it-GGUF",
-                            "filename": "gemma-4-e2b-it-Q8_0.gguf",
+                            "filename": "gemma-4-E2B-it-Q8_0.gguf",
                             "mmproj_repo_id": "ggml-org/gemma-4-E2B-it-GGUF",
-                            "mmproj_filename": "mmproj-gemma-4-e2b-it-bf16.gguf",
+                            "mmproj_filename": "mmproj-gemma-4-E2B-it-bf16.gguf",
                             "size_mb": 5090,
                             "mmproj_size_mb": 987,
                         },

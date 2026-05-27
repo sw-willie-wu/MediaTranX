@@ -46,7 +46,10 @@ _HIDDEN_KEYWORDS = [
     "embedding", "aqa", "bisheng", "text-",
     "-image-", "-image", "imagen",
     "native-audio", "tts",
-    "-lite", "custom-tools",
+    # `-lite` removed — Flash Lite variants are legitimate, cheaper picks for
+    # the agent (separate quota bucket from Flash). Users picking Gemini for
+    # the agent want all callable variants in the picker.
+    "custom-tools",
     "computer-use", "deep-research",
     "robotics", "veo", "lyria",
 ]
@@ -653,7 +656,9 @@ class GeminiProvider(RemoteProvider):
         Infer capabilities from supportedGenerationMethods.
 
         Common methods:
-        - generateContent -> text
+        - generateContent -> text (+ tools — every generateContent model on the
+          Gemini API supports `tools=[{functionDeclarations}]`, Wave 4.6 wired
+          the converter)
         - generateMessage -> text (legacy)
         - embedContent -> embedding
         """
@@ -670,6 +675,12 @@ class GeminiProvider(RemoteProvider):
         if any(kw in model_lower for kw in ["flash", "pro", "ultra", "2.0", "2.5"]):
             if "text" in caps:
                 caps.append("vision")
+
+        # Tool calling — `generateContent` always accepts a `tools=[...]` array.
+        # Without this tag the agent picker (filters by capabilities.tools)
+        # never shows Gemini models even though Wave 4.6 already supports them.
+        if "generateContent" in methods:
+            caps.append("tools")
 
         if not caps:
             caps = ["text"]
