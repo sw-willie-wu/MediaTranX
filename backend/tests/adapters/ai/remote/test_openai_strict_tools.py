@@ -303,6 +303,23 @@ class TestToOpenAIStrictTools:
         with pytest.raises(ValueError, match="missing 'parameters'"):
             _to_openai_strict_tools([{"name": "x", "description": "d"}])
 
+    def test_strictify_error_carries_tool_name(self):
+        """When _strictify_schema raises for a tool's parameters, the wrapper
+        re-raises with the offending tool name attached (I-2 from Task 9 review)."""
+        from app.adapters.ai.remote.openai import _to_openai_strict_tools
+
+        # Nested object in property — _strictify_schema would raise.
+        # Wrapper must re-raise with the tool name.
+        with pytest.raises(ValueError, match="tool 'broken_tool' parameters invalid"):
+            _to_openai_strict_tools([{
+                "name": "broken_tool",
+                "description": "intentionally broken schema",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"nested": {"type": "object", "properties": {}}},
+                },
+            }])
+
 
 class TestRealShapeSanity:
     """All 9 frontend TOOLS (mirror of useAgentTools.ts:76-160) must pass

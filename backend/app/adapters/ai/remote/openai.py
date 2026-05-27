@@ -178,12 +178,18 @@ def _to_openai_strict_tools(flat_tools: list[dict]) -> list[dict]:
             raise ValueError(f"_to_openai_strict_tools: tool {t['name']!r} missing 'description'")
         if "parameters" not in t:
             raise ValueError(f"_to_openai_strict_tools: tool {t['name']!r} missing 'parameters'")
+        try:
+            strict_params = _strictify_schema(t["parameters"])
+        except ValueError as e:
+            raise ValueError(
+                f"_to_openai_strict_tools: tool {t['name']!r} parameters invalid: {e}"
+            ) from e
         wire.append({
             "type": "function",
             "function": {
                 "name": t["name"],
                 "description": t["description"],
-                "parameters": _strictify_schema(t["parameters"]),
+                "parameters": strict_params,
                 "strict": True,
             },
         })
@@ -421,9 +427,17 @@ class OpenAIProvider(RemoteProvider):
         tool-calling path.
 
         Args:
-            tools: Tool list forwarded as-is; omitted (empty list) when None.
+            tools: Flat AG-UI shape ``{name, description, parameters}``;
+                wrapped into OpenAI strict function shape (see
+                ``_to_openai_strict_tools``).  Raises ``ValueError`` for
+                nested/malformed schemas.
             abort_hook: Invoked exactly once immediately after urlopen returns.
                 Lets RemoteChatSession stash the response for cross-thread close.
+
+        Raises:
+            ValueError: when ``tools`` contains a caller-built nested
+                shape, a tool missing required keys, or a parameters
+                schema that ``_strictify_schema`` cannot strict-ify.
         """
         # Chat Completions does not support reasoning models — callers should
         # call chat() directly for o-series / gpt-5 (which routes to Responses).
