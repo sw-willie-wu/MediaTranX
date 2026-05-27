@@ -28,8 +28,9 @@ const audioRef       = ref<HTMLAudioElement | null>(null)
 const waveformCanvas = ref<HTMLCanvasElement | null>(null)
 
 // ── Per-file playback position cache ─────────────────────────────────────
+// The previous URL is supplied by Vue's watch(oldValue) on line 447 — we
+// don't need to track it manually.
 const _timeCache = new Map<string, number>()
-let _lastUrl = ''
 
 // ── Waveform state ────────────────────────────────────────────────────────
 let waveformData: Float32Array | null = null
@@ -232,7 +233,7 @@ function drawWaveform() {
   const intervals = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600]
   const minPixelGap = 60
   const targetInterval = visibleDuration / (W / minPixelGap)
-  let tickInterval = intervals.find(i => i >= targetInterval) ?? 600
+  const tickInterval = intervals.find(i => i >= targetInterval) ?? 600
 
   // 畫刻度
   ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
