@@ -30,6 +30,27 @@ import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useAgentStore } from '@/stores/agent'
 
+// ─── Bug #21: nested value unwrap helper ─────────────────────────────────────
+
+/**
+ * Bug #21: local models (qwen3:8b, qwen3.5:9b without strict-mode equivalent) often
+ * wrap set_field's `value` arg in a nested object: `{field: 'grayscale', value: {value: 50}}`
+ * or `{field: 'mode', value: {mode: 'anime'}}`. Detect this single-key-wrapping pattern
+ * (key === field name OR key === 'value') and extract the inner scalar.
+ *
+ * Does NOT unwrap when value has multiple keys, or when the single key doesn't match —
+ * those are real object values (rare, but reserved for future panels with object fields).
+ */
+export function _unwrapNestedValue(field: string, value: unknown): unknown {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    const keys = Object.keys(value as Record<string, unknown>)
+    if (keys.length === 1 && (keys[0] === field || keys[0] === 'value')) {
+      return (value as Record<string, unknown>)[keys[0]]
+    }
+  }
+  return value
+}
+
 /**
  * Resolve a Router instance.
  *
@@ -170,7 +191,19 @@ export function getTools(activePanelSchema?: PanelAgentSchema | null): ToolDefin
         field: activePanelSchema && activePanelSchema.fields.length > 0
           ? { type: 'string', enum: activePanelSchema.fields.map(f => f.name) }
           : { type: 'string' },
-        value: {},
+        // Bug #21: empty schema let local models emit nested {value: x} or {[field]: x}.
+        // anyOf restricts to scalar types — guides schema-respecting models to scalar.
+        // Shape matches backend _STRICT_PRIMITIVE_ANYOF exactly so _strictify_schema
+        // passes through via idempotency check (OpenAI strict mode compatible).
+        // Dispatcher _unwrapNestedValue below is the safety net for non-strict providers.
+        value: {
+          anyOf: [
+            { type: 'string' },
+            { type: 'number' },
+            { type: 'boolean' },
+            { type: 'null' },
+          ],
+        },
       },
       required: ['field', 'value'],
     },
@@ -319,7 +352,10 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
   set_field: async ({ field, value }: { field: string; value: unknown }): Promise<ToolResult> => {
     try {
-      const displayValue = value !== null && typeof value === 'object' ? JSON.stringify(value) : String(value)
+      // Bug #21: unwrap single-key nested object emitted by local models without strict mode.
+      // e.g. {value: {value: 50}} → {value: 50}  or  {value: {mode: 'anime'}} → {value: 'anime'}
+      const unwrappedValue = _unwrapNestedValue(field, value)
+      const displayValue = unwrappedValue !== null && typeof unwrappedValue === 'object' ? JSON.stringify(unwrappedValue) : String(unwrappedValue)
       useAgentStore().setCurrentAction('agent.banner.act.set_field', { field, value: displayValue })
       const ap = await _getActivePanel()
       if (!ap) return { error: 'agent.error.panel_not_supported' }
@@ -335,10 +371,10 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
       }
 
       // Enum validation with case-insensitive matching (OQ-6)
-      let coercedValue = value
+      let coercedValue = unwrappedValue
       if (fieldDef.type === 'enum' && fieldDef.options) {
         const opts = fieldDef.options()
-        const matched = opts.find(o => o.toLowerCase() === String(value).toLowerCase())
+        const matched = opts.find(o => o.toLowerCase() === String(unwrappedValue).toLowerCase())
         if (!matched) {
           return {
             error: 'agent.error.invalid_field',

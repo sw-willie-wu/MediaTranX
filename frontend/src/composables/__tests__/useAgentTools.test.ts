@@ -26,7 +26,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-import { TOOLS, getTools, dispatch, type ToolCall } from '@/composables/useAgentTools'
+import { TOOLS, getTools, dispatch, _unwrapNestedValue, type ToolCall } from '@/composables/useAgentTools'
 import { viewRegistry, type ViewHandle } from '@/stores/viewRegistry'
 import { panelRegistry, type PanelHandle, type PanelAgentSchema } from '@/stores/panelRegistry'
 import { useFilesStore } from '@/stores/files'
@@ -553,6 +553,146 @@ describe('getTools (Phase 2.A dynamic field enum)', () => {
 
   it('TOOLS const equals getTools(null)', () => {
     expect(TOOLS).toEqual(getTools(null))
+  })
+})
+
+// ─── _unwrapNestedValue unit tests (Bug #21) ─────────────────────────────────
+
+describe('_unwrapNestedValue (Bug #21 fix)', () => {
+  it('passes scalar number through unchanged', () => {
+    expect(_unwrapNestedValue('upscale_scale', 50)).toBe(50)
+  })
+
+  it('passes scalar string through unchanged', () => {
+    expect(_unwrapNestedValue('model', 'quality')).toBe('quality')
+  })
+
+  it('unwraps {[field]: scalar} pattern', () => {
+    expect(_unwrapNestedValue('model', { model: 'quality' })).toBe('quality')
+  })
+
+  it('unwraps {value: scalar} pattern', () => {
+    expect(_unwrapNestedValue('upscale_scale', { value: 50 })).toBe(50)
+  })
+
+  it('does NOT unwrap when single key matches neither field nor "value"', () => {
+    const obj = { other: 50 }
+    expect(_unwrapNestedValue('upscale_scale', obj)).toBe(obj)
+  })
+
+  it('does NOT unwrap multi-key objects', () => {
+    const obj = { foo: 1, bar: 2 }
+    expect(_unwrapNestedValue('upscale_scale', obj)).toBe(obj)
+  })
+
+  it('passes null through unchanged', () => {
+    expect(_unwrapNestedValue('field', null)).toBeNull()
+  })
+
+  it('passes array through unchanged', () => {
+    const arr = [1, 2, 3]
+    expect(_unwrapNestedValue('field', arr)).toBe(arr)
+  })
+})
+
+// ─── set_field dispatcher unwrap integration (Bug #21) ───────────────────────
+
+describe('set_field dispatcher: _unwrapNestedValue integration (Bug #21)', () => {
+  function makeNumberSchema(panelId: string): import('@/stores/panelRegistry').PanelAgentSchema {
+    return {
+      panelId,
+      fields: [
+        { name: 'upscale_scale', type: 'number', min: 1, max: 4 },
+        { name: 'grayscale', type: 'number', min: 0, max: 100 },
+      ],
+      actions: [],
+      execute: { requiresConfirm: false },
+    }
+  }
+
+  it('passes scalar value through to setField unchanged', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    const vh = makeViewHandle('upscale')
+    viewRegistry.register('image', vh)
+    const setFieldFn = vi.fn((_f: string, v: unknown) => v)
+    const handle = makePanelHandle('image.upscale', { setFieldFn })
+    handle.agentSchema = makeNumberSchema('image.upscale')
+    panelRegistry.register('image.upscale', handle)
+
+    const result = await withContext(router, d =>
+      d(tc('set_field', { field: 'upscale_scale', value: 2 }))
+    )
+    expect(result.ok).toBe(true)
+    expect(setFieldFn).toHaveBeenCalledWith('upscale_scale', 2)
+  })
+
+  it('unwraps {[field]: scalar} pattern before passing to setField', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    const vh = makeViewHandle('upscale')
+    viewRegistry.register('image', vh)
+    const setFieldFn = vi.fn((_f: string, v: unknown) => v)
+    const handle = makePanelHandle('image.upscale', { setFieldFn })
+    handle.agentSchema = makeNumberSchema('image.upscale')
+    panelRegistry.register('image.upscale', handle)
+
+    const result = await withContext(router, d =>
+      d(tc('set_field', { field: 'upscale_scale', value: { upscale_scale: 2 } }))
+    )
+    expect(result.ok).toBe(true)
+    expect(setFieldFn).toHaveBeenCalledWith('upscale_scale', 2)
+  })
+
+  it('unwraps {value: scalar} pattern before passing to setField', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    const vh = makeViewHandle('upscale')
+    viewRegistry.register('image', vh)
+    const setFieldFn = vi.fn((_f: string, v: unknown) => v)
+    const handle = makePanelHandle('image.upscale', { setFieldFn })
+    handle.agentSchema = makeNumberSchema('image.upscale')
+    panelRegistry.register('image.upscale', handle)
+
+    const result = await withContext(router, d =>
+      d(tc('set_field', { field: 'grayscale', value: { value: 50 } }))
+    )
+    expect(result.ok).toBe(true)
+    expect(setFieldFn).toHaveBeenCalledWith('grayscale', 50)
+  })
+
+  it('does NOT unwrap when single key matches neither field nor "value"', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    const vh = makeViewHandle('upscale')
+    viewRegistry.register('image', vh)
+    const setFieldFn = vi.fn((_f: string, v: unknown) => v)
+    const handle = makePanelHandle('image.upscale', { setFieldFn })
+    handle.agentSchema = makeNumberSchema('image.upscale')
+    panelRegistry.register('image.upscale', handle)
+
+    const result = await withContext(router, d =>
+      d(tc('set_field', { field: 'upscale_scale', value: { other: 2 } }))
+    )
+    expect(result.ok).toBe(true)
+    expect(setFieldFn).toHaveBeenCalledWith('upscale_scale', { other: 2 })
+  })
+
+  it('does NOT unwrap multi-key objects', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    const vh = makeViewHandle('upscale')
+    viewRegistry.register('image', vh)
+    const setFieldFn = vi.fn((_f: string, v: unknown) => v)
+    const handle = makePanelHandle('image.upscale', { setFieldFn })
+    handle.agentSchema = makeNumberSchema('image.upscale')
+    panelRegistry.register('image.upscale', handle)
+
+    const result = await withContext(router, d =>
+      d(tc('set_field', { field: 'upscale_scale', value: { foo: 1, bar: 2 } }))
+    )
+    expect(result.ok).toBe(true)
+    expect(setFieldFn).toHaveBeenCalledWith('upscale_scale', { foo: 1, bar: 2 })
   })
 })
 
