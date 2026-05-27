@@ -3,15 +3,19 @@
  *
  * Verifies the full Wave 2 stack end-to-end using a deterministic fake
  * streamRun function (no real HTTP).  Exercises:
- *   - useAgent singleton: ChatBubble + AgentRunBanner share the same instance
+ *   - useAgent singleton: shared isRunning + cancelRun across consumers
  *   - Transient text buffer: streaming delta appears then commits to messages
  *   - isRunning flag: correct during + after a run
- *   - cancelRun via banner shares state with bubble's agent instance
+ *   - cancelRun halts the run loop and discards transient state
  *
  * Wave 4 additions:
  *   - Task 4.2: setCurrentAction is called before each tool dispatch
  *   - Task 4.3: ConfirmCard full flow — tool_confirm card → approve → dispatch
  *   - Task 4.8: 3-round token accumulation — prompt replaces, completion accumulates
+ *
+ * 2026-05-28: AgentRunBanner removed (chat bubble already shows running state
+ * inline). Scenario 5 (banner-mounted cancel-button click) dropped; Scenario 4
+ * (cancelRun on singleton halts the loop) still covers the underlying behaviour.
  */
 
 import { mount } from '@vue/test-utils'
@@ -21,7 +25,6 @@ import { createI18n } from 'vue-i18n'
 import en from '@/i18n/locales/en'
 
 import ChatBubble from '@/components/agent/ChatBubble.vue'
-import AgentRunBanner from '@/components/agent/AgentRunBanner.vue'
 import ChatMessages from '@/components/agent/ChatMessages.vue'
 import ConfirmCard from '@/components/agent/ConfirmCard.vue'
 import { useAgent, _resetAgent } from '@/composables/useAgent'
@@ -96,7 +99,7 @@ function buildFakeStreamRun(chunks: FakeChunk[]) {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe('ChatBubble + AgentRunBanner mock-SSE smoke', () => {
+describe('ChatBubble mock-SSE smoke', () => {
 
   // ─── Scenario 1: singleton identity ──────────────────────────────────────
 
@@ -128,15 +131,15 @@ describe('ChatBubble + AgentRunBanner mock-SSE smoke', () => {
     expect(fakeStream).toHaveBeenCalledTimes(1)
   })
 
-  // ─── Scenario 3: isRunning via store — banner + bubble share state ────────
+  // ─── Scenario 3: isRunning via store — all consumers share state ──────────
 
-  it('AgentRunBanner uses same isRunning as ChatBubble (singleton)', async () => {
+  it('useAgent singleton: isRunning reflects shared store state across consumers', async () => {
     const store = useAgentStore()
 
     // Validate the shared store ref before mounting
     expect(store.isRunning).toBe(false)
 
-    // Manually set running to verify banner reflects it
+    // Manually flip running to verify it surfaces on the store
     store.start()
     expect(store.isRunning).toBe(true)
     store.stop()
@@ -164,7 +167,7 @@ describe('ChatBubble + AgentRunBanner mock-SSE smoke', () => {
     expect(store.isRunning).toBe(false)
   })
 
-  // ─── Scenario 4: cancelRun from banner affects bubble's messages ──────────
+  // ─── Scenario 4: cancelRun on singleton halts the run loop ───────────────
 
   it('cancelRun on singleton instance halts the run loop', async () => {
     // Fake stream that blocks until cancelled
@@ -185,7 +188,7 @@ describe('ChatBubble + AgentRunBanner mock-SSE smoke', () => {
     await new Promise(r => setTimeout(r, 10))
     expect(store.isRunning).toBe(true)
 
-    // Cancel via the same singleton (simulating banner cancel button)
+    // Cancel via the singleton (the chat bubble cancel button does the same)
     agent.cancelRun()
     resolveStream()   // unblock the fake stream so it can throw AbortError
 
@@ -196,42 +199,7 @@ describe('ChatBubble + AgentRunBanner mock-SSE smoke', () => {
     expect(agent.messages.value.map(m => m.role)).toEqual(['user'])
   })
 
-  // ─── Scenario 5: AgentRunBanner mount — cancelRun shares agent singleton ──
-
-  it('AgentRunBanner mount: banner cancel button triggers shared agent cancelRun', async () => {
-    let resolveStream!: () => void
-    const blockedStream = vi.fn(async (opts: any) => {
-      opts.onTextChunk?.({ messageId: 'm1', delta: 'partial' })
-      await new Promise<void>((resolve) => { resolveStream = resolve })
-      const err: any = new Error('aborted'); err.name = 'AbortError'; throw err
-    })
-
-    // Init singleton with fake stream
-    const agent = useAgent({ streamRunFn: blockedStream })
-
-    // Mount the banner — it calls useAgent() and gets the same singleton
-    const banner = mount(AgentRunBanner, { global: globalPlugins() })
-
-    // Start the run
-    const runPromise = agent.sendUserText('blocking question')
-    await new Promise(r => setTimeout(r, 10))
-
-    // Click the banner cancel button
-    const cancelBtn = banner.find('.banner-cancel')
-    expect(cancelBtn.exists()).toBe(true)
-    await cancelBtn.trigger('click')
-    resolveStream()
-
-    await runPromise
-
-    // The shared agent instance should have stopped
-    expect(agent.isRunning.value).toBe(false)
-    expect(agent.messages.value.map(m => m.role)).toEqual(['user'])
-
-    banner.unmount()
-  })
-
-  // ─── Scenario 6 (Task 4.2): setCurrentAction fires inside real dispatchers ───
+  // ─── Scenario 5 (Task 4.2): setCurrentAction fires inside real dispatchers ───
 
   it('Task 4.2: real dispatch() calls store.setCurrentAction with correct key before executing', async () => {
     // Import the real dispatch function (not injected via fakeTool)
@@ -241,8 +209,8 @@ describe('ChatBubble + AgentRunBanner mock-SSE smoke', () => {
     // Dispatch navigate_to — outside a setup context resolveRouter() falls
     // back to the global singleton (router/index.ts) and navigation succeeds.
     // The key behaviour we care about here is that setCurrentAction fires
-    // BEFORE the router push, so the banner gets a chance to render the
-    // action label.
+    // BEFORE the router push, so any consumer listening on the store
+    // (chat bubble, future UI) gets a chance to render the action label.
     const result = await dispatch({
       id: 'tc1',
       type: 'function',

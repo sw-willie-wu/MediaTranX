@@ -13,7 +13,7 @@
  *   runLoop can break.
  * - useActivePanel is Task 3.1/3.2. Until then, accept activePanelRef as
  *   injectable dep with a default of () => null.
- * - Singleton pattern: all callers (ChatBubble, AgentRunBanner, etc.) share
+ * - Singleton pattern: all callers (ChatBubble, SettingsAgent, etc.) share
  *   the same instance so cancelRun() and isRunning are always in sync.
  *   Tests call _resetAgent() in beforeEach for isolation.
  */
@@ -114,8 +114,8 @@ function _createAgent(deps: UseAgentDeps = {}) {
   const runStream = deps.streamRunFn ?? streamRun
 
   // C1: useActivePanel() / useActiveView() call useRoute() which requires setup
-  // context. Production callers (ChatBubble/AgentRunBanner/SettingsAgent) are
-  // all <script setup> — safe. Node-env tests (useAgent.test.ts) build factory
+  // context. Production callers (ChatBubble/SettingsAgent) are all
+  // <script setup> — safe. Node-env tests (useAgent.test.ts) build factory
   // outside setup — guard with getCurrentInstance() + try/catch so apComputed /
   // avComputed stay null in tests, falling back to () => null behavior.
   let apComputed: ReturnType<typeof useActivePanel> | null = null
