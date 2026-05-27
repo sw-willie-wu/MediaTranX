@@ -1,0 +1,66 @@
+============================================================
+SPIKE Phase 2.A: qwen3.5:9b tool calling probe (5 trials)
+============================================================
+
+  Binary : C:\Users\willie\Repos\MediaTranX-App\core\backend\bin\llama\llama-server.exe
+  Model  : C:\Users\willie\Repos\MediaTranX-App\core\backend\models\qwen3.5\Qwen3.5-9B-Q4_K_M.gguf
+  Size   : 5417 MB
+
+--- Phase 1: 5 trials WITH --jinja ---
+  CMD: C:\Users\willie\Repos\MediaTranX-App\core\backend\bin\llama\llama-server.exe --model C:\Users\willie\Repos\MediaTranX-App\core\backend\models\qwen3.5\Qwen3.5-9B-Q4_K_M.gguf --port 19380 --host 127.0.0.1 --ctx-size 4096 --n-gpu-layers 99 --jinja
+  PID: 35916  waiting for /health ...
+  Server ready on port 19380 (jinja=True)
+
+  --- Trial 1 ---
+  tool_calls: 1, name=set_field
+  args_parsed: {'field': 'mode', 'value': {'mode': 'anime'}}
+  field_in_enum: True
+  elapsed: 1.3s
+
+  --- Trial 2 ---
+  tool_calls: 1, name=set_field
+  args_parsed: {'field': 'mode', 'value': {'mode': 'anime'}}
+  field_in_enum: True
+  elapsed: 1.1s
+
+  --- Trial 3 ---
+  tool_calls: 1, name=set_field
+  args_parsed: {'field': 'mode', 'value': {'mode': 'anime'}}
+  field_in_enum: True
+  elapsed: 1.2s
+
+  --- Trial 4 ---
+  tool_calls: 1, name=set_field
+  args_parsed: {'field': 'mode', 'value': {'mode': 'anime'}}
+  field_in_enum: True
+  elapsed: 1.1s
+
+  --- Trial 5 ---
+  tool_calls: 1, name=set_field
+  args_parsed: {'field': 'mode', 'value': {'mode': 'anime'}}
+  field_in_enum: True
+  elapsed: 1.1s
+  Server stopped (rc=1)
+
+--- Phase 2: 1 trial WITHOUT --jinja ---
+  CMD: C:\Users\willie\Repos\MediaTranX-App\core\backend\bin\llama\llama-server.exe --model C:\Users\willie\Repos\MediaTranX-App\core\backend\models\qwen3.5\Qwen3.5-9B-Q4_K_M.gguf --port 19380 --host 127.0.0.1 --ctx-size 4096 --n-gpu-layers 99
+  PID: 45692  waiting for /health ...
+  Server ready on port 19380 (jinja=False)
+
+  --- Trial 99 ---
+  tool_calls: 1, name=set_field
+  args_parsed: {'field': 'mode', 'value': {'mode': 'anime'}}
+  field_in_enum: True
+  elapsed: 1.3s
+  Server stopped (rc=1)
+
+============================================================
+SPIKE Phase 2.A SUMMARY
+============================================================
+AC-SPIKE-1: 5/5 valid tool_calls (need >=4)
+AC-SPIKE-2: 0/5 trials emitted out-of-enum field
+           -> STRONG enum honor
+AC-SPIKE-3: no-jinja trial -> PASS (jinja optional)
+
+Verdict: PASS-FULL
+============================================================
