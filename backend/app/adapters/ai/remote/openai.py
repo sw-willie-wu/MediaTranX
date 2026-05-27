@@ -60,6 +60,59 @@ _HIDDEN_MODELS = {"babbage-002", "davinci-002", "dall-e-2", "dall-e-3",
 _HIDDEN_KEYWORDS = ["-preview", "transcribe", "tts", "instruct", "diarize"]
 
 
+# ═══════════════════════════════════════════════════════════
+# Strict-mode tool calling adapter (Structured Outputs)
+# ═══════════════════════════════════════════════════════════
+# Why: gpt-4o-mini reliably emits `arguments: "{}"` for tools with required
+# fields unless strict mode is enabled.  Strict mode runs constrained decoding
+# on the tool_calls path, eliminating that failure (bug #15).
+#
+# Spec: core/.claude/specs/2026-05-27-openai-strict-tool-calling-design.md
+
+# Primitive union for "any value" slots (set_field.value).
+# OpenAI strict mode does NOT support multi-element type arrays like
+# `["string","number","boolean","null"]`; it requires either single-type
+# or `anyOf` for branching.
+_STRICT_PRIMITIVE_ANYOF: dict = {
+    "anyOf": [
+        {"type": "string"},
+        {"type": "number"},
+        {"type": "boolean"},
+        {"type": "null"},
+    ],
+}
+
+
+def _strictify_schema(schema: dict) -> dict:
+    """Convert a permissive tool parameter schema into one that satisfies
+    OpenAI Structured Outputs strict mode constraints.
+
+    See spec §3.2 for full design; this docstring summarizes:
+    - Root must be {type:"object", properties:{...}}; raises ValueError otherwise
+    - Adds `additionalProperties: false`
+    - Overwrites `required` to list every key in properties
+    - Replaces empty {} value-slot with `_STRICT_PRIMITIVE_ANYOF`
+    - Raises ValueError on nested object / array-of-object / anyOf/oneOf/
+      allOf/$ref/$defs in property (unsupported; fail loudly)
+    - Idempotent: applying twice yields the same result
+    """
+    if not isinstance(schema, dict):
+        raise ValueError(
+            f"_strictify_schema: root must be a dict, got {type(schema).__name__}"
+        )
+
+    s = dict(schema)
+
+    if s.get("type") != "object":
+        raise ValueError(
+            f"_strictify_schema: root schema must declare type:'object' (got {s.get('type')!r}); "
+            f"zero-arg tool should use {{type:'object', properties:{{}}}}"
+        )
+
+    # Body filled in by later tasks
+    return s
+
+
 # Minimum max_output_tokens for o-series Responses API calls with reasoning.
 # Even at effort="low", o4-mini consumes ~64-100 reasoning tokens before producing
 # any visible output. A budget below this yields an empty response (production bug
