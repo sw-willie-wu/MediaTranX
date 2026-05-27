@@ -27,6 +27,13 @@ export interface BubblePosition {
 
 // Bubble button geometry (must match ChatBubble.vue CSS).
 export const BUBBLE_SIZE_PX = 48
+// Horizontal distance from the viewport edge when snapped. Kept tight
+// so the snapped bubble hugs the side and stays out of the content
+// area. Distinct from BUBBLE_MARGIN_PX (vertical breathing room).
+export const BUBBLE_EDGE_PX = 8
+// Vertical breathing room — used by clampY (so the bubble doesn't
+// touch the titlebar/window edges) and by ChatBubble.vue for the
+// expanded-state top + panel offsets.
 export const BUBBLE_MARGIN_PX = 24
 const CLICK_THRESHOLD_PX = 5
 const LS_KEY = 'chat-bubble-position'
@@ -143,15 +150,15 @@ export function useBubbleDrag(): BubbleDragApi {
         transition: 'none',
       }
     }
-    // Always emit `left: Npx; right: auto` (never `right: 24px; left: auto`).
+    // Always emit `left: Npx; right: auto` (never `right: 8px; left: auto`).
     // CSS cannot transition between `auto` and a length, so toggling
     // anchor sides would make the snap-right case teleport instead of
     // animating. Computing `left` from viewport width keeps both sides
     // on the same transitionable property.
     const pos = position.value
     const leftPx = pos.side === 'right'
-      ? viewportWidth.value - BUBBLE_SIZE_PX - BUBBLE_MARGIN_PX
-      : BUBBLE_MARGIN_PX
+      ? viewportWidth.value - BUBBLE_SIZE_PX - BUBBLE_EDGE_PX
+      : BUBBLE_EDGE_PX
     return {
       left: `${leftPx}px`,
       right: 'auto',

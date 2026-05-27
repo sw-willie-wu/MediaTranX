@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAgentStore } from '@/stores/agent'
 import { useAgent } from '@/composables/useAgent'
-import { useBubbleDrag, BUBBLE_SIZE_PX, BUBBLE_MARGIN_PX } from '@/composables/useBubbleDrag'
+import { useBubbleDrag, BUBBLE_SIZE_PX, BUBBLE_EDGE_PX, BUBBLE_MARGIN_PX } from '@/composables/useBubbleDrag'
 import ChatHeader from './ChatHeader.vue'
 import ChatMessages from './ChatMessages.vue'
 import ChatInput from './ChatInput.vue'
@@ -50,9 +50,11 @@ const panelStyle = computed<Record<string, string>>(() => {
   const pos = position.value
   // Anchor panel adjacent to the bubble at its expanded position.
   // Right side: panel left of bubble. Left side: panel right of bubble.
+  // Offset = viewport-edge gap + bubble width + bubble↔panel gap.
+  const adjacentOffset = BUBBLE_EDGE_PX + BUBBLE_SIZE_PX + PANEL_GAP_PX
   const sideRule = pos.side === 'right'
-    ? { right: `${BUBBLE_MARGIN_PX + BUBBLE_SIZE_PX + PANEL_GAP_PX}px`, left: 'auto' }
-    : { left: `${BUBBLE_MARGIN_PX + BUBBLE_SIZE_PX + PANEL_GAP_PX}px`, right: 'auto' }
+    ? { right: `${adjacentOffset}px`, left: 'auto' }
+    : { left: `${adjacentOffset}px`, right: 'auto' }
   // Clamp panel so it never extends below viewport (corner case: very
   // short windows where viewport < EXPANDED_TOP_PX + PANEL_HEIGHT + MARGIN).
   const maxTop = Math.max(BUBBLE_MARGIN_PX, window.innerHeight - PANEL_HEIGHT - BUBBLE_MARGIN_PX)
