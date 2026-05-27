@@ -463,3 +463,84 @@ class TestRealShapeSanity:
                 entry["function"]["name"]
             for prop_name, prop_schema in params["properties"].items():
                 assert prop_schema != {}, f"{entry['function']['name']}.{prop_name}"
+
+
+# ── Helper (mirror of test_openai_chat_completions_stream.py:23-30) ──────
+
+def _make_sse_response(*lines: bytes):
+    from unittest.mock import MagicMock
+    resp = MagicMock(name="HTTPResponse")
+    resp.__iter__ = lambda self: iter(list(lines))
+    resp.__enter__ = MagicMock(return_value=resp)
+    resp.__exit__ = MagicMock(return_value=False)
+    resp.close = MagicMock()
+    return resp
+
+
+DONE_LINE = b"data: [DONE]\n"
+
+
+class TestWireShape:
+    """End-to-end: capture the actual JSON body sent to OpenAI and assert
+    strict invariants on each tool.  Uses fake_urlopen pattern from
+    test_openai_chat_completions_stream.py:205-228.
+    """
+
+    def _prov(self):
+        from app.adapters.ai.remote.openai import OpenAIProvider
+        return OpenAIProvider("https://api.openai.com", "sk-test")
+
+    def _capture_payload(self, tools):
+        """Helper: run chat_completions_stream with `tools` and return the
+        request body the provider sent to OpenAI."""
+        captured: dict = {}
+
+        def fake_urlopen(req, timeout=None):
+            captured["payload"] = json.loads(req.data.decode("utf-8"))
+            return _make_sse_response(DONE_LINE)
+
+        with patch(
+            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            list(self._prov().chat_completions_stream(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": "x"}],
+                tools=tools,
+            ))
+        return captured["payload"]
+
+    def test_payload_each_tool_has_strict_true(self):
+        payload = self._capture_payload(TestRealShapeSanity.FRONTEND_TOOLS)
+        for entry in payload["tools"]:
+            assert entry["function"]["strict"] is True, entry["function"]["name"]
+
+    def test_payload_each_tool_satisfies_strict_invariants(self):
+        payload = self._capture_payload(TestRealShapeSanity.FRONTEND_TOOLS)
+        for entry in payload["tools"]:
+            params = entry["function"]["parameters"]
+            assert params["additionalProperties"] is False
+            assert set(params["required"]) == set(params["properties"].keys())
+            for v in params["properties"].values():
+                assert v != {}, "no empty {} value-slot allowed"
+
+    def test_payload_set_field_value_is_anyOf_not_multi_type_array(self):
+        """Regression guard: set_field.value must be anyOf-of-single-types,
+        NOT a multi-element type array (OpenAI strict rejects the latter)."""
+        payload = self._capture_payload(TestRealShapeSanity.FRONTEND_TOOLS)
+        sf = next(e for e in payload["tools"] if e["function"]["name"] == "set_field")
+        v = sf["function"]["parameters"]["properties"]["value"]
+        assert "anyOf" in v
+        assert not isinstance(v.get("type"), list), \
+            "OpenAI strict rejects multi-element type arrays"
+
+    def test_payload_tool_choice_none_when_no_tools(self):
+        payload = self._capture_payload(tools=[])
+        assert payload["tool_choice"] == "none"
+        assert payload["tools"] == []
+
+    def test_chat_completions_stream_rejects_caller_built_nested_shape(self):
+        with pytest.raises(ValueError, match="nested OpenAI shape not accepted"):
+            self._capture_payload([
+                {"type": "function", "function": {"name": "x", "description": "y", "parameters": {"type": "object"}, "strict": True}}
+            ])
