@@ -167,12 +167,30 @@ describe('ImageAdjustPanel agent integration', () => {
     expect(panelRegistry.get('image.adjust')).toBeUndefined()
   })
 
-  // AC-11 — KeepAlive-aware panel switch
-  it('switching panels leaves only the latest in registry (AC-11)', () => {
+  // AC-11 — KeepAlive-aware panel switch: unmount of one panel must not
+  // touch another panel's registration (registry independence invariant)
+  it('switching panels leaves the other panel intact in registry (AC-11)', () => {
     const w1 = mount(makeImageAdjustPanelStub())
     expect(panelRegistry.get('image.adjust')).toBeDefined()
+
+    // Simulate a second panel (e.g. image.filter) being concurrently registered
+    // — directly register a minimal handle without a full stub, to avoid
+    // pulling Task 2.4's filter stub into this file.
+    const otherHandle = {
+      agentSchema: { panelId: 'image.other', fields: [], actions: [], execute: null },
+      isMultiSelect: () => false,
+      getCurrentValues: () => ({}),
+      setField: (_f: string, v: unknown) => v,
+      openField: (_f: string) => {},
+      execute: async () => ({}),
+      isMounted: { value: true } as ReturnType<typeof ref<boolean>>,
+    }
+    panelRegistry.register('image.other', otherHandle as unknown as PanelHandle)
+    expect(panelRegistry.get('image.other')).toBeDefined()
+
+    // Switch (unmount adjust, simulating user navigation away from adjust)
     w1.unmount()
-    expect(panelRegistry.get('image.adjust')).toBeUndefined()
-    // ImageFilterPanel test mirrors with its own panel — together AC-11 confirmed
+    expect(panelRegistry.get('image.adjust')).toBeUndefined()  // adjust gone
+    expect(panelRegistry.get('image.other')).toBeDefined()      // other untouched
   })
 })
