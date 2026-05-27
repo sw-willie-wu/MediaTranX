@@ -117,6 +117,10 @@ def _strictify_schema(schema: dict) -> dict:
                 f"_strictify_schema: property {k!r} is not a dict schema "
                 f"(got {type(v).__name__})"
             )
+        # Empty {} = "any" — replace with primitive anyOf.
+        if not v:
+            new_props[k] = dict(_STRICT_PRIMITIVE_ANYOF)
+            continue
         # Primitive property — passes through (fail-loudly cases handled in Task 5)
         new_props[k] = v
 

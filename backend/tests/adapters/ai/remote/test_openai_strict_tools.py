@@ -86,3 +86,36 @@ class TestStrictifySchemaHappyPath:
             "properties": {"name": {"type": "string"}},
         })
         assert result["properties"]["name"] == {"type": "string"}
+
+
+class TestStrictifySchemaEmptyValue:
+    """The set_field.value fix: untyped {} → primitive anyOf union."""
+
+    def test_replaces_empty_value_with_anyOf_primitive_union(self):
+        from app.adapters.ai.remote.openai import _strictify_schema
+
+        schema = {
+            "type": "object",
+            "properties": {"field": {"type": "string"}, "value": {}},
+            "required": ["field", "value"],
+        }
+        result = _strictify_schema(schema)
+        assert result["properties"]["value"] == {
+            "anyOf": [
+                {"type": "string"},
+                {"type": "number"},
+                {"type": "boolean"},
+                {"type": "null"},
+            ]
+        }
+
+    def test_anyOf_branches_are_single_type_not_multi_array(self):
+        """Sanity: each anyOf branch is a single-type schema (OpenAI strict
+        rejects multi-element type arrays like ["string","number"])."""
+        from app.adapters.ai.remote.openai import _strictify_schema
+
+        result = _strictify_schema({"type": "object", "properties": {"v": {}}})
+        for branch in result["properties"]["v"]["anyOf"]:
+            assert isinstance(branch.get("type"), str), \
+                f"branch type must be a string, got {branch.get('type')!r}"
+            assert "anyOf" not in branch  # No nesting
