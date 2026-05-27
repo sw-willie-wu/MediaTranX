@@ -23,7 +23,9 @@
 import { getCurrentInstance } from 'vue'
 import { useRouter, type Router } from 'vue-router'
 import { useActivePanel } from '@/composables/useActivePanel'
-import { useActiveView } from '@/composables/useActiveView'
+import { useActiveView, deriveViewId } from '@/composables/useActiveView'
+import { viewRegistry } from '@/stores/viewRegistry'
+import { panelRegistry } from '@/stores/panelRegistry'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useAgentStore } from '@/stores/agent'
@@ -160,18 +162,52 @@ export const TOOLS: ToolDefinition[] = [
 // ─── Dispatcher helpers ───────────────────────────────────────────────────────
 
 /**
- * Lazily get the active panel entry.
- * Must be called inside a component setup context OR after installing pinia +
- * a router (for tests that use defineComponent + mount).
+ * Lazily get the active view / panel entry.
+ *
+ * In a setup context (the vitest harness mounts dispatchers inside a
+ * defineComponent with router + pinia plugins), the composable form works
+ * and resolves the inject-based useRoute() correctly.
+ *
+ * From the runLoop async path (production), there is no setup context, so
+ * useRoute() returns undefined and `route.path` crashes with "Cannot read
+ * properties of undefined (reading 'path')". Fall back to deriving the path
+ * from the router singleton's `currentRoute` and looking up the registry
+ * directly — exactly what the composable does, just without inject().
  */
-function _getActivePanel() {
-  const ap = useActivePanel()
-  return ap.value
+async function _getActiveView() {
+  if (getCurrentInstance() !== null) {
+    const av = useActiveView()
+    return av.value
+  }
+  const router = await resolveRouter()
+  const path = router.currentRoute.value.path
+  const viewId = deriveViewId(path)
+  if (!viewId) return null
+  return viewRegistry.get(viewId) ?? null
 }
 
-function _getActiveView() {
-  const av = useActiveView()
-  return av.value
+async function _getActivePanel() {
+  if (getCurrentInstance() !== null) {
+    const ap = useActivePanel()
+    return ap.value
+  }
+  const router = await resolveRouter()
+  const path = router.currentRoute.value.path
+  const viewId = deriveViewId(path)
+  if (!viewId) return null
+  const view = viewRegistry.get(viewId)
+  if (!view) return null
+  const fn = view.currentFunction.value
+  if (!fn) return null
+  const panelId = `${viewId}.${fn}`
+  const entry = panelRegistry.get(panelId)
+  if (!entry) return null
+  return {
+    panelId,
+    schema: entry.agentSchema,
+    instance: entry,
+    isMounted: entry.isMounted.value,
+  }
 }
 
 // ─── Individual dispatchers ───────────────────────────────────────────────────
@@ -192,7 +228,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
   select_subfunction: async ({ name }: { name: string }): Promise<ToolResult> => {
     try {
       useAgentStore().setCurrentAction('agent.banner.act.select_subfunction', { name })
-      const view = _getActiveView()
+      const view = await _getActiveView()
       if (!view || !view.setCurrentFunction) {
         return { error: 'agent.error.view_not_introspectable' }
       }
@@ -244,7 +280,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
   open_dropdown: async ({ field }: { field: string }): Promise<ToolResult> => {
     try {
       useAgentStore().setCurrentAction('agent.banner.act.open_dropdown', { field })
-      const ap = _getActivePanel()
+      const ap = await _getActivePanel()
       if (!ap) return { error: 'agent.error.panel_not_active' }
       if (!ap.isMounted) return { error: 'agent.error.panel_not_active' }
       ap.instance.openField(field)
@@ -258,7 +294,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
     try {
       const displayValue = value !== null && typeof value === 'object' ? JSON.stringify(value) : String(value)
       useAgentStore().setCurrentAction('agent.banner.act.set_field', { field, value: displayValue })
-      const ap = _getActivePanel()
+      const ap = await _getActivePanel()
       if (!ap) return { error: 'agent.error.panel_not_supported' }
       if (!ap.isMounted) return { error: 'agent.error.panel_not_active' }
 
@@ -296,7 +332,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
   click_execute: async (): Promise<ToolResult> => {
     try {
       useAgentStore().setCurrentAction('agent.banner.act.click_execute', {})
-      const ap = _getActivePanel()
+      const ap = await _getActivePanel()
       if (!ap) return { error: 'agent.error.panel_not_supported' }
       if (!ap.isMounted) return { error: 'agent.error.panel_not_active' }
 
@@ -323,7 +359,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
   click_action: async ({ name }: { name: string }): Promise<ToolResult> => {
     try {
       useAgentStore().setCurrentAction('agent.banner.act.click_action', { name })
-      const ap = _getActivePanel()
+      const ap = await _getActivePanel()
       if (!ap) return { error: 'agent.error.panel_not_supported' }
       if (!ap.isMounted) return { error: 'agent.error.panel_not_active' }
 
