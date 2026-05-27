@@ -100,7 +100,10 @@ async def test_stream_yields_tool_call_deltas():
     }
     assert tc_events[1] == {
         "type": "tool_call",
-        "id": "",           # id absent on 2nd chunk → defaults to ""
+        # id carried from index→id map populated on the 1st chunk (real
+        # OpenAI streams only put `id` on chunk #1, but downstream needs the
+        # same id on every chunk to accumulate args into the right bucket).
+        "id": "tc1",
         "name": "",         # name absent on 2nd chunk → defaults to ""
         "parent_message_id": "msg1",
         "args_delta": 'ld":"x"}',

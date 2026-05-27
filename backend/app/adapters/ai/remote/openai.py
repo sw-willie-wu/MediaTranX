@@ -457,6 +457,13 @@ class OpenAIProvider(RemoteProvider):
             "stream": True,
             "stream_options": {"include_usage": True},
         }
+        # AG-UI agent loop dispatches tool calls sequentially round-by-round;
+        # parallel_tool_calls=true causes gpt-4o-mini to emit multiple tool
+        # calls in one stream, which our SSE parser collapses (loses index
+        # disambiguation) and produces an empty/garbled args bag.  Force
+        # sequential to match the agent's actual execution model.
+        if payload.get("tools"):
+            payload["parallel_tool_calls"] = False
         body = json.dumps(payload).encode("utf-8")
         headers: dict = {
             "Content-Type": "application/json",
