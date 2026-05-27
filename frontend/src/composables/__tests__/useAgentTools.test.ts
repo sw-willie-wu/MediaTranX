@@ -26,7 +26,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-import { dispatch, type ToolCall } from '@/composables/useAgentTools'
+import { TOOLS, getTools, dispatch, type ToolCall } from '@/composables/useAgentTools'
 import { viewRegistry, type ViewHandle } from '@/stores/viewRegistry'
 import { panelRegistry, type PanelHandle, type PanelAgentSchema } from '@/stores/panelRegistry'
 import { useFilesStore } from '@/stores/files'
@@ -491,6 +491,68 @@ describe('dispatch: unknown tool', () => {
       d({ id: 'x', type: 'function', function: { name: 'navigate_to', arguments: 'not-json' } })
     )
     expect(result.error).toBe('agent.error.tool_failed')
+  })
+})
+
+// ─── getTools (Phase 2.A dynamic field enum) ─────────────────────────────────
+
+describe('getTools (Phase 2.A dynamic field enum)', () => {
+  it('returns set_field.field as free string when activePanelSchema is null', () => {
+    const tools = getTools(null)
+    const setField = tools.find(t => t.name === 'set_field')!
+    const params = setField.parameters as any
+    expect(params.properties.field).toEqual({ type: 'string' })
+    expect(params.properties.field.enum).toBeUndefined()
+  })
+
+  it('returns set_field.field as enum when activePanelSchema has fields', () => {
+    const panel: PanelAgentSchema = {
+      panelId: 'x.y',
+      fields: [
+        { name: 'foo', type: 'enum', options: () => ['a', 'b'] },
+        { name: 'bar', type: 'number', min: 0, max: 100 },
+        { name: 'baz', type: 'bool' },
+      ],
+      actions: [],
+      execute: { requiresConfirm: false },
+    }
+    const tools = getTools(panel)
+    const setField = tools.find(t => t.name === 'set_field')!
+    const params = setField.parameters as any
+    expect(params.properties.field).toEqual({
+      type: 'string',
+      enum: ['foo', 'bar', 'baz'],
+    })
+  })
+
+  it('returns set_field.field as free string when activePanelSchema has empty fields', () => {
+    const panel: PanelAgentSchema = {
+      panelId: 'x.y',
+      fields: [],
+      actions: [],
+      execute: null,
+    }
+    const tools = getTools(panel)
+    const setField = tools.find(t => t.name === 'set_field')!
+    const params = setField.parameters as any
+    expect(params.properties.field).toEqual({ type: 'string' })
+  })
+
+  it('preserves tool order regardless of activePanelSchema', () => {
+    const names1 = getTools(null).map(t => t.name)
+    const panel: PanelAgentSchema = {
+      panelId: 'x.y',
+      fields: [{ name: 'foo', type: 'string' }],
+      actions: [],
+      execute: null,
+    }
+    const names2 = getTools(panel).map(t => t.name)
+    expect(names1).toEqual(['navigate_to', 'select_subfunction', 'load_file', 'list_files', 'open_dropdown', 'set_field', 'click_execute', 'click_action', 'get_task_status'])
+    expect(names2).toEqual(names1)
+  })
+
+  it('TOOLS const equals getTools(null)', () => {
+    expect(TOOLS).toEqual(getTools(null))
   })
 })
 
