@@ -1160,6 +1160,8 @@ export default {
       thinking: '思考中…',
       token_count: '輸入: {prompt} / 輸出: {completion}',
       clear: '清除對話紀錄',
+      show: '顯示 Agent 對話泡泡',
+      hide: '隱藏 Agent 對話泡泡',
     },
     confirm: {
       title: '確認動作',

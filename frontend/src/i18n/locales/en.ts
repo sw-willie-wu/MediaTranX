@@ -1160,6 +1160,8 @@ export default {
       thinking: 'Thinking…',
       token_count: 'in: {prompt} / out: {completion}',
       clear: 'Clear chat history',
+      show: 'Show chat bubble',
+      hide: 'Hide chat bubble',
     },
     confirm: {
       title: 'Confirm action',

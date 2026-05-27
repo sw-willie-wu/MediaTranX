@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAgentStore } from '@/stores/agent'
 import { useAgent } from '@/composables/useAgent'
 import { useBubbleDrag, BUBBLE_SIZE_PX, BUBBLE_EDGE_PX, BUBBLE_MARGIN_PX } from '@/composables/useBubbleDrag'
+import { bubbleVisible } from '@/composables/useBubbleVisibility'
 import ChatHeader from './ChatHeader.vue'
 import ChatMessages from './ChatMessages.vue'
 import ChatInput from './ChatInput.vue'
@@ -35,7 +36,6 @@ function onBubblePointerDown(e: PointerEvent) {
  */
 const EXPANDED_TOP_PX = BUBBLE_MARGIN_PX
 const PANEL_WIDTH = 380
-const PANEL_HEIGHT = 600
 const PANEL_GAP_PX = 12
 
 const bubbleStyleFinal = computed<Record<string, string>>(() => {
@@ -55,11 +55,14 @@ const panelStyle = computed<Record<string, string>>(() => {
   const sideRule = pos.side === 'right'
     ? { right: `${adjacentOffset}px`, left: 'auto' }
     : { left: `${adjacentOffset}px`, right: 'auto' }
-  // Clamp panel so it never extends below viewport (corner case: very
-  // short windows where viewport < EXPANDED_TOP_PX + PANEL_HEIGHT + MARGIN).
-  const maxTop = Math.max(BUBBLE_MARGIN_PX, window.innerHeight - PANEL_HEIGHT - BUBBLE_MARGIN_PX)
-  const top = Math.min(EXPANDED_TOP_PX, maxTop)
-  return { ...sideRule, top: `${top}px`, bottom: 'auto' }
+  // Full-height: anchor both top and bottom so the panel stretches
+  // between them. Browser resolves the panel height automatically;
+  // the .chat-bubble-panel CSS uses `height: auto` so this works.
+  return {
+    ...sideRule,
+    top: `${EXPANDED_TOP_PX}px`,
+    bottom: `${BUBBLE_MARGIN_PX}px`,
+  }
 })
 
 function handleKeydown(e: KeyboardEvent) {
@@ -79,9 +82,14 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <!-- Bubble (always mounted, draggable, toggle on click). When
-         expanded, it flies up to EXPANDED_TOP_PX and acts as the close
-         button. -->
+    <!-- Whole widget gated by the titlebar toggle (default: hidden).
+         When bubbleVisible is false, neither the floating bubble button
+         nor the expanded panel renders; the user controls visibility
+         from the Titlebar chat_bubble icon. -->
+    <template v-if="bubbleVisible">
+    <!-- Bubble (always mounted while visible, draggable, toggle on
+         click). When expanded, it flies up to EXPANDED_TOP_PX and acts
+         as the close button. -->
     <button
       class="chat-bubble-btn"
       :class="{ 'is-running': store.isRunning, 'is-dragging': isDragging, 'is-expanded': expanded }"
@@ -111,6 +119,7 @@ onBeforeUnmount(() => {
         :is-running="store.isRunning"
       />
     </div>
+    </template>
   </Teleport>
 </template>
 
@@ -180,7 +189,7 @@ onBeforeUnmount(() => {
 .chat-bubble-panel {
   position: fixed;
   width: 380px;
-  height: 600px;
+  height: auto; /* stretches between :style top and bottom */
   border-radius: 12px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);

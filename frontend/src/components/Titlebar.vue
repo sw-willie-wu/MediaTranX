@@ -5,6 +5,7 @@ import IconRestore from './icons/IconRestore.vue'
 import IconClose from './icons/IconClose.vue'
 import TitlebarButton from './common/TitlebarButton.vue'
 import TitlebarResultsButton from './TitlebarResultsButton.vue'
+import TitlebarChatBubbleButton from './TitlebarChatBubbleButton.vue'
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -113,6 +114,7 @@ onMounted(async () => {
 
     <!-- 右側：視窗控制 -->
     <div class="titlebar-right">
+      <TitlebarChatBubbleButton />
       <TitlebarResultsButton />
       <div v-if="isElectron" class="window-controls">
         <button class="window-btn" @click="minimize" :title="$t('titlebar.minimize')">
