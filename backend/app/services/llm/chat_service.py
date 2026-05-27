@@ -259,6 +259,16 @@ class LocalChatSession:
                     return
                 if isinstance(item, tuple) and item[0] is SENTINEL_ERR:
                     raise item[1]
+                # A "done" chunk means the producer iterated to natural EOF
+                # (it's emitted just before SENTINEL_END — see producer above).
+                # Flag now so a caller that breaks immediately after `done`
+                # (AgentService.run does this on the multi-round path) won't
+                # trip the finally's spurious kill_process() — that kill clears
+                # LlamaServer._port but leaves LlmWrapper._model dangling,
+                # which makes is_loaded() lie and the next acquire skip the
+                # re-start, breaking every multi-round agent conversation.
+                if isinstance(item, dict) and item.get("type") == "done":
+                    sentinel_end_reached = True
                 yield item
         finally:
             # Generator-cleanup contract: if consumer abandons (async for ... break,
@@ -289,6 +299,13 @@ class LocalChatSession:
 
         Additionally for stream() callers: sets _stream_kill_pending so a
         not-yet-started producer thread's race check will raise immediately.
+
+        After the subprocess stop, also clear the wrapper's `_model` ref so
+        `wrapper.is_loaded()` tells the truth on the next acquire — otherwise
+        a stale ref points at a dead LlamaServer, the next mm.acquire skips
+        the re-start, and the very next chat_stream raises "LlamaServer not
+        started". This recovery is critical for the agent path which calls
+        kill_process on producer exceptions (HTTP 500, parse errors, etc.).
         """
         self._stream_kill_pending = True   # race flag for stream() producer
         model = getattr(self._runtime, "_model", None)
@@ -298,6 +315,11 @@ class LocalChatSession:
             model.stop(timeout=2.0)
         except Exception:
             pass  # best-effort
+        # Clear wrapper ref so is_loaded() stops lying; idempotent.
+        try:
+            self._runtime._model = None
+        except Exception:
+            pass
 
 
 def _read_image_as_data_uri(path: Path) -> tuple[str, str]:

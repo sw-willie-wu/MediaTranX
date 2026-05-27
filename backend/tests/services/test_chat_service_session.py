@@ -57,8 +57,12 @@ def test_session_kill_process_routes_through_server_stop():
     rt = _fake_llama_runtime()
     svc = ChatService(rt)
     with svc.session(model_family="gemma4", model_size="4b") as session:
+        # kill_process now clears rt._model after stop (so wrapper.is_loaded()
+        # stops lying); capture the model ref upfront to keep the assertion.
+        model_before_kill = rt._model
         session.kill_process()
-    rt._model.stop.assert_called_once_with(timeout=2.0)
+    model_before_kill.stop.assert_called_once_with(timeout=2.0)
+    assert rt._model is None  # cleared
 
 
 def test_session_kill_process_safe_when_no_process():

@@ -113,6 +113,9 @@ async def test_kill_during_stream_propagates():
     rt.chat_stream.return_value = slow_iter()
     rt._model = MagicMock()
     rt._model.stop = MagicMock(side_effect=lambda timeout=2.0: block.set())
+    # kill_process now clears rt._model so the next acquire() can detect a
+    # dead wrapper — capture the model ref to keep the .stop assertion.
+    model_before_kill = rt._model
 
     sess = LocalChatSession(rt, on_progress=None)
 
@@ -129,7 +132,8 @@ async def test_kill_during_stream_propagates():
     # kill_process() is called TWICE: once explicitly by the consumer inside the loop
     # and once by stream()'s finally block when the generator exits.  Both calls are
     # idempotent (documented in kill_process() docstring). Accept ≥1 call.
-    rt._model.stop.assert_called()
+    model_before_kill.stop.assert_called()
+    assert rt._model is None  # cleared after stop so is_loaded() stops lying
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +273,9 @@ async def test_stream_break_kills_producer():
     rt.chat_stream.return_value = slow_iter()
     rt._model = MagicMock()
     rt._model.stop = MagicMock(side_effect=lambda timeout=2.0: block_after_first.set())
+    # kill_process now clears rt._model after stop — save the ref for the
+    # post-cleanup .stop assertion below.
+    saved_model = rt._model
 
     # Patch Thread to capture the producer thread reference
     original_thread_start = threading.Thread.start
@@ -296,7 +303,9 @@ async def test_stream_break_kills_producer():
 
     # The finally block in stream() must have called kill_process()
     assert sess._stream_kill_pending is True
-    rt._model.stop.assert_called()
+    # kill_process clears _model after stop; assert via the saved reference.
+    assert rt._model is None
+    saved_model.stop.assert_called()
 
 
 # ---------------------------------------------------------------------------
