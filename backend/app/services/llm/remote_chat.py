@@ -197,10 +197,16 @@ class RemoteChatSession:
                     raise OSError("cancel_pre_first_chunk")
 
                 usage: dict | None = None
+                # Track tool-call id per index across chunks: OpenAI puts the
+                # real id only on the first chunk of each call.  Without this
+                # map, the AG-UI SSE accumulator on the frontend keys args
+                # deltas by `id=""` while the UI tool-call card uses the real
+                # id — args land in the wrong bucket and the card shows `{}`.
+                id_by_index: dict[int, str] = {}
                 for raw_chunk in stream_iter:
                     if raw_chunk.get("usage"):
                         usage = raw_chunk["usage"]
-                    parsed = _parse_openai_compat_chunk(raw_chunk)
+                    parsed = _parse_openai_compat_chunk(raw_chunk, id_by_index)
                     for p in parsed:
                         asyncio.run_coroutine_threadsafe(q.put(p), loop).result()
                 asyncio.run_coroutine_threadsafe(

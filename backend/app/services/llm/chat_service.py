@@ -19,7 +19,10 @@ from app.utils.inference import cancel_guard
 logger = logging.getLogger(__name__)
 
 
-def _parse_openai_compat_chunk(raw_chunk: dict) -> list[dict]:
+def _parse_openai_compat_chunk(
+    raw_chunk: dict,
+    id_by_index: dict[int, str] | None = None,
+) -> list[dict]:
     """Parse one OpenAI chat completions SSE chunk into 0..N typed events.
 
     A single chunk can produce:
@@ -36,9 +39,12 @@ def _parse_openai_compat_chunk(raw_chunk: dict) -> list[dict]:
     Notes:
     - message_id comes from chunk['id'] (OpenAI assigns per response).
     - tool_call.id is only present on the FIRST chunk for a given tool call;
-      later chunks identify by index only (id defaults to '').  The frontend
-      AgUiSSEParser accumulates across multiple chunks by remembering the
-      first id for each index.
+      later chunks identify by `index` only (no `id` key).  Caller passes a
+      mutable `id_by_index` dict (per-stream state) so we can substitute the
+      remembered real id into every subsequent chunk; without this, the
+      frontend SSE accumulator would store `args` deltas under the empty id
+      `""` while the UI tool-call card (keyed by the real id) shows empty
+      args (production bug observed live with gpt-4o-mini agent path).
     """
     out: list[dict] = []
     chunk_id = raw_chunk.get("id", "")
@@ -57,9 +63,17 @@ def _parse_openai_compat_chunk(raw_chunk: dict) -> list[dict]:
 
     # Tool call deltas (0..N per chunk)
     for tc_delta in delta.get("tool_calls", []):
+        tc_index = tc_delta.get("index")
+        tc_id = tc_delta.get("id", "")
+        # Carry id across chunks via id_by_index map (Phase 1 agent fix).
+        if id_by_index is not None and tc_index is not None:
+            if tc_id:
+                id_by_index[tc_index] = tc_id
+            elif tc_index in id_by_index:
+                tc_id = id_by_index[tc_index]
         out.append({
             "type": "tool_call",
-            "id": tc_delta.get("id", ""),
+            "id": tc_id,
             "name": tc_delta.get("function", {}).get("name", ""),
             "parent_message_id": chunk_id,
             "args_delta": tc_delta.get("function", {}).get("arguments", ""),
@@ -224,12 +238,16 @@ class LocalChatSession:
                 # the top level — it does NOT contain a `choices` delta.  Skip it from
                 # delta yield, store the usage block.
                 usage: dict | None = None
+                # See RemoteChatSession.stream for why this map is needed —
+                # OpenAI sends the real tool_call.id only on the first chunk
+                # of each call; later chunks identify by `index` only.
+                id_by_index: dict[int, str] = {}
                 for raw_chunk in stream_iter:
                     if raw_chunk.get("usage"):
                         usage = raw_chunk["usage"]
                         # Don't `continue` — usage chunk in OpenAI SSE has empty choices,
                         # so _parse_openai_compat_chunk produces nothing.  Safe to fall through.
-                    parsed = _parse_openai_compat_chunk(raw_chunk)
+                    parsed = _parse_openai_compat_chunk(raw_chunk, id_by_index)
                     for p in parsed:
                         # Use run_coroutine_threadsafe + blocking put() for backpressure:
                         # put_nowait raises QueueFull inside the event-loop callback (the

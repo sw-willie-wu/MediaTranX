@@ -100,12 +100,102 @@ async def test_stream_yields_tool_call_deltas():
     }
     assert tc_events[1] == {
         "type": "tool_call",
-        "id": "",           # id absent on 2nd chunk → defaults to ""
+        # id carried from index→id map populated on the 1st chunk (real
+        # OpenAI streams only put `id` on chunk #1, but downstream needs the
+        # same id on every chunk to accumulate args into the right bucket).
+        "id": "tc1",
         "name": "",         # name absent on 2nd chunk → defaults to ""
         "parent_message_id": "msg1",
         "args_delta": 'ld":"x"}',
     }
     assert any(c.get("type") == "done" for c in chunks)
+
+
+# ---------------------------------------------------------------------------
+# _parse_openai_compat_chunk — id_by_index map (carry id across chunks)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_chunk_id_by_index_populates_on_first_chunk():
+    """First chunk for a given index populates id_by_index with the real id."""
+    id_by_index: dict[int, str] = {}
+    raw = {
+        "id": "msg1",
+        "choices": [{"delta": {"tool_calls": [
+            {"index": 0, "id": "call_abc", "function": {"name": "navigate_to", "arguments": ""}},
+        ]}}],
+    }
+    events = _parse_openai_compat_chunk(raw, id_by_index)
+    assert id_by_index == {0: "call_abc"}
+    assert events == [{
+        "type": "tool_call",
+        "id": "call_abc",
+        "name": "navigate_to",
+        "parent_message_id": "msg1",
+        "args_delta": "",
+    }]
+
+
+def test_parse_chunk_id_by_index_carries_id_on_continuation_chunk():
+    """Continuation chunk (no `id` key) reads the id from id_by_index."""
+    id_by_index: dict[int, str] = {0: "call_abc"}
+    raw = {
+        "id": "msg1",
+        "choices": [{"delta": {"tool_calls": [
+            {"index": 0, "function": {"arguments": '{"route":"/video"}'}},
+        ]}}],
+    }
+    events = _parse_openai_compat_chunk(raw, id_by_index)
+    assert events == [{
+        "type": "tool_call",
+        "id": "call_abc",  # carried, not ""
+        "name": "",
+        "parent_message_id": "msg1",
+        "args_delta": '{"route":"/video"}',
+    }]
+
+
+def test_parse_chunk_without_id_by_index_falls_back_to_empty():
+    """Backward-compat: when id_by_index is None, continuation chunks still
+    emit id='' (legacy behaviour for callers that haven't adopted the map)."""
+    raw = {
+        "id": "msg1",
+        "choices": [{"delta": {"tool_calls": [
+            {"index": 0, "function": {"arguments": "x"}},  # no id
+        ]}}],
+    }
+    events = _parse_openai_compat_chunk(raw)  # no id_by_index arg
+    assert events[0]["id"] == ""
+
+
+def test_parse_chunk_id_by_index_handles_parallel_indices():
+    """Parallel tool calls: index 0 and index 1 each get their own carried id."""
+    id_by_index: dict[int, str] = {}
+    # First chunk announces both
+    raw1 = {
+        "id": "msg1",
+        "choices": [{"delta": {"tool_calls": [
+            {"index": 0, "id": "call_A", "function": {"name": "navigate_to", "arguments": ""}},
+            {"index": 1, "id": "call_B", "function": {"name": "select_subfunction", "arguments": ""}},
+        ]}}],
+    }
+    _parse_openai_compat_chunk(raw1, id_by_index)
+    assert id_by_index == {0: "call_A", 1: "call_B"}
+    # Continuation chunk for index 1 only — should pick up call_B not call_A
+    raw2 = {
+        "id": "msg1",
+        "choices": [{"delta": {"tool_calls": [
+            {"index": 1, "function": {"arguments": '{"name":"transcode"}'}},
+        ]}}],
+    }
+    events = _parse_openai_compat_chunk(raw2, id_by_index)
+    assert events == [{
+        "type": "tool_call",
+        "id": "call_B",  # not call_A
+        "name": "",
+        "parent_message_id": "msg1",
+        "args_delta": '{"name":"transcode"}',
+    }]
 
 
 async def test_stream_propagates_producer_exception():

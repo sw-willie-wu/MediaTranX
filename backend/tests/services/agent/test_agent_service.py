@@ -113,6 +113,35 @@ class TestMsgToDict:
         assert result["role"] == "system"
         assert "id" not in result
 
+    def test_assistant_empty_tool_calls_stripped_snake(self):
+        """OpenAI rejects assistant messages with empty `tool_calls: []`.
+        _msg_to_dict must drop the key entirely when no tool calls present."""
+        d = {"role": "assistant", "content": "just text", "tool_calls": []}
+        result = _msg_to_dict(d)
+        assert "tool_calls" not in result
+        assert result["content"] == "just text"
+
+    def test_assistant_empty_tool_calls_stripped_camelcase(self):
+        """Frontend rehydration path may emit camelCase `toolCalls: []`.
+        _msg_to_dict must also handle that variant."""
+        d = {"role": "assistant", "content": "text", "toolCalls": []}
+        result = _msg_to_dict(d)
+        assert "toolCalls" not in result
+        assert "tool_calls" not in result
+
+    def test_assistant_non_empty_tool_calls_preserved(self):
+        """Non-empty tool_calls must NOT be stripped — that's the whole
+        point of the message in agent multi-round flow."""
+        d = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": "call_x", "type": "function",
+                            "function": {"name": "navigate_to",
+                                         "arguments": '{"route":"/video"}'}}],
+        }
+        result = _msg_to_dict(d)
+        assert result["tool_calls"] == d["tool_calls"]
+
 
 class TestToolToDict:
     def test_plain_dict_passthrough(self):
