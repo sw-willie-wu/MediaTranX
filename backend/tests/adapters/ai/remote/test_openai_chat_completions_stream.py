@@ -114,7 +114,11 @@ class TestChatCompletionsStream:
             chunks = list(self._prov().chat_completions_stream(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": "go to video"}],
-                tools=[{"name": "navigate_to", "description": "nav", "parameters": {}}],
+                tools=[{
+                    "name": "navigate_to",
+                    "description": "nav",
+                    "parameters": {"type": "object", "properties": {}},
+                }],
             ))
         assert len(chunks) == 1
         tc = chunks[0]["choices"][0]["delta"]["tool_calls"][0]
@@ -203,7 +207,8 @@ class TestChatCompletionsStream:
         assert chunks[0]["choices"][0]["delta"]["content"] == "a"
 
     def test_payload_includes_tools_and_stream_options(self):
-        """Request payload carries tools, tool_choice, stream, stream_options."""
+        """Request payload carries tools (wrapped to OpenAI strict shape),
+        tool_choice, stream, stream_options."""
         lines = [DONE_LINE]
         captured: dict = {}
 
@@ -211,7 +216,11 @@ class TestChatCompletionsStream:
             captured["payload"] = json.loads(req.data.decode("utf-8"))
             return _make_sse_response(*lines)
 
-        tools = [{"name": "foo", "description": "bar", "parameters": {}}]
+        tools = [{
+            "name": "foo",
+            "description": "bar",
+            "parameters": {"type": "object", "properties": {}},
+        }]
         with patch(
             "app.adapters.ai.remote.openai.urllib.request.urlopen",
             side_effect=fake_urlopen,
@@ -224,8 +233,18 @@ class TestChatCompletionsStream:
         p = captured["payload"]
         assert p["stream"] is True
         assert p["stream_options"] == {"include_usage": True}
-        assert p["tools"] == tools
         assert p["tool_choice"] == "auto"
+        # NEW: tools are wrapped to OpenAI strict shape, not passed through flat
+        assert len(p["tools"]) == 1
+        entry = p["tools"][0]
+        assert entry["type"] == "function"
+        assert entry["function"]["name"] == "foo"
+        assert entry["function"]["description"] == "bar"
+        assert entry["function"]["strict"] is True
+        # parameters were strict-ified (zero-arg → additionalProperties:false)
+        params = entry["function"]["parameters"]
+        assert params["additionalProperties"] is False
+        assert params["required"] == []
 
     def test_payload_tool_choice_none_when_no_tools(self):
         """tool_choice='none' when tools=[] or tools=None."""
