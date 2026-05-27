@@ -25,7 +25,7 @@ import { useRouter, type Router } from 'vue-router'
 import { useActivePanel } from '@/composables/useActivePanel'
 import { useActiveView, deriveViewId } from '@/composables/useActiveView'
 import { viewRegistry } from '@/stores/viewRegistry'
-import { panelRegistry } from '@/stores/panelRegistry'
+import { panelRegistry, type PanelAgentSchema } from '@/stores/panelRegistry'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useAgentStore } from '@/stores/agent'
@@ -73,7 +73,8 @@ export interface ToolCall {
 
 // ─── Tool definitions (§7) ───────────────────────────────────────────────────
 
-export const TOOLS: ToolDefinition[] = [
+// 8 non-set_field tools (static). set_field is generated dynamically in getTools().
+const _NON_SET_FIELD_TOOLS: ToolDefinition[] = [
   {
     name: 'navigate_to',
     description: 'Navigate to a top-level domain view (image/audio/video/document/settings/tasks/home).',
@@ -121,18 +122,7 @@ export const TOOLS: ToolDefinition[] = [
       required: ['field'],
     },
   },
-  {
-    name: 'set_field',
-    description: 'Set a field on the active panel. Field name & valid values are in state.panel_schema.',
-    parameters: {
-      type: 'object',
-      properties: {
-        field: { type: 'string' },
-        value: {},
-      },
-      required: ['field', 'value'],
-    },
-  },
+  // set_field is at index 5 in the final array — generated dynamically in getTools()
   {
     name: 'click_execute',
     description: "Submit the active panel's task with the currently set fields.",
@@ -158,6 +148,43 @@ export const TOOLS: ToolDefinition[] = [
     },
   },
 ]
+
+/**
+ * Build the 9-tool array with a dynamic set_field definition.
+ *
+ * When activePanelSchema is provided and has fields, set_field.field becomes
+ * an enum of panel field names — enabling OpenAI strict-mode constrained
+ * decoding and Gemini/Ollama schema-respecting models to self-correct (§5.3.1,
+ * Appendix D).
+ *
+ * Order: navigate, select, load, list, open_dropdown, set_field, click_exec,
+ *        click_action, get_status.
+ */
+export function getTools(activePanelSchema?: PanelAgentSchema | null): ToolDefinition[] {
+  const setFieldDef: ToolDefinition = {
+    name: 'set_field',
+    description: 'Set a field on the active panel. Field name & valid values are in state.panel_schema.',
+    parameters: {
+      type: 'object',
+      properties: {
+        field: activePanelSchema && activePanelSchema.fields.length > 0
+          ? { type: 'string', enum: activePanelSchema.fields.map(f => f.name) }
+          : { type: 'string' },
+        value: {},
+      },
+      required: ['field', 'value'],
+    },
+  }
+  // Maintain original order: first 5 non-set_field tools, then set_field, then last 3
+  return [
+    ..._NON_SET_FIELD_TOOLS.slice(0, 5),
+    setFieldDef,
+    ..._NON_SET_FIELD_TOOLS.slice(5),
+  ]
+}
+
+// Backward-compat: callers using the static TOOLS array continue to work
+export const TOOLS: ToolDefinition[] = getTools(null)
 
 // ─── Dispatcher helpers ───────────────────────────────────────────────────────
 
@@ -474,5 +501,5 @@ export function dispatch(tc: ToolCall): Promise<ToolResult> {
 // ─── Composable ───────────────────────────────────────────────────────────────
 
 export function useAgentTools() {
-  return { TOOLS, dispatch }
+  return { TOOLS, getTools, dispatch }
 }

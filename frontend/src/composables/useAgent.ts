@@ -23,6 +23,7 @@ import { streamRun, type AssistantMessage } from '@/composables/useAgentSSE'
 import { useAgentStore, type TransientBuffer } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
 import { useAgentTools } from '@/composables/useAgentTools'
+import type { PanelAgentSchema } from '@/stores/panelRegistry'
 
 // i18n.global.t is the standard pattern for non-setup contexts (see
 // useSubmitTask / useMediaCollection).  We resolve it lazily on first error
@@ -59,6 +60,7 @@ export type Message =
  */
 export interface ToolsApi {
   TOOLS: Array<{ name: string; description: string; parameters: object }>
+  getTools: (activePanelSchema?: PanelAgentSchema | null) => Array<{ name: string; description: string; parameters: object }>
   dispatch(toolCall: { id: string; function: { name: string; arguments: string } }): Promise<{ ok?: boolean; error?: string; [k: string]: any }>
 }
 
