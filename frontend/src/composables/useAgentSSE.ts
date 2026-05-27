@@ -175,15 +175,40 @@ export class AgUiSSEParser {
    * Includes ALL accumulated tool calls (single-round: all belong to this message).
    */
   assembledAssistantMessage(): AssistantMessage {
+    const normalizeToolCallArgs = (raw: string): string => {
+      const trimmed = (raw ?? '').trim()
+      if (!trimmed) return '{}'
+      try {
+        JSON.parse(trimmed)
+        return trimmed
+      } catch {
+        return '{}'
+      }
+    }
     const id = this.lastMessageId || crypto.randomUUID()
     const content = this.textAccum.get(id) ?? ''
-    const toolCalls = Array.from(this.toolCallsAccum.entries()).map(
-      ([toolCallId, v]) => ({
+    // Drop tool calls with a missing / empty name — qwen3 etc. occasionally
+    // emit phantom `{name: ""}` entries alongside a real call (Bug #9). These
+    // would dispatch to nothing (unknown_tool) and pollute the round-2 wire,
+    // where llama-server's tool-call parser then rejects them with a 500.
+    const toolCalls = Array.from(this.toolCallsAccum.entries())
+      .filter(([_, v]) => v.name && v.name.trim())
+      .map(([toolCallId, v]) => ({
         id: toolCallId,
         type: 'function' as const,
-        function: { name: v.name, arguments: v.args },
-      })
-    )
+        // Normalize the streamed `arguments` to a valid JSON-encoded object.
+        // Three failure modes observed live with qwen3-8b:
+        //   1. Empty: model emits no args at all → ""
+        //   2. Truncated: model stops mid-stream after "{" (no closing brace)
+        //   3. Garbage: model emits trailing text or non-JSON noise
+        // Any non-parseable value defaults to "{}" so neither the frontend
+        // dispatcher's JSON.parse nor llama-server's tool-call parser
+        // (next-round payload) explodes.
+        function: {
+          name: v.name,
+          arguments: normalizeToolCallArgs(v.args),
+        },
+      }))
     return { id, role: 'assistant', content, toolCalls }
   }
 }
