@@ -462,6 +462,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="removeBgPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="onPanelSubmit"
         />
 
@@ -484,6 +485,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="adjustPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="onPanelSubmit"
           @preview-change="onPreviewChange"
         />
@@ -493,6 +495,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="filterPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="onPanelSubmit"
           @preview-change="onPreviewChange"
         />
@@ -514,6 +517,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="ocrPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="onPanelSubmit"
         />
       </div>
