@@ -85,8 +85,10 @@ describe('useAgent.runLoop', () => {
       }
       return { id: 'm2', role: 'assistant' as const, content: 'done', toolCalls: [] }
     })
+    const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
     const fakeTools = {
-      TOOLS: [{ name: 'navigate_to', description: '', parameters: {} }],
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
       dispatch: vi.fn(async () => ({ ok: true })),
     }
     // Default policy is 'auto'; 'navigate_to' is in autoWhitelist (not in alwaysAsk)
@@ -123,8 +125,10 @@ describe('useAgent.runLoop', () => {
       }
       return { id: 'm2', role: 'assistant' as const, content: 'done', toolCalls: [] }
     })
+    const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
     const fakeTools = {
-      TOOLS: [{ name: 'navigate_to', description: '', parameters: {} }],
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
       dispatch: vi.fn(async () => ({ ok: true })),
     }
 
@@ -181,8 +185,10 @@ describe('useAgent.runLoop', () => {
       }
       return { id: 'm2', role: 'assistant' as const, content: 'done', toolCalls: [] }
     })
+    const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
     const fakeTools = {
-      TOOLS: [{ name: 'navigate_to', description: '', parameters: {} }],
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
       dispatch: vi.fn(async () => ({ ok: true })),
     }
 
@@ -250,8 +256,10 @@ describe('useAgent.runLoop', () => {
         { id: 'tc4', type: 'function' as const, function: { name: 'set_field', arguments: '{}' } },
       ],
     }))
+    const fakeToolsTOOLS: { name: string; description: string; parameters: object }[] = []
     const fakeTools = {
-      TOOLS: [],
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
       dispatch: vi.fn(async () => ({ error: 'agent.error.invalid_field' })),
     }
     const { sendUserText, messages } = useAgent({ streamRunFn: fakeStreamRun, tools: fakeTools })
@@ -292,8 +300,10 @@ describe('useAgent.runLoop', () => {
         }],
       }
     })
+    const fakeToolsTOOLS: { name: string; description: string; parameters: object }[] = []
     const fakeTools = {
-      TOOLS: [],
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
       dispatch: vi.fn(async () => ({ ok: true })),
     }
 
@@ -413,8 +423,10 @@ describe('useAgent.runLoop', () => {
       }
       return { id: 'm2', role: 'assistant' as const, content: 'done', toolCalls: [] }
     })
+    const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
     const fakeTools = {
-      TOOLS: [{ name: 'navigate_to', description: '', parameters: {} }],
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
       dispatch: vi.fn(async () => ({ ok: true })),
     }
 
@@ -475,8 +487,10 @@ describe('useAgent.runLoop', () => {
         function: { name: 'navigate_to', arguments: '{}' },
       }],
     }))
+    const fakeToolsTOOLS: { name: string; description: string; parameters: object }[] = []
     const fakeTools = {
-      TOOLS: [],
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
       dispatch: vi.fn(async () => ({ ok: true })),
     }
 
