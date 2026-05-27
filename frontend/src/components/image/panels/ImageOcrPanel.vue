@@ -10,10 +10,13 @@ import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
+import type { SelectItem } from '@/components/common/AppSelect.vue'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -129,6 +132,38 @@ async function execute() {
   )
   if (taskId) emit('submit', taskId)
 }
+
+const agentSchema = {
+  panelId: 'image.ocr',
+  fields: [
+    { name: 'model', type: 'enum' as const,
+      options: () => modelOptions.value.flatMap((o: SelectItem) =>
+        'options' in o ? o.options.map(x => x.value) : [o.value]
+      ),
+    },
+    { name: 'output_format', type: 'enum' as const, options: () => ['md', 'txt'] },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.ocr.execute' },
+}
+
+useAgentPanelHost('image.ocr', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    model: selectedModel.value,
+    output_format: outputFormat.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'model': selectedModel.value = value as string; return selectedModel.value
+      case 'output_format': outputFormat.value = value as 'md' | 'txt'; return outputFormat.value
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  execute: async () => { await execute(); return {} },
+})
 
 defineExpose({ execute, isDisabled, isLoading, outputFormat, getParams })
 </script>
