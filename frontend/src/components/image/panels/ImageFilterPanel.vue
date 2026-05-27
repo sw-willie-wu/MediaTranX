@@ -3,11 +3,13 @@ import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppRange from '@/components/common/AppRange.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 import type { FilterPreview } from './filterTypes'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -98,6 +100,43 @@ async function execute() {
   )
   if (taskId) emit('submit', taskId)
 }
+
+// ── Agent panel registration ─────────────────────────────────────────────────
+const agentSchema = {
+  panelId: 'image.filter',
+  fields: [
+    { name: 'grayscale', type: 'number' as const, min: 0, max: 100, step: 1 },
+    { name: 'sepia',     type: 'number' as const, min: 0, max: 100, step: 1 },
+    { name: 'invert',    type: 'number' as const, min: 0, max: 100, step: 1 },
+    { name: 'blur',      type: 'number' as const, min: 0, max: 20,  step: 1 },
+    { name: 'vignette',  type: 'number' as const, min: 0, max: 100, step: 1 },
+  ],
+  actions: [{ name: 'reset', label: 'image.filter.reset' }],
+  execute: { requiresConfirm: false, label: 'panel.filter.execute' },
+}
+
+useAgentPanelHost('image.filter', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    grayscale: grayscale.value, sepia: sepia.value, invert: invert.value,
+    blur: blur.value, vignette: vignette.value,
+  }),
+  setField: (field, value) => {
+    const clamp = (v: unknown, lo: number, hi: number) => Math.min(Math.max(Number(v), lo), hi)
+    switch (field) {
+      case 'grayscale': { const c = clamp(value, 0, 100); grayscale.value = c; return c }
+      case 'sepia':     { const c = clamp(value, 0, 100); sepia.value = c;     return c }
+      case 'invert':    { const c = clamp(value, 0, 100); invert.value = c;    return c }
+      case 'blur':      { const c = clamp(value, 0, 20);  blur.value = c;      return c }
+      case 'vignette':  { const c = clamp(value, 0, 100); vignette.value = c;  return c }
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  invokeAction: (name) => { if (name === 'reset') reset() },
+  execute: async () => { await execute(); return {} },
+})
 
 defineExpose({ execute, isDisabled, isLoading, getParams, getState, setState, reset, getPreview: () => preview.value })
 </script>
