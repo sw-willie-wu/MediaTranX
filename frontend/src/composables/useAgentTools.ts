@@ -473,6 +473,14 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
         return { error: 'agent.error.multi_select_not_supported' }
       }
 
+      // Universal gate: every tool panel (image/audio/video/document)
+      // requires an active file. Without one the UI's Apply button is
+      // disabled; the dispatcher must refuse for the same reason so the
+      // agent doesn't fire a phantom submit + report success.
+      if (useFilesStore().currentFile == null) {
+        return { error: 'agent.error.no_file_selected' }
+      }
+
       const result = await ap.instance.execute()
       return { ok: true, task_id: result?.task_id }
     } catch (e: any) {

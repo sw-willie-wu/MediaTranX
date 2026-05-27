@@ -1185,6 +1185,7 @@ export default {
       file_not_found: '找不到檔案 {file_id}',
       view_not_introspectable: '目前畫面無法被檢視',
       no_execute_on_settings: '無法從設定頁面提交任務',
+      no_file_selected: '尚未載入檔案 — 請先上傳或載入檔案再執行',
       invalid_subfunction: '此頁面沒有「{name}」子功能',
     },
     tool: {

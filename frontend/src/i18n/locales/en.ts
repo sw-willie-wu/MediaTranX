@@ -1185,6 +1185,7 @@ export default {
       file_not_found: 'File {file_id} not found',
       view_not_introspectable: 'Current view cannot be introspected',
       no_execute_on_settings: 'Cannot submit tasks from the settings page',
+      no_file_selected: 'No file is loaded — upload or load a file first before executing',
       invalid_subfunction: 'Subfunction "{name}" is not available in this view',
     },
     tool: {

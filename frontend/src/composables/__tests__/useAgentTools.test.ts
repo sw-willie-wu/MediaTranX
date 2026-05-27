@@ -480,6 +480,15 @@ describe('dispatch: click_execute', () => {
     })
     panelRegistry.register('image.upscale', handle)
 
+    // click_execute requires a loaded file (the underlying Apply button
+    // is disabled without one) — inject one before invoking.
+    const filesStore = useFilesStore()
+    filesStore.files.set('file-go', {
+      id: 'file-go', name: 'x.jpg', originalName: 'x.jpg', path: '',
+      size: 100, mimeType: 'image/jpeg', type: 'image', createdAt: new Date(),
+    })
+    filesStore.setCurrentFile('file-go')
+
     const result = await withContext(router, d => d(tc('click_execute')))
     expect(result.ok).toBe(true)
     expect(result.task_id).toBe('task-xyz')
@@ -490,6 +499,29 @@ describe('dispatch: click_execute', () => {
     const router = makeRouter('/image')
     const result = await withContext(router, d => d(tc('click_execute')))
     expect(result.error).toBe('agent.error.panel_not_supported')
+  })
+
+  // Bug: agent was free to fire click_execute on a panel whose Apply
+  // button was disabled (no file loaded) and got back a phantom success.
+  // The dispatcher must refuse universally — every tool panel needs an
+  // active file (settings panels are already gated by execute:null).
+  it('returns no_file_selected when no file is loaded in the store', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+
+    const vh = makeViewHandle('upscale')
+    viewRegistry.register('image', vh)
+    const executeFn = vi.fn(async () => ({ task_id: 'should-not-fire' }))
+    panelRegistry.register('image.upscale', makePanelHandle('image.upscale', {
+      executeNull: false,
+      executeFn,
+    }))
+
+    // FilesStore.currentFile is null in a fresh pinia — that's the bug
+    // condition the user reported.
+    const result = await withContext(router, d => d(tc('click_execute')))
+    expect(result.error).toBe('agent.error.no_file_selected')
+    expect(executeFn).not.toHaveBeenCalled()
   })
 })
 

@@ -32,9 +32,20 @@ AGENT_SYSTEM_PROMPT = """\
 3. `select_subfunction` 切到對的子功能（這會渲染對應 panel）
 4. `load_file` 把目標檔案設為 active
 5. 一個或多個 `set_field` 把參數設好
-6. `click_execute` 送出（user 會看到 confirm card）
+6. **只在 user 明確要求執行 / 送出 / 套用 / 開始時**才 `click_execute`
 
 執行中你會收到 `state.panel_schema`，列出當前 panel 有哪些欄位、合法值、目前 value。**絕對不要**設不在 schema 內的欄位、也不要猜值（enum 一律照 schema 列舉）。
+
+# click_execute 觸發規則（重要）
+
+`click_execute` 對應 panel 的「Apply / 執行 / 送出」按鈕，會真的提交任務、開始跑模型 / 消耗資源。**這是不可隨意觸發的動作。**
+
+- ✅ 該呼叫：user 說「執行」/「跑」/「送出」/「套用」/「開始轉檔」/「幫我做」/「直接做完」等明確「動手」指令
+- ❌ **不該呼叫**：user 只說「設定...」/「調成...」/「切到...」/「把參數改成...」等純調整指令。此時做完 set_field 就停、回報參數已調好、等 user 下指令
+- ❌ **不該呼叫**：active panel 沒載入檔案時（dispatcher 會擋、但你自己也該避免無謂呼叫）
+- ❌ **不該呼叫**：user 只說「準備好...」/「先設定一下...」這種預備性語意
+
+判斷不確定時優先停在 set_field 後問 user「要我直接送出嗎？」、不要自己決定。
 
 # 安全與誠實
 
