@@ -52,6 +52,30 @@ export function _unwrapNestedValue(field: string, value: unknown): unknown {
 }
 
 /**
+ * Bug #23: qwen3.5 (and some other non-strict-mode local models) occasionally
+ * JSON-quote their string enum arguments, emitting
+ *   "value": "\"jpg\""
+ * on the wire instead of the expected
+ *   "value": "jpg"
+ * JSON.parse on the tool-call arguments turns that into the literal 5-char
+ * string `"jpg"` (quote chars included), which then fails the enum match.
+ *
+ * Strip exactly one layer of JSON-quote-wrap when the value is a string of
+ * the form `"..."` AND parses cleanly to another string. Single-pass — we
+ * trust the model to overquote at most once.
+ */
+export function _stripJsonStringWrap(value: unknown): unknown {
+  if (typeof value !== 'string' || value.length < 2) return value
+  if (!value.startsWith('"') || !value.endsWith('"')) return value
+  try {
+    const parsed = JSON.parse(value)
+    return typeof parsed === 'string' ? parsed : value
+  } catch {
+    return value
+  }
+}
+
+/**
  * Resolve a Router instance.
  *
  * When called from inside an active Vue setup() (e.g. the test harness which
@@ -393,7 +417,9 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
     try {
       // Bug #21: unwrap single-key nested object emitted by local models without strict mode.
       // e.g. {value: {value: 50}} → {value: 50}  or  {value: {mode: 'anime'}} → {value: 'anime'}
-      const unwrappedValue = _unwrapNestedValue(field, value)
+      // Bug #23: strip one layer of JSON-quote-wrap from string values
+      // (qwen3.5 sometimes emits `"\"jpg\""` instead of `"jpg"`).
+      const unwrappedValue = _stripJsonStringWrap(_unwrapNestedValue(field, value))
       const displayValue = unwrappedValue !== null && typeof unwrappedValue === 'object' ? JSON.stringify(unwrappedValue) : String(unwrappedValue)
       useAgentStore().setCurrentAction('agent.banner.act.set_field', { field, value: displayValue })
       const ap = await _getActivePanel()

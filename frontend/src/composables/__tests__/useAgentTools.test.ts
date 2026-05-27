@@ -392,6 +392,62 @@ describe('dispatch: set_field', () => {
     const result = await withContext(router, d => d(tc('set_field', { field: 'model', value: 'fast' })))
     expect(result.error).toBe('agent.error.panel_not_supported')
   })
+
+  // Bug #23: qwen3.5 (and other non-strict local models) sometimes JSON-quote
+  // their string enum values, emitting `value: "\"quality\""` over the wire
+  // instead of `value: "quality"`. JSON.parse on the args turns that into the
+  // literal four-char string `"quality"` (with the quote chars), which fails
+  // the enum match. The dispatcher must strip one layer of JSON-quote-wrap
+  // before the enum coerce so the model isn't punished for the quirk.
+  it('Bug #23: unwraps JSON-quoted string enum value before matching', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+
+    const vh = makeViewHandle('upscale')
+    viewRegistry.register('image', vh)
+    const setFieldFn = vi.fn((_f: string, v: unknown) => v)
+    const handle = makePanelHandle('image.upscale', { setFieldFn })
+    panelRegistry.register('image.upscale', handle)
+
+    // Value is the literal 9-char string  "quality"  (with the two quote chars),
+    // which is what JSON.parse('"\\"quality\\""') produces from a qwen3.5 chunk.
+    const result = await withContext(router, d => d(tc('set_field', { field: 'model', value: '"quality"' })))
+    expect(result.ok).toBe(true)
+    expect(result.actual).toBe('quality')
+    expect(setFieldFn).toHaveBeenCalledWith('model', 'quality')
+  })
+
+  it('Bug #23: leaves a non-quoted string value untouched', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+
+    const vh = makeViewHandle('upscale')
+    viewRegistry.register('image', vh)
+    const setFieldFn = vi.fn((_f: string, v: unknown) => v)
+    const handle = makePanelHandle('image.upscale', { setFieldFn })
+    panelRegistry.register('image.upscale', handle)
+
+    // Plain 'quality' must still match; the strip must not break the happy path.
+    const result = await withContext(router, d => d(tc('set_field', { field: 'model', value: 'quality' })))
+    expect(result.ok).toBe(true)
+    expect(setFieldFn).toHaveBeenCalledWith('model', 'quality')
+  })
+
+  it('Bug #23: leaves a string that does not parse as JSON untouched', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+
+    const vh = makeViewHandle('upscale')
+    viewRegistry.register('image', vh)
+    const setFieldFn = vi.fn((_f: string, v: unknown) => v)
+    const handle = makePanelHandle('image.upscale', { setFieldFn })
+    panelRegistry.register('image.upscale', handle)
+
+    // Mismatched outer quotes — not valid JSON, must NOT crash, must NOT strip.
+    // Falls through to enum coerce and (rightly) gets invalid_field.
+    const result = await withContext(router, d => d(tc('set_field', { field: 'model', value: '"quality' })))
+    expect(result.error).toBe('agent.error.invalid_field')
+  })
 })
 
 // ─── click_execute ────────────────────────────────────────────────────────────
