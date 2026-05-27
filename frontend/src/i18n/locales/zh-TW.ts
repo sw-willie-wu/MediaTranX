@@ -122,6 +122,16 @@ export default {
     go_to_model_manager: '前往模型管理',
   },
 
+  // ── 面板執行按鈕 ──────────────────────────────────────────────────────
+  panel: {
+    upscale:    { execute: '放大' },                 // Phase 1 debt
+    transcode:  { execute: '轉檔' },                 // renamed from convert (Bug #22)
+    adjust:     { execute: '套用調整' },             // Phase 2.A new
+    filter:     { execute: '套用濾鏡' },             // Phase 2.A new
+    remove_bg:  { execute: '去除背景' },             // Phase 2.A new
+    ocr:        { execute: '辨識文字' },             // Phase 2.A new
+  },
+
   // ── Toast 通知 ─────────────────────────────────────────────────────────
   toast: {
     task_submitted: '{label}任務已提交',
@@ -371,7 +381,7 @@ export default {
     loading: '讀取圖片資訊...',
 
     functions: {
-      convert: '轉檔',
+      transcode: '轉檔',
       remove_bg: '去背',
       ai_remove: '物件移除',
       upscale: '超解析',
@@ -976,6 +986,7 @@ export default {
       general: '一般',
       system: '系統資訊',
       models: 'AI 模型管理',
+      agent: 'Agent',
       about: '關於',
     },
 
@@ -1094,6 +1105,101 @@ export default {
       edit: '編輯',
       refresh: '重新整理模型',
       delete: '刪除',
+    },
+
+    agent: {
+      title: 'Agent 設定',
+      model: {
+        label: '模型',
+        placeholder: '選擇支援 tools 的模型…',
+        warning_orphan: '所選模型已不存在',
+      },
+      policy: {
+        label: '確認策略',
+        auto: '自動（建議）',
+        ask_all: '全部都問',
+        custom: '自訂白名單',
+      },
+      whitelist: {
+        label: '個別工具策略',
+        state_auto: '自動',
+        state_ask: '詢問',
+        state_deny: '拒絕',
+      },
+      clear_history: {
+        label: '清空對話',
+        confirm: '確定清空所有對話？此操作無法復原。',
+      },
+    },
+  },
+
+  // ── Agent ──────────────────────────────────────────────────────────────
+  agent: {
+    banner: {
+      prefix: 'Agent：',
+      queued: '等待中…',
+      cancelled: '已中斷',
+      waiting_confirm: '等待確認中…',
+      completed: '已完成',
+      act: {
+        navigate_to: '正在前往 {route}',
+        select_subfunction: '正在選擇 {name}',
+        load_file: '正在載入檔案 {file_id}',
+        open_dropdown: '正在展開 {field}',
+        set_field: '正在設定 {field} = {value}',
+        click_execute: '正在送出任務…',
+        click_action: '正在執行 {name}',
+        list_files: '正在列出檔案…',
+        get_task_status: '正在查詢任務 {task_id}',
+      },
+    },
+    bubble: {
+      title: 'Agent 對話',
+      placeholder: '請告訴 Agent 你想做什麼…',
+      empty: '尚無對話',
+      thinking: '思考中…',
+      token_count: '輸入: {prompt} / 輸出: {completion}',
+      clear: '清除對話紀錄',
+      show: '顯示 Agent 對話泡泡',
+      hide: '隱藏 Agent 對話泡泡',
+    },
+    confirm: {
+      title: '確認動作',
+      cancel: '取消',
+      submit: '送出',
+      with_values: '確認以下數值執行此動作？',
+    },
+    error: {
+      no_model: '尚未設定 Agent 模型',
+      model_unavailable: '所選模型目前不可用',
+      tools_not_supported: '此模型不支援工具呼叫',
+      provider_error: '服務提供者回傳錯誤',
+      context_full: '對話過長，請清除後重新開始。',
+      internal: '內部錯誤',
+      unknown_tool: '未知工具：{name}',
+      tool_failed: '工具 {name} 執行失敗：{error}',
+      invalid_field: '目前畫面中找不到欄位 {field}',
+      invalid_action: '動作 {name} 目前無法執行',
+      no_active_file: '目前沒有載入任何檔案',
+      panel_not_supported: '此工具不支援面板 {panel}',
+      panel_not_active: '面板 {panel} 尚未啟用',
+      multi_select_not_supported: '此處不支援多檔選取',
+      file_not_found: '找不到檔案 {file_id}',
+      view_not_introspectable: '目前畫面無法被檢視',
+      no_execute_on_settings: '無法從設定頁面提交任務',
+      no_file_selected: '尚未載入檔案 — 請先上傳或載入檔案再執行',
+      invalid_subfunction: '此頁面沒有「{name}」子功能',
+    },
+    tool: {
+      navigate_to: '切換頁面',
+      select_subfunction: '選擇功能',
+      load_file: '載入檔案',
+      open_dropdown: '展開選單',
+      set_field: '設定欄位',
+      click_execute: '執行任務',
+      click_action: '點擊動作',
+      list_files: '列出檔案',
+      get_task_status: '查詢任務狀態',
     },
   },
 

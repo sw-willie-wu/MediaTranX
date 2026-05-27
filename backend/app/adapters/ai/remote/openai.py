@@ -10,7 +10,7 @@ import json
 import logging
 import urllib.error
 import urllib.request
-from typing import Callable, Optional
+from typing import Callable, Iterator, Optional
 
 from .base import RemoteProvider, RemoteModel
 
@@ -58,6 +58,142 @@ _HIDDEN_MODELS = {"babbage-002", "davinci-002", "dall-e-2", "dall-e-3",
 
 # Hidden special-purpose variants (filtered if keyword is present)
 _HIDDEN_KEYWORDS = ["-preview", "transcribe", "tts", "instruct", "diarize"]
+
+
+# ═══════════════════════════════════════════════════════════
+# Strict-mode tool calling adapter (Structured Outputs)
+# ═══════════════════════════════════════════════════════════
+# Why: gpt-4o-mini reliably emits `arguments: "{}"` for tools with required
+# fields unless strict mode is enabled.  Strict mode runs constrained decoding
+# on the tool_calls path, eliminating that failure (bug #15).
+#
+# Spec: core/.claude/specs/2026-05-27-openai-strict-tool-calling-design.md
+
+# Primitive union for "any value" slots (set_field.value).
+# OpenAI strict mode does NOT support multi-element type arrays like
+# `["string","number","boolean","null"]`; it requires either single-type
+# or `anyOf` for branching.
+_STRICT_PRIMITIVE_ANYOF: dict = {
+    "anyOf": [
+        {"type": "string"},
+        {"type": "number"},
+        {"type": "boolean"},
+        {"type": "null"},
+    ],
+}
+
+
+def _strictify_schema(schema: dict) -> dict:
+    """Convert a permissive tool parameter schema into one that satisfies
+    OpenAI Structured Outputs strict mode constraints.
+
+    See spec §3.2 for full design; this docstring summarizes:
+    - Root must be {type:"object", properties:{...}}; raises ValueError otherwise
+    - Adds `additionalProperties: false`
+    - Overwrites `required` to list every key in properties
+    - Replaces empty {} value-slot with `_STRICT_PRIMITIVE_ANYOF`
+    - Raises ValueError on nested object / array-of-object / anyOf/oneOf/
+      allOf/$ref/$defs in property (unsupported; fail loudly)
+    - Idempotent: applying twice yields the same result
+    """
+    if not isinstance(schema, dict):
+        raise ValueError(
+            f"_strictify_schema: root must be a dict, got {type(schema).__name__}"
+        )
+
+    s = dict(schema)
+
+    if s.get("type") != "object":
+        raise ValueError(
+            f"_strictify_schema: root schema must declare type:'object' (got {s.get('type')!r}); "
+            f"zero-arg tool should use {{type:'object', properties:{{}}}}"
+        )
+
+    props = s.get("properties") or {}
+    new_props: dict = {}
+    for k, v in props.items():
+        if not isinstance(v, dict):
+            raise ValueError(
+                f"_strictify_schema: property {k!r} is not a dict schema "
+                f"(got {type(v).__name__})"
+            )
+        # Empty {} = "any" — replace with primitive anyOf.
+        if not v:
+            new_props[k] = dict(_STRICT_PRIMITIVE_ANYOF)
+            continue
+        # Idempotency: a property already holding our own primitive-union
+        # anyOf shape passes through unchanged.  Without this, the anyOf
+        # branch-rejection below would refuse a schema we ourselves emit.
+        if v == _STRICT_PRIMITIVE_ANYOF:
+            new_props[k] = v
+            continue
+        # Reject shapes we don't recurse into so future tool authors
+        # see the limit explicitly instead of getting a runtime 400 from OpenAI.
+        if v.get("type") == "object":
+            raise ValueError(
+                f"_strictify_schema: nested object in property {k!r} not supported; "
+                f"flatten the schema or extend the adapter"
+            )
+        if v.get("type") == "array":
+            items = v.get("items")
+            if isinstance(items, dict) and items.get("type") == "object":
+                raise ValueError(
+                    f"_strictify_schema: array-of-object in property {k!r} not supported"
+                )
+        for branch_key in ("anyOf", "oneOf", "allOf", "$ref", "$defs"):
+            if branch_key in v:
+                raise ValueError(
+                    f"_strictify_schema: {branch_key!r} in property {k!r} not supported "
+                    f"(only the self-inserted primitive-union anyOf is allowed)"
+                )
+        new_props[k] = v
+
+    s["properties"] = new_props
+    s["required"] = list(new_props.keys())
+    s["additionalProperties"] = False
+    return s
+
+
+def _to_openai_strict_tools(flat_tools: list[dict]) -> list[dict]:
+    """Wrap AG-UI flat tool defs into OpenAI strict function shape.
+
+    AG-UI flat shape:     {name, description, parameters}
+    OpenAI strict shape:  {type:"function", function:{...strict schema..., strict:true}}
+
+    Agent path only sends flat tools (RemoteChatSession.stream → frontend
+    AG-UI TOOLS); accepting caller-built nested shapes would risk silently
+    shipping non-strict tools.  We therefore only accept flat shape and
+    raise on anything else to fail loudly.
+    """
+    wire: list[dict] = []
+    for t in flat_tools:
+        if "type" in t or "function" in t:
+            raise ValueError(
+                "_to_openai_strict_tools: nested OpenAI shape not accepted; "
+                "agent path must send AG-UI flat shape {name, description, parameters}"
+            )
+        if "name" not in t:
+            raise ValueError("_to_openai_strict_tools: tool missing 'name'")
+        if "description" not in t:
+            raise ValueError(f"_to_openai_strict_tools: tool {t['name']!r} missing 'description'")
+        if "parameters" not in t:
+            raise ValueError(f"_to_openai_strict_tools: tool {t['name']!r} missing 'parameters'")
+        try:
+            strict_params = _strictify_schema(t["parameters"])
+        except ValueError as e:
+            raise ValueError(
+                f"_to_openai_strict_tools: tool {t['name']!r} parameters invalid: {e}"
+            ) from e
+        wire.append({
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": strict_params,
+                "strict": True,
+            },
+        })
+    return wire
 
 
 # Minimum max_output_tokens for o-series Responses API calls with reasoning.
@@ -272,6 +408,130 @@ class OpenAIProvider(RemoteProvider):
             if resp is not None:
                 try: resp.close()
                 except Exception: pass
+
+    def chat_completions_stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        abort_hook: Optional[Callable] = None,
+    ) -> Iterator[dict]:
+        """Synchronous generator yielding raw OpenAI Chat Completions SSE chunks.
+
+        Yields raw chunk dicts (same shape as LlamaServer.chat_stream).
+        Caller parses delta/tool_calls via _parse_openai_compat_chunk
+        (chat_service.py).  Used by RemoteChatSession.stream() for the agent
+        tool-calling path.
+
+        Args:
+            tools: Flat AG-UI shape ``{name, description, parameters}``;
+                wrapped into OpenAI strict function shape (see
+                ``_to_openai_strict_tools``).  Raises ``ValueError`` for
+                nested/malformed schemas.
+            abort_hook: Invoked exactly once immediately after urlopen returns.
+                Lets RemoteChatSession stash the response for cross-thread close.
+
+        Raises:
+            ValueError: when ``tools`` contains a caller-built nested
+                shape, a tool missing required keys, or a parameters
+                schema that ``_strictify_schema`` cannot strict-ify.
+        """
+        # Chat Completions does not support reasoning models — callers should
+        # call chat() directly for o-series / gpt-5 (which routes to Responses).
+        token_key = "max_completion_tokens" if self._is_new_model(model) else "max_tokens"
+        # AG-UI flat tools → OpenAI strict shape.  Strict mode runs
+        # constrained decoding on tool_calls and eliminates gpt-4o-mini's
+        # `arguments: "{}"` failure mode (bug #15).  See spec
+        # core/.claude/specs/2026-05-27-openai-strict-tool-calling-design.md.
+        wire_tools = _to_openai_strict_tools(tools or [])
+        payload: dict = {
+            "model": model,
+            "messages": messages,
+            "tools": wire_tools,
+            "tool_choice": "auto" if wire_tools else "none",
+            token_key: max_tokens,
+            "temperature": temperature,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        # AG-UI agent loop dispatches tool calls sequentially round-by-round;
+        # parallel_tool_calls=true causes gpt-4o-mini to emit multiple tool
+        # calls in one stream, which our SSE parser collapses (loses index
+        # disambiguation) and produces an empty/garbled args bag.  Force
+        # sequential to match the agent's actual execution model.
+        if payload.get("tools"):
+            payload["parallel_tool_calls"] = False
+        body = json.dumps(payload).encode("utf-8")
+        headers: dict = {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        req = urllib.request.Request(
+            f"{self.endpoint}/v1/chat/completions",
+            data=body, headers=headers, method="POST",
+        )
+
+        from app.handler.exceptions import RemoteApiError
+
+        resp = None
+        try:
+            # 180s socket timeout: cancel arrives via abort_hook → resp.close()
+            # from another thread, not timeout.
+            resp = urllib.request.urlopen(req, timeout=180)
+        except urllib.error.HTTPError as e:
+            body_err = e.read().decode("utf-8", errors="replace")[:200]
+            raise self._parse_error(e.code, body_err)
+        except (urllib.error.URLError, OSError) as e:
+            raise RemoteApiError("connection_failed", f"OpenAI: {e}")
+
+        if abort_hook is not None:
+            abort_hook(resp)
+
+        try:
+            for raw_line in resp:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:"):].strip()
+                if data == "[DONE]":
+                    return
+                try:
+                    yield json.loads(data)
+                except json.JSONDecodeError:
+                    logger.warning("chat_completions_stream: malformed SSE chunk: %r", data[:120])
+        finally:
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
+
+    def chat_responses_stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        abort_hook: Optional[Callable] = None,
+    ) -> Iterator[dict]:
+        """OpenAI Responses API streaming with tool calling.
+
+        Not implemented in Phase 1 (Wave 4 Task 4.5).  Responses-API tool
+        calling uses different event types (response.function_call.delta, etc.)
+        that require a dedicated parser.  Use a Chat Completions model
+        (gpt-4o, gpt-4o-mini) for the agent in Phase 1.
+        """
+        raise NotImplementedError(
+            "OpenAI Responses streaming + tool calling deferred to follow-up; "
+            "use a chat-completions model (gpt-4o, gpt-4o-mini) for agent in Phase 1."
+        )
 
     def _convert_to_responses_input(self, messages: list[dict]) -> list[dict]:
         """Convert Chat Completions message shape to Responses API input shape.

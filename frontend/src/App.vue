@@ -5,6 +5,7 @@ import Titlebar from './components/Titlebar.vue'
 import MainSidebar from './components/MainSidebar.vue'
 import AppToast from './components/AppToast.vue'
 import AppConfirmDialog from './components/common/AppConfirmDialog.vue'
+import ChatBubble from './components/agent/ChatBubble.vue'
 import { useTheme } from './composables/useTheme'
 import { useRemoteModelStore } from './stores/remoteModels'
 import { useResultsStore } from './stores/results'
@@ -58,6 +59,7 @@ onMounted(async () => {
     </div>
     <AppToast />
     <AppConfirmDialog />
+    <ChatBubble />
   </div>
 </template>
 

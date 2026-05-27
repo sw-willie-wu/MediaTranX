@@ -14,6 +14,7 @@ import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
 import { useSettingsStore } from '@/stores/settings'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const { t } = useI18n()
 
@@ -210,6 +211,59 @@ async function submitGenerate() {
 const isDisabled = computed(() =>
   isLoading.value || !props.fileId
 )
+
+// ── Agent panel registration ──────────────────────────────────────────────────
+// NOTE: SubtitlePanel does NOT support multi-select (m16) — hardcoded false.
+const agentSchema = {
+  panelId: 'video.subtitle',
+  fields: [
+    { name: 'language', type: 'enum' as const,
+      options: () => languages.value.map(l => l.value) },
+    { name: 'model_size', type: 'enum' as const,
+      options: () => modelSizesWithBadge.value.map(m => m.value) },
+    { name: 'vocal_separation', type: 'bool' as const },
+    { name: 'output_format', type: 'enum' as const,
+      options: () => outputFormats.value.map(f => f.value) },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.subtitle.execute' },
+}
+
+useAgentPanelHost('video.subtitle', {
+  agentSchema,
+  isMultiSelect: () => false,  // subtitle panel does not support multi-select
+  getCurrentValues: () => ({
+    language: language.value,
+    model_size: modelSize.value,
+    vocal_separation: vocalSeparation.value,
+    output_format: outputFormat.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'language':
+        language.value = value as string
+        return value
+      case 'model_size':
+        modelSize.value = value as string
+        return value
+      case 'vocal_separation':
+        vocalSeparation.value = !!value
+        return vocalSeparation.value
+      case 'output_format':
+        outputFormat.value = value as string
+        return value
+      default:
+        throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {
+    // no-op
+  },
+  execute: async () => {
+    await submitGenerate()
+    return {}
+  },
+})
 
 defineExpose({ submitGenerate, isLoading, isDisabled })
 

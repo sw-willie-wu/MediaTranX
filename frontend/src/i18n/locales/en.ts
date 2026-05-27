@@ -122,6 +122,16 @@ export default {
     go_to_model_manager: 'Go to Model Manager',
   },
 
+  // ── Panel execute buttons ──────────────────────────────────────────────
+  panel: {
+    upscale:    { execute: 'Upscale' },              // Phase 1 debt
+    transcode:  { execute: 'Convert' },              // renamed from convert (Bug #22)
+    adjust:     { execute: 'Apply Adjustments' },    // Phase 2.A new
+    filter:     { execute: 'Apply Filter' },         // Phase 2.A new
+    remove_bg:  { execute: 'Remove Background' },    // Phase 2.A new
+    ocr:        { execute: 'Extract Text' },         // Phase 2.A new
+  },
+
   // ── Toast notifications ───────────────────────────────────────────────
   toast: {
     task_submitted: '{label} task submitted',
@@ -371,7 +381,7 @@ export default {
     loading: 'Loading image info...',
 
     functions: {
-      convert: 'Convert',
+      transcode: 'Transcode',
       remove_bg: 'Remove BG',
       ai_remove: 'Object Remove',
       upscale: 'Upscale',
@@ -976,6 +986,7 @@ export default {
       general: 'General',
       system: 'System Info',
       models: 'AI Models',
+      agent: 'Agent',
       about: 'About',
     },
 
@@ -1094,6 +1105,101 @@ export default {
       edit: 'Edit',
       refresh: 'Refresh Models',
       delete: 'Delete',
+    },
+
+    agent: {
+      title: 'Agent settings',
+      model: {
+        label: 'Model',
+        placeholder: 'Select a tool-capable model…',
+        warning_orphan: 'Selected model is no longer available',
+      },
+      policy: {
+        label: 'Confirmation policy',
+        auto: 'Auto (recommended)',
+        ask_all: 'Ask for everything',
+        custom: 'Custom whitelist',
+      },
+      whitelist: {
+        label: 'Per-tool policy',
+        state_auto: 'Auto',
+        state_ask: 'Ask',
+        state_deny: 'Deny',
+      },
+      clear_history: {
+        label: 'Clear chat history',
+        confirm: 'Clear all messages? This cannot be undone.',
+      },
+    },
+  },
+
+  // ── Agent ──────────────────────────────────────────────────────────────
+  agent: {
+    banner: {
+      prefix: 'Agent: ',
+      queued: 'Waiting…',
+      cancelled: 'Cancelled',
+      waiting_confirm: 'Waiting for confirmation…',
+      completed: 'Done',
+      act: {
+        navigate_to: 'Navigating to {route}',
+        select_subfunction: 'Selecting {name}',
+        load_file: 'Loading file {file_id}',
+        open_dropdown: 'Opening {field}',
+        set_field: 'Setting {field} = {value}',
+        click_execute: 'Submitting task...',
+        click_action: 'Invoking {name}',
+        list_files: 'Listing files...',
+        get_task_status: 'Checking task {task_id}',
+      },
+    },
+    bubble: {
+      title: 'Agent Chat',
+      placeholder: 'Ask agent to do something…',
+      empty: 'No messages yet',
+      thinking: 'Thinking…',
+      token_count: 'in: {prompt} / out: {completion}',
+      clear: 'Clear chat history',
+      show: 'Show chat bubble',
+      hide: 'Hide chat bubble',
+    },
+    confirm: {
+      title: 'Confirm action',
+      cancel: 'Cancel',
+      submit: 'Submit',
+      with_values: 'Confirm action with the following values?',
+    },
+    error: {
+      no_model: 'No agent model configured',
+      model_unavailable: 'Selected model is unavailable',
+      tools_not_supported: 'This model does not support tool use',
+      provider_error: 'Provider returned an error',
+      context_full: 'Conversation too long. Please clear and start over.',
+      internal: 'Internal error',
+      unknown_tool: 'Unknown tool: {name}',
+      tool_failed: 'Tool {name} failed: {error}',
+      invalid_field: 'Field {field} is not valid in the current view',
+      invalid_action: 'Action {name} is not available',
+      no_active_file: 'No file is currently loaded',
+      panel_not_supported: 'Panel {panel} is not supported by this tool',
+      panel_not_active: 'Panel {panel} is not active',
+      multi_select_not_supported: 'Multi-file selection is not supported here',
+      file_not_found: 'File {file_id} not found',
+      view_not_introspectable: 'Current view cannot be introspected',
+      no_execute_on_settings: 'Cannot submit tasks from the settings page',
+      no_file_selected: 'No file is loaded — upload or load a file first before executing',
+      invalid_subfunction: 'Subfunction "{name}" is not available in this view',
+    },
+    tool: {
+      navigate_to: 'Navigate',
+      select_subfunction: 'Select function',
+      load_file: 'Load file',
+      open_dropdown: 'Open dropdown',
+      set_field: 'Set field',
+      click_execute: 'Execute',
+      click_action: 'Click action',
+      list_files: 'List files',
+      get_task_status: 'Get task status',
     },
   },
 
