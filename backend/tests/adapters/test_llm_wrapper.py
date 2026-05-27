@@ -145,6 +145,46 @@ class TestResolveModelPath:
         assert config["n_ctx"] >= 1
 
 
+class TestChatStream:
+    def test_raises_when_no_model_loaded(self):
+        w = LlmWrapper(slot="llm")
+        w._model = None
+        with pytest.raises(RuntimeError, match="not loaded"):
+            list(w.chat_stream(messages=[{"role": "user", "content": "hi"}]))
+
+    def test_forwards_args_to_llama_server(self):
+        w = LlmWrapper(slot="llm")
+        fake_server = MagicMock()
+        fake_server.chat_stream.return_value = iter([{"choices": [{"delta": {"content": "x"}}]}])
+        w._model = fake_server
+        # Caller would consume the iterator; we just need to verify forwarding.
+        result = list(w.chat_stream(
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[{"name": "t", "description": "d", "parameters": {}}],
+            max_tokens=1234,
+            temperature=0.42,
+        ))
+        assert result == [{"choices": [{"delta": {"content": "x"}}]}]
+        fake_server.chat_stream.assert_called_once_with(
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[{"name": "t", "description": "d", "parameters": {}}],
+            max_tokens=1234,
+            temperature=0.42,
+        )
+
+    def test_default_tools_and_temperature(self):
+        w = LlmWrapper(slot="llm")
+        fake_server = MagicMock()
+        fake_server.chat_stream.return_value = iter([])
+        w._model = fake_server
+        list(w.chat_stream(messages=[{"role": "user", "content": "x"}]))
+        # Defaults: tools=None, max_tokens=4096, temperature=0.1
+        kwargs = fake_server.chat_stream.call_args.kwargs
+        assert kwargs["tools"] is None
+        assert kwargs["max_tokens"] == 4096
+        assert kwargs["temperature"] == 0.1
+
+
 class TestKillProcess:
     def test_noop_when_no_model_loaded(self):
         w = LlmWrapper(slot="llm")
