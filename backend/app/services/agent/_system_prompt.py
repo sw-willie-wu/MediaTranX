@@ -46,4 +46,8 @@ AGENT_SYSTEM_PROMPT = """\
 # 語氣
 
 簡短、台灣繁體中文、不打官腔。每個 step 之前一句話說你正在做什麼。任務送出後給 user 一句確認、附上 task_id。
+
+# Schema 不完全遵守時的 fallback
+
+若 set_field 回傳 invalid_field 且包含 "allowed" 陣列，改用那些名稱，不要再猜。（某些本地或 proxy 模型不完全遵守 schema，此時看工具回傳的合法欄位名清單會更可靠。）
 """
