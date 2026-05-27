@@ -25,7 +25,13 @@ function renderText(text: string): string {
 
 <template>
   <div class="assistant-message">
-    <div class="assistant-bubble">
+    <!-- Bubble only when there is something to show. Pure tool-call
+         rounds (no assistant text) skip the bubble entirely so the
+         message list isn't padded with empty rectangles. -->
+    <div
+      v-if="content || (isRunning && toolCalls.length === 0)"
+      class="assistant-bubble"
+    >
       <!-- Text content -->
       <span
         v-if="content"

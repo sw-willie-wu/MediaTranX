@@ -30,7 +30,7 @@ export const BUBBLE_SIZE_PX = 48
 // Horizontal distance from the viewport edge when snapped. Kept tight
 // so the snapped bubble hugs the side and stays out of the content
 // area. Distinct from BUBBLE_MARGIN_PX (vertical breathing room).
-export const BUBBLE_EDGE_PX = 8
+export const BUBBLE_EDGE_PX = 12
 // Vertical breathing room — used by clampY (so the bubble doesn't
 // touch the titlebar/window edges) and by ChatBubble.vue for the
 // expanded-state top + panel offsets.
