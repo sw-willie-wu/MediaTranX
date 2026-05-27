@@ -134,7 +134,7 @@ MODELS_REGISTRY = {
         "qwen3": {
             "slot": SLOT_LLM,
             "label": "Qwen3",
-            "capabilities": ["text"],
+            "capabilities": ["text", "tools"],
             "description": "models.qwen3",
             "inference": {
                 "translate": {
@@ -226,7 +226,7 @@ MODELS_REGISTRY = {
         "qwen3vl": {
             "slot": SLOT_LLM,
             "label": "Qwen3-VL",
-            "capabilities": ["vision"],
+            "capabilities": ["vision", "tools"],
             "description": "models.qwen3vl",
             "inference": {
                 "ocr": {
