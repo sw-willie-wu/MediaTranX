@@ -539,6 +539,23 @@ class TestWireShape:
         assert payload["tool_choice"] == "none"
         assert payload["tools"] == []
 
+    def test_payload_parallel_tool_calls_false_when_tools_present(self):
+        """Regression guard for the parser bucket-collapse bug: parallel
+        tool calls cause arguments to interleave across indices in the SSE
+        stream.  Even with the index→id parser fix, we keep parallel off
+        to match the agent loop's round-by-round sequential dispatch."""
+        payload = self._capture_payload(TestRealShapeSanity.FRONTEND_TOOLS)
+        assert payload.get("parallel_tool_calls") is False, \
+            "parallel_tool_calls must be False on agent path"
+
+    def test_payload_parallel_tool_calls_absent_when_no_tools(self):
+        """Negative guard: when no tools are sent (chat/summary path),
+        parallel_tool_calls must NOT appear in the payload (sending it
+        with tools omitted would change wire shape for the non-agent
+        chat/summary path)."""
+        payload = self._capture_payload(tools=[])
+        assert "parallel_tool_calls" not in payload
+
     def test_chat_completions_stream_rejects_caller_built_nested_shape(self):
         with pytest.raises(ValueError, match="nested OpenAI shape not accepted"):
             self._capture_payload([
