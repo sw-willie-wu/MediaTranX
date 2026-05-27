@@ -194,3 +194,41 @@ class TestStrictifySchemaFailLoudly:
         schema = {"type": "object", "properties": {"x": "not-a-dict"}}
         with pytest.raises(ValueError, match="not a dict schema"):
             _strictify_schema(schema)
+
+
+class TestStrictifySchemaIdempotency:
+    """Applying _strictify_schema twice produces the same result.
+
+    Critical for the set_field case: the second pass sees self-inserted
+    anyOf in the value-slot and must NOT raise (would contradict Task 5's
+    anyOf rejection rule).  Self-recognition guard exempts it.
+    """
+
+    def test_is_idempotent_for_plain_schema(self):
+        from app.adapters.ai.remote.openai import _strictify_schema
+
+        schema = {
+            "type": "object",
+            "properties": {"route": {"type": "string", "enum": ["/a"]}},
+            "required": ["route"],
+        }
+        once = _strictify_schema(schema)
+        twice = _strictify_schema(once)
+        assert once == twice
+
+    def test_idempotent_on_set_field_shape(self):
+        """Self-inserted anyOf primitive-union passes through the anyOf-reject
+        guard via the self-recognition exemption."""
+        from app.adapters.ai.remote.openai import _strictify_schema
+
+        schema = {
+            "type": "object",
+            "properties": {"field": {"type": "string"}, "value": {}},
+            "required": ["field", "value"],
+        }
+        once = _strictify_schema(schema)
+        # Sanity: first pass inserted the anyOf
+        assert "anyOf" in once["properties"]["value"]
+        # Second pass MUST NOT raise (would happen without self-recognition)
+        twice = _strictify_schema(once)
+        assert once == twice

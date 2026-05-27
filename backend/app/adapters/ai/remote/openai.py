@@ -121,6 +121,12 @@ def _strictify_schema(schema: dict) -> dict:
         if not v:
             new_props[k] = dict(_STRICT_PRIMITIVE_ANYOF)
             continue
+        # Idempotency: a property already holding our own primitive-union
+        # anyOf shape passes through unchanged.  Without this, the anyOf
+        # branch-rejection below would refuse a schema we ourselves emit.
+        if v == _STRICT_PRIMITIVE_ANYOF:
+            new_props[k] = v
+            continue
         # Reject shapes we don't recurse into so future tool authors
         # see the limit explicitly instead of getting a runtime 400 from OpenAI.
         if v.get("type") == "object":
