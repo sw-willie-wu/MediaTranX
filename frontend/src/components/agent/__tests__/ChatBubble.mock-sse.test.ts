@@ -238,21 +238,22 @@ describe('ChatBubble + AgentRunBanner mock-SSE smoke', () => {
     const { dispatch } = await import('@/composables/useAgentTools')
     const store = useAgentStore()
 
-    // Dispatch navigate_to — it will fail at useRouter() in test env, but
-    // setCurrentAction is called BEFORE useRouter(), so it should still fire.
-    // We catch the error from the missing router and verify the action was set.
+    // Dispatch navigate_to — outside a setup context resolveRouter() falls
+    // back to the global singleton (router/index.ts) and navigation succeeds.
+    // The key behaviour we care about here is that setCurrentAction fires
+    // BEFORE the router push, so the banner gets a chance to render the
+    // action label.
     const result = await dispatch({
       id: 'tc1',
       type: 'function',
       function: { name: 'navigate_to', arguments: '{"route":"/video"}' },
     })
 
-    // Result will be an error (no router in test), but setCurrentAction was called before that
+    // setCurrentAction must have fired with the correct key + args
     expect(store.currentAction.key).toBe('agent.banner.act.navigate_to')
     expect(store.currentAction.args).toEqual({ route: '/video' })
-    // dispatch returned an error (no router), not ok
-    expect(result.ok).toBeUndefined()
-    expect((result as any).error).toBeDefined()
+    // dispatch should succeed against the global router singleton
+    expect(result.ok).toBe(true)
   })
 
   // ─── Scenario 7 (Task 4.3): ConfirmCard full flow ───────────────────────────
