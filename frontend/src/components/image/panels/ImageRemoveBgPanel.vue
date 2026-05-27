@@ -4,10 +4,12 @@ import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelGuard } from '@/composables/useModelGuard'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -48,6 +50,30 @@ async function execute() {
   )
   if (taskId) emit('submit', taskId)
 }
+
+const agentSchema = {
+  panelId: 'image.remove_bg',
+  fields: [
+    { name: 'mode', type: 'enum' as const,
+      options: () => ['auto', 'person', 'product', 'animal', 'anime'] },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.remove_bg.execute' },
+}
+
+useAgentPanelHost('image.remove_bg', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({ mode: removeBgMode.value }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'mode': removeBgMode.value = value as string; return removeBgMode.value
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  execute: async () => { await execute(); return {} },
+})
 
 defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
