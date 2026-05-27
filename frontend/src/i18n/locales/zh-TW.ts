@@ -122,6 +122,16 @@ export default {
     go_to_model_manager: '前往模型管理',
   },
 
+  // ── 面板執行按鈕 ──────────────────────────────────────────────────────
+  panel: {
+    upscale:    { execute: '放大' },                 // Phase 1 debt
+    convert:    { execute: '轉檔' },                 // Phase 1 debt
+    adjust:     { execute: '套用調整' },             // Phase 2.A new
+    filter:     { execute: '套用濾鏡' },             // Phase 2.A new
+    remove_bg:  { execute: '去除背景' },             // Phase 2.A new
+    ocr:        { execute: '辨識文字' },             // Phase 2.A new
+  },
+
   // ── Toast 通知 ─────────────────────────────────────────────────────────
   toast: {
     task_submitted: '{label}任務已提交',

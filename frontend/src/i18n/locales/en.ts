@@ -122,6 +122,16 @@ export default {
     go_to_model_manager: 'Go to Model Manager',
   },
 
+  // ── Panel execute buttons ──────────────────────────────────────────────
+  panel: {
+    upscale:    { execute: 'Upscale' },              // Phase 1 debt
+    convert:    { execute: 'Convert' },              // Phase 1 debt
+    adjust:     { execute: 'Apply Adjustments' },    // Phase 2.A new
+    filter:     { execute: 'Apply Filter' },         // Phase 2.A new
+    remove_bg:  { execute: 'Remove Background' },    // Phase 2.A new
+    ocr:        { execute: 'Extract Text' },         // Phase 2.A new
+  },
+
   // ── Toast notifications ───────────────────────────────────────────────
   toast: {
     task_submitted: '{label} task submitted',
