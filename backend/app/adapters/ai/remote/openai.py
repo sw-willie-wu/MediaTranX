@@ -121,7 +121,25 @@ def _strictify_schema(schema: dict) -> dict:
         if not v:
             new_props[k] = dict(_STRICT_PRIMITIVE_ANYOF)
             continue
-        # Primitive property — passes through (fail-loudly cases handled in Task 5)
+        # Reject shapes we don't recurse into so future tool authors
+        # see the limit explicitly instead of getting a runtime 400 from OpenAI.
+        if v.get("type") == "object":
+            raise ValueError(
+                f"_strictify_schema: nested object in property {k!r} not supported; "
+                f"flatten the schema or extend the adapter"
+            )
+        if v.get("type") == "array":
+            items = v.get("items")
+            if isinstance(items, dict) and items.get("type") == "object":
+                raise ValueError(
+                    f"_strictify_schema: array-of-object in property {k!r} not supported"
+                )
+        for branch_key in ("anyOf", "oneOf", "allOf", "$ref", "$defs"):
+            if branch_key in v:
+                raise ValueError(
+                    f"_strictify_schema: {branch_key!r} in property {k!r} not supported "
+                    f"(only the self-inserted primitive-union anyOf is allowed)"
+                )
         new_props[k] = v
 
     s["properties"] = new_props

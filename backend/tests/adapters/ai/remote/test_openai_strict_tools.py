@@ -119,3 +119,78 @@ class TestStrictifySchemaEmptyValue:
             assert isinstance(branch.get("type"), str), \
                 f"branch type must be a string, got {branch.get('type')!r}"
             assert "anyOf" not in branch  # No nesting
+
+
+class TestStrictifySchemaFailLoudly:
+    """Unsupported shapes raise ValueError (not silent passthrough)."""
+
+    def test_raises_on_nested_object_in_property(self):
+        from app.adapters.ai.remote.openai import _strictify_schema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "nested": {"type": "object", "properties": {"x": {"type": "string"}}}
+            },
+        }
+        with pytest.raises(ValueError, match="nested object"):
+            _strictify_schema(schema)
+
+    def test_raises_on_array_of_object_in_property(self):
+        from app.adapters.ai.remote.openai import _strictify_schema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "items": {"type": "array", "items": {"type": "object", "properties": {}}}
+            },
+        }
+        with pytest.raises(ValueError, match="array-of-object"):
+            _strictify_schema(schema)
+
+    def test_raises_on_anyOf_in_property(self):
+        from app.adapters.ai.remote.openai import _strictify_schema
+
+        # NB: this is *caller-supplied* anyOf — distinct from the self-inserted
+        # primitive union which Task 6 exempts via idempotency guard.
+        schema = {
+            "type": "object",
+            "properties": {"v": {"anyOf": [{"type": "string"}, {"type": "integer"}]}},
+        }
+        with pytest.raises(ValueError, match="'anyOf'"):
+            _strictify_schema(schema)
+
+    def test_raises_on_oneOf_in_property(self):
+        from app.adapters.ai.remote.openai import _strictify_schema
+
+        schema = {"type": "object", "properties": {"v": {"oneOf": []}}}
+        with pytest.raises(ValueError, match="'oneOf'"):
+            _strictify_schema(schema)
+
+    def test_raises_on_allOf_in_property(self):
+        from app.adapters.ai.remote.openai import _strictify_schema
+
+        schema = {"type": "object", "properties": {"v": {"allOf": []}}}
+        with pytest.raises(ValueError, match="'allOf'"):
+            _strictify_schema(schema)
+
+    def test_raises_on_ref_in_property(self):
+        from app.adapters.ai.remote.openai import _strictify_schema
+
+        schema = {"type": "object", "properties": {"v": {"$ref": "#/$defs/X"}}}
+        with pytest.raises(ValueError, match=r"'\$ref'"):
+            _strictify_schema(schema)
+
+    def test_raises_on_defs_in_property(self):
+        from app.adapters.ai.remote.openai import _strictify_schema
+
+        schema = {"type": "object", "properties": {"v": {"$defs": {}}}}
+        with pytest.raises(ValueError, match=r"'\$defs'"):
+            _strictify_schema(schema)
+
+    def test_raises_on_non_dict_property_value(self):
+        from app.adapters.ai.remote.openai import _strictify_schema
+
+        schema = {"type": "object", "properties": {"x": "not-a-dict"}}
+        with pytest.raises(ValueError, match="not a dict schema"):
+            _strictify_schema(schema)
