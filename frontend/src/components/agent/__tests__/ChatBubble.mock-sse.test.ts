@@ -323,8 +323,10 @@ describe('ChatBubble + AgentRunBanner mock-SSE smoke', () => {
       return { id: 'm3', role: 'assistant' as const, content: 'all done', toolCalls: [] }
     })
 
+    const fakeToolTOOLS: ToolApi['TOOLS'] = []
     const fakeTool = {
-      TOOLS: [],
+      TOOLS: fakeToolTOOLS,
+      getTools: () => fakeToolTOOLS,
       dispatch: vi.fn(async () => ({ ok: true, files: [] })),
     }
 
