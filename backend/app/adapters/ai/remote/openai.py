@@ -109,7 +109,20 @@ def _strictify_schema(schema: dict) -> dict:
             f"zero-arg tool should use {{type:'object', properties:{{}}}}"
         )
 
-    # Body filled in by later tasks
+    props = s.get("properties") or {}
+    new_props: dict = {}
+    for k, v in props.items():
+        if not isinstance(v, dict):
+            raise ValueError(
+                f"_strictify_schema: property {k!r} is not a dict schema "
+                f"(got {type(v).__name__})"
+            )
+        # Primitive property — passes through (fail-loudly cases handled in Task 5)
+        new_props[k] = v
+
+    s["properties"] = new_props
+    s["required"] = list(new_props.keys())
+    s["additionalProperties"] = False
     return s
 
 
