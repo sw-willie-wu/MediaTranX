@@ -12,10 +12,11 @@ import { defineComponent, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { setActivePinia, createPinia } from 'pinia'
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { panelRegistry, type PanelHandle } from '@/stores/panelRegistry'
 import { viewRegistry } from '@/stores/viewRegistry'
 import { useAgent, _resetAgent } from '@/composables/useAgent'
+import { makeFakeAgent } from '@/composables/__tests__/_fakeAgent'
 
 function makeMockPanelHandle(panelId: string): PanelHandle {
   return {
@@ -64,17 +65,13 @@ describe('useAgent production wiring (AC-12)', () => {
     await router.push('/image')
     await router.isReady()
 
-    // Mock streamRun: capture the tools arg passed by useAgent
-    let capturedTools: any = null
-    const fakeStreamRun = vi.fn(async (input: any) => {
-      capturedTools = input.tools
-      return { id: 'm1', role: 'assistant' as const, content: 'ok', toolCalls: [] }
-    })
+    // Fake agent: capture the tools arg passed by useAgent via fake.calls
+    const fake = makeFakeAgent(() => ({ textDeltas: ['ok'] }))
 
     // Mount a host component that calls useAgent() in setup
     const host = defineComponent({
       setup() {
-        const agent = useAgent({ streamRunFn: fakeStreamRun })
+        const agent = useAgent({ agentFactory: fake.factory })
         return { agent }
       },
       template: '<div/>',
@@ -85,6 +82,7 @@ describe('useAgent production wiring (AC-12)', () => {
     await w.vm.agent.sendUserText('hi')
 
     // Verify captured tools array contains a set_field tool with field enum
+    const capturedTools = fake.calls[0].params.tools
     expect(capturedTools).toBeDefined()
     const setFieldTool = capturedTools.find((t: any) => t.name === 'set_field')
     expect(setFieldTool).toBeDefined()
@@ -96,15 +94,11 @@ describe('useAgent production wiring (AC-12)', () => {
     await router.push('/')
     await router.isReady()
 
-    let capturedTools: any = null
-    const fakeStreamRun = vi.fn(async (input: any) => {
-      capturedTools = input.tools
-      return { id: 'm1', role: 'assistant' as const, content: 'ok', toolCalls: [] }
-    })
+    const fake = makeFakeAgent(() => ({ textDeltas: ['ok'] }))
 
     const host = defineComponent({
       setup() {
-        const agent = useAgent({ streamRunFn: fakeStreamRun })
+        const agent = useAgent({ agentFactory: fake.factory })
         return { agent }
       },
       template: '<div/>',
@@ -112,6 +106,7 @@ describe('useAgent production wiring (AC-12)', () => {
     const w = mount(host, { global: { plugins: [router] } })
     await w.vm.agent.sendUserText('hi')
 
+    const capturedTools = fake.calls[0].params.tools
     const setFieldTool = capturedTools.find((t: any) => t.name === 'set_field')
     expect(setFieldTool.parameters.properties.field).toEqual({ type: 'string' })
     expect(setFieldTool.parameters.properties.field.enum).toBeUndefined()
@@ -125,19 +120,11 @@ describe('useAgent production wiring (AC-12)', () => {
     })
     panelRegistry.register('image.adjust', makeMockPanelHandle('image.adjust'))
 
-    let capturedTools_round1: any = null
-    let capturedTools_round2: any = null
-    let round = 0
-    const fakeStreamRun = vi.fn(async (input: any) => {
-      round++
-      if (round === 1) capturedTools_round1 = input.tools
-      if (round === 2) capturedTools_round2 = input.tools
-      return { id: `m${round}`, role: 'assistant' as const, content: 'ok', toolCalls: [] }
-    })
+    const fake = makeFakeAgent(() => ({ textDeltas: ['ok'] }))
 
     const host = defineComponent({
       setup() {
-        const agent = useAgent({ streamRunFn: fakeStreamRun })
+        const agent = useAgent({ agentFactory: fake.factory })
         return { agent }
       },
       template: '<div/>',
@@ -152,6 +139,8 @@ describe('useAgent production wiring (AC-12)', () => {
     await router.isReady()
     await w.vm.agent.sendUserText('second')
 
+    const capturedTools_round1 = fake.calls[0].params.tools
+    const capturedTools_round2 = fake.calls[1].params.tools
     const sf1 = capturedTools_round1.find((t: any) => t.name === 'set_field')
     const sf2 = capturedTools_round2.find((t: any) => t.name === 'set_field')
     expect(sf1.parameters.properties.field.enum).toBeUndefined()  // round 1: home, no panel

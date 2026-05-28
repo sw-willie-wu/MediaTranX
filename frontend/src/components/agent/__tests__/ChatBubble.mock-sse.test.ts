@@ -3,7 +3,7 @@
  * Mock-SSE smoke test — Wave 2 Task 2.6 + Wave 4 Tasks 4.2/4.3/4.8
  *
  * Verifies the full Wave 2 stack end-to-end using a deterministic fake
- * streamRun function (no real HTTP).  Exercises:
+ * AgentLike (makeFakeAgent, no real HTTP).  Exercises:
  *   - useAgent singleton: shared isRunning + cancelRun across consumers
  *   - Transient text buffer: streaming delta appears then commits to messages
  *   - isRunning flag: correct during + after a run
@@ -29,6 +29,7 @@ import ChatMessages from '@/components/agent/ChatMessages.vue'
 import ConfirmCard from '@/components/agent/ConfirmCard.vue'
 import { useAgent, _resetAgent } from '@/composables/useAgent'
 import { useAgentStore } from '@/stores/agent'
+import { makeFakeAgent } from '@/composables/__tests__/_fakeAgent'
 
 // ─── Global plugin config shared by all mounts ───────────────────────────────
 
@@ -68,35 +69,6 @@ beforeEach(() => {
   }))
 })
 
-// ─── Helper: build a synchronous fake streamRun from a list of events ────────
-
-type FakeChunk =
-  | { type: 'text'; text: string }
-  | { type: 'finished'; payload?: object }
-  | { type: 'error'; payload: { code: string; message: string } }
-
-function buildFakeStreamRun(chunks: FakeChunk[]) {
-  return vi.fn(async (opts: any) => {
-    for (const chunk of chunks) {
-      if (chunk.type === 'text') {
-        opts.onTextChunk?.({ messageId: 'm1', delta: chunk.text })
-      } else if (chunk.type === 'finished') {
-        opts.onRunFinished?.({
-          runId: 'r1',
-          threadId: 't1',
-          usage: { promptTokens: 5, completionTokens: 2 },
-          ...(chunk.payload ?? {}),
-        })
-      } else if (chunk.type === 'error') {
-        opts.onError?.(chunk.payload)
-      }
-    }
-    const text = chunks.filter((c): c is { type: 'text'; text: string } => c.type === 'text')
-      .map(c => c.text).join('')
-    return { id: 'm1', role: 'assistant' as const, content: text, toolCalls: [] }
-  })
-}
-
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('ChatBubble mock-SSE smoke', () => {
@@ -115,12 +87,8 @@ describe('ChatBubble mock-SSE smoke', () => {
   // ─── Scenario 2: streaming text commits to messages ──────────────────────
 
   it('sendUserText → streaming deltas accumulate → commit to assistant message', async () => {
-    const fakeStream = buildFakeStreamRun([
-      { type: 'text', text: 'Hello' },
-      { type: 'text', text: ' world!' },
-      { type: 'finished' },
-    ])
-    const agent = useAgent({ streamRunFn: fakeStream })
+    const fake = makeFakeAgent(() => ({ textDeltas: ['Hello', ' world!'] }))
+    const agent = useAgent({ agentFactory: fake.factory })
 
     await agent.sendUserText('Hi there')
 
@@ -128,7 +96,7 @@ describe('ChatBubble mock-SSE smoke', () => {
     expect(roles).toEqual(['user', 'assistant'])
     expect((agent.messages.value[0] as any).content).toBe('Hi there')
     expect((agent.messages.value[1] as any).content).toBe('Hello world!')
-    expect(fakeStream).toHaveBeenCalledTimes(1)
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(1)
   })
 
   // ─── Scenario 3: isRunning via store — all consumers share state ──────────
@@ -146,19 +114,16 @@ describe('ChatBubble mock-SSE smoke', () => {
     expect(store.isRunning).toBe(false)
 
     // Both components read isRunning from the same store
-    const fakeStream = buildFakeStreamRun([
-      { type: 'text', text: 'ok' },
-      { type: 'finished' },
-    ])
-    const agent = useAgent({ streamRunFn: fakeStream })
+    const fake = makeFakeAgent(() => ({ textDeltas: ['ok'] }))
 
-    // isRunning becomes true during run
+    // isRunning becomes true during run — capture it inside runAgent
     let runningDuringStream = false
-    const origStream = fakeStream.getMockImplementation()!
-    fakeStream.mockImplementationOnce(async (opts: any) => {
+    const origRun = fake.agent.runAgent.getMockImplementation()!
+    fake.agent.runAgent.mockImplementation(async (p: any, s: any) => {
       runningDuringStream = store.isRunning
-      return origStream(opts)
+      return origRun(p, s)
     })
+    const agent = useAgent({ agentFactory: fake.factory })
 
     await agent.sendUserText('test')
     // isRunning was true while streaming (captured above)
@@ -170,15 +135,10 @@ describe('ChatBubble mock-SSE smoke', () => {
   // ─── Scenario 4: cancelRun on singleton halts the run loop ───────────────
 
   it('cancelRun on singleton instance halts the run loop', async () => {
-    // Fake stream that blocks until cancelled
-    let resolveStream!: () => void
-    const blockedStream = vi.fn(async (opts: any) => {
-      opts.onTextChunk?.({ messageId: 'm1', delta: 'partial' })
-      await new Promise<void>((resolve) => { resolveStream = resolve })
-      const err: any = new Error('aborted'); err.name = 'AbortError'; throw err
-    })
+    // Fake agent that emits partial text then blocks until abortRun() → code:'abort'
+    const fake = makeFakeAgent(() => ({ textDeltas: ['partial'], blockUntilAbort: true }))
 
-    const agent = useAgent({ streamRunFn: blockedStream })
+    const agent = useAgent({ agentFactory: fake.factory })
     const store = useAgentStore()
 
     // Start run without awaiting (it will block)
@@ -188,9 +148,9 @@ describe('ChatBubble mock-SSE smoke', () => {
     await new Promise(r => setTimeout(r, 10))
     expect(store.isRunning).toBe(true)
 
-    // Cancel via the singleton (the chat bubble cancel button does the same)
+    // Cancel via the singleton (the chat bubble cancel button does the same).
+    // cancelRun() → abortRun() unblocks the fake → it fires code:'abort' + rejects.
     agent.cancelRun()
-    resolveStream()   // unblock the fake stream so it can throw AbortError
 
     await runPromise
 
@@ -266,39 +226,29 @@ describe('ChatBubble mock-SSE smoke', () => {
   it('Task 4.8: 3-round mock-SSE — prompt replaces each round, completion accumulates', async () => {
     const store = useAgentStore()
 
-    let round = 0
     const usagePerRound = [
       { promptTokens: 100, completionTokens: 20 },
       { promptTokens: 200, completionTokens: 30 },
       { promptTokens: 350, completionTokens: 15 },
     ]
 
-    const multiRoundStream = vi.fn(async (opts: any) => {
-      const usage = usagePerRound[round]
-      opts.onRunFinished?.({ runId: `r${round}`, threadId: 't1', usage })
-      round++
-      // Rounds 1+2 return a tool_call; round 3 returns plain text to stop the loop
-      if (round < 3) {
-        return {
-          id: `m${round}`,
-          role: 'assistant' as const,
-          content: '',
-          toolCalls: [
-            { id: `tc${round}`, type: 'function' as const, function: { name: 'list_files', arguments: '{}' } },
-          ],
-        }
-      }
-      return { id: 'm3', role: 'assistant' as const, content: 'all done', toolCalls: [] }
-    })
+    // Rounds 0+1 return a tool_call; round 2 returns plain text to stop the loop.
+    const fake = makeFakeAgent((round) => ({
+      usage: usagePerRound[round],
+      toolCalls: round < 2
+        ? [{ id: `tc${round}`, name: 'list_files', args: '{}' }]
+        : undefined,
+      textDeltas: round < 2 ? undefined : ['all done'],
+    }))
 
-    const fakeToolTOOLS: ToolApi['TOOLS'] = []
+    const fakeToolTOOLS: { name: string; description: string; parameters: object }[] = []
     const fakeTool = {
       TOOLS: fakeToolTOOLS,
       getTools: () => fakeToolTOOLS,
       dispatch: vi.fn(async () => ({ ok: true, files: [] })),
     }
 
-    const agent = useAgent({ streamRunFn: multiRoundStream, tools: fakeTool })
+    const agent = useAgent({ agentFactory: fake.factory, tools: fakeTool })
     await agent.sendUserText('list files 3 times')
 
     // After 3 rounds:
