@@ -13,7 +13,7 @@
  */
 import { computed, type ComputedRef } from 'vue'
 import { useRoute } from 'vue-router'
-import { deriveViewId, useActiveView } from '@/composables/useActiveView'
+import { deriveViewId, panelIdFor, useActiveView } from '@/composables/useActiveView'
 import { panelRegistry, type PanelHandle, type PanelAgentSchema } from '@/stores/panelRegistry'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ export function useActivePanel(): ComputedRef<ActivePanelEntry | null> {
     const fn = view.currentFunction.value
     if (!fn) return null
 
-    const panelId = `${viewId}.${fn}`
+    const panelId = panelIdFor(viewId, fn)
     const entry = panelRegistry.get(panelId)
     if (!entry) return null
 

@@ -502,6 +502,37 @@ describe('dispatch: click_execute', () => {
     expect(result.error).toBe('agent.error.panel_not_supported')
   })
 
+  // Regression (kebab→snake panelId bridge): the agent's subfunction id is
+  // kebab-case (remove-bg) but the panel registers under a snake-case panelId
+  // (image.remove_bg, matching taskType/i18n). click_execute goes through the
+  // production _getActivePanel path; it must normalize and resolve the panel,
+  // not return panel_not_supported. Before the fix executeFn never fired.
+  it('resolves a kebab subfunction to its snake panelId (remove-bg → image.remove_bg)', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+
+    const vh = makeViewHandle('remove-bg', ['remove-bg', 'upscale', 'ocr'])
+    viewRegistry.register('image', vh)
+    const executeFn = vi.fn(async () => ({ task_id: 'task-rmbg' }))
+    panelRegistry.register('image.remove_bg', makePanelHandle('image.remove_bg', {
+      executeNull: false,
+      executeFn,
+    }))
+
+    const filesStore = useFilesStore()
+    filesStore.files.set('file-rmbg', {
+      id: 'file-rmbg', name: 'x.jpg', originalName: 'x.jpg', path: '',
+      size: 100, mimeType: 'image/jpeg', type: 'image', createdAt: new Date(),
+    })
+    filesStore.setCurrentFile('file-rmbg')
+
+    const result = await withContext(router, d => d(tc('click_execute')))
+    expect(result.error).not.toBe('agent.error.panel_not_supported')
+    expect(result.ok).toBe(true)
+    expect(result.task_id).toBe('task-rmbg')
+    expect(executeFn).toHaveBeenCalledOnce()
+  })
+
   // Bug: agent was free to fire click_execute on a panel whose Apply
   // button was disabled (no file loaded) and got back a phantom success.
   // The dispatcher must refuse universally — every tool panel needs an
