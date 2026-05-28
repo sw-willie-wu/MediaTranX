@@ -338,12 +338,12 @@ class TestAgentE2EFakeLLM:
     # ── Error path: no model choice ──────────────────────────────────────
 
     def test_error_path_no_model_emits_run_error(self):
-        """state without agent_model_choice → AgentError → RUN_ERROR + RUN_FINISHED.
+        """state without agent_model_choice → AgentError → lone terminal RUN_ERROR.
 
         Verifies:
         - HTTP 200 (errors are streamed as SSE, not HTTP error codes)
         - RUN_ERROR present with agent.error.no_model code
-        - RUN_FINISHED still emitted via finally block (spec §9)
+        - RUN_ERROR is terminal — no trailing RUN_FINISHED (AG-UI conformance)
         """
         fake_chat = FakeChatService([])  # session never opened
         with _build_app_with_fake_chat(fake_chat) as (app, container, fake_chat):
@@ -360,8 +360,9 @@ class TestAgentE2EFakeLLM:
             _, error_data = next((t, d) for t, d in events if t == "RUN_ERROR")
             assert error_data.get("code") == "agent.error.no_model"
 
-            # RUN_FINISHED always emitted (finally block guarantee)
-            assert types[-1] == "RUN_FINISHED"
+            # RUN_ERROR is terminal — no trailing RUN_FINISHED (AG-UI conformance)
+            assert types[-1] == "RUN_ERROR"
+            assert "RUN_FINISHED" not in types
 
     # ── Cancel: kill_process spy ─────────────────────────────────────────
 

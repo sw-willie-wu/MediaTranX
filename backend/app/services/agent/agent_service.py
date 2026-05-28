@@ -95,6 +95,7 @@ class AgentService:
 
         session = None
         usage: dict | None = None
+        errored = False                          # ★ AG-UI conformance: track RUN_ERROR
         try:
             choice = (input.state or {}).get("agent_model_choice")
             if not choice:
@@ -150,6 +151,7 @@ class AgentService:
             raise
         except AgentError as e:
             yield encoder.encode(RunErrorEvent(code=e.code, message=e.message))
+            errored = True
         except NotImplementedError as e:
             # Provider does not yet support streaming tool calling
             # (Gemini — Wave 4.6 deliverable; Ollama done in Wave 4.7).
@@ -157,15 +159,22 @@ class AgentService:
                 code="agent.error.tools_not_supported",
                 message=str(e),
             ))
+            errored = True
         except Exception as e:
             logger.exception("Agent run failed")
             yield encoder.encode(RunErrorEvent(
                 code="agent.error.internal", message=str(e)))
+            errored = True
         finally:
-            # SPIKE-A: thread_id is required on RunFinishedEvent
-            yield emit_run_finished_with_usage(
-                encoder, run_id=input.run_id, thread_id=input.thread_id,
-                usage=usage)
+            # AG-UI: a run ends with RUN_FINISHED (success) XOR RUN_ERROR (failure).
+            # RUN_ERROR is terminal — do not emit a trailing RUN_FINISHED.
+            # Cancel path (CancelledError) leaves errored=False and falls through
+            # here, emitting RUN_FINISHED before CancelledError propagates — harmless
+            # because the frontend abort() already tore down the stream client-side.
+            if not errored:
+                yield emit_run_finished_with_usage(
+                    encoder, run_id=input.run_id, thread_id=input.thread_id,
+                    usage=usage)
 
     def _resolve_model_choice(self, choice: str) -> dict:
         """Mirror frontend parseModelValue (useModelOptions.ts:84).
