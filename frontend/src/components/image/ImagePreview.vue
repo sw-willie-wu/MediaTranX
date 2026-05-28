@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, toRef, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useImageZoom } from '@/composables/useImageZoom'
 import { useCanvasMask, type MaskToolMode } from '@/composables/useCanvasMask'
 import { useCropRect } from '@/composables/useCropRect'
@@ -36,8 +36,8 @@ const { zoomLevel, panX, panY, isDragging, zoomPercent, reset, onWheel, onImageL
 // ── Canvas Mask ──────────────────────────────────────────────────────────
 const {
   canvasRef: maskCanvasRef,
-  brushSize,
-  toolMode,
+  brushSize: maskBrushSize,
+  toolMode: maskToolMode,
   syncToImage,
   onMouseDown: onCanvasMouseDown,
   onMouseMove: onCanvasMouseMove,
@@ -52,8 +52,8 @@ const {
 } = useCanvasMask(imgRef, containerRef)
 
 // 同步外部 props 到 composable
-watch(() => props.brushSize, (v) => { if (v !== undefined) brushSize.value = v })
-watch(() => props.toolMode, (v) => { if (v !== undefined) toolMode.value = v })
+watch(() => props.brushSize, (v) => { if (v !== undefined) maskBrushSize.value = v })
+watch(() => props.toolMode, (v) => { if (v !== undefined) maskToolMode.value = v })
 
 // ── Crop Rect ─────────────────────────────────────────────────────────────
 const cropAspectRatioRef = computed(() => props.cropAspectRatio ?? 'free')
@@ -229,7 +229,7 @@ function handleCanvasMouseMove(e: MouseEvent) {
   if (isSpaceHeld.value) return  // pan 由 document mousemove 處理
   onCanvasMouseMove(e)
 }
-function handleCanvasMouseUp(e: MouseEvent) {
+function handleCanvasMouseUp(_e: MouseEvent) {
   if (isSpaceHeld.value) return  // pan 由 document mouseup 處理
   onCanvasMouseUp()
 }
@@ -243,7 +243,7 @@ function handleCropMouseMove(e: MouseEvent) {
   if (isSpaceHeld.value) return
   onCropMouseMove(e)
 }
-function handleCropMouseUp(e: MouseEvent) {
+function handleCropMouseUp(_e: MouseEvent) {
   if (isSpaceHeld.value) return
   onCropMouseUp()
 }

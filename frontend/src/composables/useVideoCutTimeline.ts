@@ -46,7 +46,7 @@ export function useVideoCutTimeline(mediaInfo: Readonly<{ value: VideoMediaInfo 
     width: (endPercent.value - startPercent.value) + '%',
   }))
 
-  function startDrag(handle: 'start' | 'end', e: MouseEvent | TouchEvent) {
+  function startDrag(handle: 'start' | 'end', _e: MouseEvent | TouchEvent) {
     dragging.value = handle
     document.addEventListener('mousemove', onDragMove)
     document.addEventListener('mouseup', onDragEnd)

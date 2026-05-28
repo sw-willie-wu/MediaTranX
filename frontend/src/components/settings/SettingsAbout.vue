@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConfirm } from '@/composables/useConfirm'
 import { apiFetch } from '@/composables/useApi'
@@ -8,11 +8,13 @@ import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const { t } = useI18n()
 const { confirm } = useConfirm()
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const electron = (window as any).electron
 
 const appVersion = electron?.appVersion ?? 'dev'
 
 // Component versions from backend
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const envInfo = ref<Record<string, any>>({})
 const envLoading = ref(true)
 
@@ -45,6 +47,7 @@ const pytorchDisplay = computed(() => {
   return pt
 })
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toolTag(tool: any): string {
   if (!tool) return '—'
   return typeof tool === 'object' ? tool.tag || '—' : tool
@@ -72,6 +75,7 @@ async function reinstallEnv() {
   electron?.reinstallAiEnv()
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function handleReinstallProgress(data: any) {
   reinstallPercent.value = data.percent || 0
   reinstallDetail.value = data.detail || ''

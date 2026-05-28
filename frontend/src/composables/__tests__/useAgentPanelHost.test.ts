@@ -10,7 +10,7 @@
  *   6. agentSchema is accessible on retrieved handle
  */
 
-import { defineComponent, ref } from 'vue'
+import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { panelRegistry, type PanelHandle, type PanelAgentSchema } from '@/stores/panelRegistry'

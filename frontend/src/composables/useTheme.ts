@@ -1,4 +1,4 @@
-import { ref, watch, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
@@ -31,6 +31,7 @@ function setTheme(mode: ThemeMode) {
   localStorage.setItem('theme-mode', mode)
   updateEffectiveTheme()
   // Sync to Electron preferences (for splash screen theme)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(window as any).electron?.savePreference('theme', effectiveTheme.value)
 }
 

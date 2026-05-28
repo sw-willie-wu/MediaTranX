@@ -6,6 +6,7 @@ import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
 import AppSelect from '@/components/common/AppSelect.vue'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const { t } = useI18n()
 const modelStore = useModelStore()
@@ -15,6 +16,7 @@ const props = defineProps<{
   fileId: string | null
   currentFileName: string
   mediaInfo: { width?: number; height?: number } | null
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -88,6 +90,38 @@ async function execute() {
 }
 
 onMounted(() => modelStore.ensureLoaded())
+
+// ── Agent panel registration ─────
+const agentSchema = {
+  panelId: 'video.enhance',
+  fields: [
+    { name: 'model',         type: 'enum' as const, options: () => variantOptions.value.map(o => o.value) },
+    { name: 'output_format', type: 'enum' as const, options: () => formatOptions.value.map(f => f.value) },
+    { name: 'video_codec',   type: 'enum' as const, options: () => codecOptions.value.map(c => c.value) },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.enhance.execute' },
+}
+
+useAgentPanelHost('video.enhance', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    model:         variant.value,
+    output_format: outputFormat.value,
+    video_codec:   videoCodec.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'model':         variant.value      = String(value); return variant.value
+      case 'output_format': outputFormat.value = String(value); return outputFormat.value
+      case 'video_codec':   videoCodec.value   = String(value); return videoCodec.value
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  execute: async () => { await execute(); return {} },
+})
 
 defineExpose({ execute, isDisabled, isLoading })
 </script>

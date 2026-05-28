@@ -39,10 +39,10 @@ function makeImageConvertPanelStub() {
       { name: 'scale', type: 'number' as const,
         min: 10, max: 200, step: 1,
         visibleWhen: () => convertResizeMode.value === 'scale' },
-      { name: 'width', type: 'number' as const,
+      { name: 'custom_width', type: 'number' as const,
         min: 1, max: 99999, step: 1,
         visibleWhen: () => convertResizeMode.value === 'custom' },
-      { name: 'height', type: 'number' as const,
+      { name: 'custom_height', type: 'number' as const,
         min: 1, max: 99999, step: 1,
         visibleWhen: () => convertResizeMode.value === 'custom' },
     ],
@@ -58,8 +58,8 @@ function makeImageConvertPanelStub() {
       quality: convertQuality.value,
       resize_mode: convertResizeMode.value,
       scale: convertScale.value,
-      width: convertWidth.value,
-      height: convertHeight.value,
+      custom_width: convertWidth.value,
+      custom_height: convertHeight.value,
     }),
     setField: (field, value) => {
       switch (field) {
@@ -79,10 +79,10 @@ function makeImageConvertPanelStub() {
           convertScale.value = clamped
           return clamped
         }
-        case 'width':
+        case 'custom_width':
           convertWidth.value = value === null ? null : Number(value)
           return convertWidth.value
-        case 'height':
+        case 'custom_height':
           convertHeight.value = value === null ? null : Number(value)
           return convertHeight.value
         default:

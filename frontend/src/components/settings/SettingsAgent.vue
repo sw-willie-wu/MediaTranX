@@ -7,7 +7,7 @@ import { useModelOptions } from '@/composables/useModelOptions'
 import { useAgent } from '@/composables/useAgent'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 import AppSelect from '@/components/common/AppSelect.vue'
-import type { SelectOption, SelectItem } from '@/components/common/AppSelect.vue'
+import type { SelectOption } from '@/components/common/AppSelect.vue'
 import type { AgentPolicy } from '@/stores/agentSettings'
 
 const { t } = useI18n()

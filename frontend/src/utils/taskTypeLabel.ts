@@ -9,7 +9,9 @@ import i18n from '@/i18n'
  * read the flat key off the messages object directly (message resolver).
  */
 export function getTaskTypeLabel(taskType: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const messages = (i18n.global as any).messages.value ?? (i18n.global as any).messages
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const locale = (i18n.global as any).locale.value ?? (i18n.global as any).locale
   const types = messages?.[locale]?.tasks?.types
   return types?.[taskType] || taskType

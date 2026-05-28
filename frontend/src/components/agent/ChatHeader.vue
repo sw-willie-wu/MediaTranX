@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
-import { useI18n } from 'vue-i18n'
-
-const { t } = useI18n()
 
 const props = defineProps<{
   tokenUsage: { prompt: number; completion: number }

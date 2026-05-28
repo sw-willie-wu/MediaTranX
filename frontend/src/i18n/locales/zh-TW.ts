@@ -130,6 +130,17 @@ export default {
     filter:     { execute: '套用濾鏡' },             // Phase 2.A new
     remove_bg:  { execute: '去除背景' },             // Phase 2.A new
     ocr:        { execute: '辨識文字' },             // Phase 2.A new
+    cut:             { execute: '剪輯影片' },            // Phase 2.C new
+    enhance:         { execute: '增強' },                // Phase 2.C new
+    interpolate:     { execute: '插補幀數' },            // Phase 2.C new
+    summary:         { execute: '產生摘要' },            // Phase 2.C new
+    audio_transcode: { execute: '轉檔音訊' },            // Phase 2.D new
+    volume:          { execute: '調整音量' },            // Phase 2.D new
+    separate:        { execute: '分離音軌' },            // Phase 2.D new
+    doc_translate:   { execute: '翻譯文件' },            // Phase 2.E new
+    doc_ocr:         { execute: '執行 OCR' },            // Phase 2.E new
+    doc_pdf_convert: { execute: '轉換 PDF' },            // Phase 2.E new
+    doc_split:       { execute: '切割文件' },            // Phase 2.E new
   },
 
   // ── Toast 通知 ─────────────────────────────────────────────────────────

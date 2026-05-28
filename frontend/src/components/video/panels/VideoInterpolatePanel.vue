@@ -5,6 +5,7 @@ import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
 
@@ -16,6 +17,7 @@ const props = defineProps<{
   fileId: string | null
   currentFileName: string
   mediaInfo: { fps?: number } | null
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -99,6 +101,43 @@ async function execute() {
 }
 
 onMounted(() => modelStore.ensureLoaded())
+
+// ── Agent panel registration ─────
+const agentSchema = {
+  panelId: 'video.interpolate',
+  fields: [
+    { name: 'model',         type: 'enum'   as const, options: () => modelOptions.value.map(o => o.value) },
+    { name: 'mode',          type: 'enum'   as const, options: () => modeOptions.value.map(m => m.value) },
+    { name: 'target_fps',    type: 'number' as const, min: 2, max: 240, step: 1,
+      visibleWhen: () => mode.value === 'custom' },
+    { name: 'output_format', type: 'enum'   as const, options: () => formatOptions.value.map(f => f.value) },
+    { name: 'video_codec',   type: 'enum'   as const, options: () => codecOptions.value.map(c => c.value) },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.interpolate.execute' },
+}
+
+useAgentPanelHost('video.interpolate', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    model: model.value, mode: mode.value, target_fps: targetFps.value,
+    output_format: outputFormat.value, video_codec: videoCodec.value,
+  }),
+  setField: (field, value) => {
+    const clamp = (v: unknown, lo: number, hi: number) => Math.min(Math.max(Number(v), lo), hi)
+    switch (field) {
+      case 'model':         model.value        = String(value);                  return model.value
+      case 'mode':          mode.value         = String(value);                  return mode.value
+      case 'target_fps':    { const c = clamp(value, 2, 240); targetFps.value = c; return c }
+      case 'output_format': outputFormat.value = String(value);                  return outputFormat.value
+      case 'video_codec':   videoCodec.value   = String(value);                  return videoCodec.value
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  execute: async () => { await execute(); return {} },
+})
 
 defineExpose({ execute, isDisabled, isLoading })
 </script>

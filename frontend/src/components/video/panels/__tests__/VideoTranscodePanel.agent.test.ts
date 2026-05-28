@@ -59,10 +59,10 @@ function makeVideoTranscodePanelStub() {
       { name: 'resolution', type: 'enum' as const,
         options: () => resolutions.map(r => r.value),
         visibleWhen: () => !isAudioFormat() },
-      { name: 'custom_res_width', type: 'number' as const,
+      { name: 'custom_width', type: 'number' as const,
         min: 1, max: 99999, step: 1,
         visibleWhen: () => resolution.value === 'custom' },
-      { name: 'custom_res_height', type: 'number' as const,
+      { name: 'custom_height', type: 'number' as const,
         min: 1, max: 99999, step: 1,
         visibleWhen: () => resolution.value === 'custom' },
       { name: 'scale_algorithm', type: 'enum' as const,
@@ -86,8 +86,8 @@ function makeVideoTranscodePanelStub() {
       output_format: outputFormat.value,
       video_codec: videoCodec.value,
       resolution: resolution.value,
-      custom_res_width: customResWidth.value,
-      custom_res_height: customResHeight.value,
+      custom_width: customResWidth.value,
+      custom_height: customResHeight.value,
       scale_algorithm: scaleAlgorithm.value,
       crf: crf.value,
       audio_bitrate: audioBitrate.value,
@@ -103,12 +103,12 @@ function makeVideoTranscodePanelStub() {
         case 'resolution':
           resolution.value = value as string
           return value
-        case 'custom_res_width': {
+        case 'custom_width': {
           const v = Math.max(1, Number(value))
           customResWidth.value = v
           return v
         }
-        case 'custom_res_height': {
+        case 'custom_height': {
           const v = Math.max(1, Number(value))
           customResHeight.value = v
           return v

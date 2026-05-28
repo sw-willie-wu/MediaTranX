@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Mock-SSE smoke test — Wave 2 Task 2.6 + Wave 4 Tasks 4.2/4.3/4.8
  *
@@ -24,7 +25,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import en from '@/i18n/locales/en'
 
-import ChatBubble from '@/components/agent/ChatBubble.vue'
 import ChatMessages from '@/components/agent/ChatMessages.vue'
 import ConfirmCard from '@/components/agent/ConfirmCard.vue'
 import { useAgent, _resetAgent } from '@/composables/useAgent'

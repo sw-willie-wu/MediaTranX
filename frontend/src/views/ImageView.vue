@@ -25,7 +25,6 @@ const {
   goBack, goForward, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
   handleDownload, handleDownloadBatch,
   collection, activeId, selectedIds,
-  sourceDir,
 } = useImageWorkspace()
 
 const { submitToAll } = useMultiSubmit(collection)
@@ -347,7 +346,7 @@ function registerTitlebar() {
 const _activeTick = ref(0)
 
 watchEffect(() => {
-  _activeTick.value           // KeepAlive 切回時強制重跑
+  void _activeTick.value  // reactive dependency — KeepAlive 切回時強制重跑
   const actions: TitlebarExtraAction[] = []
   // 圖片對比
   const compareEnabled = hasResult.value && currentFunction.value !== 'ocr'

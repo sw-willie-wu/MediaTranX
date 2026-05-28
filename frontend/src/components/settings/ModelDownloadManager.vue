@@ -127,7 +127,7 @@ async function testConnection() {
       }),
     })
     if (res.ok) testResult.value = await res.json()
-  } catch (e) {
+  } catch {
     testResult.value = { connected: false, models: [] }
   } finally {
     testingConn.value = false

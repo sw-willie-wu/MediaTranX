@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import AppToggle from '@/components/common/AppToggle.vue'
 import AppRange from '@/components/common/AppRange.vue'
-
-const { t } = useI18n()
 
 const showAdvanced = ref(false)
 const wordTimestamps = ref(false)

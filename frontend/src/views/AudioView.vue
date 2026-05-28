@@ -35,9 +35,9 @@ const { t } = useI18n()
 const toast = useToast()
 
 const {
-  hasFile, fileId, activeFileId, activePreviewUrl, isUploading, sourceDir, currentFileName, hasResult, audioInfo,
+  hasFile, activeFileId, activePreviewUrl, isUploading, sourceDir, currentFileName, hasResult, audioInfo,
   canGoBack, canGoForward,
-  textResultContent, textResultFileId,
+  textResultContent,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, handleDownloadBatch, downloadFile, addMidiEntry,
   goBack, goForward,
@@ -45,7 +45,7 @@ const {
 
 const selectedIds = computed(() => collection.selectedIds.value)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
-const { isSubmitting, submitToAll } = useMultiSubmit(collection)
+const { submitToAll } = useMultiSubmit(collection)
 
 // Panel refs
 const transcodePanelRef  = ref<InstanceType<typeof AudioTranscodePanel>  | null>(null)
@@ -496,7 +496,7 @@ function registerTitlebar() {
 const _activeTick = ref(0)
 
 watchEffect(() => {
-  _activeTick.value
+  void _activeTick.value  // reactive dependency — forces re-run on increment
   const actions: TitlebarExtraAction[] = []
   if (currentFunction.value === 'lyrics' || currentFunction.value === 'transcribe') {
     actions.push({
@@ -746,6 +746,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="transcodePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -764,6 +765,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="volumePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
           @update:gain-preview="g => volumeGainPreview = g"
         />
@@ -782,6 +784,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="separatePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
           @jump-to-midi="handleJumpToMidi"
         />

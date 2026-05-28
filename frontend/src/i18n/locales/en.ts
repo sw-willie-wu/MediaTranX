@@ -130,6 +130,17 @@ export default {
     filter:     { execute: 'Apply Filter' },         // Phase 2.A new
     remove_bg:  { execute: 'Remove Background' },    // Phase 2.A new
     ocr:        { execute: 'Extract Text' },         // Phase 2.A new
+    cut:             { execute: 'Cut Video' },           // Phase 2.C new
+    enhance:         { execute: 'Enhance' },             // Phase 2.C new
+    interpolate:     { execute: 'Interpolate Frames' },  // Phase 2.C new
+    summary:         { execute: 'Generate Summary' },    // Phase 2.C new
+    audio_transcode: { execute: 'Transcode Audio' },     // Phase 2.D new
+    volume:          { execute: 'Adjust Volume' },       // Phase 2.D new
+    separate:        { execute: 'Separate Stems' },      // Phase 2.D new
+    doc_translate:   { execute: 'Translate Document' },  // Phase 2.E new
+    doc_ocr:         { execute: 'Run OCR' },             // Phase 2.E new
+    doc_pdf_convert: { execute: 'Convert PDF' },         // Phase 2.E new
+    doc_split:       { execute: 'Split Document' },      // Phase 2.E new
   },
 
   // ── Toast notifications ───────────────────────────────────────────────

@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/stores/settings'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
-
-const { t } = useI18n()
 
 const settingsStore = useSettingsStore()
 
@@ -30,7 +27,7 @@ useAgentPanelHost('settings.system', {
   execute: () => { throw new Error('agent.error.no_execute_on_settings') },
   invokeAction: (name: string) => {
     if (name === 'restart_backend') {
-      ;(window as any).electron?.restart()
+      window.electron?.restart()
       return { ok: true }
     }
     // browse_data_dir: not implemented in this panel

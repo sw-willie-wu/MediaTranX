@@ -3,11 +3,13 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
   currentFileExt: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -35,7 +37,7 @@ const isLoading  = computed(() => isProcessing.value)
 
 async function execute() {
   if (!props.fileId) return
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     file_id: props.fileId,
     output_format: outputFormat.value,
   }
@@ -44,11 +46,36 @@ async function execute() {
 }
 
 function getParams() {
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     output_format: outputFormat.value,
   }
   return body
 }
+
+// ── Agent panel registration ─────────────────────────────────────────────
+
+const agentSchema = {
+  panelId: 'document.pdf_convert',
+  fields: [
+    { name: 'output_format', type: 'enum' as const, options: () => outputFormatOptions.value.map(f => f.value) },
+  ],
+  actions: [],
+  execute: { requiresConfirm: false, label: 'panel.doc_pdf_convert.execute' },
+}
+
+useAgentPanelHost('document.pdf_convert', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({ output_format: outputFormat.value }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'output_format': outputFormat.value = String(value); return outputFormat.value
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  execute: async () => { await execute(); return {} },
+})
 
 defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>

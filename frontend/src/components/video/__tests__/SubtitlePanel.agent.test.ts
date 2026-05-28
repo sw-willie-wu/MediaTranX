@@ -29,7 +29,7 @@ function makeSubtitlePanelStub() {
     fields: [
       { name: 'language', type: 'enum' as const,
         options: () => languages.value.map(l => l.value) },
-      { name: 'model_size', type: 'enum' as const,
+      { name: 'whisper_model', type: 'enum' as const,
         options: () => modelSizesWithBadge.value.map(m => m.value) },
       { name: 'vocal_separation', type: 'bool' as const },
       { name: 'output_format', type: 'enum' as const,
@@ -44,7 +44,7 @@ function makeSubtitlePanelStub() {
     isMultiSelect: () => false,  // subtitle does not support multi-select (m16)
     getCurrentValues: () => ({
       language: language.value,
-      model_size: modelSize.value,
+      whisper_model: modelSize.value,
       vocal_separation: vocalSeparation.value,
       output_format: outputFormat.value,
     }),
@@ -53,7 +53,7 @@ function makeSubtitlePanelStub() {
         case 'language':
           language.value = value as string
           return value
-        case 'model_size':
+        case 'whisper_model':
           modelSize.value = value as string
           return value
         case 'vocal_separation':

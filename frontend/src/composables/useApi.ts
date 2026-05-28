@@ -4,7 +4,7 @@
 import { ref } from 'vue'
 
 export function getApiBase() {
-  // @ts-ignore
+  // @ts-expect-error — backendPort is injected by Electron preload but not in TypeScript types
   const port = window.electron?.backendPort
   // 如果在 Electron 環境且有 port，使用絕對地址；否則在開發環境使用相對路徑 /api (由 Vite Proxy 處理)
   return port ? `http://localhost:${port}/api` : '/api'

@@ -30,7 +30,7 @@ watch(() => props.transient?.text, scrollToBottom)
 function toolCallIdToName(toolCallId: string, messages: Message[]): string {
   for (const m of messages) {
     if (m.role === 'assistant') {
-      const tc = (m as any).toolCalls?.find((t: any) => t.id === toolCallId)
+      const tc = m.toolCalls?.find((t) => t.id === toolCallId)
       if (tc) return tc.function?.name ?? toolCallId
     }
   }
@@ -60,8 +60,8 @@ function toolCallIdToName(toolCallId: string, messages: Message[]): string {
       <!-- v-for over a single-item array lets us call toolResultPreview() once per row -->
       <template v-else-if="msg.role === 'tool'">
         <div
-          v-for="preview in [toolResultPreview((msg as any).content)]"
-          :key="`tool-${idx}`"
+          v-for="(preview, previewIdx) in [toolResultPreview((msg as any).content)]"
+          :key="previewIdx"
           class="tool-result-row"
         >
           <span class="tool-result-name">{{ toolCallIdToName((msg as any).toolCallId, messages) }}</span>

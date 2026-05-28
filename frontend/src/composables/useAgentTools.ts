@@ -98,6 +98,11 @@ async function resolveRouter(): Promise<Router> {
   return mod.default
 }
 
+/** Extract a human-readable message from an unknown caught value. */
+function errMsg(e: unknown): string {
+  return String(e instanceof Error ? e.message : e)
+}
+
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 export interface ToolDefinition {
@@ -107,8 +112,8 @@ export interface ToolDefinition {
 }
 
 export type ToolResult =
-  | { ok: true; [k: string]: any }
-  | { error: string; [k: string]: any }
+  | { ok: true; [k: string]: unknown }
+  | { error: string; [k: string]: unknown }
 
 export interface ToolCall {
   id: string
@@ -329,6 +334,7 @@ async function _getActivePanel() {
 
 // ─── Individual dispatchers ───────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
   navigate_to: async ({ route }: { route: string }): Promise<ToolResult> => {
@@ -337,8 +343,8 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
       const router = await resolveRouter()
       await router.push(route)
       return { ok: true }
-    } catch (e: any) {
-      return { error: 'agent.error.tool_failed', detail: String(e?.message ?? e) }
+    } catch (e: unknown) {
+      return { error: 'agent.error.tool_failed', detail: errMsg(e) }
     }
   },
 
@@ -357,8 +363,8 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
       }
       view.setCurrentFunction(name)
       return { ok: true }
-    } catch (e: any) {
-      return { error: 'agent.error.tool_failed', detail: String(e?.message ?? e) }
+    } catch (e: unknown) {
+      return { error: 'agent.error.tool_failed', detail: errMsg(e) }
     }
   },
 
@@ -379,8 +385,8 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
       }
       filesStore.setCurrentFile(file_id)
       return { ok: true }
-    } catch (e: any) {
-      return { error: 'agent.error.tool_failed', detail: String(e?.message ?? e) }
+    } catch (e: unknown) {
+      return { error: 'agent.error.tool_failed', detail: errMsg(e) }
     }
   },
 
@@ -395,8 +401,8 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
         size_bytes: f.size,
       }))
       return { ok: true, files }
-    } catch (e: any) {
-      return { error: 'agent.error.tool_failed', detail: String(e?.message ?? e) }
+    } catch (e: unknown) {
+      return { error: 'agent.error.tool_failed', detail: errMsg(e) }
     }
   },
 
@@ -408,8 +414,8 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
       if (!ap.isMounted) return { error: 'agent.error.panel_not_active' }
       ap.instance.openField(field)
       return { ok: true }
-    } catch (e: any) {
-      return { error: 'agent.error.tool_failed', detail: String(e?.message ?? e) }
+    } catch (e: unknown) {
+      return { error: 'agent.error.tool_failed', detail: errMsg(e) }
     }
   },
 
@@ -452,8 +458,8 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
       const actual = ap.instance.setField(field, coercedValue)
       return { ok: true, requested: value, actual }
-    } catch (e: any) {
-      return { error: 'agent.error.tool_failed', detail: String(e?.message ?? e) }
+    } catch (e: unknown) {
+      return { error: 'agent.error.tool_failed', detail: errMsg(e) }
     }
   },
 
@@ -483,12 +489,12 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
       const result = await ap.instance.execute()
       return { ok: true, task_id: result?.task_id }
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Catch the sentinel thrown by settings panels' execute()
-      if (String(e?.message ?? e).includes('agent.error.no_execute_on_settings')) {
+      if (errMsg(e).includes('agent.error.no_execute_on_settings')) {
         return { error: 'agent.error.no_execute_on_settings' }
       }
-      return { error: 'agent.error.tool_failed', detail: String(e?.message ?? e) }
+      return { error: 'agent.error.tool_failed', detail: errMsg(e) }
     }
   },
 
@@ -515,8 +521,8 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
       const result = await ap.instance.invokeAction(name)
       return { ok: true, result }
-    } catch (e: any) {
-      return { error: 'agent.error.tool_failed', detail: String(e?.message ?? e) }
+    } catch (e: unknown) {
+      return { error: 'agent.error.tool_failed', detail: errMsg(e) }
     }
   },
 
@@ -540,8 +546,8 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
           error: task.error,
         },
       }
-    } catch (e: any) {
-      return { error: 'agent.error.tool_failed', detail: String(e?.message ?? e) }
+    } catch (e: unknown) {
+      return { error: 'agent.error.tool_failed', detail: errMsg(e) }
     }
   },
 }
@@ -553,12 +559,10 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 // case observed live with qwen3:8b emitting navigate_to({}) — would otherwise
 // fall through to router.push(undefined) and a cryptic vue-router error).
 const REQUIRED_BY_TOOL: Record<string, readonly string[]> = Object.fromEntries(
-  TOOLS.map(t => [
-    t.name,
-    Array.isArray((t.parameters as any)?.required)
-      ? ((t.parameters as any).required as string[])
-      : [],
-  ]),
+  TOOLS.map(t => {
+    const params = t.parameters as { required?: string[] }
+    return [t.name, Array.isArray(params?.required) ? params.required : []]
+  }),
 )
 
 /**
@@ -575,14 +579,15 @@ export function dispatch(tc: ToolCall): Promise<ToolResult> {
   // Defense-in-depth: empty / whitespace `arguments` is treated as "{}"
   // (the SSE assembler already normalizes the wire path; this covers
   // direct callers / tests that bypass the assembler).
-  let args: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let args: any  // tool call args are runtime-validated by the ag-ui tool schema
   const raw = (tc.function.arguments ?? '').trim()
   if (!raw) {
     args = {}
   } else {
     try {
       args = JSON.parse(raw)
-    } catch (e: any) {
+    } catch {
       return Promise.resolve({ error: 'agent.error.tool_failed', detail: 'arguments not valid JSON' })
     }
   }
@@ -601,9 +606,9 @@ export function dispatch(tc: ToolCall): Promise<ToolResult> {
     }
   }
 
-  return fn(args).catch((e: any) => ({
+  return fn(args).catch((e: unknown) => ({
     error: 'agent.error.tool_failed',
-    detail: String(e?.message ?? e),
+    detail: errMsg(e),
   }))
 }
 

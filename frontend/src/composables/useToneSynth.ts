@@ -129,6 +129,7 @@ async function _fetchSoundfontsInfo(): Promise<{ path: string; exists: boolean }
  * Returns a blob URL string, or null if the file doesn't exist.
  */
 async function _loadSampleUrl(dirName: string, note: string): Promise<string | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const electron = (window as any).electron
 
   if (_soundfontsPath && electron?.readLocalFile) {
@@ -393,8 +394,8 @@ export function useToneSynth() {
   async function noteOff(
     trackIndex: number,
     pitch: number,
-    program: number,
-    isDrum: boolean
+    _program: number,
+    _isDrum: boolean
   ): Promise<void> {
     const sampler = _samplers.get(`track_${trackIndex}`)
     if (!sampler) return

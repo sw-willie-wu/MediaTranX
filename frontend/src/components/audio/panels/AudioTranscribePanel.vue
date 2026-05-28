@@ -10,7 +10,6 @@ import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { apiFetch } from '@/composables/useApi'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import { useSettingsStore } from '@/stores/settings'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const props = defineProps<{
@@ -28,7 +27,6 @@ const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
 const { guardModelReady } = useModelGuard()
-const settingsStore = useSettingsStore()
 
 // ── Whisper model status ────────────────────────────────────────
 const modelSizes = computed(() =>
@@ -269,7 +267,7 @@ function getParams() {
 const agentSchema = {
   panelId: 'audio.transcribe',
   fields: [
-    { name: 'model_size', type: 'enum' as const,
+    { name: 'whisper_model', type: 'enum' as const,
       options: () => modelSizes.value.map(m => m.value) },
     { name: 'language', type: 'enum' as const,
       options: () => languages.value.map(l => l.value) },
@@ -291,7 +289,7 @@ useAgentPanelHost('audio.transcribe', {
   agentSchema,
   isMultiSelect: () => props.isMultiSelect ?? false,
   getCurrentValues: () => ({
-    model_size: modelSize.value,
+    whisper_model: modelSize.value,
     language: language.value,
     output_format: outputFormat.value,
     vocal_separation: vocalSeparation.value,
@@ -302,7 +300,7 @@ useAgentPanelHost('audio.transcribe', {
   }),
   setField: (field, value) => {
     switch (field) {
-      case 'model_size':
+      case 'whisper_model':
         modelSize.value = value as string
         return value
       case 'language':

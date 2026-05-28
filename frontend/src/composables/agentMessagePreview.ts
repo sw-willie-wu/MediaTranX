@@ -27,14 +27,15 @@ export function toolResultPreview(content: string): ToolResultPreview {
   try {
     const parsed = JSON.parse(content)
     if (parsed && typeof parsed === 'object') {
-      if ((parsed as any).error) {
-        return { status: 'error', icon: '✗', text: truncate(String((parsed as any).error)) }
+      const p = parsed as Record<string, unknown>
+      if (p.error) {
+        return { status: 'error', icon: '✗', text: truncate(String(p.error)) }
       }
-      if ((parsed as any).user_cancelled) {
+      if (p.user_cancelled) {
         return { status: 'error', icon: '✗', text: 'cancelled' }
       }
-      if ((parsed as any).skipped) {
-        return { status: 'error', icon: '✗', text: truncate(`skipped: ${(parsed as any).skipped}`) }
+      if (p.skipped) {
+        return { status: 'error', icon: '✗', text: truncate(`skipped: ${p.skipped}`) }
       }
       const keys = Object.keys(parsed as Record<string, unknown>)
       if (keys.length > 0) {

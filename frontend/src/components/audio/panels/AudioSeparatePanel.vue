@@ -9,10 +9,12 @@ import { apiFetch } from '@/composables/useApi'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { useModelStore } from '@/stores/models'
 import { usePersistedModel } from '@/composables/usePersistedModel'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -56,6 +58,48 @@ const selectedStems = computed(() => {
   if (stemPiano.value) stems.push('piano')
   if (stemOther.value) stems.push('other')
   return stems
+})
+
+// ── Agent panel registration ─────
+const agentSchema = {
+  panelId: 'audio.separate',
+  fields: [
+    { name: 'output_format', type: 'enum' as const, options: () => outputFormats.value.map(f => f.value) },
+    { name: 'generate_midi', type: 'bool' as const },
+    { name: 'stem_vocals',   type: 'bool' as const },
+    { name: 'stem_drums',    type: 'bool' as const },
+    { name: 'stem_bass',     type: 'bool' as const },
+    { name: 'stem_guitar',   type: 'bool' as const },
+    { name: 'stem_piano',    type: 'bool' as const },
+    { name: 'stem_other',    type: 'bool' as const },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.separate.execute' },
+}
+
+useAgentPanelHost('audio.separate', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    output_format: outputFormat.value, generate_midi: generateMidi.value,
+    stem_vocals: stemVocals.value, stem_drums: stemDrums.value, stem_bass: stemBass.value,
+    stem_guitar: stemGuitar.value, stem_piano: stemPiano.value, stem_other: stemOther.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'output_format': outputFormat.value = String(value);  return outputFormat.value
+      case 'generate_midi': generateMidi.value = Boolean(value); return generateMidi.value
+      case 'stem_vocals':   stemVocals.value   = Boolean(value); return stemVocals.value
+      case 'stem_drums':    stemDrums.value    = Boolean(value); return stemDrums.value
+      case 'stem_bass':     stemBass.value     = Boolean(value); return stemBass.value
+      case 'stem_guitar':   stemGuitar.value   = Boolean(value); return stemGuitar.value
+      case 'stem_piano':    stemPiano.value    = Boolean(value); return stemPiano.value
+      case 'stem_other':    stemOther.value    = Boolean(value); return stemOther.value
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  execute: async () => { await execute(); return {} },
 })
 
 async function loadModelStatus() {

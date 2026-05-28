@@ -14,7 +14,7 @@ import { useTitlebar } from '@/composables/useTitlebar'
 const route = useRoute()
 const isMaximized = ref(false)
 const { t } = useI18n()
-const { activeFileName, canUndo, canRedo, canSave, canSaveAs, undo, redo, save, saveAs, extraActions } = useTitlebar()
+const { activeFileName, canUndo, canRedo, canSaveAs, undo, redo, saveAs, extraActions } = useTitlebar()
 
 // preload (electron/preload.cjs) injects `window.electron` synchronously
 // before Vue mounts, so a one-shot check at script setup is sufficient —
