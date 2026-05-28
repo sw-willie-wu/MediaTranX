@@ -5,7 +5,7 @@
  *   - After mount, panelRegistry.get('audio.transcribe') returns a handle
  *   - getCurrentValues() returns an object with all schema field names
  *   - setField('translate', true) returns true
- *   - setField('model_size', 'large-v3') returns 'large-v3'
+ *   - setField('whisper_model', 'large-v3') returns 'large-v3'
  */
 
 import { defineComponent, ref } from 'vue'
@@ -32,7 +32,7 @@ function makeAudioTranscribePanelStub() {
   const agentSchema = {
     panelId: 'audio.transcribe',
     fields: [
-      { name: 'model_size', type: 'enum' as const,
+      { name: 'whisper_model', type: 'enum' as const,
         options: () => modelSizes.value.map(m => m.value) },
       { name: 'language', type: 'enum' as const,
         options: () => languages.value.map(l => l.value) },
@@ -54,7 +54,7 @@ function makeAudioTranscribePanelStub() {
     agentSchema,
     isMultiSelect: () => false,
     getCurrentValues: () => ({
-      model_size: modelSize.value,
+      whisper_model: modelSize.value,
       language: language.value,
       output_format: outputFormat.value,
       vocal_separation: vocalSeparation.value,
@@ -65,7 +65,7 @@ function makeAudioTranscribePanelStub() {
     }),
     setField: (field, value) => {
       switch (field) {
-        case 'model_size':
+        case 'whisper_model':
           modelSize.value = value as string
           return value
         case 'language':
@@ -129,9 +129,9 @@ describe('AudioTranscribePanel agent schema smoke', () => {
     expect(handle.setField('translate', true)).toBe(true)
   })
 
-  it('setField model_size = large-v3 → returns large-v3', () => {
+  it('setField whisper_model = large-v3 → returns large-v3', () => {
     mount(makeAudioTranscribePanelStub())
     const handle = panelRegistry.get('audio.transcribe')!
-    expect(handle.setField('model_size', 'large-v3')).toBe('large-v3')
+    expect(handle.setField('whisper_model', 'large-v3')).toBe('large-v3')
   })
 })
