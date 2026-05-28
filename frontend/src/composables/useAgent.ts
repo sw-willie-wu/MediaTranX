@@ -109,6 +109,20 @@ function mapMessagesToAgUi(msgs: Message[]): AgUiMessage[] {
     }) as unknown as AgUiMessage[]
 }
 
+/**
+ * Launder a value into a plain, structured-cloneable object tree.
+ *
+ * HttpAgent.runAgent() runs structuredClone() on its inputs (messages / state /
+ * tools). Those inputs originate from Vue reactive stores (messages.value,
+ * panel-derived tool schemas), and a reactive Proxy is NOT structured-cloneable
+ * — the browser throws "could not be cloned". Our agent payloads are all
+ * JSON-safe (strings / numbers / arrays / plain objects), so a JSON round-trip
+ * is the simplest correct way to strip the reactive proxies at the SDK boundary.
+ */
+function toCloneable<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value))
+}
+
 // ─── Module-level singleton ────────────────────────────────────────────────────
 
 let _instance: ReturnType<typeof _createAgent> | null = null
@@ -196,7 +210,8 @@ function _createAgent(deps: UseAgentDeps = {}) {
         if (!agent) {
           agent = makeAgent({ url: `${getApiBase()}/agent/run`, threadId: threadId.value })
         }
-        agent.messages = mapMessagesToAgUi(messages.value)
+        // toCloneable: HttpAgent structuredClones these inputs; strip Vue reactive proxies.
+        agent.messages = toCloneable(mapMessagesToAgUi(messages.value))
         agent.state = { agent_model_choice: settings.modelChoice }
 
         const subscriber: AgentSubscriber = {
@@ -225,7 +240,11 @@ function _createAgent(deps: UseAgentDeps = {}) {
           result = await agent.runAgent(
             {
               runId: crypto.randomUUID(),
-              tools: tools.getTools(getActivePanel()?.schema ?? null, getActiveView()),
+              // toCloneable: defensive — getTools() output is normally plain, but
+              // launder at the SDK boundary so a future reactive-sourced field can't
+              // silently reintroduce the structuredClone crash (messages is the
+              // confirmed leak source; see toCloneable docblock).
+              tools: toCloneable(tools.getTools(getActivePanel()?.schema ?? null, getActiveView())),
               context: [],
               forwardedProps: {},
             },
