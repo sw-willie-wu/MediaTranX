@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useToast } from '@/composables/useToast'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 import AppToggle from '@/components/common/AppToggle.vue'
 
 const { t } = useI18n()
@@ -13,6 +14,7 @@ const props = defineProps<{
   startTime: string
   endTime: string
   streamCopy: boolean
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -63,6 +65,41 @@ async function execute() {
 }
 
 defineExpose({ execute, isDisabled, isLoading })
+
+// ───────────────────────── Agent integration ─────────────────────────
+const agentSchema = {
+  panelId: 'video.cut',
+  fields: [
+    { name: 'start_time',  type: 'string' as const },
+    { name: 'end_time',    type: 'string' as const },
+    { name: 'stream_copy', type: 'bool'   as const },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.cut.execute' },
+}
+
+useAgentPanelHost('video.cut', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    start_time:  props.startTime,
+    end_time:    props.endTime,
+    stream_copy: props.streamCopy,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'start_time':  emit('update:startTime', String(value));   return String(value)
+      case 'end_time':    emit('update:endTime',   String(value));   return String(value)
+      case 'stream_copy': emit('update:streamCopy', Boolean(value)); return Boolean(value)
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {}, // no enum/AppSelect
+  execute: async () => {
+    await execute()
+    return {}
+  },
+})
 </script>
 
 <template>
