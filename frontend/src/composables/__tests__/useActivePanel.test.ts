@@ -214,4 +214,32 @@ describe('useActivePanel', () => {
 
     expect(vm.active?.panelId).toBe('image.ocr')
   })
+
+  it('kebab subfunction id resolves to snake panelId (remove-bg → image.remove_bg)', async () => {
+    // Subfunction ids live in the kebab "routing" namespace (remove-bg,
+    // pdf-convert) while panels register under snake panelIds (image.remove_bg,
+    // matching taskType/i18n). The bridge must normalize hyphens → underscores
+    // or every multi-word subfunction resolves to null →
+    // agent.error.panel_not_supported (regression: remove-bg / pdf-convert).
+    const viewHandle = makeViewHandle('remove-bg')
+    viewRegistry.register('image', viewHandle)
+    panelRegistry.register('image.remove_bg', makePanelHandle('image.remove_bg'))
+
+    const router = makeRouter('/image')
+    await router.isReady()
+
+    let entry: ActivePanelEntry | null | undefined = undefined
+    const Comp = defineComponent({
+      setup() {
+        const active = useActivePanel()
+        entry = active.value
+        return {}
+      },
+      template: '<div></div>',
+    })
+    mount(Comp, { global: { plugins: [router] } })
+
+    expect(entry).not.toBeNull()
+    expect(entry!.panelId).toBe('image.remove_bg')
+  })
 })

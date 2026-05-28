@@ -23,7 +23,7 @@
 import { getCurrentInstance } from 'vue'
 import { useRouter, type Router } from 'vue-router'
 import { useActivePanel } from '@/composables/useActivePanel'
-import { useActiveView, deriveViewId } from '@/composables/useActiveView'
+import { useActiveView, deriveViewId, panelIdFor } from '@/composables/useActiveView'
 import { viewRegistry, type ViewHandle } from '@/stores/viewRegistry'
 import { panelRegistry, type PanelAgentSchema } from '@/stores/panelRegistry'
 import { useFilesStore } from '@/stores/files'
@@ -321,7 +321,7 @@ async function _getActivePanel() {
   if (!view) return null
   const fn = view.currentFunction.value
   if (!fn) return null
-  const panelId = `${viewId}.${fn}`
+  const panelId = panelIdFor(viewId, fn)
   const entry = panelRegistry.get(panelId)
   if (!entry) return null
   return {

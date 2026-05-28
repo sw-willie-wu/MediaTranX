@@ -16,7 +16,7 @@ import { mount } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { viewRegistry, type ViewHandle } from '@/stores/viewRegistry'
-import { deriveViewId, useActiveView } from '@/composables/useActiveView'
+import { deriveViewId, panelIdFor, useActiveView } from '@/composables/useActiveView'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -69,6 +69,24 @@ describe('deriveViewId', () => {
     ['/not-a-real-route',  null],
   ])('deriveViewId("%s") → %s', (path, expected) => {
     expect(deriveViewId(path)).toBe(expected)
+  })
+})
+
+// ─── A2. panelIdFor unit tests ────────────────────────────────────────────────
+
+describe('panelIdFor', () => {
+  it.each([
+    // kebab subfunction ids normalize to the snake panelId namespace
+    ['image',    'remove-bg',    'image.remove_bg'],
+    ['document', 'pdf-convert',  'document.pdf_convert'],
+    ['image',    'ai-remove',    'image.ai_remove'],
+    ['audio',    'midi-edit',    'audio.midi_edit'],
+    // single-word subfunctions are unaffected (no-op)
+    ['image',    'upscale',      'image.upscale'],
+    ['image',    'ocr',          'image.ocr'],
+    ['settings', 'general',      'settings.general'],
+  ])('panelIdFor("%s", "%s") → %s', (viewId, fn, expected) => {
+    expect(panelIdFor(viewId, fn)).toBe(expected)
   })
 })
 

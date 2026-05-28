@@ -38,6 +38,22 @@ export function deriveViewId(pathname: string): string | null {
   return null
 }
 
+/**
+ * Build the canonical panel-registry key for a (viewId, subfunction) pair.
+ *
+ * Subfunction ids live in the kebab "routing" namespace (`remove-bg`,
+ * `pdf-convert` — mirroring the HTTP route convention), but panels register
+ * under the snake "data-identity" namespace (`image.remove_bg`, matching
+ * taskType / i18n keys). The agent bridge is the single point where the two
+ * namespaces meet, so hyphens are normalized to underscores here. Without
+ * this, every multi-word subfunction resolves to null →
+ * agent.error.panel_not_supported. Single-word subfunctions (upscale /
+ * adjust / ocr) are unaffected (no-op).
+ */
+export function panelIdFor(viewId: string, fn: string): string {
+  return `${viewId}.${fn.replace(/-/g, '_')}`
+}
+
 // ─── Composable ───────────────────────────────────────────────────────────────
 
 export function useActiveView(): ComputedRef<ViewHandle | null> {
