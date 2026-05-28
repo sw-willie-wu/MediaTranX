@@ -249,6 +249,35 @@ class TestKeyHint:
         assert r[0]["key_hint"] == "⚠ undecryptable"
 
 
+class TestDecryptOnRead:
+    def test_get_provider_decrypts_stored_key(self, fake_dao, fake_cipher):
+        fake_dao.get_by_id.return_value = _conn_obj(id=5, provider="openai", endpoint="http://x", api_key="enc:fake:" + "sk-X"[::-1])
+        with patch.object(RemoteService, "_get_provider", return_value=MagicMock()) as mg:
+            RemoteService().get_provider_for_connection(5, "openai")
+        mg.assert_called_once_with("openai", "http://x", "sk-X")   # decrypted
+
+    def test_get_provider_undecryptable_raises_remote_error(self, fake_dao, fake_cipher):
+        from app.handler.exceptions import RemoteApiError
+        fake_dao.get_by_id.return_value = _conn_obj(id=6, provider="openai", endpoint="http://x", api_key="enc:dpapi:xxx")
+        with pytest.raises(RemoteApiError) as exc_info:
+            RemoteService().get_provider_for_connection(6, "openai")
+        assert exc_info.value.code == "key_undecryptable"
+
+    def test_reveal_key_returns_plaintext(self, fake_dao, fake_cipher):
+        fake_dao.get_by_id.return_value = _conn_obj(id=7, api_key="enc:fake:" + "sk-REVEAL"[::-1])
+        assert RemoteService().reveal_key(7) == "sk-REVEAL"
+
+    def test_reveal_key_no_key_returns_none(self, fake_dao, fake_cipher):
+        fake_dao.get_by_id.return_value = _conn_obj(id=8, provider="ollama", api_key=None)
+        assert RemoteService().reveal_key(8) is None
+
+    def test_reveal_key_missing_raises_not_found(self, fake_dao, fake_cipher):
+        from app.handler.exceptions import NotFoundError
+        fake_dao.get_by_id.return_value = None
+        with pytest.raises(NotFoundError):
+            RemoteService().reveal_key(999)
+
+
 class TestEnabledFallback:
     def test_conn_id_none_uses_enabled_attr(self, fake_dao):
         active = _conn_obj(id=1, provider="ollama", endpoint="http://o", api_key=None, enabled=True)

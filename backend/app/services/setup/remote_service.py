@@ -34,6 +34,19 @@ class RemoteService:
             conns = self._dao.get_all()
         return [self._redact(c.model_dump()) for c in conns]
 
+    def _decrypt_stored(self, stored: Optional[str]) -> Optional[str]:
+        """Decrypt a stored api_key value. Raises RemoteApiError if the value is
+        present but cannot be decrypted by the active cipher (wrong scheme /
+        corrupt data). Returns the value unchanged when it has no enc: prefix
+        (legacy plaintext passthrough) or is empty/None."""
+        if not stored:
+            return stored
+        try:
+            return get_secret_cipher().decrypt(stored)
+        except SecretDecryptError as e:
+            from app.handler.exceptions import RemoteApiError
+            raise RemoteApiError("key_undecryptable", str(e)) from e
+
     def _redact(self, conn_dict: dict) -> dict:
         """Strip the stored api_key from a serialized connection, replacing it
         with ``has_api_key`` (bool) and ``key_hint`` (last-4 chars of plaintext
@@ -87,6 +100,17 @@ class RemoteService:
         if not self._dao.delete(conn_id):
             raise NotFoundError(f"Connection not found: {conn_id}")
 
+    def reveal_key(self, conn_id: int) -> Optional[str]:
+        """Return the decrypted plaintext api_key for a connection.
+        Raises NotFoundError if conn_id is unknown.
+        Raises RemoteApiError with code 'key_undecryptable' if the stored value
+        cannot be decrypted by the active cipher."""
+        conn = self._dao.get_by_id(conn_id)
+        if conn is None:
+            from app.handler.exceptions import NotFoundError
+            raise NotFoundError(f"Connection not found: {conn_id}")
+        return self._decrypt_stored(conn.api_key)
+
     def test_connection(self, provider: str, endpoint: str, api_key: Optional[str] = None) -> dict:
         """Test if a connection is working."""
         p = self._get_provider(provider, endpoint, api_key)
@@ -105,7 +129,7 @@ class RemoteService:
         if conn is None:
             from app.handler.exceptions import NotFoundError
             raise NotFoundError(f"Connection not found: {conn_id}")
-        p = self._get_provider(conn.provider, conn.endpoint, conn.api_key)
+        p = self._get_provider(conn.provider, conn.endpoint, self._decrypt_stored(conn.api_key))
         models = p.list_models()
         return [self._model_to_dict(m) for m in models]
 
@@ -138,10 +162,10 @@ class RemoteService:
         if conn_id is not None:
             conn = self._dao.get_by_id(conn_id)
             if conn:
-                return self._get_provider(conn.provider, conn.endpoint, conn.api_key)
+                return self._get_provider(conn.provider, conn.endpoint, self._decrypt_stored(conn.api_key))
         # fallback: get the first active connection of this provider
         conns = self._dao.get_by_provider(provider)
         for c in conns:
             if c.enabled:
-                return self._get_provider(c.provider, c.endpoint, c.api_key)
+                return self._get_provider(c.provider, c.endpoint, self._decrypt_stored(c.api_key))
         return None
