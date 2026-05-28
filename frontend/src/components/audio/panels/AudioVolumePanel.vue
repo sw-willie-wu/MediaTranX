@@ -3,10 +3,12 @@ import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppRange from '@/components/common/AppRange.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -48,6 +50,34 @@ async function execute() {
   )
   if (taskId) emit('submit', taskId)
 }
+
+// ── Agent panel registration ─────
+const agentSchema = {
+  panelId: 'audio.volume',
+  fields: [
+    { name: 'mode',      type: 'enum'   as const, options: () => ['adjust', 'normalize'] },
+    { name: 'volume_db', type: 'number' as const, min: -20, max: 20, step: 1,
+      visibleWhen: () => mode.value === 'adjust' },
+  ],
+  actions: [],
+  execute: { requiresConfirm: false, label: 'panel.volume.execute' },
+}
+
+useAgentPanelHost('audio.volume', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({ mode: mode.value, volume_db: volumeDb.value }),
+  setField: (field, value) => {
+    const clamp = (v: unknown, lo: number, hi: number) => Math.min(Math.max(Number(v), lo), hi)
+    switch (field) {
+      case 'mode':      mode.value = String(value) as 'adjust' | 'normalize'; return mode.value
+      case 'volume_db': { const c = clamp(value, -20, 20); volumeDb.value = c; return c }
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},  // mode 是 button toggle、no dropdown
+  execute: async () => { await execute(); return {} },
+})
 
 function getParams() {
   return {
