@@ -37,6 +37,10 @@ const { t } = useI18n()
   position: relative;
   width: 32px;
   height: 28px;
+  /* Nudge left so the agent↔results gap matches the 4px results↔window-controls
+     gap (TitlebarResultsButton's .results-button-wrap margin-right) — keeps the
+     right-cluster icon spacing balanced instead of flush against results. */
+  margin-right: 4px;
   padding: 0;
   border: 0;
   background: transparent;
