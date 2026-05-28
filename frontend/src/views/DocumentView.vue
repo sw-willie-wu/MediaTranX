@@ -247,6 +247,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="translatePanelRef"
           :file-id="fileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -256,6 +257,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           :file-id="fileId"
           :current-file-name="currentFileName"
           :current-file-ext="currentFileExt"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -265,6 +267,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           :file-id="fileId"
           :current-file-name="currentFileName"
           :current-file-ext="currentFileExt"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -273,6 +276,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="splitPanelRef"
           :file-id="fileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
       </div>
