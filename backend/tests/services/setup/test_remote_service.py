@@ -28,17 +28,17 @@ class TestGetConnections:
     def test_no_filter_returns_all(self, fake_dao):
         fake_dao.get_all.return_value = [_conn_obj(id=1, provider="openai")]
         result = RemoteService().get_connections()
-        # api_key is never present here; redaction adds has_api_key=False
-        assert result == [{"id": 1, "provider": "openai", "has_api_key": False}]
+        # api_key is never present here; redaction adds has_api_key=False + key_hint=None
+        assert result == [{"id": 1, "provider": "openai", "has_api_key": False, "key_hint": None}]
         fake_dao.get_all.assert_called_once()
 
     def test_filtered_by_provider(self, fake_dao):
         fake_dao.get_by_provider.return_value = [_conn_obj(id=2, provider="ollama")]
         result = RemoteService().get_connections(provider="ollama")
-        assert result == [{"id": 2, "provider": "ollama", "has_api_key": False}]
+        assert result == [{"id": 2, "provider": "ollama", "has_api_key": False, "key_hint": None}]
         fake_dao.get_by_provider.assert_called_once_with("ollama")
 
-    def test_redacts_api_key_and_sets_has_api_key_flag(self, fake_dao):
+    def test_redacts_api_key_and_sets_has_api_key_flag(self, fake_dao, fake_cipher):
         # Security: the plaintext api_key must NEVER appear in the response
         # body — only a boolean telling the UI whether a key is set.
         fake_dao.get_all.return_value = [
@@ -55,17 +55,18 @@ class TestGetConnections:
 
 
 class TestAddConnection:
-    def test_creates_with_fields(self, fake_dao):
+    def test_creates_with_fields(self, fake_dao, fake_cipher):
         fake_dao.create.return_value = _conn_obj(id=1, provider="openai", name="prod")
         result = RemoteService().add_connection(
             provider="openai", name="prod", endpoint="https://api.openai.com", api_key="sk-x",
         )
         assert result["id"] == 1
+        # encrypt-on-write: DAO receives the encrypted value ("sk-x" reversed = "x-ks")
         fake_dao.create.assert_called_once_with(
-            provider="openai", name="prod", endpoint="https://api.openai.com", api_key="sk-x",
+            provider="openai", name="prod", endpoint="https://api.openai.com", api_key="enc:fake:x-ks",
         )
 
-    def test_response_redacts_api_key(self, fake_dao):
+    def test_response_redacts_api_key(self, fake_dao, fake_cipher):
         # Security: the add response must not echo the plaintext key back.
         fake_dao.create.return_value = _conn_obj(
             id=1, provider="openai", name="prod", api_key="sk-secret",
@@ -85,7 +86,7 @@ class TestUpdateConnection:
         assert result["name"] == "new"
         fake_dao.update.assert_called_once_with(3, name="new")
 
-    def test_response_redacts_api_key(self, fake_dao):
+    def test_response_redacts_api_key(self, fake_dao, fake_cipher):
         # Security: a PUT that only changes name/endpoint/enabled must NOT
         # echo the stored plaintext key back in the response.
         fake_dao.update.return_value = _conn_obj(
@@ -169,7 +170,7 @@ class TestGetProviderForConnection:
         mock_get.assert_called_once_with("openai", "http://x", "k")
 
     def test_conn_id_none_uses_first_active(self, fake_dao):
-        active = _conn_obj(id=1, provider="ollama", endpoint="http://o", api_key=None, is_active=True)
+        active = _conn_obj(id=1, provider="ollama", endpoint="http://o", api_key=None, enabled=True)
         fake_dao.get_by_provider.return_value = [active]
         fake_provider = MagicMock()
         with patch.object(RemoteService, "_get_provider", return_value=fake_provider):
@@ -180,6 +181,81 @@ class TestGetProviderForConnection:
         fake_dao.get_by_provider.return_value = []
         result = RemoteService().get_provider_for_connection(None, "ollama")
         assert result is None
+
+
+class _FakeCipher:
+    scheme = "fake"
+    def encrypt(self, p):
+        return f"enc:fake:{p[::-1]}" if p else p
+    def decrypt(self, t):
+        if not t: return t
+        if not t.startswith("enc:"): return t
+        scheme, _, payload = t[4:].partition(":")
+        if scheme != "fake":
+            from app.adapters.security.secret_cipher import SecretDecryptError
+            raise SecretDecryptError("wrong scheme")
+        return payload[::-1]
+
+
+@pytest.fixture
+def fake_cipher(monkeypatch):
+    c = _FakeCipher()
+    monkeypatch.setattr("app.services.setup.remote_service.get_secret_cipher", lambda: c)
+    return c
+
+
+class TestEncryptOnWrite:
+    def test_add_encrypts_key_before_dao(self, fake_dao, fake_cipher):
+        fake_dao.create.return_value = _conn_obj(id=1, provider="openai", api_key="enc:fake:1-ks")
+        RemoteService().add_connection(provider="openai", name="n", endpoint="http://x", api_key="sk-1")
+        # DAO received the ENCRYPTED value, not the plaintext
+        _, kwargs = fake_dao.create.call_args
+        assert kwargs["api_key"] == "enc:fake:1-ks"
+        assert kwargs["api_key"] != "sk-1"
+
+    def test_update_encrypts_key_when_present(self, fake_dao, fake_cipher):
+        fake_dao.update.return_value = _conn_obj(id=2, name="n", api_key="enc:fake:2-ks")
+        RemoteService().update_connection(2, name="n", api_key="sk-2")
+        _, kwargs = fake_dao.update.call_args
+        assert kwargs["api_key"] == "enc:fake:2-ks"
+
+    def test_update_without_key_does_not_touch_api_key(self, fake_dao, fake_cipher):
+        fake_dao.update.return_value = _conn_obj(id=3, name="n")
+        RemoteService().update_connection(3, name="n")
+        _, kwargs = fake_dao.update.call_args
+        assert "api_key" not in kwargs
+
+
+class TestKeyHint:
+    def test_get_connections_returns_masked_hint_no_full_key(self, fake_dao, fake_cipher):
+        # stored value is fake-encrypted "sk-LONGKEY" -> reversed
+        fake_dao.get_all.return_value = [_conn_obj(id=1, provider="openai", api_key="enc:fake:" + "sk-LONGKEY"[::-1])]
+        result = RemoteService().get_connections()
+        assert "api_key" not in result[0]
+        assert result[0]["has_api_key"] is True
+        assert result[0]["key_hint"] == "…GKEY"
+        assert "sk-LONGKEY" not in str(result)
+
+    def test_hint_none_when_no_key(self, fake_dao, fake_cipher):
+        fake_dao.get_all.return_value = [_conn_obj(id=1, provider="ollama", api_key=None)]
+        r = RemoteService().get_connections()
+        assert r[0]["has_api_key"] is False
+        assert r[0]["key_hint"] is None
+
+    def test_hint_marks_undecryptable(self, fake_dao, fake_cipher):
+        fake_dao.get_all.return_value = [_conn_obj(id=1, provider="openai", api_key="enc:dpapi:xxxx")]
+        r = RemoteService().get_connections()
+        assert r[0]["has_api_key"] is True
+        assert r[0]["key_hint"] == "⚠ undecryptable"
+
+
+class TestEnabledFallback:
+    def test_conn_id_none_uses_enabled_attr(self, fake_dao):
+        active = _conn_obj(id=1, provider="ollama", endpoint="http://o", api_key=None, enabled=True)
+        fake_dao.get_by_provider.return_value = [active]
+        with patch.object(RemoteService, "_get_provider", return_value=MagicMock()) as mg:
+            RemoteService().get_provider_for_connection(None, "ollama")
+        mg.assert_called_once()
 
 
 class TestListRemoteModelsByConn:

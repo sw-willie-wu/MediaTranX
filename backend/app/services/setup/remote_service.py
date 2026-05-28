@@ -5,6 +5,7 @@ Manages external AI API connection settings (Ollama, OpenAI, Gemini).
 import logging
 from typing import Optional
 
+from app.adapters.security.secret_cipher import get_secret_cipher, SecretDecryptError
 from app.db.dao.api_connection_dao import ApiConnectionDAO
 
 logger = logging.getLogger(__name__)
@@ -33,13 +34,21 @@ class RemoteService:
             conns = self._dao.get_all()
         return [self._redact(c.model_dump()) for c in conns]
 
-    @staticmethod
-    def _redact(conn_dict: dict) -> dict:
-        """Strip the plaintext api_key from a serialized connection, exposing
-        only a ``has_api_key`` boolean. Applied to EVERY connection that
-        crosses the API boundary (get / add / update) so the key never travels
-        to the client (see get_connections docstring)."""
-        conn_dict["has_api_key"] = bool(conn_dict.pop("api_key", None))
+    def _redact(self, conn_dict: dict) -> dict:
+        """Strip the stored api_key from a serialized connection, replacing it
+        with ``has_api_key`` (bool) and ``key_hint`` (last-4 chars of plaintext
+        or ``None``). Applied to EVERY connection that crosses the API boundary
+        (get / add / update) so the raw key never travels to the client."""
+        stored = conn_dict.pop("api_key", None)
+        conn_dict["has_api_key"] = bool(stored)
+        if not stored:
+            conn_dict["key_hint"] = None
+            return conn_dict
+        try:
+            plain = get_secret_cipher().decrypt(stored)
+            conn_dict["key_hint"] = ("…" + plain[-4:]) if len(plain) >= 4 else "…"
+        except SecretDecryptError:
+            conn_dict["key_hint"] = "⚠ undecryptable"
         return conn_dict
 
     def add_connection(
@@ -50,6 +59,8 @@ class RemoteService:
         api_key: Optional[str] = None,
     ) -> dict:
         """Add a new connection."""
+        if api_key:
+            api_key = get_secret_cipher().encrypt(api_key)
         conn = self._dao.create(
             provider=provider,
             name=name,
@@ -62,6 +73,8 @@ class RemoteService:
         """Update a connection. Raises NotFoundError if conn_id is unknown."""
         from app.handler.exceptions import NotFoundError
 
+        if kwargs.get("api_key"):
+            kwargs["api_key"] = get_secret_cipher().encrypt(kwargs["api_key"])
         conn = self._dao.update(conn_id, **kwargs)
         if conn is None:
             raise NotFoundError(f"Connection not found: {conn_id}")
@@ -129,6 +142,6 @@ class RemoteService:
         # fallback: get the first active connection of this provider
         conns = self._dao.get_by_provider(provider)
         for c in conns:
-            if c.is_active:
+            if c.enabled:
                 return self._get_provider(c.provider, c.endpoint, c.api_key)
         return None
