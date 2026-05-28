@@ -10,11 +10,14 @@ import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
+import type { SelectItem } from '@/components/common/AppSelect.vue'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
   currentFileExt: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -151,6 +154,41 @@ function getParams() {
 
   return body
 }
+
+// ── Agent panel registration ─────────────────────────────────────────────
+
+const flattenOptions = (items: SelectItem[]) =>
+  items.flatMap((o: SelectItem) =>
+    'options' in o ? o.options.map(x => x.value) : [o.value]
+  )
+
+const agentSchema = {
+  panelId: 'document.ocr',
+  fields: [
+    { name: 'model',         type: 'enum' as const, options: () => flattenOptions(modelOptions.value) },
+    { name: 'output_format', type: 'enum' as const, options: () => outputFormats.value.map(f => f.value) },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.doc_ocr.execute' },
+}
+
+useAgentPanelHost('document.ocr', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    model: selectedModel.value,
+    output_format: outputFormat.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'model':         selectedModel.value = String(value);                  return selectedModel.value
+      case 'output_format': outputFormat.value  = String(value) as 'md' | 'txt';  return outputFormat.value
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  execute: async () => { await execute(); return {} },
+})
 
 defineExpose({ execute, isDisabled, isLoading, outputFormat, getParams })
 </script>
