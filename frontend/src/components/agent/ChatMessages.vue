@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onMounted } from 'vue'
 import type { Message } from '@/composables/useAgent'
 import type { TransientBuffer } from '@/stores/agent'
 import { toolResultPreview } from '@/composables/agentMessagePreview'
@@ -26,6 +26,12 @@ function scrollToBottom() {
 
 watch(() => props.messages.length, scrollToBottom)
 watch(() => props.transient?.text, scrollToBottom)
+
+// The panel is v-if-mounted (ChatBubble closes by unmounting), so reopening
+// remounts this component at scrollTop=0. The watchers above only fire on
+// CHANGE, not on mount — so without this, reopening a non-empty chat lands at
+// the top instead of the latest message. Scroll to bottom on mount.
+onMounted(scrollToBottom)
 
 function toolCallIdToName(toolCallId: string, messages: Message[]): string {
   for (const m of messages) {
@@ -123,6 +129,16 @@ function toolCallIdToName(toolCallId: string, messages: Message[]): string {
   &::-webkit-scrollbar { width: 4px; }
   &::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
   &::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+}
+
+// Messages must never be flex-shrunk. In this column flex + overflow-y:auto
+// scroll container, a child with `overflow:hidden` (e.g. ConfirmCard) has its
+// `min-height:auto` resolved to 0 by the flexbox spec, so flexbox collapses it
+// to ~1px once the list overflows — clipping its buttons and leaving only the
+// amber border ("orange line, no options" confirm-card bug). flex-shrink:0 keeps
+// every message at its natural height; the container scrolls instead.
+.chat-messages > * {
+  flex-shrink: 0;
 }
 
 .messages-empty {
