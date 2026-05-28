@@ -86,6 +86,29 @@ def test_remote_inference_config_shape(task: str):
     assert isinstance(cfg["max_tokens"], int) and cfg["max_tokens"] > 0
 
 
+# Most-constrained cloud completion cap we must stay within. OpenAI's
+# chat-completions models (gpt-4o-mini / gpt-4o / gpt-4-turbo) reject the
+# request with HTTP 400 "max_tokens is too large" when the requested
+# completion budget exceeds 16384. The OpenAI API does NOT expose this
+# limit on /v1/models, so it can't be queried at runtime — these static
+# defaults are the only safety net. (Regression: ocr was 32768, so every
+# gpt-4o-mini remote OCR task 400'd.)
+_OPENAI_CHAT_COMPLETION_CAP = 16384
+
+
+@pytest.mark.parametrize("task", list(REMOTE_INFERENCE_DEFAULTS.keys()))
+def test_remote_inference_max_tokens_within_openai_cap(task: str):
+    """Every remote task default max_tokens must stay <= the OpenAI
+    chat-completions completion cap, or cloud OCR/translate/summary tasks
+    400 out on gpt-4o-* models."""
+    max_tokens = get_remote_inference_config(task)["max_tokens"]
+    assert max_tokens <= _OPENAI_CHAT_COMPLETION_CAP, (
+        f"remote task {task!r} max_tokens={max_tokens} exceeds OpenAI "
+        f"chat-completions cap {_OPENAI_CHAT_COMPLETION_CAP} -> HTTP 400 "
+        f"'max_tokens is too large'"
+    )
+
+
 def test_remote_inference_config_unknown_task_uses_fallback():
     """Unknown task must not raise — returns safe default."""
     cfg = get_remote_inference_config("nonexistent_task_xyz")
