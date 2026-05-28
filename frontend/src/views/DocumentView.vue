@@ -13,6 +13,7 @@ import TextPreviewModal          from '@/components/common/TextPreviewModal.vue'
 import { useDocumentWorkspace } from '@/composables/useDocumentWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
+import { useViewHost } from '@/composables/useViewHost'
 
 const { t } = useI18n()
 
@@ -43,6 +44,12 @@ const subFunctions = computed(() => [
 ])
 
 const currentFunction = ref('split')
+
+useViewHost('document', {
+  currentFunction,
+  setCurrentFunction: (id) => { currentFunction.value = id },
+  validSubfunctions: () => ['split', 'pdf-convert', 'ocr', 'translate'],
+})
 
 const currentFileExt = computed(() => {
   const parts = currentFileName.value.split('.')
