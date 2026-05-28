@@ -213,7 +213,9 @@ function _createAgent(deps: UseAgentDeps = {}) {
                 }
               }
               // unreachable per filter above (tool_confirm filtered out)
-              return { id: m.id ?? crypto.randomUUID(), role: m.role as string, content: '' }
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const _m = m as any
+              return { id: _m.id ?? crypto.randomUUID(), role: String(_m.role), content: '' }
             }),
           tools: tools.getTools(getActivePanel()?.schema ?? null, getActiveView()),
           state: { agent_model_choice: settings.modelChoice },

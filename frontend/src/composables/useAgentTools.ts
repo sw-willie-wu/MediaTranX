@@ -579,7 +579,8 @@ export function dispatch(tc: ToolCall): Promise<ToolResult> {
   // Defense-in-depth: empty / whitespace `arguments` is treated as "{}"
   // (the SSE assembler already normalizes the wire path; this covers
   // direct callers / tests that bypass the assembler).
-  let args: unknown
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let args: any  // tool call args are runtime-validated by the ag-ui tool schema
   const raw = (tc.function.arguments ?? '').trim()
   if (!raw) {
     args = {}

@@ -105,7 +105,8 @@ export class AgUiSSEParser {
     if (dataLines.length === 0) return
 
     const payloadStr = dataLines.join('\n')
-    let payload: unknown
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let payload: any  // SSE payload schema is upstream-validated by the ag-ui backend
     try {
       payload = JSON.parse(payloadStr)
     } catch {
