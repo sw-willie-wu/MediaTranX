@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
+import type { SelectItem } from '@/components/common/AppSelect.vue'
 import { apiFetch } from '@/composables/useApi'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelStore } from '@/stores/models'
@@ -9,10 +10,12 @@ import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -207,6 +210,47 @@ function getParams() {
 
   return body
 }
+
+// ── Agent panel registration ─────────────────────────────────────────────
+
+const flattenOptions = (items: SelectItem[]) =>
+  items.flatMap((o: SelectItem) =>
+    'options' in o ? (o as unknown as { options: { value: string }[] }).options.map(x => x.value) : [o.value]
+  )
+
+const agentSchema = {
+  panelId: 'document.translate',
+  fields: [
+    { name: 'model',           type: 'enum' as const, options: () => flattenOptions(translateModelOptions.value) },
+    { name: 'source_language', type: 'enum' as const, options: () => languageOptions.value.map(l => l.value) },
+    { name: 'target_language', type: 'enum' as const, options: () => languageOptions.value.map(l => l.value) },
+    { name: 'translate_style', type: 'enum' as const, options: () => translateStyles.value.map(s => s.value) },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.doc_translate.execute' },
+}
+
+useAgentPanelHost('document.translate', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    model:           selectedTranslateModel.value,
+    source_language: sourceLanguage.value,
+    target_language: targetLanguage.value,
+    translate_style: translateStyle.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'model':           selectedTranslateModel.value = String(value); return selectedTranslateModel.value
+      case 'source_language': sourceLanguage.value         = String(value); return sourceLanguage.value
+      case 'target_language': targetLanguage.value         = String(value); return targetLanguage.value
+      case 'translate_style': translateStyle.value         = String(value); return translateStyle.value
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  execute: async () => { await execute(); return {} },
+})
 
 defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
