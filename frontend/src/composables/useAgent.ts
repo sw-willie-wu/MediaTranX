@@ -1,26 +1,28 @@
 /**
  * useAgent — central agent orchestrator composable.
  *
- * Drives the multi-round conversation loop:
- *   streamRun → assistant message → tool dispatch → tool results → next round
+ * Drives the multi-round conversation loop on top of @ag-ui/client HttpAgent:
+ *   agent.runAgent(round) → newMessages → sanitize → tool dispatch → next round
  *
  * Key design decisions:
- * - M16: transient buffer prevents orphan UI text on cancel. onTextChunk /
- *   onToolCallChunk write to the transient buffer (not directly to
- *   messages.value). The buffer is committed on clean streamRun return and
- *   discarded on cancel/error.
- * - m4: cancelRun() resolves all pending confirm cards with false so the
- *   runLoop can break.
- * - useActivePanel is Task 3.1/3.2. Until then, accept activePanelRef as
- *   injectable dep with a default of () => null.
- * - Singleton pattern: all callers (ChatBubble, SettingsAgent, etc.) share
- *   the same instance so cancelRun() and isRunning are always in sync.
- *   Tests call _resetAgent() in beforeEach for isolation.
+ * - M16: transient buffer prevents orphan UI text on cancel. The AgentSubscriber
+ *   callbacks write to the transient buffer (not directly to messages.value).
+ *   Committed (from sanitized newMessages) on clean return; discarded on cancel/error.
+ * - Cancel: cancelRun() → agent.abortRun(). The SDK surfaces abort as
+ *   onRunErrorEvent{code:'abort'} (NOT a thrown AbortError), so we detect it in
+ *   the subscriber and treat as a silent cancel (spec §2.7-1).
+ * - Error: backend RUN_ERROR causes runAgent to reject; onRunErrorEvent fires
+ *   BEFORE the reject, so we capture {code,message} and handle it after await,
+ *   surviving both resolve and reject (spec §4 unified post-await handling).
+ * - Singleton pattern: all callers share the same instance. _resetAgent() in tests.
  */
 
 import { ref, computed, getCurrentInstance } from 'vue'
-import { streamRun, type AssistantMessage } from '@/composables/useAgentSSE'
-import { useAgentStore, type TransientBuffer } from '@/stores/agent'
+import { HttpAgent } from '@ag-ui/client'
+import type { Message as AgUiMessage, RunAgentResult, AgentSubscriber } from '@ag-ui/client'
+import { getApiBase } from '@/composables/useApi'
+import { sanitizeAssistantMessage, pickAssistant, type SanitizedAssistant, type ToolCall } from '@/composables/agentSanitize'
+import { useAgentStore, type TransientBuffer, type TokenUsage } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
 import { useAgentTools } from '@/composables/useAgentTools'
 import { useActivePanel, type ActivePanelEntry } from '@/composables/useActivePanel'
@@ -28,22 +30,17 @@ import { useActiveView } from '@/composables/useActiveView'
 import type { PanelAgentSchema } from '@/stores/panelRegistry'
 import type { ViewHandle } from '@/stores/viewRegistry'
 
-// i18n.global.t is the standard pattern for non-setup contexts (see
-// useSubmitTask / useMediaCollection).  We resolve it lazily on first error
-// instead of importing `@/i18n` at module-load time so this composable stays
-// importable from node-env tests that don't need full i18n bootstrap (and so
-// we don't trigger `resolveLocale()` -> navigator.language at import time).
+// i18n.global.t lazy resolve (unchanged from original).
 let _t: ((k: string) => string) | null = null
 function translate(key: string): string {
   if (_t === null) {
     try {
-       
-      // @ts-expect-error — require() is available in Vitest (node) + Vite (cjs interop); not in browser lib types
+      // @ts-expect-error — require() available in Vitest (node) + Vite (cjs interop)
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const mod = require('@/i18n')
       _t = (mod.default ?? mod).global.t
     } catch {
-      _t = (k: string) => k   // fallback: identity
+      _t = (k: string) => k
     }
   }
   return _t!(key)
@@ -58,14 +55,19 @@ export type Message =
   | { id?: string; role: 'user'; content: string }
   | { id?: string; role: 'assistant'; content: string; toolCalls?: ToolCallEntry[] }
   | { id?: string; role: 'tool'; content: string; toolCallId: string }
-  | { id?: string; role: 'tool_confirm'; toolCall: ToolConfirmEntry; status: 'pending' }  // client-only (m13)
+  | { id?: string; role: 'tool_confirm'; toolCall: ToolConfirmEntry; status: 'pending' }
 
-// ─── Injectable deps interface ─────────────────────────────────────────────────
+/** Minimal slice of HttpAgent we depend on — lets tests inject a fake. */
+export interface AgentLike {
+  messages: AgUiMessage[]
+  state: Record<string, unknown>
+  runAgent(
+    params: { runId?: string; tools?: unknown[]; context?: unknown[]; forwardedProps?: Record<string, unknown> },
+    subscriber?: AgentSubscriber,
+  ): Promise<RunAgentResult>
+  abortRun(): void
+}
 
-/**
- * Minimal ToolsApi — Task 3.6 will provide the real implementation.
- * For Task 2.3 we define the interface here so tests can inject fakes.
- */
 export interface ToolsApi {
   TOOLS: Array<{ name: string; description: string; parameters: object }>
   getTools: (activePanelSchema?: PanelAgentSchema | null, activeViewHandle?: ViewHandle | null) => Array<{ name: string; description: string; parameters: object }>
@@ -73,33 +75,62 @@ export interface ToolsApi {
 }
 
 export interface UseAgentDeps {
-  /** Injectable for testing. Real impl is Task 3.6 useAgentTools. */
   tools?: ToolsApi
-  /** Override streamRun for tests. */
-  streamRunFn?: typeof streamRun
-  /** Override active panel resolution for tests. */
+  /** Override agent construction for tests. Real impl: (cfg) => new HttpAgent(cfg). */
+  agentFactory?: (cfg: { url: string; threadId?: string }) => AgentLike
   activePanelRef?: () => ActivePanelEntry | null
+}
+
+// ─── Map our Message[] → SDK AgUiMessage[] (per-round input vehicle) ────────────
+
+function mapMessagesToAgUi(msgs: Message[]): AgUiMessage[] {
+  return msgs
+    .filter((m) => m.role !== 'tool_confirm')
+    .map((m) => {
+      if (m.role === 'assistant') {
+        return {
+          id: m.id ?? crypto.randomUUID(),
+          role: 'assistant' as const,
+          content: m.content ?? '',
+          toolCalls: (m.toolCalls ?? []).map((tc) => ({
+            id: tc.id, type: 'function' as const, function: tc.function,
+          })),
+        }
+      }
+      if (m.role === 'tool') {
+        return { id: m.id ?? crypto.randomUUID(), role: 'tool' as const, toolCallId: m.toolCallId, content: m.content }
+      }
+      if (m.role === 'user') {
+        return { id: m.id ?? crypto.randomUUID(), role: 'user' as const, content: m.content }
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const _m = m as any
+      return { id: _m.id ?? crypto.randomUUID(), role: String(_m.role), content: '' }
+    }) as unknown as AgUiMessage[]
+}
+
+/**
+ * Launder a value into a plain, structured-cloneable object tree.
+ *
+ * HttpAgent.runAgent() runs structuredClone() on its inputs (messages / state /
+ * tools). Those inputs originate from Vue reactive stores (messages.value,
+ * panel-derived tool schemas), and a reactive Proxy is NOT structured-cloneable
+ * — the browser throws "could not be cloned". Our agent payloads are all
+ * JSON-safe (strings / numbers / arrays / plain objects), so a JSON round-trip
+ * is the simplest correct way to strip the reactive proxies at the SDK boundary.
+ */
+function toCloneable<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value))
 }
 
 // ─── Module-level singleton ────────────────────────────────────────────────────
 
 let _instance: ReturnType<typeof _createAgent> | null = null
 
-/**
- * Reset the singleton — for tests only.
- * Call in beforeEach to get a fresh instance per test.
- */
 export function _resetAgent(): void {
   _instance = null
 }
 
-// ─── Singleton accessor ────────────────────────────────────────────────────────
-
-/**
- * Returns the shared agent instance.
- * First caller may pass deps (e.g. in tests); subsequent callers get the
- * cached instance (deps ignored with a console.warn).
- */
 export function useAgent(deps: UseAgentDeps = {}): ReturnType<typeof _createAgent> {
   if (!_instance) {
     _instance = _createAgent(deps)
@@ -113,15 +144,10 @@ export function useAgent(deps: UseAgentDeps = {}): ReturnType<typeof _createAgen
 
 function _createAgent(deps: UseAgentDeps = {}) {
   const settings = useAgentSettingsStore()
-  const store    = useAgentStore()
-  const tools    = deps.tools ?? useAgentTools()
-  const runStream = deps.streamRunFn ?? streamRun
+  const store = useAgentStore()
+  const tools = deps.tools ?? useAgentTools()
+  const makeAgent = deps.agentFactory ?? ((cfg: { url: string; threadId?: string }) => new HttpAgent(cfg) as unknown as AgentLike)
 
-  // C1: useActivePanel() / useActiveView() call useRoute() which requires setup
-  // context. Production callers (ChatBubble/SettingsAgent) are all
-  // <script setup> — safe. Node-env tests (useAgent.test.ts) build factory
-  // outside setup — guard with getCurrentInstance() + try/catch so apComputed /
-  // avComputed stay null in tests, falling back to () => null behavior.
   let apComputed: ReturnType<typeof useActivePanel> | null = null
   let avComputed: ReturnType<typeof useActiveView> | null = null
   if (deps.activePanelRef === undefined && getCurrentInstance() !== null) {
@@ -135,7 +161,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
   const messages = ref<Message[]>([])
   const isRunning = computed(() => store.isRunning)
 
-  let abortCtl: AbortController | null = null
+  let agent: AgentLike | null = null
   let invalidFieldStrikes = 0
   let outerStop = false
 
@@ -151,110 +177,122 @@ function _createAgent(deps: UseAgentDeps = {}) {
   function clearHistory() {
     messages.value = []
     threadId.value = crypto.randomUUID()
+    agent = null              // recreate with fresh threadId next run
     store.resetTokens()
     invalidFieldStrikes = 0
     outerStop = false
   }
 
   function cancelRun() {
-    abortCtl?.abort()
-    store.resolveAllPendingConfirms(false)   // m4: reject all waiting confirm cards
-    outerStop = true   // spec §3.4: cancel → loop break, not just current SSE
+    agent?.abortRun()                         // SDK surfaces abort as onRunErrorEvent{code:'abort'}
+    store.resolveAllPendingConfirms(false)    // m4
+    outerStop = true                          // spec §3.4: cancel → loop break
   }
 
   // ─── Run loop ────────────────────────────────────────────────────
 
   async function runLoop() {
     while (!outerStop) {
-      abortCtl = new AbortController()
       store.start()
-
-      // M16: transient buffer for streamed text + tool_calls.
-      // onTextChunk / onToolCallChunk write here, NOT to messages.value.
-      // Commit on clean streamRun return; discard on cancel/error.
-      const transient: TransientBuffer = {
-        messageId: '',
-        text: '',
-        toolCallsBuf: new Map<string, { name: string; args: string }>(),
-      }
+      const transient: TransientBuffer = { messageId: '', text: '', toolCallsBuf: new Map() }
       store.setTransient(transient)
 
-      let assistantMsg: AssistantMessage | null = null
-      let unprocessedToolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = []
+      let cancelled = false
+      let runError: { code?: string; message?: string } | null = null
+      let capturedUsage: TokenUsage | undefined
+      let result: RunAgentResult | null = null
+      let caught: unknown = null
+      // Sanitized tool calls carry `type:'function'` (ToolCall) so they can be
+      // passed straight to tools.dispatch (which requires the full shape).
+      let unprocessedToolCalls: ToolCall[] = []
 
       try {
-        assistantMsg = await runStream({
-          threadId: threadId.value,
-          runId: crypto.randomUUID(),
-          messages: messages.value
-            .filter(m => m.role !== 'tool_confirm')
-            .map(m => {
-              if (m.role === 'assistant') {
-                return {
-                  id: m.id ?? crypto.randomUUID(),
-                  role: 'assistant' as const,
-                  content: m.content ?? '',
-                  toolCalls: m.toolCalls ?? [],
-                }
-              }
-              if (m.role === 'tool') {
-                return {
-                  id: m.id ?? crypto.randomUUID(),
-                  role: 'tool' as const,
-                  toolCallId: m.toolCallId,
-                  content: m.content,
-                }
-              }
-              if (m.role === 'user') {
-                return {
-                  id: m.id ?? crypto.randomUUID(),
-                  role: 'user' as const,
-                  content: m.content,
-                }
-              }
-              // unreachable per filter above (tool_confirm filtered out)
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const _m = m as any
-              return { id: _m.id ?? crypto.randomUUID(), role: String(_m.role), content: '' }
-            }),
-          tools: tools.getTools(getActivePanel()?.schema ?? null, getActiveView()),
-          state: { agent_model_choice: settings.modelChoice },
-          signal: abortCtl.signal,
-          onTextChunk: (e) => {
-            transient.messageId = e.messageId
-            transient.text += e.delta
-          },
-          onToolCallChunk: (e) => {
-            const slot = transient.toolCallsBuf.get(e.toolCallId) ?? { name: e.toolCallName, args: '' }
-            slot.args += e.delta
-            if (e.toolCallName) slot.name = e.toolCallName
-            transient.toolCallsBuf.set(e.toolCallId, slot)
-          },
-          onRunFinished: (e) => store.addUsage(e.usage),
-          onError: (e) => {
-            // RUN_ERROR from backend — record as assistant message and stop the loop.
-            // e.code is an i18n key (e.g. "agent.error.no_model"); fall back to the
-            // raw code when no translation exists so unknown codes still surface.
-            const translated = translate(e.code)
-            const friendly = translated === e.code ? e.code : translated
-            const suffix = e.message ? ` (${e.message})` : ''
-            messages.value.push({ role: 'assistant', content: `${friendly}${suffix}` })
-            outerStop = true
-          },
-        })
-
-        // M16: clean return → commit transient to messages (unless RUN_ERROR set outerStop)
-        if (!outerStop) {
-          messages.value.push(assistantMsg)
+        if (!agent) {
+          agent = makeAgent({ url: `${getApiBase()}/agent/run`, threadId: threadId.value })
         }
+        // toCloneable: HttpAgent structuredClones these inputs; strip Vue reactive proxies.
+        agent.messages = toCloneable(mapMessagesToAgUi(messages.value))
+        agent.state = { agent_model_choice: settings.modelChoice }
+
+        const subscriber: AgentSubscriber = {
+          onTextMessageContentEvent: ({ event }) => {
+            transient.messageId = event.messageId
+            transient.text += event.delta
+          },
+          onToolCallStartEvent: ({ event }) => {
+            transient.toolCallsBuf.set(event.toolCallId, { name: event.toolCallName, args: '' })
+          },
+          onToolCallArgsEvent: ({ event }) => {
+            const slot = transient.toolCallsBuf.get(event.toolCallId)
+            if (slot) slot.args += event.delta
+          },
+          onRunFinishedEvent: ({ event }) => {
+            // RunFinishedEvent schema is "passthrough"; usage rides as an extra.
+            capturedUsage = (event as { usage?: TokenUsage }).usage
+          },
+          onRunErrorEvent: ({ event }) => {
+            if (event.code === 'abort') cancelled = true
+            else runError = { code: event.code, message: event.message }
+          },
+        }
+
+        try {
+          result = await agent.runAgent(
+            {
+              runId: crypto.randomUUID(),
+              // toCloneable: defensive — getTools() output is normally plain, but
+              // launder at the SDK boundary so a future reactive-sourced field can't
+              // silently reintroduce the structuredClone crash (messages is the
+              // confirmed leak source; see toCloneable docblock).
+              tools: toCloneable(tools.getTools(getActivePanel()?.schema ?? null, getActiveView())),
+              context: [],
+              forwardedProps: {},
+            },
+            subscriber,
+          )
+        } catch (e) {
+          caught = e   // error/abort path: runAgent rejects; rely on captured state
+        }
+
+        // ── Unified post-await handling (survives resolve & reject) ──
+        if (cancelled) {                       // 4a: silent cancel
+          store.clearTransient()
+          outerStop = true
+          break
+        }
+        if (runError) {                        // 4b: backend RUN_ERROR
+          store.clearTransient()
+          // Cast needed: TS can't narrow a closure-mutated `let` across the
+          // await, collapsing it to `never` at this guard. Extract once.
+          const re = runError as { code?: string; message?: string }
+          const code = re.code ?? 'agent.error.internal'
+          const translated = translate(code)
+          const friendly = translated === code ? code : translated
+          const suffix = re.message ? ` (${re.message})` : ''
+          messages.value.push({ role: 'assistant', content: `${friendly}${suffix}` })
+          outerStop = true
+          break
+        }
+        if (caught && !result) {               // 4c: unexpected reject (no RUN_ERROR)
+          store.clearTransient()
+          console.error('[useAgent] runLoop error:', caught)
+          messages.value.push({
+            role: 'assistant',
+            content: `[agent.error.internal] ${String(caught instanceof Error ? caught.message : caught)}`,
+          })
+          break
+        }
+
+        // ── 4d: success ──
+        const assistant: SanitizedAssistant | null = sanitizeAssistantMessage(pickAssistant(result!.newMessages))
+        store.addUsage(capturedUsage)
         store.clearTransient()
-        unprocessedToolCalls = outerStop ? [] : [...(assistantMsg.toolCalls ?? [])]
+        if (assistant) messages.value.push(assistant)
 
-        if (outerStop) break  // RUN_ERROR set outerStop above
-
+        unprocessedToolCalls = assistant ? [...assistant.toolCalls] : []
         if (unprocessedToolCalls.length === 0) break
 
-        // ── Dispatch tool_calls ─────────────────────────────────────
+        // ── Dispatch tool_calls (logic unchanged from original) ──
         while (unprocessedToolCalls.length > 0 && !outerStop) {
           const tc = unprocessedToolCalls[0]
           const ap = getActivePanel()
@@ -262,34 +300,21 @@ function _createAgent(deps: UseAgentDeps = {}) {
           if (settings.shouldConfirm({ name: tc.function.name, arguments: undefined }, ap?.schema ?? undefined)) {
             const approved = await pushConfirmCard(tc)
             if (!approved) {
-              messages.value.push({
-                role: 'tool',
-                toolCallId: tc.id,
-                content: JSON.stringify({ user_cancelled: true }),
-              })
+              messages.value.push({ role: 'tool', toolCallId: tc.id, content: JSON.stringify({ user_cancelled: true }) })
               unprocessedToolCalls.shift()
               continue
             }
           }
 
-          const result = await tools.dispatch(tc)
-          messages.value.push({
-            role: 'tool',
-            toolCallId: tc.id,
-            content: JSON.stringify(result),
-          })
+          const dispatchResult = await tools.dispatch(tc)
+          messages.value.push({ role: 'tool', toolCallId: tc.id, content: JSON.stringify(dispatchResult) })
           unprocessedToolCalls.shift()
 
-          if (result.error === 'agent.error.invalid_field') {
+          if (dispatchResult.error === 'agent.error.invalid_field') {
             invalidFieldStrikes++
             if (invalidFieldStrikes >= 3) {
-              // M16-INCOMPLETE-fix: synth skipped results for all remaining tool calls
               for (const remaining of unprocessedToolCalls) {
-                messages.value.push({
-                  role: 'tool',
-                  toolCallId: remaining.id,
-                  content: JSON.stringify({ skipped: 'too_many_strikes' }),
-                })
+                messages.value.push({ role: 'tool', toolCallId: remaining.id, content: JSON.stringify({ skipped: 'too_many_strikes' }) })
               }
               unprocessedToolCalls = []
               outerStop = true
@@ -298,46 +323,27 @@ function _createAgent(deps: UseAgentDeps = {}) {
           }
         }
       } catch (e: unknown) {
-        // M16: two sub-cases depending on whether streamRun completed
-        if (assistantMsg) {
-          // streamRun returned cleanly; error came from tool dispatch
-          for (const tc of unprocessedToolCalls) {
-            messages.value.push({
-              role: 'tool',
-              toolCallId: tc.id,
-              content: JSON.stringify({ skipped: 'cancelled' }),
-            })
-          }
-        } else {
-          // streamRun threw mid-stream → discard transient (no assistant message added)
-          store.clearTransient()
+        // Reachable only from the tool-dispatch phase (runAgent errors captured
+        // into `caught` above). Mirror legacy: synth skipped for remaining tool calls.
+        for (const tc of unprocessedToolCalls) {
+          messages.value.push({ role: 'tool', toolCallId: tc.id, content: JSON.stringify({ skipped: 'cancelled' }) })
         }
-
-        if (e instanceof Error && e.name === 'AbortError') break
-
-        // Non-abort error: log and break
-        console.error('[useAgent] runLoop error:', e)
-        messages.value.push({
-          role: 'assistant',
-          content: `[agent.error.internal] ${String(e instanceof Error ? e.message : e)}`,
-        })
+        if (!(e instanceof Error && e.name === 'AbortError')) {
+          console.error('[useAgent] runLoop dispatch error:', e)
+          messages.value.push({
+            role: 'assistant',
+            content: `[agent.error.internal] ${String(e instanceof Error ? e.message : e)}`,
+          })
+        }
         break
       } finally {
-        store.stop()
-        abortCtl = null
+        store.stop()   // ★ N1: isRunning reset on every exit path
       }
     }
   }
 
-  // ─── ConfirmCard handling (m4 pendingConfirms) ────────────────────
+  // ─── ConfirmCard handling (m4 pendingConfirms) — unchanged ────────
 
-  /**
-   * Push a tool_confirm card to the message list and await user decision.
-   * When the user clicks the card, ConfirmCard.vue calls
-   * store.removePendingConfirm + resolves the promise.
-   * cancelRun() calls store.resolveAllPendingConfirms(false) which iterates
-   * the Set and resolves every waiting promise.
-   */
   async function pushConfirmCard(tc: { id: string; function: { name: string; arguments: string } }): Promise<boolean> {
     messages.value.push({ role: 'tool_confirm', toolCall: tc, status: 'pending' })
     return new Promise<boolean>((resolve) => {
@@ -345,12 +351,5 @@ function _createAgent(deps: UseAgentDeps = {}) {
     })
   }
 
-  return {
-    threadId,
-    messages,
-    isRunning,
-    sendUserText,
-    cancelRun,
-    clearHistory,
-  }
+  return { threadId, messages, isRunning, sendUserText, cancelRun, clearHistory }
 }

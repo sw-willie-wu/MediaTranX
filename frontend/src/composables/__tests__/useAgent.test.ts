@@ -1,17 +1,23 @@
 // @vitest-environment node
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
- * Tests for useAgent runLoop (Wave 2 Task 2.3)
+ * Tests for useAgent runLoop (Wave 2 Task 2.3) — migrated to @ag-ui/client seam.
+ *
+ * Each scenario injects a fake AgentLike via `agentFactory` (makeFakeAgent)
+ * instead of the old `streamRunFn`. Every behavioural assertion is preserved.
  *
  * Covers:
  *   1. no tool_calls → loop exits after one round
  *   2. 1 tool_call (auto policy) → dispatch + result + re-run + exit
  *   3. confirm-required tool → confirm card pushed; user approves → dispatch
  *   4. confirm-required tool → user cancels → user_cancelled tool result, no dispatch
- *   5. cancel mid-stream → AbortError → transient cleared, only user message
+ *   5. cancel mid-stream → silent cancel → transient cleared, only user message
  *   6. 3 invalid_field strikes → break + synth skipped for remaining
  *   7. cancelRun during confirm wait → resolveAllPendingConfirms(false) + loop breaks
  *   8. clearHistory resets messages + threadId + tokens
+ *   9. round-2 wire payload preserves assistant.toolCalls
+ *   10. RUN_ERROR produces exactly 1 assistant message
+ *   11. cancelRun during confirm → outerStop → no round 2
  */
 
 import { setActivePinia, createPinia } from 'pinia'
@@ -19,6 +25,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useAgent, _resetAgent } from '@/composables/useAgent'
 import { useAgentStore } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
+import { makeFakeAgent } from '@/composables/__tests__/_fakeAgent'
 
 // Minimal localStorage stub for node environment (agentSettings.ts calls it on init)
 const localStorageStore: Record<string, string> = {}
@@ -44,6 +51,17 @@ if (typeof (globalThis as any).navigator === 'undefined') {
   })
 }
 
+// Minimal window stub — getApiBase() (called by useAgent.runLoop when building
+// the agent URL) reads window.electron?.backendPort. In node env there is no
+// window; provide an empty one so getApiBase() falls back to the relative '/api'.
+if (typeof (globalThis as any).window === 'undefined') {
+  Object.defineProperty(globalThis, 'window', {
+    value: {},
+    writable: true,
+    configurable: true,
+  })
+}
+
 beforeEach(() => {
   localStorageStub.clear()
   setActivePinia(createPinia())
@@ -54,38 +72,19 @@ beforeEach(() => {
 
 describe('useAgent.runLoop', () => {
   it('no tool_calls → loop exits after one round', async () => {
-    const fakeStreamRun = vi.fn(async () => ({
-      id: 'm1',
-      role: 'assistant' as const,
-      content: 'hi',
-      toolCalls: [],
-    }))
-    const { sendUserText, messages } = useAgent({ streamRunFn: fakeStreamRun })
+    const fake = makeFakeAgent(() => ({ textDeltas: ['hi'] }))
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory })
     await sendUserText('hello')
-    expect(fakeStreamRun).toHaveBeenCalledTimes(1)
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(1)
     expect(messages.value.map(m => m.role)).toEqual(['user', 'assistant'])
   })
 
   // ─── Scenario 2 ────────────────────────────────────────────────────────────
 
   it('1 tool_call (auto policy) → dispatch + result + re-run + exit', async () => {
-    let round = 0
-    const fakeStreamRun = vi.fn(async () => {
-      round++
-      if (round === 1) {
-        return {
-          id: 'm1',
-          role: 'assistant' as const,
-          content: '',
-          toolCalls: [{
-            id: 'tc1',
-            type: 'function' as const,
-            function: { name: 'navigate_to', arguments: '{"route":"/video"}' },
-          }],
-        }
-      }
-      return { id: 'm2', role: 'assistant' as const, content: 'done', toolCalls: [] }
-    })
+    const fake = makeFakeAgent((round) => round === 0
+      ? { toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{"route":"/video"}' }] }
+      : { textDeltas: ['done'] })
     const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
     const fakeTools = {
       TOOLS: fakeToolsTOOLS,
@@ -93,9 +92,9 @@ describe('useAgent.runLoop', () => {
       dispatch: vi.fn(async () => ({ ok: true })),
     }
     // Default policy is 'auto'; 'navigate_to' is in autoWhitelist (not in alwaysAsk)
-    const { sendUserText, messages } = useAgent({ streamRunFn: fakeStreamRun, tools: fakeTools })
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
     await sendUserText('go to video')
-    expect(fakeStreamRun).toHaveBeenCalledTimes(2)
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
     expect(fakeTools.dispatch).toHaveBeenCalledOnce()
     expect(messages.value.map(m => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
   })
@@ -109,23 +108,9 @@ describe('useAgent.runLoop', () => {
     settings.setPolicy('ask_all')
 
     // Round-aware: round 1 returns tool_call, round 2 returns empty (exits loop)
-    let round = 0
-    const fakeStreamRun = vi.fn(async () => {
-      round++
-      if (round === 1) {
-        return {
-          id: 'm1',
-          role: 'assistant' as const,
-          content: '',
-          toolCalls: [{
-            id: 'tc1',
-            type: 'function' as const,
-            function: { name: 'navigate_to', arguments: '{"route":"/video"}' },
-          }],
-        }
-      }
-      return { id: 'm2', role: 'assistant' as const, content: 'done', toolCalls: [] }
-    })
+    const fake = makeFakeAgent((round) => round === 0
+      ? { toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{"route":"/video"}' }] }
+      : { textDeltas: ['done'] })
     const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
     const fakeTools = {
       TOOLS: fakeToolsTOOLS,
@@ -134,7 +119,7 @@ describe('useAgent.runLoop', () => {
     }
 
     const store = useAgentStore()
-    const { sendUserText, messages } = useAgent({ streamRunFn: fakeStreamRun, tools: fakeTools })
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
 
     // Drive approval: start run + concurrently poll for pending confirms and approve
     let approveCount = 0
@@ -158,7 +143,7 @@ describe('useAgent.runLoop', () => {
     expect(roles).toContain('tool')
     expect(fakeTools.dispatch).toHaveBeenCalledOnce()
     // Second stream call happens after tool result
-    expect(fakeStreamRun).toHaveBeenCalledTimes(2)
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
   })
 
   // ─── Scenario 4 ────────────────────────────────────────────────────────────
@@ -169,23 +154,9 @@ describe('useAgent.runLoop', () => {
     settings.setPolicy('ask_all')
 
     // Round-aware: round 1 returns tool_call requiring confirm, round 2 returns empty (exits loop)
-    let round = 0
-    const fakeStreamRun = vi.fn(async () => {
-      round++
-      if (round === 1) {
-        return {
-          id: 'm1',
-          role: 'assistant' as const,
-          content: '',
-          toolCalls: [{
-            id: 'tc1',
-            type: 'function' as const,
-            function: { name: 'navigate_to', arguments: '{}' },
-          }],
-        }
-      }
-      return { id: 'm2', role: 'assistant' as const, content: 'done', toolCalls: [] }
-    })
+    const fake = makeFakeAgent((round) => round === 0
+      ? { toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{}' }] }
+      : { textDeltas: ['done'] })
     const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
     const fakeTools = {
       TOOLS: fakeToolsTOOLS,
@@ -194,7 +165,7 @@ describe('useAgent.runLoop', () => {
     }
 
     const store = useAgentStore()
-    const { sendUserText, messages } = useAgent({ streamRunFn: fakeStreamRun, tools: fakeTools })
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
 
     // Drive rejection: poll for pending confirms and reject them
     const rejecter = async () => {
@@ -219,22 +190,18 @@ describe('useAgent.runLoop', () => {
 
   // ─── Scenario 5 ────────────────────────────────────────────────────────────
 
-  it('cancel mid-stream → AbortError → transient cleared, only user message remains', async () => {
+  it('cancel mid-stream → silent cancel → transient cleared, only user message remains', async () => {
     const store = useAgentStore()
 
-    const fakeStreamRun = vi.fn(async (opts: any) => {
-      // Simulate partial text arriving before abort
-      opts.onTextChunk?.({ messageId: 'm1', delta: 'partial...' })
-      const err: any = new Error('The user aborted a request.')
-      err.name = 'AbortError'
-      throw err
-    })
+    // Stream emits partial text, then blocks until abortRun() → code:'abort'
+    const fake = makeFakeAgent(() => ({ textDeltas: ['partial...'], blockUntilAbort: true }))
 
-    const { sendUserText, cancelRun, messages } = useAgent({ streamRunFn: fakeStreamRun })
+    const { sendUserText, cancelRun, messages } = useAgent({ agentFactory: fake.factory })
 
-    // Start the run then immediately cancel
+    // Start the run, let it begin + emit partial, then cancel
     const p = sendUserText('long question')
-    cancelRun()
+    await new Promise(r => setTimeout(r, 5))   // let runAgent start + emit partial
+    cancelRun()                                 // → abortRun() unblocks fake → code:'abort'
     await p
 
     // Transient was discarded — no assistant message should appear
@@ -246,15 +213,12 @@ describe('useAgent.runLoop', () => {
   // ─── Scenario 6 ────────────────────────────────────────────────────────────
 
   it('3 invalid_field strikes → break + synth skipped for remaining tool call', async () => {
-    const fakeStreamRun = vi.fn(async () => ({
-      id: 'm1',
-      role: 'assistant' as const,
-      content: '',
+    const fake = makeFakeAgent(() => ({
       toolCalls: [
-        { id: 'tc1', type: 'function' as const, function: { name: 'set_field', arguments: '{}' } },
-        { id: 'tc2', type: 'function' as const, function: { name: 'set_field', arguments: '{}' } },
-        { id: 'tc3', type: 'function' as const, function: { name: 'set_field', arguments: '{}' } },
-        { id: 'tc4', type: 'function' as const, function: { name: 'set_field', arguments: '{}' } },
+        { id: 'tc1', name: 'set_field', args: '{}' },
+        { id: 'tc2', name: 'set_field', args: '{}' },
+        { id: 'tc3', name: 'set_field', args: '{}' },
+        { id: 'tc4', name: 'set_field', args: '{}' },
       ],
     }))
     const fakeToolsTOOLS: { name: string; description: string; parameters: object }[] = []
@@ -263,7 +227,7 @@ describe('useAgent.runLoop', () => {
       getTools: () => fakeToolsTOOLS,
       dispatch: vi.fn(async () => ({ error: 'agent.error.invalid_field' })),
     }
-    const { sendUserText, messages } = useAgent({ streamRunFn: fakeStreamRun, tools: fakeTools })
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
     await sendUserText('break it')
 
     // 3 strikes hit on tc3 → outerStop; tc4 gets synthetic skipped result
@@ -278,29 +242,14 @@ describe('useAgent.runLoop', () => {
 
   it('cancelRun during confirm wait → resolveAllPendingConfirms(false) + loop breaks', async () => {
     // Use policy='ask_all' so shouldConfirm always returns true.
-    // cancelRun() aborts the current AbortController AND resolves pending confirms with false.
-    // For the loop to stop, fakeStreamRun must check the signal on re-entry.
+    // cancelRun() calls abortRun() AND resolves pending confirms with false +
+    // sets outerStop, so the loop stops without a round 2.
     const settings = useAgentSettingsStore()
     settings.setPolicy('ask_all')
 
-    let cancelled = false
-    const fakeStreamRun = vi.fn(async (opts: any) => {
-      // If cancelled flag is set (cancelRun was called), throw AbortError to stop the loop
-      if (cancelled || opts.signal?.aborted) {
-        const err: any = new Error('aborted'); err.name = 'AbortError'
-        throw err
-      }
-      return {
-        id: 'm1',
-        role: 'assistant' as const,
-        content: '',
-        toolCalls: [{
-          id: 'tc1',
-          type: 'function' as const,
-          function: { name: 'navigate_to', arguments: '{}' },
-        }],
-      }
-    })
+    const fake = makeFakeAgent(() => ({
+      toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{}' }],
+    }))
     const fakeToolsTOOLS: { name: string; description: string; parameters: object }[] = []
     const fakeTools = {
       TOOLS: fakeToolsTOOLS,
@@ -310,18 +259,17 @@ describe('useAgent.runLoop', () => {
 
     const store = useAgentStore()
     const { sendUserText, cancelRun, messages } = useAgent({
-      streamRunFn: fakeStreamRun,
+      agentFactory: fake.factory,
       tools: fakeTools,
     })
 
     // Drive cancelRun: poll for pending confirms and call cancelRun when one appears
-    // cancelRun() calls abortCtl.abort() + resolveAllPendingConfirms(false)
+    // cancelRun() calls abortRun() + resolveAllPendingConfirms(false) + outerStop
     const canceller = async () => {
       for (let i = 0; i < 20; i++) {
         await new Promise(r => setTimeout(r, 1))
         if (store.pendingConfirms.size > 0) {
-          cancelled = true
-          cancelRun()  // aborts + rejects all pending confirms
+          cancelRun()  // aborts + rejects all pending confirms + outerStop
           break
         }
       }
@@ -342,14 +290,9 @@ describe('useAgent.runLoop', () => {
 
   it('clearHistory resets messages + threadId + tokens', async () => {
     const store = useAgentStore()
-    const fakeStreamRun = vi.fn(async () => ({
-      id: 'm1',
-      role: 'assistant' as const,
-      content: 'hello',
-      toolCalls: [],
-    }))
+    const fake = makeFakeAgent(() => ({ textDeltas: ['hello'] }))
 
-    const { sendUserText, clearHistory, messages, threadId } = useAgent({ streamRunFn: fakeStreamRun })
+    const { sendUserText, clearHistory, messages, threadId } = useAgent({ agentFactory: fake.factory })
 
     // Populate some state
     await sendUserText('hello')
@@ -374,21 +317,23 @@ describe('useAgent.runLoop', () => {
     const store = useAgentStore()
     let capturedTransient: any = null
 
-    const fakeStreamRun = vi.fn(async (opts: any) => {
-      // Simulate onTextChunk firing
-      opts.onTextChunk?.({ messageId: 'm1', delta: 'hello' })
-      opts.onTextChunk?.({ messageId: 'm1', delta: ' world' })
-      // Capture transient state mid-stream
-      capturedTransient = store.transient ? { ...store.transient } : null
-      return {
-        id: 'm1',
-        role: 'assistant' as const,
-        content: 'hello world',
-        toolCalls: [],
+    // Fire two text deltas, then capture the transient state mid-stream by
+    // wrapping runAgent to read store.transient right after the deltas fired.
+    const fake = makeFakeAgent(() => ({ textDeltas: ['hello', ' world'] }))
+    const orig = fake.agent.runAgent.getMockImplementation()!
+    fake.agent.runAgent.mockImplementation(async (p: any, s: any) => {
+      // Wrap the subscriber so we can snapshot transient after deltas are applied.
+      const wrapped = {
+        ...s,
+        onTextMessageContentEvent: (arg: any) => {
+          s.onTextMessageContentEvent?.(arg)
+          capturedTransient = store.transient ? { ...store.transient } : null
+        },
       }
+      return orig(p, wrapped)
     })
 
-    const { sendUserText, messages } = useAgent({ streamRunFn: fakeStreamRun })
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory })
     await sendUserText('hi')
 
     // Mid-stream: transient should have been set
@@ -402,28 +347,9 @@ describe('useAgent.runLoop', () => {
   // ─── Scenario 9: toolCalls preserved in round-2 wire payload ────────────────
 
   it('round-2 wire payload preserves assistant.toolCalls (not dropped)', async () => {
-    let capturedRound2Messages: any[] | null = null
-    let round = 0
-    const fakeStreamRun = vi.fn(async (opts: any) => {
-      round++
-      if (round === 2) {
-        // Capture the messages array passed to round 2
-        capturedRound2Messages = opts.messages
-      }
-      if (round === 1) {
-        return {
-          id: 'm1',
-          role: 'assistant' as const,
-          content: '',
-          toolCalls: [{
-            id: 'tc1',
-            type: 'function' as const,
-            function: { name: 'navigate_to', arguments: '{"route":"/video"}' },
-          }],
-        }
-      }
-      return { id: 'm2', role: 'assistant' as const, content: 'done', toolCalls: [] }
-    })
+    const fake = makeFakeAgent((round) => round === 0
+      ? { toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{"route":"/video"}' }] }
+      : { textDeltas: ['done'] })
     const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
     const fakeTools = {
       TOOLS: fakeToolsTOOLS,
@@ -431,15 +357,16 @@ describe('useAgent.runLoop', () => {
       dispatch: vi.fn(async () => ({ ok: true })),
     }
 
-    const { sendUserText } = useAgent({ streamRunFn: fakeStreamRun, tools: fakeTools })
+    const { sendUserText } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
     await sendUserText('go to video')
 
     // Round 2 must have been called
-    expect(fakeStreamRun).toHaveBeenCalledTimes(2)
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
+    const capturedRound2Messages = fake.calls[1].messagesIn
     expect(capturedRound2Messages).not.toBeNull()
 
     // Find the assistant entry in the round-2 wire payload
-    const wireAssistant = capturedRound2Messages!.find((m: any) => m.role === 'assistant')
+    const wireAssistant = capturedRound2Messages.find((m: any) => m.role === 'assistant')
     expect(wireAssistant).toBeDefined()
     // toolCalls must NOT be dropped
     expect(Array.isArray(wireAssistant.toolCalls)).toBe(true)
@@ -450,14 +377,9 @@ describe('useAgent.runLoop', () => {
   // ─── Scenario 10: RUN_ERROR produces exactly 1 assistant message ─────────────
 
   it('RUN_ERROR does not duplicate assistant message', async () => {
-    const fakeStreamRun = vi.fn(async (opts: any) => {
-      // Fire the RUN_ERROR callback (as the SSE parser would)
-      opts.onError?.({ code: 'agent.error.no_model', message: 'no model configured' })
-      // Then return an empty/partial assembled assistant message (streamRun resolved normally)
-      return { id: 'm1', role: 'assistant' as const, content: '', toolCalls: [] }
-    })
+    const fake = makeFakeAgent(() => ({ error: { code: 'agent.error.no_model', message: 'no model configured' } }))
 
-    const { sendUserText, messages } = useAgent({ streamRunFn: fakeStreamRun })
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory })
     await sendUserText('hello')
 
     const assistantMessages = messages.value.filter(m => m.role === 'assistant')
@@ -474,19 +396,12 @@ describe('useAgent.runLoop', () => {
 
   // ─── Scenario 11: cancelRun during confirm → outerStop → no round 2 ──────────
 
-  it('cancelRun during confirm wait sets outerStop → loop exits, no round 2 streamRun', async () => {
+  it('cancelRun during confirm wait sets outerStop → loop exits, no round 2 runAgent', async () => {
     const settings = useAgentSettingsStore()
     settings.setPolicy('ask_all')
 
-    const fakeStreamRun = vi.fn(async () => ({
-      id: 'm1',
-      role: 'assistant' as const,
-      content: '',
-      toolCalls: [{
-        id: 'tc1',
-        type: 'function' as const,
-        function: { name: 'navigate_to', arguments: '{}' },
-      }],
+    const fake = makeFakeAgent(() => ({
+      toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{}' }],
     }))
     const fakeToolsTOOLS: { name: string; description: string; parameters: object }[] = []
     const fakeTools = {
@@ -497,7 +412,7 @@ describe('useAgent.runLoop', () => {
 
     const store = useAgentStore()
     const { sendUserText, cancelRun, messages } = useAgent({
-      streamRunFn: fakeStreamRun,
+      agentFactory: fake.factory,
       tools: fakeTools,
     })
 
@@ -514,8 +429,8 @@ describe('useAgent.runLoop', () => {
 
     await Promise.all([sendUserText('do the action'), canceller()])
 
-    // streamRun was called exactly ONCE — no round 2
-    expect(fakeStreamRun).toHaveBeenCalledTimes(1)
+    // runAgent was called exactly ONCE — no round 2
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(1)
     // dispatch was never called (confirm was rejected via cancelRun)
     expect(fakeTools.dispatch).not.toHaveBeenCalled()
     // user_cancelled tool result is present
@@ -527,13 +442,13 @@ describe('useAgent.runLoop', () => {
 
   // ─── Non-abort error ─────────────────────────────────────────────────────────
 
-  it('non-abort error from streamRun → internal error assistant message + loop breaks', async () => {
-    const fakeStreamRun = vi.fn(async () => {
-      throw new Error('network failure')
-    })
+  it('unexpected reject (no RUN_ERROR) → internal error assistant message + loop breaks', async () => {
+    const fake = makeFakeAgent(() => ({ newMessages: [] }))
+    // override runAgent to reject WITHOUT firing onRunErrorEvent (connection-layer failure)
+    fake.agent.runAgent.mockImplementationOnce(async () => { throw new Error('network failure') })
 
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { sendUserText, messages } = useAgent({ streamRunFn: fakeStreamRun })
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory })
     await sendUserText('query')
 
     expect(messages.value.map(m => m.role)).toEqual(['user', 'assistant'])

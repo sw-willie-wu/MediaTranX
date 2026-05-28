@@ -383,8 +383,9 @@ class TestRunErrors:
         )
         events = [e async for e in svc.run(inp)]
         assert any("RUN_ERROR" in e and "agent.error.no_model" in e for e in events)
-        # RUN_FINISHED still emitted (finally block)
-        assert "RUN_FINISHED" in events[-1]
+        # RUN_ERROR is terminal — no trailing RUN_FINISHED (AG-UI conformance)
+        assert "RUN_ERROR" in events[-1]
+        assert not any("RUN_FINISHED" in e for e in events)
 
     async def test_empty_messages_rejected(self):
         """input.messages=[] → RunErrorEvent(agent.error.internal, 'empty messages list')."""
@@ -401,7 +402,9 @@ class TestRunErrors:
             "RUN_ERROR" in e and "agent.error.internal" in e and "empty messages list" in e
             for e in events
         )
-        assert "RUN_FINISHED" in events[-1]
+        # RUN_ERROR is terminal — no trailing RUN_FINISHED (AG-UI conformance)
+        assert "RUN_ERROR" in events[-1]
+        assert not any("RUN_FINISHED" in e for e in events)
 
     async def test_not_implemented_emits_tools_not_supported(self):
         """NotImplementedError from session.stream → agent.error.tools_not_supported."""
@@ -428,7 +431,9 @@ class TestRunErrors:
             "RUN_ERROR" in e and "agent.error.tools_not_supported" in e
             for e in events
         )
-        assert "RUN_FINISHED" in events[-1]
+        # RUN_ERROR is terminal — no trailing RUN_FINISHED (AG-UI conformance)
+        assert "RUN_ERROR" in events[-1]
+        assert not any("RUN_FINISHED" in e for e in events)
 
     async def test_unknown_exception_emits_internal_error(self):
         """If session.stream raises an unexpected exception, RUN_ERROR with internal."""

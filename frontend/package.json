@@ -17,6 +17,7 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "@ag-ui/client": "^0.0.53",
     "bootstrap": "^5.3.5",
     "bootstrap-icons": "^1.11.3",
     "bootstrap5": "^1.1.9",
