@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 
 from app.init.container import AppContainer
@@ -114,3 +114,17 @@ async def list_remote_models(
     into the URL → uvicorn access logs in plaintext.
     """
     return {"models": service.list_remote_models_by_conn(conn_id)}
+
+
+@router.post("/remote/connections/{conn_id}/key")
+@inject
+async def reveal_connection_key(
+    conn_id: int,
+    response: Response,
+    service: RemoteService = Depends(Provide[AppContainer.remote_service]),
+):
+    """Reveal the full plaintext key for ONE connection (user-initiated,
+    loopback). Secret is in the response body (not URL) -> not access-logged.
+    POST + no-store so intermediaries/history don't cache the secret."""
+    response.headers["Cache-Control"] = "no-store"
+    return {"api_key": service.reveal_key(conn_id)}
