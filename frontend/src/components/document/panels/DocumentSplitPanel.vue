@@ -2,10 +2,12 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -38,6 +40,31 @@ function getParams() {
   }
   return body
 }
+
+// ── Agent panel registration ─────────────────────────────────────────────
+
+const agentSchema = {
+  panelId: 'document.split',
+  fields: [
+    { name: 'pages', type: 'string' as const },
+  ],
+  actions: [],
+  execute: { requiresConfirm: false, label: 'panel.doc_split.execute' },
+}
+
+useAgentPanelHost('document.split', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({ pages: pages.value }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'pages': pages.value = String(value); return pages.value
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  execute: async () => { await execute(); return {} },
+})
 
 defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>
