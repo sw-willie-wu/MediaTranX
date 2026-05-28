@@ -115,7 +115,7 @@ const hasFile = computed(() =>
 // Sync titlebar filename — filmstrip mode uses prop, single-file uses internal state
 watch(
   () => props.activeFileName ?? currentFile.value?.name ?? '',
-  (name) => { name ? setFileName(name) : clearFileName() },
+  (name) => { if (name) { setFileName(name) } else { clearFileName() } },
   { immediate: true },
 )
 
@@ -147,15 +147,6 @@ function setFile(file: File, sourceDir?: string) {
   previewUrl.value = URL.createObjectURL(file)
   setFileName(file.name)
   emit('file', file, sourceDir)
-}
-
-function removeFile() {
-  log.info('removeFile')
-  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
-  currentFile.value = null
-  previewUrl.value = null
-  clearFileName()
-  emit('remove-file')
 }
 
 function handleUploadFile(file: File, sourceDir?: string) {

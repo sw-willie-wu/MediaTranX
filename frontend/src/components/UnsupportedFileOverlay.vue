@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { getToolLabel, type ToolType } from '@/utils/mediaType'
 
-const props = defineProps<{
+defineProps<{
   visible: boolean
   target: ToolType | null
 }>()

@@ -37,7 +37,7 @@ const isLoading  = computed(() => isProcessing.value)
 
 async function execute() {
   if (!props.fileId) return
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     file_id: props.fileId,
     output_format: outputFormat.value,
   }
@@ -46,7 +46,7 @@ async function execute() {
 }
 
 function getParams() {
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     output_format: outputFormat.value,
   }
   return body

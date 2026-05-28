@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useTheme, type ThemeMode } from '@/composables/useTheme'
 import { useResizableLayout } from '@/composables/useResizableLayout'
 import { apiFetch } from '@/composables/useApi'
-import { LOCALE_OPTIONS, resolveLocale, saveLocalePreference, getSavedPreference, type SupportedLocale } from '@/i18n'
+import { LOCALE_OPTIONS, saveLocalePreference, getSavedPreference, type SupportedLocale } from '@/i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
@@ -44,7 +44,7 @@ watch(() => settings.value.theme, (newTheme) => {
 })
 
 watch(() => settings.value.language, (val) => {
-  saveLocalePreference(val as any)
+  saveLocalePreference(val as SupportedLocale)
   locale.value = val
 })
 
@@ -99,7 +99,7 @@ async function selectTempDir() {
 }
 
 function restartApp() {
-  ;(window as any).electron?.restart()
+  window.electron?.restart()
 }
 
 // ── 暫存狀態 ──────────────────────────────────────────────────

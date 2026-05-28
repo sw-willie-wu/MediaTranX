@@ -18,16 +18,15 @@ import { useViewHost } from '@/composables/useViewHost'
 const { t } = useI18n()
 
 const {
-  hasFile, fileId, activeFileId, isUploading, currentFileName, hasResult,
+  hasFile, fileId, isUploading, currentFileName, hasResult,
   textResultContent, textResultFilename,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, handleDownloadBatch, handleTextDownload,
-  sourceDir,
 } = useDocumentWorkspace()
 
 const selectedIds = computed(() => collection.selectedIds.value)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
-const { isSubmitting, submitToAll } = useMultiSubmit(collection)
+const { submitToAll } = useMultiSubmit(collection)
 
 // Panel refs
 const translatePanelRef  = ref<InstanceType<typeof DocumentTranslatePanel>  | null>(null)
@@ -166,7 +165,7 @@ function registerTitlebar() {
 const _activeTick = ref(0)
 
 watchEffect(() => {
-  _activeTick.value
+  void _activeTick.value  // reactive dependency — forces re-run on increment
   const actions: TitlebarExtraAction[] = []
   if (currentFunction.value === 'ocr') {
     actions.push({

@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
 
-const { t } = useI18n()
 const log = createLogger('ComparisonSlider')
 
 const props = defineProps<{

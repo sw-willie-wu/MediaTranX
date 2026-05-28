@@ -24,7 +24,7 @@ export interface AgUiMessage {
   id: string
   role: string
   content: string
-  toolCalls?: any[]
+  toolCalls?: { id: string; function: { name: string; arguments: string } }[]
   toolCallId?: string
 }
 
@@ -33,7 +33,7 @@ export interface StreamRunOpts {
   runId: string
   messages: AgUiMessage[]
   tools: AgUiTool[]
-  state: Record<string, any>
+  state: Record<string, unknown>
   signal?: AbortSignal
   // Stream-time callbacks
   onTextChunk?: (e: { messageId: string; delta: string }) => void
@@ -105,7 +105,7 @@ export class AgUiSSEParser {
     if (dataLines.length === 0) return
 
     const payloadStr = dataLines.join('\n')
-    let payload: any
+    let payload: unknown
     try {
       payload = JSON.parse(payloadStr)
     } catch {

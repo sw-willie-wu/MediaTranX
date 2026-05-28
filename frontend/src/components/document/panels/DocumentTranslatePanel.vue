@@ -157,7 +157,7 @@ async function execute() {
   const isModelReady = parsed.isRemote || localTranslateModelOptions.value.find(m => m.value === selectedTranslateModel.value)?.badge === 'ok'
   if (!await guardModelReady(isModelReady === true, 'llm')) return
   if (!props.fileId || !selectedTranslateModel.value) return
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     file_id: props.fileId,
     source_language: sourceLanguage.value,
     target_language: targetLanguage.value,
@@ -187,7 +187,7 @@ onMounted(() => { loadTranslateModels(); loadLanguages(); loadTranslateStyles();
 
 function getParams() {
   const parsed = parseModelValue(selectedTranslateModel.value)
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     source_language: sourceLanguage.value,
     target_language: targetLanguage.value,
     translate_style: translateStyle.value,

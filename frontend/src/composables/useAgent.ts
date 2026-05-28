@@ -38,7 +38,8 @@ function translate(key: string): string {
   if (_t === null) {
     try {
        
-      // @ts-ignore — require() is available in Vitest (node) + Vite (cjs interop); not in browser lib types
+      // @ts-expect-error — require() is available in Vitest (node) + Vite (cjs interop); not in browser lib types
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const mod = require('@/i18n')
       _t = (mod.default ?? mod).global.t
     } catch {
@@ -50,11 +51,14 @@ function translate(key: string): string {
 
 // ─── Public types ──────────────────────────────────────────────────────────────
 
+export type ToolCallEntry = { id: string; function: { name: string; arguments: string } }
+export type ToolConfirmEntry = { id: string; function: { name: string; arguments: string }; status?: string }
+
 export type Message =
   | { id?: string; role: 'user'; content: string }
-  | { id?: string; role: 'assistant'; content: string; toolCalls?: any[] }
+  | { id?: string; role: 'assistant'; content: string; toolCalls?: ToolCallEntry[] }
   | { id?: string; role: 'tool'; content: string; toolCallId: string }
-  | { id?: string; role: 'tool_confirm'; toolCall: any; status: 'pending' }  // client-only (m13)
+  | { id?: string; role: 'tool_confirm'; toolCall: ToolConfirmEntry; status: 'pending' }  // client-only (m13)
 
 // ─── Injectable deps interface ─────────────────────────────────────────────────
 
@@ -65,7 +69,7 @@ export type Message =
 export interface ToolsApi {
   TOOLS: Array<{ name: string; description: string; parameters: object }>
   getTools: (activePanelSchema?: PanelAgentSchema | null, activeViewHandle?: ViewHandle | null) => Array<{ name: string; description: string; parameters: object }>
-  dispatch(toolCall: { id: string; function: { name: string; arguments: string } }): Promise<{ ok?: boolean; error?: string; [k: string]: any }>
+  dispatch(toolCall: { id: string; function: { name: string; arguments: string } }): Promise<{ ok?: boolean; error?: string; [k: string]: unknown }>
 }
 
 export interface UseAgentDeps {
@@ -189,27 +193,27 @@ function _createAgent(deps: UseAgentDeps = {}) {
                 return {
                   id: m.id ?? crypto.randomUUID(),
                   role: 'assistant' as const,
-                  content: (m as any).content ?? '',
-                  toolCalls: (m as any).toolCalls ?? [],
+                  content: m.content ?? '',
+                  toolCalls: m.toolCalls ?? [],
                 }
               }
               if (m.role === 'tool') {
                 return {
                   id: m.id ?? crypto.randomUUID(),
                   role: 'tool' as const,
-                  toolCallId: (m as any).toolCallId,
-                  content: (m as any).content,
+                  toolCallId: m.toolCallId,
+                  content: m.content,
                 }
               }
               if (m.role === 'user') {
                 return {
                   id: m.id ?? crypto.randomUUID(),
                   role: 'user' as const,
-                  content: (m as any).content,
+                  content: m.content,
                 }
               }
               // unreachable per filter above (tool_confirm filtered out)
-              return { id: (m as any).id ?? crypto.randomUUID(), role: (m as any).role as string, content: '' }
+              return { id: m.id ?? crypto.randomUUID(), role: m.role as string, content: '' }
             }),
           tools: tools.getTools(getActivePanel()?.schema ?? null, getActiveView()),
           state: { agent_model_choice: settings.modelChoice },
@@ -253,7 +257,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
           const tc = unprocessedToolCalls[0]
           const ap = getActivePanel()
 
-          if (settings.shouldConfirm(tc as any, ap?.schema ?? undefined)) {
+          if (settings.shouldConfirm({ name: tc.function.name, arguments: undefined }, ap?.schema ?? undefined)) {
             const approved = await pushConfirmCard(tc)
             if (!approved) {
               messages.value.push({
@@ -291,7 +295,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
             }
           }
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         // M16: two sub-cases depending on whether streamRun completed
         if (assistantMsg) {
           // streamRun returned cleanly; error came from tool dispatch
@@ -307,13 +311,13 @@ function _createAgent(deps: UseAgentDeps = {}) {
           store.clearTransient()
         }
 
-        if (e?.name === 'AbortError') break
+        if (e instanceof Error && e.name === 'AbortError') break
 
         // Non-abort error: log and break
         console.error('[useAgent] runLoop error:', e)
         messages.value.push({
           role: 'assistant',
-          content: `[agent.error.internal] ${String(e?.message ?? e)}`,
+          content: `[agent.error.internal] ${String(e instanceof Error ? e.message : e)}`,
         })
         break
       } finally {

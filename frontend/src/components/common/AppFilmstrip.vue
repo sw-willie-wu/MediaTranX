@@ -91,22 +91,12 @@ const scrollEl = ref<HTMLElement | null>(null)
 const canScrollLeft = ref(false)
 const canScrollRight = ref(false)
 
-const SCROLL_STEP = 200
-
 // --- Scroll state ---
 function updateScrollState() {
   const el = scrollEl.value
   if (!el) return
   canScrollLeft.value = el.scrollLeft > 0
   canScrollRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 1
-}
-
-function scrollLeft() {
-  scrollEl.value?.scrollBy({ left: -SCROLL_STEP, behavior: 'smooth' })
-}
-
-function scrollRight() {
-  scrollEl.value?.scrollBy({ left: SCROLL_STEP, behavior: 'smooth' })
 }
 
 function onWheel(e: WheelEvent) {

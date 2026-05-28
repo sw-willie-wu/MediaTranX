@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ToolCallCard from './ToolCallCard.vue'
 
-const props = defineProps<{
+defineProps<{
   content: string
   toolCalls: Array<{ id: string; function: { name: string; arguments: string } }>
   isRunning: boolean

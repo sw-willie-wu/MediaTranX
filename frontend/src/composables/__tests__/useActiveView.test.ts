@@ -153,6 +153,7 @@ describe('useActiveView', () => {
       template: '<div></div>',
     })
     const wrapper = mount(Comp, { global: { plugins: [router] } })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vm = wrapper.vm as any
 
     expect(vm.activeView).toBe(imageHandle)

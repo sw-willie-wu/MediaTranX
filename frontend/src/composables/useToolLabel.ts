@@ -16,6 +16,7 @@ export function useToolLabel() {
     const raw = labels?.[toolId]
     if (raw == null) return toolId
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return rt(raw as any)
     } catch {
       return String(raw)

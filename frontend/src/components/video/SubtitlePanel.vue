@@ -8,12 +8,11 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
 import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
-import { apiFetch, getApiBase } from '@/composables/useApi'
+import { apiFetch } from '@/composables/useApi'
 import { parseModelValue } from '@/composables/useModelOptions'
 import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import { useSettingsStore } from '@/stores/settings'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const { t } = useI18n()
@@ -42,7 +41,6 @@ const taskStore = useTaskStore()
 const toast = useToast()
 const modelStore = useModelStore()
 const { guardModelReady } = useModelGuard()
-const settingsStore = useSettingsStore()
 
 const isLoading = ref(false)
 const error = ref<string | null>(null)
@@ -133,7 +131,7 @@ async function submitGenerate() {
   error.value = null
 
   try {
-    const body: Record<string, any> = {
+    const body: Record<string, unknown> = {
       file_id: props.fileId,
       model_size: modelSize.value,
       output_format: outputFormat.value,

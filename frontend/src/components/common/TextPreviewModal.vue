@@ -32,6 +32,7 @@ import { computed } from 'vue'
 
 <template>
   <Teleport to="body">
+    <!-- entry/exit animation handled by parent v-if mount/unmount -->
     <Transition name="modal-fade">
       <div class="modal-overlay" @click.self="emit('close')">
         <div class="modal-panel">

@@ -178,10 +178,11 @@ export function useVideoWorkspace() {
       log.info('handleFile uploaded', { fileName: file.name, fileId: uploadedFileId })
       collection.updateEntry(entryId, { fileId: uploadedFileId, status: 'idle' })
       await loadMediaInfo()
-    } catch (e: any) {
-      log.error('handleFile upload failed', { fileName: file.name, error: e.message })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      log.error('handleFile upload failed', { fileName: file.name, error: msg })
       collection.updateEntry(entryId, { status: 'idle' })
-      toast.show(e.message || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
+      toast.show(msg || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
     }
   }
 
@@ -213,7 +214,7 @@ export function useVideoWorkspace() {
     }
   }
 
-  function handleDownload(outputFormat?: string, suffix = '_output') {
+  function handleDownload(outputFormat?: string, _suffix = '_output') {
     // Binary result download (from history stack)
     const latest = historyStack.value.at(-1)
     if (latest) {

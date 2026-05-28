@@ -20,7 +20,7 @@ import { useViewHost } from '@/composables/useViewHost'
 const { t } = useI18n()
 
 const {
-  hasFile, fileId, activeFileId, activePreviewUrl, isUploading, sourceDir, currentFileName, mediaInfo, hasResult,
+  hasFile, activeFileId, activePreviewUrl, isUploading, currentFileName, mediaInfo, hasResult,
   canGoBack, canGoForward,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload,
@@ -30,7 +30,7 @@ const {
 
 const selectedIds = computed(() => collection.selectedIds.value)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
-const { isSubmitting, submitToAll } = useMultiSubmit(collection)
+const { submitToAll } = useMultiSubmit(collection)
 
 // Cut time points (shared between VideoPreview and VideoCutPanel)
 const cutStartTime = ref('00:00:00')
@@ -135,7 +135,6 @@ function handleMultiExecute() {
 
 function onDownload() {
   const fmt = transcodePanelRef.value?.outputFormat ?? 'mp4'
-  const isAudio = transcodePanelRef.value?.isAudioFormat ?? false
   const suffix = currentFunction.value === 'cut' ? '_cut' : '_transcoded'
   handleDownload(fmt, suffix)
 }

@@ -115,7 +115,7 @@ async function execute() {
   if (!props.fileId) return
   const parsed = parseModelValue(selectedModel.value)
 
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     file_id: props.fileId,
     format: outputFormat.value,
   }
@@ -137,7 +137,7 @@ async function execute() {
 
 function getParams() {
   const parsed = parseModelValue(selectedModel.value)
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     format: outputFormat.value,
   }
 

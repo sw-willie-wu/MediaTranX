@@ -35,7 +35,6 @@ function onBubblePointerDown(e: PointerEvent) {
  * was removed — the bubble is the only toggle.
  */
 const EXPANDED_TOP_PX = BUBBLE_MARGIN_PX
-const PANEL_WIDTH = 380
 const PANEL_GAP_PX = 12
 
 const bubbleStyleFinal = computed<Record<string, string>>(() => {

@@ -10,7 +10,6 @@ import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { apiFetch } from '@/composables/useApi'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import { useSettingsStore } from '@/stores/settings'
 
 const props = defineProps<{
   fileId: string | null
@@ -26,7 +25,6 @@ const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
 const { guardModelReady } = useModelGuard()
-const settingsStore = useSettingsStore()
 
 // ── Whisper model status ────────────────────────────────────────
 const modelSizes = computed(() =>
