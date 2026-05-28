@@ -103,7 +103,7 @@ export interface BubbleDragApi {
    * depending on the snapped side. While dragging, uses absolute
    * `top` + `left` from the cursor.
    */
-  bubbleStyle: ComputedRef<Record<string, string>>
+  bubbleStyle: ComputedRef<Record<string, string | undefined>>
   /**
    * Attach to the bubble button's pointerdown. Starts tracking and, on
    * pointerup, either snaps + persists (if dragged) or invokes
@@ -139,7 +139,7 @@ export function useBubbleDrag(): BubbleDragApi {
   let bubbleStartTop = 0   // bubble's top edge at pointerdown
   let pendingClickFallback: (() => void) | null = null
 
-  const bubbleStyle = computed<Record<string, string>>(() => {
+  const bubbleStyle = computed(() => {
     if (isDragging.value) {
       return {
         left: `${dragX.value}px`,

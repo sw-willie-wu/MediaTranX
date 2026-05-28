@@ -37,7 +37,7 @@ function onBubblePointerDown(e: PointerEvent) {
 const EXPANDED_TOP_PX = BUBBLE_MARGIN_PX
 const PANEL_GAP_PX = 12
 
-const bubbleStyleFinal = computed<Record<string, string>>(() => {
+const bubbleStyleFinal = computed<Record<string, string | undefined>>(() => {
   const base = bubbleStyle.value
   if (expanded.value && !isDragging.value) {
     return { ...base, top: `${EXPANDED_TOP_PX}px` }
