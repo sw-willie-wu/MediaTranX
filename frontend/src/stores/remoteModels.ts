@@ -27,6 +27,8 @@ export interface RemoteConnection {
   /** Whether a key is stored server-side. The plaintext key is never sent to
    *  the client (it stays in the backend and is resolved by conn_id). */
   has_api_key?: boolean
+  /** Last-4 masked hint like "…AbCd", "⚠ undecryptable", or null. */
+  key_hint?: string | null
   enabled: boolean
 }
 
@@ -197,6 +199,16 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
     return updateConnection(id, { enabled })
   }
 
+  /** Fetch the plaintext API key for a connection on demand.
+   *  Returns the key string, or null on any error / undecryptable.
+   *  The result is intentionally NOT stored in reactive state. */
+  async function revealKey(id: number): Promise<string | null> {
+    const res = await apiFetch(`/setup/remote/connections/${id}/key`, { method: 'POST' })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.api_key ?? null
+  }
+
   return {
     // state
     connections, connModels, connLoading,
@@ -212,5 +224,7 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
     fetchAll,
     // connection CRUD (single source of truth)
     addConnection, deleteConnection, updateConnection, toggleConnection,
+    // on-demand key reveal (plaintext, transient, not persisted)
+    revealKey,
   }
 })
