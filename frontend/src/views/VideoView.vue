@@ -289,6 +289,7 @@ onUnmounted(() => { clearActions() })
           v-model:start-time="cutStartTime"
           v-model:end-time="cutEndTime"
           v-model:stream-copy="cutStreamCopy"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -321,6 +322,7 @@ onUnmounted(() => { clearActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :media-info="mediaInfo"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -329,6 +331,7 @@ onUnmounted(() => { clearActions() })
           ref="summaryPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -338,6 +341,7 @@ onUnmounted(() => { clearActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :media-info="mediaInfo"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
       </div>
