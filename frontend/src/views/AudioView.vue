@@ -746,6 +746,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="transcodePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -764,6 +765,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="volumePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
           @update:gain-preview="g => volumeGainPreview = g"
         />
@@ -782,6 +784,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="separatePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
           @jump-to-midi="handleJumpToMidi"
         />
