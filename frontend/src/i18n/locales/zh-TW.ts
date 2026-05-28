@@ -1094,6 +1094,7 @@ export default {
       category_llm: '大語言模型',
       download_success: '{id} 下載完成',
       download_failed: '{id} 下載失敗：{error}',
+      remote_key_keep: '留空＝保留現有金鑰',
       display_title: '顯示設定',
       show_all_models: '在工具面板顯示未下載的模型',
       show_all_models_hint: '關閉後，工具面板的模型選單只會顯示已下載的模型。',

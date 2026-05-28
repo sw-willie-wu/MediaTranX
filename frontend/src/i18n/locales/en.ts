@@ -1094,6 +1094,7 @@ export default {
       category_llm: 'Large Language Models',
       download_success: '{id} download complete',
       download_failed: '{id} download failed: {error}',
+      remote_key_keep: 'Leave blank to keep the current key',
       display_title: 'Display',
       show_all_models: 'Show undownloaded models in tool panels',
       show_all_models_hint: 'When disabled, tool panel dropdowns only show downloaded models.',

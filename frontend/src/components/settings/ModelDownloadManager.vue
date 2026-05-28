@@ -81,7 +81,9 @@ async function deleteConnection(id: number) {
 
 function startEdit(conn: RemoteConnection) {
   editingConnId.value = conn.id
-  editConn.value = { name: conn.name, endpoint: conn.endpoint, api_key: conn.api_key || '' }
+  // api_key is write-only: never prefilled (the server no longer returns it).
+  // Empty field on save = keep the stored key.
+  editConn.value = { name: conn.name, endpoint: conn.endpoint, api_key: '' }
 }
 
 function cancelEdit() {
@@ -89,7 +91,14 @@ function cancelEdit() {
 }
 
 async function saveEdit(id: number) {
-  const ok = await remoteModelStore.updateConnection(id, editConn.value)
+  const payload: { name: string; endpoint: string; api_key?: string } = {
+    name: editConn.value.name,
+    endpoint: editConn.value.endpoint,
+  }
+  // Only send api_key when the user typed a new one — an empty field means
+  // "keep the existing key" (omitting it lets the backend preserve it).
+  if (editConn.value.api_key) payload.api_key = editConn.value.api_key
+  const ok = await remoteModelStore.updateConnection(id, payload)
   if (ok) editingConnId.value = null
 }
 
@@ -297,7 +306,7 @@ onMounted(() => {
           <div class="form-group">
             <label>API Key</label>
             <div class="input-with-eye">
-              <input class="form-input" v-model="editConn.api_key" :type="showEditKey ? 'text' : 'password'" />
+              <input class="form-input" v-model="editConn.api_key" :type="showEditKey ? 'text' : 'password'" :placeholder="conn.has_api_key ? $t('settings.models.remote_key_keep') : 'sk-...'" />
               <button class="eye-btn" @mousedown="showEditKey = true" @mouseup="showEditKey = false" @mouseleave="showEditKey = false">
                 <i :class="showEditKey ? 'bi bi-eye' : 'bi bi-eye-slash'"></i>
               </button>

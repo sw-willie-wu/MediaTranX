@@ -24,7 +24,9 @@ export interface RemoteConnection {
   provider: string
   name: string
   endpoint: string
-  api_key?: string
+  /** Whether a key is stored server-side. The plaintext key is never sent to
+   *  the client (it stays in the backend and is resolved by conn_id). */
+  has_api_key?: boolean
   enabled: boolean
 }
 
@@ -82,12 +84,12 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
     localStorage.setItem(ENABLED_MODELS_KEY, JSON.stringify([...next]))
   }
 
-  async function fetchConnModels(conn: { id: number; provider: string; endpoint: string; api_key?: string }) {
+  async function fetchConnModels(conn: { id: number }) {
     connLoading.value[conn.id] = true
     try {
-      const res = await apiFetch(
-        `/setup/remote/models?provider=${conn.provider}&endpoint=${encodeURIComponent(conn.endpoint)}${conn.api_key ? `&api_key=${encodeURIComponent(conn.api_key)}` : ''}`
-      )
+      // conn_id only — the backend resolves the api_key server-side. Passing
+      // the key as a query param leaked it into uvicorn access logs.
+      const res = await apiFetch(`/setup/remote/models?conn_id=${conn.id}`)
       if (res.ok) {
         const data = await res.json()
         const models = (data.models as RemoteModelInfo[]).sort((a, b) => a.name.localeCompare(b.name))
@@ -171,7 +173,9 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
 
   async function updateConnection(
     id: number,
-    payload: Partial<Pick<RemoteConnection, 'name' | 'endpoint' | 'api_key' | 'enabled'>>,
+    // api_key is a write-only field: send a new key to change it, or omit it
+    // (null/undefined) to keep the stored one. It is never read back.
+    payload: { name?: string; endpoint?: string; api_key?: string | null; enabled?: boolean },
   ): Promise<boolean> {
     const res = await apiFetch(`/setup/remote/connections/${id}`, {
       method: 'PUT',

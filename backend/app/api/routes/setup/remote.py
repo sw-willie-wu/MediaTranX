@@ -104,10 +104,13 @@ async def test_connection(
 @router.get("/remote/models")
 @inject
 async def list_remote_models(
-    provider: str,
-    endpoint: str,
-    api_key: Optional[str] = None,
+    conn_id: int,
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
-    """List available remote models."""
-    return {"models": service.list_remote_models(provider, endpoint, api_key)}
+    """List available models for a SAVED connection.
+
+    Takes conn_id only — the api_key is resolved server-side. Previously this
+    accepted provider/endpoint/api_key as query params, which leaked the key
+    into the URL → uvicorn access logs in plaintext.
+    """
+    return {"models": service.list_remote_models_by_conn(conn_id)}

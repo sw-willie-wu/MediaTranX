@@ -28,14 +28,30 @@ class TestGetConnections:
     def test_no_filter_returns_all(self, fake_dao):
         fake_dao.get_all.return_value = [_conn_obj(id=1, provider="openai")]
         result = RemoteService().get_connections()
-        assert result == [{"id": 1, "provider": "openai"}]
+        # api_key is never present here; redaction adds has_api_key=False
+        assert result == [{"id": 1, "provider": "openai", "has_api_key": False}]
         fake_dao.get_all.assert_called_once()
 
     def test_filtered_by_provider(self, fake_dao):
         fake_dao.get_by_provider.return_value = [_conn_obj(id=2, provider="ollama")]
         result = RemoteService().get_connections(provider="ollama")
-        assert result == [{"id": 2, "provider": "ollama"}]
+        assert result == [{"id": 2, "provider": "ollama", "has_api_key": False}]
         fake_dao.get_by_provider.assert_called_once_with("ollama")
+
+    def test_redacts_api_key_and_sets_has_api_key_flag(self, fake_dao):
+        # Security: the plaintext api_key must NEVER appear in the response
+        # body — only a boolean telling the UI whether a key is set.
+        fake_dao.get_all.return_value = [
+            _conn_obj(id=1, provider="openai", endpoint="http://x", api_key="sk-secret"),
+            _conn_obj(id=2, provider="ollama", endpoint="http://o", api_key=None),
+        ]
+        result = RemoteService().get_connections()
+        assert "api_key" not in result[0]
+        assert "api_key" not in result[1]
+        assert result[0]["has_api_key"] is True
+        assert result[1]["has_api_key"] is False
+        # The secret value must not leak anywhere in the serialized result
+        assert "sk-secret" not in str(result)
 
 
 class TestAddConnection:
@@ -49,6 +65,18 @@ class TestAddConnection:
             provider="openai", name="prod", endpoint="https://api.openai.com", api_key="sk-x",
         )
 
+    def test_response_redacts_api_key(self, fake_dao):
+        # Security: the add response must not echo the plaintext key back.
+        fake_dao.create.return_value = _conn_obj(
+            id=1, provider="openai", name="prod", api_key="sk-secret",
+        )
+        result = RemoteService().add_connection(
+            provider="openai", name="prod", endpoint="https://api.openai.com", api_key="sk-secret",
+        )
+        assert "api_key" not in result
+        assert result["has_api_key"] is True
+        assert "sk-secret" not in str(result)
+
 
 class TestUpdateConnection:
     def test_updates_and_returns(self, fake_dao):
@@ -56,6 +84,17 @@ class TestUpdateConnection:
         result = RemoteService().update_connection(3, name="new")
         assert result["name"] == "new"
         fake_dao.update.assert_called_once_with(3, name="new")
+
+    def test_response_redacts_api_key(self, fake_dao):
+        # Security: a PUT that only changes name/endpoint/enabled must NOT
+        # echo the stored plaintext key back in the response.
+        fake_dao.update.return_value = _conn_obj(
+            id=3, name="new", provider="openai", api_key="sk-stored",
+        )
+        result = RemoteService().update_connection(3, name="new")
+        assert "api_key" not in result
+        assert result["has_api_key"] is True
+        assert "sk-stored" not in str(result)
 
     def test_missing_raises_not_found(self, fake_dao):
         from app.handler.exceptions import NotFoundError
@@ -141,3 +180,30 @@ class TestGetProviderForConnection:
         fake_dao.get_by_provider.return_value = []
         result = RemoteService().get_provider_for_connection(None, "ollama")
         assert result is None
+
+
+class TestListRemoteModelsByConn:
+    """Security: model listing for a saved connection resolves the api_key
+    server-side from conn_id — the key is never accepted from / echoed to the
+    client (no more api_key in the request URL → no more plaintext in logs)."""
+
+    def test_resolves_key_server_side_and_lists(self, fake_dao):
+        conn = _conn_obj(id=7, provider="openai", endpoint="http://x", api_key="sk-secret")
+        fake_dao.get_by_id.return_value = conn
+        fake_provider = MagicMock()
+        fake_provider.list_models.return_value = [
+            MagicMock(id="m1", name="Model One", size=1, parameter_size="8B",
+                      quantization="Q4_K_M", capabilities=["text"]),
+        ]
+        with patch.object(RemoteService, "_get_provider", return_value=fake_provider) as mock_get:
+            result = RemoteService().list_remote_models_by_conn(7)
+        # key looked up from the stored connection, not passed by the caller
+        mock_get.assert_called_once_with("openai", "http://x", "sk-secret")
+        fake_dao.get_by_id.assert_called_once_with(7)
+        assert result[0]["id"] == "m1"
+
+    def test_unknown_conn_raises_not_found(self, fake_dao):
+        from app.handler.exceptions import NotFoundError
+        fake_dao.get_by_id.return_value = None
+        with pytest.raises(NotFoundError, match="Connection not found"):
+            RemoteService().list_remote_models_by_conn(999)
