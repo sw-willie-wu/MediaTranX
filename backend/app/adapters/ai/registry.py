@@ -879,6 +879,13 @@ REMOTE_INFERENCE_DEFAULTS = {
     # tokens each plus citations approaches 4k. Provider-aware caps are a
     # follow-up.
     "summarize":    {"temperature": 0.3, "max_tokens": 8192},
-    "ocr":          {"temperature": 0.0, "max_tokens": 32768},
+    # 16384: gpt-4o-mini / gpt-4o completion cap (OpenAI rejects anything
+    # larger with HTTP 400 "max_tokens is too large", and the API doesn't
+    # expose the limit so we can't query it). Was 32768 → every remote OCR
+    # on gpt-4o-* failed. 16384 matches `translate` (both are full-text
+    # outputs) and is ample for a single image. gemini-2.5-flash (8192 cap)
+    # is the same pre-existing limitation as translate — provider-aware
+    # caps remain the follow-up.
+    "ocr":          {"temperature": 0.0, "max_tokens": 16384},
     "frame_select": {"temperature": 0.0, "max_tokens": 16},
 }
