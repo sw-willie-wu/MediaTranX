@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from app.db import init_db
 from app.init.container import get_container
+from app.init.migrate_secrets import migrate_plaintext_keys
 
 LOGGER = logging.getLogger(__name__)
 
@@ -102,6 +103,11 @@ def build_lifespan():
         # ── Startup ──
         init_db()
         LOGGER.info("Database initialized")
+
+        try:
+            migrate_plaintext_keys()
+        except Exception:
+            LOGGER.exception("secret key migration failed (continuing)")
 
         container = get_container()
         history = container.task_history()
