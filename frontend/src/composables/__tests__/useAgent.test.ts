@@ -14,7 +14,7 @@
  *   5. cancel mid-stream → silent cancel → transient cleared, only user message
  *   6. 3 invalid_field strikes → break + synth skipped for remaining
  *   7. cancelRun during confirm wait → resolveAllPendingConfirms(false) + loop breaks
- *   8. clearHistory resets messages + threadId + tokens
+ *   8. startNewSession resets messages + threadId + tokens
  *   9. round-2 wire payload preserves assistant.toolCalls
  *   10. RUN_ERROR produces exactly 1 assistant message
  *   11. cancelRun during confirm → outerStop → no round 2
@@ -288,25 +288,27 @@ describe('useAgent.runLoop', () => {
 
   // ─── Scenario 8 ────────────────────────────────────────────────────────────
 
-  it('clearHistory resets messages + threadId + tokens', async () => {
+  it('startNewSession resets messages + threadId + sessionId + tokens', async () => {
     const store = useAgentStore()
     const fake = makeFakeAgent(() => ({ textDeltas: ['hello'] }))
 
-    const { sendUserText, clearHistory, messages, threadId } = useAgent({ agentFactory: fake.factory })
+    const { sendUserText, startNewSession, messages, threadId, currentSessionId } =
+      useAgent({ agentFactory: fake.factory })
 
-    // Populate some state
     await sendUserText('hello')
     expect(messages.value).toHaveLength(2)
 
-    // Manually add some token usage
     store.addUsage({ promptTokens: 100, completionTokens: 50 })
     expect(store.threadTokens.completion).toBe(50)
 
     const oldThreadId = threadId.value
-    clearHistory()
+    const oldSessionId = currentSessionId.value
+    startNewSession()
 
     expect(messages.value).toHaveLength(0)
     expect(threadId.value).not.toBe(oldThreadId)
+    expect(currentSessionId.value).not.toBe(oldSessionId)
+    expect(threadId.value).toBe(currentSessionId.value)   // 1:1 with thread_id
     expect(store.threadTokens.prompt).toBe(0)
     expect(store.threadTokens.completion).toBe(0)
   })

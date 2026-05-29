@@ -104,7 +104,7 @@ onBeforeUnmount(() => {
     <div v-if="expanded" class="chat-bubble-panel" :style="panelStyle">
       <ChatHeader
         :token-usage="store.threadTokens"
-        @clear="agent.clearHistory()"
+        @clear="agent.startNewSession()"
       />
       <ChatMessages
         :messages="agent.messages.value"

@@ -157,7 +157,8 @@ function _createAgent(deps: UseAgentDeps = {}) {
   const getActivePanel = deps.activePanelRef ?? (() => apComputed?.value ?? null)
   const getActiveView = () => avComputed?.value ?? null
 
-  const threadId = ref<string>(crypto.randomUUID())
+  const currentSessionId = ref<string>(crypto.randomUUID())
+  const threadId = ref<string>(currentSessionId.value)
   const messages = ref<Message[]>([])
   const isRunning = computed(() => store.isRunning)
 
@@ -174,9 +175,13 @@ function _createAgent(deps: UseAgentDeps = {}) {
     await runLoop()
   }
 
-  function clearHistory() {
+  function startNewSession() {
+    // Non-destructive: leaves the prior conversation saved in the DB (reachable
+    // from the session list). Starts a fresh thread with a new id.
+    const id = crypto.randomUUID()
+    currentSessionId.value = id
+    threadId.value = id
     messages.value = []
-    threadId.value = crypto.randomUUID()
     agent = null              // recreate with fresh threadId next run
     store.resetTokens()
     invalidFieldStrikes = 0
@@ -351,5 +356,5 @@ function _createAgent(deps: UseAgentDeps = {}) {
     })
   }
 
-  return { threadId, messages, isRunning, sendUserText, cancelRun, clearHistory }
+  return { threadId, currentSessionId, messages, isRunning, sendUserText, cancelRun, startNewSession }
 }
