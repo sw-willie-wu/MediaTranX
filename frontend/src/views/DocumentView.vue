@@ -22,6 +22,7 @@ const {
   textResultContent, textResultFilename,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, handleDownloadBatch, handleTextDownload,
+  handleExistingFiles,
 } = useDocumentWorkspace()
 
 const selectedIds = computed(() => collection.selectedIds.value)
@@ -205,6 +206,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     @execute="handleExecute"
     @file="handleFile"
     @files="handleFiles"
+    @existing-files="handleExistingFiles"
     @remove-file="handleRemoveFile"
     @clear-selection="collection.clearSelection()"
   >

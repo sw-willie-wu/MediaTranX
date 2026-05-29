@@ -4,6 +4,7 @@ import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
+import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
 import { apiFetch } from '@/composables/useApi'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { useI18n } from 'vue-i18n'
@@ -275,7 +276,8 @@ export function useImageWorkspace() {
     }
   }
 
-  usePendingFileListener(handleFile, handleFiles)
+  const { handleExistingFiles } = useExistingFileHandler(collection, loadImageInfo)
+  usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
 
   function handleRemoveFile() {
     const id = collection.activeId.value
@@ -431,5 +433,6 @@ export function useImageWorkspace() {
     selectedIds: collection.selectedIds,
     handleFiles,
     handleDownloadBatch,
+    handleExistingFiles,
   }
 }

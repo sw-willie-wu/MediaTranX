@@ -40,6 +40,7 @@ const {
   textResultContent,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, handleDownloadBatch, downloadFile, addMidiEntry,
+  handleExistingFiles,
   goBack, goForward,
 } = useAudioWorkspace()
 
@@ -536,6 +537,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     @execute="handleExecute"
     @file="handleFile"
     @files="handleFiles"
+    @existing-files="handleExistingFiles"
     @remove-file="handleRemoveFile"
     @clear-selection="collection.clearSelection()"
   >

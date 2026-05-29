@@ -5,6 +5,7 @@ import { useToast } from '@/composables/useToast'
 import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
+import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
 import { apiFetch } from '@/composables/useApi'
 import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
@@ -115,7 +116,8 @@ export function useDocumentWorkspace() {
     }
   }
 
-  usePendingFileListener(handleFile, handleFiles)
+  const { handleExistingFiles } = useExistingFileHandler(collection)
+  usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
 
   function handleRemoveFile() {
     const id = collection.activeId.value
@@ -225,5 +227,6 @@ export function useDocumentWorkspace() {
     handleDownload,
     handleDownloadBatch,
     handleTextDownload,
+    handleExistingFiles,
   }
 }
