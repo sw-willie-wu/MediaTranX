@@ -1209,6 +1209,7 @@ export default {
       unknown_tool: 'Unknown tool: {name}',
       tool_failed: 'Tool {name} failed: {error}',
       invalid_field: 'Field {field} is not valid in the current view',
+      invalid_route: 'Route "{route}" is not a valid view',
       invalid_action: 'Action {name} is not available',
       no_active_file: 'No file is currently loaded',
       panel_not_supported: 'Panel {panel} is not supported by this tool',
