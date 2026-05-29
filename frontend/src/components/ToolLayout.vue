@@ -10,6 +10,7 @@ import { useResizableLayout } from '@/composables/useResizableLayout'
 import { useTitlebar } from '@/composables/useTitlebar'
 import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
 import { createLogger } from '@/utils/logger'
+import { usePasteUpload } from '@/composables/usePasteUpload'
 
 const { t } = useI18n()
 const log = createLogger('ToolLayout')
@@ -165,6 +166,16 @@ function handleUploadFile(file: File, sourceDir?: string) {
 function handleUploadFiles(files: File[]) {
   emit('files', files)
 }
+
+// 貼上 = 拖曳的另一個入口:單檔走型別驗證路徑,多檔走 filmstrip 批次。
+// 貼上內容無 sourceDir(走 HTTP upload),與拖曳語意一致。
+usePasteUpload((files) => {
+  if (files.length === 1) {
+    handleUploadFile(files[0])
+  } else {
+    handleUploadFiles(files)
+  }
+})
 
 function handleDrop(e: DragEvent) {
   e.preventDefault()
