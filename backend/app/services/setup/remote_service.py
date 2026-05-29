@@ -49,7 +49,7 @@ class RemoteService:
 
     def _redact(self, conn_dict: dict) -> dict:
         """Strip the stored api_key from a serialized connection, replacing it
-        with ``has_api_key`` (bool) and ``key_hint`` (last-4 chars of plaintext
+        with ``has_api_key`` (bool) and ``key_hint`` (head+tail masked plaintext
         or ``None``). Applied to EVERY connection that crosses the API boundary
         (get / add / update) so the raw key never travels to the client."""
         stored = conn_dict.pop("api_key", None)
@@ -59,10 +59,20 @@ class RemoteService:
             return conn_dict
         try:
             plain = get_secret_cipher().decrypt(stored)
-            conn_dict["key_hint"] = ("…" + plain[-4:]) if len(plain) >= 4 else "…"
+            conn_dict["key_hint"] = self._mask_key(plain)
         except SecretDecryptError:
             conn_dict["key_hint"] = "⚠ undecryptable"
         return conn_dict
+
+    @staticmethod
+    def _mask_key(plain: str) -> str:
+        """Masked head+tail hint for display — never the full key. Shows the
+        first 3 + last 3 chars with a fixed-width mask between (length-hiding),
+        e.g. ``sk-proj-abcdef1234`` -> ``sk-•••234``. Keys shorter than 8 chars
+        (where head+tail would expose most of the secret) are fully masked."""
+        if len(plain) >= 8:
+            return f"{plain[:3]}•••{plain[-3:]}"
+        return "•••"
 
     def add_connection(
         self,
