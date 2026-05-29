@@ -97,6 +97,37 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     return id
   }
 
+  /** Add an entry that references an existing backend file (no local File, no upload). */
+  function addExistingEntry(args: {
+    fileId: string
+    fileName: string
+    fileSize: number
+    mimeType: string
+    previewUrl: string
+  }): string {
+    const id = crypto.randomUUID()
+    const entry: MediaEntry = {
+      id,
+      file: null,
+      fileName: args.fileName,
+      fileSize: args.fileSize,
+      fileId: args.fileId,
+      sourceDir: undefined,
+      previewUrl: args.previewUrl,
+      thumbnailUrl: args.previewUrl,
+      status: 'idle',
+      progress: 0,
+      historyStack: [],
+      redoStack: [],
+      currentTaskId: null,
+    }
+    entries.value.set(id, entry)
+    activeId.value = id
+    selectedIds.value = new Set()
+    log.info('addExistingEntry', { id, fileId: args.fileId, fileName: args.fileName })
+    return id
+  }
+
   function removeEntry(id: string): void {
     const entry = entries.value.get(id)
     if (!entry) return
@@ -283,6 +314,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     entriesList,
     // Methods
     addEntry,
+    addExistingEntry,
     removeEntry,
     removeEntries,
     removeAllEntries,
