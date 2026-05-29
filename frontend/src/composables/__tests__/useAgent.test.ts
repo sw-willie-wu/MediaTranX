@@ -14,7 +14,7 @@
  *   5. cancel mid-stream → silent cancel → transient cleared, only user message
  *   6. 3 invalid_field strikes → break + synth skipped for remaining
  *   7. cancelRun during confirm wait → resolveAllPendingConfirms(false) + loop breaks
- *   8. clearHistory resets messages + threadId + tokens
+ *   8. startNewSession resets messages + threadId + tokens
  *   9. round-2 wire payload preserves assistant.toolCalls
  *   10. RUN_ERROR produces exactly 1 assistant message
  *   11. cancelRun during confirm → outerStop → no round 2
@@ -26,6 +26,12 @@ import { useAgent, _resetAgent } from '@/composables/useAgent'
 import { useAgentStore } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
 import { makeFakeAgent } from '@/composables/__tests__/_fakeAgent'
+import { apiFetch } from '@/composables/useApi'
+
+vi.mock('@/composables/useApi', () => ({
+  getApiBase: () => '/api',
+  apiFetch: vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })),
+}))
 
 // Minimal localStorage stub for node environment (agentSettings.ts calls it on init)
 const localStorageStore: Record<string, string> = {}
@@ -66,6 +72,8 @@ beforeEach(() => {
   localStorageStub.clear()
   setActivePinia(createPinia())
   _resetAgent()   // reset singleton so each test gets a fresh instance
+  vi.mocked(apiFetch).mockReset()
+  vi.mocked(apiFetch).mockResolvedValue({ ok: true, json: () => Promise.resolve({}) } as Response)
 })
 
 // ─── Scenario 1 ───────────────────────────────────────────────────────────────
@@ -288,25 +296,27 @@ describe('useAgent.runLoop', () => {
 
   // ─── Scenario 8 ────────────────────────────────────────────────────────────
 
-  it('clearHistory resets messages + threadId + tokens', async () => {
+  it('startNewSession resets messages + threadId + sessionId + tokens', async () => {
     const store = useAgentStore()
     const fake = makeFakeAgent(() => ({ textDeltas: ['hello'] }))
 
-    const { sendUserText, clearHistory, messages, threadId } = useAgent({ agentFactory: fake.factory })
+    const { sendUserText, startNewSession, messages, threadId, currentSessionId } =
+      useAgent({ agentFactory: fake.factory })
 
-    // Populate some state
     await sendUserText('hello')
     expect(messages.value).toHaveLength(2)
 
-    // Manually add some token usage
     store.addUsage({ promptTokens: 100, completionTokens: 50 })
     expect(store.threadTokens.completion).toBe(50)
 
     const oldThreadId = threadId.value
-    clearHistory()
+    const oldSessionId = currentSessionId.value
+    startNewSession()
 
     expect(messages.value).toHaveLength(0)
     expect(threadId.value).not.toBe(oldThreadId)
+    expect(currentSessionId.value).not.toBe(oldSessionId)
+    expect(threadId.value).toBe(currentSessionId.value)   // 1:1 with thread_id
     expect(store.threadTokens.prompt).toBe(0)
     expect(store.threadTokens.completion).toBe(0)
   })
@@ -438,6 +448,113 @@ describe('useAgent.runLoop', () => {
     expect(toolMessages.length).toBeGreaterThanOrEqual(1)
     const content = JSON.parse((toolMessages[0] as any).content)
     expect(content.user_cancelled).toBe(true)
+  })
+
+  // ─── Persistence tests ──────────────────────────────────────────────────────
+
+  it('persists every committed message via apiFetch', async () => {
+    vi.mocked(apiFetch).mockClear()
+    const fake = makeFakeAgent(() => ({ textDeltas: ['hi there'] }))
+    const { sendUserText, currentSessionId } = useAgent({ agentFactory: fake.factory })
+
+    await sendUserText('hello')
+
+    // user message + assistant reply both persisted to the session endpoint
+    const calls = vi.mocked(apiFetch).mock.calls.filter(
+      (c) => String(c[0]).includes(`/agent/sessions/${currentSessionId.value}/messages`),
+    )
+    expect(calls.length).toBe(2)
+    for (const c of calls) {
+      expect(c[1]?.method).toBe('POST')
+    }
+  })
+
+  it('swallows persist failure (in-memory messages stay authoritative)', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce({ ok: false, status: 500 } as Response)
+    const fake = makeFakeAgent(() => ({ textDeltas: ['hi'] }))
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory })
+
+    // must not throw even though the first persist returns !ok
+    await expect(sendUserText('hello')).resolves.toBeUndefined()
+    expect(messages.value).toHaveLength(2)
+  })
+
+  // ─── loadSession / deleteSession ────────────────────────────────────────────
+
+  it('loadSession populates messages + sets sessionId/threadId + recreates agent + resets tokens', async () => {
+    const store = useAgentStore()
+    vi.mocked(apiFetch).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        id: 's-load',
+        messages: [
+          { role: 'user', content: 'hi' },
+          { role: 'assistant', content: 'hello back' },
+        ],
+      }),
+    } as Response)
+
+    const fake = makeFakeAgent(() => ({ textDeltas: ['x'] }))
+    const { loadSession, messages, threadId, currentSessionId } = useAgent({ agentFactory: fake.factory })
+    store.addUsage({ promptTokens: 10, completionTokens: 5 })
+
+    await loadSession('s-load')
+
+    expect(messages.value).toHaveLength(2)
+    expect(currentSessionId.value).toBe('s-load')
+    expect(threadId.value).toBe('s-load')
+    expect(store.threadTokens.prompt).toBe(0)
+    expect(store.threadTokens.completion).toBe(0)
+  })
+
+  it('loadSession sanitizes dangling tool_calls and orphan tool rows', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        id: 's-bad',
+        messages: [
+          { role: 'user', content: 'do it' },
+          // assistant references c1 (matched) and c2 (no tool row -> dropped)
+          { role: 'assistant', content: '', toolCalls: [
+            { id: 'c1', function: { name: 'set_field', arguments: '{}' } },
+            { id: 'c2', function: { name: 'set_field', arguments: '{}' } },
+          ] },
+          { role: 'tool', content: '{}', toolCallId: 'c1' },
+          // orphan tool row (no assistant call) -> dropped
+          { role: 'tool', content: '{}', toolCallId: 'zzz' },
+        ],
+      }),
+    } as Response)
+
+    const fake = makeFakeAgent(() => ({ textDeltas: ['x'] }))
+    const { loadSession, messages } = useAgent({ agentFactory: fake.factory })
+
+    await loadSession('s-bad')
+
+    // user, assistant(with only c1), tool(c1) — orphan zzz dropped
+    expect(messages.value).toHaveLength(3)
+    const asst = messages.value[1] as { role: 'assistant'; toolCalls?: { id: string }[] }
+    expect(asst.toolCalls?.map((t) => t.id)).toEqual(['c1'])
+    const toolIds = messages.value.filter((m) => m.role === 'tool').map((m) => (m as { toolCallId: string }).toolCallId)
+    expect(toolIds).toEqual(['c1'])
+  })
+
+  it('loadSession throws on fetch failure (caller shows toast)', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce({ ok: false, status: 500 } as Response)
+    const fake = makeFakeAgent(() => ({ textDeltas: ['x'] }))
+    const { loadSession } = useAgent({ agentFactory: fake.factory })
+    await expect(loadSession('s1')).rejects.toThrow()
+  })
+
+  it('deleteSession of the active session starts a new one', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) } as Response)
+    const fake = makeFakeAgent(() => ({ textDeltas: ['x'] }))
+    const { deleteSession, currentSessionId } = useAgent({ agentFactory: fake.factory })
+    const active = currentSessionId.value
+
+    await deleteSession(active)
+
+    expect(currentSessionId.value).not.toBe(active)
   })
 
   // ─── Non-abort error ─────────────────────────────────────────────────────────

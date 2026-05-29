@@ -1,16 +1,37 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAgentStore } from '@/stores/agent'
 import { useAgent } from '@/composables/useAgent'
 import { useBubbleDrag, BUBBLE_SIZE_PX, BUBBLE_EDGE_PX, BUBBLE_MARGIN_PX } from '@/composables/useBubbleDrag'
 import { bubbleVisible } from '@/composables/useBubbleVisibility'
+import { useToast } from '@/composables/useToast'
 import ChatHeader from './ChatHeader.vue'
 import ChatMessages from './ChatMessages.vue'
 import ChatInput from './ChatInput.vue'
+import SessionList from './SessionList.vue'
 
 const store = useAgentStore()
 const agent = useAgent()
 const expanded = ref(false)
+
+const view = ref<'list' | 'chat'>('chat')   // ChatBubble-local; survives collapse/reopen within a run
+const { t } = useI18n()
+const { show } = useToast()
+
+async function onSelectSession(id: string) {
+  try {
+    await agent.loadSession(id)
+    view.value = 'chat'
+  } catch {
+    show(t('agent.session.load_failed'), { type: 'error' })
+  }
+}
+
+function onNewChat() {
+  agent.startNewSession()
+  view.value = 'chat'
+}
 
 const { position, isDragging, bubbleStyle, onPointerDown } = useBubbleDrag()
 
@@ -102,21 +123,28 @@ onBeforeUnmount(() => {
 
     <!-- Panel (mounted only when expanded, anchored next to bubble) -->
     <div v-if="expanded" class="chat-bubble-panel" :style="panelStyle">
-      <ChatHeader
-        :token-usage="store.threadTokens"
-        @clear="agent.clearHistory()"
+      <SessionList
+        v-if="view === 'list'"
+        @select="onSelectSession"
+        @new-chat="onNewChat"
       />
-      <ChatMessages
-        :messages="agent.messages.value"
-        :transient="store.transient"
-        :is-running="store.isRunning"
-      />
-      <ChatInput
-        :disabled="store.isRunning"
-        @send="agent.sendUserText"
-        @cancel="agent.cancelRun()"
-        :is-running="store.isRunning"
-      />
+      <template v-else>
+        <ChatHeader
+          :token-usage="store.threadTokens"
+          @back="view = 'list'"
+        />
+        <ChatMessages
+          :messages="agent.messages.value"
+          :transient="store.transient"
+          :is-running="store.isRunning"
+        />
+        <ChatInput
+          :disabled="store.isRunning"
+          @send="agent.sendUserText"
+          @cancel="agent.cancelRun()"
+          :is-running="store.isRunning"
+        />
+      </template>
     </div>
     </template>
   </Teleport>

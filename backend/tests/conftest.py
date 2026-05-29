@@ -145,6 +145,8 @@ def real_db(monkeypatch):
     # It only passes-by-accident when another module that imports the model is
     # collected first. (conftest.py currently imports no model.)
     import app.db.models.api_connection  # noqa: F401
+    import app.db.models.agent_session  # noqa: F401
+    import app.db.models.agent_message  # noqa: F401
     SQLModel.metadata.create_all(engine)
     # CRITICAL (review I1/I2): modules do `from app.db.database import get_engine`,
     # binding the name at import time — patching `database.get_engine` alone does
@@ -154,4 +156,5 @@ def real_db(monkeypatch):
     import app.db.database as database
     monkeypatch.setattr(database, "get_engine", lambda: engine)
     monkeypatch.setattr("app.db.dao.api_connection_dao.get_engine", lambda: engine)
+    monkeypatch.setattr("app.db.dao.agent_session_dao.get_engine", lambda: engine)
     return engine

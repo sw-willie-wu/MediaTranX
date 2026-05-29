@@ -6,6 +6,16 @@ import { HttpAgent } from '@ag-ui/client'
 import { useAgent, _resetAgent } from '@/composables/useAgent'
 import { useAgentStore } from '@/stores/agent'
 
+// Isolate session persistence: commitMessage() now POSTs to /agent/sessions via
+// apiFetch. Without this stub those POSTs would hit the global `fetch` mock these
+// tests install for the HttpAgent /agent/run calls and desync its single-use SSE
+// Response stream (giving phantom-empty toolCalls). getApiBase is still exported
+// so the HttpAgent run URL builds normally (HttpAgent uses global fetch, not apiFetch).
+vi.mock('@/composables/useApi', () => ({
+  getApiBase: () => '/api',
+  apiFetch: vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })),
+}))
+
 // ─── Minimal localStorage stub for jsdom environment ─────────────────────────
 const lsStore: Record<string, string> = {}
 Object.defineProperty(globalThis, 'localStorage', {

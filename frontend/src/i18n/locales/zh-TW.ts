@@ -1178,6 +1178,21 @@ export default {
       show: '顯示 Agent 對話泡泡',
       hide: '隱藏 Agent 對話泡泡',
     },
+    session: {
+      new_chat: '+ 新對話',
+      empty: '尚無對話',
+      delete: '刪除對話',
+      delete_confirm: '確定刪除此對話？此操作無法復原。',
+      back: '返回對話列表',
+      load_failed: '載入對話失敗',
+      delete_failed: '刪除對話失敗',
+      time: {
+        just_now: '剛剛',
+        minutes_ago: '{n} 分鐘前',
+        hours_ago: '{n} 小時前',
+        days_ago: '{n} 天前',
+      },
+    },
     confirm: {
       title: '確認動作',
       cancel: '取消',

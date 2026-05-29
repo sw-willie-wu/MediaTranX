@@ -1178,6 +1178,21 @@ export default {
       show: 'Show chat bubble',
       hide: 'Hide chat bubble',
     },
+    session: {
+      new_chat: '+ New chat',
+      empty: 'No conversations yet',
+      delete: 'Delete conversation',
+      delete_confirm: 'Delete this conversation? This cannot be undone.',
+      back: 'Back to conversations',
+      load_failed: 'Failed to load conversations',
+      delete_failed: 'Failed to delete conversation',
+      time: {
+        just_now: 'just now',
+        minutes_ago: '{n}m ago',
+        hours_ago: '{n}h ago',
+        days_ago: '{n}d ago',
+      },
+    },
     confirm: {
       title: 'Confirm action',
       cancel: 'Cancel',

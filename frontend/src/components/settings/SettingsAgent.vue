@@ -85,12 +85,6 @@ function setModel(val: string) {
   settings.setModelChoice(val)
 }
 
-function clearHistory() {
-  if (window.confirm(t('settings.agent.clear_history.confirm'))) {
-    agent.clearHistory()
-  }
-}
-
 // ── Agent panel host (settings.agent) ────────────────────────────────────────
 
 const POLICY_VALUES = ['auto', 'ask_all', 'custom'] as const
@@ -136,7 +130,7 @@ useAgentPanelHost('settings.agent', {
   execute: () => { throw new Error('agent.error.no_execute_on_settings') },
   invokeAction: (name: string) => {
     if (name === 'clear_history') {
-      agent.clearHistory()
+      agent.startNewSession()
       return { ok: true }
     }
     throw new Error(`Unknown action: ${name}`)
@@ -227,13 +221,13 @@ useAgentPanelHost('settings.agent', {
     </div>
   </template>
 
-  <!-- Clear history -->
-  <h6 class="section-title mt">{{ $t('settings.agent.clear_history.label') }}</h6>
+  <!-- New conversation -->
+  <h6 class="section-title mt">{{ $t('agent.session.new_chat') }}</h6>
 
   <div class="setting-item">
-    <button class="btn-secondary" @click="clearHistory">
-      <i class="bi bi-trash3"></i>
-      {{ $t('settings.agent.clear_history.label') }}
+    <button class="btn-secondary" @click="agent.startNewSession()">
+      <i class="bi bi-plus-lg"></i>
+      {{ $t('agent.session.new_chat') }}
     </button>
   </div>
 </template>

@@ -20,7 +20,7 @@
 import { ref, computed, getCurrentInstance } from 'vue'
 import { HttpAgent } from '@ag-ui/client'
 import type { Message as AgUiMessage, RunAgentResult, AgentSubscriber } from '@ag-ui/client'
-import { getApiBase } from '@/composables/useApi'
+import { getApiBase, apiFetch } from '@/composables/useApi'
 import { sanitizeAssistantMessage, pickAssistant, type SanitizedAssistant, type ToolCall } from '@/composables/agentSanitize'
 import { useAgentStore, type TransientBuffer, type TokenUsage } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
@@ -110,6 +110,32 @@ function mapMessagesToAgUi(msgs: Message[]): AgUiMessage[] {
 }
 
 /**
+ * Resume-side defense: drop assistant tool_calls entries that have no matching
+ * tool row, and drop orphan tool rows (no matching assistant call). An
+ * unbalanced history would 400 OpenAI when re-sent verbatim on the next round
+ * (see agent_service _msg_to_dict + the OpenAI Strict Tool Calling work).
+ */
+function sanitizeHistory(msgs: Message[]): Message[] {
+  const toolRowIds = new Set(
+    msgs.filter((m) => m.role === 'tool').map((m) => (m as Extract<Message, { role: 'tool' }>).toolCallId),
+  )
+  const keptCallIds = new Set<string>()
+  const out: Message[] = []
+  for (const m of msgs) {
+    if (m.role === 'assistant') {
+      const kept = (m.toolCalls ?? []).filter((tc) => toolRowIds.has(tc.id))
+      for (const tc of kept) keptCallIds.add(tc.id)
+      out.push(kept.length ? { ...m, toolCalls: kept } : { role: 'assistant', content: m.content })
+    } else if (m.role === 'tool') {
+      if (keptCallIds.has(m.toolCallId)) out.push(m)  // assistant always precedes its tool rows
+    } else {
+      out.push(m)
+    }
+  }
+  return out
+}
+
+/**
  * Launder a value into a plain, structured-cloneable object tree.
  *
  * HttpAgent.runAgent() runs structuredClone() on its inputs (messages / state /
@@ -157,7 +183,8 @@ function _createAgent(deps: UseAgentDeps = {}) {
   const getActivePanel = deps.activePanelRef ?? (() => apComputed?.value ?? null)
   const getActiveView = () => avComputed?.value ?? null
 
-  const threadId = ref<string>(crypto.randomUUID())
+  const currentSessionId = ref<string>(crypto.randomUUID())
+  const threadId = ref<string>(currentSessionId.value)
   const messages = ref<Message[]>([])
   const isRunning = computed(() => store.isRunning)
 
@@ -168,15 +195,19 @@ function _createAgent(deps: UseAgentDeps = {}) {
   // ─── Public API ──────────────────────────────────────────────────
 
   async function sendUserText(text: string) {
-    messages.value.push({ role: 'user', content: text })
+    await commitMessage({ role: 'user', content: text })
     invalidFieldStrikes = 0
     outerStop = false
     await runLoop()
   }
 
-  function clearHistory() {
+  function startNewSession() {
+    // Non-destructive: leaves the prior conversation saved in the DB (reachable
+    // from the session list). Starts a fresh thread with a new id.
+    const id = crypto.randomUUID()
+    currentSessionId.value = id
+    threadId.value = id
     messages.value = []
-    threadId.value = crypto.randomUUID()
     agent = null              // recreate with fresh threadId next run
     store.resetTokens()
     invalidFieldStrikes = 0
@@ -187,6 +218,65 @@ function _createAgent(deps: UseAgentDeps = {}) {
     agent?.abortRun()                         // SDK surfaces abort as onRunErrorEvent{code:'abort'}
     store.resolveAllPendingConfirms(false)    // m4
     outerStop = true                          // spec §3.4: cancel → loop break
+  }
+
+  /**
+   * Persist one committed message to the session, best-effort. AWAITED (not
+   * fire-and-forget): isRunning gates a second sendUserText, so there is only
+   * ever one in-flight writer per session — seq has no race and lazy-create
+   * can't double-create. On failure we warn and continue (in-memory messages
+   * stay authoritative for the live session).
+   */
+  async function persistMessage(sessionId: string, msg: Message): Promise<void> {
+    try {
+      const body: Record<string, unknown> = { role: msg.role }
+      if (msg.role === 'user') {
+        body.content = msg.content
+      } else if (msg.role === 'assistant') {
+        body.content = msg.content
+        if (msg.toolCalls && msg.toolCalls.length) body.tool_calls = msg.toolCalls
+      } else if (msg.role === 'tool') {
+        body.content = msg.content
+        body.tool_call_id = msg.toolCallId
+      } else {
+        return  // tool_confirm / transient are never persisted
+      }
+      const res = await apiFetch(`/agent/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) console.warn(`[useAgent] persist failed: HTTP ${res.status}`)
+    } catch (e) {
+      console.warn('[useAgent] persist failed:', e)
+    }
+  }
+
+  /** Push a committed message AND persist it. The single funnel for all 9 sites. */
+  async function commitMessage(msg: Message): Promise<void> {
+    messages.value.push(msg)
+    await persistMessage(currentSessionId.value, msg)
+  }
+
+  /** Load a persisted session for resume. Throws on fetch failure (caller toasts). */
+  async function loadSession(id: string): Promise<void> {
+    const res = await apiFetch(`/agent/sessions/${id}/messages`)
+    if (!res.ok) throw new Error(`loadSession failed: HTTP ${res.status}`)
+    const data = (await res.json()) as { id: string; messages: Message[] }
+    messages.value = sanitizeHistory(data.messages ?? [])
+    currentSessionId.value = id
+    threadId.value = id
+    agent = null               // recreate HttpAgent for this thread id
+    store.resetTokens()        // token counts aren't persisted; clear the running total
+    invalidFieldStrikes = 0
+    outerStop = false
+  }
+
+  /** Delete a persisted session. If it's the active one, start a fresh session. */
+  async function deleteSession(id: string): Promise<void> {
+    const res = await apiFetch(`/agent/sessions/${id}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`deleteSession failed: HTTP ${res.status}`)
+    if (id === currentSessionId.value) startNewSession()
   }
 
   // ─── Run loop ────────────────────────────────────────────────────
@@ -269,14 +359,14 @@ function _createAgent(deps: UseAgentDeps = {}) {
           const translated = translate(code)
           const friendly = translated === code ? code : translated
           const suffix = re.message ? ` (${re.message})` : ''
-          messages.value.push({ role: 'assistant', content: `${friendly}${suffix}` })
+          await commitMessage({ role: 'assistant', content: `${friendly}${suffix}` })
           outerStop = true
           break
         }
         if (caught && !result) {               // 4c: unexpected reject (no RUN_ERROR)
           store.clearTransient()
           console.error('[useAgent] runLoop error:', caught)
-          messages.value.push({
+          await commitMessage({
             role: 'assistant',
             content: `[agent.error.internal] ${String(caught instanceof Error ? caught.message : caught)}`,
           })
@@ -287,7 +377,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
         const assistant: SanitizedAssistant | null = sanitizeAssistantMessage(pickAssistant(result!.newMessages))
         store.addUsage(capturedUsage)
         store.clearTransient()
-        if (assistant) messages.value.push(assistant)
+        if (assistant) await commitMessage(assistant)
 
         unprocessedToolCalls = assistant ? [...assistant.toolCalls] : []
         if (unprocessedToolCalls.length === 0) break
@@ -300,21 +390,21 @@ function _createAgent(deps: UseAgentDeps = {}) {
           if (settings.shouldConfirm({ name: tc.function.name, arguments: undefined }, ap?.schema ?? undefined)) {
             const approved = await pushConfirmCard(tc)
             if (!approved) {
-              messages.value.push({ role: 'tool', toolCallId: tc.id, content: JSON.stringify({ user_cancelled: true }) })
+              await commitMessage({ role: 'tool', toolCallId: tc.id, content: JSON.stringify({ user_cancelled: true }) })
               unprocessedToolCalls.shift()
               continue
             }
           }
 
           const dispatchResult = await tools.dispatch(tc)
-          messages.value.push({ role: 'tool', toolCallId: tc.id, content: JSON.stringify(dispatchResult) })
+          await commitMessage({ role: 'tool', toolCallId: tc.id, content: JSON.stringify(dispatchResult) })
           unprocessedToolCalls.shift()
 
           if (dispatchResult.error === 'agent.error.invalid_field') {
             invalidFieldStrikes++
             if (invalidFieldStrikes >= 3) {
               for (const remaining of unprocessedToolCalls) {
-                messages.value.push({ role: 'tool', toolCallId: remaining.id, content: JSON.stringify({ skipped: 'too_many_strikes' }) })
+                await commitMessage({ role: 'tool', toolCallId: remaining.id, content: JSON.stringify({ skipped: 'too_many_strikes' }) })
               }
               unprocessedToolCalls = []
               outerStop = true
@@ -326,11 +416,11 @@ function _createAgent(deps: UseAgentDeps = {}) {
         // Reachable only from the tool-dispatch phase (runAgent errors captured
         // into `caught` above). Mirror legacy: synth skipped for remaining tool calls.
         for (const tc of unprocessedToolCalls) {
-          messages.value.push({ role: 'tool', toolCallId: tc.id, content: JSON.stringify({ skipped: 'cancelled' }) })
+          await commitMessage({ role: 'tool', toolCallId: tc.id, content: JSON.stringify({ skipped: 'cancelled' }) })
         }
         if (!(e instanceof Error && e.name === 'AbortError')) {
           console.error('[useAgent] runLoop dispatch error:', e)
-          messages.value.push({
+          await commitMessage({
             role: 'assistant',
             content: `[agent.error.internal] ${String(e instanceof Error ? e.message : e)}`,
           })
@@ -351,5 +441,5 @@ function _createAgent(deps: UseAgentDeps = {}) {
     })
   }
 
-  return { threadId, messages, isRunning, sendUserText, cancelRun, clearHistory }
+  return { threadId, currentSessionId, messages, isRunning, sendUserText, cancelRun, startNewSession, loadSession, deleteSession }
 }
