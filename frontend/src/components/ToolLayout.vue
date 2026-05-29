@@ -89,6 +89,7 @@ const emit = defineEmits<{
   (e: 'execute'): void
   (e: 'file', file: File, sourceDir?: string): void
   (e: 'files', files: File[]): void
+  (e: 'existing-files', refs: import('@/stores/files').PendingResultRef[]): void
   (e: 'remove-file'): void
   (e: 'clear-selection'): void
 }>()
@@ -238,6 +239,9 @@ onActivated(() => {
   // Batch pending files (cross-tool open with multi-select)
   const many = filesStore.consumePendingFiles()
   if (many.length > 0) emit('files', many)
+  // Batch pending results (open-in-tool by reference, no upload)
+  const manyResults = filesStore.consumePendingResults()
+  if (manyResults.length > 0) emit('existing-files', manyResults)
 })
 
 onBeforeUnmount(() => {
