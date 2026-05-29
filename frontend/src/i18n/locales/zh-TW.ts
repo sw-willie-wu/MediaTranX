@@ -100,7 +100,7 @@ export default {
     select: '請選擇',
     select_or_drop: '請選擇或拖曳檔案',
     select_function: '請選擇功能',
-    drop_files: '拖曳檔案到這裡',
+    drop_files: '拖曳或貼上檔案到這裡',
     drop_hint: '或點擊選擇檔案',
     loading_info: '讀取資訊...',
     uploading: '上傳中...',
@@ -387,7 +387,7 @@ export default {
   // ── 圖片工具 ───────────────────────────────────────────────────────────
   image: {
     title: '圖片工具',
-    upload_label: '拖曳圖片到這裡',
+    upload_label: '拖曳或貼上圖片到這裡',
     upload_hint: '支援 JPG、PNG、WebP、BMP 等格式',
     loading: '讀取圖片資訊...',
 
@@ -541,7 +541,7 @@ export default {
   // ── 影片工具 ───────────────────────────────────────────────────────────
   video: {
     title: '影片工具',
-    upload_label: '拖曳影片到這裡',
+    upload_label: '拖曳或貼上影片到這裡',
     upload_hint: '支援 MP4、MKV、MOV、AVI 等格式',
     loading: '讀取媒體資訊...',
 
@@ -716,7 +716,7 @@ export default {
   // ── 音訊工具 ───────────────────────────────────────────────────────────
   audio: {
     title: '音訊工具',
-    upload_label: '拖曳音訊到這裡',
+    upload_label: '拖曳或貼上音訊到這裡',
     upload_hint: '支援 MP3、WAV、FLAC、AAC 等格式',
     loading: '讀取音訊資訊...',
     preview_unsupported: '此格式不支援預覽，但可正常處理',
@@ -915,7 +915,7 @@ export default {
   // ── 文件工具 ───────────────────────────────────────────────────────────
   document: {
     title: '文件工具',
-    upload_label: '拖曳文件到這裡',
+    upload_label: '拖曳或貼上文件到這裡',
     upload_hint: '支援 PDF、DOCX、TXT、SRT 等格式',
     loading: '上傳中...',
 

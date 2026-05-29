@@ -100,7 +100,7 @@ export default {
     select: 'Select',
     select_or_drop: 'Select or drop a file',
     select_function: 'Select a function',
-    drop_files: 'Drop files here',
+    drop_files: 'Drop or paste files here',
     drop_hint: 'or click to select',
     loading_info: 'Loading info...',
     uploading: 'Uploading...',
@@ -387,7 +387,7 @@ export default {
   // ── Image tools ───────────────────────────────────────────────────────
   image: {
     title: 'Image Tools',
-    upload_label: 'Drop images here',
+    upload_label: 'Drop or paste images here',
     upload_hint: 'Supports JPG, PNG, WebP, BMP and more',
     loading: 'Loading image info...',
 
@@ -541,7 +541,7 @@ export default {
   // ── Video tools ───────────────────────────────────────────────────────
   video: {
     title: 'Video Tools',
-    upload_label: 'Drop videos here',
+    upload_label: 'Drop or paste videos here',
     upload_hint: 'Supports MP4, MKV, MOV, AVI and more',
     loading: 'Loading media info...',
 
@@ -716,7 +716,7 @@ export default {
   // ── Audio tools ───────────────────────────────────────────────────────
   audio: {
     title: 'Audio Tools',
-    upload_label: 'Drop audio here',
+    upload_label: 'Drop or paste audio here',
     upload_hint: 'Supports MP3, WAV, FLAC, AAC and more',
     loading: 'Loading audio info...',
     preview_unsupported: 'This format does not support preview, but can be processed normally',
@@ -915,7 +915,7 @@ export default {
   // ── Document tools ────────────────────────────────────────────────────
   document: {
     title: 'Document Tools',
-    upload_label: 'Drop documents here',
+    upload_label: 'Drop or paste documents here',
     upload_hint: 'Supports PDF, DOCX, TXT, SRT and more',
     loading: 'Uploading...',
 
