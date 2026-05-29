@@ -156,7 +156,7 @@ export function useAudioWorkspace() {
     }
   }
 
-  const { handleExistingFiles } = useExistingFileHandler(collection, loadAudioInfo)
+  const { handleExistingFiles, addExistingFile } = useExistingFileHandler(collection, loadAudioInfo)
   usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
 
   function handleRemoveFile() {
@@ -253,19 +253,13 @@ export function useAudioWorkspace() {
   )
 
   /** Add a MIDI file (already on backend) to the filmstrip without re-uploading */
-  async function addMidiEntry(midiFileId: string, midiFilename: string) {
-    try {
-      const res = await apiFetch(`/files/${midiFileId}/download`)
-      if (!res.ok) throw new Error('fetch failed')
-      const blob = await res.blob()
-      const file = new File([blob], midiFilename, { type: 'audio/midi' })
-      const entryId = await collection.addEntry(file, undefined, generateAudioThumbnail)
-      // Skip upload — file already registered on backend
-      collection.updateEntry(entryId, { fileId: midiFileId, status: 'idle' })
-      return entryId
-    } catch (e) {
-      log.error('addMidiEntry failed', { midiFileId, error: e })
-    }
+  function addMidiEntry(midiFileId: string, midiFilename: string): string {
+    return addExistingFile({
+      fileId: midiFileId,
+      filename: midiFilename,
+      fileSize: 0,            // MIDI: not real audio; loadAudioInfo skips .mid/.midi; no consumer reads size
+      mimeType: 'audio/midi',
+    })
   }
 
   // Reset text result when switching files

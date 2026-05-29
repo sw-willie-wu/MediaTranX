@@ -38,4 +38,15 @@ describe('useExistingFileHandler', () => {
     expect(c.addExistingEntry).toHaveBeenCalledTimes(2)
     expect(loadInfo).toHaveBeenCalledOnce()
   })
+
+  it('addExistingFile works for MIDI-shaped ref (fileSize 0, audio/midi) without fetch', () => {
+    const c = fakeCollection()
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const { addExistingFile } = useExistingFileHandler(c)
+    const id = addExistingFile({ fileId: 'mid1', filename: 'song.mid', fileSize: 0, mimeType: 'audio/midi' })
+    expect(id).toBe('entry-mid1')
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
 })
