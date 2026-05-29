@@ -113,7 +113,7 @@ export function useImageWorkspace() {
 
   /** Original filename of the active entry */
   const currentFileName = computed<string>(
-    () => collection.activeEntry.value?.file.name ?? '',
+    () => collection.activeEntry.value?.fileName ?? '',
   )
 
   /** History stack of the active entry */

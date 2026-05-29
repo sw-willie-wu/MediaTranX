@@ -60,7 +60,7 @@ export async function collectLatestOutputs(
       const latest = e.historyStack.at(-1)
       const fileId = latest ? latest.fileId : e.fileId
       if (!fileId) return null
-      const filename = latest ? latest.outputFilename : e.file.name
+      const filename = latest ? latest.outputFilename : e.fileName
       let srcPath: string | undefined
       try {
         const res = await apiFetch(`/files/${fileId}`)

@@ -18,10 +18,12 @@ export interface HistoryEntry {
 
 export interface MediaEntry {
   id: string
-  file: File
+  file: File | null
+  fileName: string
+  fileSize: number
   fileId: string | null
   sourceDir?: string
-  previewUrl: string       // full-res blob URL of the original file
+  previewUrl: string       // blob: URL (uploaded) or http download URL (adopted result)
   thumbnailUrl: string
   status: 'idle' | 'uploading' | 'processing' | 'done'
   progress: number
@@ -74,6 +76,8 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     const entry: MediaEntry = {
       id,
       file,
+      fileName: file.name,
+      fileSize: file.size,
       fileId: null,
       sourceDir: srcDir,
       previewUrl,
@@ -96,9 +100,9 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
   function removeEntry(id: string): void {
     const entry = entries.value.get(id)
     if (!entry) return
-    log.info('removeEntry', { id, fileName: entry.file.name })
+    log.info('removeEntry', { id, fileName: entry.fileName })
 
-    URL.revokeObjectURL(entry.previewUrl)
+    if (entry.previewUrl.startsWith('blob:')) URL.revokeObjectURL(entry.previewUrl)
     if (entry.thumbnailUrl !== entry.previewUrl && entry.thumbnailUrl.startsWith('blob:')) {
       URL.revokeObjectURL(entry.thumbnailUrl)
     }
@@ -126,7 +130,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
 
   function removeAllEntries(): void {
     for (const entry of entries.value.values()) {
-      URL.revokeObjectURL(entry.previewUrl)
+      if (entry.previewUrl.startsWith('blob:')) URL.revokeObjectURL(entry.previewUrl)
       if (entry.thumbnailUrl !== entry.previewUrl && entry.thumbnailUrl.startsWith('blob:')) {
         URL.revokeObjectURL(entry.thumbnailUrl)
       }
@@ -216,7 +220,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
             const historyEntry: HistoryEntry = {
               fileId: outputFileId,
               previewUrl,
-              outputFilename: outputFilename ?? entry.file.name,
+              outputFilename: outputFilename ?? entry.fileName,
               taskType: task.taskType,
               meta: Object.keys(meta).length > 0 ? meta : undefined,
             }

@@ -122,10 +122,10 @@ function formatSize(bytes: number): string {
 const documentInfoItems = computed<InfoItem[]>(() => {
   const entry = collection.activeEntry.value
   if (!entry) return []
-  const ext = entry.file.name.split('.').pop()?.toUpperCase() ?? '—'
+  const ext = entry.fileName.split('.').pop()?.toUpperCase() ?? '—'
   return [
     { icon: 'bi-file-earmark-text', label: ext },
-    { icon: 'bi-hdd',               label: formatSize(entry.file.size) },
+    { icon: 'bi-hdd',               label: formatSize(entry.fileSize) },
   ]
 })
 

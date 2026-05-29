@@ -66,7 +66,7 @@ export function useDocumentWorkspace() {
   const fileId = computed<string | null>(() => collection.activeEntry.value?.fileId ?? null)
   const isUploading = computed<boolean>(() => collection.activeEntry.value?.status === 'uploading')
   const sourceDir = computed<string | undefined>(() => collection.activeEntry.value?.sourceDir)
-  const currentFileName = computed<string>(() => collection.activeEntry.value?.file.name ?? '')
+  const currentFileName = computed<string>(() => collection.activeEntry.value?.fileName ?? '')
   const currentTaskId = computed<string | null>(() => collection.activeEntry.value?.currentTaskId ?? null)
   const historyStack = computed(() => collection.activeEntry.value?.historyStack ?? [])
 
