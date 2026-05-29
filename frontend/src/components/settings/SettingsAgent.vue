@@ -26,6 +26,8 @@ onMounted(() => { void modelStore.ensureLoaded() })
 const localToolModels = computed<SelectOption[]>(() =>
   modelStore.byCategory('llm')
     .filter(m => m.capabilities?.includes('tools'))
+    .filter(m => m.downloaded)   // only models actually on disk — selecting an
+                                 // undownloaded model would crash the agent run
     .map(m => ({ value: `${m.family}:${m.variant}`, label: m.label }))
 )
 
