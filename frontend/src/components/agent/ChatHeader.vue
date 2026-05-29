@@ -7,7 +7,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'clear'): void
+  (e: 'back'): void
 }>()
 
 const settingsStore = useAgentSettingsStore()
@@ -30,6 +30,14 @@ const modelLabel = computed(() => {
 <template>
   <div class="chat-header">
     <div class="chat-header-left">
+      <button
+        class="header-btn header-back-btn"
+        :title="$t('agent.session.back')"
+        :aria-label="$t('agent.session.back')"
+        @click="emit('back')"
+      >
+        <i class="bi bi-arrow-left"></i>
+      </button>
       <span class="chat-title">{{ $t('agent.bubble.title') }}</span>
       <span v-if="modelLabel" class="model-badge">
         {{ modelLabel }}
@@ -39,9 +47,6 @@ const modelLabel = computed(() => {
       <span v-if="props.tokenUsage.prompt > 0 || props.tokenUsage.completion > 0" class="token-counter">
         {{ $t('agent.bubble.token_count', { prompt: props.tokenUsage.prompt, completion: props.tokenUsage.completion }) }}
       </span>
-      <button class="header-btn" :title="$t('agent.bubble.clear')" @click="emit('clear')">
-        <i class="bi bi-trash3"></i>
-      </button>
     </div>
   </div>
 </template>
