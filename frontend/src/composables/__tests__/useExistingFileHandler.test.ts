@@ -39,6 +39,22 @@ describe('useExistingFileHandler', () => {
     expect(loadInfo).toHaveBeenCalledOnce()
   })
 
+  it('passes makeThumbnail() result as the entry thumbnailUrl (non-image domains)', () => {
+    const c = fakeCollection()
+    const makeThumbnail = vi.fn(() => 'data:image/png;base64,GLYPH')
+    const { addExistingFile } = useExistingFileHandler(c, undefined, makeThumbnail)
+    addExistingFile({ fileId: 'aud1', filename: 's.wav', fileSize: 9, mimeType: 'audio/wav' })
+    expect(makeThumbnail).toHaveBeenCalledOnce()
+    expect(c.calls[0].thumbnailUrl).toBe('data:image/png;base64,GLYPH')
+  })
+
+  it('without makeThumbnail, thumbnailUrl is undefined (image domain falls back to download URL)', () => {
+    const c = fakeCollection()
+    const { addExistingFile } = useExistingFileHandler(c)
+    addExistingFile({ fileId: 'img1', filename: 'p.png', fileSize: 3, mimeType: 'image/png' })
+    expect(c.calls[0].thumbnailUrl).toBeUndefined()
+  })
+
   it('addExistingFile works for MIDI-shaped ref (fileSize 0, audio/midi) without fetch', () => {
     const c = fakeCollection()
     const fetchMock = vi.fn()

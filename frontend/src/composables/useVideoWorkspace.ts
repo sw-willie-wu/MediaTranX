@@ -5,6 +5,7 @@ import { useToast } from '@/composables/useToast'
 import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
+import { renderGlyphThumbnail, TOOL_GLYPH } from '@/utils/glyphThumbnail'
 import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
 import { apiFetch } from '@/composables/useApi'
 import { useI18n } from 'vue-i18n'
@@ -194,7 +195,9 @@ export function useVideoWorkspace() {
     }
   }
 
-  const { handleExistingFiles } = useExistingFileHandler(collection, loadMediaInfo)
+  const { handleExistingFiles } = useExistingFileHandler(
+    collection, loadMediaInfo, () => renderGlyphThumbnail(TOOL_GLYPH.video),
+  )
   usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
 
   function handleRemoveFile() {

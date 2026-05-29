@@ -104,6 +104,10 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     fileSize: number
     mimeType: string
     previewUrl: string
+    /** Filmstrip thumbnail. Defaults to previewUrl (fine for images, whose
+     *  download URL renders as an <img>). Non-image domains pass a glyph icon
+     *  because the raw media download URL is not a displayable image. */
+    thumbnailUrl?: string
   }): string {
     const id = crypto.randomUUID()
     const entry: MediaEntry = {
@@ -114,7 +118,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
       fileId: args.fileId,
       sourceDir: undefined,
       previewUrl: args.previewUrl,
-      thumbnailUrl: args.previewUrl,
+      thumbnailUrl: args.thumbnailUrl ?? args.previewUrl,
       status: 'idle',
       progress: 0,
       historyStack: [],

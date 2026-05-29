@@ -5,6 +5,7 @@ import { useToast } from '@/composables/useToast'
 import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
+import { renderGlyphThumbnail, TOOL_GLYPH } from '@/utils/glyphThumbnail'
 import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
 import { apiFetch } from '@/composables/useApi'
 import { useI18n } from 'vue-i18n'
@@ -156,7 +157,9 @@ export function useAudioWorkspace() {
     }
   }
 
-  const { handleExistingFiles, addExistingFile } = useExistingFileHandler(collection, loadAudioInfo)
+  const { handleExistingFiles, addExistingFile } = useExistingFileHandler(
+    collection, loadAudioInfo, () => renderGlyphThumbnail(TOOL_GLYPH.audio),
+  )
   usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
 
   function handleRemoveFile() {
