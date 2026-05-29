@@ -110,6 +110,32 @@ function mapMessagesToAgUi(msgs: Message[]): AgUiMessage[] {
 }
 
 /**
+ * Resume-side defense: drop assistant tool_calls entries that have no matching
+ * tool row, and drop orphan tool rows (no matching assistant call). An
+ * unbalanced history would 400 OpenAI when re-sent verbatim on the next round
+ * (see agent_service _msg_to_dict + the OpenAI Strict Tool Calling work).
+ */
+function sanitizeHistory(msgs: Message[]): Message[] {
+  const toolRowIds = new Set(
+    msgs.filter((m) => m.role === 'tool').map((m) => (m as Extract<Message, { role: 'tool' }>).toolCallId),
+  )
+  const keptCallIds = new Set<string>()
+  const out: Message[] = []
+  for (const m of msgs) {
+    if (m.role === 'assistant') {
+      const kept = (m.toolCalls ?? []).filter((tc) => toolRowIds.has(tc.id))
+      for (const tc of kept) keptCallIds.add(tc.id)
+      out.push(kept.length ? { ...m, toolCalls: kept } : { role: 'assistant', content: m.content })
+    } else if (m.role === 'tool') {
+      if (keptCallIds.has(m.toolCallId)) out.push(m)  // assistant always precedes its tool rows
+    } else {
+      out.push(m)
+    }
+  }
+  return out
+}
+
+/**
  * Launder a value into a plain, structured-cloneable object tree.
  *
  * HttpAgent.runAgent() runs structuredClone() on its inputs (messages / state /
@@ -230,6 +256,27 @@ function _createAgent(deps: UseAgentDeps = {}) {
   async function commitMessage(msg: Message): Promise<void> {
     messages.value.push(msg)
     await persistMessage(currentSessionId.value, msg)
+  }
+
+  /** Load a persisted session for resume. Throws on fetch failure (caller toasts). */
+  async function loadSession(id: string): Promise<void> {
+    const res = await apiFetch(`/agent/sessions/${id}/messages`)
+    if (!res.ok) throw new Error(`loadSession failed: HTTP ${res.status}`)
+    const data = (await res.json()) as { id: string; messages: Message[] }
+    messages.value = sanitizeHistory(data.messages ?? [])
+    currentSessionId.value = id
+    threadId.value = id
+    agent = null               // recreate HttpAgent for this thread id
+    store.resetTokens()        // token counts aren't persisted; clear the running total
+    invalidFieldStrikes = 0
+    outerStop = false
+  }
+
+  /** Delete a persisted session. If it's the active one, start a fresh session. */
+  async function deleteSession(id: string): Promise<void> {
+    const res = await apiFetch(`/agent/sessions/${id}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`deleteSession failed: HTTP ${res.status}`)
+    if (id === currentSessionId.value) startNewSession()
   }
 
   // ─── Run loop ────────────────────────────────────────────────────
@@ -394,5 +441,5 @@ function _createAgent(deps: UseAgentDeps = {}) {
     })
   }
 
-  return { threadId, currentSessionId, messages, isRunning, sendUserText, cancelRun, startNewSession }
+  return { threadId, currentSessionId, messages, isRunning, sendUserText, cancelRun, startNewSession, loadSession, deleteSession }
 }

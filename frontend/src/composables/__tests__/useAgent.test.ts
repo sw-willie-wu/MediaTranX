@@ -479,6 +479,84 @@ describe('useAgent.runLoop', () => {
     expect(messages.value).toHaveLength(2)
   })
 
+  // ─── loadSession / deleteSession ────────────────────────────────────────────
+
+  it('loadSession populates messages + sets sessionId/threadId + recreates agent + resets tokens', async () => {
+    const store = useAgentStore()
+    vi.mocked(apiFetch).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        id: 's-load',
+        messages: [
+          { role: 'user', content: 'hi' },
+          { role: 'assistant', content: 'hello back' },
+        ],
+      }),
+    } as Response)
+
+    const fake = makeFakeAgent(() => ({ textDeltas: ['x'] }))
+    const { loadSession, messages, threadId, currentSessionId } = useAgent({ agentFactory: fake.factory })
+    store.addUsage({ promptTokens: 10, completionTokens: 5 })
+
+    await loadSession('s-load')
+
+    expect(messages.value).toHaveLength(2)
+    expect(currentSessionId.value).toBe('s-load')
+    expect(threadId.value).toBe('s-load')
+    expect(store.threadTokens.prompt).toBe(0)
+    expect(store.threadTokens.completion).toBe(0)
+  })
+
+  it('loadSession sanitizes dangling tool_calls and orphan tool rows', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        id: 's-bad',
+        messages: [
+          { role: 'user', content: 'do it' },
+          // assistant references c1 (matched) and c2 (no tool row -> dropped)
+          { role: 'assistant', content: '', toolCalls: [
+            { id: 'c1', function: { name: 'set_field', arguments: '{}' } },
+            { id: 'c2', function: { name: 'set_field', arguments: '{}' } },
+          ] },
+          { role: 'tool', content: '{}', toolCallId: 'c1' },
+          // orphan tool row (no assistant call) -> dropped
+          { role: 'tool', content: '{}', toolCallId: 'zzz' },
+        ],
+      }),
+    } as Response)
+
+    const fake = makeFakeAgent(() => ({ textDeltas: ['x'] }))
+    const { loadSession, messages } = useAgent({ agentFactory: fake.factory })
+
+    await loadSession('s-bad')
+
+    // user, assistant(with only c1), tool(c1) — orphan zzz dropped
+    expect(messages.value).toHaveLength(3)
+    const asst = messages.value[1] as { role: 'assistant'; toolCalls?: { id: string }[] }
+    expect(asst.toolCalls?.map((t) => t.id)).toEqual(['c1'])
+    const toolIds = messages.value.filter((m) => m.role === 'tool').map((m) => (m as { toolCallId: string }).toolCallId)
+    expect(toolIds).toEqual(['c1'])
+  })
+
+  it('loadSession throws on fetch failure (caller shows toast)', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce({ ok: false, status: 500 } as Response)
+    const fake = makeFakeAgent(() => ({ textDeltas: ['x'] }))
+    const { loadSession } = useAgent({ agentFactory: fake.factory })
+    await expect(loadSession('s1')).rejects.toThrow()
+  })
+
+  it('deleteSession of the active session starts a new one', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) } as Response)
+    const fake = makeFakeAgent(() => ({ textDeltas: ['x'] }))
+    const { deleteSession, currentSessionId } = useAgent({ agentFactory: fake.factory })
+    const active = currentSessionId.value
+
+    await deleteSession(active)
+
+    expect(currentSessionId.value).not.toBe(active)
+  })
+
   // ─── Non-abort error ─────────────────────────────────────────────────────────
 
   it('unexpected reject (no RUN_ERROR) → internal error assistant message + loop breaks', async () => {
