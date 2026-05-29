@@ -69,7 +69,7 @@ export default {
     audio: '音訊',
     image: '圖片',
     document: '文件',
-    drop_text: '將檔案拖曳至此',
+    drop_text: '將檔案拖曳或貼上至此',
     drop_hint: '自動識別檔案類型並進入對應工具',
     unknown_file_type: '無法識別此檔案類型',
   },

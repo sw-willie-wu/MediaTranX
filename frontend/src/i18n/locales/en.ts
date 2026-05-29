@@ -69,7 +69,7 @@ export default {
     audio: 'Audio',
     image: 'Image',
     document: 'Document',
-    drop_text: 'Drop files here',
+    drop_text: 'Drop or paste files here',
     drop_hint: 'Automatically detect file type and open the appropriate tool',
     unknown_file_type: 'Unable to recognize this file type',
   },
