@@ -2,13 +2,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
 import { useFilesStore } from '@/stores/files'
+import { useMediaCollection } from '@/composables/useMediaCollection'
+
+type AddExistingArgs = Parameters<ReturnType<typeof useMediaCollection>['addExistingEntry']>[0]
 
 function fakeCollection() {
-  const calls: any[] = []
-  return {
-    calls,
-    addExistingEntry: vi.fn((a: any) => { calls.push(a); return 'entry-' + a.fileId }),
-  } as any
+  const calls: AddExistingArgs[] = []
+  const addExistingEntry = vi.fn((a: AddExistingArgs): string => { calls.push(a); return 'entry-' + a.fileId })
+  return { calls, addExistingEntry }
 }
 
 describe('useExistingFileHandler', () => {
