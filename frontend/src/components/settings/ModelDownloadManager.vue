@@ -317,7 +317,7 @@ onMounted(() => {
         <!-- 編輯表單 -->
         <div v-if="editingConnId === conn.id" class="conn-edit-form">
           <div class="form-group">
-            <label>{{ $t('settings.models.remote_name') }}</label>
+            <label>{{ $t('settings.remote.name') }}</label>
             <input class="form-input" v-model="editConn.name" />
           </div>
           <div class="form-group">
