@@ -499,11 +499,13 @@ MODELS_REGISTRY = {
                     "n_ctx_min": 4096, "n_ctx_max": 131072, "n_ctx_default": 16384, "vram_per_ctx_token": 0.03, "max_srt_batch": 15,
                     "vram_overhead_mb": 600,
                     "variants": {
+                        # HF repo paths are case-sensitive — must use uppercase E4B
+                        # (matches the repo's actual filenames). Lowercase forms 404.
                         "Q4_K_M": {
                             "repo_id": "ggml-org/gemma-4-E4B-it-GGUF",
-                            "filename": "gemma-4-e4b-it-Q4_K_M.gguf",
+                            "filename": "gemma-4-E4B-it-Q4_K_M.gguf",
                             "mmproj_repo_id": "ggml-org/gemma-4-E4B-it-GGUF",
-                            "mmproj_filename": "mmproj-gemma-4-e4b-it-bf16.gguf",
+                            "mmproj_filename": "mmproj-gemma-4-E4B-it-bf16.gguf",
                             "size_mb": 5470,
                             "mmproj_size_mb": 992,
                         },
