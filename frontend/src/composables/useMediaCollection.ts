@@ -18,10 +18,12 @@ export interface HistoryEntry {
 
 export interface MediaEntry {
   id: string
-  file: File
+  file: File | null
+  fileName: string
+  fileSize: number
   fileId: string | null
   sourceDir?: string
-  previewUrl: string       // full-res blob URL of the original file
+  previewUrl: string       // blob: URL (uploaded) or http download URL (adopted result)
   thumbnailUrl: string
   status: 'idle' | 'uploading' | 'processing' | 'done'
   progress: number
@@ -74,6 +76,8 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     const entry: MediaEntry = {
       id,
       file,
+      fileName: file.name,
+      fileSize: file.size,
       fileId: null,
       sourceDir: srcDir,
       previewUrl,
@@ -93,12 +97,47 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     return id
   }
 
+  /** Add an entry that references an existing backend file (no local File, no upload). */
+  function addExistingEntry(args: {
+    fileId: string
+    fileName: string
+    fileSize: number
+    mimeType: string
+    previewUrl: string
+    /** Filmstrip thumbnail. Defaults to previewUrl (fine for images, whose
+     *  download URL renders as an <img>). Non-image domains pass a glyph icon
+     *  because the raw media download URL is not a displayable image. */
+    thumbnailUrl?: string
+  }): string {
+    const id = crypto.randomUUID()
+    const entry: MediaEntry = {
+      id,
+      file: null,
+      fileName: args.fileName,
+      fileSize: args.fileSize,
+      fileId: args.fileId,
+      sourceDir: undefined,
+      previewUrl: args.previewUrl,
+      thumbnailUrl: args.thumbnailUrl ?? args.previewUrl,
+      status: 'idle',
+      progress: 0,
+      historyStack: [],
+      redoStack: [],
+      currentTaskId: null,
+    }
+    entries.value.set(id, entry)
+    activeId.value = id
+    selectedIds.value = new Set()
+    log.info('addExistingEntry', { id, fileId: args.fileId, fileName: args.fileName })
+    return id
+  }
+
   function removeEntry(id: string): void {
     const entry = entries.value.get(id)
     if (!entry) return
-    log.info('removeEntry', { id, fileName: entry.file.name })
+    log.info('removeEntry', { id, fileName: entry.fileName })
 
-    URL.revokeObjectURL(entry.previewUrl)
+    if (entry.previewUrl.startsWith('blob:')) URL.revokeObjectURL(entry.previewUrl)
     if (entry.thumbnailUrl !== entry.previewUrl && entry.thumbnailUrl.startsWith('blob:')) {
       URL.revokeObjectURL(entry.thumbnailUrl)
     }
@@ -126,7 +165,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
 
   function removeAllEntries(): void {
     for (const entry of entries.value.values()) {
-      URL.revokeObjectURL(entry.previewUrl)
+      if (entry.previewUrl.startsWith('blob:')) URL.revokeObjectURL(entry.previewUrl)
       if (entry.thumbnailUrl !== entry.previewUrl && entry.thumbnailUrl.startsWith('blob:')) {
         URL.revokeObjectURL(entry.thumbnailUrl)
       }
@@ -216,7 +255,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
             const historyEntry: HistoryEntry = {
               fileId: outputFileId,
               previewUrl,
-              outputFilename: outputFilename ?? entry.file.name,
+              outputFilename: outputFilename ?? entry.fileName,
               taskType: task.taskType,
               meta: Object.keys(meta).length > 0 ? meta : undefined,
             }
@@ -279,6 +318,7 @@ export function useMediaCollection(options?: MediaCollectionOptions) {
     entriesList,
     // Methods
     addEntry,
+    addExistingEntry,
     removeEntry,
     removeEntries,
     removeAllEntries,

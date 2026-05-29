@@ -65,7 +65,7 @@ export function useMultiSubmit(collection: ReturnType<typeof useMediaCollection>
           perFileParams,
           label,
           taskType,
-          entry.file.name,
+          entry.fileName,
         )
         if (taskId) {
           collection.registerTask(taskId, entry.id)

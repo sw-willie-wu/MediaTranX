@@ -7,7 +7,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import type { Router } from 'vue-router'
-import { apiFetch, getApiBase } from '@/composables/useApi'
+import { apiFetch } from '@/composables/useApi'
 import { useTaskStore } from '@/stores/tasks'
 import { useFilesStore } from '@/stores/files'
 import { detectTypeByName, getToolPath, type ToolType } from '@/utils/mediaType'
@@ -266,9 +266,9 @@ export const useResultsStore = defineStore('results', () => {
   }
 
   /**
-   * Fetch a result file's blob, wrap as File, set as pendingFile, then route
-   * to the matching tool. If already on that route, dispatch a window event
-   * so the active Workspace composable can pick it up via consumePendingFile.
+   * Stage a result file by reference (no blob download) and route to the
+   * matching tool. If already on that route, dispatch a window event so the
+   * active Workspace composable can pick up the pending refs immediately.
    */
   async function openInTool(
     fileId: string,
@@ -284,32 +284,22 @@ export const useResultsStore = defineStore('results', () => {
       return
     }
 
-    try {
-      const res = await fetch(`${getApiBase()}/files/${fileId}/download`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const blob = await res.blob()
-      const file = new File([blob], r.filename, { type: r.mimeType || blob.type })
+    useFilesStore().setPendingResults([
+      { fileId: r.fileId, filename: r.filename, fileSize: r.fileSize, mimeType: r.mimeType },
+    ])
 
-      useFilesStore().setPendingFile(file)
-
-      const targetPath = getToolPath(targetType)
-      if (currentRoute !== targetPath) {
-        await router.push(targetPath)
-      } else {
-        // Same tool — onActivated won't fire on same-route; emit an event so the
-        // active Workspace composable can consume the pending file.
-        window.dispatchEvent(new CustomEvent('pending-file-ready'))
-      }
-    } catch (e) {
-      log.error('openInTool failed', e)
+    const targetPath = getToolPath(targetType)
+    if (currentRoute !== targetPath) {
+      await router.push(targetPath)
+    } else {
+      window.dispatchEvent(new CustomEvent('pending-results-ready'))
     }
   }
 
   /**
-   * Batch counterpart of openInTool. Fetches all selected files in parallel,
-   * stages them as pendingFiles in the files store, then routes to the tool.
-   * All ids must resolve to the same target tool — caller (BatchBar) ensures
-   * this via canOpenInTool guard.
+   * Batch counterpart of openInTool. Stages all selected files by reference
+   * (no blob download), then routes to the matching tool. All ids must resolve
+   * to the same target tool — caller (BatchBar) ensures this via canOpenInTool guard.
    */
   async function openManyInTool(
     ids: string[],
@@ -318,52 +308,35 @@ export const useResultsStore = defineStore('results', () => {
   ): Promise<void> {
     if (ids.length === 0) return
 
-    // Resolve entries + filter unknown types
     const entries = ids
       .map((id) => results.value.find((r) => r.fileId === id))
       .filter((r): r is ResultEntry => !!r)
     if (entries.length === 0) return
 
     let targetType: ToolType | null = null
+    const refs: { fileId: string; filename: string; fileSize: number; mimeType: string }[] = []
     for (const e of entries) {
-      const t = detectTypeByName(e.filename, e.mimeType)
-      if (t === null) {
+      const tt = detectTypeByName(e.filename, e.mimeType)
+      if (tt === null) {
         log.warn('openManyInTool: unknown type, skipped', { fileId: e.fileId })
         continue
       }
-      if (targetType === null) targetType = t
-      else if (targetType !== t) {
+      if (targetType === null) targetType = tt
+      else if (targetType !== tt) {
         log.error('openManyInTool: mixed types — caller should guard', { ids })
         return
       }
+      refs.push({ fileId: e.fileId, filename: e.filename, fileSize: e.fileSize, mimeType: e.mimeType })
     }
-    if (!targetType) return
+    if (!targetType || refs.length === 0) return
 
-    // Fetch all blobs in parallel — preserve selection order via index-keyed slots
-    const apiBase = getApiBase()
-    const slots: (File | null)[] = new Array(entries.length).fill(null)
-    await Promise.all(
-      entries.map(async (e, i) => {
-        try {
-          const res = await fetch(`${apiBase}/files/${e.fileId}/download`)
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          const blob = await res.blob()
-          slots[i] = new File([blob], e.filename, { type: e.mimeType || blob.type })
-        } catch (err) {
-          log.warn('openManyInTool: fetch failed', { fileId: e.fileId, err })
-        }
-      }),
-    )
-    const files = slots.filter((f): f is File => f !== null)
-    if (files.length === 0) return
-
-    useFilesStore().setPendingFiles(files)
+    useFilesStore().setPendingResults(refs)
 
     const targetPath = getToolPath(targetType)
     if (currentRoute !== targetPath) {
       await router.push(targetPath)
     } else {
-      window.dispatchEvent(new CustomEvent('pending-files-ready'))
+      window.dispatchEvent(new CustomEvent('pending-results-ready'))
     }
   }
 

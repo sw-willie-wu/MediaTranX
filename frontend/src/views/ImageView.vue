@@ -25,6 +25,7 @@ const {
   goBack, goForward, handleFile, handleFiles, handleRemoveFile, handlePanelSubmit,
   handleDownload, handleDownloadBatch,
   collection, activeId, selectedIds,
+  handleExistingFiles,
 } = useImageWorkspace()
 
 const { submitToAll } = useMultiSubmit(collection)
@@ -392,6 +393,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     @execute="handleExecute"
     @file="handleFile"
     @files="handleFiles"
+    @existing-files="handleExistingFiles"
     @remove-file="handleRemoveFile"
     @clear-selection="collection.clearSelection()"
   >

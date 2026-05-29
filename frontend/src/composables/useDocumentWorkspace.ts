@@ -5,6 +5,8 @@ import { useToast } from '@/composables/useToast'
 import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
+import { renderGlyphThumbnail, TOOL_GLYPH } from '@/utils/glyphThumbnail'
+import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
 import { apiFetch } from '@/composables/useApi'
 import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
@@ -66,7 +68,7 @@ export function useDocumentWorkspace() {
   const fileId = computed<string | null>(() => collection.activeEntry.value?.fileId ?? null)
   const isUploading = computed<boolean>(() => collection.activeEntry.value?.status === 'uploading')
   const sourceDir = computed<string | undefined>(() => collection.activeEntry.value?.sourceDir)
-  const currentFileName = computed<string>(() => collection.activeEntry.value?.file.name ?? '')
+  const currentFileName = computed<string>(() => collection.activeEntry.value?.fileName ?? '')
   const currentTaskId = computed<string | null>(() => collection.activeEntry.value?.currentTaskId ?? null)
   const historyStack = computed(() => collection.activeEntry.value?.historyStack ?? [])
 
@@ -115,7 +117,10 @@ export function useDocumentWorkspace() {
     }
   }
 
-  usePendingFileListener(handleFile, handleFiles)
+  const { handleExistingFiles } = useExistingFileHandler(
+    collection, undefined, () => renderGlyphThumbnail(TOOL_GLYPH.document),
+  )
+  usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
 
   function handleRemoveFile() {
     const id = collection.activeId.value
@@ -225,5 +230,6 @@ export function useDocumentWorkspace() {
     handleDownload,
     handleDownloadBatch,
     handleTextDownload,
+    handleExistingFiles,
   }
 }
