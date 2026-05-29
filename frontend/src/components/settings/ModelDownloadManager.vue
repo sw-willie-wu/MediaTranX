@@ -66,23 +66,19 @@ const editConn = ref({ name: '', endpoint: '', api_key: '' })
 const showEditKey = ref(false)
 const showNewKey = ref(false)
 
-// Transient reveal state — never written back into the store
-const revealedKey = ref<Record<number, string>>({})
-
-async function onReveal(id: number) {
-  if (revealedKey.value[id]) {
-    try {
-      await navigator.clipboard.writeText(revealedKey.value[id])
-    } catch {
-      toast.show(t('settings.models.copy_failed'), { type: 'error' })
-    }
+async function onCopyKey(id: number) {
+  // Copy-only: fetch the plaintext once and write it straight to the clipboard.
+  // The key is never displayed on screen (no reveal/visible state).
+  const k = await remoteModelStore.revealKey(id)
+  if (!k) {
+    toast.show(t('settings.models.reveal_failed'), { type: 'error' })
     return
   }
-  const k = await remoteModelStore.revealKey(id)
-  if (k) {
-    revealedKey.value[id] = k
-  } else {
-    toast.show(t('settings.models.reveal_failed'), { type: 'error' })
+  try {
+    await navigator.clipboard.writeText(k)
+    toast.show(t('settings.models.key_copied'), { type: 'success' })
+  } catch {
+    toast.show(t('settings.models.copy_failed'), { type: 'error' })
   }
 }
 
@@ -108,7 +104,6 @@ function startEdit(conn: RemoteConnection) {
 
 function cancelEdit() {
   editingConnId.value = null
-  revealedKey.value = {}
 }
 
 async function saveEdit(id: number) {
@@ -122,7 +117,6 @@ async function saveEdit(id: number) {
   const ok = await remoteModelStore.updateConnection(id, payload)
   if (ok) {
     editingConnId.value = null
-    revealedKey.value = {}
   }
 }
 
@@ -300,11 +294,10 @@ onMounted(() => {
           <div class="conn-title">
             <span class="conn-name">{{ conn.name }}</span>
             <span class="conn-endpoint">{{ conn.endpoint }}</span>
-            <span v-if="conn.has_api_key" class="conn-key-hint">{{ revealedKey[conn.id] ?? conn.key_hint }}</span>
           </div>
           <div class="conn-actions" @click.stop>
-            <button v-if="conn.has_api_key" class="btn-secondary btn-sm" @click="onReveal(conn.id)" :title="revealedKey[conn.id] ? $t('common.copy') : $t('settings.models.reveal_key')">
-              <i :class="revealedKey[conn.id] ? 'bi bi-clipboard-check' : 'bi bi-eye'"></i>
+            <button v-if="conn.has_api_key" class="btn-secondary btn-sm" @click="onCopyKey(conn.id)" :title="$t('settings.models.copy_key')">
+              <i class="bi bi-clipboard"></i>
             </button>
             <button class="btn-secondary btn-sm" @click="refreshConnModels(conn)" :title="$t('settings.remote.refresh')">
               <i class="bi bi-arrow-clockwise"></i>
@@ -334,7 +327,7 @@ onMounted(() => {
           <div class="form-group">
             <label>API Key</label>
             <div class="input-with-eye">
-              <input class="form-input" v-model="editConn.api_key" :type="showEditKey ? 'text' : 'password'" :placeholder="conn.has_api_key ? $t('settings.models.remote_key_keep') : 'sk-...'" />
+              <input class="form-input" v-model="editConn.api_key" :type="showEditKey ? 'text' : 'password'" :placeholder="conn.has_api_key && conn.key_hint ? conn.key_hint : 'sk-...'" />
               <button class="eye-btn" @mousedown="showEditKey = true" @mouseup="showEditKey = false" @mouseleave="showEditKey = false">
                 <i :class="showEditKey ? 'bi bi-eye' : 'bi bi-eye-slash'"></i>
               </button>
@@ -578,12 +571,6 @@ onMounted(() => {
 .conn-endpoint {
   color: var(--text-muted);
   font-size: 0.7rem;
-}
-
-.conn-key-hint {
-  color: var(--text-muted);
-  font-size: 0.7rem;
-  font-family: monospace;
 }
 
 .conn-actions {

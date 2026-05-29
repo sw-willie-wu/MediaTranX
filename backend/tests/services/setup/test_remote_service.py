@@ -233,8 +233,16 @@ class TestKeyHint:
         result = RemoteService().get_connections()
         assert "api_key" not in result[0]
         assert result[0]["has_api_key"] is True
-        assert result[0]["key_hint"] == "…GKEY"
+        # head 3 + tail 3, fixed-width mask between (length-hiding)
+        assert result[0]["key_hint"] == "sk-•••KEY"
         assert "sk-LONGKEY" not in str(result)
+
+    def test_short_key_is_fully_masked(self, fake_dao, fake_cipher):
+        # keys < 8 chars: head+tail would expose most of the secret -> fully masked
+        fake_dao.get_all.return_value = [_conn_obj(id=1, provider="openai", api_key="enc:fake:" + "short"[::-1])]
+        result = RemoteService().get_connections()
+        assert result[0]["key_hint"] == "•••"
+        assert "short" not in str(result)
 
     def test_hint_none_when_no_key(self, fake_dao, fake_cipher):
         fake_dao.get_all.return_value = [_conn_obj(id=1, provider="ollama", api_key=None)]
