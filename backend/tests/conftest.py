@@ -158,4 +158,5 @@ def real_db(monkeypatch):
     monkeypatch.setattr(database, "get_engine", lambda: engine)
     monkeypatch.setattr("app.db.dao.api_connection_dao.get_engine", lambda: engine)
     monkeypatch.setattr("app.db.dao.agent_session_dao.get_engine", lambda: engine)
+    monkeypatch.setattr("app.db.dao.app_setting_dao.get_engine", lambda: engine)
     return engine
