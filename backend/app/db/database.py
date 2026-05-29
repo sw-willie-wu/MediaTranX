@@ -49,6 +49,8 @@ def init_db() -> None:
     # Ensure all models are imported (triggers SQLModel metadata registration)
     import app.db.models.task_history  # noqa: F401
     import app.db.models.api_connection  # noqa: F401
+    import app.db.models.agent_session  # noqa: F401
+    import app.db.models.agent_message  # noqa: F401
 
     engine = get_engine()
 
