@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useAgentStore } from '@/stores/agent'
 import { useAgent } from '@/composables/useAgent'
 import { useBubbleDrag, BUBBLE_SIZE_PX, BUBBLE_EDGE_PX, BUBBLE_MARGIN_PX } from '@/composables/useBubbleDrag'
-import { bubbleVisible } from '@/composables/useBubbleVisibility'
+import { bubbleVisible, bubbleExpanded } from '@/composables/useBubbleVisibility'
 import { useToast } from '@/composables/useToast'
 import ChatHeader from './ChatHeader.vue'
 import ChatMessages from './ChatMessages.vue'
@@ -13,7 +13,6 @@ import SessionList from './SessionList.vue'
 
 const store = useAgentStore()
 const agent = useAgent()
-const expanded = ref(false)
 
 const view = ref<'list' | 'chat'>('chat')   // ChatBubble-local; survives collapse/reopen within a run
 const { t } = useI18n()
@@ -36,7 +35,7 @@ function onNewChat() {
 const { position, isDragging, bubbleStyle, onPointerDown } = useBubbleDrag()
 
 function toggle() {
-  expanded.value = !expanded.value
+  bubbleExpanded.value = !bubbleExpanded.value
 }
 
 function onBubblePointerDown(e: PointerEvent) {
@@ -60,7 +59,7 @@ const PANEL_GAP_PX = 12
 
 const bubbleStyleFinal = computed<Record<string, string | undefined>>(() => {
   const base = bubbleStyle.value
-  if (expanded.value && !isDragging.value) {
+  if (bubbleExpanded.value && !isDragging.value) {
     return { ...base, top: `${EXPANDED_TOP_PX}px` }
   }
   return base
@@ -86,8 +85,8 @@ const panelStyle = computed<Record<string, string>>(() => {
 })
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && expanded.value) {
-    expanded.value = false
+  if (e.key === 'Escape' && bubbleExpanded.value) {
+    bubbleExpanded.value = false
   }
 }
 
@@ -112,17 +111,17 @@ onBeforeUnmount(() => {
          as the close button. -->
     <button
       class="chat-bubble-btn"
-      :class="{ 'is-running': store.isRunning, 'is-dragging': isDragging, 'is-expanded': expanded }"
+      :class="{ 'is-running': store.isRunning, 'is-dragging': isDragging, 'is-expanded': bubbleExpanded }"
       :style="bubbleStyleFinal"
       @pointerdown="onBubblePointerDown"
       :aria-label="$t('agent.bubble.title')"
     >
-      <i class="bi" :class="expanded ? 'bi-x-lg' : 'bi-robot'"></i>
-      <span v-if="store.isRunning && !expanded" class="bubble-pulse"></span>
+      <i class="bi" :class="bubbleExpanded ? 'bi-x-lg' : 'bi-robot'"></i>
+      <span v-if="store.isRunning && !bubbleExpanded" class="bubble-pulse"></span>
     </button>
 
     <!-- Panel (mounted only when expanded, anchored next to bubble) -->
-    <div v-if="expanded" class="chat-bubble-panel" :style="panelStyle">
+    <div v-if="bubbleExpanded" class="chat-bubble-panel" :style="panelStyle">
       <SessionList
         v-if="view === 'list'"
         @select="onSelectSession"

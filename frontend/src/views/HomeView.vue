@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useFilesStore } from '@/stores/files'
 import { detectMediaType, getToolPath } from '@/utils/mediaType'
+import { usePasteUpload } from '@/composables/usePasteUpload'
 
 const router = useRouter()
 const filesStore = useFilesStore()
@@ -33,6 +34,17 @@ function handleDragLeave() {
   isDragging.value = false
 }
 
+function routeFile(file: File, srcDir?: string) {
+  const fileType = detectMediaType(file)
+  if (fileType) {
+    filesStore.pendingFile = file
+    filesStore.pendingSourceDir = srcDir
+    router.push(getToolPath(fileType))
+  } else {
+    alert(t('home.unknown_file_type'))
+  }
+}
+
 function handleDrop(e: DragEvent) {
   e.preventDefault()
   isDragging.value = false
@@ -41,18 +53,14 @@ function handleDrop(e: DragEvent) {
   if (!files || files.length === 0) return
 
   const file = files[0]
-  const fileType = detectMediaType(file)
-
-  // 導航到對應工具頁面，透過 store 傳遞檔案
-  if (fileType) {
-    const srcDir = window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
-    filesStore.pendingFile = file
-    filesStore.pendingSourceDir = srcDir
-    router.push(getToolPath(fileType))
-  } else {
-    alert(t('home.unknown_file_type'))
-  }
+  const srcDir = window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
+  routeFile(file, srcDir)
 }
+
+// 首頁貼上:比照拖曳,取第一個檔偵測型別並導頁。
+usePasteUpload((files) => {
+  if (files.length > 0) routeFile(files[0])
+})
 </script>
 
 <template>

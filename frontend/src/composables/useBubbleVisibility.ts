@@ -36,3 +36,10 @@ watch(bubbleVisible, (v) => {
 export function toggleBubbleVisible(): void {
   bubbleVisible.value = !bubbleVisible.value
 }
+
+/**
+ * Whether the chat panel is expanded (open). Hoisted to a module-level
+ * singleton so non-bubble code (e.g. usePasteUpload's guard) can read it.
+ * Intentionally NOT persisted — the panel should start closed on reload.
+ */
+export const bubbleExpanded = ref<boolean>(false)
