@@ -24,11 +24,17 @@ onMounted(() => { void modelStore.ensureLoaded() })
 // (e.g. "qwen3-8b-Q4_K_M") and cannot be reused as-is, so build the value
 // from `family` + `variant` (variant already has the "size:quant" shape).
 const localToolModels = computed<SelectOption[]>(() =>
-  modelStore.byCategory('llm')
-    .filter(m => m.capabilities?.includes('tools'))
-    .filter(m => m.downloaded)   // only models actually on disk — selecting an
-                                 // undownloaded model would crash the agent run
-    .map(m => ({ value: `${m.family}:${m.variant}`, label: m.label }))
+  // Match the domain tool panels: forPanel() honours the "show undownloaded
+  // models" toggle (off → only downloaded), and each option carries a download
+  // badge (ok = on disk, err = not downloaded) so an undownloaded pick is
+  // clearly flagged rather than silently offered.
+  modelStore.forPanel(
+    modelStore.byCategory('llm').filter(m => m.capabilities?.includes('tools')),
+  ).map(m => ({
+    value: `${m.family}:${m.variant}`,
+    label: m.label,
+    badge: m.downloaded ? ('ok' as const) : ('err' as const),
+  }))
 )
 
 const { mergedOptions } = useModelOptions('tools', localToolModels)
