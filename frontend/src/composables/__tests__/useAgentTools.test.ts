@@ -159,6 +159,39 @@ describe('dispatch: navigate_to', () => {
     const result = await withContext(router, d => d(tc('navigate_to', { route: '/' })))
     expect(result.ok).toBe(true)
   })
+
+  it('resolves the bare word "settings" to /settings', async () => {
+    const router = makeRouter('/')
+    let pushedRoute: string | undefined
+    const origPush = router.push.bind(router)
+    vi.spyOn(router, 'push').mockImplementation((loc: any) => { pushedRoute = loc; return origPush(loc) })
+
+    const result = await withContext(router, d => d(tc('navigate_to', { route: 'settings' })))
+    expect(result.ok).toBe(true)
+    expect(pushedRoute).toBe('/settings')
+  })
+
+  it('maps the word "home" to "/" (not the dead /home route)', async () => {
+    const router = makeRouter('/image')
+    let pushedRoute: string | undefined
+    const origPush = router.push.bind(router)
+    vi.spyOn(router, 'push').mockImplementation((loc: any) => { pushedRoute = loc; return origPush(loc) })
+
+    const result = await withContext(router, d => d(tc('navigate_to', { route: 'home' })))
+    expect(result.ok).toBe(true)
+    expect(pushedRoute).toBe('/')
+  })
+
+  it('rejects an unknown route with invalid_route + allowed, without navigating', async () => {
+    const router = makeRouter('/image')
+    const pushSpy = vi.spyOn(router, 'push')
+
+    const result = await withContext(router, d => d(tc('navigate_to', { route: 'theme' })))
+    expect(result.ok).toBeUndefined()
+    expect(result.error).toBe('agent.error.invalid_route')
+    expect(result.allowed).toContain('settings')
+    expect(pushSpy).not.toHaveBeenCalled()   // a dead route must NOT navigate the app
+  })
 })
 
 // ─── select_subfunction ───────────────────────────────────────────────────────

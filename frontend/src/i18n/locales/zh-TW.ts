@@ -1209,6 +1209,7 @@ export default {
       unknown_tool: '未知工具：{name}',
       tool_failed: '工具 {name} 執行失敗：{error}',
       invalid_field: '目前畫面中找不到欄位 {field}',
+      invalid_route: '「{route}」不是有效的頁面',
       invalid_action: '動作 {name} 目前無法執行',
       no_active_file: '目前沒有載入任何檔案',
       panel_not_supported: '此工具不支援面板 {panel}',

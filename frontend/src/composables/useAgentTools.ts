@@ -334,14 +334,49 @@ async function _getActivePanel() {
 
 // ─── Individual dispatchers ───────────────────────────────────────────────────
 
+// Canonical top-level routes navigate_to can reach. Single source of truth for
+// the word<->path mapping. The model may pass a bare word ("settings") or a path
+// ("/settings"); both resolve here. CRITICAL: home is "/", NOT "/home" — the tool
+// description advertises "home", so it MUST map to "/" or it lands on a dead route.
+const NAV_ROUTES: Record<string, string> = {
+  home: '/',
+  image: '/image',
+  audio: '/audio',
+  video: '/video',
+  document: '/document',
+  tasks: '/tasks',
+  settings: '/settings',
+}
+
+/**
+ * Resolve the model's `route` arg to a canonical path. Known words map to their
+ * path; empty / "/" is home; anything else is treated as a literal path (then
+ * validated against the router before navigating, in navigate_to).
+ */
+function resolveNavRoute(input: string): string {
+  const word = (input ?? '').trim().toLowerCase().replace(/^\/+/, '')
+  if (word === '') return '/'
+  return NAV_ROUTES[word] ?? '/' + word
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
 
   navigate_to: async ({ route }: { route: string }): Promise<ToolResult> => {
     try {
-      useAgentStore().setCurrentAction('agent.banner.act.navigate_to', { route })
+      const path = resolveNavRoute(route)
       const router = await resolveRouter()
-      await router.push(route)
+      // Validate BEFORE navigating. Vue Router's push() does NOT throw for an
+      // unmatched path — it silently navigates to a dead (0-component) location
+      // and resolves — so guarding on push alone would both move the app to a
+      // blank view AND falsely report ok:true. router.resolve() reports the
+      // matched route records without moving the app, so a bad route never
+      // navigates and is reported back so the model can self-correct.
+      if (router.resolve(path).matched.length === 0) {
+        return { error: 'agent.error.invalid_route', route, allowed: Object.keys(NAV_ROUTES) }
+      }
+      useAgentStore().setCurrentAction('agent.banner.act.navigate_to', { route })
+      await router.push(path)
       return { ok: true }
     } catch (e: unknown) {
       return { error: 'agent.error.tool_failed', detail: errMsg(e) }
