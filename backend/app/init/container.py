@@ -28,6 +28,9 @@ from app.services.setup.manager_service import SetupService
 # ── Task History (lightweight) ──
 from app.services.tasks.history_service import TaskHistoryService
 
+# ── Agent Session Persistence (lightweight) ──
+from app.services.agent.agent_session_service import AgentSessionService
+
 
 # ── Lazy factory helper ─────────────────────────────────────────────────────
 # Defers `import module; cls(...)` until the Singleton is first accessed.
@@ -151,6 +154,9 @@ class AppContainer(containers.DeclarativeContainer):
         chat_service=chat_service,
         remote_service=remote_service,
     )
+
+    # ── Agent Session Persistence ──
+    agent_session_service = providers.Singleton(AgentSessionService)
 
     # ── Task History ──
     task_history = providers.Singleton(TaskHistoryService)
