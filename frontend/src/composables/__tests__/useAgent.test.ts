@@ -26,6 +26,12 @@ import { useAgent, _resetAgent } from '@/composables/useAgent'
 import { useAgentStore } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
 import { makeFakeAgent } from '@/composables/__tests__/_fakeAgent'
+import { apiFetch } from '@/composables/useApi'
+
+vi.mock('@/composables/useApi', () => ({
+  getApiBase: () => '/api',
+  apiFetch: vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })),
+}))
 
 // Minimal localStorage stub for node environment (agentSettings.ts calls it on init)
 const localStorageStore: Record<string, string> = {}
@@ -66,6 +72,8 @@ beforeEach(() => {
   localStorageStub.clear()
   setActivePinia(createPinia())
   _resetAgent()   // reset singleton so each test gets a fresh instance
+  vi.mocked(apiFetch).mockReset()
+  vi.mocked(apiFetch).mockResolvedValue({ ok: true, json: () => Promise.resolve({}) } as Response)
 })
 
 // ─── Scenario 1 ───────────────────────────────────────────────────────────────
@@ -440,6 +448,35 @@ describe('useAgent.runLoop', () => {
     expect(toolMessages.length).toBeGreaterThanOrEqual(1)
     const content = JSON.parse((toolMessages[0] as any).content)
     expect(content.user_cancelled).toBe(true)
+  })
+
+  // ─── Persistence tests ──────────────────────────────────────────────────────
+
+  it('persists every committed message via apiFetch', async () => {
+    vi.mocked(apiFetch).mockClear()
+    const fake = makeFakeAgent(() => ({ textDeltas: ['hi there'] }))
+    const { sendUserText, currentSessionId } = useAgent({ agentFactory: fake.factory })
+
+    await sendUserText('hello')
+
+    // user message + assistant reply both persisted to the session endpoint
+    const calls = vi.mocked(apiFetch).mock.calls.filter(
+      (c) => String(c[0]).includes(`/agent/sessions/${currentSessionId.value}/messages`),
+    )
+    expect(calls.length).toBe(2)
+    for (const c of calls) {
+      expect(c[1]?.method).toBe('POST')
+    }
+  })
+
+  it('swallows persist failure (in-memory messages stay authoritative)', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce({ ok: false, status: 500 } as Response)
+    const fake = makeFakeAgent(() => ({ textDeltas: ['hi'] }))
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory })
+
+    // must not throw even though the first persist returns !ok
+    await expect(sendUserText('hello')).resolves.toBeUndefined()
+    expect(messages.value).toHaveLength(2)
   })
 
   // ─── Non-abort error ─────────────────────────────────────────────────────────
