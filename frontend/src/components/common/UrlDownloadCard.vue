@@ -30,7 +30,7 @@ function fmtDuration(s: number): string {
       <div v-else-if="error" class="udc-error">
         <i class="bi bi-exclamation-triangle" />
         <p>{{ $t('video_download.reason.' + error) }}</p>
-        <button class="btn-secondary" @click="cancel">{{ $t('common.close') }}</button>
+        <button class="udc-btn udc-btn-secondary" @click="cancel">{{ $t('common.close') }}</button>
       </div>
 
       <!-- downloadable -->
@@ -54,8 +54,8 @@ function fmtDuration(s: number): string {
         </label>
 
         <div class="udc-actions">
-          <button class="btn-secondary" @click="cancel">{{ $t('common.cancel') }}</button>
-          <button class="btn-primary udc-download-btn" @click="confirm">
+          <button class="udc-btn udc-btn-secondary" @click="cancel">{{ $t('common.cancel') }}</button>
+          <button class="udc-btn udc-btn-primary udc-download-btn" @click="confirm">
             <i class="bi bi-download" /> {{ $t('video_download.download') }}
           </button>
         </div>
@@ -157,5 +157,36 @@ function fmtDuration(s: number): string {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.udc-btn {
+  padding: 0.5rem 1.25rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &.udc-btn-secondary {
+    background: var(--input-bg);
+    color: var(--text-secondary);
+    border: 1px solid var(--panel-border);
+
+    &:hover {
+      background: var(--panel-bg-hover);
+      color: var(--text-primary);
+    }
+  }
+
+  &.udc-btn-primary {
+    background: var(--color-primary);
+    color: white;
+
+    &:hover {
+      background: var(--color-primary-hover);
+    }
+  }
 }
 </style>
