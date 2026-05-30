@@ -198,6 +198,7 @@ export const useTaskStore = defineStore('tasks', () => {
     cancelTask,
     removeTask,
     refreshTasks,
+    startPolling,
     cleanup,
   }
 })
