@@ -1,10 +1,12 @@
 """Video URL download service: gate, settings persistence, probe, orchestration."""
 import logging
+import re
+from pathlib import Path
 
 from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.adapters.binary.ytdlp import ProbeResult, YtDlpWrapper
 from app.db.dao.app_setting_dao import AppSettingDAO
-from app.schemas.video_download import ProbeResponse, VideoDownloadSettings
+from app.schemas.video_download import FormatIntent, ProbeResponse, VideoDownloadSettings
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -12,6 +14,24 @@ logger = logging.getLogger(__name__)
 
 TASK_TYPE_VIDEO_DOWNLOAD = "video.download"
 SETTINGS_KEY = "video_download"
+
+_ILLEGAL = re.compile(r'[<>:"/\x5c|?*\x00-\x1f]')
+
+
+def _build_format_selector(intent: FormatIntent) -> str:
+    """Service composes the yt-dlp format selector; the wrapper just receives it."""
+    if intent.mode == "cap" and intent.max_height:
+        n = intent.max_height
+        return f"bestvideo[height<={n}]+bestaudio/best[height<={n}]"
+    if intent.mode == "ask" and intent.format_id:
+        return f"{intent.format_id}+bestaudio/best"
+    return "bestvideo*+bestaudio/best"  # auto + all fallbacks
+
+
+def _safe_title(title: str) -> str:
+    """Sanitise an (untrusted) title for use as a filename stem."""
+    cleaned = _ILLEGAL.sub("_", (title or "").strip())
+    return (cleaned or "video")[:120]
 
 
 class VideoDownloadService:
@@ -62,6 +82,62 @@ class VideoDownloadService:
         result: ProbeResult = self._ytdlp.probe(url)
         return ProbeResponse.model_validate(result.__dict__)
 
-    # ── Task orchestration (download) — implemented in Task 9 ──
+    # ── Task orchestration (download) ──
+    async def submit_download(
+        self, url: str, format_intent: FormatIntent, title: str = "video"
+    ) -> str:
+        params = {
+            "url": url,
+            "title": title,
+            "format_intent": format_intent.model_dump(),
+        }
+        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_DOWNLOAD, params)
+        logger.info("Video download task submitted: %s", task_id)
+        return task_id
+
     def _handle_task(self, params: dict, progress_callback) -> dict:
-        raise NotImplementedError  # Task 9
+        url = params["url"]
+        intent = FormatIntent.model_validate(params.get("format_intent") or {})
+        title = _safe_title(params.get("title") or "video")
+        selector = _build_format_selector(intent)
+
+        output_file_id, output_path = self._file_service.create_output_path(
+            original_filename=title, suffix="", ext=".mp4",
+        )
+        # yt-dlp --ffmpeg-location wants the directory holding ffmpeg + ffprobe.
+        ffmpeg_dir = str(Path(self._ffmpeg.ffmpeg_path).parent)
+
+        progress_callback(0.0, "task.progress.download_starting")
+        try:
+            self._ytdlp.download(
+                url=url,
+                format_selector=selector,
+                out_path=output_path,
+                ffmpeg_dir=ffmpeg_dir,
+                progress_cb=progress_callback,
+            )
+        except BaseException:
+            # On failure OR cancel, remove the half-written file.
+            try:
+                if output_path.exists():
+                    output_path.unlink()
+            except OSError:
+                pass
+            raise
+
+        output_info = self._file_service.register_output(
+            file_id=output_file_id,
+            file_path=output_path,
+            original_filename=f"{title}.mp4",
+            mime_type="video/mp4",
+        )
+        progress_callback(1.0, "task.progress.download_complete")
+        return {
+            "output_file_id": output_file_id,
+            # Clean, user-facing name (NOT the mangled on-disk name); this is the
+            # Video-tool entry label after handoff. register_output keeps the
+            # disk file; we surface the title-based name.
+            "output_filename": f"{title}.mp4",
+            "output_size": output_info.file_size,
+            "title": title,
+        }
