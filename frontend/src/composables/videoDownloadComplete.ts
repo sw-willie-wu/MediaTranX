@@ -15,22 +15,25 @@ export interface CompletedDownload {
 }
 
 export function adoptCompletedDownload(result: CompletedDownload): void {
-  useFilesStore().setPendingResults([
+  const refs = [
     {
       fileId: result.output_file_id,
       filename: result.output_filename,
       fileSize: result.output_size,
       mimeType: 'video/mp4',
     },
-  ])
-  window.dispatchEvent(new Event('pending-results-ready'))
+  ]
   useToast().show(
     i18n.global.t('video_download.toast.complete', { title: result.title || '' }),
     {
       type: 'success',
       action: {
         label: i18n.global.t('video_download.toast.open'),
-        callback: () => router.push('/video'),
+        callback: async () => {
+          useFilesStore().setPendingResults(refs)
+          await router.push('/video')
+          window.dispatchEvent(new CustomEvent('pending-results-ready'))
+        },
       },
     },
   )
