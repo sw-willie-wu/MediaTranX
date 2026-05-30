@@ -7,6 +7,7 @@ import type { Task } from '@/types/task'
 
 import { getApiBase } from '@/composables/useApi'
 import { createLogger } from '@/utils/logger'
+import { adoptCompletedDownload } from '@/composables/videoDownloadComplete'
 
 const log = createLogger('TaskStore')
 
@@ -170,6 +171,15 @@ export const useTaskStore = defineStore('tasks', () => {
           fileName: existing?.fileName ?? taskData.file_name,
         }
         tasks.value.set(task.taskId, task)
+        // Feature B: hand a freshly-completed video download to the Video tool.
+        if (
+          task.taskType === 'video.download' &&
+          task.status === 'completed' &&
+          existing?.status !== 'completed' &&
+          task.result
+        ) {
+          adoptCompletedDownload(task.result as never)
+        }
       }
 
       // 沒有 active task 時停止輪詢
