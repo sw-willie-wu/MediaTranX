@@ -87,6 +87,22 @@ export function resolvePaste(
   return files.length > 0 ? files : null
 }
 
+const URL_RE = /^https?:\/\/\S+$/i
+
+/** Pure decision: returns a pasted http(s) URL to handle, or null to ignore. */
+export function resolvePastedUrl(
+  e: ClipboardEvent,
+  opts: { expanded: boolean; activeElement: Element | null },
+): string | null {
+  if (opts.expanded) return null
+  if (isEditableTarget(opts.activeElement)) return null
+  const dt = e.clipboardData
+  if (!dt) return null
+  if (dt.files && dt.files.length > 0) return null // files take precedence
+  const text = (dt.getData('text/plain') ?? '').trim()
+  return URL_RE.test(text) ? text : null
+}
+
 /**
  * Wire window 'paste' → onPaste(files). Active only while the host page is
  * the current (visible) route. Mirrors usePendingFileListener: uses ONLY
@@ -94,18 +110,33 @@ export function resolvePaste(
  * both call sites (ToolLayout, HomeView) receive activate/deactivate; this
  * also prevents simultaneously-cached tool pages from double-firing. No
  * onMounted/onUnmounted needed.
+ *
+ * `onUrl` is optional — when omitted the composable behaves exactly as before
+ * (Feature A unchanged). URL detection only fires when (a) no files are
+ * present, (b) the clipboard text looks like an http(s) URL, and (c) the
+ * caller passed `onUrl`.
  */
-export function usePasteUpload(onPaste: (files: File[]) => void): void {
+export function usePasteUpload(
+  onPaste: (files: File[]) => void,
+  onUrl?: (url: string) => void,
+): void {
   function handler(e: ClipboardEvent): void {
+    const ctx = { expanded: bubbleExpanded.value, activeElement: document.activeElement }
     // resolvePaste is fully synchronous — no await before preventDefault,
     // or preventDefault would no-op and the browser may also paste text.
-    const files = resolvePaste(e, {
-      expanded: bubbleExpanded.value,
-      activeElement: document.activeElement,
-    })
-    if (!files) return
-    e.preventDefault()
-    onPaste(files)
+    const files = resolvePaste(e, ctx)
+    if (files) {
+      e.preventDefault()
+      onPaste(files)
+      return
+    }
+    if (onUrl) {
+      const url = resolvePastedUrl(e, ctx)
+      if (url) {
+        e.preventDefault()
+        onUrl(url)
+      }
+    }
   }
   onActivated(() => window.addEventListener('paste', handler))
   onDeactivated(() => window.removeEventListener('paste', handler))
