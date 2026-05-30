@@ -86,5 +86,10 @@ describe('useUrlDownload', () => {
     expect(body.format_intent).toEqual({ mode: 'cap', max_height: 720 })
     expect(startPolling).toHaveBeenCalled()
     expect(u.visible.value).toBe(false) // card hides after submit
+    // a "download started" toast fires (a real translated string, not a key)
+    expect(toastShow).toHaveBeenCalled()
+    const [startedMsg] = toastShow.mock.calls[toastShow.mock.calls.length - 1]
+    expect(typeof startedMsg).toBe('string')
+    expect(startedMsg).not.toBe('video_download.toast.started') // translated, not the raw key
   })
 })

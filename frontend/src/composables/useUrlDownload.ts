@@ -5,6 +5,7 @@
 import { ref } from 'vue'
 import { apiFetch } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import i18n from '@/i18n'
 import { useTaskStore } from '@/stores/tasks'
 import { useVideoDownloadStore, type QualityMode } from '@/stores/videoDownload'
 
@@ -89,11 +90,14 @@ export function useUrlDownload() {
 
   async function confirm(): Promise<void> {
     if (!probe.value) return
+    const title = probe.value.title || 'video'
     const body = {
       url: pendingUrl.value,
-      title: probe.value.title || 'video',
+      title,
       format_intent: buildFormatIntent(store.settings, selectedFormatId.value),
     }
+    // AppToast renders the message verbatim — pass a translated string, not a key.
+    const t = i18n.global.t
     try {
       const res = await apiFetch('/video/download', {
         method: 'POST',
@@ -103,11 +107,12 @@ export function useUrlDownload() {
       if (res.ok) {
         tasks.refreshTasks()
         tasks.startPolling()
+        show(t('video_download.toast.started', { title }), { type: 'info' })
       } else {
-        show('video_download.toast.submit_failed', { type: 'error' })
+        show(t('video_download.toast.submit_failed'), { type: 'error' })
       }
     } catch {
-      show('video_download.toast.submit_failed', { type: 'error' })
+      show(t('video_download.toast.submit_failed'), { type: 'error' })
     } finally {
       cancel() // hide card; progress now lives in the task manager
     }

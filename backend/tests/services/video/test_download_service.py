@@ -20,12 +20,14 @@ def _build(real_db):
     return svc, ytdlp, ffmpeg, fs, tm
 
 
-def test_registers_handler_with_results_policy(real_db):
+def test_registers_handler_with_history_policy(real_db):
+    # "history" → show_in_results=False: the download loads into the Video tool,
+    # not the Results drawer.
     svc, _, _, _, tm = _build(real_db)
     tm.register_handler.assert_called_once()
     args, kwargs = tm.register_handler.call_args
     assert args[0] == TASK_TYPE_VIDEO_DOWNLOAD
-    assert kwargs.get("output_policy") == "results"
+    assert kwargs.get("output_policy") == "history"
 
 
 def test_settings_default_disabled_when_db_empty(real_db):

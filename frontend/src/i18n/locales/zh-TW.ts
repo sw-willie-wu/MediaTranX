@@ -1282,6 +1282,7 @@ export default {
       'video.extract_audio': '影片 · 音軌提取',
       'video.subtitle_generate': '影片 · 字幕提取',
       'video.summary': '影片 · 摘要',
+      'video.download': '影片 · 下載',
       'audio.transcode': '音訊 · 轉檔',
       'audio.cut': '音訊 · 剪輯',
       'audio.volume': '音訊 · 音量調整',
@@ -1342,8 +1343,9 @@ export default {
     },
     toast: {
       submit_failed: '無法開始下載。',
-      complete: '已下載:{title} — 已加入影片工具',
-      open: '開啟',
+      started: '開始下載:{title}',
+      complete: '下載完成:{title},已載入影片工具',
+      open: '前往影片工具',
     },
   },
 

@@ -1282,6 +1282,7 @@ export default {
       'video.extract_audio': 'Video · Extract Audio',
       'video.subtitle_generate': 'Video · Subtitles',
       'video.summary': 'Video · Summary',
+      'video.download': 'Video · Download',
       'audio.transcode': 'Audio · Transcode',
       'audio.cut': 'Audio · Cut',
       'audio.volume': 'Audio · Volume',
@@ -1342,8 +1343,9 @@ export default {
     },
     toast: {
       submit_failed: 'Failed to start the download.',
-      complete: 'Downloaded: {title} — added to the Video tool',
-      open: 'Open',
+      started: 'Downloading: {title}',
+      complete: 'Downloaded: {title} — loaded into the Video tool',
+      open: 'Go to Video tool',
     },
   },
 
