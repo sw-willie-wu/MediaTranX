@@ -117,10 +117,21 @@ class VideoDownloadService:
                 progress_cb=progress_callback,
             )
         except BaseException:
-            # On failure OR cancel, remove the half-written file.
+            # Clean the final file AND yt-dlp's intermediate stream files
+            # (e.g. {stem}.f701.mp4.part, {stem}.f140.m4a.part), which share
+            # output_path's stem and are left behind when a download is
+            # cancelled before the merge step.
+            # NOTE: use iterdir()+startswith rather than glob() because the
+            # stem may contain glob metacharacters (e.g. '[', ']') from
+            # video titles.
             try:
-                if output_path.exists():
-                    output_path.unlink()
+                stem = output_path.stem
+                for leftover in output_path.parent.iterdir():
+                    if leftover.name.startswith(stem):
+                        try:
+                            leftover.unlink()
+                        except OSError:
+                            pass
             except OSError:
                 pass
             raise

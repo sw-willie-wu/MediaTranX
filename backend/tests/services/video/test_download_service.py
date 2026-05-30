@@ -139,22 +139,44 @@ def test_handle_task_downloads_and_registers(real_db, tmp_path):
 
 
 def test_handle_task_cleans_half_file_on_failure(real_db, tmp_path):
+    """Intermediate yt-dlp stream files sharing the output stem are all removed on cancel."""
     from app.handler.exceptions import TaskCancelledError
     ytdlp = MagicMock(); ffmpeg = MagicMock()
     ffmpeg.ffmpeg_path = str(tmp_path / "ffmpeg.exe")
     fs = make_file_service_mock(tmp_path); tm = MagicMock()
 
-    written = {}
+    created: list[Path] = []
 
     def _fake_download(**kw):
-        Path(kw["out_path"]).write_bytes(b"partial")
-        written["path"] = Path(kw["out_path"])
+        out_path = Path(kw["out_path"])
+        stem = out_path.stem
+        # Simulate yt-dlp writing separate stream files + a partial final output.
+        # These names share the stem but have yt-dlp-style suffixes — none of
+        # which is the bare output_path until the final merge.
+        intermediates = [
+            out_path.parent / f"{stem}.f701.mp4.part",
+            out_path.parent / f"{stem}.f140.m4a.part",
+            out_path,  # the final mp4 may also exist partially
+        ]
+        for f in intermediates:
+            f.write_bytes(b"partial")
+            created.append(f)
         raise TaskCancelledError("cancel")
     ytdlp.download.side_effect = _fake_download
+
+    # An unrelated file in the same dir must NOT be touched.
+    unrelated = tmp_path / "other.mp4"
+    unrelated.write_bytes(b"keep me")
 
     svc = VideoDownloadService(yt_dlp_wrapper=ytdlp, ffmpeg=ffmpeg,
                                file_service=fs, task_manager=tm)
     with pytest.raises(TaskCancelledError):
         svc._handle_task({"url": "http://x", "title": "Clip",
                           "format_intent": {"mode": "auto"}}, lambda p, m: None)
-    assert not written["path"].exists()  # half-file removed
+
+    # All stem-matching intermediates must be gone.
+    for f in created:
+        assert not f.exists(), f"expected {f.name} to be removed, but it still exists"
+
+    # Unrelated files in the same directory must be untouched.
+    assert unrelated.exists(), "unrelated file was incorrectly removed"
