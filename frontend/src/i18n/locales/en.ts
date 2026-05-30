@@ -1002,6 +1002,7 @@ export default {
       system: 'System Info',
       models: 'AI Models',
       agent: 'Agent',
+      'video-download': 'Video Download',
       about: 'About',
     },
 
@@ -1307,6 +1308,35 @@ export default {
       invalid_request: 'Invalid request parameters.',
       invalid_params: 'Unsupported parameter for this model.',
       remote_error: 'Remote API error.',
+    },
+  },
+
+  // ── Video download ────────────────────────────────────────────────────
+  video_download: {
+    terms_title: 'Video Download — Terms',
+    terms_body: 'You may only download content you have the right to use. Respect copyright and each site\'s Terms of Service. You are solely responsible for your use; the developer assumes no liability.',
+    agree: 'I have read and agree to the above',
+    enable: 'Enable video download',
+    quality_mode: 'Download quality',
+    quality_auto: 'Best available (auto)',
+    quality_cap: 'Cap resolution',
+    quality_ask: 'Ask each time',
+    max_height: 'Max resolution',
+    checking: 'Checking URL...',
+    quality: 'Quality',
+    download: 'Download',
+    reason: {
+      unsupported: 'This site or URL is not supported.',
+      private: 'This is a private video.',
+      geo: 'This video is not available in your region.',
+      age_restricted: 'This video is age-restricted and requires sign-in.',
+      network: 'Network error. Please try again.',
+      unknown: 'Could not process this URL.',
+    },
+    toast: {
+      submit_failed: 'Failed to start the download.',
+      complete: 'Downloaded: {title} — added to the Video tool',
+      open: 'Open',
     },
   },
 
