@@ -306,6 +306,10 @@ export default {
       analyzing_audio: '分析音訊中...',
       converting_midi: '轉換 MIDI 事件...',
       midi_complete: '音訊轉 MIDI 完成',
+      // video download
+      download_starting: '開始下載...',
+      downloading_video: '下載影片中...',
+      merging_video: '合併串流中...',
       // video transcode
       transcode_starting: '開始轉檔...',
       transcoding: '轉檔中...',
@@ -998,6 +1002,7 @@ export default {
       system: '系統資訊',
       models: 'AI 模型管理',
       agent: 'Agent',
+      'video-download': '影片下載',
       about: '關於',
     },
 
@@ -1303,6 +1308,35 @@ export default {
       invalid_request: '請求參數錯誤。',
       invalid_params: '此模型不支援指定的參數。',
       remote_error: '遠端 API 錯誤。',
+    },
+  },
+
+  // ── 影片下載 ───────────────────────────────────────────────────────────
+  video_download: {
+    terms_title: '影片下載 — 使用條款',
+    terms_body: '你只能下載你有權使用的內容。請遵守著作權與各網站的服務條款。使用後果由你自行承擔,開發者不負任何責任。',
+    agree: '我已閱讀並同意上述條款',
+    enable: '啟用影片下載',
+    quality_mode: '下載畫質',
+    quality_auto: '最佳畫質(自動)',
+    quality_cap: '限制解析度',
+    quality_ask: '每次詢問',
+    max_height: '最高解析度',
+    checking: '正在檢查網址...',
+    quality: '畫質',
+    download: '下載',
+    reason: {
+      unsupported: '不支援此網站或網址。',
+      private: '這是私人影片。',
+      geo: '此影片在你的地區無法觀看。',
+      age_restricted: '此影片有年齡限制,需登入。',
+      network: '網路錯誤,請重試。',
+      unknown: '無法處理此網址。',
+    },
+    toast: {
+      submit_failed: '無法開始下載。',
+      complete: '已下載:{title} — 已加入影片工具',
+      open: '開啟',
     },
   },
 

@@ -6,9 +6,11 @@ import MainSidebar from './components/MainSidebar.vue'
 import AppToast from './components/AppToast.vue'
 import AppConfirmDialog from './components/common/AppConfirmDialog.vue'
 import ChatBubble from './components/agent/ChatBubble.vue'
+import UrlDownloadCard from './components/common/UrlDownloadCard.vue'
 import { useTheme } from './composables/useTheme'
 import { useRemoteModelStore } from './stores/remoteModels'
 import { useResultsStore } from './stores/results'
+import { useVideoDownloadStore } from './stores/videoDownload'
 
 const router = useRouter()
 
@@ -21,6 +23,9 @@ remoteModelStore.fetchAll()
 
 // Results drawer store
 const resultsStore = useResultsStore()
+
+// Video download store — boot fail-closed (enabled=false until load() resolves)
+const videoDownloadStore = useVideoDownloadStore()
 
 function removeSplash() {
   const overlay = document.getElementById('splash-overlay')
@@ -42,6 +47,8 @@ onMounted(async () => {
   resultsStore.startAutoCollect()
   await resultsStore.loadInitial()
 
+  videoDownloadStore.load() // no await — gate is fail-closed until this resolves
+
   removeSplash()
 })
 </script>
@@ -60,6 +67,7 @@ onMounted(async () => {
     <AppToast />
     <AppConfirmDialog />
     <ChatBubble />
+    <UrlDownloadCard />
   </div>
 </template>
 

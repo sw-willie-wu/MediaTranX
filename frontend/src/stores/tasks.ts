@@ -170,6 +170,19 @@ export const useTaskStore = defineStore('tasks', () => {
           fileName: existing?.fileName ?? taskData.file_name,
         }
         tasks.value.set(task.taskId, task)
+        // Feature B: hand a freshly-completed video download to the Video tool.
+        if (
+          task.taskType === 'video.download' &&
+          task.status === 'completed' &&
+          existing?.status !== 'completed' &&
+          task.result
+        ) {
+          // Lazy import: keeps @/i18n out of tasks.ts's static graph so node-env
+          // test suites that import the store don't crash on module load.
+          void import('@/composables/videoDownloadComplete').then((m) =>
+            m.adoptCompletedDownload(task.result as never),
+          )
+        }
       }
 
       // 沒有 active task 時停止輪詢
@@ -198,6 +211,7 @@ export const useTaskStore = defineStore('tasks', () => {
     cancelTask,
     removeTask,
     refreshTasks,
+    startPolling,
     cleanup,
   }
 })

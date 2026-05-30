@@ -11,6 +11,7 @@ import { useTitlebar } from '@/composables/useTitlebar'
 import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
 import { createLogger } from '@/utils/logger'
 import { usePasteUpload } from '@/composables/usePasteUpload'
+import { useUrlDownload } from '@/composables/useUrlDownload'
 
 const { t } = useI18n()
 const log = createLogger('ToolLayout')
@@ -167,15 +168,18 @@ function handleUploadFiles(files: File[]) {
   emit('files', files)
 }
 
+const urlDownload = useUrlDownload()
+
 // 貼上 = 拖曳的另一個入口:單檔走型別驗證路徑,多檔走 filmstrip 批次。
 // 貼上內容無 sourceDir(走 HTTP upload),與拖曳語意一致。
+// URL 偵測只在 video tool 啟用,其他 tool 傳 undefined 跳過。
 usePasteUpload((files) => {
   if (files.length === 1) {
     handleUploadFile(files[0])
   } else {
     handleUploadFiles(files)
   }
-})
+}, props.acceptType === 'video' ? (url) => urlDownload.handlePastedUrl(url) : undefined)
 
 function handleDrop(e: DragEvent) {
   e.preventDefault()

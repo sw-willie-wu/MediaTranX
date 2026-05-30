@@ -69,6 +69,7 @@ class AppContainer(containers.DeclarativeContainer):
 
     # ── Engine ──
     ffmpeg = providers.Singleton(FFmpegWrapper)
+    yt_dlp_wrapper = providers.Singleton(_lazy("app.adapters.binary.ytdlp", "YtDlpWrapper"))
     model_manager = providers.Singleton(ModelManager)
     llama_runtime = providers.Singleton(
         _lazy("app.adapters.ai.wrapper.llm", "LlmWrapper"),
@@ -298,6 +299,11 @@ class AppContainer(containers.DeclarativeContainer):
         file_service=file_service, task_manager=task_manager,
         ffmpeg=ffmpeg,
         realesrgan=realesrgan_wrapper,
+    )
+    video_download = providers.Singleton(
+        _lazy("app.services.video.download_service", "VideoDownloadService"),
+        yt_dlp_wrapper=yt_dlp_wrapper, ffmpeg=ffmpeg,
+        file_service=file_service, task_manager=task_manager,
     )
 
     # ── Document Services (lazy) ──
