@@ -306,6 +306,10 @@ export default {
       analyzing_audio: '分析音訊中...',
       converting_midi: '轉換 MIDI 事件...',
       midi_complete: '音訊轉 MIDI 完成',
+      // video download
+      download_starting: '開始下載...',
+      downloading_video: '下載影片中...',
+      merging_video: '合併串流中...',
       // video transcode
       transcode_starting: '開始轉檔...',
       transcoding: '轉檔中...',

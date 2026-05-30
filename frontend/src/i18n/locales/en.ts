@@ -306,6 +306,10 @@ export default {
       analyzing_audio: 'Analyzing audio...',
       converting_midi: 'Converting MIDI events...',
       midi_complete: 'Audio to MIDI complete',
+      // video download
+      download_starting: 'Starting download...',
+      downloading_video: 'Downloading video...',
+      merging_video: 'Merging streams...',
       // video transcode
       transcode_starting: 'Starting transcode...',
       transcoding: 'Transcoding...',
