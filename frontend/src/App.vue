@@ -10,6 +10,7 @@ import UrlDownloadCard from './components/common/UrlDownloadCard.vue'
 import { useTheme } from './composables/useTheme'
 import { useRemoteModelStore } from './stores/remoteModels'
 import { useResultsStore } from './stores/results'
+import { useVideoDownloadStore } from './stores/videoDownload'
 
 const router = useRouter()
 
@@ -22,6 +23,9 @@ remoteModelStore.fetchAll()
 
 // Results drawer store
 const resultsStore = useResultsStore()
+
+// Video download store — boot fail-closed (enabled=false until load() resolves)
+const videoDownloadStore = useVideoDownloadStore()
 
 function removeSplash() {
   const overlay = document.getElementById('splash-overlay')
@@ -42,6 +46,8 @@ onMounted(async () => {
   // 啟動 Results drawer：先掛 watcher（避免錯過早期完成的任務），再載入既有 output 檔
   resultsStore.startAutoCollect()
   await resultsStore.loadInitial()
+
+  videoDownloadStore.load() // no await — gate is fail-closed until this resolves
 
   removeSplash()
 })

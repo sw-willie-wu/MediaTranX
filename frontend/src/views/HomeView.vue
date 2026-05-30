@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useFilesStore } from '@/stores/files'
 import { detectMediaType, getToolPath } from '@/utils/mediaType'
 import { usePasteUpload } from '@/composables/usePasteUpload'
+import { useUrlDownload } from '@/composables/useUrlDownload'
 
 const router = useRouter()
 const filesStore = useFilesStore()
@@ -57,10 +58,13 @@ function handleDrop(e: DragEvent) {
   routeFile(file, srcDir)
 }
 
+const urlDownload = useUrlDownload()
+
 // 首頁貼上:比照拖曳,取第一個檔偵測型別並導頁。
-usePasteUpload((files) => {
-  if (files.length > 0) routeFile(files[0])
-})
+usePasteUpload(
+  (files) => { if (files.length > 0) routeFile(files[0]) },
+  (url) => urlDownload.handlePastedUrl(url),
+)
 </script>
 
 <template>
