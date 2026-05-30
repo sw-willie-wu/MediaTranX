@@ -4,8 +4,15 @@ import { setActivePinia, createPinia } from 'pinia'
 
 const apiFetch = vi.fn()
 vi.mock('@/composables/useApi', () => ({ apiFetch: (...a: unknown[]) => apiFetch(...a) }))
-// The component builds AppSelect option labels via useI18n() in <script setup>.
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k: string) => k }) }))
+// The component uses useI18n() in <script setup> for AppSelect option labels (t)
+// and the terms_points array (tm/rt).
+vi.mock('vue-i18n', () => ({
+  useI18n: () => ({
+    t: (k: string) => k,
+    tm: (k: string) => (k === 'video_download.terms_points' ? ['point a', 'point b'] : []),
+    rt: (s: unknown) => String(s),
+  }),
+}))
 
 import SettingsVideoDownload from '@/components/settings/SettingsVideoDownload.vue'
 
@@ -20,6 +27,14 @@ describe('SettingsVideoDownload', () => {
     setActivePinia(createPinia())
     apiFetch.mockReset()
     apiFetch.mockResolvedValue(jsonRes({ agreed: false, enabled: false, quality_mode: 'auto', max_height: 1080 }))
+  })
+
+  it('renders the terms intro + bulleted points', async () => {
+    const w = mount(SettingsVideoDownload, mountOpts)
+    await flushPromises()
+    const items = w.findAll('.vd-terms-list li')
+    expect(items).toHaveLength(2) // from the mocked tm() array
+    expect(items[0].text()).toBe('point a')
   })
 
   it('disables the enable toggle until terms are agreed', async () => {

@@ -6,10 +6,16 @@ import AppToggle from '@/components/common/AppToggle.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import type { SelectOption } from '@/components/common/AppSelect.vue'
 
-const { t } = useI18n()
+const { t, tm, rt } = useI18n()
 const store = useVideoDownloadStore()
 
 onMounted(() => { if (!store.loaded) store.load() })
+
+// terms_points is an array message; tm() returns the raw list, rt() resolves each
+// entry to a display string (handles plain or compiled messages).
+const termsPoints = computed<string[]>(() =>
+  (tm('video_download.terms_points') as unknown[]).map((p) => rt(p as never)),
+)
 
 const agreed = computed(() => store.settings.agreed)
 const enabled = computed(() => store.settings.enabled)
@@ -38,7 +44,10 @@ async function onMaxHeight(v: number) { await store.update({ max_height: v }) }
 
 <template>
   <h6 class="section-title">{{ $t('video_download.terms_title') }}</h6>
-  <p class="vd-terms">{{ $t('video_download.terms_body') }}</p>
+  <p class="vd-terms">{{ $t('video_download.terms_intro') }}</p>
+  <ul class="vd-terms-list">
+    <li v-for="(point, i) in termsPoints" :key="i">{{ point }}</li>
+  </ul>
 
   <div class="setting-item">
     <AppToggle
@@ -88,8 +97,19 @@ async function onMaxHeight(v: number) { await store.update({ max_height: v }) }
 
 <style lang="scss" scoped>
 .vd-terms {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font-size: 0.85rem;
   line-height: 1.5;
+}
+.vd-terms-list {
+  margin: 0 0 8px;
+  padding-left: 1.25rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.6;
+
+  li {
+    margin-bottom: 4px;
+  }
 }
 </style>
