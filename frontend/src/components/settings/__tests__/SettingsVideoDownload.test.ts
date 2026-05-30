@@ -4,6 +4,8 @@ import { setActivePinia, createPinia } from 'pinia'
 
 const apiFetch = vi.fn()
 vi.mock('@/composables/useApi', () => ({ apiFetch: (...a: unknown[]) => apiFetch(...a) }))
+// The component builds AppSelect option labels via useI18n() in <script setup>.
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k: string) => k }) }))
 
 import SettingsVideoDownload from '@/components/settings/SettingsVideoDownload.vue'
 
@@ -23,15 +25,18 @@ describe('SettingsVideoDownload', () => {
   it('disables the enable toggle until terms are agreed', async () => {
     const w = mount(SettingsVideoDownload, mountOpts)
     await flushPromises()
+    // AppToggle marks the disabled state with the `is-disabled` class (no
+    // native `disabled` attribute on its <label> root).
     const enable = w.find('[data-test="vd-enable"]')
-    expect(enable.attributes('disabled')).toBeDefined()
+    expect(enable.classes()).toContain('is-disabled')
   })
 
   it('agreeing PUTs agreed=true', async () => {
     const w = mount(SettingsVideoDownload, mountOpts)
     await flushPromises()
     apiFetch.mockResolvedValueOnce(jsonRes({ agreed: true, enabled: false, quality_mode: 'auto', max_height: 1080 }))
-    await w.find('[data-test="vd-agree"]').setValue(true)
+    // AppToggle flips on click (it has no checkbox input to setValue on).
+    await w.find('[data-test="vd-agree"]').trigger('click')
     await flushPromises()
     const putCall = apiFetch.mock.calls.find((c) => c[1]?.method === 'PUT')
     expect(putCall).toBeTruthy()
