@@ -7,7 +7,6 @@ import type { Task } from '@/types/task'
 
 import { getApiBase } from '@/composables/useApi'
 import { createLogger } from '@/utils/logger'
-import { adoptCompletedDownload } from '@/composables/videoDownloadComplete'
 
 const log = createLogger('TaskStore')
 
@@ -178,7 +177,11 @@ export const useTaskStore = defineStore('tasks', () => {
           existing?.status !== 'completed' &&
           task.result
         ) {
-          adoptCompletedDownload(task.result as never)
+          // Lazy import: keeps @/i18n out of tasks.ts's static graph so node-env
+          // test suites that import the store don't crash on module load.
+          void import('@/composables/videoDownloadComplete').then((m) =>
+            m.adoptCompletedDownload(task.result as never),
+          )
         }
       }
 

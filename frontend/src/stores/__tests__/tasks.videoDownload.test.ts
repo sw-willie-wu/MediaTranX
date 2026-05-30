@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { flushPromises } from '@vue/test-utils'
 
 const { adopt } = vi.hoisted(() => ({ adopt: vi.fn() }))
 vi.mock('@/composables/videoDownloadComplete', () => ({ adoptCompletedDownload: adopt }))
@@ -33,6 +34,7 @@ describe('tasks store — video.download completion handoff', () => {
     // 2nd poll: completed (adopt once)
     vi.stubGlobal('fetch', fetchReturning([{ ...base, status: 'completed', result }]))
     await store.refreshTasks()
+    await flushPromises()
     expect(adopt).toHaveBeenCalledTimes(1)
     expect(adopt).toHaveBeenCalledWith(result)
   })
@@ -48,6 +50,7 @@ describe('tasks store — video.download completion handoff', () => {
         result: { output_file_id: 'x', output_filename: 'x.mp4', output_size: 1 } },
     ]))
     await store.refreshTasks()
+    await flushPromises()
     expect(adopt).not.toHaveBeenCalled()
   })
 })
