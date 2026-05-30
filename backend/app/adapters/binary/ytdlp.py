@@ -59,6 +59,22 @@ def _no_window() -> dict:
     return {}
 
 
+def _classify_error(stderr: str) -> str:
+    """Map yt-dlp stderr to a stable reason code for the confirm card."""
+    s = (stderr or "").lower()
+    if "private video" in s:
+        return "private"
+    if "age" in s and ("confirm" in s or "restrict" in s or "sign in" in s):
+        return "age_restricted"
+    if "not available in your country" in s or "geo" in s or "blocked it in your country" in s:
+        return "geo"
+    if "unsupported url" in s or "no video formats" in s or "is not a valid url" in s:
+        return "unsupported"
+    if "timed out" in s or "unable to download" in s or "network" in s or "connection" in s:
+        return "network"
+    return "unknown"
+
+
 class YtDlpWrapper:
     """Owns the yt-dlp subprocess. Path resolved lazily on first use."""
 
@@ -79,6 +95,41 @@ class YtDlpWrapper:
         if self._ytdlp_path is None:
             self._ytdlp_path = self._find_ytdlp()
         return self._ytdlp_path
+
+    def probe(self, url: str) -> ProbeResult:
+        """Run `yt-dlp --dump-single-json` and structure the result."""
+        exe = self._resolve()
+        args = [exe, "--dump-single-json", "--no-playlist", "--no-warnings", url]
+        try:
+            proc = subprocess.run(
+                args, capture_output=True, text=True, timeout=60, **_no_window()
+            )
+        except subprocess.TimeoutExpired:
+            return ProbeResult(downloadable=False, reason="network")
+        if proc.returncode != 0:
+            return ProbeResult(downloadable=False, reason=_classify_error(proc.stderr))
+        try:
+            info = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return ProbeResult(downloadable=False, reason="unknown")
+        formats = [
+            {
+                "format_id": f.get("format_id", ""),
+                "height": f.get("height") or 0,
+                "ext": f.get("ext", ""),
+                "note": f.get("format_note", ""),
+            }
+            for f in (info.get("formats") or [])
+            if f.get("vcodec") not in (None, "none")  # video-bearing only
+        ]
+        return ProbeResult(
+            downloadable=True,
+            title=info.get("title") or "video",
+            duration=float(info.get("duration") or 0.0),
+            uploader=info.get("uploader") or "",
+            thumbnail=info.get("thumbnail") or "",
+            formats=formats,
+        )
 
     @classmethod
     def is_installed(cls) -> bool:
