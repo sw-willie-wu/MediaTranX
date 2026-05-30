@@ -75,6 +75,48 @@ def _classify_error(stderr: str) -> str:
     return "unknown"
 
 
+_PCT_RE = re.compile(r"\[dl\]\s*([\d.]+)%")
+
+
+def _parse_percent(line: str) -> Optional[float]:
+    """Parse a `[dl] NN.N%` progress line → fraction 0..1, else None."""
+    m = _PCT_RE.search(line)
+    if not m:
+        return None
+    try:
+        return min(float(m.group(1)) / 100.0, 1.0)
+    except ValueError:
+        return None
+
+
+def _is_merge_line(line: str) -> bool:
+    return "[merger]" in line.lower() or "merging formats" in line.lower()
+
+
+def _kill_tree(proc: "subprocess.Popen") -> None:
+    """Terminate the whole process tree (yt-dlp + its ffmpeg grandchild).
+
+    stdlib only — no psutil. Windows: `taskkill /F /T`. POSIX: the process was
+    started in its own session (start_new_session=True), so kill the group.
+    """
+    if proc.poll() is not None:
+        return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True, **_no_window(),
+            )
+        else:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (ProcessLookupError, OSError) as e:
+        logger.warning("yt-dlp process-tree kill failed: %s", e)
+
+
 class YtDlpWrapper:
     """Owns the yt-dlp subprocess. Path resolved lazily on first use."""
 
@@ -130,6 +172,62 @@ class YtDlpWrapper:
             thumbnail=info.get("thumbnail") or "",
             formats=formats,
         )
+
+    def download(
+        self,
+        url: str,
+        format_selector: str,
+        out_path: Path,
+        ffmpeg_dir: str,
+        progress_cb: Callable[[float, str], None],
+    ) -> Path:
+        """Download `url` with the pre-built `format_selector`, merging to MP4.
+
+        Cancellation: `progress_cb` raises TaskCancelledError when the task is
+        cancelled; we catch it, kill the whole process tree, and re-raise. The
+        merge stage emits few progress lines, so cancel during merge is
+        best-effort (may wait for the next line or merge end) — see spec §3.6.
+        """
+        exe = self._resolve()
+        args = [
+            exe,
+            "-f", format_selector,
+            "--merge-output-format", "mp4",  # always produce MP4 (spec §3.4)
+            "--ffmpeg-location", ffmpeg_dir,
+            "--no-playlist",
+            "--newline",
+            "--no-warnings",
+            "--progress-template", "download:[dl]%(progress._percent_str)s",
+            "-o", str(out_path),
+            url,
+        ]
+        popen_kwargs: dict = dict(
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            **_no_window(),
+        )
+        if sys.platform != "win32":
+            popen_kwargs["start_new_session"] = True  # own group for killpg
+
+        proc = subprocess.Popen(args, **popen_kwargs)
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                pct = _parse_percent(line)
+                if pct is not None:
+                    progress_cb(pct * 0.95, "task.progress.downloading_video")
+                elif _is_merge_line(line):
+                    progress_cb(0.97, "task.progress.merging_video")
+            proc.wait()
+        except BaseException:
+            # Covers TaskCancelledError (cooperative cancel) AND any read error.
+            _kill_tree(proc)
+            raise
+        if proc.returncode != 0:
+            raise YtDlpError(f"yt-dlp download failed (exit {proc.returncode})")
+        return out_path
 
     @classmethod
     def is_installed(cls) -> bool:
