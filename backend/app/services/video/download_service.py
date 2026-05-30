@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 TASK_TYPE_VIDEO_DOWNLOAD = "video.download"
 SETTINGS_KEY = "video_download"
 
-_ILLEGAL = re.compile(r'[<>:"/\x5c|?*\x00-\x1f]')
+_ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 def _build_format_selector(intent: FormatIntent) -> str:
