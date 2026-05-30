@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, computed } from 'vue'
-import { useVideoDownloadStore } from '@/stores/videoDownload'
+import { useVideoDownloadStore, type QualityMode } from '@/stores/videoDownload'
 
 const store = useVideoDownloadStore()
 
@@ -17,7 +17,7 @@ async function onAgree(v: boolean) {
   await store.update(v ? { agreed: true } : { agreed: false, enabled: false })
 }
 async function onEnable(v: boolean) { await store.update({ enabled: v }) }
-async function onMode(v: string) { await store.update({ quality_mode: v as never }) }
+async function onMode(v: string) { await store.update({ quality_mode: v as QualityMode }) }
 async function onMaxHeight(v: string) { await store.update({ max_height: Number(v) }) }
 </script>
 
