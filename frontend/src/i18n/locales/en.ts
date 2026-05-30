@@ -1314,7 +1314,14 @@ export default {
   // ── Video download ────────────────────────────────────────────────────
   video_download: {
     terms_title: 'Video Download — Terms',
-    terms_body: 'You may only download content you have the right to use. Respect copyright and each site\'s Terms of Service. You are solely responsible for your use; the developer assumes no liability.',
+    terms_intro: 'Before enabling Video Download, please read and understand the following:',
+    terms_points: [
+      'Only download content you own the copyright to, are authorized to use, or that is in the public domain or under an open license (e.g. Creative Commons).',
+      'Most video platforms (including YouTube) prohibit unauthorized downloading in their Terms of Service. Confirm the source site permits it before enabling.',
+      'Use this feature only for your personal, lawful purposes — not to reproduce, distribute, or commercially exploit infringing content.',
+      'You bear sole responsibility for all legal, copyright, and compliance consequences arising from your use.',
+      'This feature is provided "as is". The developer makes no warranty as to its legality or suitability and assumes no liability.',
+    ],
     agree: 'I have read and agree to the above',
     enable: 'Enable video download',
     quality_mode: 'Download quality',
