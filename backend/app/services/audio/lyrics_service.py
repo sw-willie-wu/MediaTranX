@@ -182,7 +182,8 @@ class AudioLyricsService:
                     model_family=translate_model_family,
                     model_size=translate_model_size,
                     quantization=translate_quantization,
-                    on_load_progress=lambda p, m: stage_progress("translate", p * 0.05, m),
+                    on_load_progress=lambda p, m: stage_progress("translate", p, m),
+                    load_band=(0.0, 0.05),
                 ) as session:
                     translated_all = translate_srt_auto(
                         seg_dicts, src, target_lang,
