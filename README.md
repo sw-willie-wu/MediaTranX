@@ -1,16 +1,24 @@
-# MediaTranX — AI-Powered Local Multimedia Toolkit
+<p align="center">
+  <img src="docs/icon.png" alt="MediaTranX" width="128" height="128" />
+</p>
 
-[![GitHub release](https://img.shields.io/github/v/release/sw-willie-wu/MediaTranX)](https://github.com/sw-willie-wu/MediaTranX/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows)](https://github.com/sw-willie-wu/MediaTranX/releases)
-[![GitHub stars](https://img.shields.io/github/stars/sw-willie-wu/MediaTranX)](https://github.com/sw-willie-wu/MediaTranX/stargazers)
+<h1 align="center">MediaTranX — AI-Powered Local Multimedia Toolkit</h1>
 
-[![Electron](https://img.shields.io/badge/Electron-34-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Vue 3](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
-[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+<p align="center">
+<a href="https://github.com/sw-willie-wu/MediaTranX/releases"><img src="https://img.shields.io/github/v/release/sw-willie-wu/MediaTranX" alt="GitHub release" /></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+<a href="https://github.com/sw-willie-wu/MediaTranX/releases"><img src="https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows" alt="Platform" /></a>
+<a href="https://github.com/sw-willie-wu/MediaTranX/stargazers"><img src="https://img.shields.io/github/stars/sw-willie-wu/MediaTranX" alt="GitHub stars" /></a>
+</p>
 
-Free, open-source desktop app for **AI speech-to-text, AI translation, AI image upscaling, AI OCR, audio source separation, and media transcoding** — all running locally on your machine. No cloud, no subscription, full privacy.
+<p align="center">
+<a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-34-47848F?logo=electron&logoColor=white" alt="Electron" /></a>
+<a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white" alt="Vue 3" /></a>
+<a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python" /></a>
+<a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?logo=pytorch&logoColor=white" alt="PyTorch" /></a>
+</p>
+
+Free, open-source desktop app for **AI speech-to-text, AI translation, AI image upscaling, AI OCR, audio source separation, video summarization, and media transcoding** — driven by natural language or a classic tool UI, all running **locally** on your machine. No cloud required, no subscription, full privacy. Cloud providers (OpenAI / Gemini / Ollama) are optional.
 
 [繁體中文](docs/README.zh-TW.md)
 
@@ -20,44 +28,53 @@ Free, open-source desktop app for **AI speech-to-text, AI translation, AI image 
 
 ## Key Features
 
-### Image Processing
-- **AI Super-Resolution** — upscale images 2x-4x with Real-ESRGAN, SwinIR, BSRGAN, Real-CUGAN, Waifu2x
-- **AI Background Removal** — automatic background removal using rembg
-- **AI Object Removal** — select and remove objects with MobileSAM + LaMa inpainting
-- **AI Face Restoration** — repair faces with CodeFormer and GFPGAN
-- **AI OCR** — extract text from images using Vision Language Models (Qwen3-VL, InternVL, Gemma 3)
-- **Format Conversion** — PNG, JPEG, WebP, BMP, TIFF, GIF, ICO
-- **Image Editing** — adjust, filter, crop
+### 🤖 AI Assistant (Natural Language)
+- **Chat-driven workflow** — describe a task in plain language ("turn this into a 1080p MP4", "transcribe and translate to English") and the built-in agent drives the tools for you: it navigates to the right tool, picks the function, loads files, fills in settings, and runs the task — with a confirmation step before anything executes.
+- **Works across every domain** — Image, Audio, Video, and Document tools.
+- **Local or cloud** — runs on a local LLM (Qwen3, Gemma) or a cloud model (OpenAI, Gemini, Ollama).
+- **Multi-session history** — conversations are saved and resumable.
 
-### Audio Processing
-- **AI Speech-to-Text** — transcribe audio with Faster-Whisper (tiny to large-v3) + auto-summarization
-- **AI Source Separation** — isolate vocals, drums, bass, guitar, piano, other with Demucs 6-stem
-- **AI Lyrics Extraction** — extract and align lyrics with Wav2Vec2 forced alignment (16 languages)
-- **AI Translation** — translate transcriptions via local LLM (Qwen3, Gemma 4) or cloud API (OpenAI, Gemini)
-- **MIDI Editor** — piano roll editor with Tone.js playback, GM soundfont, effects, and audio export
-- **Format Transcoding** — MP3, WAV, FLAC, OGG, AAC, M4A, WMA, OPUS
-- **Audio Editing** — cut, volume adjustment
+### 🖼️ Image Processing
+- **AI Super-Resolution** — upscale images 2x–4x with Real-ESRGAN, SwinIR, BSRGAN, Real-CUGAN, Waifu2x — with optional **face restoration (GFPGAN)**.
+- **AI Background Removal** — automatic background removal with rembg (U²-Net / ISNet), with auto / person / product / animal / anime modes.
+- **AI Object Removal** — brush, polygon, or bezier select an object and erase it with MobileSAM segmentation + LaMa inpainting.
+- **AI OCR** — extract text from images using Vision Language Models (Qwen3-VL, InternVL2.5, Gemma) — locally or via cloud.
+- **Format Conversion** — PNG, JPEG, WebP, BMP, TIFF, GIF, ICO.
+- **Image Editing** — adjust (brightness/contrast/saturation/hue/sharpness), filters, crop — with real-time preview.
 
-### Video Processing
-- **AI Subtitle Generation** — extract subtitles from video with Whisper speech recognition
-- **AI Subtitle Translation** — translate subtitles with local LLM or cloud API
-- **AI Frame Interpolation** — increase video FPS with RIFE (2x/4x/custom)
-- **AI Video Enhancement** — upscale video resolution with Real-ESRGAN
-- **Format Transcoding** — MP4, MKV, AVI, MOV, WebM with codec control (H.264/H.265/VP9/AV1)
-- **Video Editing** — cut with stream copy, audio extraction
+### 🎵 Audio Processing
+- **AI Speech-to-Text** — transcribe audio with Faster-Whisper (tiny → large-v3), with optional vocal separation, translation, and word-level alignment.
+- **AI Source Separation** — isolate vocals, drums, bass, guitar, piano, and other with Demucs 6-stem — with optional **audio → MIDI** conversion (Basic Pitch).
+- **AI Lyrics Extraction** — recognize and align lyrics with Wav2Vec2 forced alignment (multilingual).
+- **AI Translation** — translate transcriptions / lyrics via local LLM (Qwen3, Gemma) or cloud API (OpenAI, Gemini, Ollama).
+- **MIDI Editor** — full piano-roll editor with Tone.js playback, GM soundfonts, per-note velocity, tempo / time-signature, effects, and audio export.
+- **Format Transcoding** — MP3, AAC, OGG, M4A, Opus, FLAC, ALAC, WAV, AIFF.
+- **Audio Editing** — cut, volume adjustment.
 
-### Document Processing
-- **AI OCR** — extract text from documents and PDFs using Vision Language Models
-- **AI Translation** — translate documents with local LLM or cloud API
-- **PDF Tools** — split, convert
+### 🎬 Video Processing
+- **AI Subtitle Generation** — extract subtitles from video with Whisper, with optional translation and word-level alignment.
+- **AI Video Summary** — generate a Markdown summary with representative key frames (bullet-point or narrative mode). Combines Whisper transcription, LLM summarization, scene detection, and optional **VLM frame selection**; exports a ZIP (summary + key frames).
+- **Download by URL** — paste a video link and download it via yt-dlp (auto-best / capped resolution / pick-a-format), then jump straight into editing.
+- **AI Frame Interpolation** — increase video FPS with RIFE (2x / 4x / custom).
+- **AI Video Enhancement** — upscale video resolution with Real-ESRGAN / SwinIR.
+- **Format Transcoding** — MP4, MKV, AVI, MOV, WebM with codec control (H.264 / H.265 / VP9).
+- **Video Editing** — cut with stream copy, crop, audio extraction.
 
-### General
-- **Multi-file batch processing** with filmstrip management UI
-- **Dark / light theme** with glassmorphism design
-- **Real-time task progress** tracking
-- **Local + cloud AI** model support (Ollama, OpenAI, Gemini)
-- **Multilingual UI** — English, Traditional Chinese
-- **100% local inference** — no data leaves your machine
+### 📄 Document Processing
+- **AI OCR** — extract text from documents and PDFs using Vision Language Models — locally or via cloud.
+- **AI Translation** — translate documents with local LLM or cloud API.
+- **PDF Tools** — split by pages, convert to text / Markdown / page images.
+
+### ⚙️ General
+- **Multi-file batch processing** with a filmstrip management UI (apply one operation to many files).
+- **Results drawer** — browse all task outputs from the title bar and open any result directly in the relevant tool.
+- **Paste to add files** — `Ctrl+V` an image or file from the clipboard or Explorer.
+- **Before / after comparison slider** for image and video results.
+- **Dark / light theme** with a glassmorphism design.
+- **Real-time task progress** tracking, with cancel support.
+- **Local + cloud AI** model support — local inference by default; OpenAI / Gemini / Ollama connections are optional and managed in Settings.
+- **Multilingual UI** — English, Traditional Chinese.
+- **100% local inference by default** — no data leaves your machine unless you choose a cloud model.
 
 ---
 
@@ -66,16 +83,19 @@ Free, open-source desktop app for **AI speech-to-text, AI translation, AI image 
 | Category | Models |
 |----------|--------|
 | **Speech-to-Text** | Faster-Whisper (tiny / base / small / medium / large-v3) |
-| **Translation LLM** | Qwen3 (1.7B/4B/8B/14B), Gemma 4 (4B/12B/27B) |
+| **Chat / Translation / Summary LLM** | Qwen3, Qwen3.5, Gemma 3, Gemma 4 (multiple sizes) — local GGUF or cloud |
+| **Vision LLM (OCR / frame selection)** | Qwen3-VL, InternVL2.5, Gemma (multiple sizes) — local GGUF or cloud |
 | **Image Super-Resolution** | Real-ESRGAN, SwinIR, BSRGAN, Real-CUGAN, Waifu2x |
-| **Face Restoration** | CodeFormer, GFPGAN v1.4 |
-| **Vision LLM (OCR)** | Qwen3-VL (2B/4B/8B), InternVL2.5 (1B/4B), Gemma 3 (4B/12B) |
+| **Face Restoration** | GFPGAN v1.4 |
+| **Object Removal** | MobileSAM (segmentation) + LaMa (inpainting) |
+| **Background Removal** | rembg — U²-Net / ISNet |
 | **Source Separation** | Demucs HTDemucs 6-stem |
-| **Forced Alignment** | Wav2Vec2 (16 languages) |
+| **Audio → MIDI** | Basic Pitch |
+| **Forced Alignment** | Wav2Vec2 (multilingual) |
 | **Frame Interpolation** | RIFE v4.26 |
-| **Object Segmentation** | MobileSAM |
+| **Cloud Providers** | OpenAI, Google Gemini, Ollama (optional) |
 
-All models are downloaded on-demand through the built-in model manager. No manual setup required.
+All local models are downloaded on-demand through the built-in model manager. No manual setup required.
 
 ---
 
@@ -87,7 +107,8 @@ All models are downloaded on-demand through the built-in model manager. No manua
 | Frontend | Vue 3 + TypeScript + Pinia + Vite |
 | Backend | FastAPI + Python 3.12 + uv |
 | AI Inference | PyTorch, CTranslate2, llama-server (GGUF) |
-| Media | FFmpeg, Tone.js |
+| Agent Protocol | AG-UI (streaming tool-calling over SSE) |
+| Media | FFmpeg, yt-dlp, Tone.js |
 
 ---
 
@@ -97,22 +118,26 @@ All models are downloaded on-demand through the built-in model manager. No manua
 graph TB
     subgraph Frontend["Vue 3 Frontend (port 8000)"]
         UI["ToolLayout + Composables"]
+        Agent["Agent Chat Bubble"]
     end
 
     subgraph Backend["FastAPI Backend (port 8001)"]
         direction LR
-        Routes["Routes"] --> Services --> Engine
+        Routes["Routes"] --> Services --> Adapters
     end
 
     subgraph AI["AI Runtimes"]
         Llama["llama-server<br/>(LLM, VLM)"]
         PT["PyTorch<br/>(CV, STT, Demucs)"]
+        Cloud["Cloud API<br/>(OpenAI / Gemini / Ollama)"]
     end
 
     UI -->|"REST API"| Routes
-    Engine --> Llama
-    Engine --> PT
-    Engine --> FFmpeg["FFmpeg"]
+    Agent -->|"AG-UI / SSE"| Routes
+    Adapters --> Llama
+    Adapters --> PT
+    Adapters --> Cloud
+    Adapters --> FFmpeg["FFmpeg / yt-dlp"]
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
@@ -120,6 +145,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 ---
 
 ## Getting Started
+
+> Most users should just grab the installer from the [Releases](https://github.com/sw-willie-wu/MediaTranX/releases) page. The instructions below are for running from source.
 
 ### Prerequisites
 
@@ -158,7 +185,7 @@ Open `http://localhost:8000` in your browser.
 
 ### Download AI Models
 
-After launch, go to **Settings > AI Models** to download the models you need.
+After launch, go to **Settings > AI Models** to download the models you need. To use cloud providers, add a connection (API key / endpoint) under the same screen.
 
 ---
 
