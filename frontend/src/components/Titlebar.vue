@@ -5,6 +5,7 @@ import IconRestore from './icons/IconRestore.vue'
 import IconClose from './icons/IconClose.vue'
 import TitlebarButton from './common/TitlebarButton.vue'
 import TitlebarResultsButton from './TitlebarResultsButton.vue'
+import TitlebarChatBubbleButton from './TitlebarChatBubbleButton.vue'
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -13,7 +14,7 @@ import { useTitlebar } from '@/composables/useTitlebar'
 const route = useRoute()
 const isMaximized = ref(false)
 const { t } = useI18n()
-const { activeFileName, canUndo, canRedo, canSave, canSaveAs, undo, redo, save, saveAs, extraActions } = useTitlebar()
+const { activeFileName, canUndo, canRedo, canSaveAs, undo, redo, saveAs, extraActions } = useTitlebar()
 
 // preload (electron/preload.cjs) injects `window.electron` synchronously
 // before Vue mounts, so a one-shot check at script setup is sufficient —
@@ -113,6 +114,7 @@ onMounted(async () => {
 
     <!-- 右側：視窗控制 -->
     <div class="titlebar-right">
+      <TitlebarChatBubbleButton />
       <TitlebarResultsButton />
       <div v-if="isElectron" class="window-controls">
         <button class="window-btn" @click="minimize" :title="$t('titlebar.minimize')">

@@ -94,7 +94,8 @@ class ImageOcrService:
             model_family=model_family,
             model_size=size,
             quantization=quantization,
-            on_load_progress=lambda p, m: progress_callback(0.1 + p * 0.05, m),
+            on_load_progress=progress_callback,
+            load_band=(0.10, 0.15),
         ) as session:
             from app.pipeline.ocr import recognize_image_local
 

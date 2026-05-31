@@ -134,7 +134,7 @@ MODELS_REGISTRY = {
         "qwen3": {
             "slot": SLOT_LLM,
             "label": "Qwen3",
-            "capabilities": ["text"],
+            "capabilities": ["text", "tools"],
             "description": "models.qwen3",
             "inference": {
                 "translate": {
@@ -226,7 +226,7 @@ MODELS_REGISTRY = {
         "qwen3vl": {
             "slot": SLOT_LLM,
             "label": "Qwen3-VL",
-            "capabilities": ["vision"],
+            "capabilities": ["vision", "tools"],
             "description": "models.qwen3vl",
             "inference": {
                 "ocr": {
@@ -451,7 +451,7 @@ MODELS_REGISTRY = {
         "gemma4": {
             "slot": SLOT_LLM,
             "label": "Gemma4",
-            "capabilities": ["text", "vision"],
+            "capabilities": ["text", "vision", "tools"],
             "description": "models.gemma4",
             "inference": {
                 "translate": {
@@ -482,11 +482,13 @@ MODELS_REGISTRY = {
                     "n_ctx_min": 2048, "n_ctx_max": 131072, "n_ctx_default": 8192, "vram_per_ctx_token": 0.02, "max_srt_batch": 15,
                     "vram_overhead_mb": 500,
                     "variants": {
+                        # HF repo paths are case-sensitive — must use uppercase E2B
+                        # (matches the repo's actual filenames). Lowercase forms 404.
                         "Q8_0": {
                             "repo_id": "ggml-org/gemma-4-E2B-it-GGUF",
-                            "filename": "gemma-4-e2b-it-Q8_0.gguf",
+                            "filename": "gemma-4-E2B-it-Q8_0.gguf",
                             "mmproj_repo_id": "ggml-org/gemma-4-E2B-it-GGUF",
-                            "mmproj_filename": "mmproj-gemma-4-e2b-it-bf16.gguf",
+                            "mmproj_filename": "mmproj-gemma-4-E2B-it-bf16.gguf",
                             "size_mb": 5090,
                             "mmproj_size_mb": 987,
                         },
@@ -497,11 +499,13 @@ MODELS_REGISTRY = {
                     "n_ctx_min": 4096, "n_ctx_max": 131072, "n_ctx_default": 16384, "vram_per_ctx_token": 0.03, "max_srt_batch": 15,
                     "vram_overhead_mb": 600,
                     "variants": {
+                        # HF repo paths are case-sensitive — must use uppercase E4B
+                        # (matches the repo's actual filenames). Lowercase forms 404.
                         "Q4_K_M": {
                             "repo_id": "ggml-org/gemma-4-E4B-it-GGUF",
-                            "filename": "gemma-4-e4b-it-Q4_K_M.gguf",
+                            "filename": "gemma-4-E4B-it-Q4_K_M.gguf",
                             "mmproj_repo_id": "ggml-org/gemma-4-E4B-it-GGUF",
-                            "mmproj_filename": "mmproj-gemma-4-e4b-it-bf16.gguf",
+                            "mmproj_filename": "mmproj-gemma-4-E4B-it-bf16.gguf",
                             "size_mb": 5470,
                             "mmproj_size_mb": 992,
                         },
@@ -534,7 +538,7 @@ MODELS_REGISTRY = {
         "qwen3.5": {
             "slot": SLOT_LLM,
             "label": "Qwen3.5",
-            "capabilities": ["text", "vision"],
+            "capabilities": ["text", "vision", "tools"],
             "description": "models.qwen3_5",
             "inference": {
                 "translate": {
@@ -877,6 +881,13 @@ REMOTE_INFERENCE_DEFAULTS = {
     # tokens each plus citations approaches 4k. Provider-aware caps are a
     # follow-up.
     "summarize":    {"temperature": 0.3, "max_tokens": 8192},
-    "ocr":          {"temperature": 0.0, "max_tokens": 32768},
+    # 16384: gpt-4o-mini / gpt-4o completion cap (OpenAI rejects anything
+    # larger with HTTP 400 "max_tokens is too large", and the API doesn't
+    # expose the limit so we can't query it). Was 32768 → every remote OCR
+    # on gpt-4o-* failed. 16384 matches `translate` (both are full-text
+    # outputs) and is ample for a single image. gemini-2.5-flash (8192 cap)
+    # is the same pre-existing limitation as translate — provider-aware
+    # caps remain the follow-up.
+    "ocr":          {"temperature": 0.0, "max_tokens": 16384},
     "frame_select": {"temperature": 0.0, "max_tokens": 16},
 }

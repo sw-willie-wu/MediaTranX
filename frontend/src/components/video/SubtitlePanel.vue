@@ -8,12 +8,12 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
 import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
-import { apiFetch, getApiBase } from '@/composables/useApi'
+import { apiFetch } from '@/composables/useApi'
 import { parseModelValue } from '@/composables/useModelOptions'
 import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import { useSettingsStore } from '@/stores/settings'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const { t } = useI18n()
 
@@ -41,7 +41,6 @@ const taskStore = useTaskStore()
 const toast = useToast()
 const modelStore = useModelStore()
 const { guardModelReady } = useModelGuard()
-const settingsStore = useSettingsStore()
 
 const isLoading = ref(false)
 const error = ref<string | null>(null)
@@ -132,7 +131,7 @@ async function submitGenerate() {
   error.value = null
 
   try {
-    const body: Record<string, any> = {
+    const body: Record<string, unknown> = {
       file_id: props.fileId,
       model_size: modelSize.value,
       output_format: outputFormat.value,
@@ -210,6 +209,59 @@ async function submitGenerate() {
 const isDisabled = computed(() =>
   isLoading.value || !props.fileId
 )
+
+// ── Agent panel registration ──────────────────────────────────────────────────
+// NOTE: SubtitlePanel does NOT support multi-select (m16) — hardcoded false.
+const agentSchema = {
+  panelId: 'video.subtitle',
+  fields: [
+    { name: 'language', type: 'enum' as const,
+      options: () => languages.value.map(l => l.value) },
+    { name: 'whisper_model', type: 'enum' as const,
+      options: () => modelSizesWithBadge.value.map(m => m.value) },
+    { name: 'vocal_separation', type: 'bool' as const },
+    { name: 'output_format', type: 'enum' as const,
+      options: () => outputFormats.value.map(f => f.value) },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.subtitle.execute' },
+}
+
+useAgentPanelHost('video.subtitle', {
+  agentSchema,
+  isMultiSelect: () => false,  // subtitle panel does not support multi-select
+  getCurrentValues: () => ({
+    language: language.value,
+    whisper_model: modelSize.value,
+    vocal_separation: vocalSeparation.value,
+    output_format: outputFormat.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'language':
+        language.value = value as string
+        return value
+      case 'whisper_model':
+        modelSize.value = value as string
+        return value
+      case 'vocal_separation':
+        vocalSeparation.value = !!value
+        return vocalSeparation.value
+      case 'output_format':
+        outputFormat.value = value as string
+        return value
+      default:
+        throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {
+    // no-op
+  },
+  execute: async () => {
+    await submitGenerate()
+    return {}
+  },
+})
 
 defineExpose({ submitGenerate, isLoading, isDisabled })
 

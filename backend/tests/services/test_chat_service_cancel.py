@@ -62,11 +62,15 @@ def test_cancel_during_chat_kills_via_session_kill_process():
         time.sleep(2.5)
         return "late"
     rt.chat.side_effect = slow
+    # kill_process now clears rt._model after stop (so wrapper.is_loaded()
+    # stops lying on the next acquire), so capture the model ref upfront.
+    model_before_kill = rt._model
     with pytest.raises(TaskCancelledError):
         s.chat(messages=[{"role": "user", "content": "x"}],
                max_tokens=10, temperature=0.0)
     # cancel_guard(cancellable=self) -> ChatSession.kill_process -> rt._model.stop
-    rt._model.stop.assert_called()
+    model_before_kill.stop.assert_called()
+    assert rt._model is None  # cleared so next acquire's is_loaded() tells truth
 
 
 def test_single_poller_when_enclosing_fake_progress():

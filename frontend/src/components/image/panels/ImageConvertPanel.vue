@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 interface ImageInfo {
   width: number
@@ -17,6 +18,7 @@ const props = defineProps<{
   fileId: string | null
   currentFileName: string
   imageInfo: ImageInfo | null
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -71,6 +73,79 @@ async function execute() {
 
   if (taskId) emit('submit', taskId)
 }
+
+// ── Agent panel registration ──────────────────────────────────────────────────
+const agentSchema = {
+  panelId: 'image.transcode',
+  fields: [
+    { name: 'output_format', type: 'enum' as const,
+      options: () => convertFormats.map(f => f.value) },
+    { name: 'quality', type: 'number' as const,
+      min: 1, max: 100, step: 1,
+      visibleWhen: () => convertFormat.value === 'jpg' || convertFormat.value === 'webp' },
+    { name: 'resize_mode', type: 'enum' as const,
+      options: () => ['original', 'scale', 'custom'] },
+    { name: 'scale', type: 'number' as const,
+      min: 10, max: 200, step: 1,
+      visibleWhen: () => convertResizeMode.value === 'scale' },
+    { name: 'custom_width', type: 'number' as const,
+      min: 1, max: 99999, step: 1,
+      visibleWhen: () => convertResizeMode.value === 'custom' },
+    { name: 'custom_height', type: 'number' as const,
+      min: 1, max: 99999, step: 1,
+      visibleWhen: () => convertResizeMode.value === 'custom' },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.transcode.execute' },
+}
+
+useAgentPanelHost('image.transcode', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    output_format: convertFormat.value,
+    quality: convertQuality.value,
+    resize_mode: convertResizeMode.value,
+    scale: convertScale.value,
+    custom_width: convertWidth.value,
+    custom_height: convertHeight.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'output_format':
+        convertFormat.value = value as string
+        return value
+      case 'quality': {
+        const clamped = Math.min(Math.max(Number(value), 1), 100)
+        convertQuality.value = clamped
+        return clamped
+      }
+      case 'resize_mode':
+        convertResizeMode.value = value as 'original' | 'scale' | 'custom'
+        return value
+      case 'scale': {
+        const clamped = Math.min(Math.max(Number(value), 10), 200)
+        convertScale.value = clamped
+        return clamped
+      }
+      case 'custom_width':
+        convertWidth.value = value === null ? null : Number(value)
+        return convertWidth.value
+      case 'custom_height':
+        convertHeight.value = value === null ? null : Number(value)
+        return convertHeight.value
+      default:
+        throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {
+    // no-op
+  },
+  execute: async () => {
+    await execute()
+    return {}
+  },
+})
 
 defineExpose({ execute, isDisabled, isLoading, convertFormat, getParams })
 </script>

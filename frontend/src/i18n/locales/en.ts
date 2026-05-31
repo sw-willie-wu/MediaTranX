@@ -69,7 +69,7 @@ export default {
     audio: 'Audio',
     image: 'Image',
     document: 'Document',
-    drop_text: 'Drop files here',
+    drop_text: 'Drop or paste files here',
     drop_hint: 'Automatically detect file type and open the appropriate tool',
     unknown_file_type: 'Unable to recognize this file type',
   },
@@ -100,7 +100,7 @@ export default {
     select: 'Select',
     select_or_drop: 'Select or drop a file',
     select_function: 'Select a function',
-    drop_files: 'Drop files here',
+    drop_files: 'Drop or paste files here',
     drop_hint: 'or click to select',
     loading_info: 'Loading info...',
     uploading: 'Uploading...',
@@ -120,6 +120,27 @@ export default {
     no_models_available: 'No models available',
     model_not_downloaded_hint: 'The selected model has not been downloaded yet. Go to model manager to download it?',
     go_to_model_manager: 'Go to Model Manager',
+  },
+
+  // ── Panel execute buttons ──────────────────────────────────────────────
+  panel: {
+    upscale:    { execute: 'Upscale' },              // Phase 1 debt
+    transcode:  { execute: 'Convert' },              // renamed from convert (Bug #22)
+    adjust:     { execute: 'Apply Adjustments' },    // Phase 2.A new
+    filter:     { execute: 'Apply Filter' },         // Phase 2.A new
+    remove_bg:  { execute: 'Remove Background' },    // Phase 2.A new
+    ocr:        { execute: 'Extract Text' },         // Phase 2.A new
+    cut:             { execute: 'Cut Video' },           // Phase 2.C new
+    enhance:         { execute: 'Enhance' },             // Phase 2.C new
+    interpolate:     { execute: 'Interpolate Frames' },  // Phase 2.C new
+    summary:         { execute: 'Generate Summary' },    // Phase 2.C new
+    audio_transcode: { execute: 'Transcode Audio' },     // Phase 2.D new
+    volume:          { execute: 'Adjust Volume' },       // Phase 2.D new
+    separate:        { execute: 'Separate Stems' },      // Phase 2.D new
+    doc_translate:   { execute: 'Translate Document' },  // Phase 2.E new
+    doc_ocr:         { execute: 'Run OCR' },             // Phase 2.E new
+    doc_pdf_convert: { execute: 'Convert PDF' },         // Phase 2.E new
+    doc_split:       { execute: 'Split Document' },      // Phase 2.E new
   },
 
   // ── Toast notifications ───────────────────────────────────────────────
@@ -285,6 +306,10 @@ export default {
       analyzing_audio: 'Analyzing audio...',
       converting_midi: 'Converting MIDI events...',
       midi_complete: 'Audio to MIDI complete',
+      // video download
+      download_starting: 'Starting download...',
+      downloading_video: 'Downloading video...',
+      merging_video: 'Merging streams...',
       // video transcode
       transcode_starting: 'Starting transcode...',
       transcoding: 'Transcoding...',
@@ -366,12 +391,12 @@ export default {
   // ── Image tools ───────────────────────────────────────────────────────
   image: {
     title: 'Image Tools',
-    upload_label: 'Drop images here',
+    upload_label: 'Drop or paste images here',
     upload_hint: 'Supports JPG, PNG, WebP, BMP and more',
     loading: 'Loading image info...',
 
     functions: {
-      convert: 'Convert',
+      transcode: 'Transcode',
       remove_bg: 'Remove BG',
       ai_remove: 'Object Remove',
       upscale: 'Upscale',
@@ -520,7 +545,7 @@ export default {
   // ── Video tools ───────────────────────────────────────────────────────
   video: {
     title: 'Video Tools',
-    upload_label: 'Drop videos here',
+    upload_label: 'Drop or paste videos here',
     upload_hint: 'Supports MP4, MKV, MOV, AVI and more',
     loading: 'Loading media info...',
 
@@ -695,7 +720,7 @@ export default {
   // ── Audio tools ───────────────────────────────────────────────────────
   audio: {
     title: 'Audio Tools',
-    upload_label: 'Drop audio here',
+    upload_label: 'Drop or paste audio here',
     upload_hint: 'Supports MP3, WAV, FLAC, AAC and more',
     loading: 'Loading audio info...',
     preview_unsupported: 'This format does not support preview, but can be processed normally',
@@ -894,7 +919,7 @@ export default {
   // ── Document tools ────────────────────────────────────────────────────
   document: {
     title: 'Document Tools',
-    upload_label: 'Drop documents here',
+    upload_label: 'Drop or paste documents here',
     upload_hint: 'Supports PDF, DOCX, TXT, SRT and more',
     loading: 'Uploading...',
 
@@ -976,6 +1001,8 @@ export default {
       general: 'General',
       system: 'System Info',
       models: 'AI Models',
+      agent: 'Agent',
+      'video-download': 'Video Download',
       about: 'About',
     },
 
@@ -1072,6 +1099,10 @@ export default {
       category_llm: 'Large Language Models',
       download_success: '{id} download complete',
       download_failed: '{id} download failed: {error}',
+      copy_key: 'Copy key',
+      key_copied: 'Key copied to clipboard',
+      reveal_failed: 'Couldn\'t read the key — it may be undecryptable on this machine; please re-enter it.',
+      copy_failed: 'Couldn\'t copy to clipboard.',
       display_title: 'Display',
       show_all_models: 'Show undownloaded models in tool panels',
       show_all_models_hint: 'When disabled, tool panel dropdowns only show downloaded models.',
@@ -1091,9 +1122,121 @@ export default {
       models_available: 'models available',
       connection_failed: 'Connection failed',
       no_models: 'No models found',
+      fetch_failed: "Couldn't load models from {count} connection(s): {names}",
       edit: 'Edit',
       refresh: 'Refresh Models',
       delete: 'Delete',
+    },
+
+    agent: {
+      title: 'Agent settings',
+      model: {
+        label: 'Model',
+        placeholder: 'Select a tool-capable model…',
+        warning_orphan: 'Selected model is no longer available',
+      },
+      policy: {
+        label: 'Confirmation policy',
+        auto: 'Auto (recommended)',
+        ask_all: 'Ask for everything',
+        custom: 'Custom whitelist',
+      },
+      whitelist: {
+        label: 'Per-tool policy',
+        state_auto: 'Auto',
+        state_ask: 'Ask',
+        state_deny: 'Deny',
+      },
+      clear_history: {
+        label: 'Clear chat history',
+        confirm: 'Clear all messages? This cannot be undone.',
+      },
+    },
+  },
+
+  // ── Agent ──────────────────────────────────────────────────────────────
+  agent: {
+    banner: {
+      prefix: 'Agent: ',
+      queued: 'Waiting…',
+      cancelled: 'Cancelled',
+      waiting_confirm: 'Waiting for confirmation…',
+      completed: 'Done',
+      act: {
+        navigate_to: 'Navigating to {route}',
+        select_subfunction: 'Selecting {name}',
+        load_file: 'Loading file {file_id}',
+        open_dropdown: 'Opening {field}',
+        set_field: 'Setting {field} = {value}',
+        click_execute: 'Submitting task...',
+        click_action: 'Invoking {name}',
+        list_files: 'Listing files...',
+        get_task_status: 'Checking task {task_id}',
+      },
+    },
+    bubble: {
+      title: 'Agent Chat',
+      placeholder: 'Ask agent to do something…',
+      empty: 'No messages yet',
+      thinking: 'Thinking…',
+      token_count: 'in: {prompt} / out: {completion}',
+      clear: 'Clear chat history',
+      show: 'Show chat bubble',
+      hide: 'Hide chat bubble',
+    },
+    session: {
+      new_chat: '+ New chat',
+      empty: 'No conversations yet',
+      delete: 'Delete conversation',
+      delete_confirm: 'Delete this conversation? This cannot be undone.',
+      back: 'Back to conversations',
+      load_failed: 'Failed to load conversations',
+      delete_failed: 'Failed to delete conversation',
+      time: {
+        just_now: 'just now',
+        minutes_ago: '{n}m ago',
+        hours_ago: '{n}h ago',
+        days_ago: '{n}d ago',
+      },
+    },
+    confirm: {
+      title: 'Confirm action',
+      cancel: 'Cancel',
+      submit: 'Submit',
+      with_values: 'Confirm action with the following values?',
+    },
+    error: {
+      no_model: 'No agent model configured',
+      model_unavailable: 'Selected model is unavailable',
+      tools_not_supported: 'This model does not support tool use',
+      provider_error: 'Provider returned an error',
+      context_full: 'Conversation too long. Please clear and start over.',
+      internal: 'Internal error',
+      unknown_tool: 'Unknown tool: {name}',
+      tool_failed: 'Tool {name} failed: {error}',
+      invalid_field: 'Field {field} is not valid in the current view',
+      invalid_route: 'Route "{route}" is not a valid view',
+      invalid_action: 'Action {name} is not available',
+      no_active_file: 'No file is currently loaded',
+      panel_not_supported: 'Panel {panel} is not supported by this tool',
+      panel_not_active: 'Panel {panel} is not active',
+      multi_select_not_supported: 'Multi-file selection is not supported here',
+      file_not_found: 'File {file_id} not found',
+      view_not_introspectable: 'Current view cannot be introspected',
+      no_execute_on_settings: 'Cannot submit tasks from the settings page',
+      no_file_selected: 'No file is loaded — upload or load a file first before executing',
+      invalid_subfunction: 'Subfunction "{name}" is not available in this view',
+    },
+    tool: {
+      navigate_to: 'Navigate',
+      select_subfunction: 'Select function',
+      load_file: 'Load file',
+      open_dropdown: 'Open dropdown',
+      set_field: 'Set field',
+      click_execute: 'Execute',
+      click_action: 'Click action',
+      list_files: 'List files',
+      get_task_status: 'Get task status',
     },
   },
 
@@ -1140,6 +1283,7 @@ export default {
       'video.extract_audio': 'Video · Extract Audio',
       'video.subtitle_generate': 'Video · Subtitles',
       'video.summary': 'Video · Summary',
+      'video.download': 'Video · Download',
       'audio.transcode': 'Audio · Transcode',
       'audio.cut': 'Audio · Cut',
       'audio.volume': 'Audio · Volume',
@@ -1166,6 +1310,43 @@ export default {
       invalid_request: 'Invalid request parameters.',
       invalid_params: 'Unsupported parameter for this model.',
       remote_error: 'Remote API error.',
+    },
+  },
+
+  // ── Video download ────────────────────────────────────────────────────
+  video_download: {
+    terms_title: 'Video Download — Terms',
+    terms_intro: 'Before enabling Video Download, please read and understand the following:',
+    terms_points: [
+      'Only download content you own the copyright to, are authorized to use, or that is in the public domain or under an open license (e.g. Creative Commons).',
+      'Most video platforms (including YouTube) prohibit unauthorized downloading in their Terms of Service. Confirm the source site permits it before enabling.',
+      'Use this feature only for your personal, lawful purposes — not to reproduce, distribute, or commercially exploit infringing content.',
+      'You bear sole responsibility for all legal, copyright, and compliance consequences arising from your use.',
+      'This feature is provided "as is". The developer makes no warranty as to its legality or suitability and assumes no liability.',
+    ],
+    agree: 'I have read and agree to the above',
+    enable: 'Enable video download',
+    quality_mode: 'Download quality',
+    quality_auto: 'Best available (auto)',
+    quality_cap: 'Cap resolution',
+    quality_ask: 'Ask each time',
+    max_height: 'Max resolution',
+    checking: 'Checking URL...',
+    quality: 'Quality',
+    download: 'Load',
+    reason: {
+      unsupported: 'This site or URL is not supported.',
+      private: 'This is a private video.',
+      geo: 'This video is not available in your region.',
+      age_restricted: 'This video is age-restricted and requires sign-in.',
+      network: 'Network error. Please try again.',
+      unknown: 'Could not process this URL.',
+    },
+    toast: {
+      submit_failed: 'Failed to start the download.',
+      started: 'Downloading: {title}',
+      complete: 'Downloaded: {title} — loaded into the Video tool',
+      open: 'Go to Video tool',
     },
   },
 

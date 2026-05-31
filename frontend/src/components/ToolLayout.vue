@@ -10,6 +10,8 @@ import { useResizableLayout } from '@/composables/useResizableLayout'
 import { useTitlebar } from '@/composables/useTitlebar'
 import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
 import { createLogger } from '@/utils/logger'
+import { usePasteUpload } from '@/composables/usePasteUpload'
+import { useUrlDownload } from '@/composables/useUrlDownload'
 
 const { t } = useI18n()
 const log = createLogger('ToolLayout')
@@ -89,6 +91,7 @@ const emit = defineEmits<{
   (e: 'execute'): void
   (e: 'file', file: File, sourceDir?: string): void
   (e: 'files', files: File[]): void
+  (e: 'existing-files', refs: import('@/stores/files').PendingResultRef[]): void
   (e: 'remove-file'): void
   (e: 'clear-selection'): void
 }>()
@@ -115,7 +118,7 @@ const hasFile = computed(() =>
 // Sync titlebar filename — filmstrip mode uses prop, single-file uses internal state
 watch(
   () => props.activeFileName ?? currentFile.value?.name ?? '',
-  (name) => { name ? setFileName(name) : clearFileName() },
+  (name) => { if (name) { setFileName(name) } else { clearFileName() } },
   { immediate: true },
 )
 
@@ -149,15 +152,6 @@ function setFile(file: File, sourceDir?: string) {
   emit('file', file, sourceDir)
 }
 
-function removeFile() {
-  log.info('removeFile')
-  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
-  currentFile.value = null
-  previewUrl.value = null
-  clearFileName()
-  emit('remove-file')
-}
-
 function handleUploadFile(file: File, sourceDir?: string) {
   if (props.acceptType) {
     const detected = detectMediaType(file)
@@ -173,6 +167,19 @@ function handleUploadFile(file: File, sourceDir?: string) {
 function handleUploadFiles(files: File[]) {
   emit('files', files)
 }
+
+const urlDownload = useUrlDownload()
+
+// 貼上 = 拖曳的另一個入口:單檔走型別驗證路徑,多檔走 filmstrip 批次。
+// 貼上內容無 sourceDir(走 HTTP upload),與拖曳語意一致。
+// URL 偵測只在 video tool 啟用,其他 tool 傳 undefined 跳過。
+usePasteUpload((files) => {
+  if (files.length === 1) {
+    handleUploadFile(files[0])
+  } else {
+    handleUploadFiles(files)
+  }
+}, props.acceptType === 'video' ? (url) => urlDownload.handlePastedUrl(url) : undefined)
 
 function handleDrop(e: DragEvent) {
   e.preventDefault()
@@ -247,6 +254,9 @@ onActivated(() => {
   // Batch pending files (cross-tool open with multi-select)
   const many = filesStore.consumePendingFiles()
   if (many.length > 0) emit('files', many)
+  // Batch pending results (open-in-tool by reference, no upload)
+  const manyResults = filesStore.consumePendingResults()
+  if (manyResults.length > 0) emit('existing-files', manyResults)
 })
 
 onBeforeUnmount(() => {

@@ -79,7 +79,10 @@ class ApiConnectionDAO:
                 conn.name = name
             if endpoint is not None:
                 conn.endpoint = endpoint
-            if api_key is not None:
+            # Security: only overwrite the stored key when a non-empty value is
+            # supplied. Both None (omitted) and "" (blank field) mean "keep the
+            # existing key" — a blank value must never silently wipe a secret.
+            if api_key:
                 conn.api_key = api_key
             if enabled is not None:
                 conn.enabled = enabled

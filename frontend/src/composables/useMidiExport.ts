@@ -72,6 +72,7 @@ async function _loadSampleUrl(
   dirName: string,
   note: string,
 ): Promise<string | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const electron = (window as any).electron
 
   if (soundfontsPath && electron?.readLocalFile) {

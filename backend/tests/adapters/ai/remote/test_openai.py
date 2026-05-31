@@ -107,15 +107,33 @@ def test_list_models_filters_preview_keyword():
     assert "gpt-4o" in ids
 
 
-def test_list_models_returns_empty_on_http_error():
+def test_list_models_raises_on_http_error():
     prov = OpenAIProvider(api_key="sk-test")
     with patch(PATCH_TARGET, side_effect=make_http_error(500, "Server Error")):
-        assert prov.list_models() == []
+        with pytest.raises(RemoteApiError) as ei:
+            prov.list_models()
+    assert ei.value.code == "remote_error"
 
 
-def test_list_models_returns_empty_on_json_decode_error():
+def test_list_models_raises_on_json_decode_error():
     prov = OpenAIProvider(api_key="sk-test")
     with patch(PATCH_TARGET, return_value=make_response(b"not-json")):
+        with pytest.raises(RemoteApiError) as ei:
+            prov.list_models()
+    assert ei.value.code == "remote_error"
+
+
+def test_list_models_raises_connection_failed_on_url_error():
+    prov = OpenAIProvider(api_key="sk-test")
+    with patch(PATCH_TARGET, side_effect=make_url_error("down")):
+        with pytest.raises(RemoteApiError) as ei:
+            prov.list_models()
+    assert ei.value.code == "connection_failed"
+
+
+def test_list_models_returns_empty_on_genuinely_empty_200():
+    prov = OpenAIProvider(api_key="sk-test")
+    with patch(PATCH_TARGET, return_value=make_response({"data": []})):
         assert prov.list_models() == []
 
 

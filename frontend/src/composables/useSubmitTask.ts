@@ -54,9 +54,10 @@ export function useSubmitTask() {
       taskStore.addTask(task)
       toast.show(t('toast.task_submitted', { label }), { type: 'success', icon: 'bi-check-circle' })
       return taskId
-    } catch (e: any) {
-      log.error('submit failed', { apiPath, taskType, error: e.message })
-      toast.show(e.message || t('toast.submit_failed'), { type: 'error', icon: 'bi-x-circle' })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      log.error('submit failed', { apiPath, taskType, error: msg })
+      toast.show(msg || t('toast.submit_failed'), { type: 'error', icon: 'bi-x-circle' })
       return null
     } finally {
       isProcessing.value = false

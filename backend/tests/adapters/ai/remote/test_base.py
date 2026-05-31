@@ -35,12 +35,12 @@ class _StubProvider(RemoteProvider):
         super().__init__(endpoint, api_key)
         self._connect_result = connect_result
 
-    def connect(self) -> bool:
+    def connect(self, timeout: int = 3) -> bool:
         if isinstance(self._connect_result, Exception):
             raise self._connect_result
         return self._connect_result
 
-    def list_models(self):
+    def list_models(self, timeout: int = 3):
         return []
 
     def chat(self, model, messages, *, max_tokens=2048, temperature=0.1, abort_hook=None):

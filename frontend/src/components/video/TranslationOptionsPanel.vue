@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/stores/settings'
 import { useModelStore } from '@/stores/models'
 import { apiFetch } from '@/composables/useApi'
-import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
+import { useModelOptions } from '@/composables/useModelOptions'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
@@ -152,7 +152,7 @@ watch(selectedTranslateModel, savePreferences)
 
 onMounted(async () => {
   await Promise.all([loadTranslateModels(), loadTranslateStyles()])
-  remoteStore.fetchAll()
+  remoteStore.ensureLoaded()
   settings.loadDeviceInfo()
   const saved = loadPreferences()
   if (saved && localTranslateModelOptions.value.some(m => m.value === saved)) {

@@ -2,10 +2,12 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -24,7 +26,7 @@ const isLoading  = computed(() => isProcessing.value)
 
 async function execute() {
   if (!props.fileId) return
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     file_id: props.fileId,
     pages: pages.value.trim(),
   }
@@ -33,11 +35,36 @@ async function execute() {
 }
 
 function getParams() {
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     pages: pages.value.trim(),
   }
   return body
 }
+
+// ── Agent panel registration ─────────────────────────────────────────────
+
+const agentSchema = {
+  panelId: 'document.split',
+  fields: [
+    { name: 'pages', type: 'string' as const },
+  ],
+  actions: [],
+  execute: { requiresConfirm: false, label: 'panel.doc_split.execute' },
+}
+
+useAgentPanelHost('document.split', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({ pages: pages.value }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'pages': pages.value = String(value); return pages.value
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  execute: async () => { await execute(); return {} },
+})
 
 defineExpose({ execute, isDisabled, isLoading, getParams })
 </script>

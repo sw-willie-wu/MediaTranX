@@ -5,6 +5,8 @@ import { useToast } from '@/composables/useToast'
 import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
+import { renderGlyphThumbnail, TOOL_GLYPH } from '@/utils/glyphThumbnail'
+import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
 import { apiFetch } from '@/composables/useApi'
 import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
@@ -79,7 +81,7 @@ export function useAudioWorkspace() {
   const fileId = computed<string | null>(() => collection.activeEntry.value?.fileId ?? null)
   const isUploading = computed<boolean>(() => collection.activeEntry.value?.status === 'uploading')
   const sourceDir = computed<string | undefined>(() => collection.activeEntry.value?.sourceDir)
-  const currentFileName = computed<string>(() => collection.activeEntry.value?.file.name ?? '')
+  const currentFileName = computed<string>(() => collection.activeEntry.value?.fileName ?? '')
   const currentTaskId = computed<string | null>(() => collection.activeEntry.value?.currentTaskId ?? null)
   const historyStack = computed(() => collection.activeEntry.value?.historyStack ?? [])
 
@@ -140,10 +142,11 @@ export function useAudioWorkspace() {
       log.info('handleFile uploaded', { fileName: file.name, fileId: uploadedFileId })
       collection.updateEntry(entryId, { fileId: uploadedFileId, status: 'idle' })
       await loadAudioInfo()
-    } catch (e: any) {
-      log.error('handleFile upload failed', { fileName: file.name, error: e.message })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      log.error('handleFile upload failed', { fileName: file.name, error: msg })
       collection.updateEntry(entryId, { status: 'idle' })
-      toast.show(e.message || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
+      toast.show(msg || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
     }
   }
 
@@ -154,7 +157,10 @@ export function useAudioWorkspace() {
     }
   }
 
-  usePendingFileListener(handleFile, handleFiles)
+  const { handleExistingFiles, addExistingFile } = useExistingFileHandler(
+    collection, loadAudioInfo, () => renderGlyphThumbnail(TOOL_GLYPH.audio),
+  )
+  usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
 
   function handleRemoveFile() {
     const id = collection.activeId.value
@@ -250,19 +256,13 @@ export function useAudioWorkspace() {
   )
 
   /** Add a MIDI file (already on backend) to the filmstrip without re-uploading */
-  async function addMidiEntry(midiFileId: string, midiFilename: string) {
-    try {
-      const res = await apiFetch(`/files/${midiFileId}/download`)
-      if (!res.ok) throw new Error('fetch failed')
-      const blob = await res.blob()
-      const file = new File([blob], midiFilename, { type: 'audio/midi' })
-      const entryId = await collection.addEntry(file, undefined, generateAudioThumbnail)
-      // Skip upload — file already registered on backend
-      collection.updateEntry(entryId, { fileId: midiFileId, status: 'idle' })
-      return entryId
-    } catch (e) {
-      log.error('addMidiEntry failed', { midiFileId, error: e })
-    }
+  function addMidiEntry(midiFileId: string, midiFilename: string): string {
+    return addExistingFile({
+      fileId: midiFileId,
+      filename: midiFilename,
+      fileSize: 0,            // MIDI: not real audio; loadAudioInfo skips .mid/.midi; no consumer reads size
+      mimeType: 'audio/midi',
+    })
   }
 
   // Reset text result when switching files
@@ -316,6 +316,7 @@ export function useAudioWorkspace() {
     handleDownloadBatch,
     downloadFile,
     addMidiEntry,
+    handleExistingFiles,
     goBack,
     goForward,
   }

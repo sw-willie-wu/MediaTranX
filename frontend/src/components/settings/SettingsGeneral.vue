@@ -4,10 +4,11 @@ import { useI18n } from 'vue-i18n'
 import { useTheme, type ThemeMode } from '@/composables/useTheme'
 import { useResizableLayout } from '@/composables/useResizableLayout'
 import { apiFetch } from '@/composables/useApi'
-import { LOCALE_OPTIONS, resolveLocale, saveLocalePreference, getSavedPreference } from '@/i18n'
+import { LOCALE_OPTIONS, saveLocalePreference, getSavedPreference, type SupportedLocale } from '@/i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const { locale, t } = useI18n()
 const { themeMode, setTheme } = useTheme()
@@ -43,7 +44,7 @@ watch(() => settings.value.theme, (newTheme) => {
 })
 
 watch(() => settings.value.language, (val) => {
-  saveLocalePreference(val as any)
+  saveLocalePreference(val as SupportedLocale)
   locale.value = val
 })
 
@@ -98,7 +99,7 @@ async function selectTempDir() {
 }
 
 function restartApp() {
-  ;(window as any).electron?.restart()
+  window.electron?.restart()
 }
 
 // ── 暫存狀態 ──────────────────────────────────────────────────
@@ -147,6 +148,46 @@ async function clearTemp() {
     clearing.value = false
   }
 }
+
+// ── Agent panel host (settings.general) ──────────────────────────────────────
+
+useAgentPanelHost('settings.general', {
+  agentSchema: {
+    panelId: 'settings.general',
+    fields: [
+      {
+        name: 'theme',
+        type: 'enum',
+        options: () => ['system', 'dark', 'light'],
+      },
+      {
+        name: 'language',
+        type: 'enum',
+        options: () => LOCALE_OPTIONS.map(o => o.value),
+      },
+    ],
+    actions: [],
+    execute: null,
+  },
+  getCurrentValues: () => ({
+    theme: settings.value.theme,
+    language: settings.value.language,
+  }),
+  setField: (field: string, value: unknown) => {
+    if (field === 'theme') {
+      settings.value.theme = value as ThemeMode
+      return settings.value.theme
+    }
+    if (field === 'language') {
+      settings.value.language = value as SupportedLocale
+      return settings.value.language
+    }
+    throw new Error(`Unknown field: ${field}`)
+  },
+  openField: (_field: string) => { /* dropdowns open on interaction */ },
+  execute: () => { throw new Error('agent.error.no_execute_on_settings') },
+  isMultiSelect: () => false,
+})
 </script>
 
 <template>

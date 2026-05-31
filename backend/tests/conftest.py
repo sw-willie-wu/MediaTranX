@@ -4,6 +4,8 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from sqlmodel import create_engine, SQLModel
+from sqlalchemy.pool import StaticPool
 
 from app.init.configs import AppSettings, SETTINGS
 
@@ -123,3 +125,38 @@ def model_available(model_id: str, variant: str | None = None) -> bool:
         return any(variant in p.name for p in base.rglob("*"))
     except Exception:
         return False
+
+
+# ─── DB / DAO fixtures ───
+
+@pytest.fixture
+def real_db(monkeypatch):
+    """In-memory sqlite engine shared across the DAO's per-call Sessions.
+    StaticPool + check_same_thread=False keep one connection alive so the
+    in-memory DB persists across sessions."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    # CRITICAL (review round-2 M2): import the model so it registers on
+    # SQLModel.metadata BEFORE create_all — otherwise running a DAO/migration test
+    # FILE in isolation builds an empty schema ("no such table: api_connections").
+    # It only passes-by-accident when another module that imports the model is
+    # collected first. (conftest.py currently imports no model.)
+    import app.db.models.api_connection  # noqa: F401
+    import app.db.models.agent_session  # noqa: F401
+    import app.db.models.agent_message  # noqa: F401
+    import app.db.models.app_setting  # noqa: F401
+    SQLModel.metadata.create_all(engine)
+    # CRITICAL (review I1/I2): modules do `from app.db.database import get_engine`,
+    # binding the name at import time — patching `database.get_engine` alone does
+    # NOT reach them. Patch at the USE SITE. The DAO uses a bare import (patch its
+    # module attr); migrate_secrets (Task 6) is written to call
+    # `database.get_engine()` qualified, so the `database` patch reaches it.
+    import app.db.database as database
+    monkeypatch.setattr(database, "get_engine", lambda: engine)
+    monkeypatch.setattr("app.db.dao.api_connection_dao.get_engine", lambda: engine)
+    monkeypatch.setattr("app.db.dao.agent_session_dao.get_engine", lambda: engine)
+    monkeypatch.setattr("app.db.dao.app_setting_dao.get_engine", lambda: engine)
+    return engine

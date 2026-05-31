@@ -118,7 +118,8 @@ export function useCropRect(
     const { W, H } = imgDims()
     const MIN = 20
 
-    let { x, y, w, h } = s
+    let { x, y } = s
+    const { w, h } = s
 
     if (handle === 'move') {
       x = clamp(s.x + dx, 0, W - w)

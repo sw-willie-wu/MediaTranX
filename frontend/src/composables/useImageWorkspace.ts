@@ -1,10 +1,10 @@
 import { ref, computed, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
+import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
 import { apiFetch } from '@/composables/useApi'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { useI18n } from 'vue-i18n'
@@ -74,7 +74,6 @@ export async function generateImageThumbnail(file: File, existingUrl?: string): 
 }
 
 export function useImageWorkspace() {
-  const router = useRouter()
   const filesStore = useFilesStore()
   const taskStore = useTaskStore()
   const toast = useToast()
@@ -115,7 +114,7 @@ export function useImageWorkspace() {
 
   /** Original filename of the active entry */
   const currentFileName = computed<string>(
-    () => collection.activeEntry.value?.file.name ?? '',
+    () => collection.activeEntry.value?.fileName ?? '',
   )
 
   /** History stack of the active entry */
@@ -260,10 +259,11 @@ export function useImageWorkspace() {
       log.info('handleFile uploaded', { fileName: file.name, fileId: uploadedFileId })
       collection.updateEntry(entryId, { fileId: uploadedFileId, status: 'idle' })
       await loadImageInfo()
-    } catch (e: any) {
-      log.error('handleFile upload failed', { fileName: file.name, error: e.message })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      log.error('handleFile upload failed', { fileName: file.name, error: msg })
       collection.updateEntry(entryId, { status: 'idle' })
-      toast.show(e.message || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
+      toast.show(msg || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
     }
   }
 
@@ -276,7 +276,8 @@ export function useImageWorkspace() {
     }
   }
 
-  usePendingFileListener(handleFile, handleFiles)
+  const { handleExistingFiles } = useExistingFileHandler(collection, loadImageInfo)
+  usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
 
   function handleRemoveFile() {
     const id = collection.activeId.value
@@ -432,5 +433,6 @@ export function useImageWorkspace() {
     selectedIds: collection.selectedIds,
     handleFiles,
     handleDownloadBatch,
+    handleExistingFiles,
   }
 }

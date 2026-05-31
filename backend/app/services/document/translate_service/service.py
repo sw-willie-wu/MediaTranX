@@ -209,7 +209,8 @@ class TranslateService:
                     model_family=model_family,
                     model_size=model_size,
                     quantization=quantization,
-                    on_load_progress=lambda p, m: translate_progress(p * 0.05, m),
+                    on_load_progress=translate_progress,
+                    load_band=(0.0, 0.05),
                 ) as session:
                     translate_progress(0.05, "task.progress.start_translate")
                     translated_segments = translate_srt_auto(
@@ -245,7 +246,8 @@ class TranslateService:
                 model_family=model_family,
                 model_size=model_size,
                 quantization=quantization,
-                on_load_progress=lambda p, m: translate_progress(p * 0.05, m),
+                on_load_progress=translate_progress,
+                load_band=(0.0, 0.05),
             ) as session:
                 translate_progress(0.05, "task.progress.start_translate")
                 translated_text = translate_text_local(

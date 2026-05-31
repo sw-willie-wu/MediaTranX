@@ -3,7 +3,8 @@ import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 export interface SelectOption {
-  value: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  value: any  // option values are heterogeneous by design
   label: string
   desc?: string
   badge?: 'ok' | 'err' | null
@@ -23,7 +24,8 @@ function isGroup(item: SelectItem): item is SelectGroup {
 const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
-  modelValue: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  modelValue: any  // matches SelectOption.value which is heterogeneous
   options: readonly SelectItem[]
   size?: 'default' | 'sm'
   placeholder?: string
@@ -62,7 +64,8 @@ const renderOptions = computed<readonly SelectItem[]>(() => {
 })
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: any): void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (e: 'update:modelValue', value: any): void  // mirrors SelectOption.value
 }>()
 
 const isOpen = ref(false)
@@ -80,7 +83,7 @@ const selectedLabel = computed(() => {
 
 function toggle() {
   if (props.disabled || isEmpty.value) return
-  isOpen.value ? close() : open()
+  if (isOpen.value) { close() } else { open() }
 }
 
 function open() {

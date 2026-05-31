@@ -10,11 +10,12 @@ import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { apiFetch } from '@/composables/useApi'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import { useSettingsStore } from '@/stores/settings'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -26,7 +27,6 @@ const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
 const { guardModelReady } = useModelGuard()
-const settingsStore = useSettingsStore()
 
 // ── Whisper model status ────────────────────────────────────────
 const modelSizes = computed(() =>
@@ -263,12 +263,86 @@ function getParams() {
   return body
 }
 
+// ── Agent panel registration ──────────────────────────────────────────────────
+const agentSchema = {
+  panelId: 'audio.transcribe',
+  fields: [
+    { name: 'whisper_model', type: 'enum' as const,
+      options: () => modelSizes.value.map(m => m.value) },
+    { name: 'language', type: 'enum' as const,
+      options: () => languages.value.map(l => l.value) },
+    { name: 'output_format', type: 'enum' as const,
+      options: () => outputFormats.value.map(f => f.value) },
+    { name: 'vocal_separation', type: 'bool' as const },
+    { name: 'align', type: 'bool' as const },
+    { name: 'translate', type: 'bool' as const },
+    { name: 'target_language', type: 'enum' as const,
+      options: () => translateLanguages.value.map(l => l.value),
+      visibleWhen: () => translateEnabled.value },
+    { name: 'summarize', type: 'bool' as const },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.transcribe.execute' },
+}
+
+useAgentPanelHost('audio.transcribe', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    whisper_model: modelSize.value,
+    language: language.value,
+    output_format: outputFormat.value,
+    vocal_separation: vocalSeparation.value,
+    align: alignEnabled.value,
+    translate: translateEnabled.value,
+    target_language: targetLanguage.value,
+    summarize: summarizeEnabled.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'whisper_model':
+        modelSize.value = value as string
+        return value
+      case 'language':
+        language.value = value as string
+        return value
+      case 'output_format':
+        outputFormat.value = value as string
+        return value
+      case 'vocal_separation':
+        vocalSeparation.value = !!value
+        return vocalSeparation.value
+      case 'align':
+        alignEnabled.value = !!value
+        return alignEnabled.value
+      case 'translate':
+        translateEnabled.value = !!value
+        return translateEnabled.value
+      case 'target_language':
+        targetLanguage.value = value as string
+        return value
+      case 'summarize':
+        summarizeEnabled.value = !!value
+        return summarizeEnabled.value
+      default:
+        throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {
+    // no-op
+  },
+  execute: async () => {
+    await execute()
+    return {}
+  },
+})
+
 defineExpose({ execute, isDisabled, isLoading, getParams })
 
 onMounted(() => {
   loadLanguages()
   modelStore.fetchModels()
-  remoteStore.fetchAll()
+  remoteStore.ensureLoaded()
 })
 </script>
 

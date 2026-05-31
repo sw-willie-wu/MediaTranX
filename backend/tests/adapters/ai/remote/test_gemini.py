@@ -103,10 +103,20 @@ def test_list_models_dedup_by_family_key():
     assert len(models) == 1
 
 
-def test_list_models_returns_empty_on_http_error():
+def test_list_models_raises_on_http_error():
     prov = GeminiProvider(api_key="g-key")
     with patch(PATCH_TARGET, side_effect=make_http_error(500, "x")):
-        assert prov.list_models() == []
+        with pytest.raises(RemoteApiError) as ei:
+            prov.list_models()
+    assert ei.value.code == "remote_error"
+
+
+def test_list_models_raises_connection_failed_on_url_error():
+    prov = GeminiProvider(api_key="g-key")
+    with patch(PATCH_TARGET, side_effect=make_url_error("down")):
+        with pytest.raises(RemoteApiError) as ei:
+            prov.list_models()
+    assert ei.value.code == "connection_failed"
 
 
 def test_list_models_assigns_vision_capability_to_modern_models():

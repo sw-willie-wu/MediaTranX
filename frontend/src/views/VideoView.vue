@@ -15,21 +15,23 @@ import VideoSummaryPanel from '@/components/video/panels/VideoSummaryPanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTitlebar } from '@/composables/useTitlebar'
+import { useViewHost } from '@/composables/useViewHost'
 
 const { t } = useI18n()
 
 const {
-  hasFile, fileId, activeFileId, activePreviewUrl, isUploading, sourceDir, currentFileName, mediaInfo, hasResult,
+  hasFile, activeFileId, activePreviewUrl, isUploading, currentFileName, mediaInfo, hasResult,
   canGoBack, canGoForward,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload,
   handleDownloadBatch,
+  handleExistingFiles,
   goBack, goForward,
 } = useVideoWorkspace()
 
 const selectedIds = computed(() => collection.selectedIds.value)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
-const { isSubmitting, submitToAll } = useMultiSubmit(collection)
+const { submitToAll } = useMultiSubmit(collection)
 
 // Cut time points (shared between VideoPreview and VideoCutPanel)
 const cutStartTime = ref('00:00:00')
@@ -70,6 +72,12 @@ const subFunctions = computed(() => [
 ])
 
 const currentFunction = ref('transcode')
+
+useViewHost('video', {
+  currentFunction,
+  setCurrentFunction: (id) => { currentFunction.value = id },
+  validSubfunctions: () => ['transcode', 'cut', 'crop', 'subtitle', 'summary', 'interpolate', 'enhance'],
+})
 
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
 
@@ -128,7 +136,6 @@ function handleMultiExecute() {
 
 function onDownload() {
   const fmt = transcodePanelRef.value?.outputFormat ?? 'mp4'
-  const isAudio = transcodePanelRef.value?.isAudioFormat ?? false
   const suffix = currentFunction.value === 'cut' ? '_cut' : '_transcoded'
   handleDownload(fmt, suffix)
 }
@@ -224,6 +231,7 @@ onUnmounted(() => { clearActions() })
     @execute="handleExecute"
     @file="handleFile"
     @files="handleFiles"
+    @existing-files="handleExistingFiles"
     @remove-file="handleRemoveFile"
     @clear-selection="collection.clearSelection()"
   >
@@ -270,6 +278,7 @@ onUnmounted(() => { clearActions() })
           ref="transcodePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -281,6 +290,7 @@ onUnmounted(() => { clearActions() })
           v-model:start-time="cutStartTime"
           v-model:end-time="cutEndTime"
           v-model:stream-copy="cutStreamCopy"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -305,6 +315,7 @@ onUnmounted(() => { clearActions() })
             @submit="handlePanelSubmit"
           />
         </div>
+        <!-- Note: SubtitlePanel does not accept :isMultiSelect (m16 — subtitle panel hardcodes false internally) -->
 
         <VideoInterpolatePanel
           v-else-if="currentFunction === 'interpolate'"
@@ -312,6 +323,7 @@ onUnmounted(() => { clearActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :media-info="mediaInfo"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -320,6 +332,7 @@ onUnmounted(() => { clearActions() })
           ref="summaryPanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -329,6 +342,7 @@ onUnmounted(() => { clearActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :media-info="mediaInfo"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
       </div>

@@ -156,6 +156,7 @@ export function useMidiEditor() {
       tempo.value = json.tempo ?? 120
       timeSignature.value = json.time_signature ?? json.timeSignature ?? [4, 4]
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tracks.value = (json.tracks ?? []).map((apiTrack: any, idx: number) => ({
         name: apiTrack.name ?? `Track ${idx + 1}`,
         instrument: apiTrack.instrument ?? 0,
@@ -166,6 +167,7 @@ export function useMidiEditor() {
         solo: false,
         visible: apiTrack.visible ?? true,
         isDrum: apiTrack.is_drum ?? apiTrack.isDrum ?? false,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         notes: (apiTrack.notes ?? []).map((apiNote: any) => ({
           id: crypto.randomUUID(),
           pitch: apiNote.pitch ?? 60,

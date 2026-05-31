@@ -5,6 +5,8 @@ import { useToast } from '@/composables/useToast'
 import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
+import { renderGlyphThumbnail, TOOL_GLYPH } from '@/utils/glyphThumbnail'
+import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
 import { apiFetch } from '@/composables/useApi'
 import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
@@ -66,7 +68,7 @@ export function useDocumentWorkspace() {
   const fileId = computed<string | null>(() => collection.activeEntry.value?.fileId ?? null)
   const isUploading = computed<boolean>(() => collection.activeEntry.value?.status === 'uploading')
   const sourceDir = computed<string | undefined>(() => collection.activeEntry.value?.sourceDir)
-  const currentFileName = computed<string>(() => collection.activeEntry.value?.file.name ?? '')
+  const currentFileName = computed<string>(() => collection.activeEntry.value?.fileName ?? '')
   const currentTaskId = computed<string | null>(() => collection.activeEntry.value?.currentTaskId ?? null)
   const historyStack = computed(() => collection.activeEntry.value?.historyStack ?? [])
 
@@ -100,10 +102,11 @@ export function useDocumentWorkspace() {
       const uploadedFileId = await filesStore.uploadFile(file, srcDir)
       log.info('handleFile uploaded', { fileName: file.name, fileId: uploadedFileId })
       collection.updateEntry(entryId, { fileId: uploadedFileId, status: 'idle' })
-    } catch (e: any) {
-      log.error('handleFile upload failed', { fileName: file.name, error: e.message })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      log.error('handleFile upload failed', { fileName: file.name, error: msg })
       collection.updateEntry(entryId, { status: 'idle' })
-      toast.show(e.message || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
+      toast.show(msg || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
     }
   }
 
@@ -114,7 +117,10 @@ export function useDocumentWorkspace() {
     }
   }
 
-  usePendingFileListener(handleFile, handleFiles)
+  const { handleExistingFiles } = useExistingFileHandler(
+    collection, undefined, () => renderGlyphThumbnail(TOOL_GLYPH.document),
+  )
+  usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
 
   function handleRemoveFile() {
     const id = collection.activeId.value
@@ -137,7 +143,7 @@ export function useDocumentWorkspace() {
     }
   }
 
-  function handleDownload(fallbackSuffix = '_output', fallbackExt = 'pdf') {
+  function handleDownload(_fallbackSuffix = '_output', _fallbackExt = 'pdf') {
     // Binary result download (from history stack)
     const latest = historyStack.value.at(-1)
     if (latest) {
@@ -224,5 +230,6 @@ export function useDocumentWorkspace() {
     handleDownload,
     handleDownloadBatch,
     handleTextDownload,
+    handleExistingFiles,
   }
 }

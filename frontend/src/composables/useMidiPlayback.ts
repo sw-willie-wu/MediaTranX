@@ -1,6 +1,6 @@
 import { ref, onUnmounted } from 'vue'
 import * as Tone from 'tone'
-import type { MidiTrack, MidiNote } from './useMidiEditor'
+import type { MidiTrack } from './useMidiEditor'
 import { useToneSynth } from './useToneSynth'
 
 // ---------------------------------------------------------------------------
@@ -94,7 +94,7 @@ export function useMidiPlayback() {
         const noteOnTime = beatsToSeconds(note.start)
         const noteOffTime = beatsToSeconds(note.start + note.duration)
         const trackIndex = ti
-        const { pitch, velocity, duration } = note
+        const { pitch, velocity } = note
         const { instrument, isDrum } = track
 
         // Schedule noteOn (pass time from Transport for sample-accurate timing)

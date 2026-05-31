@@ -10,11 +10,14 @@ import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
+import type { SelectItem } from '@/components/common/AppSelect.vue'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
   language?: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -120,7 +123,7 @@ watch(localLlmOptions, (options) => {
 
 onMounted(() => {
   modelStore.ensureLoaded()
-  remoteStore.fetchAll()
+  remoteStore.ensureLoaded()
 })
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value || !llmModel.value)
@@ -217,6 +220,49 @@ async function execute() {
   )
   if (taskId) emit('submit', taskId)
 }
+
+// ── Agent panel registration ─────
+const flattenOptions = (items: SelectItem[]) =>
+  items.flatMap((o: SelectItem) =>
+    'options' in o ? o.options.map(x => x.value) : [o.value]
+  )
+
+const agentSchema = {
+  panelId: 'video.summary',
+  fields: [
+    { name: 'whisper_model',    type: 'enum' as const, options: () => whisperModelOptions.value.map(m => m.value) },
+    { name: 'llm_model',        type: 'enum' as const, options: () => flattenOptions(llmOptions.value) },
+    { name: 'vlm_model',        type: 'enum' as const, options: () => flattenOptions(vlmOptions.value) },
+    { name: 'summary_mode',     type: 'enum' as const, options: () => summaryModeOptions.value.map(o => o.value) },
+    { name: 'vocal_separation', type: 'bool' as const },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.summary.execute' },
+}
+
+useAgentPanelHost('video.summary', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    whisper_model:    whisperModelSize.value,
+    llm_model:        llmModel.value,
+    vlm_model:        vlmModel.value,
+    summary_mode:     summaryMode.value,
+    vocal_separation: vocalSeparation.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'whisper_model':    whisperModelSize.value = String(value); return whisperModelSize.value
+      case 'llm_model':        llmModel.value         = String(value); return llmModel.value
+      case 'vlm_model':        vlmModel.value         = String(value); return vlmModel.value   // 接受 ''
+      case 'summary_mode':     summaryMode.value      = String(value); return summaryMode.value
+      case 'vocal_separation': vocalSeparation.value  = Boolean(value); return vocalSeparation.value
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  execute: async () => { await execute(); return {} },
+})
 
 defineExpose({ execute, isDisabled, isLoading })
 </script>

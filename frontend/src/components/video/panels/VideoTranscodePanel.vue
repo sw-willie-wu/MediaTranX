@@ -4,12 +4,14 @@ import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const { t } = useI18n()
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -143,6 +145,96 @@ function getParams() {
     scale_algorithm: finalResolution ? scaleAlgorithm.value : undefined,
   }
 }
+
+// ── Agent panel registration ──────────────────────────────────────────────────
+const agentSchema = {
+  panelId: 'video.transcode',
+  fields: [
+    { name: 'output_format', type: 'enum' as const,
+      options: () => formats.value.map(f => f.value) },
+    { name: 'video_codec', type: 'enum' as const,
+      options: () => videoCodecs.value.map(c => c.value),
+      visibleWhen: () => !isAudioFormat.value },
+    { name: 'resolution', type: 'enum' as const,
+      options: () => resolutions.value.map(r => r.value),
+      visibleWhen: () => !isAudioFormat.value },
+    { name: 'custom_width', type: 'number' as const,
+      min: 1, max: 99999, step: 1,
+      visibleWhen: () => resolution.value === 'custom' },
+    { name: 'custom_height', type: 'number' as const,
+      min: 1, max: 99999, step: 1,
+      visibleWhen: () => resolution.value === 'custom' },
+    { name: 'scale_algorithm', type: 'enum' as const,
+      options: () => scaleAlgorithms.value.map(a => a.value),
+      visibleWhen: () => !isAudioFormat.value && !!resolution.value },
+    { name: 'crf', type: 'number' as const,
+      min: 0, max: 51, step: 1,
+      visibleWhen: () => !isAudioFormat.value },
+    { name: 'audio_bitrate', type: 'enum' as const,
+      options: () => audioBitrates.map(b => b.value),
+      visibleWhen: () => showBitrateOption.value },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.transcode.execute' },
+}
+
+useAgentPanelHost('video.transcode', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    output_format: outputFormat.value,
+    video_codec: videoCodec.value,
+    resolution: resolution.value,
+    custom_width: customResWidth.value,
+    custom_height: customResHeight.value,
+    scale_algorithm: scaleAlgorithm.value,
+    crf: crf.value,
+    audio_bitrate: audioBitrate.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'output_format':
+        outputFormat.value = value as string
+        return value
+      case 'video_codec':
+        videoCodec.value = value as string
+        return value
+      case 'resolution':
+        resolution.value = value as string
+        return value
+      case 'custom_width': {
+        const v = Math.max(1, Number(value))
+        customResWidth.value = v
+        return v
+      }
+      case 'custom_height': {
+        const v = Math.max(1, Number(value))
+        customResHeight.value = v
+        return v
+      }
+      case 'scale_algorithm':
+        scaleAlgorithm.value = value as string
+        return value
+      case 'crf': {
+        const clamped = Math.min(Math.max(Number(value), 0), 51)
+        crf.value = clamped
+        return clamped
+      }
+      case 'audio_bitrate':
+        audioBitrate.value = value as string
+        return value
+      default:
+        throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {
+    // no-op
+  },
+  execute: async () => {
+    await execute()
+    return {}
+  },
+})
 
 defineExpose({ execute, isDisabled, isLoading, outputFormat, isAudioFormat, getParams })
 </script>

@@ -21,6 +21,7 @@ class PathSettings(BaseModel):
       - `log`        : log files (root/logs)
       - `ffmpeg`     : Windows root/bin/ffmpeg/; Linux/macOS = system 'ffmpeg'
       - `llama`      : root/bin/llama/
+      - `ytdlp`      : Windows root/bin/yt-dlp/; Linux/macOS = system 'yt-dlp'
       - `soundfonts` : root/bin/soundfonts/musyngkite/
     """
     root: Path = Path(".")
@@ -47,6 +48,12 @@ class PathSettings(BaseModel):
     @property
     def llama(self) -> Path:
         return self.root / "bin" / "llama"
+
+    @computed_field
+    @property
+    def ytdlp(self) -> Path:
+        # Windows: bundled in root/bin/yt-dlp/; else prefer system yt-dlp (PATH).
+        return self.root / "bin" / "yt-dlp" if _WIN else Path("yt-dlp")
 
     @computed_field
     @property

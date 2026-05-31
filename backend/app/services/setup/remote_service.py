@@ -5,6 +5,8 @@ Manages external AI API connection settings (Ollama, OpenAI, Gemini).
 import logging
 from typing import Optional
 
+from app.adapters.ai.remote.base import TEST_TIMEOUT
+from app.adapters.security.secret_cipher import get_secret_cipher, SecretDecryptError
 from app.db.dao.api_connection_dao import ApiConnectionDAO
 
 logger = logging.getLogger(__name__)
@@ -18,12 +20,60 @@ class RemoteService:
         logger.info("RemoteService initialized")
 
     def get_connections(self, provider: Optional[str] = None) -> list[dict]:
-        """Get connection list."""
+        """Get connection list.
+
+        SECURITY: the plaintext ``api_key`` is stripped from every connection
+        and replaced with a ``has_api_key`` boolean. The key must never travel
+        to the client — it stays server-side and is resolved by conn_id when a
+        provider call is made (see list_remote_models_by_conn /
+        get_provider_for_connection). Leaking it to the frontend is what let it
+        end up in request URLs → uvicorn access logs in plaintext.
+        """
         if provider:
             conns = self._dao.get_by_provider(provider)
         else:
             conns = self._dao.get_all()
-        return [c.model_dump() for c in conns]
+        return [self._redact(c.model_dump()) for c in conns]
+
+    def _decrypt_stored(self, stored: Optional[str]) -> Optional[str]:
+        """Decrypt a stored api_key value. Raises RemoteApiError if the value is
+        present but cannot be decrypted by the active cipher (wrong scheme /
+        corrupt data). Returns the value unchanged when it has no enc: prefix
+        (legacy plaintext passthrough) or is empty/None."""
+        if not stored:
+            return stored
+        try:
+            return get_secret_cipher().decrypt(stored)
+        except SecretDecryptError as e:
+            from app.handler.exceptions import RemoteApiError
+            raise RemoteApiError("key_undecryptable", str(e)) from e
+
+    def _redact(self, conn_dict: dict) -> dict:
+        """Strip the stored api_key from a serialized connection, replacing it
+        with ``has_api_key`` (bool) and ``key_hint`` (head+tail masked plaintext
+        or ``None``). Applied to EVERY connection that crosses the API boundary
+        (get / add / update) so the raw key never travels to the client."""
+        stored = conn_dict.pop("api_key", None)
+        conn_dict["has_api_key"] = bool(stored)
+        if not stored:
+            conn_dict["key_hint"] = None
+            return conn_dict
+        try:
+            plain = get_secret_cipher().decrypt(stored)
+            conn_dict["key_hint"] = self._mask_key(plain)
+        except SecretDecryptError:
+            conn_dict["key_hint"] = "⚠ undecryptable"
+        return conn_dict
+
+    @staticmethod
+    def _mask_key(plain: str) -> str:
+        """Masked head+tail hint for display — never the full key. Shows the
+        first 3 + last 3 chars with a fixed-width mask between (length-hiding),
+        e.g. ``sk-proj-abcdef1234`` -> ``sk-•••234``. Keys shorter than 8 chars
+        (where head+tail would expose most of the secret) are fully masked."""
+        if len(plain) >= 8:
+            return f"{plain[:3]}•••{plain[-3:]}"
+        return "•••"
 
     def add_connection(
         self,
@@ -33,22 +83,26 @@ class RemoteService:
         api_key: Optional[str] = None,
     ) -> dict:
         """Add a new connection."""
+        if api_key:
+            api_key = get_secret_cipher().encrypt(api_key)
         conn = self._dao.create(
             provider=provider,
             name=name,
             endpoint=endpoint,
             api_key=api_key,
         )
-        return conn.model_dump()
+        return self._redact(conn.model_dump())
 
     def update_connection(self, conn_id: int, **kwargs) -> dict:
         """Update a connection. Raises NotFoundError if conn_id is unknown."""
         from app.handler.exceptions import NotFoundError
 
+        if kwargs.get("api_key"):
+            kwargs["api_key"] = get_secret_cipher().encrypt(kwargs["api_key"])
         conn = self._dao.update(conn_id, **kwargs)
         if conn is None:
             raise NotFoundError(f"Connection not found: {conn_id}")
-        return conn.model_dump()
+        return self._redact(conn.model_dump())
 
     def delete_connection(self, conn_id: int) -> None:
         """Delete a connection. Raises NotFoundError if conn_id is unknown."""
@@ -57,19 +111,44 @@ class RemoteService:
         if not self._dao.delete(conn_id):
             raise NotFoundError(f"Connection not found: {conn_id}")
 
+    def reveal_key(self, conn_id: int) -> Optional[str]:
+        """Return the decrypted plaintext api_key for a connection.
+        Raises NotFoundError if conn_id is unknown.
+        Raises RemoteApiError with code 'key_undecryptable' if the stored value
+        cannot be decrypted by the active cipher."""
+        conn = self._dao.get_by_id(conn_id)
+        if conn is None:
+            from app.handler.exceptions import NotFoundError
+            raise NotFoundError(f"Connection not found: {conn_id}")
+        return self._decrypt_stored(conn.api_key)
+
     def test_connection(self, provider: str, endpoint: str, api_key: Optional[str] = None) -> dict:
         """Test if a connection is working."""
+        from app.handler.exceptions import RemoteApiError
         p = self._get_provider(provider, endpoint, api_key)
-        connected = p.is_available()
-        models = p.list_models() if connected else []
+        connected = p.is_available(timeout=TEST_TIMEOUT)
+        models = []
+        if connected:
+            try:
+                models = p.list_models(timeout=TEST_TIMEOUT)
+            except RemoteApiError as e:
+                # is_available already established connectivity; a list failure
+                # after that shouldn't flip connected — degrade to empty list.
+                logger.warning(f"test_connection: connected but list_models failed: {e}")
         return {
             "connected": connected,
             "models": [self._model_to_dict(m) for m in models],
         }
 
-    def list_remote_models(self, provider: str, endpoint: str, api_key: Optional[str] = None) -> list[dict]:
-        """List available remote models."""
-        p = self._get_provider(provider, endpoint, api_key)
+    def list_remote_models_by_conn(self, conn_id: int) -> list[dict]:
+        """List models for a SAVED connection, resolving the api_key
+        server-side from conn_id. The caller (and the request URL) never sees
+        the key. Raises NotFoundError when conn_id is unknown."""
+        conn = self._dao.get_by_id(conn_id)
+        if conn is None:
+            from app.handler.exceptions import NotFoundError
+            raise NotFoundError(f"Connection not found: {conn_id}")
+        p = self._get_provider(conn.provider, conn.endpoint, self._decrypt_stored(conn.api_key))
         models = p.list_models()
         return [self._model_to_dict(m) for m in models]
 
@@ -102,10 +181,10 @@ class RemoteService:
         if conn_id is not None:
             conn = self._dao.get_by_id(conn_id)
             if conn:
-                return self._get_provider(conn.provider, conn.endpoint, conn.api_key)
+                return self._get_provider(conn.provider, conn.endpoint, self._decrypt_stored(conn.api_key))
         # fallback: get the first active connection of this provider
         conns = self._dao.get_by_provider(provider)
         for c in conns:
-            if c.is_active:
-                return self._get_provider(c.provider, c.endpoint, c.api_key)
+            if c.enabled:
+                return self._get_provider(c.provider, c.endpoint, self._decrypt_stored(c.api_key))
         return None

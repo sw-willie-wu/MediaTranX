@@ -66,6 +66,22 @@ const editConn = ref({ name: '', endpoint: '', api_key: '' })
 const showEditKey = ref(false)
 const showNewKey = ref(false)
 
+async function onCopyKey(id: number) {
+  // Copy-only: fetch the plaintext once and write it straight to the clipboard.
+  // The key is never displayed on screen (no reveal/visible state).
+  const k = await remoteModelStore.revealKey(id)
+  if (!k) {
+    toast.show(t('settings.models.reveal_failed'), { type: 'error' })
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(k)
+    toast.show(t('settings.models.key_copied'), { type: 'success' })
+  } catch {
+    toast.show(t('settings.models.copy_failed'), { type: 'error' })
+  }
+}
+
 async function addConnection() {
   const ok = await remoteModelStore.addConnection(newConn.value)
   if (ok) {
@@ -81,7 +97,9 @@ async function deleteConnection(id: number) {
 
 function startEdit(conn: RemoteConnection) {
   editingConnId.value = conn.id
-  editConn.value = { name: conn.name, endpoint: conn.endpoint, api_key: conn.api_key || '' }
+  // api_key is write-only: never prefilled (the server no longer returns it).
+  // Empty field on save = keep the stored key.
+  editConn.value = { name: conn.name, endpoint: conn.endpoint, api_key: '' }
 }
 
 function cancelEdit() {
@@ -89,8 +107,17 @@ function cancelEdit() {
 }
 
 async function saveEdit(id: number) {
-  const ok = await remoteModelStore.updateConnection(id, editConn.value)
-  if (ok) editingConnId.value = null
+  const payload: { name: string; endpoint: string; api_key?: string } = {
+    name: editConn.value.name,
+    endpoint: editConn.value.endpoint,
+  }
+  // Only send api_key when the user typed a new one — an empty field means
+  // "keep the existing key" (omitting it lets the backend preserve it).
+  if (editConn.value.api_key) payload.api_key = editConn.value.api_key
+  const ok = await remoteModelStore.updateConnection(id, payload)
+  if (ok) {
+    editingConnId.value = null
+  }
 }
 
 async function toggleConnection(conn: RemoteConnection) {
@@ -127,7 +154,7 @@ async function testConnection() {
       }),
     })
     if (res.ok) testResult.value = await res.json()
-  } catch (e) {
+  } catch {
     testResult.value = { connected: false, models: [] }
   } finally {
     testingConn.value = false
@@ -204,7 +231,7 @@ watch(
 
 onMounted(() => {
   modelStore.fetchModels()
-  remoteModelStore.fetchAll()
+  remoteModelStore.ensureLoaded()
 })
 </script>
 
@@ -265,10 +292,16 @@ onMounted(() => {
       <div v-for="conn in connections" :key="conn.id" class="conn-card" :class="{ expanded: expandedConnId === conn.id }">
         <div class="conn-header" @click="toggleExpand(conn)">
           <div class="conn-title">
-            <span class="conn-name">{{ conn.name }}</span>
+            <span class="conn-name">
+              {{ conn.name }}
+              <span v-if="remoteModelStore.connError[conn.id]" class="conn-error-tag">（{{ $t('settings.remote.connection_failed') }}）</span>
+            </span>
             <span class="conn-endpoint">{{ conn.endpoint }}</span>
           </div>
           <div class="conn-actions" @click.stop>
+            <button v-if="conn.has_api_key" class="btn-secondary btn-sm" @click="onCopyKey(conn.id)" :title="$t('settings.models.copy_key')">
+              <i class="bi bi-clipboard"></i>
+            </button>
             <button class="btn-secondary btn-sm" @click="refreshConnModels(conn)" :title="$t('settings.remote.refresh')">
               <i class="bi bi-arrow-clockwise"></i>
             </button>
@@ -287,7 +320,7 @@ onMounted(() => {
         <!-- 編輯表單 -->
         <div v-if="editingConnId === conn.id" class="conn-edit-form">
           <div class="form-group">
-            <label>{{ $t('settings.models.remote_name') }}</label>
+            <label>{{ $t('settings.remote.name') }}</label>
             <input class="form-input" v-model="editConn.name" />
           </div>
           <div class="form-group">
@@ -297,7 +330,7 @@ onMounted(() => {
           <div class="form-group">
             <label>API Key</label>
             <div class="input-with-eye">
-              <input class="form-input" v-model="editConn.api_key" :type="showEditKey ? 'text' : 'password'" />
+              <input class="form-input" v-model="editConn.api_key" :type="showEditKey ? 'text' : 'password'" :placeholder="conn.has_api_key && conn.key_hint ? conn.key_hint : 'sk-...'" />
               <button class="eye-btn" @mousedown="showEditKey = true" @mouseup="showEditKey = false" @mouseleave="showEditKey = false">
                 <i :class="showEditKey ? 'bi bi-eye' : 'bi bi-eye-slash'"></i>
               </button>
@@ -329,6 +362,9 @@ onMounted(() => {
               </div>
             </div>
           </template>
+          <div v-else-if="remoteModelStore.connError[conn.id]" class="conn-models-error">
+            <span>{{ $t('settings.remote.connection_failed') }}</span>
+          </div>
           <p v-else class="conn-models-empty">{{ $t('settings.remote.no_models') }}</p>
         </div>
       </div>
@@ -650,6 +686,21 @@ onMounted(() => {
   font-size: 0.8rem;
   padding: 0.5rem;
   text-align: center;
+}
+
+.conn-error-tag {
+  color: var(--color-danger);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.conn-models-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  color: var(--color-danger);
+  font-size: 0.8rem;
 }
 
 .conn-empty {

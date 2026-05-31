@@ -29,22 +29,24 @@ import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTaskStore } from '@/stores/tasks'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 import { apiFetch } from '@/composables/useApi'
+import { useViewHost } from '@/composables/useViewHost'
 
 const { t } = useI18n()
 const toast = useToast()
 
 const {
-  hasFile, fileId, activeFileId, activePreviewUrl, isUploading, sourceDir, currentFileName, hasResult, audioInfo,
+  hasFile, activeFileId, activePreviewUrl, isUploading, sourceDir, currentFileName, hasResult, audioInfo,
   canGoBack, canGoForward,
-  textResultContent, textResultFileId,
+  textResultContent,
   collection,
   handleFile, handleFiles, handleRemoveFile, handlePanelSubmit, handleDownload, handleDownloadBatch, downloadFile, addMidiEntry,
+  handleExistingFiles,
   goBack, goForward,
 } = useAudioWorkspace()
 
 const selectedIds = computed(() => collection.selectedIds.value)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
-const { isSubmitting, submitToAll } = useMultiSubmit(collection)
+const { submitToAll } = useMultiSubmit(collection)
 
 // Panel refs
 const transcodePanelRef  = ref<InstanceType<typeof AudioTranscodePanel>  | null>(null)
@@ -135,6 +137,13 @@ const subFunctions = computed(() => [
 ])
 
 const currentFunction = ref('transcode')
+
+useViewHost('audio', {
+  currentFunction,
+  setCurrentFunction: (id) => { currentFunction.value = id },
+  validSubfunctions: () => ['transcode', 'cut', 'volume', 'midi-edit', 'transcribe', 'separate', 'lyrics'],
+})
+
 const volumeGainPreview = ref(1)
 const trimRange = ref<{ start: number; end: number } | null>(null)
 
@@ -488,7 +497,7 @@ function registerTitlebar() {
 const _activeTick = ref(0)
 
 watchEffect(() => {
-  _activeTick.value
+  void _activeTick.value  // reactive dependency — forces re-run on increment
   const actions: TitlebarExtraAction[] = []
   if (currentFunction.value === 'lyrics' || currentFunction.value === 'transcribe') {
     actions.push({
@@ -528,6 +537,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     @execute="handleExecute"
     @file="handleFile"
     @files="handleFiles"
+    @existing-files="handleExistingFiles"
     @remove-file="handleRemoveFile"
     @clear-selection="collection.clearSelection()"
   >
@@ -738,6 +748,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="transcodePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -756,6 +767,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="volumePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
           @update:gain-preview="g => volumeGainPreview = g"
         />
@@ -765,6 +777,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="transcribePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
@@ -773,6 +786,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           ref="separatePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
           @jump-to-midi="handleJumpToMidi"
         />

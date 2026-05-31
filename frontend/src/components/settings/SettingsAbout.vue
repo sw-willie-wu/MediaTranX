@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConfirm } from '@/composables/useConfirm'
 import { apiFetch } from '@/composables/useApi'
 import AppIcon from '@/assets/icon.svg'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const { t } = useI18n()
 const { confirm } = useConfirm()
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const electron = (window as any).electron
 
 const appVersion = electron?.appVersion ?? 'dev'
 
 // Component versions from backend
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const envInfo = ref<Record<string, any>>({})
 const envLoading = ref(true)
 
@@ -44,6 +47,7 @@ const pytorchDisplay = computed(() => {
   return pt
 })
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toolTag(tool: any): string {
   if (!tool) return '—'
   return typeof tool === 'object' ? tool.tag || '—' : tool
@@ -71,6 +75,7 @@ async function reinstallEnv() {
   electron?.reinstallAiEnv()
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function handleReinstallProgress(data: any) {
   reinstallPercent.value = data.percent || 0
   reinstallDetail.value = data.detail || ''
@@ -91,6 +96,22 @@ function restartApp() {
 onMounted(() => {
   loadEnvInfo()
   electron?.onReinstallProgress(handleReinstallProgress)
+})
+
+useAgentPanelHost('settings.about', {
+  agentSchema: {
+    panelId: 'settings.about',
+    fields: [],
+    actions: [],
+    execute: null,
+  },
+  getCurrentValues: () => ({}),
+  setField: (_field: string, _value: unknown) => {
+    throw new Error('agent.error.no_execute_on_settings')
+  },
+  openField: (_field: string) => {},
+  execute: () => { throw new Error('agent.error.no_execute_on_settings') },
+  isMultiSelect: () => false,
 })
 </script>
 

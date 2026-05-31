@@ -69,7 +69,7 @@ export default {
     audio: '音訊',
     image: '圖片',
     document: '文件',
-    drop_text: '將檔案拖曳至此',
+    drop_text: '將檔案拖曳或貼上至此',
     drop_hint: '自動識別檔案類型並進入對應工具',
     unknown_file_type: '無法識別此檔案類型',
   },
@@ -100,7 +100,7 @@ export default {
     select: '請選擇',
     select_or_drop: '請選擇或拖曳檔案',
     select_function: '請選擇功能',
-    drop_files: '拖曳檔案到這裡',
+    drop_files: '拖曳或貼上檔案到這裡',
     drop_hint: '或點擊選擇檔案',
     loading_info: '讀取資訊...',
     uploading: '上傳中...',
@@ -120,6 +120,27 @@ export default {
     no_models_available: '無可用模型',
     model_not_downloaded_hint: '選擇的模型尚未下載，是否前往模型管理頁面下載？',
     go_to_model_manager: '前往模型管理',
+  },
+
+  // ── 面板執行按鈕 ──────────────────────────────────────────────────────
+  panel: {
+    upscale:    { execute: '放大' },                 // Phase 1 debt
+    transcode:  { execute: '轉檔' },                 // renamed from convert (Bug #22)
+    adjust:     { execute: '套用調整' },             // Phase 2.A new
+    filter:     { execute: '套用濾鏡' },             // Phase 2.A new
+    remove_bg:  { execute: '去除背景' },             // Phase 2.A new
+    ocr:        { execute: '辨識文字' },             // Phase 2.A new
+    cut:             { execute: '剪輯影片' },            // Phase 2.C new
+    enhance:         { execute: '增強' },                // Phase 2.C new
+    interpolate:     { execute: '插補幀數' },            // Phase 2.C new
+    summary:         { execute: '產生摘要' },            // Phase 2.C new
+    audio_transcode: { execute: '轉檔音訊' },            // Phase 2.D new
+    volume:          { execute: '調整音量' },            // Phase 2.D new
+    separate:        { execute: '分離音軌' },            // Phase 2.D new
+    doc_translate:   { execute: '翻譯文件' },            // Phase 2.E new
+    doc_ocr:         { execute: '執行 OCR' },            // Phase 2.E new
+    doc_pdf_convert: { execute: '轉換 PDF' },            // Phase 2.E new
+    doc_split:       { execute: '切割文件' },            // Phase 2.E new
   },
 
   // ── Toast 通知 ─────────────────────────────────────────────────────────
@@ -285,6 +306,10 @@ export default {
       analyzing_audio: '分析音訊中...',
       converting_midi: '轉換 MIDI 事件...',
       midi_complete: '音訊轉 MIDI 完成',
+      // video download
+      download_starting: '開始下載...',
+      downloading_video: '下載影片中...',
+      merging_video: '合併串流中...',
       // video transcode
       transcode_starting: '開始轉檔...',
       transcoding: '轉檔中...',
@@ -366,12 +391,12 @@ export default {
   // ── 圖片工具 ───────────────────────────────────────────────────────────
   image: {
     title: '圖片工具',
-    upload_label: '拖曳圖片到這裡',
+    upload_label: '拖曳或貼上圖片到這裡',
     upload_hint: '支援 JPG、PNG、WebP、BMP 等格式',
     loading: '讀取圖片資訊...',
 
     functions: {
-      convert: '轉檔',
+      transcode: '轉檔',
       remove_bg: '去背',
       ai_remove: '物件移除',
       upscale: '超解析',
@@ -520,7 +545,7 @@ export default {
   // ── 影片工具 ───────────────────────────────────────────────────────────
   video: {
     title: '影片工具',
-    upload_label: '拖曳影片到這裡',
+    upload_label: '拖曳或貼上影片到這裡',
     upload_hint: '支援 MP4、MKV、MOV、AVI 等格式',
     loading: '讀取媒體資訊...',
 
@@ -695,7 +720,7 @@ export default {
   // ── 音訊工具 ───────────────────────────────────────────────────────────
   audio: {
     title: '音訊工具',
-    upload_label: '拖曳音訊到這裡',
+    upload_label: '拖曳或貼上音訊到這裡',
     upload_hint: '支援 MP3、WAV、FLAC、AAC 等格式',
     loading: '讀取音訊資訊...',
     preview_unsupported: '此格式不支援預覽，但可正常處理',
@@ -894,7 +919,7 @@ export default {
   // ── 文件工具 ───────────────────────────────────────────────────────────
   document: {
     title: '文件工具',
-    upload_label: '拖曳文件到這裡',
+    upload_label: '拖曳或貼上文件到這裡',
     upload_hint: '支援 PDF、DOCX、TXT、SRT 等格式',
     loading: '上傳中...',
 
@@ -976,6 +1001,8 @@ export default {
       general: '一般',
       system: '系統資訊',
       models: 'AI 模型管理',
+      agent: 'Agent',
+      'video-download': '影片下載',
       about: '關於',
     },
 
@@ -1072,6 +1099,10 @@ export default {
       category_llm: '大語言模型',
       download_success: '{id} 下載完成',
       download_failed: '{id} 下載失敗：{error}',
+      copy_key: '複製金鑰',
+      key_copied: '金鑰已複製到剪貼簿',
+      reveal_failed: '無法讀取金鑰 — 可能在此機器上無法解密；請重新輸入。',
+      copy_failed: '無法複製到剪貼簿。',
       display_title: '顯示設定',
       show_all_models: '在工具面板顯示未下載的模型',
       show_all_models_hint: '關閉後，工具面板的模型選單只會顯示已下載的模型。',
@@ -1091,9 +1122,121 @@ export default {
       models_available: '個可用模型',
       connection_failed: '連線失敗',
       no_models: '未找到可用模型',
+      fetch_failed: '{count} 個雲端連線無法取得模型：{names}',
       edit: '編輯',
       refresh: '重新整理模型',
       delete: '刪除',
+    },
+
+    agent: {
+      title: 'Agent 設定',
+      model: {
+        label: '模型',
+        placeholder: '選擇支援 tools 的模型…',
+        warning_orphan: '所選模型已不存在',
+      },
+      policy: {
+        label: '確認策略',
+        auto: '自動（建議）',
+        ask_all: '全部都問',
+        custom: '自訂白名單',
+      },
+      whitelist: {
+        label: '個別工具策略',
+        state_auto: '自動',
+        state_ask: '詢問',
+        state_deny: '拒絕',
+      },
+      clear_history: {
+        label: '清空對話',
+        confirm: '確定清空所有對話？此操作無法復原。',
+      },
+    },
+  },
+
+  // ── Agent ──────────────────────────────────────────────────────────────
+  agent: {
+    banner: {
+      prefix: 'Agent：',
+      queued: '等待中…',
+      cancelled: '已中斷',
+      waiting_confirm: '等待確認中…',
+      completed: '已完成',
+      act: {
+        navigate_to: '正在前往 {route}',
+        select_subfunction: '正在選擇 {name}',
+        load_file: '正在載入檔案 {file_id}',
+        open_dropdown: '正在展開 {field}',
+        set_field: '正在設定 {field} = {value}',
+        click_execute: '正在送出任務…',
+        click_action: '正在執行 {name}',
+        list_files: '正在列出檔案…',
+        get_task_status: '正在查詢任務 {task_id}',
+      },
+    },
+    bubble: {
+      title: 'Agent 對話',
+      placeholder: '請告訴 Agent 你想做什麼…',
+      empty: '尚無對話',
+      thinking: '思考中…',
+      token_count: '輸入: {prompt} / 輸出: {completion}',
+      clear: '清除對話紀錄',
+      show: '顯示 Agent 對話泡泡',
+      hide: '隱藏 Agent 對話泡泡',
+    },
+    session: {
+      new_chat: '+ 新對話',
+      empty: '尚無對話',
+      delete: '刪除對話',
+      delete_confirm: '確定刪除此對話？此操作無法復原。',
+      back: '返回對話列表',
+      load_failed: '載入對話失敗',
+      delete_failed: '刪除對話失敗',
+      time: {
+        just_now: '剛剛',
+        minutes_ago: '{n} 分鐘前',
+        hours_ago: '{n} 小時前',
+        days_ago: '{n} 天前',
+      },
+    },
+    confirm: {
+      title: '確認動作',
+      cancel: '取消',
+      submit: '送出',
+      with_values: '確認以下數值執行此動作？',
+    },
+    error: {
+      no_model: '尚未設定 Agent 模型',
+      model_unavailable: '所選模型目前不可用',
+      tools_not_supported: '此模型不支援工具呼叫',
+      provider_error: '服務提供者回傳錯誤',
+      context_full: '對話過長，請清除後重新開始。',
+      internal: '內部錯誤',
+      unknown_tool: '未知工具：{name}',
+      tool_failed: '工具 {name} 執行失敗：{error}',
+      invalid_field: '目前畫面中找不到欄位 {field}',
+      invalid_route: '「{route}」不是有效的頁面',
+      invalid_action: '動作 {name} 目前無法執行',
+      no_active_file: '目前沒有載入任何檔案',
+      panel_not_supported: '此工具不支援面板 {panel}',
+      panel_not_active: '面板 {panel} 尚未啟用',
+      multi_select_not_supported: '此處不支援多檔選取',
+      file_not_found: '找不到檔案 {file_id}',
+      view_not_introspectable: '目前畫面無法被檢視',
+      no_execute_on_settings: '無法從設定頁面提交任務',
+      no_file_selected: '尚未載入檔案 — 請先上傳或載入檔案再執行',
+      invalid_subfunction: '此頁面沒有「{name}」子功能',
+    },
+    tool: {
+      navigate_to: '切換頁面',
+      select_subfunction: '選擇功能',
+      load_file: '載入檔案',
+      open_dropdown: '展開選單',
+      set_field: '設定欄位',
+      click_execute: '執行任務',
+      click_action: '點擊動作',
+      list_files: '列出檔案',
+      get_task_status: '查詢任務狀態',
     },
   },
 
@@ -1140,6 +1283,7 @@ export default {
       'video.extract_audio': '影片 · 音軌提取',
       'video.subtitle_generate': '影片 · 字幕提取',
       'video.summary': '影片 · 摘要',
+      'video.download': '影片 · 下載',
       'audio.transcode': '音訊 · 轉檔',
       'audio.cut': '音訊 · 剪輯',
       'audio.volume': '音訊 · 音量調整',
@@ -1166,6 +1310,43 @@ export default {
       invalid_request: '請求參數錯誤。',
       invalid_params: '此模型不支援指定的參數。',
       remote_error: '遠端 API 錯誤。',
+    },
+  },
+
+  // ── 影片下載 ───────────────────────────────────────────────────────────
+  video_download: {
+    terms_title: '影片下載 — 使用條款',
+    terms_intro: '啟用「影片下載」前,請先閱讀並理解以下條款:',
+    terms_points: [
+      '你只能下載你擁有著作權、已獲授權、或屬公共領域/開放授權(如 Creative Commons)的內容。',
+      '多數影音平台(包含 YouTube)的服務條款禁止未經授權的下載;啟用前請自行確認來源網站允許此行為。',
+      '本功能僅供你個人的合法用途,不得用於侵權內容的重製、散布或商業利用。',
+      '因使用本功能所生之一切法律、著作權與合規責任及後果,均由你自行承擔。',
+      '本功能以「現狀」提供,開發者不對其合法性、可用性或下載結果作任何擔保,亦不負任何責任。',
+    ],
+    agree: '我已閱讀並同意上述條款',
+    enable: '啟用影片下載',
+    quality_mode: '下載畫質',
+    quality_auto: '最佳畫質(自動)',
+    quality_cap: '限制解析度',
+    quality_ask: '每次詢問',
+    max_height: '最高解析度',
+    checking: '正在檢查網址...',
+    quality: '畫質',
+    download: '載入',
+    reason: {
+      unsupported: '不支援此網站或網址。',
+      private: '這是私人影片。',
+      geo: '此影片在你的地區無法觀看。',
+      age_restricted: '此影片有年齡限制,需登入。',
+      network: '網路錯誤,請重試。',
+      unknown: '無法處理此網址。',
+    },
+    toast: {
+      submit_failed: '無法開始下載。',
+      started: '開始下載:{title}',
+      complete: '下載完成:{title},已載入影片工具',
+      open: '前往影片工具',
     },
   },
 

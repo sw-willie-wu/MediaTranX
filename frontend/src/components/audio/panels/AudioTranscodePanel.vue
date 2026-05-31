@@ -3,10 +3,12 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -98,6 +100,42 @@ function getParams() {
 }
 
 defineExpose({ execute, isDisabled, isLoading, getParams })
+
+// ── Agent panel registration ─────
+const agentSchema = {
+  panelId: 'audio.transcode',
+  fields: [
+    { name: 'output_format', type: 'enum' as const,
+      options: () => formats.flatMap(g => g.options.map(o => o.value)) },   // formats is top-level const, no .value
+    { name: 'bitrate', type: 'enum' as const,
+      options: () => bitrates.value.map(b => b.value),
+      visibleWhen: () => showBitrate.value },
+    { name: 'sample_rate', type: 'enum' as const,
+      options: () => sampleRates.value.map(r => r.value) },
+  ],
+  actions: [],
+  execute: { requiresConfirm: true, label: 'panel.audio_transcode.execute' },
+}
+
+useAgentPanelHost('audio.transcode', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    output_format: outputFormat.value,
+    bitrate:       bitrate.value,
+    sample_rate:   sampleRate.value,
+  }),
+  setField: (field, value) => {
+    switch (field) {
+      case 'output_format': outputFormat.value = String(value); return outputFormat.value
+      case 'bitrate':       bitrate.value      = String(value); return bitrate.value
+      case 'sample_rate':   sampleRate.value   = String(value); return sampleRate.value
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  execute: async () => { await execute(); return {} },
+})
 </script>
 
 <template>

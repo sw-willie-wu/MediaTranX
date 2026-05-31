@@ -2,10 +2,11 @@
 Remote API connection management routes.
 """
 from __future__ import annotations
+import asyncio
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 
 from app.init.container import AppContainer
@@ -94,20 +95,36 @@ async def test_connection(
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
     """Test a connection."""
-    return service.test_connection(
-        provider=data.provider,
-        endpoint=data.endpoint,
-        api_key=data.api_key,
+    return await asyncio.to_thread(
+        service.test_connection, data.provider, data.endpoint, data.api_key
     )
 
 
 @router.get("/remote/models")
 @inject
 async def list_remote_models(
-    provider: str,
-    endpoint: str,
-    api_key: Optional[str] = None,
+    conn_id: int,
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
-    """List available remote models."""
-    return {"models": service.list_remote_models(provider, endpoint, api_key)}
+    """List available models for a SAVED connection.
+
+    Takes conn_id only — the api_key is resolved server-side. Previously this
+    accepted provider/endpoint/api_key as query params, which leaked the key
+    into the URL → uvicorn access logs in plaintext.
+    """
+    models = await asyncio.to_thread(service.list_remote_models_by_conn, conn_id)
+    return {"models": models}
+
+
+@router.post("/remote/connections/{conn_id}/key")
+@inject
+async def reveal_connection_key(
+    conn_id: int,
+    response: Response,
+    service: RemoteService = Depends(Provide[AppContainer.remote_service]),
+):
+    """Reveal the full plaintext key for ONE connection (user-initiated,
+    loopback). Secret is in the response body (not URL) -> not access-logged.
+    POST + no-store so intermediaries/history don't cache the secret."""
+    response.headers["Cache-Control"] = "no-store"
+    return {"api_key": service.reveal_key(conn_id)}

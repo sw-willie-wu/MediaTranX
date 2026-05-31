@@ -3,11 +3,13 @@ import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppRange from '@/components/common/AppRange.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
+import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 import type { FilterPreview } from './filterTypes'
 
 const props = defineProps<{
   fileId: string | null
   currentFileName: string
+  isMultiSelect?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -104,6 +106,45 @@ async function execute() {
   )
   if (taskId) emit('submit', taskId)
 }
+
+// ── Agent panel registration ─────────────────────────────────────────────────
+const agentSchema = {
+  panelId: 'image.adjust',
+  fields: [
+    { name: 'brightness', type: 'number' as const, min: 0,    max: 300, step: 1 },
+    { name: 'contrast',   type: 'number' as const, min: 0,    max: 300, step: 1 },
+    { name: 'saturation', type: 'number' as const, min: 0,    max: 300, step: 1 },
+    { name: 'sharpness',  type: 'number' as const, min: 0,    max: 300, step: 1 },
+    { name: 'hue',        type: 'number' as const, min: -180, max: 180, step: 1 },
+    { name: 'warmth',     type: 'number' as const, min: -100, max: 100, step: 1 },
+  ],
+  actions: [{ name: 'reset', label: 'image.adjust.reset' }],
+  execute: { requiresConfirm: false, label: 'panel.adjust.execute' },
+}
+
+useAgentPanelHost('image.adjust', {
+  agentSchema,
+  isMultiSelect: () => props.isMultiSelect ?? false,
+  getCurrentValues: () => ({
+    brightness: brightness.value, contrast: contrast.value, saturation: saturation.value,
+    sharpness: sharpness.value, hue: hue.value, warmth: warmth.value,
+  }),
+  setField: (field, value) => {
+    const clamp = (v: unknown, lo: number, hi: number) => Math.min(Math.max(Number(v), lo), hi)
+    switch (field) {
+      case 'brightness': { const c = clamp(value, 0, 300); brightness.value = c; return c }
+      case 'contrast':   { const c = clamp(value, 0, 300); contrast.value = c;   return c }
+      case 'saturation': { const c = clamp(value, 0, 300); saturation.value = c; return c }
+      case 'sharpness':  { const c = clamp(value, 0, 300); sharpness.value = c;  return c }
+      case 'hue':        { const c = clamp(value, -180, 180); hue.value = c;     return c }
+      case 'warmth':     { const c = clamp(value, -100, 100); warmth.value = c;  return c }
+      default: throw new Error(`Unknown field: ${field}`)
+    }
+  },
+  openField: (_field) => {},
+  invokeAction: (name) => { if (name === 'reset') reset() },
+  execute: async () => { await execute(); return {} },
+})
 
 defineExpose({ execute, isDisabled, isLoading, getState, setState, reset, getParams, getPreview: () => preview.value })
 </script>

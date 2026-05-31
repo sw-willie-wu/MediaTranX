@@ -10,9 +10,9 @@ import json
 import logging
 import urllib.error
 import urllib.request
-from typing import Callable, Optional
+from typing import Callable, Iterator, Optional
 
-from .base import RemoteProvider, RemoteModel
+from .base import RemoteProvider, RemoteModel, PROBE_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -118,14 +118,14 @@ class OllamaProvider(RemoteProvider):
         super().__init__(endpoint, api_key)
         self._caps_cache: dict[str, list[str]] = {}  # model_name -> capabilities
 
-    def connect(self) -> bool:
+    def connect(self, timeout: int = PROBE_TIMEOUT) -> bool:
         """Check if the Ollama service is running."""
         try:
             req = urllib.request.Request(
                 f"{self.endpoint}/api/version",
                 method="GET",
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read())
                 version = data.get("version", "unknown")
                 logger.info(f"Ollama connected: v{version} at {self.endpoint}")
@@ -134,14 +134,15 @@ class OllamaProvider(RemoteProvider):
             logger.warning(f"Ollama connection failed: {e}")
             return False
 
-    def list_models(self) -> list[RemoteModel]:
+    def list_models(self, timeout: int = PROBE_TIMEOUT) -> list[RemoteModel]:
         """List installed Ollama models (with capability detection)."""
+        from app.handler.exceptions import RemoteApiError
         try:
             req = urllib.request.Request(
                 f"{self.endpoint}/api/tags",
                 method="GET",
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read())
 
             models = []
@@ -160,9 +161,20 @@ class OllamaProvider(RemoteProvider):
                 ))
             return models
 
-        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
-            logger.error(f"Failed to list Ollama models: {e}")
-            return []
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8", "replace")
+            except Exception:
+                pass
+            logger.warning(f"Ollama list_models HTTP {e.code}: {body[:200]}")
+            raise self._parse_error(e.code, body)
+        except (urllib.error.URLError, OSError) as e:
+            logger.warning(f"Ollama list_models connection failed: {e}")
+            raise RemoteApiError("connection_failed", f"Ollama: {e}")
+        except json.JSONDecodeError as e:
+            logger.warning(f"Ollama list_models bad JSON: {e}")
+            raise RemoteApiError("remote_error", f"Ollama: invalid response ({e})")
 
     def _detect_capabilities(self, model_name: str, families: list[str]) -> list[str]:
         """
@@ -227,8 +239,140 @@ class OllamaProvider(RemoteProvider):
             if "vision" not in caps:
                 caps.append("vision")
 
+        # OQ-7 (template probe fallback): when Ollama's /api/show didn't return
+        # a "capabilities" array (older Ollama or proxy), check the chat template
+        # for tool-related markers.  Only runs when the primary capabilities path
+        # already failed (i.e. we're in the fallback branch).
+        if self._supports_tools(model_name):
+            caps.append("tools")
+
         self._caps_cache[model_name] = caps
         return caps
+
+    def _supports_tools(self, model_name: str) -> bool:
+        """Probe /api/show template field for tool-call support (OQ-7).
+
+        Returns True only when the Jinja chat template contains tool-related
+        variable names ('tools', 'tool_calls', 'function_call',
+        'available_tools').  Conservative: falls back to False on any network
+        or parse error so we never *over-claim* capabilities.
+
+        Rationale: Ollama 0.4.0+ reports 'tools' in the capabilities array
+        (handled by the primary path in _detect_capabilities).  Older Ollama
+        versions and LiteLLM-style proxies may not include a capabilities array
+        at all; the template is the authoritative source of truth in those cases.
+        """
+        try:
+            payload = json.dumps({"name": model_name}).encode("utf-8")
+            req = urllib.request.Request(
+                f"{self.endpoint}/api/show",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            template: str = data.get("template", "") or ""
+            template_lower = template.lower()
+            return any(marker in template_lower for marker in [
+                "tools", "tool_calls", "function_call", "available_tools",
+            ])
+        except Exception as e:
+            logger.debug("Ollama tool template probe failed for %s: %s", model_name, e)
+            return False
+
+    def chat_completions_stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        abort_hook: Optional[Callable] = None,
+    ) -> Iterator[dict]:
+        """Yield raw OpenAI-compat SSE chunks from Ollama /v1/chat/completions.
+
+        Ollama natively speaks the OpenAI Chat Completions wire format via its
+        /v1/ sub-path (requires Ollama 0.1.24+).  Chunks are yielded as-is; the
+        caller parses delta / tool_calls via _parse_openai_compat_chunk
+        (services/llm/chat_service.py).  Used by RemoteChatSession.stream() for
+        the agent tool-calling path.
+
+        Ollama-specific notes vs. OpenAI:
+        - Endpoint: {endpoint}/v1/chat/completions (same /v1/ prefix as OpenAI).
+        - Auth: usually absent for local Ollama; forwarded if api_key is set
+          (e.g. for LiteLLM-style proxies that require a token).
+        - Tool calling requires Ollama ≥ 0.4.0 AND a model whose chat template
+          includes tool-call Jinja variables.  See _supports_tools / OQ-7.
+        - The existing chat() method (used by translate / summary / subtitle)
+          targets /api/chat (native Ollama NDJSON) and is NOT affected.
+
+        Args:
+            tools: Forwarded as-is; empty list sent when None.
+            abort_hook: Invoked once immediately after urlopen returns.
+                Lets RemoteChatSession stash the response for cross-thread close.
+        """
+        payload: dict = {
+            "model": model,
+            "messages": messages,
+            "tools": tools or [],
+            "tool_choice": "auto" if tools else "none",
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        body = json.dumps(payload).encode("utf-8")
+        headers: dict = {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        req = urllib.request.Request(
+            f"{self.endpoint}/v1/chat/completions",
+            data=body, headers=headers, method="POST",
+        )
+
+        resp = None
+        try:
+            # 180s socket timeout: cancel arrives via abort_hook → resp.close()
+            # from another thread, not timeout.  Ollama on a local GPU is fast
+            # enough that 180s is never hit in normal operation; same ceiling as
+            # OpenAI cloud path for consistency.
+            resp = urllib.request.urlopen(req, timeout=180)
+        except urllib.error.HTTPError as e:
+            body_err = e.read().decode("utf-8", errors="replace")[:200]
+            raise RuntimeError(f"ollama API error {e.code}: {body_err}") from e
+        except (urllib.error.URLError, OSError) as e:
+            raise RuntimeError(f"ollama connection error: {e}") from e
+
+        if abort_hook is not None:
+            abort_hook(resp)
+
+        try:
+            for raw_line in resp:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:"):].strip()
+                if data == "[DONE]":
+                    return
+                try:
+                    yield json.loads(data)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "chat_completions_stream: malformed Ollama SSE chunk: %r",
+                        data[:120],
+                    )
+        finally:
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
 
     def get_model_ctx(self, model_name: str) -> int:
         """Query Ollama for model's context window size via /api/show."""

@@ -28,6 +28,9 @@ from app.services.setup.manager_service import SetupService
 # ── Task History (lightweight) ──
 from app.services.tasks.history_service import TaskHistoryService
 
+# ── Agent Session Persistence (lightweight) ──
+from app.services.agent.agent_session_service import AgentSessionService
+
 
 # ── Lazy factory helper ─────────────────────────────────────────────────────
 # Defers `import module; cls(...)` until the Singleton is first accessed.
@@ -66,6 +69,7 @@ class AppContainer(containers.DeclarativeContainer):
 
     # ── Engine ──
     ffmpeg = providers.Singleton(FFmpegWrapper)
+    yt_dlp_wrapper = providers.Singleton(_lazy("app.adapters.binary.ytdlp", "YtDlpWrapper"))
     model_manager = providers.Singleton(ModelManager)
     llama_runtime = providers.Singleton(
         _lazy("app.adapters.ai.wrapper.llm", "LlmWrapper"),
@@ -144,6 +148,16 @@ class AppContainer(containers.DeclarativeContainer):
         task_manager=task_manager,
         model_manager=model_manager,
     )
+
+    # ── Agent Service ──
+    agent_service = providers.Singleton(
+        _lazy("app.services.agent.agent_service", "AgentService"),
+        chat_service=chat_service,
+        remote_service=remote_service,
+    )
+
+    # ── Agent Session Persistence ──
+    agent_session_service = providers.Singleton(AgentSessionService)
 
     # ── Task History ──
     task_history = providers.Singleton(TaskHistoryService)
@@ -285,6 +299,11 @@ class AppContainer(containers.DeclarativeContainer):
         file_service=file_service, task_manager=task_manager,
         ffmpeg=ffmpeg,
         realesrgan=realesrgan_wrapper,
+    )
+    video_download = providers.Singleton(
+        _lazy("app.services.video.download_service", "VideoDownloadService"),
+        yt_dlp_wrapper=yt_dlp_wrapper, ffmpeg=ffmpeg,
+        file_service=file_service, task_manager=task_manager,
     )
 
     # ── Document Services (lazy) ──

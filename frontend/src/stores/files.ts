@@ -10,6 +10,13 @@ import { createLogger } from '@/utils/logger'
 
 const log = createLogger('FilesStore')
 
+export interface PendingResultRef {
+  fileId: string
+  filename: string
+  fileSize: number
+  mimeType: string
+}
+
 export const useFilesStore = defineStore('files', () => {
   // 狀態
   const files = ref<Map<string, MediaFile>>(new Map())
@@ -23,6 +30,9 @@ export const useFilesStore = defineStore('files', () => {
 
   // 批次暫存（跨工具開啟多選結果用）
   const pendingFiles = ref<File[]>([])
+
+  // 暫存「以既有 file_id 引用」的 result（加入工具用，不搬 bytes）
+  const pendingResults = ref<PendingResultRef[]>([])
 
   // 計算屬性
   const allFiles = computed(() => Array.from(files.value.values()))
@@ -248,6 +258,49 @@ export const useFilesStore = defineStore('files', () => {
     return arr
   }
 
+  function setPendingResults(refs: PendingResultRef[]) {
+    pendingResults.value = [...refs]
+  }
+
+  function consumePendingResults(): PendingResultRef[] {
+    const arr = pendingResults.value
+    pendingResults.value = []
+    return arr
+  }
+
+  // Video-download-specific queue: completed URL downloads are staged here and
+  // adopted ONLY by the Video tool (on activation). Kept separate from the
+  // generic pendingResults so no other active tool can consume a video file.
+  const pendingVideoDownloads = ref<PendingResultRef[]>([])
+  function queueVideoDownload(ref: PendingResultRef) {
+    pendingVideoDownloads.value = [...pendingVideoDownloads.value, ref]
+  }
+  function consumeVideoDownloads(): PendingResultRef[] {
+    const arr = pendingVideoDownloads.value
+    pendingVideoDownloads.value = []
+    return arr
+  }
+
+  /** Adopt a backend-resident result file by reference: build a MediaFile,
+   *  register it, set as current — no download/upload. */
+  function adoptResultFile(ref: PendingResultRef): MediaFile {
+    const previewUrl = `${getApiBase()}/files/${ref.fileId}/download`
+    const mediaFile: MediaFile = {
+      id: ref.fileId,
+      name: ref.filename,
+      originalName: ref.filename,
+      path: '',
+      size: ref.fileSize,
+      mimeType: ref.mimeType,
+      type: getMediaType(ref.mimeType),
+      createdAt: new Date(),
+      previewUrl,
+    }
+    files.value.set(ref.fileId, mediaFile)
+    currentFile.value = mediaFile
+    return mediaFile
+  }
+
   return {
     // 狀態
     files,
@@ -257,6 +310,8 @@ export const useFilesStore = defineStore('files', () => {
     pendingFile,
     pendingSourceDir,
     pendingFiles,
+    pendingResults,
+    pendingVideoDownloads,
     allFiles,
     imageFiles,
     videoFiles,
@@ -271,6 +326,11 @@ export const useFilesStore = defineStore('files', () => {
     consumePendingFile,
     setPendingFiles,
     consumePendingFiles,
+    setPendingResults,
+    consumePendingResults,
+    queueVideoDownload,
+    consumeVideoDownloads,
+    adoptResultFile,
     cleanup,
   }
 })

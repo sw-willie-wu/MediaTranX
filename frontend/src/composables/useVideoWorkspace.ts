@@ -1,10 +1,12 @@
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onActivated, onDeactivated } from 'vue'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { useFileDownload, collectLatestOutputs } from '@/composables/useFileDownload'
 import { useMediaCollection } from '@/composables/useMediaCollection'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
+import { renderGlyphThumbnail, TOOL_GLYPH } from '@/utils/glyphThumbnail'
+import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
 import { apiFetch } from '@/composables/useApi'
 import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
@@ -125,7 +127,7 @@ export function useVideoWorkspace() {
   const fileId = computed<string | null>(() => collection.activeEntry.value?.fileId ?? null)
   const isUploading = computed<boolean>(() => collection.activeEntry.value?.status === 'uploading')
   const sourceDir = computed<string | undefined>(() => collection.activeEntry.value?.sourceDir)
-  const currentFileName = computed<string>(() => collection.activeEntry.value?.file.name ?? '')
+  const currentFileName = computed<string>(() => collection.activeEntry.value?.fileName ?? '')
   const currentTaskId = computed<string | null>(() => collection.activeEntry.value?.currentTaskId ?? null)
   const historyStack = computed(() => collection.activeEntry.value?.historyStack ?? [])
 
@@ -178,10 +180,11 @@ export function useVideoWorkspace() {
       log.info('handleFile uploaded', { fileName: file.name, fileId: uploadedFileId })
       collection.updateEntry(entryId, { fileId: uploadedFileId, status: 'idle' })
       await loadMediaInfo()
-    } catch (e: any) {
-      log.error('handleFile upload failed', { fileName: file.name, error: e.message })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      log.error('handleFile upload failed', { fileName: file.name, error: msg })
       collection.updateEntry(entryId, { status: 'idle' })
-      toast.show(e.message || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
+      toast.show(msg || '上傳失敗', { type: 'error', icon: 'bi-x-circle' })
     }
   }
 
@@ -192,7 +195,26 @@ export function useVideoWorkspace() {
     }
   }
 
-  usePendingFileListener(handleFile, handleFiles)
+  const { handleExistingFiles } = useExistingFileHandler(
+    collection, loadMediaInfo, () => renderGlyphThumbnail(TOOL_GLYPH.video),
+  )
+  usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
+
+  // Completed URL downloads are adopted ONLY by the Video tool, and only while
+  // it is active (avoids touching an inactive/cached component's DOM). Drains on
+  // activation (picks up anything queued while away) and on the video-only event
+  // (download finished while the Video tool was already open).
+  function drainVideoDownloads() {
+    const refs = filesStore.consumeVideoDownloads()
+    if (refs.length > 0) handleExistingFiles(refs)
+  }
+  onActivated(() => {
+    window.addEventListener('video-download-ready', drainVideoDownloads)
+    drainVideoDownloads()
+  })
+  onDeactivated(() => {
+    window.removeEventListener('video-download-ready', drainVideoDownloads)
+  })
 
   function handleRemoveFile() {
     const id = collection.activeId.value
@@ -213,7 +235,7 @@ export function useVideoWorkspace() {
     }
   }
 
-  function handleDownload(outputFormat?: string, suffix = '_output') {
+  function handleDownload(outputFormat?: string, _suffix = '_output') {
     // Binary result download (from history stack)
     const latest = historyStack.value.at(-1)
     if (latest) {
@@ -296,6 +318,7 @@ export function useVideoWorkspace() {
     handlePanelSubmit,
     handleDownload,
     handleDownloadBatch,
+    handleExistingFiles,
     goBack,
     goForward,
   }
