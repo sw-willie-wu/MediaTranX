@@ -1332,7 +1332,7 @@ export default {
     max_height: 'Max resolution',
     checking: 'Checking URL...',
     quality: 'Quality',
-    download: 'Download',
+    download: 'Load',
     reason: {
       unsupported: 'This site or URL is not supported.',
       private: 'This is a private video.',

@@ -56,7 +56,7 @@ function fmtDuration(s: number): string {
         <div class="udc-actions">
           <button class="udc-btn udc-btn-secondary" @click="cancel">{{ $t('common.cancel') }}</button>
           <button class="udc-btn udc-btn-primary udc-download-btn" @click="confirm">
-            <i class="bi bi-download" /> {{ $t('video_download.download') }}
+            <i class="bi bi-box-arrow-in-down" /> {{ $t('video_download.download') }}
           </button>
         </div>
       </div>

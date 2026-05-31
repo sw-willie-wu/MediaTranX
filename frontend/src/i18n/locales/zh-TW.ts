@@ -1332,7 +1332,7 @@ export default {
     max_height: '最高解析度',
     checking: '正在檢查網址...',
     quality: '畫質',
-    download: '下載',
+    download: '載入',
     reason: {
       unsupported: '不支援此網站或網址。',
       private: '這是私人影片。',
