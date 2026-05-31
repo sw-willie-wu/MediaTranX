@@ -375,6 +375,7 @@ class ChatService:
         remote_provider=None,                         # NEW
         remote_model: Optional[str] = None,           # NEW
         on_load_progress: Optional[Callable] = None,
+        load_band: Optional[tuple[float, float]] = None,
         on_progress: Optional[Callable] = None,
         cancel_pct: float = 0.0,
         cancel_msg: str = "task.progress.generating",
@@ -389,8 +390,16 @@ class ChatService:
           llama_runtime.acquire(). `model_family` + `model_size` are
           required (legacy invariant).
 
+        `load_band=(lo, hi)` linearly maps the raw [0,1] model-load fraction
+        llama-server emits into [lo, hi] (the caller's own progress
+        coordinates) before it reaches `on_load_progress` — so a cold model
+        load shows as a small sub-band instead of overwriting the main bar
+        with a raw 0→100% sweep. `load_band=None` (default) passes the raw
+        fraction through unchanged (full backward-compat). Ignored on the
+        remote path (no model acquire → no load progress).
+
         See spec core/.claude/specs/2026-05-25-video-summary-remote-line.md
-        §F3.
+        §F3 and core/.claude/specs/2026-05-31-llm-model-load-progress-band.md.
         """
         if remote_provider is not None:
             if not remote_model:
@@ -415,8 +424,16 @@ class ChatService:
                 "or both model_family and model_size"
             )
         variant = f"{model_size}:{quantization}" if quantization else model_size
+        effective_load_cb = on_load_progress
+        if on_load_progress is not None and load_band is not None:
+            lo, hi = load_band
+
+            def effective_load_cb(p, m, _cb=on_load_progress, _lo=lo, _hi=hi):
+                clamped = 0.0 if p < 0.0 else (1.0 if p > 1.0 else p)
+                _cb(_lo + clamped * (_hi - _lo), m)
+
         with self._llama_runtime.acquire(
-            model_family, variant, on_progress=on_load_progress,
+            model_family, variant, on_progress=effective_load_cb,
         ):
             yield LocalChatSession(self._llama_runtime, on_progress=on_progress,
                                    cancel_pct=cancel_pct, cancel_msg=cancel_msg)
