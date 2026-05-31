@@ -13,7 +13,7 @@ import urllib.request
 import uuid
 from typing import Callable, Iterator, Optional
 
-from .base import RemoteProvider, RemoteModel
+from .base import RemoteProvider, RemoteModel, PROBE_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -223,12 +223,12 @@ class GeminiProvider(RemoteProvider):
         sep = "&" if "?" in path else "?"
         return f"{self.endpoint}{path}{sep}key={self.api_key}" if self.api_key else f"{self.endpoint}{path}"
 
-    def connect(self) -> bool:
+    def connect(self, timeout: int = PROBE_TIMEOUT) -> bool:
         """Check if the API key is valid."""
         try:
             url = self._api_url("/v1beta/models?pageSize=1")
             req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read())
                 count = len(data.get("models", []))
                 logger.info(f"Gemini connected: API key valid, {count}+ models at {self.endpoint}")
@@ -240,7 +240,7 @@ class GeminiProvider(RemoteProvider):
             logger.warning(f"Gemini connection failed: {e}")
             return False
 
-    def list_models(self) -> list[RemoteModel]:
+    def list_models(self, timeout: int = PROBE_TIMEOUT) -> list[RemoteModel]:
         """List available models (paginated, fetches all)."""
         try:
             all_models: list[dict] = []
@@ -250,7 +250,7 @@ class GeminiProvider(RemoteProvider):
                 token_param = f"&pageToken={page_token}" if page_token else ""
                 url = self._api_url(f"/v1beta/models?pageSize=100{token_param}")
                 req = urllib.request.Request(url, method="GET")
-                with urllib.request.urlopen(req, timeout=15) as resp:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
                     data = json.loads(resp.read())
 
                 all_models.extend(data.get("models", []))
