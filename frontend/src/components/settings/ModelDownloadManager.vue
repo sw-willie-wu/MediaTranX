@@ -691,7 +691,7 @@ onMounted(() => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem;
-  color: var(--color-error, var(--text-muted));
+  color: var(--color-danger);
   font-size: 0.8rem;
 }
 
