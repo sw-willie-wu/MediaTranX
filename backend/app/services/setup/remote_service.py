@@ -5,6 +5,7 @@ Manages external AI API connection settings (Ollama, OpenAI, Gemini).
 import logging
 from typing import Optional
 
+from app.adapters.ai.remote.base import TEST_TIMEOUT
 from app.adapters.security.secret_cipher import get_secret_cipher, SecretDecryptError
 from app.db.dao.api_connection_dao import ApiConnectionDAO
 
@@ -124,8 +125,8 @@ class RemoteService:
     def test_connection(self, provider: str, endpoint: str, api_key: Optional[str] = None) -> dict:
         """Test if a connection is working."""
         p = self._get_provider(provider, endpoint, api_key)
-        connected = p.is_available()
-        models = p.list_models() if connected else []
+        connected = p.is_available(timeout=TEST_TIMEOUT)
+        models = p.list_models(timeout=TEST_TIMEOUT) if connected else []
         return {
             "connected": connected,
             "models": [self._model_to_dict(m) for m in models],

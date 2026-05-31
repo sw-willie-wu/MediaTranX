@@ -320,3 +320,26 @@ class TestListRemoteModelsByConn:
         fake_dao.get_by_id.return_value = None
         with pytest.raises(NotFoundError, match="Connection not found"):
             RemoteService().list_remote_models_by_conn(999)
+
+
+def test_test_connection_uses_test_timeout(monkeypatch):
+    from app.adapters.ai.remote.base import TEST_TIMEOUT
+    from app.services.setup.remote_service import RemoteService
+
+    seen = {}
+
+    class _Recorder:
+        def is_available(self, timeout=None):
+            seen["available_timeout"] = timeout
+            return True
+
+        def list_models(self, timeout=None):
+            seen["list_timeout"] = timeout
+            return []
+
+    svc = RemoteService.__new__(RemoteService)  # bypass __init__ (no DAO needed)
+    monkeypatch.setattr(svc, "_get_provider", lambda *a, **k: _Recorder())
+
+    svc.test_connection("ollama", "http://x", None)
+    assert seen["available_timeout"] == TEST_TIMEOUT
+    assert seen["list_timeout"] == TEST_TIMEOUT
