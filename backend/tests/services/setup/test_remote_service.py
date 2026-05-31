@@ -158,6 +158,18 @@ class TestTestConnection:
         assert result["models"] == []
         fake_provider.list_models.assert_not_called()
 
+    def test_degrades_when_list_models_raises(self, fake_dao):
+        """is_available True but list_models raises RemoteApiError → connected
+        stays True, models empty, no exception escapes (contract preserved)."""
+        from app.handler.exceptions import RemoteApiError
+        fake_provider = MagicMock()
+        fake_provider.is_available.return_value = True
+        fake_provider.list_models.side_effect = RemoteApiError("connection_failed", "boom")
+        with patch.object(RemoteService, "_get_provider", return_value=fake_provider):
+            result = RemoteService().test_connection("openai", "http://x", "k")
+        assert result["connected"] is True
+        assert result["models"] == []
+
 
 class TestGetProviderForConnection:
     def test_with_conn_id_uses_dao_lookup(self, fake_dao):

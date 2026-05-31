@@ -124,9 +124,17 @@ class RemoteService:
 
     def test_connection(self, provider: str, endpoint: str, api_key: Optional[str] = None) -> dict:
         """Test if a connection is working."""
+        from app.handler.exceptions import RemoteApiError
         p = self._get_provider(provider, endpoint, api_key)
         connected = p.is_available(timeout=TEST_TIMEOUT)
-        models = p.list_models(timeout=TEST_TIMEOUT) if connected else []
+        models = []
+        if connected:
+            try:
+                models = p.list_models(timeout=TEST_TIMEOUT)
+            except RemoteApiError as e:
+                # is_available already established connectivity; a list failure
+                # after that shouldn't flip connected — degrade to empty list.
+                logger.warning(f"test_connection: connected but list_models failed: {e}")
         return {
             "connected": connected,
             "models": [self._model_to_dict(m) for m in models],
