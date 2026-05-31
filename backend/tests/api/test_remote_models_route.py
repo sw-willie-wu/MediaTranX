@@ -41,3 +41,4 @@ def test_test_connection_returns_result(client):
     res = tc.post("/api/setup/remote/test", json={"provider": "ollama", "endpoint": "http://x"})
     assert res.status_code == 200
     assert res.json() == {"connected": True, "models": []}
+    svc.test_connection.assert_called_once_with("ollama", "http://x", None)
