@@ -42,3 +42,29 @@ def test_test_connection_returns_result(client):
     assert res.status_code == 200
     assert res.json() == {"connected": True, "models": []}
     svc.test_connection.assert_called_once_with("ollama", "http://x", None)
+
+
+def test_list_remote_models_returns_502_when_provider_down():
+    """A down/unreachable provider → list_models raises RemoteApiError →
+    route returns HTTP 502 {error_code, detail} (not 200 {models:[]})."""
+    from app.handler.exceptions import RemoteApiError
+    from app.handler.error_responses import register_exception_handlers
+    from app.api.routes.setup.remote import router as remote_router
+
+    container = AppContainer()
+    svc = MagicMock()
+    svc.list_remote_models_by_conn.side_effect = RemoteApiError("connection_failed", "down")
+    container.remote_service.override(svc)
+
+    app = FastAPI()
+    register_exception_handlers(app)  # wire RemoteApiError -> 502
+    app.include_router(remote_router, prefix="/api/setup")
+    container.wire(packages=["app.api.routes.setup"])
+    try:
+        tc = TestClient(app)
+        res = tc.get("/api/setup/remote/models", params={"conn_id": 1})
+        assert res.status_code == 502
+        assert res.json()["error_code"] == "connection_failed"
+    finally:
+        container.unwire()
+        container.remote_service.reset_override()
