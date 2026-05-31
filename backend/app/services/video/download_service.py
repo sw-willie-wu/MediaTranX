@@ -53,7 +53,11 @@ class VideoDownloadService:
         self._task_manager.register_handler(
             TASK_TYPE_VIDEO_DOWNLOAD,
             self._handle_task,
-            output_policy="results",  # a downloaded video is a new artefact
+            # "history" → show_in_results=False: the download is loaded straight
+            # into the Video tool (not the Results drawer). Single output + no
+            # source file, so it is never downgraded to "results". Saving is via
+            # the Video tool's titlebar save button.
+            output_policy="history",
         )
         logger.info("VideoDownloadService initialized")
 

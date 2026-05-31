@@ -268,6 +268,19 @@ export const useFilesStore = defineStore('files', () => {
     return arr
   }
 
+  // Video-download-specific queue: completed URL downloads are staged here and
+  // adopted ONLY by the Video tool (on activation). Kept separate from the
+  // generic pendingResults so no other active tool can consume a video file.
+  const pendingVideoDownloads = ref<PendingResultRef[]>([])
+  function queueVideoDownload(ref: PendingResultRef) {
+    pendingVideoDownloads.value = [...pendingVideoDownloads.value, ref]
+  }
+  function consumeVideoDownloads(): PendingResultRef[] {
+    const arr = pendingVideoDownloads.value
+    pendingVideoDownloads.value = []
+    return arr
+  }
+
   /** Adopt a backend-resident result file by reference: build a MediaFile,
    *  register it, set as current — no download/upload. */
   function adoptResultFile(ref: PendingResultRef): MediaFile {
@@ -298,6 +311,7 @@ export const useFilesStore = defineStore('files', () => {
     pendingSourceDir,
     pendingFiles,
     pendingResults,
+    pendingVideoDownloads,
     allFiles,
     imageFiles,
     videoFiles,
@@ -314,6 +328,8 @@ export const useFilesStore = defineStore('files', () => {
     consumePendingFiles,
     setPendingResults,
     consumePendingResults,
+    queueVideoDownload,
+    consumeVideoDownloads,
     adoptResultFile,
     cleanup,
   }

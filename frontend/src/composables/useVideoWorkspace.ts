@@ -1,4 +1,4 @@
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onActivated, onDeactivated } from 'vue'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
@@ -199,6 +199,22 @@ export function useVideoWorkspace() {
     collection, loadMediaInfo, () => renderGlyphThumbnail(TOOL_GLYPH.video),
   )
   usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
+
+  // Completed URL downloads are adopted ONLY by the Video tool, and only while
+  // it is active (avoids touching an inactive/cached component's DOM). Drains on
+  // activation (picks up anything queued while away) and on the video-only event
+  // (download finished while the Video tool was already open).
+  function drainVideoDownloads() {
+    const refs = filesStore.consumeVideoDownloads()
+    if (refs.length > 0) handleExistingFiles(refs)
+  }
+  onActivated(() => {
+    window.addEventListener('video-download-ready', drainVideoDownloads)
+    drainVideoDownloads()
+  })
+  onDeactivated(() => {
+    window.removeEventListener('video-download-ready', drainVideoDownloads)
+  })
 
   function handleRemoveFile() {
     const id = collection.activeId.value
