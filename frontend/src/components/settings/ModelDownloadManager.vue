@@ -292,7 +292,10 @@ onMounted(() => {
       <div v-for="conn in connections" :key="conn.id" class="conn-card" :class="{ expanded: expandedConnId === conn.id }">
         <div class="conn-header" @click="toggleExpand(conn)">
           <div class="conn-title">
-            <span class="conn-name">{{ conn.name }}</span>
+            <span class="conn-name">
+              {{ conn.name }}
+              <span v-if="remoteModelStore.connError[conn.id]" class="conn-error-tag">（{{ $t('settings.remote.connection_failed') }}）</span>
+            </span>
             <span class="conn-endpoint">{{ conn.endpoint }}</span>
           </div>
           <div class="conn-actions" @click.stop>
@@ -361,7 +364,6 @@ onMounted(() => {
           </template>
           <div v-else-if="remoteModelStore.connError[conn.id]" class="conn-models-error">
             <span>{{ $t('settings.remote.connection_failed') }}</span>
-            <button class="btn-sm" @click="refreshConnModels(conn)">{{ $t('settings.remote.retry') }}</button>
           </div>
           <p v-else class="conn-models-empty">{{ $t('settings.remote.no_models') }}</p>
         </div>
@@ -684,6 +686,12 @@ onMounted(() => {
   font-size: 0.8rem;
   padding: 0.5rem;
   text-align: center;
+}
+
+.conn-error-tag {
+  color: var(--color-danger);
+  font-size: 0.8rem;
+  font-weight: 400;
 }
 
 .conn-models-error {
