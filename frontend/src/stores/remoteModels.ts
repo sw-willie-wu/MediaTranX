@@ -57,6 +57,8 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
   // 每個連線的模型快取（connId → models）
   const connModels = ref<Record<number, RemoteModelInfo[]>>({})
   const connLoading = ref<Record<number, boolean>>({})
+  // 每個連線的抓取失敗狀態(true = list-models 失敗;與「真的沒 model」區分)
+  const connError = ref<Record<number, boolean>>({})
 
   // 所有連線的模型彙總（啟用的連線）
   const allModels = ref<RemoteModelOption[]>([])
@@ -96,11 +98,14 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
         const data = await res.json()
         const models = (data.models as RemoteModelInfo[]).sort((a, b) => a.name.localeCompare(b.name))
         connModels.value[conn.id] = models
+        connError.value[conn.id] = false
       } else {
-        connModels.value[conn.id] = []
+        delete connModels.value[conn.id]   // 不留 []，下次 fetchAll 會重抓
+        connError.value[conn.id] = true
       }
     } catch {
-      connModels.value[conn.id] = []
+      delete connModels.value[conn.id]
+      connError.value[conn.id] = true
     } finally {
       connLoading.value[conn.id] = false
     }
@@ -211,7 +216,7 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
 
   return {
     // state
-    connections, connModels, connLoading,
+    connections, connModels, connLoading, connError,
     allModels, loaded,
     enabledIds, enabledModels,
     // queries
