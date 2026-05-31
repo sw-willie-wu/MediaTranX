@@ -201,7 +201,7 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
 
 onMounted(() => {
   modelStore.fetchModels()
-  remoteStore.fetchAll()
+  remoteStore.ensureLoaded()
 })
 </script>
 

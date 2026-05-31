@@ -231,7 +231,7 @@ watch(
 
 onMounted(() => {
   modelStore.fetchModels()
-  remoteModelStore.fetchAll()
+  remoteModelStore.ensureLoaded()
 })
 </script>
 
