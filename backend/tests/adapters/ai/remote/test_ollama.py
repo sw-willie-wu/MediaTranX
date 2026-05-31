@@ -77,10 +77,20 @@ def test_list_models_parses_tags_response():
     assert m.quantization == "Q4_0"
 
 
-def test_list_models_returns_empty_on_failure():
+def test_list_models_raises_connection_failed_on_failure():
     prov = OllamaProvider()
     with patch(PATCH_TARGET, side_effect=make_url_error("down")):
-        assert prov.list_models() == []
+        with pytest.raises(RemoteApiError) as ei:
+            prov.list_models()
+    assert ei.value.code == "connection_failed"
+
+
+def test_list_models_raises_on_http_error():
+    prov = OllamaProvider()
+    with patch(PATCH_TARGET, side_effect=make_http_error(404, "not found")):
+        with pytest.raises(RemoteApiError) as ei:
+            prov.list_models()
+    assert ei.value.code == "model_not_found"
 
 
 def test_list_models_caches_capabilities_per_model():
