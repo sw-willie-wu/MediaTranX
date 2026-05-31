@@ -542,6 +542,7 @@ class VideoSummaryService:
                     model_family=vlm_family, model_size=vlm_size,
                     remote_provider=vlm_prov, remote_model=vlm_model_id,
                     on_load_progress=progress_callback,
+                    load_band=(0.70, 0.72),
                     on_progress=progress_callback,
                     cancel_pct=0.70,
                     cancel_msg="task.progress.generating",
@@ -569,7 +570,7 @@ class VideoSummaryService:
                 bullet_sel = even_indices(len(merged.bullet_items), bullet_cap)
                 for n_done, orig_i in enumerate(bullet_sel):
                     item = merged.bullet_items[orig_i]
-                    pct = 0.70 + 0.25 * (n_done / max(1, len(bullet_sel)))
+                    pct = 0.72 + 0.23 * (n_done / max(1, len(bullet_sel)))
                     progress_callback(
                         pct,
                         f"task.progress.summary_bullet_frame|{n_done + 1}|{len(bullet_sel)}",
@@ -636,7 +637,7 @@ class VideoSummaryService:
                 )
                 for n_done, orig_i in enumerate(para_sel):
                     para = merged.narrative_paragraphs[orig_i]
-                    pct = 0.70 + 0.25 * (n_done / max(1, len(para_sel)))
+                    pct = 0.72 + 0.23 * (n_done / max(1, len(para_sel)))
                     progress_callback(
                         pct,
                         f"task.progress.summary_paragraph_frame|{n_done + 1}|{len(para_sel)}",
@@ -757,12 +758,13 @@ class VideoSummaryService:
             model_family=llm_family, model_size=llm_size,
             remote_provider=llm_prov, remote_model=llm_model_id,
             on_load_progress=progress_callback,
+            load_band=(0.50, 0.55),
             on_progress=progress_callback,
             cancel_pct=0.50,
             cancel_msg="task.progress.generating",
         ) as llm_session:
             for i, chunk in enumerate(chunks):
-                pct = 0.50 + 0.20 * (i / max(1, len(chunks)))
+                pct = 0.55 + 0.15 * (i / max(1, len(chunks)))
                 progress_callback(
                     pct, f"task.progress.summary_chunk|{i + 1}|{len(chunks)}"
                 )
