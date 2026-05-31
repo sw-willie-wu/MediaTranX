@@ -136,6 +136,7 @@ class OllamaProvider(RemoteProvider):
 
     def list_models(self, timeout: int = PROBE_TIMEOUT) -> list[RemoteModel]:
         """List installed Ollama models (with capability detection)."""
+        from app.handler.exceptions import RemoteApiError
         try:
             req = urllib.request.Request(
                 f"{self.endpoint}/api/tags",
@@ -160,9 +161,20 @@ class OllamaProvider(RemoteProvider):
                 ))
             return models
 
-        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
-            logger.error(f"Failed to list Ollama models: {e}")
-            return []
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8", "replace")
+            except Exception:
+                pass
+            logger.warning(f"Ollama list_models HTTP {e.code}: {body[:200]}")
+            raise self._parse_error(e.code, body)
+        except (urllib.error.URLError, OSError) as e:
+            logger.warning(f"Ollama list_models connection failed: {e}")
+            raise RemoteApiError("connection_failed", f"Ollama: {e}")
+        except json.JSONDecodeError as e:
+            logger.warning(f"Ollama list_models bad JSON: {e}")
+            raise RemoteApiError("remote_error", f"Ollama: invalid response ({e})")
 
     def _detect_capabilities(self, model_name: str, families: list[str]) -> list[str]:
         """

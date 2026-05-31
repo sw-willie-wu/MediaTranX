@@ -248,6 +248,7 @@ class OpenAIProvider(RemoteProvider):
 
     def list_models(self, timeout: int = PROBE_TIMEOUT) -> list[RemoteModel]:
         """List available models."""
+        from app.handler.exceptions import RemoteApiError
         try:
             with self._make_request("/v1/models", timeout=timeout) as resp:
                 data = json.loads(resp.read())
@@ -274,9 +275,20 @@ class OpenAIProvider(RemoteProvider):
 
             return list(seen_families.values())
 
-        except (urllib.error.URLError, urllib.error.HTTPError, OSError, json.JSONDecodeError) as e:
-            logger.error(f"Failed to list OpenAI models: {e}")
-            return []
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8", "replace")
+            except Exception:
+                pass
+            logger.warning(f"OpenAI list_models HTTP {e.code}: {body[:200]}")
+            raise self._parse_error(e.code, body)
+        except (urllib.error.URLError, OSError) as e:
+            logger.warning(f"OpenAI list_models connection failed: {e}")
+            raise RemoteApiError("connection_failed", f"OpenAI: {e}")
+        except json.JSONDecodeError as e:
+            logger.warning(f"OpenAI list_models bad JSON: {e}")
+            raise RemoteApiError("remote_error", f"OpenAI: invalid response ({e})")
 
     def get_summary_chunking_hints(self, model: str) -> dict:
         """Most current OpenAI text models have >=128k context (gpt-4o-mini,

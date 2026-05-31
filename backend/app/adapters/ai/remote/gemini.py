@@ -242,6 +242,7 @@ class GeminiProvider(RemoteProvider):
 
     def list_models(self, timeout: int = PROBE_TIMEOUT) -> list[RemoteModel]:
         """List available models (paginated, fetches all)."""
+        from app.handler.exceptions import RemoteApiError
         try:
             all_models: list[dict] = []
             page_token = ""
@@ -286,9 +287,20 @@ class GeminiProvider(RemoteProvider):
 
             return list(seen.values())
 
-        except (urllib.error.URLError, urllib.error.HTTPError, OSError, json.JSONDecodeError) as e:
-            logger.error(f"Failed to list Gemini models: {e}")
-            return []
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8", "replace")
+            except Exception:
+                pass
+            logger.warning(f"Gemini list_models HTTP {e.code}: {body[:200]}")
+            raise self._parse_error(e.code, body)
+        except (urllib.error.URLError, OSError) as e:
+            logger.warning(f"Gemini list_models connection failed: {e}")
+            raise RemoteApiError("connection_failed", f"Gemini: {e}")
+        except json.JSONDecodeError as e:
+            logger.warning(f"Gemini list_models bad JSON: {e}")
+            raise RemoteApiError("remote_error", f"Gemini: invalid response ({e})")
 
     def get_summary_chunking_hints(self, model: str) -> dict:
         """Gemini 1.5+ has 128k+ context (1.5-flash: 1M, 2.0-flash: 1M,
