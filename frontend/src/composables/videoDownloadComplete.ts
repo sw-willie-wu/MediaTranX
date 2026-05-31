@@ -25,14 +25,23 @@ export function adoptCompletedDownload(result: CompletedDownload): void {
   // Notify a mounted+active Video tool to pick it up immediately; if no Video
   // tool is active it stays queued and is drained on the tool's next activation.
   window.dispatchEvent(new CustomEvent('video-download-ready'))
+  // URL downloads can only be started from inside the Video tool, so the user
+  // is normally already on /video when this fires — a "go to Video tool" button
+  // would just router.push('/video') the current route (a no-op that looks
+  // broken). Only offer the navigation when they've since moved elsewhere.
+  const alreadyOnVideo = router.currentRoute.value.path === '/video'
   useToast().show(
     i18n.global.t('video_download.toast.complete', { title: result.title || '' }),
     {
       type: 'success',
-      action: {
-        label: i18n.global.t('video_download.toast.open'),
-        callback: () => router.push('/video'),
-      },
+      ...(alreadyOnVideo
+        ? {}
+        : {
+            action: {
+              label: i18n.global.t('video_download.toast.open'),
+              callback: () => router.push('/video'),
+            },
+          }),
     },
   )
 }
