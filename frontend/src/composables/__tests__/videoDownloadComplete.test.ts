@@ -1,15 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { queueVideoDownload, toastShow, push } = vi.hoisted(() => ({
+const { queueVideoDownload, toastShow, push, currentRoute } = vi.hoisted(() => ({
   queueVideoDownload: vi.fn(),
   toastShow: vi.fn(),
   push: vi.fn().mockResolvedValue(undefined),
+  currentRoute: { value: { path: '/' } },
 }))
 
 vi.mock('@/stores/files', () => ({ useFilesStore: () => ({ queueVideoDownload }) }))
 vi.mock('@/composables/useToast', () => ({ useToast: () => ({ show: toastShow }) }))
 vi.mock('@/i18n', () => ({ default: { global: { t: (k: string) => k } } }))
-vi.mock('@/router', () => ({ default: { push } }))
+vi.mock('@/router', () => ({ default: { push, currentRoute } }))
 
 import { adoptCompletedDownload } from '@/composables/videoDownloadComplete'
 
@@ -27,6 +28,7 @@ describe('adoptCompletedDownload', () => {
     queueVideoDownload.mockReset()
     toastShow.mockReset()
     push.mockReset().mockResolvedValue(undefined)
+    currentRoute.value.path = '/'  // default: not on the video tool
   })
 
   it('queues the download, dispatches video-download-ready, and shows the toast', () => {
@@ -65,5 +67,20 @@ describe('adoptCompletedDownload', () => {
     expect(push).toHaveBeenCalledWith('/video')
     // delivery already happened at completion; the action only navigates
     expect(queueVideoDownload).not.toHaveBeenCalled()
+  })
+
+  it('omits the go-to-video action when already on the Video tool (push would be a no-op)', () => {
+    vi.spyOn(window, 'dispatchEvent').mockReturnValue(true)
+    currentRoute.value.path = '/video'
+
+    adoptCompletedDownload(RESULT)
+
+    // still shows the success toast (download completed + auto-loaded)…
+    expect(toastShow).toHaveBeenCalledOnce()
+    const [msg, opts] = toastShow.mock.calls[0]
+    expect(msg).toBe('video_download.toast.complete')
+    expect(opts.type).toBe('success')
+    // …but no redundant "go to video tool" button (you're already there)
+    expect(opts.action).toBeUndefined()
   })
 })
