@@ -152,7 +152,7 @@ watch(selectedTranslateModel, savePreferences)
 
 onMounted(async () => {
   await Promise.all([loadTranslateModels(), loadTranslateStyles()])
-  remoteStore.fetchAll()
+  remoteStore.ensureLoaded()
   settings.loadDeviceInfo()
   const saved = loadPreferences()
   if (saved && localTranslateModelOptions.value.some(m => m.value === saved)) {

@@ -1122,6 +1122,8 @@ export default {
       models_available: '個可用模型',
       connection_failed: '連線失敗',
       no_models: '未找到可用模型',
+      retry: '重試',
+      fetch_failed: '{count} 個雲端連線無法取得模型：{names}',
       edit: '編輯',
       refresh: '重新整理模型',
       delete: '刪除',

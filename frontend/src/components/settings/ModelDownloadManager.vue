@@ -231,7 +231,7 @@ watch(
 
 onMounted(() => {
   modelStore.fetchModels()
-  remoteModelStore.fetchAll()
+  remoteModelStore.ensureLoaded()
 })
 </script>
 
@@ -359,6 +359,10 @@ onMounted(() => {
               </div>
             </div>
           </template>
+          <div v-else-if="remoteModelStore.connError[conn.id]" class="conn-models-error">
+            <span>{{ $t('settings.remote.connection_failed') }}</span>
+            <button class="btn-sm" @click="refreshConnModels(conn)">{{ $t('settings.remote.retry') }}</button>
+          </div>
           <p v-else class="conn-models-empty">{{ $t('settings.remote.no_models') }}</p>
         </div>
       </div>
@@ -680,6 +684,15 @@ onMounted(() => {
   font-size: 0.8rem;
   padding: 0.5rem;
   text-align: center;
+}
+
+.conn-models-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  color: var(--color-danger);
+  font-size: 0.8rem;
 }
 
 .conn-empty {

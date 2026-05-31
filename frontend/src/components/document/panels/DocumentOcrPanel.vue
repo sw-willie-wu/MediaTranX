@@ -98,7 +98,7 @@ async function checkAvailable() {
   } catch {}
 }
 
-onMounted(() => { modelStore.ensureLoaded(); remoteStore.fetchAll(); checkAvailable() })
+onMounted(() => { modelStore.ensureLoaded(); remoteStore.ensureLoaded(); checkAvailable() })
 watch(selectedModel, checkAvailable)
 
 // ── 執行 ──────────────────────────────────────────────────────────────────

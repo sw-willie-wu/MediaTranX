@@ -3,6 +3,7 @@ import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
 import { useModelStore } from '@/stores/models'
+import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelOptions } from '@/composables/useModelOptions'
 import { useAgent } from '@/composables/useAgent'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
@@ -13,11 +14,15 @@ import type { AgentPolicy } from '@/stores/agentSettings'
 const { t } = useI18n()
 const settings = useAgentSettingsStore()
 const modelStore = useModelStore()
+const remoteStore = useRemoteModelStore()
 const agent = useAgent()
 
 // Ensure model registry is loaded so the tool-capable model picker can populate
 // (registry is otherwise lazy-loaded by AI 模型管理 tab only).
-onMounted(() => { void modelStore.ensureLoaded() })
+onMounted(() => {
+  void modelStore.ensureLoaded()
+  void remoteStore.ensureLoaded()   // 補回 remote tool-capable models(原靠 App.vue 開機 fetch)
+})
 
 // Local tool-capable model options. The agent service expects the colon form
 // "family:size[:quant]" (spec §5.2 n8) — registry `m.id` is dash-separated

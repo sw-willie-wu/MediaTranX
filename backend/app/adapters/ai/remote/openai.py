@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 from typing import Callable, Iterator, Optional
 
-from .base import RemoteProvider, RemoteModel
+from .base import RemoteProvider, RemoteModel, PROBE_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -231,10 +231,10 @@ class OpenAIProvider(RemoteProvider):
         req = urllib.request.Request(url, data=body, headers=headers, method=method)
         return urllib.request.urlopen(req, timeout=timeout)
 
-    def connect(self) -> bool:
+    def connect(self, timeout: int = PROBE_TIMEOUT) -> bool:
         """Check if the API key is valid."""
         try:
-            with self._make_request("/v1/models", timeout=10) as resp:
+            with self._make_request("/v1/models", timeout=timeout) as resp:
                 data = json.loads(resp.read())
                 count = len(data.get("data", []))
                 logger.info(f"OpenAI connected: {count} models available at {self.endpoint}")
@@ -246,10 +246,10 @@ class OpenAIProvider(RemoteProvider):
             logger.warning(f"OpenAI connection failed: {e}")
             return False
 
-    def list_models(self) -> list[RemoteModel]:
+    def list_models(self, timeout: int = PROBE_TIMEOUT) -> list[RemoteModel]:
         """List available models."""
         try:
-            with self._make_request("/v1/models", timeout=15) as resp:
+            with self._make_request("/v1/models", timeout=timeout) as resp:
                 data = json.loads(resp.read())
 
             # Deduplicate: keep only one per family (prefer base version without date suffix)

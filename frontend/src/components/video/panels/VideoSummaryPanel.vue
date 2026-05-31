@@ -123,7 +123,7 @@ watch(localLlmOptions, (options) => {
 
 onMounted(() => {
   modelStore.ensureLoaded()
-  remoteStore.fetchAll()
+  remoteStore.ensureLoaded()
 })
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value || !llmModel.value)

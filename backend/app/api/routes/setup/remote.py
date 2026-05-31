@@ -2,6 +2,7 @@
 Remote API connection management routes.
 """
 from __future__ import annotations
+import asyncio
 from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
@@ -94,10 +95,8 @@ async def test_connection(
     service: RemoteService = Depends(Provide[AppContainer.remote_service]),
 ):
     """Test a connection."""
-    return service.test_connection(
-        provider=data.provider,
-        endpoint=data.endpoint,
-        api_key=data.api_key,
+    return await asyncio.to_thread(
+        service.test_connection, data.provider, data.endpoint, data.api_key
     )
 
 
@@ -113,7 +112,8 @@ async def list_remote_models(
     accepted provider/endpoint/api_key as query params, which leaked the key
     into the URL → uvicorn access logs in plaintext.
     """
-    return {"models": service.list_remote_models_by_conn(conn_id)}
+    models = await asyncio.to_thread(service.list_remote_models_by_conn, conn_id)
+    return {"models": models}
 
 
 @router.post("/remote/connections/{conn_id}/key")

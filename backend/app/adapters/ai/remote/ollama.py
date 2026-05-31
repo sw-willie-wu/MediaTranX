@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 from typing import Callable, Iterator, Optional
 
-from .base import RemoteProvider, RemoteModel
+from .base import RemoteProvider, RemoteModel, PROBE_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -118,14 +118,14 @@ class OllamaProvider(RemoteProvider):
         super().__init__(endpoint, api_key)
         self._caps_cache: dict[str, list[str]] = {}  # model_name -> capabilities
 
-    def connect(self) -> bool:
+    def connect(self, timeout: int = PROBE_TIMEOUT) -> bool:
         """Check if the Ollama service is running."""
         try:
             req = urllib.request.Request(
                 f"{self.endpoint}/api/version",
                 method="GET",
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read())
                 version = data.get("version", "unknown")
                 logger.info(f"Ollama connected: v{version} at {self.endpoint}")
@@ -134,14 +134,14 @@ class OllamaProvider(RemoteProvider):
             logger.warning(f"Ollama connection failed: {e}")
             return False
 
-    def list_models(self) -> list[RemoteModel]:
+    def list_models(self, timeout: int = PROBE_TIMEOUT) -> list[RemoteModel]:
         """List installed Ollama models (with capability detection)."""
         try:
             req = urllib.request.Request(
                 f"{self.endpoint}/api/tags",
                 method="GET",
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read())
 
             models = []

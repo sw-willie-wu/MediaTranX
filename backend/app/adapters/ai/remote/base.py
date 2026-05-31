@@ -12,6 +12,12 @@ from typing import Callable, ClassVar, Literal, Optional
 
 logger = logging.getLogger(__name__)
 
+# Probe timeouts (seconds). Short for lazy background model listing; longer
+# for user-initiated "test connection" where the user is actively waiting and
+# a cold TLS handshake / slow proxy can exceed the short value.
+PROBE_TIMEOUT = 3
+TEST_TIMEOUT = 8
+
 ImagePrepMode = Literal["raw", "recompress"]
 
 
@@ -76,12 +82,12 @@ class RemoteProvider(ABC):
         self.api_key = api_key
 
     @abstractmethod
-    def connect(self) -> bool:
+    def connect(self, timeout: int = PROBE_TIMEOUT) -> bool:
         """Verify connection is working."""
         ...
 
     @abstractmethod
-    def list_models(self) -> list[RemoteModel]:
+    def list_models(self, timeout: int = PROBE_TIMEOUT) -> list[RemoteModel]:
         """List all available models."""
         ...
 
@@ -175,9 +181,9 @@ class RemoteProvider(ABC):
         """
         return {"n_ctx": 32768, "model_cap": 6000}
 
-    def is_available(self) -> bool:
+    def is_available(self, timeout: int = PROBE_TIMEOUT) -> bool:
         """Check if provider is available (defaults to calling connect)."""
         try:
-            return self.connect()
+            return self.connect(timeout=timeout)
         except Exception:
             return False

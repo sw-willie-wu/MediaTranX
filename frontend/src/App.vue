@@ -8,7 +8,6 @@ import AppConfirmDialog from './components/common/AppConfirmDialog.vue'
 import ChatBubble from './components/agent/ChatBubble.vue'
 import UrlDownloadCard from './components/common/UrlDownloadCard.vue'
 import { useTheme } from './composables/useTheme'
-import { useRemoteModelStore } from './stores/remoteModels'
 import { useResultsStore } from './stores/results'
 import { useVideoDownloadStore } from './stores/videoDownload'
 
@@ -16,10 +15,6 @@ const router = useRouter()
 
 // 初始化主題
 useTheme()
-
-// 啟動時背景 fetch 雲端模型
-const remoteModelStore = useRemoteModelStore()
-remoteModelStore.fetchAll()
 
 // Results drawer store
 const resultsStore = useResultsStore()

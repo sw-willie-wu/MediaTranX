@@ -183,7 +183,7 @@ async function execute() {
   if (taskId) emit('submit', taskId)
 }
 
-onMounted(() => { loadTranslateModels(); loadLanguages(); loadTranslateStyles(); remoteStore.fetchAll() })
+onMounted(() => { loadTranslateModels(); loadLanguages(); loadTranslateStyles(); remoteStore.ensureLoaded() })
 
 function getParams() {
   const parsed = parseModelValue(selectedTranslateModel.value)

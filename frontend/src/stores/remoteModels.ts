@@ -16,6 +16,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { apiFetch } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
+import i18n from '@/i18n'
 
 const ENABLED_MODELS_KEY = 'remote-enabled-models'
 
@@ -57,6 +59,8 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
   // 每個連線的模型快取（connId → models）
   const connModels = ref<Record<number, RemoteModelInfo[]>>({})
   const connLoading = ref<Record<number, boolean>>({})
+  // 每個連線的抓取失敗狀態(true = list-models 失敗;與「真的沒 model」區分)
+  const connError = ref<Record<number, boolean>>({})
 
   // 所有連線的模型彙總（啟用的連線）
   const allModels = ref<RemoteModelOption[]>([])
@@ -96,11 +100,14 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
         const data = await res.json()
         const models = (data.models as RemoteModelInfo[]).sort((a, b) => a.name.localeCompare(b.name))
         connModels.value[conn.id] = models
+        connError.value[conn.id] = false
       } else {
-        connModels.value[conn.id] = []
+        delete connModels.value[conn.id]   // 不留 []，下次 fetchAll 會重抓
+        connError.value[conn.id] = true
       }
     } catch {
-      connModels.value[conn.id] = []
+      delete connModels.value[conn.id]
+      connError.value[conn.id] = true
     } finally {
       connLoading.value[conn.id] = false
     }
@@ -112,20 +119,33 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
 
   /** Load connections + every enabled connection's models in one pass.
    * The single source of truth for both Settings page and the tool dropdowns.
-   * Called automatically by every action that mutates connection state. */
-  async function fetchAll() {
+   * Called automatically by every action that mutates connection state.
+   *
+   * @param opts.notifyOnError  When true (lazy/refresh paths), show a single
+   *   aggregated warning toast for any connections that failed to list models.
+   *   Mutation callers (add/update/delete/toggle) pass nothing → default false
+   *   → no toast spam. */
+  async function fetchAll({ notifyOnError = false }: { notifyOnError?: boolean } = {}) {
     try {
       const connRes = await apiFetch('/setup/remote/connections')
       if (!connRes.ok) return
       const { connections: conns } = await connRes.json()
       connections.value = conns
 
+      // prune 已不存在連線的 connError
+      const liveIds = new Set<number>(conns.map((c: RemoteConnection) => c.id))
+      for (const key of Object.keys(connError.value)) {
+        if (!liveIds.has(Number(key))) delete connError.value[Number(key)]
+      }
+
+      // 並行抓取啟用且未快取的連線(掛掉的連線不拖累其他;後端已用
+      // asyncio.to_thread 解阻塞,這裡才真正並行)
+      const toFetch = conns.filter((c: RemoteConnection) => c.enabled && !connModels.value[c.id])
+      await Promise.all(toFetch.map((c: RemoteConnection) => fetchConnModels(c)))
+
       const all: RemoteModelOption[] = []
       for (const conn of conns) {
         if (!conn.enabled) continue
-        if (!connModels.value[conn.id]) {
-          await fetchConnModels(conn)
-        }
         const models = connModels.value[conn.id] || []
         for (const m of models) {
           all.push({
@@ -142,9 +162,31 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
       }
       allModels.value = all
       loaded.value = true
+
+      // 聚合失敗 toast — 只在 lazy/refresh 路徑(notifyOnError),mutation 不跳
+      if (notifyOnError) {
+        const failed = conns.filter((c: RemoteConnection) => connError.value[c.id])
+        if (failed.length) {
+          const names = failed.map((c: RemoteConnection) => c.name || c.provider).join('、')
+          useToast().show(
+            i18n.global.t('settings.remote.fetch_failed', { count: failed.length, names }),
+            { type: 'warning' },
+          )
+        }
+      }
     } catch (e) {
       console.error('Failed to fetch remote models', e)
     }
+  }
+
+  // lazy 入口:命中快取直接 return;進行中則共用同一個 fetch(避免兩面板
+  // 近乎同時 mount 各打一次)。失敗 toast 走 notifyOnError 路徑。
+  let inFlight: Promise<void> | null = null
+  async function ensureLoaded() {
+    if (loaded.value) return
+    if (inFlight) return inFlight
+    inFlight = fetchAll({ notifyOnError: true }).finally(() => { inFlight = null })
+    return inFlight
   }
 
   // ─── Connection CRUD actions ─────────────────────────────────
@@ -211,7 +253,7 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
 
   return {
     // state
-    connections, connModels, connLoading,
+    connections, connModels, connLoading, connError,
     allModels, loaded,
     enabledIds, enabledModels,
     // queries
@@ -221,7 +263,7 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
     // model cache
     fetchConnModels, clearConnCache,
     // canonical refresh
-    fetchAll,
+    fetchAll, ensureLoaded,
     // connection CRUD (single source of truth)
     addConnection, deleteConnection, updateConnection, toggleConnection,
     // on-demand key reveal (plaintext, transient, not persisted)

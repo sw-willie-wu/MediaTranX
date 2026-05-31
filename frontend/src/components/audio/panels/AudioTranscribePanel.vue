@@ -342,7 +342,7 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
 onMounted(() => {
   loadLanguages()
   modelStore.fetchModels()
-  remoteStore.fetchAll()
+  remoteStore.ensureLoaded()
 })
 </script>
 

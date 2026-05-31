@@ -91,7 +91,7 @@ async function checkAvailable() {
 
 onMounted(() => {
   modelStore.ensureLoaded()
-  remoteStore.fetchAll()
+  remoteStore.ensureLoaded()
   checkAvailable()
 })
 watch(selectedModel, checkAvailable)
