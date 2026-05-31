@@ -826,8 +826,8 @@ def test_execute_progress_bands_use_new_layout(tmp_path):
     """Progress events fall in the redesigned bands:
       audio: 0.02 / 0.05 (unchanged)
       Whisper: 0.05 → 0.50 (45%)
-      LLM chunks: start at 0.50 + 0.20·(i/N)
-      bullet frames: start at 0.70 + 0.25·(n/N)
+      LLM chunks: start at 0.55 + 0.15·(i/N) (model-load occupies 0.50–0.55)
+      bullet frames: start at 0.72 + 0.23·(n/N) (VLM load occupies 0.70–0.72)
       packaging: 0.95
       complete: 1.00
     """
@@ -874,16 +874,48 @@ def test_execute_progress_bands_use_new_layout(tmp_path):
     assert whisper_pcts, "expected whisper progress events"
     assert 0.05 <= min(whisper_pcts) <= 0.05 + 1e-9
     assert 0.50 - 1e-9 <= max(whisper_pcts) <= 0.50
-    # LLM chunk loop start at 0.50 (mock returns 1 chunk → first chunk pct == 0.50)
+    # LLM chunk loop start at 0.55 (model-load band 0.50–0.55 precedes it)
     chunk_pcts = [p for (p, m) in events if m.startswith("task.progress.summary_chunk|")]
-    assert chunk_pcts and 0.50 - 1e-9 <= min(chunk_pcts) <= 0.50 + 1e-9
-    # Bullet frame loop start at 0.70 (first bullet pct == 0.70)
+    assert chunk_pcts and 0.55 - 1e-9 <= min(chunk_pcts) <= 0.55 + 1e-9
+    # Bullet frame loop start at 0.72 (VLM load band 0.70–0.72 precedes it)
     bullet_pcts = [p for (p, m) in events if m.startswith("task.progress.summary_bullet_frame|")]
-    assert bullet_pcts and 0.70 - 1e-9 <= min(bullet_pcts) <= 0.70 + 1e-9
+    assert bullet_pcts and 0.72 - 1e-9 <= min(bullet_pcts) <= 0.72 + 1e-9
     # Packaging at 0.95
     assert (0.95, "task.progress.summary_packaging") in events
     # Complete at 1.0 (existing invariant)
     assert events[-1] == (1.0, "task.progress.summary_complete")
+
+
+def test_execute_wires_load_band_into_sessions(tmp_path):
+    """LLM session is opened with load_band=(0.50,0.55) and the VLM session
+    with load_band=(0.70,0.72), so model-load progress scales into the band
+    start instead of overwriting the main bar with a raw 0→100% sweep."""
+    svc, file_service = _make_svc_with_mocks(tmp_path)
+    fake_result = MagicMock(
+        segments=[MagicMock(start=0.0, end=5.0, text="一")], language="zh",
+    )
+
+    class FakeDetector:
+        def __init__(self, *a, **kw): pass
+        def detect_all(self, *a, **kw): return []
+        def extract_frame(self, input_path, output_path, timestamp):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"j")
+
+    with patch("app.services.video.summary_service.service.transcribe_audio_sync",
+               return_value=fake_result), \
+         patch("app.services.video.summary_service.service.SceneDetector",
+               FakeDetector):
+        svc._execute(
+            params={"file_id": "f1", "llm_model_family": "qwen3.5",
+                    "llm_model_size": "9b", "language": "zh-TW",
+                    "vlm_model_family": "qwen3vl", "vlm_model_size": "8b",
+                    "summary_mode": "bullets"},
+            progress_callback=lambda p, m: None,
+        )
+    bands = [kw.get("load_band") for (_a, kw) in svc._chat_service.session.call_args_list]
+    assert (0.50, 0.55) in bands, f"LLM session load_band missing; got {bands}"
+    assert (0.70, 0.72) in bands, f"VLM session load_band missing; got {bands}"
 
 
 def test_execute_merge_poll_holds_at_070(tmp_path):
@@ -1075,7 +1107,9 @@ def test_run_llm_chunk_loop_opens_remote_session_when_provider_supplied():
     assert kw["model_size"] is None
     fake_session.chat.assert_called_once()
     chat_call_kw = fake_session.chat.call_args.kwargs
-    assert chat_call_kw["cancel_pct"] == pytest.approx(0.50, abs=1e-3)
+    # First chunk's cancel_pct == the chunk-loop floor (0.55 after model-load
+    # band 0.50–0.55 was carved out at the start of the LLM band).
+    assert chat_call_kw["cancel_pct"] == pytest.approx(0.55, abs=1e-3)
     assert "summary_chunk" in chat_call_kw["cancel_msg"]
 
 
