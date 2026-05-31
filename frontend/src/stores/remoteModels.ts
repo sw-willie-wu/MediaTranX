@@ -179,6 +179,16 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
     }
   }
 
+  // lazy 入口:命中快取直接 return;進行中則共用同一個 fetch(避免兩面板
+  // 近乎同時 mount 各打一次)。失敗 toast 走 notifyOnError 路徑。
+  let inFlight: Promise<void> | null = null
+  async function ensureLoaded() {
+    if (loaded.value) return
+    if (inFlight) return inFlight
+    inFlight = fetchAll({ notifyOnError: true }).finally(() => { inFlight = null })
+    return inFlight
+  }
+
   // ─── Connection CRUD actions ─────────────────────────────────
   // All mutations end by calling fetchAll() so connections + allModels
   // refresh together. Consumers of byCapability/enabledModels see the
@@ -253,7 +263,7 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
     // model cache
     fetchConnModels, clearConnCache,
     // canonical refresh
-    fetchAll,
+    fetchAll, ensureLoaded,
     // connection CRUD (single source of truth)
     addConnection, deleteConnection, updateConnection, toggleConnection,
     // on-demand key reveal (plaintext, transient, not persisted)

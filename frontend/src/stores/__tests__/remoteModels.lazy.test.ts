@@ -85,3 +85,30 @@ describe('fetchConnModels failure handling', () => {
     expect(store.connModels[2]).toHaveLength(1)
   })
 })
+
+describe('ensureLoaded: cache + in-flight dedup', () => {
+  it('fetches once, then serves cache on the second call', async () => {
+    const { apiFetch } = await import('@/composables/useApi')
+    const fetchMock = routeApiFetch({ 2: { ok: true, models: [] } },
+      [{ id: 2, provider: 'openai', name: 'gpt', enabled: true }])
+    vi.mocked(apiFetch).mockImplementation(fetchMock)
+    const store = useRemoteModelStore()
+
+    await store.ensureLoaded()
+    await store.ensureLoaded()    // loaded=true → no network
+    const connCalls = fetchMock.mock.calls.filter(c => c[0] === '/setup/remote/connections')
+    expect(connCalls).toHaveLength(1)
+  })
+
+  it('dedups two concurrent ensureLoaded calls into one fetch', async () => {
+    const { apiFetch } = await import('@/composables/useApi')
+    const fetchMock = routeApiFetch({ 2: { ok: true, models: [] } },
+      [{ id: 2, provider: 'openai', name: 'gpt', enabled: true }])
+    vi.mocked(apiFetch).mockImplementation(fetchMock)
+    const store = useRemoteModelStore()
+
+    await Promise.all([store.ensureLoaded(), store.ensureLoaded()])
+    const connCalls = fetchMock.mock.calls.filter(c => c[0] === '/setup/remote/connections')
+    expect(connCalls).toHaveLength(1)
+  })
+})
