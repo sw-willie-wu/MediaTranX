@@ -1122,7 +1122,6 @@ export default {
       models_available: 'models available',
       connection_failed: 'Connection failed',
       no_models: 'No models found',
-      retry: 'Retry',
       fetch_failed: "Couldn't load models from {count} connection(s): {names}",
       edit: 'Edit',
       refresh: 'Refresh Models',
