@@ -144,9 +144,18 @@ class WhisperWrapper(PackageWrapper):
         if on_progress:
             on_progress(0.2, "task.progress.init_ctranslate2")
 
-        from app.adapters.device import get_compute_type
+        from app.adapters.device import compute_type_for, fits_in_vram
 
-        compute_type = config.get("compute_type", get_compute_type())
+        if device == "cuda":
+            req = config.get("vram_mb")
+            if req is not None and not fits_in_vram(req):
+                logger.warning(
+                    f"Whisper model needs ~{req}MB VRAM but GPU lacks it — using CPU"
+                )
+                device = "cpu"
+                self._device = device  # keep wrapper state consistent
+
+        compute_type = config.get("compute_type", compute_type_for(device))
 
         if on_progress:
             on_progress(0.5, f"task.progress.loading_model_device|{device}")

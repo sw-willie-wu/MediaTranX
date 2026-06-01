@@ -171,6 +171,33 @@ class TestFinallyCallsUnload:
         mock_unload.assert_called_once()
 
 
+class TestCreateModelVramDowngrade:
+    """R1 VRAM extension: cuda whisper falls back to CPU when GPU lacks VRAM,
+    and compute_type follows the (possibly downgraded) device."""
+
+    @patch("app.adapters.ai.wrapper.whisper.WhisperModel")
+    def test_downgrades_to_cpu_when_vram_insufficient(self, MockModel):
+        w = WhisperWrapper()
+        with patch("app.adapters.device.fits_in_vram", return_value=False), \
+             patch("app.adapters.device.compute_type_for", return_value="int8") as ctf:
+            w._create_model("model/path", {"vram_mb": 5000}, "cuda")
+        _, kwargs = MockModel.call_args
+        assert kwargs["device"] == "cpu"
+        assert kwargs["compute_type"] == "int8"
+        ctf.assert_called_with("cpu")
+        assert w._device == "cpu"
+
+    @patch("app.adapters.ai.wrapper.whisper.WhisperModel")
+    def test_keeps_cuda_when_vram_fits(self, MockModel):
+        w = WhisperWrapper()
+        with patch("app.adapters.device.fits_in_vram", return_value=True), \
+             patch("app.adapters.device.compute_type_for", return_value="float16"):
+            w._create_model("model/path", {"vram_mb": 1500}, "cuda")
+        _, kwargs = MockModel.call_args
+        assert kwargs["device"] == "cuda"
+        assert kwargs["compute_type"] == "float16"
+
+
 class TestCleanupModelZombieList:
     def test_cleanup_model_appends_zombie(self):
         w = WhisperWrapper()

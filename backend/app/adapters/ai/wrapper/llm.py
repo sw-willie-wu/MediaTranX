@@ -37,9 +37,16 @@ class LlmWrapper(BaseWrapper):
                 logger.warning(
                     f"Failed to stop prior llama-server before reload: {e}"
                 )
-        from app.adapters.device import has_nvidia_gpu
+        from app.adapters.device import has_nvidia_gpu, fits_in_vram
 
-        n_gpu_layers = config.get("layers", 99) if has_nvidia_gpu() else 0
+        required_vram = config.get("required_vram_mb", 0)
+        use_gpu = has_nvidia_gpu() and (required_vram <= 0 or fits_in_vram(required_vram))
+        n_gpu_layers = config.get("layers", 99) if use_gpu else 0
+        if has_nvidia_gpu() and not use_gpu:
+            logger.warning(
+                f"GPU VRAM insufficient for {config.get('model_id')} "
+                f"(need ~{required_vram}MB) — running llama-server on CPU (n_gpu_layers=0)"
+            )
         n_ctx = config.get("n_ctx", 4096)
         mmproj_path = config.get("mmproj_path")
 
@@ -178,6 +185,7 @@ class LlmWrapper(BaseWrapper):
             "quantization": quant,
             "layers": specs["layers"],
             "n_ctx": specs.get("n_ctx_default", specs.get("n_ctx", 4096)),
+            "required_vram_mb": manager.get_vram_requirement(model_id, f"{size}:{quant}"),
         }
 
         if "mmproj_filename" in variant_spec:

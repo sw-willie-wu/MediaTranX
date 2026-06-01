@@ -131,20 +131,111 @@ def get_device() -> str:
     return "cpu"
 
 
-@lru_cache(maxsize=1)
-def get_compute_type() -> str:
+def _supported_compute_types(device: str) -> set[str]:
     """
-    Select the optimal precision based on the device.
+    Ask CTranslate2 which compute types the backend actually supports.
+
+    This is authoritative: it reflects the GPU's compute capability. float16
+    needs CC >= 7.0 (Volta+); older NVIDIA GPUs (Pascal/Maxwell) are detected
+    as "cuda" but are NOT in the float16 set. Returns an empty set if
+    CTranslate2 is unavailable, in which case callers keep legacy behaviour.
+    """
+    try:
+        import ctranslate2
+
+        return set(ctranslate2.get_supported_compute_types(device))
+    except Exception:
+        return set()
+
+
+def compute_type_for(device: str) -> str:
+    """
+    Pick a CTranslate2 compute type the given device actually supports (uncached).
+
+    Unlike get_compute_type(), the device is explicit — used when a wrapper
+    locally downgrades cuda->cpu and must recompute the matching compute type.
 
     Returns:
-        str: "float16" for GPU, "int8" for CPU
+        str: "float16"/"int8_float16"/"int8"/"float32" for cuda (whichever the
+             backend supports), "int8" for cpu, "float32" for mps.
     """
-    device = get_device()
-    if device == "cuda":
-        return "float16"  # GPU uses half-precision for acceleration
-    elif device == "mps":
+    if device == "mps":
         return "float32"  # MPS currently works best with float32
-    return "int8"  # CPU uses int8 quantization to save memory
+
+    if device == "cuda":
+        # float16 requires GPU compute capability >= 7.0. Older GPUs detect as
+        # cuda but CTranslate2 rejects float16 ("does not support efficient
+        # float16 computation"), so pick the best type the backend reports.
+        supported = _supported_compute_types("cuda")
+        for ct in ("float16", "int8_float16", "int8", "float32"):
+            if ct in supported:
+                return ct
+        return "float16"  # CTranslate2 unavailable: preserve legacy default
+
+    # CPU: int8 quantization to save memory (fall back to float32 if needed)
+    supported = _supported_compute_types("cpu")
+    for ct in ("int8", "float32"):
+        if ct in supported:
+            return ct
+    return "int8"
+
+
+@lru_cache(maxsize=1)
+def get_compute_type() -> str:
+    """Select the optimal precision for the auto-detected device (cached)."""
+    return compute_type_for(get_device())
+
+
+def _free_vram_via_torch() -> int | None:
+    """Free VRAM (MB) via the torch CUDA runtime; None if unavailable."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return None
+        torch.cuda.empty_cache()
+        free_bytes, _ = torch.cuda.mem_get_info()
+        return int(free_bytes // (1024 * 1024))
+    except Exception:
+        return None
+
+
+def get_free_vram_mb() -> int | None:
+    """
+    Free GPU VRAM in MB. None means "unknown".
+
+    Prefers nvidia-smi (whole-GPU view, matches what the llama-server subprocess
+    will see, and works even when torch is a CPU-only build). Falls back to the
+    torch CUDA runtime. Not cached — free VRAM is a live value.
+    """
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.free",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            line = result.stdout.strip().split("\n")[0].strip()
+            if line:
+                return int(float(line))
+    except Exception:
+        pass
+    return _free_vram_via_torch()
+
+
+def fits_in_vram(required_mb: int, *, headroom_mb: int = 512) -> bool:
+    """
+    True if a model of `required_mb` fits in free VRAM (plus headroom).
+
+    Unknown free VRAM (get_free_vram_mb() is None) returns True: we only
+    downgrade when we can actually measure that it won't fit.
+    """
+    free = get_free_vram_mb()
+    if free is None:
+        return True
+    return free >= required_mb + headroom_mb
 
 
 _device_info_cache: dict | None = None
