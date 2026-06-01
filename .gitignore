@@ -10,13 +10,22 @@ __pycache__/
 
 # Allow our committed dev scripts (Scripts/ above is the venv binary dir
 # on Windows; on case-insensitive filesystems it also catches our
-# real scripts/ dir under backend/. Add an explicit un-ignore.)
+# real scripts/ dirs. Add explicit un-ignores.)
 !backend/scripts/
 !backend/scripts/**
+!/scripts/
+!/scripts/**
+!electron/scripts/
+!electron/scripts/**
+
+# Re-exclude bytecode that the scripts/ un-ignores above would re-include
+__pycache__/
+*.pyc
 
 # Node
 node_modules/
 dist/
+build/
 
 # IDE
 .vscode/

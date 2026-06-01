@@ -183,6 +183,26 @@ npm run dev
 
 Open `http://localhost:8000` in your browser.
 
+> Prefer containers? `docker compose up` runs the backend + frontend without Electron
+> (see `docker-compose.yml`; for CPU-only hosts use the CPU compose, see `docs/`).
+
+### Desktop App (Electron)
+
+The Electron shell wraps the backend + frontend into a desktop app.
+
+```bash
+# Dev (launches Electron, which spawns the backend + Vite dev server)
+cd electron
+npm install
+npm run electron
+
+# Build a Windows installer (dev build, auto-restores version)
+uv run --project backend python scripts/build.py --mode dev
+# -> dist/MediaTranX-Setup-X.Y.Z-dev.N-win.exe
+```
+
+See [docs/BUILD_STRATEGY.md](docs/BUILD_STRATEGY.md) and [docs/RELEASE.md](docs/RELEASE.md) for the full build/release flow.
+
 ### Download AI Models
 
 After launch, go to **Settings > AI Models** to download the models you need. To use cloud providers, add a connection (API key / endpoint) under the same screen.
