@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* Dark (default) */
+    :root, [data-theme="dark"] {
+      --bg-start: #1f1c2c;
+      --bg-end: #4a4468;
+      --text-primary: #ffffff;
+      --text-secondary: rgba(255, 255, 255, 0.7);
+      --text-tertiary: rgba(255, 255, 255, 0.5);
+      --spin-track: rgba(255, 255, 255, 0.08);
+      --spin-start: #60a5fa;
+      --spin-end: #818cf8;
+      /* App icon glyph (transparent SVG, follows splash theme) */
+      --icon-wave-0: #f1eaff;
+      --icon-wave-1: #a89cc8;
+      --icon-film-0: #f5e6c8;
+      --icon-film-1: #c8a87a;
+      --icon-frame: #1a172a;
+    }
+
+    /* Light */
+    [data-theme="light"] {
+      --bg-start: #e8e8e8;
+      --bg-end: #b8b8db;
+      --text-primary: #1a1a2e;
+      --text-secondary: rgba(0, 0, 0, 0.6);
+      --text-tertiary: rgba(0, 0, 0, 0.45);
+      --spin-track: rgba(0, 0, 0, 0.08);
+      --spin-start: #3b82f6;
+      --spin-end: #6366f1;
+      /* App icon glyph — deeper hues so it reads on the light splash */
+      --icon-wave-0: #7c6fad;
+      --icon-wave-1: #3d3460;
+      --icon-film-0: #c8a06a;
+      --icon-film-1: #846032;
+      --icon-frame: #1a172a;
+    }
+
+    body {
+      background: linear-gradient(to bottom, var(--bg-start), var(--bg-end));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      padding-bottom: 32px; /* Offset for frameless window titlebar */
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      -webkit-app-region: drag;
+    }
+
+    .logo {
+      width: 88px;
+      height: 88px;
+      border-radius: 20px;
+      margin-bottom: 1.5rem;
+    }
+
+    .title {
+      font-size: 1.6rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: 0.05em;
+      margin-bottom: 2rem;
+    }
+
+    /* Spinner ring with percentage inside */
+    .spinner-wrapper {
+      position: relative;
+      width: 64px;
+      height: 64px;
+      margin-bottom: 1rem;
+    }
+
+    .spinner-track {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 4px solid var(--spin-track);
+      position: absolute;
+      inset: 0;
+    }
+
+    .spinner-ring {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 4px solid transparent;
+      border-top-color: var(--spin-start);
+      border-right-color: var(--spin-end);
+      position: absolute;
+      inset: 0;
+      animation: spin 1.2s linear infinite;
+    }
+
+    .spinner-percent {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    /* Status texts below spinner */
+    .status-area {
+      text-align: center;
+      width: 320px;
+    }
+
+    .status-stage {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      min-height: 1.4em;
+    }
+
+    .status-detail {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-bottom: 6px;
+      min-height: 1.4em;
+    }
+
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <!-- App icon (theme-aware glyph) — sourced from frontend-assets/icon-glyph.themed.svg.
+       Audio waveform × filmstrip cross on transparent bg; colors driven by
+       --icon-* CSS vars defined in the :root / [data-theme] blocks above. -->
+  <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <defs>
+      <linearGradient id="audio" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="var(--icon-wave-0, #f1eaff)"/>
+        <stop offset="100%" stop-color="var(--icon-wave-1, #a89cc8)"/>
+      </linearGradient>
+      <linearGradient id="film" x1="100%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="var(--icon-film-0, #f5e6c8)"/>
+        <stop offset="100%" stop-color="var(--icon-film-1, #c8a87a)"/>
+      </linearGradient>
+    </defs>
+    <g transform="rotate(-45 256 256)">
+      <rect x="88" y="224" width="336" height="64" rx="8" fill="url(#film)"/>
+      <rect x="107.15" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="107.15" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="131.46" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="131.46" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="155.77" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="155.77" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="180.08" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="180.08" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="204.38" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="204.38" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="228.69" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="228.69" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="253.00" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="253.00" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="277.31" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="277.31" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="301.62" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="301.62" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="325.92" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="325.92" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="350.23" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="350.23" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="374.54" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="374.54" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="398.85" y="227" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="398.85" y="279" width="6" height="6" rx="1.5" fill="var(--icon-frame, #1a172a)" opacity="0.72"/>
+      <rect x="102" y="240" width="72.5" height="32" rx="2.5" fill="var(--icon-frame, #1a172a)" opacity="0.55"/>
+      <rect x="180.5" y="240" width="72.5" height="32" rx="2.5" fill="var(--icon-frame, #1a172a)" opacity="0.55"/>
+      <rect x="259" y="240" width="72.5" height="32" rx="2.5" fill="var(--icon-frame, #1a172a)" opacity="0.55"/>
+      <rect x="337.5" y="240" width="72.5" height="32" rx="2.5" fill="var(--icon-frame, #1a172a)" opacity="0.55"/>
+    </g>
+    <g transform="rotate(45 256 256)">
+      <rect x="87" y="245" width="18" height="22" rx="9" fill="url(#audio)"/>
+      <rect x="119" y="238" width="18" height="36" rx="9" fill="url(#audio)"/>
+      <rect x="151" y="231" width="18" height="50" rx="9" fill="url(#audio)"/>
+      <rect x="183" y="224" width="18" height="64" rx="9" fill="url(#audio)"/>
+      <rect x="215" y="217" width="18" height="78" rx="9" fill="url(#audio)"/>
+      <rect x="247" y="210" width="18" height="92" rx="9" fill="url(#audio)"/>
+      <rect x="279" y="217" width="18" height="78" rx="9" fill="url(#audio)"/>
+      <rect x="311" y="224" width="18" height="64" rx="9" fill="url(#audio)"/>
+      <rect x="343" y="231" width="18" height="50" rx="9" fill="url(#audio)"/>
+      <rect x="375" y="238" width="18" height="36" rx="9" fill="url(#audio)"/>
+      <rect x="407" y="245" width="18" height="22" rx="9" fill="url(#audio)"/>
+    </g>
+    <circle cx="256" cy="256" r="13" fill="#ffffff"/>
+  </svg>
+  <h1 class="title">MediaTranX</h1>
+
+  <div class="spinner-wrapper">
+    <div class="spinner-track"></div>
+    <div class="spinner-ring"></div>
+    <div class="spinner-percent" id="percent">0%</div>
+  </div>
+
+  <div class="status-area">
+    <p class="status-stage" id="stage">正在初始化...</p>
+    <p class="status-detail" id="detail"></p>
+  </div>
+  <!-- Progress updates are injected via executeJavaScript from main.js -->
+</body>
+</html>

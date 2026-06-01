@@ -1,0 +1,16 @@
+# CPU-only override for hosts without an NVIDIA runtime.
+# Removes the GPU device reservation from the base compose so the backend
+# runs on CPU (slower; pairs with the app's automatic CPU fallback).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up
+#
+# Note: `!override` fully replaces the list instead of the default
+# append-merge (a bare `devices: []` would append and leave the GPU
+# reservation in place).
+services:
+  backend:
+    deploy:
+      resources:
+        reservations:
+          devices: !override []

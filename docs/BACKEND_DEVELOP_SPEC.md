@@ -748,7 +748,7 @@ logger = logging.getLogger(__name__)
 
 ### 8.1 所有路徑透過 `PathSettings`（pydantic-settings）
 
-路徑由 Electron 透過 `MEDIATRANX_*` 環境變數注入，Python 的 `PathSettings` 讀取。Dev 模式下使用預設值（`core/backend/` 子目錄）。
+路徑由 Electron 透過 `MEDIATRANX_*` 環境變數注入，Python 的 `PathSettings` 讀取。Dev 模式下使用預設值（`backend/` 子目錄）。
 
 ```python
 # ✗ 禁止 hardcode
