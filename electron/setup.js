@@ -213,6 +213,20 @@ function runUvSync({ uvExe, projectDir, venvPath, uvDataDir, onProgress }) {
       ...process.env,
       UV_PROJECT_ENVIRONMENT: venvPath,
       UV_DATA_DIR: uvDataDir,
+      // The `ai` deps include git+https packages (demucs, mobile-sam). On a
+      // fresh Windows machine `git clone` invokes Git Credential Manager, which
+      // pops a GitHub sign-in dialog even for these public repos. Force git
+      // fully non-interactive and disable any credential helper for this child
+      // so the clones proceed anonymously without prompting the user.
+      GIT_TERMINAL_PROMPT: '0',
+      GCM_INTERACTIVE: 'never',
+      // credential.helper='' clears all helpers (git's reset sentinel), so GCM
+      // never launches. Requires git >= 2.31; the bundled Git for Windows is
+      // newer. Assumes the user hasn't already exported GIT_CONFIG_COUNT (a rare
+      // power-user/CI var) — on a fresh end-user machine it's unset.
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'credential.helper',
+      GIT_CONFIG_VALUE_0: '',
     };
 
     const proc = spawn(uvExe, args, {
