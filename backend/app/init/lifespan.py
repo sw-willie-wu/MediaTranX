@@ -34,6 +34,17 @@ def _warmup_domain_services(container) -> None:
     etc. load silently in the background.
     """
     start = time.monotonic()
+
+    # Log the environment first (OS/GPU/compute-capability/driver/torch build) so
+    # a tester's app.log is self-describing. In the background thread so the torch
+    # import it triggers doesn't block startup; runs well before any task.
+    try:
+        from app.init.configs import SETTINGS
+        from app.init.system_info import log_system_info
+        log_system_info(SETTINGS)
+    except Exception as e:
+        LOGGER.warning(f"system info logging failed: {e}")
+
     providers = [
         # Audio
         container.audio_transcode,

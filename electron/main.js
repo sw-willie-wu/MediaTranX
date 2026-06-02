@@ -162,6 +162,7 @@ function startPythonBackend() {
         ...process.env,
         PYTHONUNBUFFERED: '1',
         ...loadEnvFile(join(__dirname, '.env'), __dirname),
+        MEDIATRANX_APP_VERSION: app.getVersion(),
       }
     });
 
@@ -203,6 +204,7 @@ function startPythonBackend() {
         MEDIATRANX_PATH__TEMP: userEnv.MEDIATRANX_PATH__TEMP || join(appDataPath, 'temp'),
         MEDIATRANX_DB__DSN: `sqlite:///${join(appDataPath, 'mediatranx.db').replace(/\\/g, '/')}`,
         MEDIATRANX_SERVER__MODE: 'production',
+        MEDIATRANX_APP_VERSION: app.getVersion(),
       },
       windowsHide: true
     });

@@ -267,8 +267,11 @@ def get_device_info() -> dict:
         "device": device,
         "compute_type": compute_type,
         "device_name": "CPU",
+        "compute_capability": None,
         "memory_total": None,
         "memory_free": None,
+        "torch_version": None,
+        "torch_cuda_build": None,
         "has_nvidia_gpu": gpu_detected,
         "cuda_toolkit_installed": cuda_runtime,
         "driver_version": get_driver_version() if gpu_detected else None,
@@ -285,8 +288,15 @@ def get_device_info() -> dict:
     try:
         import torch
 
+        info["torch_version"] = torch.__version__
+        info["torch_cuda_build"] = torch.version.cuda  # CUDA toolkit the wheel was built against
         if info["device"] == "cuda" and torch.cuda.is_available():
             info["device_name"] = torch.cuda.get_device_name(0)
+            # Compute capability is authoritative for kernel-image compatibility:
+            # an old GPU (e.g. K80 = 3.7) detects as cuda but a modern cu12x build
+            # has no kernels for it -> cudaErrorNoKernelImageForDevice at runtime.
+            cap = torch.cuda.get_device_capability(0)
+            info["compute_capability"] = f"{cap[0]}.{cap[1]}"
             info["memory_total"] = torch.cuda.get_device_properties(0).total_memory
             info["memory_free"] = torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)
             got_gpu_info = True
