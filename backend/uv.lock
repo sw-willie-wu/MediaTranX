@@ -374,7 +374,7 @@ wheels = [
 [[package]]
 name = "demucs"
 version = "4.1.0a2"
-source = { git = "https://github.com/sw-willie-wu/demucs?rev=e976d93ecc3865e5757426930257e200846a520a#e976d93ecc3865e5757426930257e200846a520a" }
+source = { url = "https://github.com/sw-willie-wu/MediaTranX/releases/download/vendored-deps/demucs-e976d93.tar.gz" }
 dependencies = [
     { name = "dora-search" },
     { name = "einops" },
@@ -386,6 +386,39 @@ dependencies = [
     { name = "torchaudio" },
     { name = "tqdm" },
 ]
+sdist = { hash = "sha256:8db63decb782b1f2b4f9560941c553ae3aa1c6c390c94f67651a2ca3fe2b9df8" }
+
+[package.metadata]
+requires-dist = [
+    { name = "diffq", marker = "extra == 'dev'", specifier = ">=0.2.1" },
+    { name = "dora-search" },
+    { name = "dora-search", marker = "extra == 'dev'", specifier = ">=0.1.12" },
+    { name = "einops" },
+    { name = "einops", marker = "extra == 'dev'" },
+    { name = "flake8", marker = "extra == 'dev'" },
+    { name = "hydra-colorlog", marker = "extra == 'dev'", specifier = ">=1.1" },
+    { name = "hydra-core", marker = "extra == 'dev'", specifier = ">=1.1" },
+    { name = "julius", specifier = ">=0.2.3" },
+    { name = "julius", marker = "extra == 'dev'", specifier = ">=0.2.3" },
+    { name = "lameenc", specifier = ">=1.2" },
+    { name = "lameenc", marker = "extra == 'dev'", specifier = ">=1.2" },
+    { name = "museval", marker = "extra == 'dev'" },
+    { name = "mypy", marker = "extra == 'dev'" },
+    { name = "openunmix" },
+    { name = "openunmix", marker = "extra == 'dev'" },
+    { name = "pyyaml" },
+    { name = "pyyaml", marker = "extra == 'dev'" },
+    { name = "soundfile", marker = "sys_platform == 'win32' and extra == 'dev'", specifier = ">=0.10.3" },
+    { name = "submitit", marker = "extra == 'dev'" },
+    { name = "torch", specifier = ">=1.8.1" },
+    { name = "torch", marker = "extra == 'dev'", specifier = ">=1.8.1" },
+    { name = "torchaudio", specifier = ">=0.8,<2.1" },
+    { name = "torchaudio", marker = "extra == 'dev'", specifier = ">=0.8,<2.1" },
+    { name = "tqdm" },
+    { name = "tqdm", marker = "extra == 'dev'" },
+    { name = "treetable", marker = "extra == 'dev'" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "dependency-injector"
@@ -1082,7 +1115,7 @@ requires-dist = [
     { name = "basicsr", specifier = ">=1.4.2" },
     { name = "cryptography", specifier = ">=43.0.0" },
     { name = "ctranslate2", specifier = ">=4.7.1" },
-    { name = "demucs", git = "https://github.com/sw-willie-wu/demucs?rev=e976d93ecc3865e5757426930257e200846a520a" },
+    { name = "demucs", url = "https://github.com/sw-willie-wu/MediaTranX/releases/download/vendored-deps/demucs-e976d93.tar.gz" },
     { name = "dependency-injector", specifier = ">=4.41.0" },
     { name = "einops", specifier = ">=0.7.0" },
     { name = "facexlib", specifier = ">=0.3.0" },
@@ -1093,7 +1126,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
     { name = "huggingface-hub", specifier = ">=0.20.0" },
     { name = "mido", specifier = ">=1.3.0" },
-    { name = "mobile-sam", git = "https://github.com/sw-willie-wu/MobileSAM.git?rev=b01a9ccef3b9e10b099b544efe004d0871802c3b" },
+    { name = "mobile-sam", url = "https://github.com/sw-willie-wu/MediaTranX/releases/download/vendored-deps/mobile_sam-b01a9cc.tar.gz" },
     { name = "onnxruntime", specifier = ">=1.17.0" },
     { name = "opencc-python-reimplemented", specifier = ">=0.1.7" },
     { name = "opencv-python" },
@@ -1156,7 +1189,22 @@ wheels = [
 [[package]]
 name = "mobile-sam"
 version = "1.0"
-source = { git = "https://github.com/sw-willie-wu/MobileSAM.git?rev=b01a9ccef3b9e10b099b544efe004d0871802c3b#b01a9ccef3b9e10b099b544efe004d0871802c3b" }
+source = { url = "https://github.com/sw-willie-wu/MediaTranX/releases/download/vendored-deps/mobile_sam-b01a9cc.tar.gz" }
+sdist = { hash = "sha256:877a65acef18f0869cb9d6d5e6be88a047029d069f1ce0a513db75c60aa513c5" }
+
+[package.metadata]
+requires-dist = [
+    { name = "black", marker = "extra == 'dev'" },
+    { name = "flake8", marker = "extra == 'dev'" },
+    { name = "isort", marker = "extra == 'dev'" },
+    { name = "matplotlib", marker = "extra == 'all'" },
+    { name = "mypy", marker = "extra == 'dev'" },
+    { name = "onnx", marker = "extra == 'all'" },
+    { name = "onnxruntime", marker = "extra == 'all'" },
+    { name = "opencv-python", marker = "extra == 'all'" },
+    { name = "pycocotools", marker = "extra == 'all'" },
+]
+provides-extras = ["all", "dev"]
 
 [[package]]
 name = "mpmath"

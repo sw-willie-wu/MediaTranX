@@ -140,7 +140,7 @@ function buildSourcesBlock(variant) {
   const lines = [];
   lines.push(MARKER_START);
   lines.push('[tool.uv.sources]');
-  lines.push('demucs = { git = "https://github.com/sw-willie-wu/demucs", rev = "e976d93ecc3865e5757426930257e200846a520a" }');
+  lines.push('demucs = { url = "https://github.com/sw-willie-wu/MediaTranX/releases/download/vendored-deps/demucs-e976d93.tar.gz" }');
 
   if (variant !== null && variant !== undefined) {
     // CPU or CUDA variant — add torch sources
@@ -213,17 +213,16 @@ function runUvSync({ uvExe, projectDir, venvPath, uvDataDir, onProgress }) {
       ...process.env,
       UV_PROJECT_ENVIRONMENT: venvPath,
       UV_DATA_DIR: uvDataDir,
-      // The `ai` deps include git+https packages (demucs, mobile-sam). On a
-      // fresh Windows machine `git clone` invokes Git Credential Manager, which
-      // pops a GitHub sign-in dialog even for these public repos. Force git
-      // fully non-interactive and disable any credential helper for this child
-      // so the clones proceed anonymously without prompting the user.
+      // Defensive (currently a no-op): the demucs/mobile-sam deps now install
+      // from tarball URLs, so `uv sync` no longer invokes git at all — a fresh
+      // machine without git works. These vars only matter if a git+ dependency
+      // is ever reintroduced: they force git non-interactive and disable the
+      // credential helper so `git clone` of a public repo never pops a Git
+      // Credential Manager sign-in dialog. (credential.helper='' is git's reset
+      // sentinel; needs git >= 2.31. Assumes the user hasn't exported
+      // GIT_CONFIG_COUNT, a rare power-user/CI var — unset on a fresh machine.)
       GIT_TERMINAL_PROMPT: '0',
       GCM_INTERACTIVE: 'never',
-      // credential.helper='' clears all helpers (git's reset sentinel), so GCM
-      // never launches. Requires git >= 2.31; the bundled Git for Windows is
-      // newer. Assumes the user hasn't already exported GIT_CONFIG_COUNT (a rare
-      // power-user/CI var) — on a fresh end-user machine it's unset.
       GIT_CONFIG_COUNT: '1',
       GIT_CONFIG_KEY_0: 'credential.helper',
       GIT_CONFIG_VALUE_0: '',
