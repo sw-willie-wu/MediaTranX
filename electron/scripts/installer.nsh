@@ -27,3 +27,23 @@
     ${EndIf}
   ${EndIf}
 !macroend
+
+; 解除安裝時清除使用者資料（%APPDATA%\MediaTranX：.venv、AI 模型、bin、DB、加密金鑰…常達數 GB）。
+; electron-builder 預設只刪安裝目錄（%LOCALAPPDATA%），Roaming 資料會殘留。
+; 互動式跳框詢問，預設按鈕為「是」（移除）。
+!macro customUnInstall
+  ; 靜默解除安裝（/S，例如 app 內建自動更新的 uninstall→reinstall）一律「保留」，
+  ; 不可無聲清掉模型與 API key 加密金鑰——只有使用者在對話框按「是」才移除。
+  IfSilent skip_user_data
+  MessageBox MB_YESNO|MB_ICONQUESTION "是否一併移除已下載的 AI 模型、設定與資料？$\n$\n位置：%APPDATA%\MediaTranX（可能數 GB）$\n移除後重新安裝需重新下載；保留則可加速重裝。" IDNO skip_user_data
+    DetailPrint "正在移除使用者資料 $APPDATA\MediaTranX ..."
+    ; 先殺可能仍鎖住 .venv/模型檔的孤兒子行程（見 llama-server 孤兒洩漏歷史），
+    ; 否則 RMDir /r 會跳過被鎖檔案、留下數 GB 殘骸。best-effort、忽略結果。
+    nsExec::Exec 'taskkill /F /IM llama-server.exe'
+    Pop $0
+    nsExec::Exec 'taskkill /F /IM core.exe'
+    Pop $0
+    Sleep 500  ; 讓 OS 釋放被殺行程的檔案 handle，再刪才不留殘骸
+    RMDir /r "$APPDATA\MediaTranX"
+  skip_user_data:
+!macroend
