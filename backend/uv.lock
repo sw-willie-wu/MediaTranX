@@ -374,7 +374,7 @@ wheels = [
 [[package]]
 name = "demucs"
 version = "4.1.0a2"
-source = { git = "https://github.com/facebookresearch/demucs#e976d93ecc3865e5757426930257e200846a520a" }
+source = { git = "https://github.com/sw-willie-wu/demucs?rev=e976d93ecc3865e5757426930257e200846a520a#e976d93ecc3865e5757426930257e200846a520a" }
 dependencies = [
     { name = "dora-search" },
     { name = "einops" },
@@ -1082,7 +1082,7 @@ requires-dist = [
     { name = "basicsr", specifier = ">=1.4.2" },
     { name = "cryptography", specifier = ">=43.0.0" },
     { name = "ctranslate2", specifier = ">=4.7.1" },
-    { name = "demucs", git = "https://github.com/facebookresearch/demucs" },
+    { name = "demucs", git = "https://github.com/sw-willie-wu/demucs?rev=e976d93ecc3865e5757426930257e200846a520a" },
     { name = "dependency-injector", specifier = ">=4.41.0" },
     { name = "einops", specifier = ">=0.7.0" },
     { name = "facexlib", specifier = ">=0.3.0" },
@@ -1093,7 +1093,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
     { name = "huggingface-hub", specifier = ">=0.20.0" },
     { name = "mido", specifier = ">=1.3.0" },
-    { name = "mobile-sam", git = "https://github.com/ChaoningZhang/MobileSAM.git" },
+    { name = "mobile-sam", git = "https://github.com/sw-willie-wu/MobileSAM.git?rev=b01a9ccef3b9e10b099b544efe004d0871802c3b" },
     { name = "onnxruntime", specifier = ">=1.17.0" },
     { name = "opencc-python-reimplemented", specifier = ">=0.1.7" },
     { name = "opencv-python" },
@@ -1156,7 +1156,7 @@ wheels = [
 [[package]]
 name = "mobile-sam"
 version = "1.0"
-source = { git = "https://github.com/ChaoningZhang/MobileSAM.git#b01a9ccef3b9e10b099b544efe004d0871802c3b" }
+source = { git = "https://github.com/sw-willie-wu/MobileSAM.git?rev=b01a9ccef3b9e10b099b544efe004d0871802c3b#b01a9ccef3b9e10b099b544efe004d0871802c3b" }
 
 [[package]]
 name = "mpmath"

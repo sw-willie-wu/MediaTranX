@@ -140,7 +140,7 @@ function buildSourcesBlock(variant) {
   const lines = [];
   lines.push(MARKER_START);
   lines.push('[tool.uv.sources]');
-  lines.push('demucs = { git = "https://github.com/facebookresearch/demucs" }');
+  lines.push('demucs = { git = "https://github.com/sw-willie-wu/demucs", rev = "e976d93ecc3865e5757426930257e200846a520a" }');
 
   if (variant !== null && variant !== undefined) {
     // CPU or CUDA variant — add torch sources
