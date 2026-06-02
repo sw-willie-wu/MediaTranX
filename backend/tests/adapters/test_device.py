@@ -114,3 +114,78 @@ def test_fits_in_vram_insufficient_false():
 def test_fits_in_vram_sufficient_true():
     with patch("app.adapters.device.get_free_vram_mb", return_value=10000):
         assert device.fits_in_vram(2130) is True
+
+
+# --- CUDA kernel smoke-test -> CPU fallback (K80-class: GPU detected but no
+#     kernel image for its arch). All mocked; never touches a real GPU. ---
+
+def _make_fake_torch(*, fail: bool = False, cuda_available: bool = True):
+    """Fake torch where a kernel launch (`.item()`) succeeds or raises, and
+    torch.cuda.is_available() is configurable (CPU-only build = False)."""
+    import types as _types
+
+    class _Tensor:
+        def __add__(self, other):
+            return self
+
+        def item(self):
+            if fail:
+                raise RuntimeError(
+                    "CUDA error: no kernel image is available for execution on the device"
+                )
+            return 1.0
+
+    fake = _types.SimpleNamespace()
+    fake.zeros = lambda *a, **k: _Tensor()
+    fake.cuda = _types.SimpleNamespace(
+        is_available=lambda: cuda_available,
+        get_device_name=lambda i: "FakeGPU",
+    )
+    return fake
+
+
+def test_cuda_can_run_kernels_true_when_launch_succeeds(monkeypatch):
+    import sys
+    monkeypatch.setitem(sys.modules, "torch", _make_fake_torch(fail=False))
+    assert device._cuda_can_run_kernels() is True
+
+
+def test_cuda_can_run_kernels_true_when_torch_is_cpu_only(monkeypatch):
+    """CPU-only torch (CUDA may come from CTranslate2): must NOT veto the GPU."""
+    import sys
+    fake = _make_fake_torch(fail=True, cuda_available=False)  # would raise IF probed
+    monkeypatch.setitem(sys.modules, "torch", fake)
+    # is_available()==False short-circuits before the (failing) launch probe.
+    assert device._cuda_can_run_kernels() is True
+
+
+def test_cuda_can_run_kernels_false_and_logs_when_launch_fails(monkeypatch, caplog):
+    import logging
+    import sys
+    monkeypatch.setitem(sys.modules, "torch", _make_fake_torch(fail=True))
+    with caplog.at_level(logging.WARNING):
+        assert device._cuda_can_run_kernels() is False
+    assert "FakeGPU" in caplog.text and "CPU" in caplog.text
+
+
+def test_get_device_falls_back_to_cpu_when_gpu_cannot_run_kernels():
+    """GPU detected + runtime OK, but kernel launch fails -> must NOT return cuda."""
+    device.get_device.cache_clear()
+    with patch("app.adapters.device._detect_cuda_via_torch", return_value="cuda"), \
+         patch("app.adapters.device._detect_cuda_via_ctranslate2", return_value=None), \
+         patch("app.adapters.device.is_cuda_runtime_available", return_value=True), \
+         patch("app.adapters.device._cuda_can_run_kernels", return_value=False), \
+         patch("app.adapters.device.has_directml", return_value=False), \
+         patch("app.adapters.device.has_nvidia_gpu", return_value=True):
+        assert device.get_device() == "cpu"
+    device.get_device.cache_clear()
+
+
+def test_get_device_returns_cuda_when_gpu_can_run_kernels():
+    """Healthy GPU (kernel launch OK) still returns cuda — no regression."""
+    device.get_device.cache_clear()
+    with patch("app.adapters.device._detect_cuda_via_torch", return_value="cuda"), \
+         patch("app.adapters.device.is_cuda_runtime_available", return_value=True), \
+         patch("app.adapters.device._cuda_can_run_kernels", return_value=True):
+        assert device.get_device() == "cuda"
+    device.get_device.cache_clear()

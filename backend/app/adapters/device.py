@@ -107,15 +107,64 @@ def has_directml() -> bool:
     except Exception:
         return False
 
+def _cuda_can_run_kernels() -> bool:
+    """True only if the GPU can actually launch a CUDA kernel with the installed
+    torch build.
+
+    A GPU can be *detected* (``torch.cuda.is_available()`` True) yet have no
+    kernel image in the build for its compute capability — e.g. Kepler/K80
+    (CC 3.7) under a cu12x build whose kernels target sm_50+. Every kernel launch
+    then raises ``cudaErrorNoKernelImageForDevice`` at runtime. We test it once,
+    empirically (a real kernel launch + sync), so callers fall back to CPU up
+    front instead of every task crashing mid-run. This catches *any* "GPU
+    detected but unusable" cause, not just an old architecture.
+
+    Scope: this is a *torch* probe. When torch is a CUDA build, it also stands in
+    for CTranslate2/Whisper, which share the same sm_50+ kernel floor (torch can't
+    launch here => CTranslate2 can't either). But when torch is CPU-only and CUDA
+    was detected via CTranslate2 instead, the probe can't speak to that path, so it
+    must NOT veto — see the is_available() guard below.
+
+    NOTE: a failed launch leaves the CUDA context in a sticky-error state; that's
+    fine because callers abandon CUDA wholesale (device == "cpu") after this.
+    """
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            # torch is a CPU-only build. CUDA may still be usable via CTranslate2
+            # (the caller detected it that way); this torch probe can't test it,
+            # so don't downgrade — defer to the CTranslate2 detection result.
+            return True
+        # zeros() only allocates (no kernel); `+ 1` launches an elementwise
+        # kernel; `.item()` syncs device->host so an async launch error surfaces.
+        _ = (torch.zeros(1, device="cuda") + 1).item()
+        return True
+    except Exception as e:
+        name = "GPU"
+        try:
+            import torch
+            name = torch.cuda.get_device_name(0)
+        except Exception:
+            pass
+        logger.warning(
+            f"{name} cannot run CUDA kernels with the installed PyTorch build "
+            f"({type(e).__name__}: {e}) — its compute capability is likely "
+            f"unsupported by this CUDA build. Falling back to CPU."
+        )
+        return False
+
+
 @lru_cache(maxsize=1)
 def get_device() -> str:
     """
     Auto-detect the optimal compute device.
     Priority: CUDA -> DirectML -> CPU
     """
-    # 1. Try CUDA
+    # 1. Try CUDA — must be detected, have a loadable runtime, AND actually be
+    #    able to launch a kernel (an old GPU can pass the first two yet have no
+    #    kernel image for its arch -> cudaErrorNoKernelImageForDevice at runtime).
     cuda = _detect_cuda_via_torch() or _detect_cuda_via_ctranslate2()
-    if cuda == "cuda" and is_cuda_runtime_available():
+    if cuda == "cuda" and is_cuda_runtime_available() and _cuda_can_run_kernels():
         return "cuda"
     
     # 2. Try DirectML (AMD/Intel)
