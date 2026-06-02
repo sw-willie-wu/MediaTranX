@@ -11,8 +11,6 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from basic_pitch import ICASSP_2022_MODEL_PATH
-
 from app.adapters.ai.wrapper.base import PackageWrapper
 from app.adapters.ai.registry import FORMAT_PKG, MODELS_REGISTRY, SLOT_BASIC_PITCH
 
@@ -51,6 +49,11 @@ class BasicPitchWrapper(PackageWrapper):
             from scipy.signal import windows as _scipy_windows
             _scipy_signal.gaussian = _scipy_windows.gaussian
 
+        # Lazy import: importing the basic_pitch package runs backend detection
+        # in its __init__ that hard-crashes (NameError) when onnxruntime can't
+        # load. Keeping it out of module top level means a broken onnxruntime
+        # only fails this feature, not backend startup (init_container).
+        from basic_pitch import ICASSP_2022_MODEL_PATH
         from basic_pitch.inference import predict
 
         if on_progress:
