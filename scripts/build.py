@@ -109,6 +109,47 @@ def step_vite():
     print("  Frontend build complete.")
 
 
+_VC_RUNTIME_DLLS = ("msvcp140.dll", "msvcp140_1.dll")
+
+
+def _copy_vc_runtime(dest_dir: Path, system_root: str | None = None) -> None:
+    """Copy the MSVC C++ runtime DLLs next to core.exe (Windows only).
+
+    onnxruntime's native .pyd depends on msvcp140.dll, which onnxruntime does
+    NOT bundle and the uv Python home does NOT ship (it carries only
+    vcruntime140*). On a machine without a recent VC++ redistributable the
+    import fails, which previously hard-crashed the backend. core.exe's own
+    directory is first on the frozen DLL search path (app/init/setup.py), so a
+    copy here is found by onnxruntime at load time.
+
+    Sourced from the build machine's System32 (its version must be >= 14.40 /
+    VS2022 for onnxruntime 1.17+; this dev machine is 14.44). The DLLs land in
+    gitignored build/ and ship only inside the installer (permitted MS runtime
+    redistribution) -- never committed.
+
+    CI NOTE: this relies on the *build machine's* System32 being new enough. A
+    GitHub Actions / CI runner's System32 version is not guaranteed >= 14.40;
+    when moving to CI, source these from a fixed location instead
+    (%VCToolsRedistDir%\\x64\\Microsoft.VC143.CRT\\ or by extracting
+    vc_redist.x64.exe). See spec 2026-06-02 follow-up.
+    """
+    if sys.platform != "win32":
+        return
+    system_root = system_root or os.environ.get("SystemRoot", r"C:\Windows")
+    src_dir = Path(system_root) / "System32"
+    for name in _VC_RUNTIME_DLLS:
+        src = src_dir / name
+        if src.is_file():
+            shutil.copy2(src, dest_dir / name)
+            print(f"  Bundled VC++ runtime: {name}")
+        else:
+            print(
+                f"  WARNING: {src} not found -- installer will ship without {name}. "
+                f"onnxruntime (background removal, audio->MIDI) will fail on "
+                f"machines lacking a recent VC++ redistributable."
+            )
+
+
 def step_nuitka():
     """Step 2: Compile backend with Nuitka."""
     import importlib.metadata
@@ -224,6 +265,8 @@ def step_nuitka():
     if temp_dist.exists():
         shutil.move(str(temp_dist), str(core_service))
         print(f"  Moved core engine to {core_service}")
+        # Bundle MSVC runtime next to core.exe so onnxruntime loads on clean machines
+        _copy_vc_runtime(core_service)
 
     temp_nuitka = BUILD_DIR / "temp_nuitka"
     if temp_nuitka.exists():
