@@ -1058,6 +1058,9 @@ export default {
       error: '無法讀取硬體狀態',
       redetect: '重新偵測',
       refresh: '重新整理',
+      compute_policy: '運算降級',
+      cpu_fallback: '自動降級為 CPU',
+      cpu_fallback_hint: '當 GPU 無法執行（顯卡過舊、驅動不支援或記憶體不足）時，自動改用 CPU 執行（速度較慢）。關閉後 GPU 跑不動會直接讓任務失敗。',
     },
 
     ai: {
@@ -1310,6 +1313,17 @@ export default {
       invalid_request: '請求參數錯誤。',
       invalid_params: '此模型不支援指定的參數。',
       remote_error: '遠端 API 錯誤。',
+      gpu_unsupported: '顯卡過舊或驅動不支援，且未啟用自動降級為 CPU。請更新顯卡驅動，或於設定開啟「自動降級為 CPU」。',
+      vram_insufficient: 'GPU 記憶體不足，且未啟用自動降級為 CPU。請改用較小的模型，或於設定開啟「自動降級為 CPU」。',
+    },
+  },
+
+  // ── 運算降級通知 ───────────────────────────────────────────────────────
+  compute: {
+    notice: {
+      gpu_unsupported: '偵測到 GPU 但無法執行（顯卡過舊或驅動不支援），已改用 CPU 執行（速度較慢）。',
+      cuda_runtime_missing: 'GPU 加速元件未就緒，已改用 CPU 執行（速度較慢）。',
+      vram_insufficient: 'GPU 記憶體不足以載入模型，已改用 CPU 執行（速度較慢）。',
     },
   },
 

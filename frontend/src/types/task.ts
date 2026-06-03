@@ -16,6 +16,8 @@ export interface Task {
   updatedAt: Date
   label?: string
   fileName?: string
+  notices?: { code: string; params: Record<string, unknown> }[]
+  errorCode?: string | null
 }
 
 export interface ProgressUpdate {

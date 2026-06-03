@@ -29,4 +29,6 @@ export interface DeviceInfo {
   os_version: string
   cpu_name: string
   cpu_count: number | null
+  fallback_active?: boolean
+  fallback_reason?: string | null
 }

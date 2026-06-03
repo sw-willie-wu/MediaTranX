@@ -189,3 +189,58 @@ def test_get_device_returns_cuda_when_gpu_can_run_kernels():
          patch("app.adapters.device._cuda_can_run_kernels", return_value=True):
         assert device.get_device() == "cuda"
     device.get_device.cache_clear()
+
+
+from app.adapters import device as dev
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _restore_cpu_fallback_policy():
+    """Reset the process-global compute policy after each test in this module.
+
+    set_allow_cpu_fallback() mutates module-level state that persists across the
+    whole pytest session; without this teardown a test that leaves the policy at
+    False would silently change real get_device() behaviour for any later test.
+    """
+    saved = dev._allow_cpu_fallback
+    yield
+    dev.set_allow_cpu_fallback(saved)
+
+
+def test_set_allow_cpu_fallback_toggles_and_resets_report(monkeypatch):
+    dev.set_allow_cpu_fallback(True)
+    assert dev.is_cpu_fallback_allowed() is True
+    dev.mark_global_downgrade_reported()
+    assert dev.is_global_downgrade_reported() is True
+    dev.set_allow_cpu_fallback(False)
+    assert dev.is_cpu_fallback_allowed() is False
+    assert dev.is_global_downgrade_reported() is False
+
+
+def test_get_device_off_skips_kernel_probe_and_returns_cuda(monkeypatch):
+    monkeypatch.setattr(dev, "_detect_cuda_via_torch", lambda: "cuda")
+    monkeypatch.setattr(dev, "_detect_cuda_via_ctranslate2", lambda: None)
+    monkeypatch.setattr(dev, "is_cuda_runtime_available", lambda: True)
+    probe_called = {"n": 0}
+    def _probe():
+        probe_called["n"] += 1
+        return False
+    monkeypatch.setattr(dev, "_cuda_can_run_kernels", _probe)
+    dev.set_allow_cpu_fallback(False)
+    assert dev.get_device() == "cuda"
+    assert probe_called["n"] == 0
+    assert dev.get_global_downgrade_reason() is None
+
+
+def test_get_device_on_kernel_incompat_downgrades_with_reason(monkeypatch):
+    monkeypatch.setattr(dev, "_detect_cuda_via_torch", lambda: "cuda")
+    monkeypatch.setattr(dev, "_detect_cuda_via_ctranslate2", lambda: None)
+    monkeypatch.setattr(dev, "is_cuda_runtime_available", lambda: True)
+    monkeypatch.setattr(dev, "_cuda_can_run_kernels", lambda: False)
+    monkeypatch.setattr(dev, "has_directml", lambda: False)
+    monkeypatch.setattr(dev, "has_nvidia_gpu", lambda: True)
+    dev.set_allow_cpu_fallback(True)
+    assert dev.get_device() == "cpu"
+    assert dev.get_global_downgrade_reason() == "gpu_unsupported"

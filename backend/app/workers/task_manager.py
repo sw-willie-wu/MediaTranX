@@ -168,10 +168,17 @@ class TaskManager:
             progress_callback = self._create_cancellable_callback(task_id)
 
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                self._executor,
-                lambda: handler(params, progress_callback)
-            )
+
+            from app.utils.task_notices import _current_task_notices
+
+            def _run():
+                token = _current_task_notices.set(task.notices)
+                try:
+                    return handler(params, progress_callback)
+                finally:
+                    _current_task_notices.reset(token)
+
+            result = await loop.run_in_executor(self._executor, _run)
 
             task.status = TaskStatus.COMPLETED
             task.progress = 1.0
@@ -209,7 +216,8 @@ class TaskManager:
                 task.error_code = e.code
             else:
                 task.error = str(e)
-                task.error_code = None
+                from app.adapters.compute_policy import classify_gpu_error
+                task.error_code = classify_gpu_error(e)
             task.updated_at = datetime.now(timezone.utc)
             await self._progress_tracker.emit(task_id, task.progress, f"Error: {e}")
 
