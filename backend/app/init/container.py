@@ -18,6 +18,7 @@ from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.adapters.ai.model_manager import ModelManager
 
 # ── Setup Services (lightweight — needed for settings page) ──
+from app.services.setup.compute_settings_service import ComputeSettingsService
 from app.services.setup.config_service import ConfigService
 from app.services.setup.device_service import DeviceService
 from app.services.llm.language_service import LanguageService
@@ -138,6 +139,7 @@ class AppContainer(containers.DeclarativeContainer):
     )
 
     # ── Setup Services ──
+    compute_settings_service = providers.Singleton(ComputeSettingsService)
     config_service = providers.Singleton(ConfigService)
     device_service = providers.Singleton(DeviceService)
     language_service = providers.Singleton(LanguageService, model_manager=model_manager)

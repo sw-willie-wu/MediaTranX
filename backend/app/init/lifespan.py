@@ -140,6 +140,15 @@ def build_lifespan():
 
         _warmup_setup_services(container)
 
+        # Apply persisted CPU-fallback policy before any task can run.
+        try:
+            from app.adapters import device as _device
+            _cs = container.compute_settings_service().get_settings()
+            _device.set_allow_cpu_fallback(_cs.allow_cpu_fallback)
+            LOGGER.info("CPU-fallback policy applied: allow=%s", _cs.allow_cpu_fallback)
+        except Exception:
+            LOGGER.exception("Failed to apply CPU-fallback policy (using default ON)")
+
         # Import heavy domain services in the background so the server
         # starts accepting connections immediately (cold-start optimization).
         threading.Thread(
