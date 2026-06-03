@@ -92,8 +92,17 @@ class LlmWrapper(BaseWrapper):
                     "marking GPU offload unusable and retrying on CPU",
                     e.reason,
                 )
-                mark_llama_offload_broken()
-                push_task_notice("gpu_unsupported", model=model_id)
+                # Bookkeeping must never abort the CPU retry — a DB/notice
+                # hiccup on a machine that can run on CPU would defeat the whole
+                # fallback. Best-effort; the retry below is the critical path.
+                try:
+                    mark_llama_offload_broken()
+                    push_task_notice("gpu_unsupported", model=model_id)
+                except Exception:
+                    logger.warning(
+                        "post-crash bookkeeping failed; proceeding with CPU retry",
+                        exc_info=True,
+                    )
                 server.stop()  # clear the dead process + old log handle before
                 #                the clean CPU restart (avoids a misleading
                 #                "existing llama-server" warning from start())
