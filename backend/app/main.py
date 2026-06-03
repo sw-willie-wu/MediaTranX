@@ -43,10 +43,8 @@ if __name__ == "__main__":
         SETTINGS.server.port = args.port
 
     # Adjust app log level
-    import logging as _logging
-    _logging.getLogger().setLevel(
-        _logging.DEBUG if SETTINGS.server.mode == "dev" else _logging.WARNING
-    )
+    from app.init.logging_config import apply_runtime_levels
+    apply_runtime_levels(SETTINGS.server.mode)
 
     uvicorn.run(
         app,
