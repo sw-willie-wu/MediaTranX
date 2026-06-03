@@ -18,6 +18,46 @@ logger = logging.getLogger(__name__)
 
 LLAMA_SERVER_STARTUP_TIMEOUT = 180  # seconds (normal load 10-20s; buffer for cold cache / VRAM pressure)
 
+# Known Windows NTSTATUS exception codes that mean "the process was killed
+# mid-instruction by the OS" (hard crash) — distinct from a graceful non-zero
+# exit. A hard crash on GPU offload is the 0xC0000005 signature of an
+# incompatible CUDA build for this GPU (see spec 2026-06-03).
+_NT_HARD_CRASH = {
+    0xC0000005: "ACCESS_VIOLATION",
+    0xC0000409: "STACK_BUFFER_OVERRUN",
+    0xC000001D: "ILLEGAL_INSTRUCTION",
+    0xC00000FD: "STACK_OVERFLOW",
+    0xC0000374: "HEAP_CORRUPTION",
+}
+
+
+def _classify_exit_code(code: int) -> tuple[bool, str]:
+    """Return (is_hard_crash, human_reason) for a subprocess exit code.
+
+    Windows reports a crashed process's exit code as its NTSTATUS exception
+    code (e.g. 3221225477 == 0xC0000005). Python's Popen.returncode carries it
+    unsigned on Windows; mask to 32 bits so either sign convention maps.
+    """
+    u = code & 0xFFFFFFFF
+    if u in _NT_HARD_CRASH:
+        return True, f"{_NT_HARD_CRASH[u]} (0x{u:08X})"
+    return False, f"exit code {code}"
+
+
+class LlamaServerCrashError(RuntimeError):
+    """llama-server exited unexpectedly. Carries the decoded exit code so
+    callers can distinguish a hard crash (GPU-incompat signature) from a
+    graceful error, and so logs are self-describing even when the captured
+    llama_server.log is empty (a hard crash flushes no stdio)."""
+
+    def __init__(self, code: int, reason: str, is_hard_crash: bool, log_tail: str = ""):
+        self.code = code
+        self.reason = reason
+        self.is_hard_crash = is_hard_crash
+        self.log_tail = log_tail
+        # Keep raw `code` in the message: existing diagnostics/tests match it.
+        super().__init__(f"llama-server exited unexpectedly ({reason}, code {code})")
+
 
 def _find_free_port(start: int = 18080, end: int = 18200) -> int:
     for port in range(start, end):
@@ -399,15 +439,22 @@ class LlamaServer:
         while time.time() < deadline:
             if self._process and self._process.poll() is not None:
                 code = self._process.returncode
+                is_hard, reason = _classify_exit_code(code)
                 tail = self._read_log_tail()
                 if tail:
                     logger.error(
-                        "llama-server exited unexpectedly (code %s). "
+                        "llama-server exited unexpectedly (%s, code %s). "
                         "Last llama-server output:\n%s",
-                        code, tail,
+                        reason, code, tail,
                     )
-                raise RuntimeError(
-                    f"llama-server exited unexpectedly (code {code})"
+                else:
+                    logger.error(
+                        "llama-server exited unexpectedly (%s, code %s); no output "
+                        "captured (likely a hard crash before stdio flush)",
+                        reason, code,
+                    )
+                raise LlamaServerCrashError(
+                    code=code, reason=reason, is_hard_crash=is_hard, log_tail=tail
                 )
             try:
                 url = f"http://127.0.0.1:{self._port}/health"

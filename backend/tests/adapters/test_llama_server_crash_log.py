@@ -193,3 +193,45 @@ def test_init_has_log_path_attr():
     s = LlamaServer()
     assert hasattr(s, "_log_path")
     assert s._log_path is None
+
+
+# ---------------------------------------------------------------------------
+# _classify_exit_code + LlamaServerCrashError
+# ---------------------------------------------------------------------------
+
+from app.adapters.binary.llama_server import _classify_exit_code, LlamaServerCrashError
+
+
+def test_classify_exit_code_access_violation():
+    is_hard, reason = _classify_exit_code(3221225477)  # 0xC0000005
+    assert is_hard is True
+    assert "ACCESS_VIOLATION" in reason
+    assert "0xC0000005" in reason
+
+
+def test_classify_exit_code_other_nt_exceptions():
+    assert _classify_exit_code(0xC0000409)[0] is True   # STACK_BUFFER_OVERRUN
+    assert _classify_exit_code(0xC000001D)[0] is True   # ILLEGAL_INSTRUCTION
+
+
+def test_classify_exit_code_graceful_exit_is_not_hard_crash():
+    is_hard, reason = _classify_exit_code(1)
+    assert is_hard is False
+    assert "1" in reason
+
+
+def test_wait_ready_raises_llama_crash_error_with_attrs(tmp_path):
+    p = tmp_path / "llama_server.log"
+    p.write_text("CUDA error: no kernel image is available\n", encoding="utf-8")
+    s = LlamaServer()
+    s._log_path = p
+    s._port = 18099
+    s._process = _DeadProc()  # returncode = 3221225477
+
+    with pytest.raises(LlamaServerCrashError) as ei:
+        s._wait_ready()
+    exc = ei.value
+    assert exc.is_hard_crash is True
+    assert "ACCESS_VIOLATION" in exc.reason
+    assert exc.code == 3221225477
+    assert "3221225477" in str(exc)  # raw code preserved for existing assertions
