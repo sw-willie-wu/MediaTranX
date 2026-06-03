@@ -41,6 +41,7 @@ class LlamaServer:
         self._process: Optional[subprocess.Popen] = None
         self._port: Optional[int] = None
         self._log_file: Optional[TextIO] = None
+        self._log_path: Optional[Path] = None
         self._job: Optional[int] = None  # Win32 Job Object handle (F1)
 
     @property
@@ -115,6 +116,7 @@ class LlamaServer:
         log_dir = SETTINGS.path.log
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "llama_server.log"
+        self._log_path = log_path
         self._log_file = open(str(log_path), "a", encoding="utf-8")  # noqa: SIM115
 
         from app.adapters.binary import _proc_lifetime
@@ -372,6 +374,18 @@ class LlamaServer:
             except Exception:
                 pass
 
+    def _read_log_tail(self, max_lines: int = 40) -> str:
+        """Best-effort tail of llama-server's own log (its stdout/stderr) for
+        crash diagnostics. Returns '' on any failure — never raises."""
+        if self._log_path is None:
+            return ""
+        try:
+            with open(self._log_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+            return "".join(lines[-max_lines:]).strip()
+        except Exception:
+            return ""
+
     def _wait_ready(
         self,
         on_progress: Optional[Callable[[float, str], None]] = None,
@@ -384,8 +398,16 @@ class LlamaServer:
         step = 0
         while time.time() < deadline:
             if self._process and self._process.poll() is not None:
+                code = self._process.returncode
+                tail = self._read_log_tail()
+                if tail:
+                    logger.error(
+                        "llama-server exited unexpectedly (code %s). "
+                        "Last llama-server output:\n%s",
+                        code, tail,
+                    )
                 raise RuntimeError(
-                    f"llama-server exited unexpectedly (code {self._process.returncode})"
+                    f"llama-server exited unexpectedly (code {code})"
                 )
             try:
                 url = f"http://127.0.0.1:{self._port}/health"
