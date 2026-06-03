@@ -2,11 +2,15 @@
 import { onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
+import { useComputeSettingsStore } from '@/stores/computeSettings'
+import AppToggle from '@/components/common/AppToggle.vue'
 
 const settingsStore = useSettingsStore()
+const computeStore = useComputeSettingsStore()
 
 onMounted(() => {
   if (!settingsStore.deviceInfo) settingsStore.loadDeviceInfo()
+  if (!computeStore.loaded) computeStore.load()
 })
 
 useAgentPanelHost('settings.system', {
@@ -100,6 +104,25 @@ function formatRam(bytes: number | null): string {
     <button class="btn-primary" @click="settingsStore.loadDeviceInfo()">{{ $t('settings.system.redetect') }}</button>
   </div>
 
+  <h6 class="section-title mt">{{ $t('settings.system.compute_policy') }}</h6>
+
+  <div class="setting-item">
+    <AppToggle
+      :model-value="computeStore.settings.allow_cpu_fallback"
+      @update:model-value="(v) => computeStore.update({ allow_cpu_fallback: v })"
+    >
+      {{ $t('settings.system.cpu_fallback') }}
+    </AppToggle>
+    <p class="setting-hint">{{ $t('settings.system.cpu_fallback_hint') }}</p>
+  </div>
+
+  <p
+    v-if="settingsStore.deviceInfo?.fallback_active"
+    class="fallback-notice"
+  >
+    {{ $t(`compute.notice.${settingsStore.deviceInfo.fallback_reason}`) }}
+  </p>
+
   <button
     v-if="!settingsStore.isLoading"
     class="btn-secondary refresh-btn"
@@ -179,5 +202,18 @@ function formatRam(bytes: number | null): string {
 .refresh-btn {
   margin-top: 1rem;
   i.spin { animation: settings-spin 1s linear infinite; }
+}
+
+.setting-hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-top: 0.375rem;
+  line-height: 1.4;
+}
+
+.fallback-notice {
+  color: var(--color-warning, #d97706);
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
 }
 </style>
