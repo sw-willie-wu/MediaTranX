@@ -53,3 +53,19 @@ def test_classify_gpu_error():
     assert cp.classify_gpu_error(RuntimeError("CUDA error: no kernel image is available")) == "gpu_unsupported"
     assert cp.classify_gpu_error(RuntimeError("CUDA out of memory. Tried to allocate")) == "vram_insufficient"
     assert cp.classify_gpu_error(ValueError("something else")) is None
+
+
+def test_classify_gpu_error_llama_hard_crash():
+    from app.adapters.binary.llama_server import LlamaServerCrashError
+    hard = LlamaServerCrashError(code=3221225477, reason="ACCESS_VIOLATION (0xC0000005)",
+                                 is_hard_crash=True)
+    assert cp.classify_gpu_error(hard) == "gpu_unsupported"
+
+    # graceful (non-hard) llama exit must NOT be classified as gpu_unsupported
+    soft = LlamaServerCrashError(code=1, reason="exit code 1", is_hard_crash=False)
+    assert cp.classify_gpu_error(soft) is None
+
+    # survives wrapping: hard crash as __cause__ of a generic RuntimeError
+    wrapped = RuntimeError("load failed")
+    wrapped.__cause__ = hard
+    assert cp.classify_gpu_error(wrapped) == "gpu_unsupported"
