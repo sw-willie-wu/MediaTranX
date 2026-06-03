@@ -9,6 +9,39 @@ from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
+# Compute-policy state (set at startup from persisted settings; see lifespan).
+_allow_cpu_fallback: bool = True
+# Why the global device was downgraded from an available GPU (None = not downgraded).
+_global_downgrade_reason: str | None = None
+# Whether this session already surfaced the global downgrade to the user (one-shot).
+_global_downgrade_reported: bool = False
+
+
+def is_cpu_fallback_allowed() -> bool:
+    return _allow_cpu_fallback
+
+
+def get_global_downgrade_reason() -> str | None:
+    return _global_downgrade_reason
+
+
+def is_global_downgrade_reported() -> bool:
+    return _global_downgrade_reported
+
+
+def mark_global_downgrade_reported() -> None:
+    global _global_downgrade_reported
+    _global_downgrade_reported = True
+
+
+def set_allow_cpu_fallback(enabled: bool) -> None:
+    """Apply the CPU-fallback policy. Clears device caches so get_device()
+    re-evaluates under the new policy, and re-arms the one-shot session notice."""
+    global _allow_cpu_fallback, _global_downgrade_reported
+    _allow_cpu_fallback = bool(enabled)
+    _global_downgrade_reported = False
+    refresh_device_cache()
+
 
 @lru_cache(maxsize=1)
 def is_cuda_runtime_available() -> bool:
@@ -156,25 +189,35 @@ def _cuda_can_run_kernels() -> bool:
 
 @lru_cache(maxsize=1)
 def get_device() -> str:
+    """Auto-detect the optimal compute device. Priority: CUDA -> DirectML -> CPU.
+
+    When CPU fallback is allowed (default) a detected GPU must also pass the
+    kernel-capability probe; an old card that can't launch kernels downgrades to
+    CPU and records the reason. When fallback is disabled the probe is skipped so
+    the GPU is attempted and the task fails naturally (with a classified error).
     """
-    Auto-detect the optimal compute device.
-    Priority: CUDA -> DirectML -> CPU
-    """
-    # 1. Try CUDA — must be detected, have a loadable runtime, AND actually be
-    #    able to launch a kernel (an old GPU can pass the first two yet have no
-    #    kernel image for its arch -> cudaErrorNoKernelImageForDevice at runtime).
+    global _global_downgrade_reason
     cuda = _detect_cuda_via_torch() or _detect_cuda_via_ctranslate2()
-    if cuda == "cuda" and is_cuda_runtime_available() and _cuda_can_run_kernels():
-        return "cuda"
-    
-    # 2. Try DirectML (AMD/Intel)
+    if cuda == "cuda":
+        if not is_cuda_runtime_available():
+            _global_downgrade_reason = "cuda_runtime_missing"
+        elif not _allow_cpu_fallback:
+            _global_downgrade_reason = None
+            return "cuda"  # OFF: attempt GPU, let it fail if unusable
+        elif _cuda_can_run_kernels():
+            _global_downgrade_reason = None
+            return "cuda"
+        else:
+            _global_downgrade_reason = "gpu_unsupported"
+
+    # 2. DirectML (AMD/Intel)
     if has_directml():
         logger.info("Using DirectML for hardware acceleration")
         return "dml"
 
-    # 3. Fallback to CPU
+    # 3. CPU
     if has_nvidia_gpu():
-        logger.info("NVIDIA GPU detected but CUDA Toolkit not installed, falling back to CPU")
+        logger.info("NVIDIA GPU detected but unusable, falling back to CPU")
     else:
         logger.info("Using CPU (no GPU detected)")
     return "cpu"
@@ -374,6 +417,9 @@ def get_device_info() -> dict:
         except Exception:
             pass
 
+    info["fallback_reason"] = _global_downgrade_reason
+    info["fallback_active"] = _global_downgrade_reason is not None
+
     _device_info_cache = info
     return info
 
@@ -480,12 +526,17 @@ def refresh_device_cache() -> None:
     """Clear all device detection caches to force re-detection (call after CUDA DLL download)."""
     global _device_info_cache
     _device_info_cache = None
-    is_cuda_runtime_available.cache_clear()
-    get_device.cache_clear()
-    get_compute_type.cache_clear()
-    has_nvidia_gpu.cache_clear()
-    _get_gpu_name_via_smi.cache_clear()
-    get_driver_version.cache_clear()
+    for _fn in (
+        is_cuda_runtime_available,
+        get_device,
+        get_compute_type,
+        has_nvidia_gpu,
+        _get_gpu_name_via_smi,
+        get_driver_version,
+    ):
+        _clear = getattr(_fn, "cache_clear", None)
+        if _clear is not None:
+            _clear()
     logger.info("Device cache cleared, will re-detect on next call")
 
 
