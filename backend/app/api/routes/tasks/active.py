@@ -33,6 +33,7 @@ class TaskResponse(BaseModel):
     error_code: Optional[str] = None
     file_id: Optional[str] = None
     file_name: Optional[str] = None
+    notices: list = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -46,6 +47,7 @@ class TaskResponse(BaseModel):
         ``file_service`` (optional) resolves ``t.file_id`` to a human-readable
         ``file_name``; omitted -> ``file_name`` stays None.
         """
+        from app.utils.task_notices import snapshot_notices
         return cls(
             task_id=t.task_id,
             task_type=t.task_type,
@@ -57,6 +59,7 @@ class TaskResponse(BaseModel):
             error_code=getattr(t, 'error_code', None),
             file_id=t.file_id,
             file_name=file_service.get_file_name(t.file_id) if file_service else None,
+            notices=snapshot_notices(getattr(t, "notices", []) or []),
             created_at=t.created_at,
             updated_at=t.updated_at,
         )
