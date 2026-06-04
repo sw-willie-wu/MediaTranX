@@ -142,6 +142,28 @@ class TestStartBindingAndIdempotency:
         assert server._job is None
         assert server._process is fake_proc
 
+    def test_start_strips_llama_arg_env_from_child(self, tmp_path, monkeypatch):
+        """Inherited LLAMA_ARG_* env vars must not reach the child — our explicit
+        CLI flags are authoritative. A stray LLAMA_ARG_DEVICE=Vulkan1 in the user's
+        environment otherwise hijacks our CUDA build and exits it (1)."""
+        monkeypatch.setenv("LLAMA_ARG_DEVICE", "Vulkan1")
+        monkeypatch.setenv("MTX_SENTINEL_KEEP", "keepme")
+        server = LlamaServer()
+        fake_proc = MagicMock()
+        fake_proc._handle = 4321
+        fake_proc.poll.return_value = None
+        with self._patch_settings(tmp_path), \
+             patch("app.adapters.binary.llama_server.subprocess.Popen",
+                   return_value=fake_proc) as popen, \
+             patch.object(LlamaServer, "_wait_ready"), \
+             patch("app.adapters.binary._proc_lifetime.create_kill_on_close_job",
+                   return_value=None):
+            server.start(model_path=tmp_path / "m.gguf", n_ctx=4096, n_gpu_layers=99)
+        env = popen.call_args.kwargs["env"]
+        assert not any(k.startswith("LLAMA_ARG_") for k in env), \
+            "LLAMA_ARG_* must be stripped from llama-server's child environment"
+        assert env.get("MTX_SENTINEL_KEEP") == "keepme"  # unrelated env preserved
+
     def test_start_with_live_process_stops_old_and_closes_old_job_first(self, tmp_path):
         """AC#2: a live prior server is real-stopped AND its job closed before
         the new Popen — verified via the real stop() path, not a stubbed stop."""

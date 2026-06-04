@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import socket
 import subprocess
 import sys
@@ -161,11 +162,20 @@ class LlamaServer:
 
         from app.adapters.binary import _proc_lifetime
 
+        # Strip inherited LLAMA_ARG_* env vars so our explicit CLI flags are
+        # authoritative. llama.cpp maps every CLI arg to a LLAMA_ARG_* env var;
+        # a stray one in the user's environment (seen in the wild:
+        # LLAMA_ARG_DEVICE=Vulkan1) otherwise overrides us and makes our CUDA
+        # build exit before serving. We set none of these ourselves.
+        child_env = {k: v for k, v in os.environ.items()
+                     if not k.startswith("LLAMA_ARG_")}
+
         self._process = subprocess.Popen(
             cmd,
             stdout=self._log_file,
             stderr=self._log_file,
             cwd=str(llama_dir),
+            env=child_env,
             preexec_fn=_proc_lifetime.posix_pdeathsig_preexec(),  # None on win32
         )
 
