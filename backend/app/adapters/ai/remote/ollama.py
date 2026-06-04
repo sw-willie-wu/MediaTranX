@@ -36,6 +36,16 @@ _NUM_CTX_FLOOR = 4096
 _NUM_CTX_CAP = int(_os.environ.get("MTX_OLLAMA_MAX_NUM_CTX", "8192"))
 
 
+def set_num_ctx_cap(value: int) -> None:
+    """Live-update the num_ctx ceiling (DB-backed setting, no restart).
+
+    _compute_num_ctx reads the module global _NUM_CTX_CAP, so mutating it here
+    takes effect for the next chat request. Mirrors device.set_allow_cpu_fallback.
+    """
+    global _NUM_CTX_CAP
+    _NUM_CTX_CAP = int(value)
+
+
 def _estimate_messages_tokens(messages: list[dict]) -> int:
     """Rough token estimate: total char count / 3. Conservative for mixed
     English/Chinese transcript content; only used to size num_ctx (over-
