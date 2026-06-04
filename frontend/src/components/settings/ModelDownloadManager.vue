@@ -36,6 +36,17 @@ import { useRemoteModelStore, type RemoteConnection } from '@/stores/remoteModel
 const remoteModelStore = useRemoteModelStore()
 const { connections } = storeToRefs(remoteModelStore)
 
+import { useOllamaSettingsStore } from '@/stores/ollamaSettings'
+const ollamaSettings = useOllamaSettingsStore()
+const numCtxCap = ref(8192)
+
+async function saveNumCtxCap() {
+  const clamped = Math.min(131072, Math.max(4096, Math.round(numCtxCap.value || 8192)))
+  numCtxCap.value = clamped
+  await ollamaSettings.update({ ollama_num_ctx_cap: clamped })
+  toast.show(t('settings.remote.num_ctx_cap_saved'), { type: 'success' })
+}
+
 interface RemoteModel {
   id: string
   name: string
@@ -229,9 +240,11 @@ watch(
   },
 )
 
-onMounted(() => {
+onMounted(async () => {
   modelStore.fetchModels()
   remoteModelStore.ensureLoaded()
+  await ollamaSettings.load()
+  numCtxCap.value = ollamaSettings.settings.ollama_num_ctx_cap
 })
 </script>
 
@@ -287,6 +300,24 @@ onMounted(() => {
     </template>
 
   <template v-if="activeTab === 'remote'">
+    <!-- Ollama global inference settings -->
+    <div class="ollama-settings">
+      <h6 class="section-title">{{ $t('settings.remote.ollama_section') }}</h6>
+      <div class="form-group">
+        <label>{{ $t('settings.remote.num_ctx_cap') }}</label>
+        <input
+          type="number"
+          class="form-input"
+          :min="4096"
+          :max="131072"
+          step="1024"
+          v-model.number="numCtxCap"
+          @change="saveNumCtxCap"
+        />
+        <p class="download-hint"><i class="bi bi-info-circle"></i> {{ $t('settings.remote.num_ctx_cap_hint') }}</p>
+      </div>
+    </div>
+
     <!-- Connection list -->
     <div v-if="connections.length" class="conn-list">
       <div v-for="conn in connections" :key="conn.id" class="conn-card" :class="{ expanded: expandedConnId === conn.id }">
@@ -488,6 +519,19 @@ onMounted(() => {
 }
 
 // ── Remote connections ──────────────────────────────────────
+.ollama-settings {
+  margin-bottom: 1rem;
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+
+    label { font-size: 0.8rem; color: var(--text-secondary); }
+    .form-input { max-width: 12rem; }
+  }
+}
+
 .conn-list {
   display: flex;
   flex-direction: column;
