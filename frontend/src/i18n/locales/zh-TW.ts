@@ -1129,6 +1129,10 @@ export default {
       edit: '編輯',
       refresh: '重新整理模型',
       delete: '刪除',
+      ollama_section: 'Ollama 推論設定',
+      num_ctx_cap: 'num_ctx 上限',
+      num_ctx_cap_hint: '送往 Ollama 的 num_ctx 上限，防止共享伺服器（例如 DGX）OOM。範圍 4096–131072；同時不會超過模型真實的 context 視窗。',
+      num_ctx_cap_saved: '已儲存 num_ctx 上限',
     },
 
     agent: {

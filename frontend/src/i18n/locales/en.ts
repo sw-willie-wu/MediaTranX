@@ -1129,6 +1129,10 @@ export default {
       edit: 'Edit',
       refresh: 'Refresh Models',
       delete: 'Delete',
+      ollama_section: 'Ollama Inference',
+      num_ctx_cap: 'num_ctx ceiling',
+      num_ctx_cap_hint: 'Upper bound on the num_ctx sent to Ollama. Guards against OOM on shared servers (e.g. DGX). Clamped to 4096–131072; also never exceeds the model\'s real context window.',
+      num_ctx_cap_saved: 'num_ctx ceiling saved',
     },
 
     agent: {
