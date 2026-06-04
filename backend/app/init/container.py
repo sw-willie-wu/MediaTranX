@@ -140,6 +140,9 @@ class AppContainer(containers.DeclarativeContainer):
 
     # ── Setup Services ──
     compute_settings_service = providers.Singleton(ComputeSettingsService)
+    ollama_settings_service = providers.Singleton(
+        _lazy("app.services.setup.ollama_settings_service", "OllamaSettingsService")
+    )
     config_service = providers.Singleton(ConfigService)
     device_service = providers.Singleton(DeviceService)
     language_service = providers.Singleton(LanguageService, model_manager=model_manager)
