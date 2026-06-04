@@ -89,16 +89,16 @@ def _count_images(messages: list[dict]) -> int:
     return n
 
 
-def _compute_num_ctx(messages: list[dict], max_tokens: int) -> int:
-    """Bound (prompt_estimate + max_tokens + safety) between FLOOR (so we
-    don't ever request less than Ollama's typical default) and CAP (so we
-    don't trigger reload-up on the server that may OOM a shared DGX).
-
-    Prompts that genuinely need more than CAP will see Ollama truncate
-    silently — user should raise MTX_OLLAMA_MAX_NUM_CTX OR use a smaller
-    model in that case."""
+def _compute_num_ctx(messages: list[dict], max_tokens: int, model_ctx: int = 0) -> int:
+    """Bound (prompt_estimate + max_tokens + safety) between FLOOR and CAP, then
+    clamp to the model's REAL context window so we never request a KV cache
+    larger than the model supports (that OOMs a shared Ollama/DGX). model_ctx<=0
+    means 'unknown' → skip that clamp."""
     needed = _estimate_messages_tokens(messages) + max_tokens + 500  # 500 safety
-    return max(_NUM_CTX_FLOOR, min(needed, _NUM_CTX_CAP))
+    bounded = max(_NUM_CTX_FLOOR, min(needed, _NUM_CTX_CAP))
+    if model_ctx > 0:
+        bounded = min(bounded, model_ctx)  # never exceed the model's real window
+    return bounded
 
 
 class OllamaProvider(RemoteProvider):
@@ -117,6 +117,7 @@ class OllamaProvider(RemoteProvider):
     def __init__(self, endpoint: str = DEFAULT_OLLAMA_ENDPOINT, api_key: Optional[str] = None):
         super().__init__(endpoint, api_key)
         self._caps_cache: dict[str, list[str]] = {}  # model_name -> capabilities
+        self._ctx_cache: dict[str, int] = {}  # model_name -> real ctx (from /api/show)
 
     def connect(self, timeout: int = PROBE_TIMEOUT) -> bool:
         """Check if the Ollama service is running."""
@@ -402,7 +403,20 @@ class OllamaProvider(RemoteProvider):
                             return int(parts[-1])
         except Exception as e:
             logger.warning(f"Failed to query model ctx for {model_name}: {e}")
-        return 8192  # Conservative fallback
+        # Conservative fallback. Note (Issue #4): this value also becomes the
+        # num_ctx clamp ceiling when /api/show fails — i.e. a transient probe
+        # failure under-sizes num_ctx to 8192 rather than risking an OOM. Safe
+        # direction; matches _NUM_CTX_CAP's default so usually no observable diff.
+        return 8192
+
+    def _resolve_model_ctx(self, model_name: str) -> int:
+        """Cached get_model_ctx — avoids an /api/show call on every batch.
+
+        Cached for the provider's process lifetime (singleton); not invalidated
+        if the model is reconfigured in Ollama mid-session — restart to refresh."""
+        if model_name not in self._ctx_cache:
+            self._ctx_cache[model_name] = self.get_model_ctx(model_name)
+        return self._ctx_cache[model_name]
 
     def get_summary_chunking_hints(self, model: str) -> dict:
         """Query Ollama /api/show for the model's actual num_ctx.
@@ -446,6 +460,11 @@ class OllamaProvider(RemoteProvider):
 
         Spec §F1.
         """
+        # Resolve the model's real context window once so both _chat_blocking
+        # and _chat_streaming clamp num_ctx to it (Issue #4 — OOM on shared
+        # DGX when MTX_OLLAMA_MAX_NUM_CTX > model's real ctx).
+        model_ctx = self._resolve_model_ctx(model)
+
         # Pre-flight log for vision (VLM) calls — the existing telemetry log
         # in summary_service only fires on success, leaving failed VLM picks
         # (e.g. proxy 500) with zero telemetry. frame_picker only reports
@@ -457,16 +476,17 @@ class OllamaProvider(RemoteProvider):
             logger.info(
                 "Ollama VLM chat: model=%s images=%d num_ctx=%d max_tokens=%d",
                 model, img_count,
-                _compute_num_ctx(messages, max_tokens), max_tokens,
+                _compute_num_ctx(messages, max_tokens, model_ctx), max_tokens,
             )
 
         if abort_hook is None:
-            return self._chat_blocking(model, messages, max_tokens, temperature)
-        return self._chat_streaming(model, messages, max_tokens, temperature, abort_hook)
+            return self._chat_blocking(model, messages, max_tokens, temperature, model_ctx)
+        return self._chat_streaming(model, messages, max_tokens, temperature, abort_hook, model_ctx)
 
     def _chat_blocking(
         self, model: str, messages: list[dict],
         max_tokens: int, temperature: float,
+        model_ctx: int = 0,
     ) -> str:
         """Legacy path. Single .read(), stream=False, 300s socket timeout.
         Preserved verbatim for existing callers."""
@@ -483,7 +503,8 @@ class OllamaProvider(RemoteProvider):
                 # Ollama loads the model with at least num_ctx slots; first
                 # request that exceeds the loaded size reloads (slow once,
                 # cached after) — NUM_PARALLEL=1 makes this safe.
-                "num_ctx": _compute_num_ctx(messages, max_tokens),
+                # model_ctx clamps to the model's real window (Issue #4).
+                "num_ctx": _compute_num_ctx(messages, max_tokens, model_ctx),
             },
         }
         data = json.dumps(payload).encode("utf-8")
@@ -519,6 +540,7 @@ class OllamaProvider(RemoteProvider):
         self, model: str, messages: list[dict],
         max_tokens: int, temperature: float,
         abort_hook: Callable,
+        model_ctx: int = 0,
     ) -> str:
         """Streamable + cancellable path. stream=True, 30s socket timeout
         per recv; abort_hook(resp) called immediately after urlopen returns
@@ -533,7 +555,8 @@ class OllamaProvider(RemoteProvider):
                 # See _chat_blocking comment — num_ctx prevents silent
                 # truncation when modelfile / env default is smaller than
                 # the request needs.
-                "num_ctx": _compute_num_ctx(messages, max_tokens),
+                # model_ctx clamps to the model's real window (Issue #4).
+                "num_ctx": _compute_num_ctx(messages, max_tokens, model_ctx),
             },
         }
         data = json.dumps(payload).encode("utf-8")
