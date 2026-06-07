@@ -498,3 +498,43 @@ class TestRunCancel:
             async for _ in svc.run(inp):
                 pass
         assert kill_recorded["called"] is True
+
+
+# ── State snapshot tests ─────────────────────────────────────────────
+
+class TestStateSnapshot:
+    async def test_snapshot_folded_into_system_message(self):
+        chat = FakeChatService([{"type": "done"}])
+        svc = AgentService(chat_service=chat, remote_service=FakeRemoteService())
+        state = {
+            "agent_model_choice": "qwen3:8b",
+            "snapshot": {
+                "map": {
+                    "views": [{"route": "/video", "label": "Video",
+                               "subfunctions": ["transcode"]}],
+                    "files": [],
+                    "current_position": {"view": "/video", "subfunction": "transcode"},
+                },
+                "active_panel": None,
+                "active_file": None,
+            },
+        }
+        inp = _make_input(messages=[UserMessage(id="m0", content="hi")], state=state)
+        _ = [e async for e in svc.run(inp)]
+        sysmsg = chat.last_session.received_messages[0]
+        assert sysmsg["role"] == "system"
+        assert "# 當前狀態" in sysmsg["content"]
+        assert "/video" in sysmsg["content"]
+        assert "MediaTranX" in sysmsg["content"]   # static prompt still present
+
+    async def test_no_snapshot_falls_back_to_plain_prompt(self):
+        chat = FakeChatService([{"type": "done"}])
+        svc = AgentService(chat_service=chat, remote_service=FakeRemoteService())
+        inp = _make_input(
+            messages=[UserMessage(id="m0", content="hi")],
+            state={"agent_model_choice": "qwen3:8b"},
+        )
+        _ = [e async for e in svc.run(inp)]
+        sysmsg = chat.last_session.received_messages[0]
+        assert sysmsg["role"] == "system"
+        assert "# 當前狀態" not in sysmsg["content"]

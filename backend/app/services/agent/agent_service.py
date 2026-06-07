@@ -19,6 +19,7 @@ from app.services.agent._ag_ui_compat import (
     make_encoder, emit_run_finished_with_usage,
 )
 from app.services.agent._system_prompt import AGENT_SYSTEM_PROMPT
+from app.services.agent._render_state import render_state
 
 logger = logging.getLogger(__name__)
 
@@ -110,12 +111,16 @@ class AgentService:
             if not messages:
                 raise AgentError("agent.error.internal", "empty messages list")
 
-            # Prepend system prompt (M22) if no system message in input
+            # Prepend system prompt (M22) if no system message in input.
+            # Fold the live UI state snapshot (if the frontend supplied one) into
+            # the single system message — fresh each request, never persisted to
+            # history (it rides input.state, not input.messages).
             if not any(m.get("role") == "system" for m in messages):
-                messages.insert(0, {
-                    "role": "system",
-                    "content": AGENT_SYSTEM_PROMPT,
-                })
+                snapshot = (input.state or {}).get("snapshot")
+                content = AGENT_SYSTEM_PROMPT
+                if snapshot:
+                    content = AGENT_SYSTEM_PROMPT + "\n\n" + render_state(snapshot)
+                messages.insert(0, {"role": "system", "content": content})
 
             tools: list[dict] = [_tool_to_dict(t) for t in (input.tools or [])]
 
