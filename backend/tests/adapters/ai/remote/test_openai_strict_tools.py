@@ -378,7 +378,11 @@ class TestRealShapeSanity:
         },
         {
             "name": "set_field",
-            "description": "Set a field on the active panel. Field name & valid values are in state.panel_schema.",
+            "description": (
+                "Set a field on the active panel. Use ONLY field names listed in "
+                "the active_panel.fields of the current state; pick values from "
+                "each field's options. Do not invent fields or guess values."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {"field": {"type": "string"}, "value": {}},

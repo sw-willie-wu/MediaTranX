@@ -1042,7 +1042,7 @@ describe('getTools — tool description assertions', () => {
     expect(ce.description.toLowerCase()).toContain('explicit')
   })
 
-  it('set_field description no longer references state.panel_schema', () => {
+  it('set_field description drops the panel_schema phantom reference', () => {
     const sf = getTools(null).find(t => t.name === 'set_field')!
     expect(sf.description).not.toContain('panel_schema')
     expect(sf.description).toContain('current state')
