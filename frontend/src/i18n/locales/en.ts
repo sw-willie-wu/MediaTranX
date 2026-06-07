@@ -1219,6 +1219,7 @@ export default {
       provider_error: 'Provider returned an error',
       context_full: 'Conversation too long. Please clear and start over.',
       internal: 'Internal error',
+      model_busy: 'The model is busy running another task — ask me again once it finishes.',
       unknown_tool: 'Unknown tool: {name}',
       tool_failed: 'Tool {name} failed: {error}',
       invalid_field: 'Field {field} is not valid in the current view',

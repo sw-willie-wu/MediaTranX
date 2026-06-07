@@ -1219,6 +1219,7 @@ export default {
       provider_error: '服務提供者回傳錯誤',
       context_full: '對話過長，請清除後重新開始。',
       internal: '內部錯誤',
+      model_busy: '模型正忙於另一個任務，請等它跑完再問我。',
       unknown_tool: '未知工具：{name}',
       tool_failed: '工具 {name} 執行失敗：{error}',
       invalid_field: '目前畫面中找不到欄位 {field}',
