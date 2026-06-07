@@ -69,42 +69,40 @@ mediatranx.db                       ← SQLite（連線設定、任務歷史）
 AI 套件     → 排除（--nofollow-import-to）→ 運行時從 .venv import
 ```
 
-### Nuitka 排除的套件（在 .venv 安裝）
+### Nuitka 排除的第三方套件（在 .venv 安裝）
+
+排除清單**不是手寫固定表**，而是 `scripts/build.py` `step_nuitka()` 於 backend venv 動態列舉：
+`importlib.metadata.packages_distributions()` 取得所有已安裝套件，扣掉 `app` 與 `_` 開頭者，全部轉成 `--nofollow-import-to`（torch、transformers、cv2、ctranslate2、faster_whisper、demucs、rembg…等皆由此自動排除，隨 venv 實際安裝內容變動）。
+
+### Nuitka 包含的模組
 
 ```
-torch, torchvision, torchaudio, transformers, PIL, numpy, scipy,
-cv2, rembg, onnxruntime, ctranslate2, faster_whisper, demucs,
-huggingface_hub, basicsr, realesrgan, facexlib, gfpgan, spandrel,
-timm, einops, mobile_sam, simple_lama_inpainting, docx, pypdf,
-fitz, pymupdf, lxml, tokenizers, hf_xet, av
+# pkg_includes（固定，--include-package）：
+ctypes, importlib, email, http, xml, unittest, multiprocessing,
+concurrent, urllib, logging, asyncio, json, html, collections, encodings,
+app.services, app.adapters          ← 由 container._lazy() 動態 import，Nuitka 無法靜態發現，必須顯式補包
+
+# 其餘 stdlib（動態，--include-module）：
+sys.stdlib_module_names - _STDLIB_SKIP（逐個 __import__ 過濾），
+_ssl / sqlite3 等 extension 會自動被掃進來，不需手動逐個指定
 ```
 
-### Nuitka 額外包含的 stdlib
+Nuitka 以 `nuitka==4.0.8` **pin**（避免版本漂移連帶要求更新的 MinGW 工具鏈）、`--standalone`、`--output-filename=core.exe`、`--assume-yes-for-downloads`（CI/背景 build 自動接受 MinGW64 下載）。
 
-```
---include-module=_ssl
---include-module=sqlite3
---include-module=pdb
---include-module=cProfile          ← torch._dynamo 需要
---include-package=unittest
---include-package=xml              ← torchvision.datasets 需要
-```
+### 第三方套件相容性修補
 
-### Nuitka 相容性修補
-
-打包後 `__file__` 路徑可能指向 `core_service/` 而非 `.venv/site-packages/`。
-集中修補在 `backend/app/init/nuitka_compat.py`：
+集中修補在 `backend/app/init/compat.py`（`apply_compat_patches()`）：
 
 | 修補 | 說明 |
 |------|------|
-| `_patch_torch_dynamo` | 假模組繞過 `transformers.masking_utils` |
-| `_patch_demucs_remote_root` | 修正 demucs 的 `remote/files.txt` 路徑 |
+| `_patch_torchvision_functional_tensor` | 補回 basicsr/gfpgan 仍引用、新版 torchvision 已移除的 `transforms.functional_tensor` |
+| `_patch_scipy_signal_gaussian` | 補回新版 scipy 移到 `signal.windows` 的 `signal.gaussian` |
 
 ---
 
 ## AI 環境安裝（3 步驟）
 
-使用者在 Settings > AI 環境 點擊安裝：
+由 **Electron 殼層管理**（`electron/setup.js`：GPU 偵測 → uv sync → binary 下載）：
 
 | Step | 內容 | 方式 |
 |------|------|------|
@@ -112,10 +110,10 @@ fitz, pymupdf, lxml, tokenizers, hf_xet, av
 | 2/3 | PyTorch + torchvision + torchaudio | `uv pip install --index-url` 從 CUDA/CPU index |
 | 3/3 | llama-server binary | 從 GitHub releases 下載 |
 
-### DLL 注入（`init/dll_injection.py`）
+### DLL 注入（`init/setup.py`）
 
-`core.exe` 啟動時注入 `.venv/site-packages` 到 `sys.path`，
-並用 `os.add_dll_directory()` 註冊 torch、ctranslate2 等的 DLL 路徑。
+`core.exe` 啟動時（僅 `settings.is_frozen`）注入 `.venv/site-packages` 到 `sys.path`，
+並用 `os.add_dll_directory()` 註冊 torch、ctranslate2、tokenizers、llama_cpp/lib、vcruntime（讀 pyvenv.cfg `home`）等 DLL 路徑。詳細踩坑見記憶檔 `nuitka-packaging-pitfalls.md`。
 
 ---
 
@@ -123,41 +121,45 @@ fitz, pymupdf, lxml, tokenizers, hf_xet, av
 
 ### 腳本
 
+2026-04 起以兩支 Python 腳本取代舊的 8 個 `.bat`（monorepo 後皆在頂層 `scripts/`）：
+
 ```
 scripts/
-├── build.bat              ← 主 build（Vue + Nuitka + Electron）
-├── build-test.bat         ← 測試 build（自動 bump dev 版號）
-├── build_vue.bat          ← Step 1: npm run build
-├── build_python.bat       ← Step 2: Nuitka 編譯
-├── build_electron.bat     ← Step 3: electron-builder
-└── release.bat            ← 正式發版（merge + bump + build + tag + push）
+├── build.py     ← build（vite + Nuitka + electron-builder）；--mode dev|prod、--step、--full
+└── release.py   ← 正式發版（單 repo 6 步：merge + bump + build + tag + push + sync）
 ```
+
+> **務必加 `uv run --project backend` 前綴**跑 build.py —— `step_nuitka()` 的排除清單是由「執行所在 venv 已安裝套件」算出，不在 backend venv 跑會壞。
 
 ### 正式 Build 流程
 
 ```bash
-scripts\build.bat
+uv run --project backend python scripts/build.py --mode prod
 ```
 
-1. **Vue build** → `build/resources/frontend_dist/`
-2. **Nuitka** → `build/resources/core_service/core.exe`
-3. **Electron Builder** → `dist/MediaTranX-Setup-{version}-win.exe`
+三個 step（可用 `--step vite,nuitka,electron` 單獨跑）：
+
+1. **vite** → `build/resources/frontend_dist/`（`npx vite build`）
+2. **nuitka** → `build/resources/core_service/core.exe`
+3. **electron** → `dist/MediaTranX-Setup-{version}-win.exe`（`--full` 才連 `.venv` + bin tools 一起打包）
 
 ### 測試 Build 流程
 
 ```bash
-scripts\build-test.bat
+uv run --project backend python scripts/build.py --mode dev
 ```
 
-自動：讀版號 → bump minor → dev.N → build → 還原版號
+dev 模式：版號 = 當前 base（依 `--bump`，default `minor`；亦可 `--version` 直接指定）→ 加 `-dev.N` 後綴（N 由掃 `dist/` 既有 `MediaTranX-Setup-{base}-dev.N-win.exe` 取最大 +1）→ build → **build 後自動還原版號**（dev build 不寫 `uv lock`）。
 
 ```
-package.json: 1.1.0
-  → 1.2.0-dev.1 (自動遞增)
+backend/pyproject.toml: 1.5.0
+  → 1.5.1-dev.1（base 1.5.1 + 掃 dist/ 得 N）
   → build
-  → 還原回 1.1.0
-  → dist/MediaTranX-Setup-1.2.0-dev.1-win.exe
+  → 還原回 1.5.0
+  → dist/MediaTranX-Setup-1.5.1-dev.1-win.exe
 ```
+
+> 發版流程（release.py 6 步）細節見 [RELEASE.md](RELEASE.md)。
 
 ---
 
@@ -172,13 +174,15 @@ package.json: 1.1.0
 
 ## 安裝包大小
 
+預設 installer **不含** FFmpeg / `.venv` / bin tools（首次啟動由 Electron 下載）；只有 `--full` build 會把它們一起打包。
+
 | 項目 | 大小 |
 |------|------|
 | Electron + frontend | ~100 MB |
 | core.exe（Nuitka standalone） | ~125 MB |
 | uv.exe | ~15 MB |
-| FFmpeg + FFprobe | ~150 MB |
-| **總計（installer）** | **~210 MB** |
-| AI 環境（uv sync --extra ai） | ~1 GB |
-| PyTorch CUDA（按需） | ~2.5 GB |
-| AI 模型（按需） | 依模型而定 |
+| **預設 installer（不含 AI 環境/FFmpeg）** | **~111–116 MB**（v1.5.0 ≈ 111 MB、v1.4.1 ≈ 116 MB） |
+| 首次啟動下載：FFmpeg + FFprobe | ~150 MB |
+| 首次啟動下載：AI 環境（uv sync --extra ai） | ~1 GB |
+| 按需：PyTorch CUDA | ~2.5 GB |
+| 按需：AI 模型 | 依模型而定 |

@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-<a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-34-47848F?logo=electron&logoColor=white" alt="Electron" /></a>
+<a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-35-47848F?logo=electron&logoColor=white" alt="Electron" /></a>
 <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white" alt="Vue 3" /></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python" /></a>
 <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?logo=pytorch&logoColor=white" alt="PyTorch" /></a>
@@ -103,7 +103,7 @@ All local models are downloaded on-demand through the built-in model manager. No
 
 | Layer | Technology |
 |-------|------------|
-| Desktop Shell | Electron 34 |
+| Desktop Shell | Electron 35 |
 | Frontend | Vue 3 + TypeScript + Pinia + Vite |
 | Backend | FastAPI + Python 3.12 + uv |
 | AI Inference | PyTorch, CTranslate2, llama-server (GGUF) |
@@ -181,10 +181,11 @@ cd frontend
 npm run dev
 ```
 
-Open `http://localhost:8000` in your browser.
+Open `http://localhost:5173` in your browser (Vite's default dev port; the Electron shell injects `VITE_PORT=8000` at runtime, hence port 8000 in the architecture diagram).
 
 > Prefer containers? `docker compose up` runs the backend + frontend without Electron
-> (see `docker-compose.yml`; for CPU-only hosts use the CPU compose, see `docs/`).
+> (see `docker-compose.yml`; for CPU-only hosts add the CPU override:
+> `docker compose -f docker-compose.yml -f docker-compose.cpu.yml up`).
 
 ### Desktop App (Electron)
 

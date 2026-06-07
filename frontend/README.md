@@ -1,39 +1,31 @@
-# frontend
+# MediaTranX — Frontend
 
-This template should help get you started developing with Vue 3 in Vite.
+Vue 3 + TypeScript + Pinia + Vite frontend for MediaTranX. Part of the monorepo;
+the Electron shell (`../electron`) wraps this together with the FastAPI backend
+(`../backend`). See [`../docs/FRONTEND_DEVELOP_SPEC.md`](../docs/FRONTEND_DEVELOP_SPEC.md)
+for UI/UX conventions and [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for the big picture.
 
-## Recommended IDE Setup
+## Recommended IDE
 
-[VSCode](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+[VSCode](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (disable Vetur).
+`.vue` type-checking uses `vue-tsc` instead of `tsc`.
 
-## Type Support for `.vue` Imports in TS
-
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
+## Setup
 
 ```sh
 npm install
 ```
 
-### Compile and Hot-Reload for Development
+## Scripts
 
 ```sh
-npm run dev
+npm run dev          # Vite dev server (default port 5173; Electron injects VITE_PORT=8000)
+npm run build        # type-check + production build (run-p type-check build-only)
+npm run type-check   # vue-tsc --build — must stay at 0 errors
+npm run lint         # eslint . --fix
+npm run test         # vitest run
 ```
 
-### Type-Check, Compile and Minify for Production
-
-```sh
-npm run build
-```
-
-### Lint with [ESLint](https://eslint.org/)
-
-```sh
-npm run lint
-```
+> For a packaged build, the frontend is compiled via the repo-root build script —
+> `uv run --project backend python scripts/build.py --step vite` (uses `vite build` with the
+> Electron output paths), not a bare `npm run build`. See [`../docs/BUILD_STRATEGY.md`](../docs/BUILD_STRATEGY.md).

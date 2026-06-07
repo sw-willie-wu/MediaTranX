@@ -6,7 +6,7 @@
 
 ## 1. System Architecture
 
-MediaTranX Core uses a **Client-Server** architecture — Vue 3 frontend + FastAPI backend:
+MediaTranX uses a **Client-Server** architecture — Vue 3 frontend + FastAPI backend:
 
 ```mermaid
 graph TB
@@ -78,34 +78,37 @@ backend/app/
 ├── api/routes/                      # Route layer (TYPE_CHECKING service imports)
 │   ├── audio/, image/, video/, document/     # per-feature route files + inline DTO
 │   ├── files/, llm/, health/                 # concern folders
-│   ├── setup/, tasks/
+│   ├── setup/, tasks/, agent/                # agent/ = AG-UI run + sessions
 ├── adapters/                        # External-system adapters (需跨層協調)
 │   ├── device.py                    # GPU/CPU detection
 │   ├── binary/                      # Binary subprocess wrappers
-│   │   ├── ffmpeg.py
-│   │   └── llama_server.py
+│   │   ├── ffmpeg.py, llama_server.py
+│   │   └── ytdlp.py                 # yt-dlp video download
+│   ├── security/                    # secret_cipher.py (API key at-rest encryption)
 │   └── ai/                          # AI domain adapters
 │       ├── model_manager.py         # VRAM slot + acquire coordinator
 │       ├── registry.py              # Static model metadata
 │       ├── tile_inference.py        # PTH tensor tile/stitch helper
-│       ├── remote/                  # HTTP provider adapters (openai/gemini/ollama)
+│       ├── face_pipeline.py         # GFPGAN detect/align/restore orchestration
+│       ├── remote/                  # HTTP provider adapters (openai/gemini/ollama, probe)
 │       └── wrapper/                 # AI model lifecycle wrapper family
 │           ├── base.py              # BaseWrapper / PackageWrapper / PthWrapper
 │           ├── whisper.py, demucs.py, basic_pitch.py, wav2vec2.py
 │           ├── bsrgan.py, realesrgan.py, swinir.py, waifu2x.py, real_cugan.py
-│           ├── codeformer.py, gfpgan.py
+│           ├── gfpgan.py            # face restoration (only restorer; CodeFormer removed)
 │           ├── mobilesam.py, rife.py
 │           └── llm.py               # LlmWrapper (wraps binary/llama_server)
 ├── services/                        # Business layer (service = cohesive business logic)
 │   ├── audio/, image/, video/, document/     # modality feature services
-│   ├── files/, llm/, setup/, tasks/          # cross-cutting services
+│   ├── files/, llm/, setup/, tasks/, agent/  # cross-cutting services (agent/ = AG-UI)
 ├── pipeline/                        # Cross-service domain orchestration
 │   └── translate.py, transcribe.py, ocr.py
 ├── utils/                           # Pure technical helpers (技術中性 + 2+ consumer)
 ├── workers/                         # TaskManager + ProgressTracker + media_kind
 ├── handler/                         # HTTP cross-cutting (exceptions + responses + middleware)
 ├── schemas/                         # Cross-layer domain types (TaskData, FileData)
-├── db/                              # SQLModel (api_connection, task_history)
+├── db/                              # SQLModel (dao/ + models/): task_history, api_connection,
+│                                    #   agent_session, agent_message, app_setting
 └── main.py
 ```
 
@@ -117,9 +120,9 @@ Development specs: [BACKEND_DEVELOP_SPEC.md](BACKEND_DEVELOP_SPEC.md)
 graph TB
     subgraph Registry["Registry (adapters/ai/registry.py)"]
         FORMAT_PKG["FORMAT_PKG<br/>Whisper, Demucs"]
-        FORMAT_GGUF["FORMAT_GGUF<br/>Qwen3, Gemma 4"]
+        FORMAT_GGUF["FORMAT_GGUF<br/>LLM: Qwen3/Gemma; VLM: Qwen3-VL/InternVL (mmproj)"]
         FORMAT_PTH["FORMAT_PTH<br/>Real-ESRGAN, GFPGAN, ..."]
-        FORMAT_VLM["FORMAT_VLM<br/>Qwen3-VL, InternVL, Gemma 3"]
+        FORMAT_ONNX["FORMAT_ONNX<br/>(reserved, DirectML)"]
     end
 
     subgraph Manager["ModelManager (adapters/ai/model_manager.py)"]
@@ -136,7 +139,6 @@ graph TB
     FORMAT_PKG --> PKG
     FORMAT_PTH --> PTH
     FORMAT_GGUF --> LLM
-    FORMAT_VLM --> LLM
     Manager -->|"acquire/evict"| Wrappers
 ```
 
@@ -191,6 +193,9 @@ graph TB
 | `settings` | User preferences (theme, locale, paths) |
 | `models` | Local AI model state |
 | `remoteModels` | Cloud API model lists |
+| `agent` / `agentSettings` | Agent chat bubble: run state, sessions, model/connection choice |
+| `results` | Results drawer (task outputs) |
+| `videoDownload` | yt-dlp download queue |
 
 ### Shared Framework
 
@@ -238,15 +243,15 @@ sequenceDiagram
 
 ## 5. Data Paths
 
-All paths managed via `PathSettings` (pydantic-settings):
+All paths managed via `PathSettings` (a pydantic `BaseModel`; `root`/`temp` are top-level, the rest are `computed_field`s derived from `root`; Electron overrides via `MEDIATRANX_PATH__*` env vars):
 
 | Directory | Default (dev) | Production |
 |-----------|---------------|------------|
 | Models | `backend/models/` | `%APPDATA%/MediaTranX/models/` |
 | Venv | `backend/.venv/` | `%APPDATA%/MediaTranX/.venv/` |
 | Bin | `backend/bin/` | `%LOCALAPPDATA%/MediaTranX/resources/bin/` |
-| Temp | `backend/data/temp/` | `%APPDATA%/MediaTranX/temp/` |
-| Logs | stdout | `%APPDATA%/MediaTranX/logs/` |
+| Temp | `backend/temp/` | `%APPDATA%/MediaTranX/temp/` |
+| Logs | `backend/logs/` | `%APPDATA%/MediaTranX/logs/` |
 | DB | `backend/mediatranx.db` | `%APPDATA%/MediaTranX/mediatranx.db` |
 
 ---
@@ -274,10 +279,17 @@ All paths managed via `PathSettings` (pydantic-settings):
 | GET | `/api/files/{id}/download` | Download file |
 | POST | `/api/files/cleanup` | Cleanup temp files |
 | **Tasks** | | |
-| GET | `/api/tasks/` | Active tasks |
-| GET | `/api/tasks/{id}/progress` | Task progress |
+| GET | `/api/tasks/` | Active tasks (status + progress, polled) |
+| GET | `/api/tasks/{id}` | Single task status (progress included in response) |
 | POST | `/api/tasks/{id}/cancel` | Cancel task |
+| DELETE | `/api/tasks/{id}` | Dismiss active task |
 | GET | `/api/tasks/history` | Task history |
+| **Agent** (AG-UI) | | |
+| POST | `/api/agent/run` | Run agent turn (SSE stream of AG-UI events) |
+| GET | `/api/agent/sessions` | List chat sessions |
+| GET | `/api/agent/sessions/{id}/messages` | Load session messages |
+| POST | `/api/agent/sessions/{id}/messages` | Persist message |
+| DELETE | `/api/agent/sessions/{id}` | Delete session |
 | **LLM** | | |
 | GET | `/api/llm/translate/languages` | Supported translation languages |
 | GET | `/api/llm/translate/styles` | Supported translation styles |
@@ -330,7 +342,7 @@ All paths managed via `PathSettings` (pydantic-settings):
 ### Start
 
 ```bash
-# Frontend (port 8000)
+# Frontend (Vite default port 5173; Electron injects VITE_PORT=8000 at runtime)
 cd frontend && npm install && npm run dev
 
 # Backend (port 8001)

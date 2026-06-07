@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-<a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-34-47848F?logo=electron&logoColor=white" alt="Electron" /></a>
+<a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-35-47848F?logo=electron&logoColor=white" alt="Electron" /></a>
 <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white" alt="Vue 3" /></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python" /></a>
 <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?logo=pytorch&logoColor=white" alt="PyTorch" /></a>
@@ -103,7 +103,7 @@
 
 | 層級 | 技術 |
 |------|------|
-| 桌面殼層 | Electron 34 |
+| 桌面殼層 | Electron 35 |
 | 前端 | Vue 3 + TypeScript + Pinia + Vite |
 | 後端 | FastAPI + Python 3.12 + uv |
 | AI 推理 | PyTorch、CTranslate2、llama-server (GGUF) |
@@ -181,7 +181,28 @@ cd frontend
 npm run dev
 ```
 
-開啟瀏覽器 `http://localhost:8000`。
+開啟瀏覽器 `http://localhost:5173`（Vite 預設開發 port；Electron 殼層在執行時會注入 `VITE_PORT=8000`，所以架構圖標的是 port 8000）。
+
+> 偏好容器？`docker compose up` 可在不經 Electron 的情況下跑起後端＋前端
+> （見 `docker-compose.yml`；純 CPU 主機加上 CPU override：
+> `docker compose -f docker-compose.yml -f docker-compose.cpu.yml up`）。
+
+### 桌面 App（Electron）
+
+Electron 殼層會把後端＋前端包成桌面 App。
+
+```bash
+# 開發模式（啟動 Electron，由它再拉起後端＋Vite dev server）
+cd electron
+npm install
+npm run electron
+
+# 建置 Windows 安裝檔（dev build，會自動還原版號）
+uv run --project backend python scripts/build.py --mode dev
+# -> dist/MediaTranX-Setup-X.Y.Z-dev.N-win.exe
+```
+
+完整建置／發版流程見 [docs/BUILD_STRATEGY.md](BUILD_STRATEGY.md) 與 [docs/RELEASE.md](RELEASE.md)。
 
 ### 下載 AI 模型
 
