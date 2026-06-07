@@ -29,6 +29,9 @@ import { useActivePanel, type ActivePanelEntry } from '@/composables/useActivePa
 import { useActiveView } from '@/composables/useActiveView'
 import type { PanelAgentSchema } from '@/stores/panelRegistry'
 import type { ViewHandle } from '@/stores/viewRegistry'
+import { buildAgentStateSnapshot } from '@/composables/useAgentState'
+import { routeForView } from '@/agent/agentNavCatalog'
+import { useFilesStore } from '@/stores/files'
 
 // i18n.global.t lazy resolve (unchanged from original).
 let _t: ((k: string) => string) | null = null
@@ -302,7 +305,28 @@ function _createAgent(deps: UseAgentDeps = {}) {
         }
         // toCloneable: HttpAgent structuredClones these inputs; strip Vue reactive proxies.
         agent.messages = toCloneable(mapMessagesToAgUi(messages.value))
-        agent.state = { agent_model_choice: settings.modelChoice }
+        // Build the two-tier UI snapshot from live state, then launder the whole
+        // `state` object through toCloneable — HttpAgent structuredClones state,
+        // and snapshot is derived from reactive stores/getters. _createAgent has
+        // NO router var; derive route from the active panel's viewId via the catalog.
+        const ap = getActivePanel()
+        const av = getActiveView()
+        const filesStore = useFilesStore()
+        const cur = filesStore.currentFile
+        const viewId = ap ? ap.panelId.split('.')[0] : null
+        const snapshot = buildAgentStateSnapshot({
+          activePanel: ap
+            ? { panelId: ap.panelId, schema: ap.schema, currentValues: ap.instance.getCurrentValues() }
+            : null,
+          currentRoute: viewId ? routeForView(viewId) : null,
+          currentSubfunction:
+            av?.currentFunction.value ?? (ap ? ap.panelId.split('.').slice(1).join('.') : null),
+          files: filesStore.allFiles.map(f => ({
+            id: f.id, name: f.originalName ?? f.name, kind: f.type,
+          })),
+          activeFile: cur ? { id: cur.id, name: cur.originalName ?? cur.name, kind: cur.type } : null,
+        })
+        agent.state = toCloneable({ agent_model_choice: settings.modelChoice, snapshot })
 
         const subscriber: AgentSubscriber = {
           onTextMessageContentEvent: ({ event }) => {
