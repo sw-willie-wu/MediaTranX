@@ -175,7 +175,11 @@ const _NON_SET_FIELD_TOOLS: ToolDefinition[] = [
   // set_field is at index 5 in the final array — generated dynamically in getTools()
   {
     name: 'click_execute',
-    description: "Submit the active panel's task with the currently set fields.",
+    description:
+      "Submit the active panel's task. ONLY call when the user gives an explicit " +
+      'execute/run/apply/start command. MUST NOT call for mere setup/adjust ' +
+      '("set...", "change...", "switch to..."); after setting fields, stop and ' +
+      'report. If unsure whether to submit, ask the user first.',
     parameters: { type: 'object', properties: {} },
   },
   {
@@ -238,7 +242,10 @@ export function getTools(
 
   const setFieldDef: ToolDefinition = {
     name: 'set_field',
-    description: 'Set a field on the active panel. Field name & valid values are in state.panel_schema.',
+    description:
+      'Set a field on the active panel. Use ONLY field names listed in the ' +
+      'active_panel.fields of the current state; pick values from each field\'s ' +
+      'options. Do not invent fields or guess values.',
     parameters: {
       type: 'object',
       properties: {
