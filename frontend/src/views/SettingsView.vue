@@ -10,6 +10,7 @@ import SettingsAbout from '@/components/settings/SettingsAbout.vue'
 import SettingsAgent from '@/components/settings/SettingsAgent.vue'
 import SettingsVideoDownload from '@/components/settings/SettingsVideoDownload.vue'
 import { useViewHost } from '@/composables/useViewHost'
+import { subfunctionsForView } from '@/agent/agentNavCatalog'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -19,7 +20,7 @@ const activeTab = ref((route.query.tab as string) || 'general')
 useViewHost('settings', {
   currentFunction: activeTab,
   setCurrentFunction: (id) => { activeTab.value = id },
-  validSubfunctions: () => ['general', 'system', 'models', 'agent', 'video-download', 'about'],
+  validSubfunctions: () => subfunctionsForView('settings'),
 })
 
 const tabs = computed(() => [
