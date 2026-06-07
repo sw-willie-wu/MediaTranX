@@ -523,7 +523,10 @@ class TestStateSnapshot:
         _ = [e async for e in svc.run(inp)]
         sysmsg = chat.last_session.received_messages[0]
         assert sysmsg["role"] == "system"
-        assert "# 當前狀態" in sysmsg["content"]
+        # "## 我在哪" is emitted ONLY by render_state, never by the static prompt
+        # (the prompt's SOP mentions 「# 當前狀態」, so that substring can't
+        # discriminate folded vs not). This proves the snapshot was rendered in.
+        assert "## 我在哪" in sysmsg["content"]
         assert "/video" in sysmsg["content"]
         assert "MediaTranX" in sysmsg["content"]   # static prompt still present
 
@@ -537,4 +540,5 @@ class TestStateSnapshot:
         _ = [e async for e in svc.run(inp)]
         sysmsg = chat.last_session.received_messages[0]
         assert sysmsg["role"] == "system"
-        assert "# 當前狀態" not in sysmsg["content"]
+        # render-only marker absent → no snapshot block was folded in
+        assert "## 我在哪" not in sysmsg["content"]
