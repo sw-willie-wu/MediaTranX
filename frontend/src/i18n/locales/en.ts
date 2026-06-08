@@ -1129,6 +1129,9 @@ export default {
       edit: 'Edit',
       refresh: 'Refresh Models',
       delete: 'Delete',
+      chunkCtxBudget: 'Batch context budget',
+      chunkCtxBudgetAuto: 'auto',
+      chunkCtxBudgetHint: 'auto = derive from the model automatically. Translation batches scale with this; summary stays coherent up to ~16k so higher has no extra effect. If too large to fit, you\'ll be warned to lower it.',
     },
 
     agent: {

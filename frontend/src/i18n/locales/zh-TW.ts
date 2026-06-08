@@ -1129,6 +1129,9 @@ export default {
       edit: '編輯',
       refresh: '重新整理模型',
       delete: '刪除',
+      chunkCtxBudget: '批次 context 預算',
+      chunkCtxBudgetAuto: '自動',
+      chunkCtxBudgetHint: '自動＝依模型自動決定。翻譯批次隨之變動；摘要為保連貫約 16k 後無額外效果；過大若塞不進會提示調小。',
     },
 
     agent: {
