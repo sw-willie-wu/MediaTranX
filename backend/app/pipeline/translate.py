@@ -123,9 +123,14 @@ def translate_srt_cloud(
             {"role": "user", "content": prompt},
         ]
         max_tokens = min(len(srt_text) * 3, remote_config["max_tokens"])
+        # Non-None abort_hook selects the provider's streaming path (gap-based
+        # per-recv timeout) instead of the 300s single-read blocking path. A
+        # no-op hook keeps pipeline/ free of a services/ import (layering); the
+        # SRT path's cancellation is handled between batches via on_progress.
         translated_srt = prov.chat(
             model=model, messages=messages,
             max_tokens=max_tokens, temperature=remote_config["temperature"],
+            abort_hook=lambda _resp: None,
         )
 
         batch_translated = parse_srt_response(translated_srt, batch)

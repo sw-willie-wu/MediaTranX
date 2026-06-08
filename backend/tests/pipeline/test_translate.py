@@ -222,3 +222,23 @@ def test_translate_srt_cloud_respects_remote_batch_cap():
 
     # 120 segs / cap 50 → ceil = 3 batches → 3 provider calls
     assert prov.chat.call_count == 3
+
+
+def test_translate_srt_cloud_routes_through_session_streaming():
+    """Provider must be invoked with a non-None abort_hook (streaming path)."""
+    class OpenAIProvider:
+        pass
+    prov = OpenAIProvider()
+    prov.chat = MagicMock(return_value="dummy-srt")
+    segs = _segs(2)
+
+    cfg = {"temperature": 0.1, "max_tokens": 4096, "max_srt_batch": 0}
+    with patch("app.adapters.ai.inference_config.get_remote_inference_config", return_value=cfg), \
+         patch("app.utils.subtitles.parse_srt_response", side_effect=lambda srt, batch: batch), \
+         patch("app.pipeline.translate.get_cloud_ctx", return_value=1_000_000):
+        tr.translate_srt_cloud(segs, "en", "zh", prov, "gpt-4o")
+
+    assert prov.chat.called
+    _, kwargs = prov.chat.call_args
+    assert kwargs.get("abort_hook") is not None      # streaming path
+    assert kwargs.get("model") == "gpt-4o"           # model still passed
