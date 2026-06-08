@@ -442,14 +442,13 @@ class OllamaProvider(RemoteProvider):
         """Ollama chat completion.
 
         Dual-path:
-        - abort_hook is None → _chat_blocking (legacy single-read,
-          timeout=300, stream=False). Used by the 5 existing prov.chat
-          callers (subtitle / transcribe / lyrics / doc translate /
-          doc ocr); byte-identical behaviour preserved.
+        - abort_hook is None → _chat_blocking (single-read, timeout=300,
+          stream=False). App callers no longer use this — they select the
+          streaming path by passing an abort_hook (via RemoteChatSession for the
+          5 service-layer callers, or a no-op hook for the pipeline SRT path).
         - abort_hook is not None → _chat_streaming (NDJSON line-by-line,
-          timeout=30, stream=True, hook receives HTTPResponse so the
-          caller can close the socket from another thread to interrupt
-          the read). Used by RemoteChatSession for video summary remote.
+          timeout=600 per-recv, stream=True; the hook receives the HTTPResponse
+          so the caller can close the socket from another thread to interrupt).
 
         task: accepted for interface symmetry; Ollama has no built-in
         thinking budget to suppress, so this kwarg is ignored.

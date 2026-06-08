@@ -1,5 +1,8 @@
 """Unit tests for RemoteChatSession (remote-provider adapter)."""
+import threading
 from unittest.mock import MagicMock
+
+import pytest
 
 from app.services.llm.remote_chat import RemoteChatSession
 
@@ -44,3 +47,28 @@ def test_kill_process_no_response_only_sets_pending():
     assert session._current_response is None
     session.kill_process()  # must not raise
     assert session._kill_pending is True
+
+
+def test_session_cancel_surfaces_taskcancelled():
+    """on_progress raising TaskCancelledError → kill_process closes resp →
+    provider OSError → cancel_guard re-raises TaskCancelledError."""
+    from app.handler.exceptions import TaskCancelledError
+
+    killed = threading.Event()
+
+    def fake_chat(*, model, messages, max_tokens, temperature, abort_hook, task=None):
+        resp = MagicMock()
+        resp.close.side_effect = lambda: killed.set()
+        abort_hook(resp)                       # stash the closable response
+        assert killed.wait(3.0), "kill_process was never called"
+        raise OSError("socket closed by kill_process")
+
+    prov = MagicMock()
+    prov.chat = fake_chat
+
+    def on_progress(p, m):
+        raise TaskCancelledError("user cancelled")
+
+    session = RemoteChatSession(prov, "m", on_progress=on_progress, cancel_pct=0.5)
+    with pytest.raises(TaskCancelledError):
+        session.chat(messages=[{"role": "user", "content": "x"}], max_tokens=10, temperature=0.0)
