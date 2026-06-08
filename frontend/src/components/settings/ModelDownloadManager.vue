@@ -395,6 +395,7 @@ onMounted(async () => {
                 {{ editBudgetIdx >= BUDGET_AUTO_IDX ? $t('settings.remote.chunkCtxBudgetAuto') : BUDGET_STOPS[editBudgetIdx] }}
               </span>
             </div>
+            <p class="download-hint"><i class="bi bi-info-circle"></i> {{ $t('settings.remote.chunkCtxBudgetHint') }}</p>
           </div>
           <div class="conn-edit-actions">
             <button class="btn-secondary btn-sm" @click="cancelEdit">{{ $t('common.cancel') }}</button>

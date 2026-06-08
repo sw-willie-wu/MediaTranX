@@ -76,3 +76,14 @@ def test_update_other_field_does_not_clear_budget(client):
     )
     assert r2.status_code == 200, r2.text
     assert r2.json()["chunk_ctx_budget"] == 8192
+
+
+@pytest.mark.parametrize("bad", [100, 1024, 999999999])
+def test_create_rejects_out_of_range_budget(client, bad):
+    """Out-of-range chunk_ctx_budget is rejected by schema validation (not stored)."""
+    r = client.post(
+        "/api/setup/remote/connections",
+        json={"provider": "ollama", "name": "z", "endpoint": "http://h",
+              "chunk_ctx_budget": bad},
+    )
+    assert r.status_code == 422, r.text
