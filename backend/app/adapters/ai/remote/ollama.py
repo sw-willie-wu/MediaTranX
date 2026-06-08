@@ -413,6 +413,22 @@ class OllamaProvider(RemoteProvider):
         except Exception:
             return super().get_summary_chunking_hints(model)
 
+    def _maybe_warn_truncation(self, messages: list[dict], prompt_eval_count) -> None:
+        """Best-effort per-instance warning when Ollama appears to have silently
+        truncated the prompt (its loaded context < what we sent). Conservative:
+        _estimate_messages_tokens over-estimates ~33%, so only flag egregious
+        gaps. Log-only — diagnostic, never raises."""
+        if prompt_eval_count is None:
+            return
+        est = _estimate_messages_tokens(messages)
+        if est > 4000 and prompt_eval_count < est * 0.5 and not self._truncation_warned:
+            self._truncation_warned = True
+            logger.warning(
+                "Ollama response possibly truncated (input too large for model "
+                "context): est=%d prompt_eval=%d — reduce chunk_ctx_budget or use auto",
+                est, prompt_eval_count,
+            )
+
     def chat(
         self,
         model: str,
@@ -487,6 +503,7 @@ class OllamaProvider(RemoteProvider):
                         "remote_error",
                         f"Ollama proxy error: {_format_proxy_error(result)}",
                     )
+                self._maybe_warn_truncation(messages, result.get("prompt_eval_count"))
                 content = result.get("message", {}).get("content", "")
                 return content.strip()
         except urllib.error.HTTPError as e:
@@ -541,6 +558,7 @@ class OllamaProvider(RemoteProvider):
             # and is wrapped below.
             abort_hook(resp)
             parts: list[str] = []
+            last_eval: Optional[int] = None
             for raw in resp:
                 line = raw.strip()
                 if not line:
@@ -567,7 +585,9 @@ class OllamaProvider(RemoteProvider):
                     if delta:
                         parts.append(delta)
                 if obj.get("done") is True:
+                    last_eval = obj.get("prompt_eval_count")
                     break
+            self._maybe_warn_truncation(messages, last_eval)
             return "".join(parts).strip()
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
