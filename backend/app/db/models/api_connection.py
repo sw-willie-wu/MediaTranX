@@ -17,5 +17,6 @@ class ApiConnection(SQLModel, table=True):
     endpoint: str  # API endpoint URL
     api_key: Optional[str] = None  # API key / token (not required for ollama)
     enabled: bool = Field(default=True)
+    chunk_ctx_budget: Optional[int] = None  # null = auto（依模型偵測 max 切 chunk）
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
