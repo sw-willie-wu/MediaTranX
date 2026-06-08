@@ -9,6 +9,7 @@ from app.services.document.translate_service.service import (
     TranslateService,
     TASK_TYPE_DOCUMENT_TRANSLATE,
 )
+from app.services.document.translate_service import text as txt
 
 
 def _fake_file_service(tmp_path, *, content: str, name: str) -> MagicMock:
@@ -202,6 +203,19 @@ def test_execute_subtitle_remote_raises_when_provider_unavailable(tmp_path):
              "remote": True, "provider": "openai", "conn_id": 1, "remote_model": "gpt-4o"},
             lambda p, m: None,
         )
+
+
+def test_translate_text_cloud_routes_through_session_streaming():
+    prov = MagicMock(name="prov")
+    prov.chat = MagicMock(return_value="translated")
+    cfg = {"temperature": 0.1, "max_tokens": 4096}
+    with patch("app.adapters.ai.inference_config.get_remote_inference_config", return_value=cfg), \
+         patch("app.services.document.translate_service.text._get_cloud_text_chunk_size", return_value=10_000):
+        out = txt.translate_text_cloud("hello world", "en", "zh", prov, "gpt-4o")
+    assert out == "translated"
+    _, kwargs = prov.chat.call_args
+    assert kwargs.get("abort_hook") is not None
+    assert kwargs.get("model") == "gpt-4o"
 
 
 def test_execute_emits_translate_complete_at_end(tmp_path):
