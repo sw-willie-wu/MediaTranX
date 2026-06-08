@@ -482,6 +482,13 @@ class OllamaProvider(RemoteProvider):
             "messages": messages,
             "stream": False,
             "options": {
+                # NOTE: we deliberately do NOT send num_ctx. The server self-
+                # manages context load (bridges load full; sending num_ctx is
+                # useless-or-harmful — it can pin a model's context small for all
+                # users). We instead size each chunk to fit (see get_model_ctx +
+                # the batch/chunk math in translate.py / summary_service). Weak/
+                # shared stock-Ollama operators should set OLLAMA_CONTEXT_LENGTH
+                # server-side to bound the load.
                 "num_predict": max_tokens,
                 "temperature": temperature,
             },

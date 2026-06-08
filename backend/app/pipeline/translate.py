@@ -46,6 +46,10 @@ def _calc_srt_batch_size(n_ctx: int, seg_dicts: list[dict], max_batch: int = 0) 
     # Each segment appears in both input AND output (translation ≈ same length)
     # Total per segment ≈ input + output = 2 × avg_seg_tokens
     # Conservative: 50% utilization to absorb token estimation error + prompt overhead
+    #
+    # DO NOT REMOVE the `* 2` or the `// 2`: together they reserve output
+    # headroom. The context window is shared by prompt+generation, so packing
+    # input to the full n_ctx would leave no room for the model to respond.
     tokens_per_seg = avg_seg_tokens * 2
     batch_size = max(1, n_ctx // 2 // tokens_per_seg)
 
