@@ -331,13 +331,13 @@ def test_proxy_error_frame_blocking_path_also_surfaces_detail():
 # Pre-flight VLM log — failed VLM picks previously emitted zero telemetry
 # (the success-time log in summary_service never fired). Now we log before
 # the HTTP call so failed paths still leave a paper trail with the model
-# name, image count, and chosen num_ctx.
+# name, image count, and max_tokens.
 # ───────────────────────────────────────────────────────────────────────────
 
 
 def test_chat_with_ollama_native_images_emits_preflight_log(caplog):
     """Ollama-native shape {'images': [...]} on the message → INFO log fires
-    with model + image count + num_ctx before the HTTP request."""
+    with model + image count + max_tokens before the HTTP request."""
     import logging
     from app.adapters.ai.remote.ollama import OllamaProvider
 

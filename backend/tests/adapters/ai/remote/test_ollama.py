@@ -191,9 +191,6 @@ def test_chat_returns_message_content():
 
 def test_chat_payload_includes_options():
     prov = OllamaProvider()
-    # Pre-populate ctx cache so _resolve_model_ctx skips /api/show and the
-    # single urlopen mock only sees the /api/chat call (Issue #4 blast-radius).
-    prov._ctx_cache["m"] = 65536
     captured = []
     def _side_effect(req, timeout=None):
         captured.append(json.loads(req.data.decode("utf-8")))
@@ -206,13 +203,11 @@ def test_chat_payload_includes_options():
     assert payload["stream"] is False
     assert payload["options"]["num_predict"] == 500
     assert payload["options"]["temperature"] == 0.7
+    assert "num_ctx" not in payload["options"]
 
 
 def test_chat_url_targets_api_chat():
     prov = OllamaProvider(endpoint="http://host:11434")
-    # Pre-populate ctx cache so _resolve_model_ctx skips /api/show and the
-    # single urlopen mock only sees the /api/chat call (Issue #4 blast-radius).
-    prov._ctx_cache["m"] = 65536
     captured = []
     def _side_effect(req, timeout=None):
         captured.append(req)
@@ -296,37 +291,3 @@ def test_get_summary_chunking_hints_floors_model_cap_at_6k(monkeypatch):
     # min(int(4096*0.75), 16000) = 3072; max(6000, 3072) = 6000
     assert hints == {"n_ctx": 4096, "model_cap": 6000}
 
-
-# ─── _compute_num_ctx model_ctx clamp (Issue #4) ───
-
-def test_compute_num_ctx_clamps_to_model_ctx(monkeypatch):
-    import app.adapters.ai.remote.ollama as ol
-    monkeypatch.setattr(ol, "_NUM_CTX_CAP", 32768)
-    # big need (prompt + max_tokens) would exceed the model's real 12k window
-    msgs = [{"role": "user", "content": "x" * 21000}]  # ~7k tokens
-    assert ol._compute_num_ctx(msgs, max_tokens=16384, model_ctx=12000) == 12000
-
-
-def test_compute_num_ctx_no_clamp_when_model_ctx_unknown(monkeypatch):
-    import app.adapters.ai.remote.ollama as ol
-    monkeypatch.setattr(ol, "_NUM_CTX_CAP", 32768)
-    msgs = [{"role": "user", "content": "x" * 21000}]
-    # model_ctx=0 → old behaviour: bounded by CAP only
-    n = ol._compute_num_ctx(msgs, max_tokens=16384, model_ctx=0)
-    assert n <= 32768 and n >= 4096 and n > 12000  # not clamped to 12k
-
-
-def test_compute_num_ctx_model_ctx_below_floor(monkeypatch):
-    import app.adapters.ai.remote.ollama as ol
-    # tiny model window wins even over FLOOR (model genuinely can't do more)
-    assert ol._compute_num_ctx([{"role": "user", "content": "hi"}], max_tokens=100, model_ctx=2048) == 2048
-
-
-def test_resolve_model_ctx_caches(monkeypatch):
-    from app.adapters.ai.remote.ollama import OllamaProvider
-    p = OllamaProvider("http://localhost:11434", None)
-    calls = []
-    monkeypatch.setattr(p, "get_model_ctx", lambda m: calls.append(m) or 12000)
-    assert p._resolve_model_ctx("qwen2") == 12000
-    assert p._resolve_model_ctx("qwen2") == 12000
-    assert calls == ["qwen2"]  # only queried once

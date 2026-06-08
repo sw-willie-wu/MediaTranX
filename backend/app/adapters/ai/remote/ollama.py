@@ -18,38 +18,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
 
-# num_ctx bounds for the `options.num_ctx` we send to Ollama in every chat
-# request. Background: Ollama's own default when modelfile doesn't set
-# PARAMETER num_ctx is 2048-4096; requests that need more get silently
-# truncated. So we must send something. But going TOO high (e.g. auto-
-# bumping to 16k+ on a 120B model) pushes Ollama to reload-up with a bigger
-# KV cache, which can OOM the server — particularly on a shared DGX with
-# multiple concurrent loaded models (e.g. one 120B LLM + one 120B-class VLM
-# each reserving 20-30GB of KV cache @ 16k can exceed 80GB-per-card limits).
-#
-# Trade-off picked: cap at 8192 by default — matches the chunking-hints
-# fallback used in summary_service so input_budget never asks for more than
-# we ourselves announced. Users on bigger DGX with budget for larger KV
-# cache can override via env: `MTX_OLLAMA_MAX_NUM_CTX=32768`.
-import os as _os
-_NUM_CTX_FLOOR = 4096
-_NUM_CTX_CAP = int(_os.environ.get("MTX_OLLAMA_MAX_NUM_CTX", "8192"))
-
-
-def set_num_ctx_cap(value: int) -> None:
-    """Live-update the num_ctx ceiling (DB-backed setting, no restart).
-
-    _compute_num_ctx reads the module global _NUM_CTX_CAP, so mutating it here
-    takes effect for the next chat request. Mirrors device.set_allow_cpu_fallback.
-    """
-    global _NUM_CTX_CAP
-    _NUM_CTX_CAP = int(value)
-
-
 def _estimate_messages_tokens(messages: list[dict]) -> int:
     """Rough token estimate: total char count / 3. Conservative for mixed
-    English/Chinese transcript content; only used to size num_ctx (over-
-    estimating is harmless, under-estimating causes silent truncation)."""
+    English/Chinese transcript content; used for truncation-detection token
+    estimate (over-estimating is harmless, under-estimating causes silent
+    truncation)."""
     total_chars = 0
     for msg in messages:
         c = msg.get("content", "")
@@ -99,17 +72,6 @@ def _count_images(messages: list[dict]) -> int:
     return n
 
 
-def _compute_num_ctx(messages: list[dict], max_tokens: int, model_ctx: int = 0) -> int:
-    """Bound (prompt_estimate + max_tokens + safety) between FLOOR and CAP, then
-    clamp to the model's REAL context window so we never request a KV cache
-    larger than the model supports (that OOMs a shared Ollama/DGX). model_ctx<=0
-    means 'unknown' → skip that clamp."""
-    needed = _estimate_messages_tokens(messages) + max_tokens + 500  # 500 safety
-    bounded = max(_NUM_CTX_FLOOR, min(needed, _NUM_CTX_CAP))
-    if model_ctx > 0:
-        bounded = min(bounded, model_ctx)  # never exceed the model's real window
-    return bounded
-
 
 class OllamaProvider(RemoteProvider):
     """
@@ -128,7 +90,6 @@ class OllamaProvider(RemoteProvider):
                  chunk_ctx_budget: Optional[int] = None):
         super().__init__(endpoint, api_key)
         self._caps_cache: dict[str, list[str]] = {}  # model_name -> capabilities
-        self._ctx_cache: dict[str, int] = {}  # 保留：_resolve_model_ctx 仍用（後續任務才移除）
         self._chunk_ctx_budget = chunk_ctx_budget  # per-connection chunk budget override; None=auto
         self._truncation_warned = False            # per-instance truncation-warning dedup
 
@@ -422,15 +383,6 @@ class OllamaProvider(RemoteProvider):
         # direction; matches _NUM_CTX_CAP's default so usually no observable diff.
         return 8192
 
-    def _resolve_model_ctx(self, model_name: str) -> int:
-        """Cached get_model_ctx — avoids an /api/show call on every batch.
-
-        Cached for the provider's process lifetime (singleton); not invalidated
-        if the model is reconfigured in Ollama mid-session — restart to refresh."""
-        if model_name not in self._ctx_cache:
-            self._ctx_cache[model_name] = self.get_model_ctx(model_name)
-        return self._ctx_cache[model_name]
-
     def get_summary_chunking_hints(self, model: str) -> dict:
         """Query Ollama /api/show for the model's actual num_ctx.
 
@@ -473,33 +425,24 @@ class OllamaProvider(RemoteProvider):
 
         Spec §F1.
         """
-        # Resolve the model's real context window once so both _chat_blocking
-        # and _chat_streaming clamp num_ctx to it (Issue #4 — OOM on shared
-        # DGX when MTX_OLLAMA_MAX_NUM_CTX > model's real ctx).
-        model_ctx = self._resolve_model_ctx(model)
-
         # Pre-flight log for vision (VLM) calls — the existing telemetry log
         # in summary_service only fires on success, leaving failed VLM picks
         # (e.g. proxy 500) with zero telemetry. frame_picker only reports
         # "VLM pick failed" without model / payload context, so re-running
-        # to diagnose is blind. Log model + image count + chosen num_ctx
-        # before the HTTP call so failures still leave a paper trail.
+        # to diagnose is blind. Log model + image count + max_tokens before
+        # the HTTP call so failures still leave a paper trail.
         img_count = _count_images(messages)
         if img_count > 0:
-            logger.info(
-                "Ollama VLM chat: model=%s images=%d num_ctx=%d max_tokens=%d",
-                model, img_count,
-                _compute_num_ctx(messages, max_tokens, model_ctx), max_tokens,
-            )
+            logger.info("Ollama VLM chat: model=%s images=%d max_tokens=%d",
+                        model, img_count, max_tokens)
 
         if abort_hook is None:
-            return self._chat_blocking(model, messages, max_tokens, temperature, model_ctx)
-        return self._chat_streaming(model, messages, max_tokens, temperature, abort_hook, model_ctx)
+            return self._chat_blocking(model, messages, max_tokens, temperature)
+        return self._chat_streaming(model, messages, max_tokens, temperature, abort_hook)
 
     def _chat_blocking(
         self, model: str, messages: list[dict],
         max_tokens: int, temperature: float,
-        model_ctx: int = 0,
     ) -> str:
         """Legacy path. Single .read(), stream=False, 300s socket timeout.
         Preserved verbatim for existing callers."""
@@ -510,14 +453,6 @@ class OllamaProvider(RemoteProvider):
             "options": {
                 "num_predict": max_tokens,
                 "temperature": temperature,
-                # Tell Ollama how much context this request needs. Without it,
-                # Ollama uses modelfile / OLLAMA_CONTEXT_LENGTH default (often
-                # 4096) and silently truncates anything bigger. With it,
-                # Ollama loads the model with at least num_ctx slots; first
-                # request that exceeds the loaded size reloads (slow once,
-                # cached after) — NUM_PARALLEL=1 makes this safe.
-                # model_ctx clamps to the model's real window (Issue #4).
-                "num_ctx": _compute_num_ctx(messages, max_tokens, model_ctx),
             },
         }
         data = json.dumps(payload).encode("utf-8")
@@ -553,7 +488,6 @@ class OllamaProvider(RemoteProvider):
         self, model: str, messages: list[dict],
         max_tokens: int, temperature: float,
         abort_hook: Callable,
-        model_ctx: int = 0,
     ) -> str:
         """Streamable + cancellable path. stream=True, 30s socket timeout
         per recv; abort_hook(resp) called immediately after urlopen returns
@@ -565,11 +499,6 @@ class OllamaProvider(RemoteProvider):
             "options": {
                 "num_predict": max_tokens,
                 "temperature": temperature,
-                # See _chat_blocking comment — num_ctx prevents silent
-                # truncation when modelfile / env default is smaller than
-                # the request needs.
-                # model_ctx clamps to the model's real window (Issue #4).
-                "num_ctx": _compute_num_ctx(messages, max_tokens, model_ctx),
             },
         }
         data = json.dumps(payload).encode("utf-8")
