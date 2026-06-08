@@ -10,12 +10,10 @@ from pydantic import BaseModel
 
 from app.init.container import AppContainer
 from app.schemas.compute_settings import ComputeSettings, ComputeSettingsUpdate
-from app.schemas.ollama_settings import OllamaSettings, OllamaSettingsUpdate
 
 if TYPE_CHECKING:
     from app.services.setup.compute_settings_service import ComputeSettingsService
     from app.services.setup.config_service import ConfigService
-    from app.services.setup.ollama_settings_service import OllamaSettingsService
 
 router = APIRouter()
 
@@ -65,21 +63,3 @@ async def put_compute_settings(
     """Update CPU-fallback compute policy (takes effect immediately)."""
     return service.update_settings(request.model_dump(exclude_none=True))
 
-
-@router.get("/config/ollama", response_model=OllamaSettings)
-@inject
-async def get_ollama_settings(
-    service: "OllamaSettingsService" = Depends(Provide[AppContainer.ollama_settings_service]),
-):
-    """Get current Ollama num_ctx cap (DB value, or env fallback, or 8192)."""
-    return service.get_settings()
-
-
-@router.put("/config/ollama", response_model=OllamaSettings)
-@inject
-async def put_ollama_settings(
-    request: OllamaSettingsUpdate,
-    service: "OllamaSettingsService" = Depends(Provide[AppContainer.ollama_settings_service]),
-):
-    """Update Ollama num_ctx cap (takes effect immediately, no restart)."""
-    return service.update_settings(request.model_dump(exclude_none=True))

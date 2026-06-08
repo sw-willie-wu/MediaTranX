@@ -149,13 +149,6 @@ def build_lifespan():
         except Exception:
             LOGGER.exception("Failed to apply CPU-fallback policy (using default ON)")
 
-        # Apply persisted Ollama num_ctx cap before any task can run.
-        try:
-            container.ollama_settings_service().apply_persisted()
-            LOGGER.info("Ollama num_ctx cap applied")
-        except Exception:
-            LOGGER.exception("Failed to apply Ollama settings (using env/default)")
-
         # Import heavy domain services in the background so the server
         # starts accepting connections immediately (cold-start optimization).
         threading.Thread(
