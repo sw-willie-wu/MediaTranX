@@ -94,7 +94,8 @@ def translate_srt_cloud(
 
     if batch_size is None:
         n_ctx = get_cloud_ctx(prov, model)
-        batch_size = _calc_srt_batch_size(n_ctx, seg_dicts)
+        max_batch = remote_config.get("max_srt_batch", 0)
+        batch_size = _calc_srt_batch_size(n_ctx, seg_dicts, max_batch=max_batch)
 
     total = len(seg_dicts)
     num_batches = (total + batch_size - 1) // batch_size

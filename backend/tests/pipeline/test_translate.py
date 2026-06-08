@@ -204,3 +204,21 @@ def test_translate_srt_auto_dispatches_to_local_when_session_set():
 def test_translate_srt_auto_raises_when_neither_provided():
     with pytest.raises(ValueError, match="prov.*session"):
         tr.translate_srt_auto(_segs(1), "en", "zh-TW")
+
+
+def test_translate_srt_cloud_respects_remote_batch_cap():
+    """A configured max_srt_batch must cap cloud batch size → multiple batches."""
+    class OpenAIProvider:
+        pass
+    prov = OpenAIProvider()
+    prov.chat = MagicMock(return_value="dummy-srt")
+    segs = _segs(120)
+
+    cfg = {"temperature": 0.1, "max_tokens": 4096, "max_srt_batch": 50}
+    with patch("app.adapters.ai.inference_config.get_remote_inference_config", return_value=cfg), \
+         patch("app.utils.subtitles.parse_srt_response", side_effect=lambda srt, batch: batch), \
+         patch("app.pipeline.translate.get_cloud_ctx", return_value=1_000_000):
+        tr.translate_srt_cloud(segs, "en", "zh", prov, "gpt-4o")
+
+    # 120 segs / cap 50 → ceil = 3 batches → 3 provider calls
+    assert prov.chat.call_count == 3
