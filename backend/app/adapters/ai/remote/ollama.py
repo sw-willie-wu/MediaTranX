@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
 
+_CTX_CACHE: dict[tuple[str, str], int] = {}  # (endpoint, model) -> ctx; only /api/show truths
+
 def _estimate_messages_tokens(messages: list[dict]) -> int:
     """Rough token estimate: total char count / 3. Conservative for mixed
     English/Chinese transcript content; used for truncation-detection token
@@ -349,39 +351,52 @@ class OllamaProvider(RemoteProvider):
                 except Exception:
                     pass
 
+    def _show(self, model_name: str) -> dict:
+        """POST /api/show and return the parsed JSON response."""
+        payload = json.dumps({"name": model_name}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.endpoint}/api/show", data=payload,
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read())
+
+    @staticmethod
+    def _parse_num_ctx_from_text(info: dict) -> Optional[int]:
+        """Parse num_ctx from parameters or modelfile text. Returns None when not found."""
+        params = info.get("parameters", "")
+        for line in params.split("\n"):
+            if "num_ctx" in line:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    return int(parts[-1])
+        modelfile = info.get("modelfile", "")
+        for line in modelfile.split("\n"):
+            if "num_ctx" in line.lower():
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    return int(parts[-1])
+        return None
+
     def get_model_ctx(self, model_name: str) -> int:
-        """Query Ollama for model's context window size via /api/show."""
-        try:
-            payload = json.dumps({"name": model_name}).encode("utf-8")
-            req = urllib.request.Request(
-                f"{self.endpoint}/api/show",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                info = json.loads(resp.read())
-                # num_ctx is in model parameters
-                params = info.get("parameters", "")
-                for line in params.split("\n"):
-                    if "num_ctx" in line:
-                        parts = line.strip().split()
-                        if len(parts) >= 2:
-                            return int(parts[-1])
-                # Fallback: check modelfile
-                modelfile = info.get("modelfile", "")
-                for line in modelfile.split("\n"):
-                    if "num_ctx" in line.lower():
-                        parts = line.strip().split()
-                        if len(parts) >= 2:
-                            return int(parts[-1])
-        except Exception as e:
-            logger.warning(f"Failed to query model ctx for {model_name}: {e}")
-        # Conservative fallback. Note (Issue #4): this value also becomes the
-        # num_ctx clamp ceiling when /api/show fails — i.e. a transient probe
-        # failure under-sizes num_ctx to 8192 rather than risking an OOM. Safe
-        # direction; matches _NUM_CTX_CAP's default so usually no observable diff.
-        return 8192
+        """Model context window for chunk sizing. Raises when unknown — callers
+        (get_cloud_ctx / get_summary_chunking_hints) have their own fallbacks."""
+        # 1) per-connection budget override: short-circuit BEFORE cache/HTTP
+        if self._chunk_ctx_budget is not None:
+            return self._chunk_ctx_budget
+        # 2) module cache (only holds /api/show truths)
+        key = (self.endpoint, model_name)
+        if key in _CTX_CACHE:
+            return _CTX_CACHE[key]
+        # 3) /api/show -> model_info.*.context_length (max), else parameters/modelfile
+        info = self._show(model_name)
+        mi = info.get("model_info") or {}
+        ctxs = [int(v) for k, v in mi.items()
+                if k.endswith(".context_length") and isinstance(v, (int, float))]
+        val = max(ctxs) if ctxs else self._parse_num_ctx_from_text(info)
+        if val is None:
+            raise RuntimeError(f"model ctx unknown for {model_name}")
+        _CTX_CACHE[key] = val
+        return val
 
     def get_summary_chunking_hints(self, model: str) -> dict:
         """Query Ollama /api/show for the model's actual num_ctx.
