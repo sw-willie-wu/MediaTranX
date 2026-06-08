@@ -63,7 +63,8 @@ class TestAddConnection:
         assert result["id"] == 1
         # encrypt-on-write: DAO receives the encrypted value ("sk-x" reversed = "x-ks")
         fake_dao.create.assert_called_once_with(
-            provider="openai", name="prod", endpoint="https://api.openai.com", api_key="enc:fake:x-ks",
+            provider="openai", name="prod", endpoint="https://api.openai.com",
+            api_key="enc:fake:x-ks", chunk_ctx_budget=None,
         )
 
     def test_response_redacts_api_key(self, fake_dao, fake_cipher):
@@ -122,18 +123,18 @@ class TestProviderDispatch:
         with pytest.raises(ValueError, match="Unknown provider"):
             RemoteService()._get_provider("bogus", "http://x", None)
 
-    @pytest.mark.parametrize("provider,patch_path,class_name", [
-        ("ollama", "app.adapters.ai.remote.ollama.OllamaProvider", "OllamaProvider"),
-        ("openai", "app.adapters.ai.remote.openai.OpenAIProvider", "OpenAIProvider"),
-        ("gemini", "app.adapters.ai.remote.gemini.GeminiProvider", "GeminiProvider"),
+    @pytest.mark.parametrize("provider,patch_path,class_name,extra_kwargs", [
+        ("ollama", "app.adapters.ai.remote.ollama.OllamaProvider", "OllamaProvider", {"chunk_ctx_budget": None}),
+        ("openai", "app.adapters.ai.remote.openai.OpenAIProvider", "OpenAIProvider", {}),
+        ("gemini", "app.adapters.ai.remote.gemini.GeminiProvider", "GeminiProvider", {}),
     ])
-    def test_known_provider_instantiates(self, fake_dao, provider, patch_path, class_name):
+    def test_known_provider_instantiates(self, fake_dao, provider, patch_path, class_name, extra_kwargs):
         with patch(patch_path) as MockProvider:
             instance = MagicMock()
             MockProvider.return_value = instance
             result = RemoteService()._get_provider(provider, "http://x", "key")
         assert result is instance
-        MockProvider.assert_called_once_with("http://x", "key")
+        MockProvider.assert_called_once_with("http://x", "key", **extra_kwargs)
 
 
 class TestTestConnection:
@@ -173,13 +174,13 @@ class TestTestConnection:
 
 class TestGetProviderForConnection:
     def test_with_conn_id_uses_dao_lookup(self, fake_dao):
-        conn = _conn_obj(id=5, provider="openai", endpoint="http://x", api_key="k")
+        conn = _conn_obj(id=5, provider="openai", endpoint="http://x", api_key="k", chunk_ctx_budget=None)
         fake_dao.get_by_id.return_value = conn
         fake_provider = MagicMock()
         with patch.object(RemoteService, "_get_provider", return_value=fake_provider) as mock_get:
             result = RemoteService().get_provider_for_connection(5, "openai")
         assert result is fake_provider
-        mock_get.assert_called_once_with("openai", "http://x", "k")
+        mock_get.assert_called_once_with("openai", "http://x", "k", None)
 
     def test_conn_id_none_uses_first_active(self, fake_dao):
         active = _conn_obj(id=1, provider="ollama", endpoint="http://o", api_key=None, enabled=True)
@@ -271,10 +272,12 @@ class TestKeyHint:
 
 class TestDecryptOnRead:
     def test_get_provider_decrypts_stored_key(self, fake_dao, fake_cipher):
-        fake_dao.get_by_id.return_value = _conn_obj(id=5, provider="openai", endpoint="http://x", api_key="enc:fake:" + "sk-X"[::-1])
+        conn = _conn_obj(id=5, provider="openai", endpoint="http://x",
+                         api_key="enc:fake:" + "sk-X"[::-1], chunk_ctx_budget=None)
+        fake_dao.get_by_id.return_value = conn
         with patch.object(RemoteService, "_get_provider", return_value=MagicMock()) as mg:
             RemoteService().get_provider_for_connection(5, "openai")
-        mg.assert_called_once_with("openai", "http://x", "sk-X")   # decrypted
+        mg.assert_called_once_with("openai", "http://x", "sk-X", None)   # decrypted, budget forwarded
 
     def test_get_provider_undecryptable_raises_remote_error(self, fake_dao, fake_cipher):
         from app.handler.exceptions import RemoteApiError

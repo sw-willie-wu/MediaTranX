@@ -124,10 +124,13 @@ class OllamaProvider(RemoteProvider):
     PROVIDER_NAME = "ollama"
     IMAGE_PREP_MODE = "raw"
 
-    def __init__(self, endpoint: str = DEFAULT_OLLAMA_ENDPOINT, api_key: Optional[str] = None):
+    def __init__(self, endpoint: str = DEFAULT_OLLAMA_ENDPOINT, api_key: Optional[str] = None,
+                 chunk_ctx_budget: Optional[int] = None):
         super().__init__(endpoint, api_key)
         self._caps_cache: dict[str, list[str]] = {}  # model_name -> capabilities
-        self._ctx_cache: dict[str, int] = {}  # model_name -> real ctx (from /api/show)
+        self._ctx_cache: dict[str, int] = {}  # 保留：_resolve_model_ctx 仍用（後續任務才移除）
+        self._chunk_ctx_budget = chunk_ctx_budget  # per-connection chunk budget override; None=auto
+        self._truncation_warned = False            # per-instance truncation-warning dedup
 
     def connect(self, timeout: int = PROBE_TIMEOUT) -> bool:
         """Check if the Ollama service is running."""

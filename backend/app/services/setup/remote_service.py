@@ -81,6 +81,7 @@ class RemoteService:
         name: str,
         endpoint: str,
         api_key: Optional[str] = None,
+        chunk_ctx_budget: Optional[int] = None,
     ) -> dict:
         """Add a new connection."""
         if api_key:
@@ -90,6 +91,7 @@ class RemoteService:
             name=name,
             endpoint=endpoint,
             api_key=api_key,
+            chunk_ctx_budget=chunk_ctx_budget,
         )
         return self._redact(conn.model_dump())
 
@@ -163,11 +165,12 @@ class RemoteService:
             "capabilities": m.capabilities,
         }
 
-    def _get_provider(self, provider: str, endpoint: str, api_key: Optional[str] = None):
+    def _get_provider(self, provider: str, endpoint: str, api_key: Optional[str] = None,
+                      chunk_ctx_budget: Optional[int] = None):
         """Get provider instance."""
         if provider == "ollama":
             from app.adapters.ai.remote.ollama import OllamaProvider
-            return OllamaProvider(endpoint, api_key)
+            return OllamaProvider(endpoint, api_key, chunk_ctx_budget=chunk_ctx_budget)
         if provider == "openai":
             from app.adapters.ai.remote.openai import OpenAIProvider
             return OpenAIProvider(endpoint, api_key)
@@ -181,10 +184,12 @@ class RemoteService:
         if conn_id is not None:
             conn = self._dao.get_by_id(conn_id)
             if conn:
-                return self._get_provider(conn.provider, conn.endpoint, self._decrypt_stored(conn.api_key))
+                return self._get_provider(conn.provider, conn.endpoint,
+                    self._decrypt_stored(conn.api_key), conn.chunk_ctx_budget)
         # fallback: get the first active connection of this provider
         conns = self._dao.get_by_provider(provider)
         for c in conns:
             if c.enabled:
-                return self._get_provider(c.provider, c.endpoint, self._decrypt_stored(c.api_key))
+                return self._get_provider(c.provider, c.endpoint,
+                    self._decrypt_stored(c.api_key), c.chunk_ctx_budget)
         return None
