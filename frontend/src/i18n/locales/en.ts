@@ -1401,6 +1401,7 @@ export default {
     // Interpolation
     rife: 'Video Frame Interpolation',
     basic_pitch: 'Audio to MIDI',
+    soundfont: 'MIDI Playback Soundfont (GM Instruments)',
     // LLM families (GGUF)
     qwen3: 'Qwen3 Translation Model',
     qwen3vl: 'Qwen3-VL Vision-Language Model (OCR)',

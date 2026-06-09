@@ -1396,6 +1396,7 @@ export default {
     demucs: '音源分離（人聲/鼓/貝斯/吉他/鋼琴/其他）',
     rife: '影片補幀（Frame Interpolation）',
     basic_pitch: '音訊轉 MIDI',
+    soundfont: 'MIDI 播放音色庫（GM 樂器）',
     qwen3: 'Qwen3 翻譯模型',
     qwen3vl: 'Qwen3-VL 視覺語言模型（OCR）',
     internvl2_5: 'InternVL2.5 視覺語言模型（OCR）',
