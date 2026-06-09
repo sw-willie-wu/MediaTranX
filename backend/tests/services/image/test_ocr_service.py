@@ -206,3 +206,23 @@ def test_handle_remote_task_writes_output(tmp_path):
     assert result["char_count"] == len("remote-text")
     written = (fs.output_dir / "in_ocr.md").read_text(encoding="utf-8")
     assert written == "remote-text"
+
+
+def test_handle_remote_task_uses_streaming_session(tmp_path):
+    svc, fs, tm, mm, cs, rs = _make_svc(tmp_path)
+    prov = MagicMock()
+    prov.chat = MagicMock(return_value="remote-text")
+    rs.get_provider_for_connection.return_value = prov
+    with patch("app.utils.vision_messages.prepare_image_for_remote_vlm",
+               return_value=("b64data", "image/png")), \
+         patch("app.utils.vision_messages.build_vision_chat_messages",
+               return_value=[{"role": "user", "content": "ocr"}]), \
+         patch("app.adapters.ai.inference_config.get_remote_inference_config",
+               return_value={"max_tokens": 4096, "temperature": 0.1}):
+        svc._handle_remote_task(
+            {"file_id": "fid", "provider": "openai", "conn_id": 1,
+             "remote_model": "gpt-4o", "format": "md"},
+            lambda p, m: None,
+        )
+    _, kwargs = prov.chat.call_args
+    assert kwargs.get("abort_hook") is not None

@@ -40,6 +40,7 @@ def translate_text_cloud(
 ) -> str:
     """Chunked plain-text translation (cloud)."""
     from app.adapters.ai.inference_config import get_remote_inference_config
+    from app.services.llm.remote_chat import RemoteChatSession
     from app.utils.prompts import build_translate_prompt
     from app.utils.text_chunking import split_text
 
@@ -51,6 +52,7 @@ def translate_text_cloud(
     total = len(chunks)
     logger.info(f"translate_text_cloud: {len(text)} chars, max_chars={max_chars}, chunks={total}")
     translated_chunks = []
+    session = RemoteChatSession(prov, model, on_progress=on_progress)
 
     for i, chunk in enumerate(chunks):
         if on_progress:
@@ -65,9 +67,11 @@ def translate_text_cloud(
             {"role": "user", "content": prompt},
         ]
         max_tokens = min(max(len(chunk) * 4, 100), remote_config["max_tokens"])
-        result = prov.chat(
-            model=model, messages=messages,
+        result = session.chat(
+            messages=messages,
             max_tokens=max_tokens, temperature=remote_config["temperature"],
+            cancel_pct=i / total,
+            cancel_msg=f"task.progress.translating_segment|{i + 1}|{total}",
         )
         translated_chunks.append(result)
 

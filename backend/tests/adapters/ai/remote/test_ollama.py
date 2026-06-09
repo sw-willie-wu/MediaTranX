@@ -11,7 +11,7 @@ from app.handler.exceptions import RemoteApiError
 from .conftest import make_response, make_http_error, make_url_error
 
 
-PATCH_TARGET = "app.adapters.ai.remote.ollama.urllib.request.urlopen"
+PATCH_TARGET = "app.adapters.ai.remote._http.urlopen"
 
 
 @pytest.fixture(autouse=True)
@@ -152,6 +152,8 @@ def test_list_models_capability_detection_vision_keyword_fallback():
 # ─── get_model_ctx ───
 
 def test_get_model_ctx_parses_num_ctx_from_parameters():
+    import app.adapters.ai.remote.ollama as mod
+    mod._CTX_CACHE.clear()
     prov = OllamaProvider()
     info = {"parameters": "stop \"<|im_end|>\"\nnum_ctx 32768\n", "modelfile": ""}
     with patch(PATCH_TARGET, return_value=make_response(info)):
@@ -159,23 +161,91 @@ def test_get_model_ctx_parses_num_ctx_from_parameters():
 
 
 def test_get_model_ctx_falls_back_on_failure():
+    import app.adapters.ai.remote.ollama as mod
+    mod._CTX_CACHE.clear()
     prov = OllamaProvider()
     with patch(PATCH_TARGET, side_effect=make_url_error("down")):
-        assert prov.get_model_ctx("qwen2") == 8192
+        with pytest.raises(Exception):
+            prov.get_model_ctx("qwen2")
 
 
-def test_get_model_ctx_returns_default_when_num_ctx_absent():
+def test_get_model_ctx_raises_when_num_ctx_absent():
+    import app.adapters.ai.remote.ollama as mod
+    mod._CTX_CACHE.clear()
     prov = OllamaProvider()
     info = {"parameters": "stop \"<|im_end|>\"\n", "modelfile": ""}
     with patch(PATCH_TARGET, return_value=make_response(info)):
-        assert prov.get_model_ctx("qwen2") == 8192
+        with pytest.raises(Exception):
+            prov.get_model_ctx("qwen2")
 
 
 def test_get_model_ctx_parses_from_modelfile_when_parameters_missing():
+    import app.adapters.ai.remote.ollama as mod
+    mod._CTX_CACHE.clear()
     prov = OllamaProvider()
     info = {"parameters": "", "modelfile": "FROM qwen2\nPARAMETER num_ctx 16384\n"}
     with patch(PATCH_TARGET, return_value=make_response(info)):
         assert prov.get_model_ctx("qwen2") == 16384
+
+
+def test_get_model_ctx_reads_model_info_context_length(monkeypatch):
+    import app.adapters.ai.remote.ollama as mod
+    mod._CTX_CACHE.clear()
+    ol = OllamaProvider("http://h")
+    info = {"model_info": {"gemma3.context_length": 131072,
+                           "gemma3.attention.head_count": 8}, "parameters": ""}
+    monkeypatch.setattr(ol, "_show", lambda m: info)
+    assert ol.get_model_ctx("gemma3:27b") == 131072
+
+
+def test_get_model_ctx_budget_short_circuits_without_http():
+    ol = OllamaProvider("http://h", None, chunk_ctx_budget=20000)
+    def boom(m): raise AssertionError("must not call /api/show")
+    ol._show = boom
+    assert ol.get_model_ctx("any") == 20000
+
+
+def test_get_model_ctx_raises_when_model_info_empty(monkeypatch):
+    import app.adapters.ai.remote.ollama as mod
+    mod._CTX_CACHE.clear()
+    ol = OllamaProvider("http://h")
+    monkeypatch.setattr(ol, "_show", lambda m: {"model_info": {}, "parameters": "", "modelfile": ""})
+    with pytest.raises(Exception):
+        ol.get_model_ctx("vllm-model")
+
+
+def test_get_model_ctx_raises_on_failure(monkeypatch):
+    import app.adapters.ai.remote.ollama as mod
+    mod._CTX_CACHE.clear()
+    ol = OllamaProvider("http://h")
+    def boom(m): raise TimeoutError("show timeout")
+    monkeypatch.setattr(ol, "_show", boom)
+    with pytest.raises(Exception):
+        ol.get_model_ctx("m")
+
+
+def test_get_model_ctx_module_cache_avoids_refetch(monkeypatch):
+    import app.adapters.ai.remote.ollama as mod
+    mod._CTX_CACHE.clear()
+    ol = OllamaProvider("http://h")
+    calls = {"n": 0}
+    def show(m):
+        calls["n"] += 1
+        return {"model_info": {"x.context_length": 4096}, "parameters": ""}
+    monkeypatch.setattr(ol, "_show", show)
+    assert ol.get_model_ctx("m") == 4096
+    assert ol.get_model_ctx("m") == 4096
+    assert calls["n"] == 1
+
+
+def test_get_model_ctx_cache_not_polluted_by_budget(monkeypatch):
+    import app.adapters.ai.remote.ollama as mod
+    mod._CTX_CACHE.clear()
+    a = OllamaProvider("http://same", None, chunk_ctx_budget=20000)
+    b = OllamaProvider("http://same", None)
+    monkeypatch.setattr(b, "_show", lambda m: {"model_info": {"x.context_length": 4096}, "parameters": ""})
+    assert a.get_model_ctx("m") == 20000      # must NOT write cache
+    assert b.get_model_ctx("m") == 4096       # auto real value
 
 
 # ─── chat ───
@@ -191,9 +261,6 @@ def test_chat_returns_message_content():
 
 def test_chat_payload_includes_options():
     prov = OllamaProvider()
-    # Pre-populate ctx cache so _resolve_model_ctx skips /api/show and the
-    # single urlopen mock only sees the /api/chat call (Issue #4 blast-radius).
-    prov._ctx_cache["m"] = 65536
     captured = []
     def _side_effect(req, timeout=None):
         captured.append(json.loads(req.data.decode("utf-8")))
@@ -206,13 +273,11 @@ def test_chat_payload_includes_options():
     assert payload["stream"] is False
     assert payload["options"]["num_predict"] == 500
     assert payload["options"]["temperature"] == 0.7
+    assert "num_ctx" not in payload["options"]
 
 
 def test_chat_url_targets_api_chat():
     prov = OllamaProvider(endpoint="http://host:11434")
-    # Pre-populate ctx cache so _resolve_model_ctx skips /api/show and the
-    # single urlopen mock only sees the /api/chat call (Issue #4 blast-radius).
-    prov._ctx_cache["m"] = 65536
     captured = []
     def _side_effect(req, timeout=None):
         captured.append(req)
@@ -296,37 +361,3 @@ def test_get_summary_chunking_hints_floors_model_cap_at_6k(monkeypatch):
     # min(int(4096*0.75), 16000) = 3072; max(6000, 3072) = 6000
     assert hints == {"n_ctx": 4096, "model_cap": 6000}
 
-
-# ─── _compute_num_ctx model_ctx clamp (Issue #4) ───
-
-def test_compute_num_ctx_clamps_to_model_ctx(monkeypatch):
-    import app.adapters.ai.remote.ollama as ol
-    monkeypatch.setattr(ol, "_NUM_CTX_CAP", 32768)
-    # big need (prompt + max_tokens) would exceed the model's real 12k window
-    msgs = [{"role": "user", "content": "x" * 21000}]  # ~7k tokens
-    assert ol._compute_num_ctx(msgs, max_tokens=16384, model_ctx=12000) == 12000
-
-
-def test_compute_num_ctx_no_clamp_when_model_ctx_unknown(monkeypatch):
-    import app.adapters.ai.remote.ollama as ol
-    monkeypatch.setattr(ol, "_NUM_CTX_CAP", 32768)
-    msgs = [{"role": "user", "content": "x" * 21000}]
-    # model_ctx=0 → old behaviour: bounded by CAP only
-    n = ol._compute_num_ctx(msgs, max_tokens=16384, model_ctx=0)
-    assert n <= 32768 and n >= 4096 and n > 12000  # not clamped to 12k
-
-
-def test_compute_num_ctx_model_ctx_below_floor(monkeypatch):
-    import app.adapters.ai.remote.ollama as ol
-    # tiny model window wins even over FLOOR (model genuinely can't do more)
-    assert ol._compute_num_ctx([{"role": "user", "content": "hi"}], max_tokens=100, model_ctx=2048) == 2048
-
-
-def test_resolve_model_ctx_caches(monkeypatch):
-    from app.adapters.ai.remote.ollama import OllamaProvider
-    p = OllamaProvider("http://localhost:11434", None)
-    calls = []
-    monkeypatch.setattr(p, "get_model_ctx", lambda m: calls.append(m) or 12000)
-    assert p._resolve_model_ctx("qwen2") == 12000
-    assert p._resolve_model_ctx("qwen2") == 12000
-    assert calls == ["qwen2"]  # only queried once

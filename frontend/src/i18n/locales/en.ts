@@ -1129,10 +1129,9 @@ export default {
       edit: 'Edit',
       refresh: 'Refresh Models',
       delete: 'Delete',
-      ollama_section: 'Ollama Inference',
-      num_ctx_cap: 'num_ctx ceiling',
-      num_ctx_cap_hint: 'Upper bound on the num_ctx sent to Ollama. Guards against OOM on shared servers (e.g. DGX). Clamped to 4096–131072; also never exceeds the model\'s real context window.',
-      num_ctx_cap_saved: 'num_ctx ceiling saved',
+      chunkCtxBudget: 'Batch context budget',
+      chunkCtxBudgetAuto: 'auto',
+      chunkCtxBudgetHint: 'auto = derive from the model automatically. Translation batches scale with this; summary stays coherent up to ~16k so higher has no extra effect. If too large to fit, you\'ll be warned to lower it.',
     },
 
     agent: {
@@ -1318,6 +1317,8 @@ export default {
       invalid_request: 'Invalid request parameters.',
       invalid_params: 'Unsupported parameter for this model.',
       remote_error: 'Remote API error.',
+      endpoint_https_redirect: 'The endpoint redirects to https. Update the connection URL to use https://.',
+      endpoint_invalid: 'The remote endpoint rejected the request (405). Check the connection URL.',
       gpu_unsupported: "Your GPU is too old or the driver is unsupported, and auto CPU fallback is off. Update your GPU driver, or enable \"Auto fallback to CPU\" in settings.",
       vram_insufficient: "Not enough GPU memory, and auto CPU fallback is off. Use a smaller model, or enable \"Auto fallback to CPU\" in settings.",
     },

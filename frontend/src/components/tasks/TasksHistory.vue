@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onActivated } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { apiFetch } from '@/composables/useApi'
 import { getTaskTypeLabel } from '@/utils/taskTypeLabel'
+import { formatTaskError } from '@/utils/taskError'
 
 const { t } = useI18n()
 
@@ -103,13 +104,7 @@ function taskLabel(item: HistoryItem): string {
 }
 
 function friendlyError(item: HistoryItem): string {
-  if (item.error_code) {
-    const key = `tasks.errors.${item.error_code}`
-    const translated = t(key)
-    if (translated !== key) return translated
-  }
-  // fallback: 截短原始錯誤
-  return item.error ? (item.error.length > 100 ? item.error.slice(0, 100) + '...' : item.error) : ''
+  return formatTaskError(item, t)
 }
 
 function fileName(item: HistoryItem): string | null {

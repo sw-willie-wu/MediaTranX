@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.handler.exceptions import TaskCancelledError
 from app.pipeline import translate as tr
 
 
@@ -204,3 +205,83 @@ def test_translate_srt_auto_dispatches_to_local_when_session_set():
 def test_translate_srt_auto_raises_when_neither_provided():
     with pytest.raises(ValueError, match="prov.*session"):
         tr.translate_srt_auto(_segs(1), "en", "zh-TW")
+
+
+def test_translate_srt_cloud_respects_remote_batch_cap():
+    """A configured max_srt_batch must cap cloud batch size → multiple batches."""
+    class OpenAIProvider:
+        pass
+    prov = OpenAIProvider()
+    prov.chat = MagicMock(return_value="dummy-srt")
+    segs = _segs(120)
+
+    cfg = {"temperature": 0.1, "max_tokens": 4096, "max_srt_batch": 50}
+    with patch("app.adapters.ai.inference_config.get_remote_inference_config", return_value=cfg), \
+         patch("app.utils.subtitles.parse_srt_response", side_effect=lambda srt, batch: batch), \
+         patch("app.pipeline.translate.get_cloud_ctx", return_value=1_000_000):
+        tr.translate_srt_cloud(segs, "en", "zh", prov, "gpt-4o")
+
+    # 120 segs / cap 50 → ceil = 3 batches → 3 provider calls
+    assert prov.chat.call_count == 3
+
+
+def test_translate_srt_cloud_routes_through_session_streaming():
+    """Provider must be invoked with a non-None abort_hook (streaming path)."""
+    class OpenAIProvider:
+        pass
+    prov = OpenAIProvider()
+    prov.chat = MagicMock(return_value="dummy-srt")
+    segs = _segs(2)
+
+    cfg = {"temperature": 0.1, "max_tokens": 4096, "max_srt_batch": 0}
+    with patch("app.adapters.ai.inference_config.get_remote_inference_config", return_value=cfg), \
+         patch("app.utils.subtitles.parse_srt_response", side_effect=lambda srt, batch: batch), \
+         patch("app.pipeline.translate.get_cloud_ctx", return_value=1_000_000):
+        tr.translate_srt_cloud(segs, "en", "zh", prov, "gpt-4o")
+
+    assert prov.chat.called
+    _, kwargs = prov.chat.call_args
+    assert kwargs.get("abort_hook") is not None      # streaming path
+    assert kwargs.get("model") == "gpt-4o"           # model still passed
+
+
+def test_translate_srt_cloud_cancels_between_batches():
+    """on_progress raising TaskCancelledError stops the batch loop early."""
+    class OpenAIProvider:
+        pass
+    prov = OpenAIProvider()
+    prov.chat = MagicMock(return_value="dummy-srt")
+
+    calls = {"n": 0}
+    def on_progress(p, m):
+        calls["n"] += 1
+        if calls["n"] >= 2:           # raise on batch-0's end-of-batch progress call
+            raise TaskCancelledError("cancel")
+
+    cfg = {"temperature": 0.1, "max_tokens": 4096, "max_srt_batch": 10}
+    with patch("app.adapters.ai.inference_config.get_remote_inference_config", return_value=cfg), \
+         patch("app.utils.subtitles.parse_srt_response", side_effect=lambda srt, batch: batch), \
+         patch("app.pipeline.translate.get_cloud_ctx", return_value=1_000_000):
+        with pytest.raises(TaskCancelledError):
+            tr.translate_srt_cloud(_segs(50), "en", "zh", prov, "gpt-4o", on_progress=on_progress)
+    # 50 segs / cap 10 → 5 batches; cancel fires at end of batch 0 → only 1 provider call
+    assert prov.chat.call_count == 1
+
+
+def test_translate_srt_cloud_completes_via_streaming_provider():
+    """AC-2: a provider that accepts the streaming abort_hook completes normally."""
+    class OpenAIProvider:
+        pass
+    prov = OpenAIProvider()
+
+    def streaming_chat(*, model, messages, max_tokens, temperature, abort_hook):
+        abort_hook(MagicMock())          # streaming path entered
+        return "translated-srt"
+    prov.chat = streaming_chat
+
+    cfg = {"temperature": 0.1, "max_tokens": 4096, "max_srt_batch": 0}
+    with patch("app.adapters.ai.inference_config.get_remote_inference_config", return_value=cfg), \
+         patch("app.utils.subtitles.parse_srt_response", side_effect=lambda srt, batch: batch), \
+         patch("app.pipeline.translate.get_cloud_ctx", return_value=1_000_000):
+        out = tr.translate_srt_cloud(_segs(2), "en", "zh", prov, "gpt-4o")
+    assert out == _segs(2)   # parse_srt_response stub returns the batch unchanged

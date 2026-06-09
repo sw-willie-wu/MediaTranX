@@ -185,11 +185,15 @@ class ImageOcrService:
         messages = build_vision_chat_messages(provider, prompt, [(image_b64, mime_type)])
 
         from app.adapters.ai.inference_config import get_remote_inference_config
+        from app.services.llm.remote_chat import RemoteChatSession
         remote_config = get_remote_inference_config("ocr")
-        final_text = p.chat(
-            model=remote_model, messages=messages,
+        session = RemoteChatSession(p, remote_model, on_progress=progress_callback)
+        final_text = session.chat(
+            messages=messages,
             max_tokens=remote_config["max_tokens"],
             temperature=remote_config["temperature"],
+            cancel_pct=0.2,
+            cancel_msg="task.progress.recognizing",
         )
 
         if not final_text.strip():

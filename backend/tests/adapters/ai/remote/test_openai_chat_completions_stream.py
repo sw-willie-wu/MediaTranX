@@ -75,7 +75,7 @@ class TestChatCompletionsStream:
             DONE_LINE,
         ]
         with patch(
-            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=_make_sse_response(*lines),
         ):
             chunks = list(self._prov().chat_completions_stream(
@@ -90,7 +90,7 @@ class TestChatCompletionsStream:
         """Final usage chunk is yielded so caller can capture it."""
         lines = [_delta_line("x"), _usage_line(prompt=20, completion=3), DONE_LINE]
         with patch(
-            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=_make_sse_response(*lines),
         ):
             chunks = list(self._prov().chat_completions_stream(
@@ -108,7 +108,7 @@ class TestChatCompletionsStream:
             DONE_LINE,
         ]
         with patch(
-            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=_make_sse_response(*lines),
         ):
             chunks = list(self._prov().chat_completions_stream(
@@ -138,7 +138,7 @@ class TestChatCompletionsStream:
 
         # HTTPError.read() is called to get the body
         with patch(
-            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             side_effect=fake_urlopen,
         ):
             with pytest.raises(RemoteApiError) as exc_info:
@@ -155,7 +155,7 @@ class TestChatCompletionsStream:
         hook_received = []
 
         with patch(
-            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=resp,
         ):
             list(self._prov().chat_completions_stream(
@@ -176,7 +176,7 @@ class TestChatCompletionsStream:
         ]
         with caplog.at_level(logging.WARNING, logger="app.adapters.ai.remote.openai"):
             with patch(
-                "app.adapters.ai.remote.openai.urllib.request.urlopen",
+                "app.adapters.ai.remote._http.urlopen",
                 return_value=_make_sse_response(*lines),
             ):
                 chunks = list(self._prov().chat_completions_stream(
@@ -196,7 +196,7 @@ class TestChatCompletionsStream:
             _delta_line("should_not_appear"),  # after [DONE] — must be ignored
         ]
         with patch(
-            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=_make_sse_response(*lines),
         ):
             chunks = list(self._prov().chat_completions_stream(
@@ -222,7 +222,7 @@ class TestChatCompletionsStream:
             "parameters": {"type": "object", "properties": {}},
         }]
         with patch(
-            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             side_effect=fake_urlopen,
         ):
             list(self._prov().chat_completions_stream(
@@ -256,7 +256,7 @@ class TestChatCompletionsStream:
             return _make_sse_response(*lines)
 
         with patch(
-            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             side_effect=fake_urlopen,
         ):
             list(self._prov().chat_completions_stream(
@@ -272,7 +272,7 @@ class TestChatCompletionsStream:
         lines = [_delta_line("x"), DONE_LINE]
         resp = _make_sse_response(*lines)
         with patch(
-            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=resp,
         ):
             list(self._prov().chat_completions_stream(

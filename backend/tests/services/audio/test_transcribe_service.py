@@ -229,6 +229,35 @@ class TestExecuteWithSummarize:
         # Summary file should be registered
         assert any(f.get("type") == "summary" for f in result["output_files"])
 
+    def test_remote_summarize_uses_streaming_session(self, tmp_path):
+        svc, _, _, rs, cs, _, fs = _build(tmp_path)
+        prov = MagicMock()
+        prov.chat = MagicMock(return_value="summary")
+        rs.get_provider_for_connection = MagicMock(return_value=prov)
+
+        def fake_map_reduce(full_text, chat_fn, **kw):
+            return chat_fn("prompt")  # drive the closure once → reaches prov.chat
+
+        with patch("app.services.audio.transcribe_service.service.transcribe_audio_sync",
+                   return_value=_make_transcribe_result()), \
+             patch("app.services.audio.transcribe_service.service.write_bilingual_or_single",
+                   return_value=_bilingual_return(with_translation=False)), \
+             patch("app.services.audio.transcribe_service.summarize.map_reduce_summarize",
+                   side_effect=fake_map_reduce), \
+             patch("app.services.audio.transcribe_service.summarize.calc_chunk_budget",
+                   return_value=1000), \
+             patch("app.adapters.ai.inference_config.get_remote_inference_config",
+                   return_value={"temperature": 0.3, "max_tokens": 2048}):
+            svc._execute(
+                {**BASE_PARAMS, "summarize": True, "summarize_remote": True,
+                 "summarize_provider": "openai", "summarize_conn_id": "abc",
+                 "summarize_remote_model": "gpt-4o"},
+                lambda p, m: None,
+            )
+        rs.get_provider_for_connection.assert_called_once()
+        _, kwargs = prov.chat.call_args
+        assert kwargs.get("abort_hook") is not None
+
 
 class TestProgress:
     def test_progress_callback_emits_i18n_keys(self, tmp_path):

@@ -261,9 +261,14 @@ class AudioTranscribeService:
                     raise ValueError(f"No available {provider} connection")
                 remote_config = get_remote_inference_config("summarize")
 
+                from app.services.llm.remote_chat import RemoteChatSession
+                summary_session = RemoteChatSession(
+                    prov, remote_model,
+                    on_progress=lambda p, m: stage_progress("summarize", p, m),
+                )
+
                 def _cloud_chat(prompt: str, max_tokens: int = 2048) -> str:
-                    return prov.chat(
-                        model=remote_model,
+                    return summary_session.chat(
                         messages=[{"role": "user", "content": prompt}],
                         max_tokens=max_tokens,
                         temperature=remote_config["temperature"],

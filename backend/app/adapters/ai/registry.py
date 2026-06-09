@@ -873,7 +873,13 @@ MODELS_REGISTRY = {
 # Remote Inference Defaults
 # ═══════════════════════════════════════════════════════════
 REMOTE_INFERENCE_DEFAULTS = {
-    "translate":    {"temperature": 0.1, "max_tokens": 16384},
+    # max_srt_batch=50: caps cloud SRT batches just as the local path uses
+    # max_srt_batch to bound chunk size. Without a cap, _calc_srt_batch_size on
+    # a 128K-context provider would pack all segments into one request, causing
+    # response-structure drift for large files and removing per-batch progress.
+    # 50 segments ≈ ~3-5 min of content — a practical sweet-spot that fits well
+    # within gpt-4o-mini / gemini-2.5-flash max_tokens=16384.
+    "translate":    {"temperature": 0.1, "max_tokens": 16384, "max_srt_batch": 50},
     # 8192: safe LCM across providers — gemini-2.5-flash hard cap is 8192,
     # gpt-4o-mini accepts up to 16384, Ollama unbounded. 4096 was the
     # original spec value (worked for Ollama qwen3.5:9b narrative) but cuts

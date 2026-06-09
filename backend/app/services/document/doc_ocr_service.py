@@ -159,6 +159,7 @@ class DocumentOcrService:
             OCR_SYSTEM_MD, OCR_SYSTEM_TXT, OCR_USER_MD, OCR_USER_TXT,
         )
         from app.adapters.ai.inference_config import get_remote_inference_config
+        from app.services.llm.remote_chat import RemoteChatSession
 
         image_b64, mime = prepare_image_for_remote_vlm(image_path)
 
@@ -171,8 +172,9 @@ class DocumentOcrService:
         messages = build_vision_chat_messages(provider_name, combined_prompt, [(image_b64, mime)])
 
         remote_config = get_remote_inference_config("ocr")
-        return prov.chat(
-            model=model, messages=messages,
+        session = RemoteChatSession(prov, model)
+        return session.chat(
+            messages=messages,
             max_tokens=remote_config["max_tokens"],
             temperature=remote_config["temperature"],
         )

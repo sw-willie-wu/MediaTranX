@@ -1129,10 +1129,9 @@ export default {
       edit: '編輯',
       refresh: '重新整理模型',
       delete: '刪除',
-      ollama_section: 'Ollama 推論設定',
-      num_ctx_cap: 'num_ctx 上限',
-      num_ctx_cap_hint: '送往 Ollama 的 num_ctx 上限，防止共享伺服器（例如 DGX）OOM。範圍 4096–131072；同時不會超過模型真實的 context 視窗。',
-      num_ctx_cap_saved: '已儲存 num_ctx 上限',
+      chunkCtxBudget: '批次 context 預算',
+      chunkCtxBudgetAuto: '自動',
+      chunkCtxBudgetHint: '自動＝依模型自動決定。翻譯批次隨之變動；摘要為保連貫約 16k 後無額外效果；過大若塞不進會提示調小。',
     },
 
     agent: {
@@ -1318,6 +1317,8 @@ export default {
       invalid_request: '請求參數錯誤。',
       invalid_params: '此模型不支援指定的參數。',
       remote_error: '遠端 API 錯誤。',
+      endpoint_https_redirect: '連線網址被導向 https，請將連線位址改為 https://。',
+      endpoint_invalid: '遠端端點拒絕此請求（405），請檢查連線網址是否正確。',
       gpu_unsupported: '顯卡過舊或驅動不支援，且未啟用自動降級為 CPU。請更新顯卡驅動，或於設定開啟「自動降級為 CPU」。',
       vram_insufficient: 'GPU 記憶體不足，且未啟用自動降級為 CPU。請改用較小的模型，或於設定開啟「自動降級為 CPU」。',
     },

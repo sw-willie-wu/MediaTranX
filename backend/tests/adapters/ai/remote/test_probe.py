@@ -32,7 +32,7 @@ def test_probe_ollama_vlm_success_returns_success_true_with_detail_snippet():
     )
     fake_resp = _make_fake_streaming_response(body)
 
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+    with patch("app.adapters.ai.remote._http.urlopen", return_value=fake_resp):
         # Pass image_b64 to skip PIL synthetic-image generation
         result = probe_ollama_vlm("http://x:11435", "model-x", image_b64="dGVzdA==")
 
@@ -56,7 +56,7 @@ def test_probe_ollama_vlm_proxy_error_returns_code_and_full_detail():
     })
     fake_resp = _make_fake_streaming_response(body)
 
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+    with patch("app.adapters.ai.remote._http.urlopen", return_value=fake_resp):
         result = probe_ollama_vlm("http://x:11435", "qwen3.5-122b-vllm", image_b64="dGVzdA==")
 
     assert result.success is False
@@ -74,7 +74,7 @@ def test_probe_ollama_vlm_connection_refused_returns_connection_failed():
     def _raise_oserror(req, timeout=None):
         raise OSError("Connection refused")
 
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", side_effect=_raise_oserror):
+    with patch("app.adapters.ai.remote._http.urlopen", side_effect=_raise_oserror):
         result = probe_ollama_vlm("http://nope:11435", "any-model", image_b64="dGVzdA==")
 
     assert result.success is False
@@ -95,7 +95,7 @@ def test_probe_ollama_vlm_synthetic_image_used_when_no_b64_provided():
         captured["data"] = json.loads(req.data.decode("utf-8"))
         return fake_resp
 
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", side_effect=fake_urlopen):
+    with patch("app.adapters.ai.remote._http.urlopen", side_effect=fake_urlopen):
         result = probe_ollama_vlm("http://x:11435", "model-x")
 
     assert result.success is True
@@ -112,7 +112,7 @@ def test_probe_ollama_vlm_never_raises_on_unexpected_exception():
     def _raise_unexpected(req, timeout=None):
         raise RuntimeError("something totally unexpected")
 
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", side_effect=_raise_unexpected):
+    with patch("app.adapters.ai.remote._http.urlopen", side_effect=_raise_unexpected):
         # If the probe contract holds this returns a ProbeResult; if it
         # leaked the exception this would fail before reaching assertions.
         result = probe_ollama_vlm("http://x:11435", "m", image_b64="dGVzdA==")

@@ -429,6 +429,10 @@ class VideoSummaryService:
         # tiny chunks. Cap output_cap to at most half of n_ctx so input
         # always has matching breathing room.
         output_cap = min(output_cap, max(1024, n_ctx // 2))
+        # context_cap reserves output headroom: it is n_ctx MINUS the output cap
+        # and prompt overhead. DO NOT drop the subtraction — the context window
+        # is shared by prompt+generation, so the input chunk must leave room for
+        # the model's response.
         context_cap = max(1024, n_ctx - output_cap - PROMPT_OVERHEAD)
         input_budget = min(context_cap, model_cap)
 

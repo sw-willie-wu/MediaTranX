@@ -12,44 +12,20 @@ import urllib.error
 import urllib.request
 from typing import Callable, Iterator, Optional
 
+from app.adapters.ai.remote import _http
 from .base import RemoteProvider, RemoteModel, PROBE_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
 
-# num_ctx bounds for the `options.num_ctx` we send to Ollama in every chat
-# request. Background: Ollama's own default when modelfile doesn't set
-# PARAMETER num_ctx is 2048-4096; requests that need more get silently
-# truncated. So we must send something. But going TOO high (e.g. auto-
-# bumping to 16k+ on a 120B model) pushes Ollama to reload-up with a bigger
-# KV cache, which can OOM the server — particularly on a shared DGX with
-# multiple concurrent loaded models (e.g. one 120B LLM + one 120B-class VLM
-# each reserving 20-30GB of KV cache @ 16k can exceed 80GB-per-card limits).
-#
-# Trade-off picked: cap at 8192 by default — matches the chunking-hints
-# fallback used in summary_service so input_budget never asks for more than
-# we ourselves announced. Users on bigger DGX with budget for larger KV
-# cache can override via env: `MTX_OLLAMA_MAX_NUM_CTX=32768`.
-import os as _os
-_NUM_CTX_FLOOR = 4096
-_NUM_CTX_CAP = int(_os.environ.get("MTX_OLLAMA_MAX_NUM_CTX", "8192"))
-
-
-def set_num_ctx_cap(value: int) -> None:
-    """Live-update the num_ctx ceiling (DB-backed setting, no restart).
-
-    _compute_num_ctx reads the module global _NUM_CTX_CAP, so mutating it here
-    takes effect for the next chat request. Mirrors device.set_allow_cpu_fallback.
-    """
-    global _NUM_CTX_CAP
-    _NUM_CTX_CAP = int(value)
-
+_CTX_CACHE: dict[tuple[str, str], int] = {}  # (endpoint, model) -> ctx; only /api/show truths
 
 def _estimate_messages_tokens(messages: list[dict]) -> int:
     """Rough token estimate: total char count / 3. Conservative for mixed
-    English/Chinese transcript content; only used to size num_ctx (over-
-    estimating is harmless, under-estimating causes silent truncation)."""
+    English/Chinese transcript content; used for truncation-detection token
+    estimate (over-estimating is harmless, under-estimating causes silent
+    truncation)."""
     total_chars = 0
     for msg in messages:
         c = msg.get("content", "")
@@ -99,17 +75,6 @@ def _count_images(messages: list[dict]) -> int:
     return n
 
 
-def _compute_num_ctx(messages: list[dict], max_tokens: int, model_ctx: int = 0) -> int:
-    """Bound (prompt_estimate + max_tokens + safety) between FLOOR and CAP, then
-    clamp to the model's REAL context window so we never request a KV cache
-    larger than the model supports (that OOMs a shared Ollama/DGX). model_ctx<=0
-    means 'unknown' → skip that clamp."""
-    needed = _estimate_messages_tokens(messages) + max_tokens + 500  # 500 safety
-    bounded = max(_NUM_CTX_FLOOR, min(needed, _NUM_CTX_CAP))
-    if model_ctx > 0:
-        bounded = min(bounded, model_ctx)  # never exceed the model's real window
-    return bounded
-
 
 class OllamaProvider(RemoteProvider):
     """
@@ -124,10 +89,12 @@ class OllamaProvider(RemoteProvider):
     PROVIDER_NAME = "ollama"
     IMAGE_PREP_MODE = "raw"
 
-    def __init__(self, endpoint: str = DEFAULT_OLLAMA_ENDPOINT, api_key: Optional[str] = None):
+    def __init__(self, endpoint: str = DEFAULT_OLLAMA_ENDPOINT, api_key: Optional[str] = None,
+                 chunk_ctx_budget: Optional[int] = None):
         super().__init__(endpoint, api_key)
         self._caps_cache: dict[str, list[str]] = {}  # model_name -> capabilities
-        self._ctx_cache: dict[str, int] = {}  # model_name -> real ctx (from /api/show)
+        self._chunk_ctx_budget = chunk_ctx_budget  # per-connection chunk budget override; None=auto
+        self._truncation_warned = False            # per-instance truncation-warning dedup
 
     def connect(self, timeout: int = PROBE_TIMEOUT) -> bool:
         """Check if the Ollama service is running."""
@@ -136,7 +103,7 @@ class OllamaProvider(RemoteProvider):
                 f"{self.endpoint}/api/version",
                 method="GET",
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with _http.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read())
                 version = data.get("version", "unknown")
                 logger.info(f"Ollama connected: v{version} at {self.endpoint}")
@@ -153,7 +120,7 @@ class OllamaProvider(RemoteProvider):
                 f"{self.endpoint}/api/tags",
                 method="GET",
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with _http.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read())
 
             models = []
@@ -207,7 +174,7 @@ class OllamaProvider(RemoteProvider):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with _http.urlopen(req, timeout=5) as resp:
                 info = json.loads(resp.read())
                 ollama_caps = info.get("capabilities", [])
                 if ollama_caps:
@@ -281,7 +248,7 @@ class OllamaProvider(RemoteProvider):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with _http.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read())
             template: str = data.get("template", "") or ""
             template_lower = template.lower()
@@ -353,7 +320,7 @@ class OllamaProvider(RemoteProvider):
             # from another thread, not timeout.  Ollama on a local GPU is fast
             # enough that 180s is never hit in normal operation; same ceiling as
             # OpenAI cloud path for consistency.
-            resp = urllib.request.urlopen(req, timeout=180)
+            resp = _http.urlopen(req, timeout=180)
         except urllib.error.HTTPError as e:
             body_err = e.read().decode("utf-8", errors="replace")[:200]
             raise RuntimeError(f"ollama API error {e.code}: {body_err}") from e
@@ -385,48 +352,52 @@ class OllamaProvider(RemoteProvider):
                 except Exception:
                     pass
 
+    def _show(self, model_name: str) -> dict:
+        """POST /api/show and return the parsed JSON response."""
+        payload = json.dumps({"name": model_name}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.endpoint}/api/show", data=payload,
+            headers={"Content-Type": "application/json"}, method="POST")
+        with _http.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read())
+
+    @staticmethod
+    def _parse_num_ctx_from_text(info: dict) -> Optional[int]:
+        """Parse num_ctx from parameters or modelfile text. Returns None when not found."""
+        params = info.get("parameters", "")
+        for line in params.split("\n"):
+            if "num_ctx" in line:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    return int(parts[-1])
+        modelfile = info.get("modelfile", "")
+        for line in modelfile.split("\n"):
+            if "num_ctx" in line.lower():
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    return int(parts[-1])
+        return None
+
     def get_model_ctx(self, model_name: str) -> int:
-        """Query Ollama for model's context window size via /api/show."""
-        try:
-            payload = json.dumps({"name": model_name}).encode("utf-8")
-            req = urllib.request.Request(
-                f"{self.endpoint}/api/show",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                info = json.loads(resp.read())
-                # num_ctx is in model parameters
-                params = info.get("parameters", "")
-                for line in params.split("\n"):
-                    if "num_ctx" in line:
-                        parts = line.strip().split()
-                        if len(parts) >= 2:
-                            return int(parts[-1])
-                # Fallback: check modelfile
-                modelfile = info.get("modelfile", "")
-                for line in modelfile.split("\n"):
-                    if "num_ctx" in line.lower():
-                        parts = line.strip().split()
-                        if len(parts) >= 2:
-                            return int(parts[-1])
-        except Exception as e:
-            logger.warning(f"Failed to query model ctx for {model_name}: {e}")
-        # Conservative fallback. Note (Issue #4): this value also becomes the
-        # num_ctx clamp ceiling when /api/show fails — i.e. a transient probe
-        # failure under-sizes num_ctx to 8192 rather than risking an OOM. Safe
-        # direction; matches _NUM_CTX_CAP's default so usually no observable diff.
-        return 8192
-
-    def _resolve_model_ctx(self, model_name: str) -> int:
-        """Cached get_model_ctx — avoids an /api/show call on every batch.
-
-        Cached for the provider's process lifetime (singleton); not invalidated
-        if the model is reconfigured in Ollama mid-session — restart to refresh."""
-        if model_name not in self._ctx_cache:
-            self._ctx_cache[model_name] = self.get_model_ctx(model_name)
-        return self._ctx_cache[model_name]
+        """Model context window for chunk sizing. Raises when unknown — callers
+        (get_cloud_ctx / get_summary_chunking_hints) have their own fallbacks."""
+        # 1) per-connection budget override: short-circuit BEFORE cache/HTTP
+        if self._chunk_ctx_budget is not None:
+            return self._chunk_ctx_budget
+        # 2) module cache (only holds /api/show truths)
+        key = (self.endpoint, model_name)
+        if key in _CTX_CACHE:
+            return _CTX_CACHE[key]
+        # 3) /api/show -> model_info.*.context_length (max), else parameters/modelfile
+        info = self._show(model_name)
+        mi = info.get("model_info") or {}
+        ctxs = [int(v) for k, v in mi.items()
+                if k.endswith(".context_length") and isinstance(v, (int, float))]
+        val = max(ctxs) if ctxs else self._parse_num_ctx_from_text(info)
+        if val is None:
+            raise RuntimeError(f"model ctx unknown for {model_name}")
+        _CTX_CACHE[key] = val
+        return val
 
     def get_summary_chunking_hints(self, model: str) -> dict:
         """Query Ollama /api/show for the model's actual num_ctx.
@@ -443,6 +414,22 @@ class OllamaProvider(RemoteProvider):
         except Exception:
             return super().get_summary_chunking_hints(model)
 
+    def _maybe_warn_truncation(self, messages: list[dict], prompt_eval_count) -> None:
+        """Best-effort per-instance warning when Ollama appears to have silently
+        truncated the prompt (its loaded context < what we sent). Conservative:
+        _estimate_messages_tokens over-estimates ~33%, so only flag egregious
+        gaps. Log-only — diagnostic, never raises."""
+        if prompt_eval_count is None:
+            return
+        est = _estimate_messages_tokens(messages)
+        if est > 4000 and prompt_eval_count < est * 0.5 and not self._truncation_warned:
+            self._truncation_warned = True
+            logger.warning(
+                "Ollama response possibly truncated (input too large for model "
+                "context): est=%d prompt_eval=%d — reduce chunk_ctx_budget or use auto",
+                est, prompt_eval_count,
+            )
+
     def chat(
         self,
         model: str,
@@ -456,47 +443,37 @@ class OllamaProvider(RemoteProvider):
         """Ollama chat completion.
 
         Dual-path:
-        - abort_hook is None → _chat_blocking (legacy single-read,
-          timeout=300, stream=False). Used by the 5 existing prov.chat
-          callers (subtitle / transcribe / lyrics / doc translate /
-          doc ocr); byte-identical behaviour preserved.
+        - abort_hook is None → _chat_blocking (single-read, timeout=300,
+          stream=False). App callers no longer use this — they select the
+          streaming path by passing an abort_hook (via RemoteChatSession for the
+          5 service-layer callers, or a no-op hook for the pipeline SRT path).
         - abort_hook is not None → _chat_streaming (NDJSON line-by-line,
-          timeout=30, stream=True, hook receives HTTPResponse so the
-          caller can close the socket from another thread to interrupt
-          the read). Used by RemoteChatSession for video summary remote.
+          timeout=600 per-recv, stream=True; the hook receives the HTTPResponse
+          so the caller can close the socket from another thread to interrupt).
 
         task: accepted for interface symmetry; Ollama has no built-in
         thinking budget to suppress, so this kwarg is ignored.
 
         Spec §F1.
         """
-        # Resolve the model's real context window once so both _chat_blocking
-        # and _chat_streaming clamp num_ctx to it (Issue #4 — OOM on shared
-        # DGX when MTX_OLLAMA_MAX_NUM_CTX > model's real ctx).
-        model_ctx = self._resolve_model_ctx(model)
-
         # Pre-flight log for vision (VLM) calls — the existing telemetry log
         # in summary_service only fires on success, leaving failed VLM picks
         # (e.g. proxy 500) with zero telemetry. frame_picker only reports
         # "VLM pick failed" without model / payload context, so re-running
-        # to diagnose is blind. Log model + image count + chosen num_ctx
-        # before the HTTP call so failures still leave a paper trail.
+        # to diagnose is blind. Log model + image count + max_tokens before
+        # the HTTP call so failures still leave a paper trail.
         img_count = _count_images(messages)
         if img_count > 0:
-            logger.info(
-                "Ollama VLM chat: model=%s images=%d num_ctx=%d max_tokens=%d",
-                model, img_count,
-                _compute_num_ctx(messages, max_tokens, model_ctx), max_tokens,
-            )
+            logger.info("Ollama VLM chat: model=%s images=%d max_tokens=%d",
+                        model, img_count, max_tokens)
 
         if abort_hook is None:
-            return self._chat_blocking(model, messages, max_tokens, temperature, model_ctx)
-        return self._chat_streaming(model, messages, max_tokens, temperature, abort_hook, model_ctx)
+            return self._chat_blocking(model, messages, max_tokens, temperature)
+        return self._chat_streaming(model, messages, max_tokens, temperature, abort_hook)
 
     def _chat_blocking(
         self, model: str, messages: list[dict],
         max_tokens: int, temperature: float,
-        model_ctx: int = 0,
     ) -> str:
         """Legacy path. Single .read(), stream=False, 300s socket timeout.
         Preserved verbatim for existing callers."""
@@ -505,16 +482,15 @@ class OllamaProvider(RemoteProvider):
             "messages": messages,
             "stream": False,
             "options": {
+                # NOTE: we deliberately do NOT send num_ctx. The server self-
+                # manages context load (bridges load full; sending num_ctx is
+                # useless-or-harmful — it can pin a model's context small for all
+                # users). We instead size each chunk to fit (see get_model_ctx +
+                # the batch/chunk math in translate.py / summary_service). Weak/
+                # shared stock-Ollama operators should set OLLAMA_CONTEXT_LENGTH
+                # server-side to bound the load.
                 "num_predict": max_tokens,
                 "temperature": temperature,
-                # Tell Ollama how much context this request needs. Without it,
-                # Ollama uses modelfile / OLLAMA_CONTEXT_LENGTH default (often
-                # 4096) and silently truncates anything bigger. With it,
-                # Ollama loads the model with at least num_ctx slots; first
-                # request that exceeds the loaded size reloads (slow once,
-                # cached after) — NUM_PARALLEL=1 makes this safe.
-                # model_ctx clamps to the model's real window (Issue #4).
-                "num_ctx": _compute_num_ctx(messages, max_tokens, model_ctx),
             },
         }
         data = json.dumps(payload).encode("utf-8")
@@ -525,7 +501,7 @@ class OllamaProvider(RemoteProvider):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=300) as resp:
+            with _http.urlopen(req, timeout=300) as resp:
                 result = json.loads(resp.read())
                 # See _chat_streaming for the proxy error-wrapping rationale.
                 if result.get("done_reason") == "error" or "error" in result:
@@ -534,6 +510,7 @@ class OllamaProvider(RemoteProvider):
                         "remote_error",
                         f"Ollama proxy error: {_format_proxy_error(result)}",
                     )
+                self._maybe_warn_truncation(messages, result.get("prompt_eval_count"))
                 content = result.get("message", {}).get("content", "")
                 return content.strip()
         except urllib.error.HTTPError as e:
@@ -550,7 +527,6 @@ class OllamaProvider(RemoteProvider):
         self, model: str, messages: list[dict],
         max_tokens: int, temperature: float,
         abort_hook: Callable,
-        model_ctx: int = 0,
     ) -> str:
         """Streamable + cancellable path. stream=True, 30s socket timeout
         per recv; abort_hook(resp) called immediately after urlopen returns
@@ -562,11 +538,6 @@ class OllamaProvider(RemoteProvider):
             "options": {
                 "num_predict": max_tokens,
                 "temperature": temperature,
-                # See _chat_blocking comment — num_ctx prevents silent
-                # truncation when modelfile / env default is smaller than
-                # the request needs.
-                # model_ctx clamps to the model's real window (Issue #4).
-                "num_ctx": _compute_num_ctx(messages, max_tokens, model_ctx),
             },
         }
         data = json.dumps(payload).encode("utf-8")
@@ -586,7 +557,7 @@ class OllamaProvider(RemoteProvider):
             # since their TTFT is more predictable. Cancel still works via
             # abort_hook -> cross-thread resp.close(), not timeout polling,
             # so a long ceiling doesn't impede user cancel responsiveness.
-            resp = urllib.request.urlopen(req, timeout=600)
+            resp = _http.urlopen(req, timeout=600)
             # Hook BEFORE entering the read loop — gives the cancel
             # watcher a closable response to act on for the rest of the
             # call. If the hook itself raises (e.g. cancel was pre-queued
@@ -594,6 +565,7 @@ class OllamaProvider(RemoteProvider):
             # and is wrapped below.
             abort_hook(resp)
             parts: list[str] = []
+            last_eval: Optional[int] = None
             for raw in resp:
                 line = raw.strip()
                 if not line:
@@ -620,7 +592,9 @@ class OllamaProvider(RemoteProvider):
                     if delta:
                         parts.append(delta)
                 if obj.get("done") is True:
+                    last_eval = obj.get("prompt_eval_count")
                     break
+            self._maybe_warn_truncation(messages, last_eval)
             return "".join(parts).strip()
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
@@ -652,6 +626,8 @@ class OllamaProvider(RemoteProvider):
             return RemoteApiError("model_not_found", body[:200])
         if status == 401 or status == 403:
             return RemoteApiError("auth_failed", body[:200])
+        if status == 405:
+            return RemoteApiError("endpoint_invalid", body[:200])
         return RemoteApiError("remote_error", f"Ollama {status}: {body[:200]}")
 
     def pull_model(self, model_name: str, on_progress: Optional[callable] = None) -> bool:
@@ -679,7 +655,7 @@ class OllamaProvider(RemoteProvider):
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=600) as resp:
+            with _http.urlopen(req, timeout=600) as resp:
                 for line in resp:
                     try:
                         status = json.loads(line)

@@ -36,17 +36,6 @@ import { useRemoteModelStore, type RemoteConnection } from '@/stores/remoteModel
 const remoteModelStore = useRemoteModelStore()
 const { connections } = storeToRefs(remoteModelStore)
 
-import { useOllamaSettingsStore } from '@/stores/ollamaSettings'
-const ollamaSettings = useOllamaSettingsStore()
-const numCtxCap = ref(8192)
-
-async function saveNumCtxCap() {
-  const clamped = Math.min(131072, Math.max(4096, Math.round(numCtxCap.value || 8192)))
-  numCtxCap.value = clamped
-  await ollamaSettings.update({ ollama_num_ctx_cap: clamped })
-  toast.show(t('settings.remote.num_ctx_cap_saved'), { type: 'success' })
-}
-
 interface RemoteModel {
   id: string
   name: string
@@ -65,7 +54,7 @@ const _DEFAULT_ENDPOINTS: Record<string, string> = {
   openai: 'https://api.openai.com',
   gemini: 'https://generativelanguage.googleapis.com',
 }
-const newConn = ref({ provider: 'ollama', name: '', endpoint: 'http://localhost:11434', api_key: '' })
+const newConn = ref({ provider: 'ollama', name: '', endpoint: 'http://localhost:11434', api_key: '', chunk_ctx_budget: null as number | null })
 watch(() => newConn.value.provider, (p) => {
   newConn.value.endpoint = _DEFAULT_ENDPOINTS[p] || ''
 })
@@ -73,9 +62,40 @@ const testingConn = ref(false)
 const testResult = ref<{ connected: boolean; models: RemoteModel[] } | null>(null)
 const expandedConnId = ref<number | null>(null)
 const editingConnId = ref<number | null>(null)
-const editConn = ref({ name: '', endpoint: '', api_key: '' })
+const editConn = ref({ name: '', endpoint: '', api_key: '', chunk_ctx_budget: null as number | null })
+/** Provider of the connection currently being edited (needed to gate the ollama-only slider). */
+const editConnProvider = ref('')
 const showEditKey = ref(false)
 const showNewKey = ref(false)
+
+// ── chunk_ctx_budget slider ──────────────────────────────────────────────
+/** Fixed stops, in ascending order. The index AFTER the last stop is AUTO. */
+const BUDGET_STOPS = [2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144] as const
+const BUDGET_AUTO_IDX = BUDGET_STOPS.length  // rightmost = auto
+
+/** Map slider index → value sent to the API (null = auto). */
+function budgetIdxToValue(idx: number): number | null {
+  return idx >= BUDGET_AUTO_IDX ? null : (BUDGET_STOPS[idx] ?? null)
+}
+
+/** Map a stored value back to a slider index. */
+function budgetValueToIdx(v: number | null | undefined): number {
+  if (v == null) return BUDGET_AUTO_IDX
+  const i = BUDGET_STOPS.indexOf(v as typeof BUDGET_STOPS[number])
+  return i >= 0 ? i : BUDGET_AUTO_IDX
+}
+
+/** Slider index for the ADD form. */
+const newBudgetIdx = ref<number>(BUDGET_AUTO_IDX)
+watch(newBudgetIdx, (idx) => {
+  newConn.value.chunk_ctx_budget = budgetIdxToValue(idx)
+})
+
+/** Slider index for the EDIT form. */
+const editBudgetIdx = ref<number>(BUDGET_AUTO_IDX)
+watch(editBudgetIdx, (idx) => {
+  editConn.value.chunk_ctx_budget = budgetIdxToValue(idx)
+})
 
 async function onCopyKey(id: number) {
   // Copy-only: fetch the plaintext once and write it straight to the clipboard.
@@ -94,10 +114,14 @@ async function onCopyKey(id: number) {
 }
 
 async function addConnection() {
-  const ok = await remoteModelStore.addConnection(newConn.value)
+  const ok = await remoteModelStore.addConnection({
+    ...newConn.value,
+    chunk_ctx_budget: newConn.value.chunk_ctx_budget,
+  })
   if (ok) {
     showAddForm.value = false
-    newConn.value = { provider: 'ollama', name: '', endpoint: _DEFAULT_ENDPOINTS['ollama'], api_key: '' }
+    newConn.value = { provider: 'ollama', name: '', endpoint: _DEFAULT_ENDPOINTS['ollama'], api_key: '', chunk_ctx_budget: null }
+    newBudgetIdx.value = BUDGET_AUTO_IDX
     testResult.value = null
   }
 }
@@ -108,9 +132,11 @@ async function deleteConnection(id: number) {
 
 function startEdit(conn: RemoteConnection) {
   editingConnId.value = conn.id
+  editConnProvider.value = conn.provider
   // api_key is write-only: never prefilled (the server no longer returns it).
   // Empty field on save = keep the stored key.
-  editConn.value = { name: conn.name, endpoint: conn.endpoint, api_key: '' }
+  editConn.value = { name: conn.name, endpoint: conn.endpoint, api_key: '', chunk_ctx_budget: conn.chunk_ctx_budget ?? null }
+  editBudgetIdx.value = budgetValueToIdx(conn.chunk_ctx_budget)
 }
 
 function cancelEdit() {
@@ -118,13 +144,17 @@ function cancelEdit() {
 }
 
 async function saveEdit(id: number) {
-  const payload: { name: string; endpoint: string; api_key?: string } = {
+  const payload: { name: string; endpoint: string; api_key?: string; chunk_ctx_budget?: number | null } = {
     name: editConn.value.name,
     endpoint: editConn.value.endpoint,
   }
   // Only send api_key when the user typed a new one — an empty field means
   // "keep the existing key" (omitting it lets the backend preserve it).
   if (editConn.value.api_key) payload.api_key = editConn.value.api_key
+  // Always send chunk_ctx_budget for ollama connections (null = auto).
+  if (editConnProvider.value === 'ollama') {
+    payload.chunk_ctx_budget = editConn.value.chunk_ctx_budget
+  }
   const ok = await remoteModelStore.updateConnection(id, payload)
   if (ok) {
     editingConnId.value = null
@@ -243,8 +273,6 @@ watch(
 onMounted(async () => {
   modelStore.fetchModels()
   remoteModelStore.ensureLoaded()
-  await ollamaSettings.load()
-  numCtxCap.value = ollamaSettings.settings.ollama_num_ctx_cap
 })
 </script>
 
@@ -300,24 +328,6 @@ onMounted(async () => {
     </template>
 
   <template v-if="activeTab === 'remote'">
-    <!-- Ollama global inference settings -->
-    <div class="ollama-settings">
-      <h6 class="section-title">{{ $t('settings.remote.ollama_section') }}</h6>
-      <div class="form-group">
-        <label>{{ $t('settings.remote.num_ctx_cap') }}</label>
-        <input
-          type="number"
-          class="form-input"
-          :min="4096"
-          :max="131072"
-          step="1024"
-          v-model.number="numCtxCap"
-          @change="saveNumCtxCap"
-        />
-        <p class="download-hint"><i class="bi bi-info-circle"></i> {{ $t('settings.remote.num_ctx_cap_hint') }}</p>
-      </div>
-    </div>
-
     <!-- Connection list -->
     <div v-if="connections.length" class="conn-list">
       <div v-for="conn in connections" :key="conn.id" class="conn-card" :class="{ expanded: expandedConnId === conn.id }">
@@ -366,6 +376,26 @@ onMounted(async () => {
                 <i :class="showEditKey ? 'bi bi-eye' : 'bi bi-eye-slash'"></i>
               </button>
             </div>
+          </div>
+          <!-- Chunk context budget (ollama-only) -->
+          <div v-if="conn.provider === 'ollama'" class="form-group">
+            <label>{{ $t('settings.remote.chunkCtxBudget') }}</label>
+            <div class="budget-slider-row">
+              <input
+                data-testid="budget-slider"
+                type="range"
+                :min="0"
+                :max="BUDGET_AUTO_IDX"
+                :step="1"
+                :value="editBudgetIdx"
+                @input="editBudgetIdx = Number(($event.target as HTMLInputElement).value)"
+                class="budget-slider"
+              />
+              <span data-testid="budget-label" class="budget-label">
+                {{ editBudgetIdx >= BUDGET_AUTO_IDX ? $t('settings.remote.chunkCtxBudgetAuto') : BUDGET_STOPS[editBudgetIdx] }}
+              </span>
+            </div>
+            <p class="download-hint"><i class="bi bi-info-circle"></i> {{ $t('settings.remote.chunkCtxBudgetHint') }}</p>
           </div>
           <div class="conn-edit-actions">
             <button class="btn-secondary btn-sm" @click="cancelEdit">{{ $t('common.cancel') }}</button>
@@ -428,6 +458,27 @@ onMounted(async () => {
             <i :class="showNewKey ? 'bi bi-eye' : 'bi bi-eye-slash'"></i>
           </button>
         </div>
+      </div>
+
+      <!-- Chunk context budget (ollama-only) -->
+      <div v-if="newConn.provider === 'ollama'" class="form-group">
+        <label>{{ $t('settings.remote.chunkCtxBudget') }}</label>
+        <div class="budget-slider-row">
+          <input
+            data-testid="budget-slider"
+            type="range"
+            :min="0"
+            :max="BUDGET_AUTO_IDX"
+            :step="1"
+            :value="newBudgetIdx"
+            @input="newBudgetIdx = Number(($event.target as HTMLInputElement).value)"
+            class="budget-slider"
+          />
+          <span data-testid="budget-label" class="budget-label">
+            {{ newBudgetIdx >= BUDGET_AUTO_IDX ? $t('settings.remote.chunkCtxBudgetAuto') : BUDGET_STOPS[newBudgetIdx] }}
+          </span>
+        </div>
+        <p class="download-hint"><i class="bi bi-info-circle"></i> {{ $t('settings.remote.chunkCtxBudgetHint') }}</p>
       </div>
 
       <!-- Test result -->
@@ -519,19 +570,6 @@ onMounted(async () => {
 }
 
 // ── Remote connections ──────────────────────────────────────
-.ollama-settings {
-  margin-bottom: 1rem;
-
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-
-    label { font-size: 0.8rem; color: var(--text-secondary); }
-    .form-input { max-width: 12rem; }
-  }
-}
-
 .conn-list {
   display: flex;
   flex-direction: column;
@@ -807,5 +845,26 @@ onMounted(async () => {
 .btn-sm {
   padding: 0.25rem 0.5rem;
   font-size: 0.75rem;
+}
+
+// ── chunk_ctx_budget slider ───────────────────────────────────────────
+.budget-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.budget-slider {
+  flex: 1;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.budget-label {
+  min-width: 4.5rem;
+  text-align: right;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 </style>
