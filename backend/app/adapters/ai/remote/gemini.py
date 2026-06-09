@@ -13,6 +13,7 @@ import urllib.request
 import uuid
 from typing import Callable, Iterator, Optional
 
+from app.adapters.ai.remote import _http
 from .base import RemoteProvider, RemoteModel, PROBE_TIMEOUT
 
 logger = logging.getLogger(__name__)
@@ -228,7 +229,7 @@ class GeminiProvider(RemoteProvider):
         try:
             url = self._api_url("/v1beta/models?pageSize=1")
             req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with _http.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read())
                 count = len(data.get("models", []))
                 logger.info(f"Gemini connected: API key valid, {count}+ models at {self.endpoint}")
@@ -251,7 +252,7 @@ class GeminiProvider(RemoteProvider):
                 token_param = f"&pageToken={page_token}" if page_token else ""
                 url = self._api_url(f"/v1beta/models?pageSize=100{token_param}")
                 req = urllib.request.Request(url, method="GET")
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                with _http.urlopen(req, timeout=timeout) as resp:
                     data = json.loads(resp.read())
 
                 all_models.extend(data.get("models", []))
@@ -392,7 +393,7 @@ class GeminiProvider(RemoteProvider):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=300) as resp:
+            with _http.urlopen(req, timeout=300) as resp:
                 result = json.loads(resp.read())
                 candidates = result.get("candidates", [])
                 if candidates:
@@ -438,7 +439,7 @@ class GeminiProvider(RemoteProvider):
             # 180s socket timeout: cloud TTFT on large summarize chunks (~9k+
             # tokens with thinking) routinely exceeds 30s; cancel still works
             # via abort_hook → resp.close() from another thread, not timeout.
-            resp = urllib.request.urlopen(req, timeout=180)
+            resp = _http.urlopen(req, timeout=180)
             abort_hook(resp)
             parts: list[str] = []
             for raw in resp:
@@ -560,7 +561,7 @@ class GeminiProvider(RemoteProvider):
         try:
             # 180s socket timeout: cancel arrives via abort_hook → resp.close()
             # from another thread, not timeout.
-            resp = urllib.request.urlopen(req, timeout=180)
+            resp = _http.urlopen(req, timeout=180)
         except urllib.error.HTTPError as e:
             body_err = e.read().decode("utf-8", errors="replace")[:200]
             raise self._parse_error(e.code, body_err)

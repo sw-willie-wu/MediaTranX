@@ -12,6 +12,7 @@ import urllib.error
 import urllib.request
 from typing import Callable, Iterator, Optional
 
+from app.adapters.ai.remote import _http
 from .base import RemoteProvider, RemoteModel, PROBE_TIMEOUT
 
 logger = logging.getLogger(__name__)
@@ -102,7 +103,7 @@ class OllamaProvider(RemoteProvider):
                 f"{self.endpoint}/api/version",
                 method="GET",
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with _http.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read())
                 version = data.get("version", "unknown")
                 logger.info(f"Ollama connected: v{version} at {self.endpoint}")
@@ -119,7 +120,7 @@ class OllamaProvider(RemoteProvider):
                 f"{self.endpoint}/api/tags",
                 method="GET",
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with _http.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read())
 
             models = []
@@ -173,7 +174,7 @@ class OllamaProvider(RemoteProvider):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with _http.urlopen(req, timeout=5) as resp:
                 info = json.loads(resp.read())
                 ollama_caps = info.get("capabilities", [])
                 if ollama_caps:
@@ -247,7 +248,7 @@ class OllamaProvider(RemoteProvider):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with _http.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read())
             template: str = data.get("template", "") or ""
             template_lower = template.lower()
@@ -319,7 +320,7 @@ class OllamaProvider(RemoteProvider):
             # from another thread, not timeout.  Ollama on a local GPU is fast
             # enough that 180s is never hit in normal operation; same ceiling as
             # OpenAI cloud path for consistency.
-            resp = urllib.request.urlopen(req, timeout=180)
+            resp = _http.urlopen(req, timeout=180)
         except urllib.error.HTTPError as e:
             body_err = e.read().decode("utf-8", errors="replace")[:200]
             raise RuntimeError(f"ollama API error {e.code}: {body_err}") from e
@@ -357,7 +358,7 @@ class OllamaProvider(RemoteProvider):
         req = urllib.request.Request(
             f"{self.endpoint}/api/show", data=payload,
             headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with _http.urlopen(req, timeout=5) as resp:
             return json.loads(resp.read())
 
     @staticmethod
@@ -500,7 +501,7 @@ class OllamaProvider(RemoteProvider):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=300) as resp:
+            with _http.urlopen(req, timeout=300) as resp:
                 result = json.loads(resp.read())
                 # See _chat_streaming for the proxy error-wrapping rationale.
                 if result.get("done_reason") == "error" or "error" in result:
@@ -556,7 +557,7 @@ class OllamaProvider(RemoteProvider):
             # since their TTFT is more predictable. Cancel still works via
             # abort_hook -> cross-thread resp.close(), not timeout polling,
             # so a long ceiling doesn't impede user cancel responsiveness.
-            resp = urllib.request.urlopen(req, timeout=600)
+            resp = _http.urlopen(req, timeout=600)
             # Hook BEFORE entering the read loop — gives the cancel
             # watcher a closable response to act on for the rest of the
             # call. If the hook itself raises (e.g. cancel was pre-queued
@@ -652,7 +653,7 @@ class OllamaProvider(RemoteProvider):
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=600) as resp:
+            with _http.urlopen(req, timeout=600) as resp:
                 for line in resp:
                     try:
                         status = json.loads(line)

@@ -12,6 +12,7 @@ import urllib.error
 import urllib.request
 from typing import Callable, Iterator, Optional
 
+from app.adapters.ai.remote import _http
 from .base import RemoteProvider, RemoteModel, PROBE_TIMEOUT
 
 logger = logging.getLogger(__name__)
@@ -229,7 +230,7 @@ class OpenAIProvider(RemoteProvider):
 
         body = json.dumps(data).encode("utf-8") if data else None
         req = urllib.request.Request(url, data=body, headers=headers, method=method)
-        return urllib.request.urlopen(req, timeout=timeout)
+        return _http.urlopen(req, timeout=timeout)
 
     def connect(self, timeout: int = PROBE_TIMEOUT) -> bool:
         """Check if the API key is valid."""
@@ -388,7 +389,7 @@ class OpenAIProvider(RemoteProvider):
             # 180s socket timeout: cloud TTFT on large summarize chunks (~9k+
             # tokens with thinking) routinely exceeds 30s; cancel still works
             # via abort_hook → resp.close() from another thread, not timeout.
-            resp = urllib.request.urlopen(req, timeout=180)
+            resp = _http.urlopen(req, timeout=180)
             abort_hook(resp)
             parts: list[str] = []
             for raw in resp:
@@ -494,7 +495,7 @@ class OpenAIProvider(RemoteProvider):
         try:
             # 180s socket timeout: cancel arrives via abort_hook → resp.close()
             # from another thread, not timeout.
-            resp = urllib.request.urlopen(req, timeout=180)
+            resp = _http.urlopen(req, timeout=180)
         except urllib.error.HTTPError as e:
             body_err = e.read().decode("utf-8", errors="replace")[:200]
             raise self._parse_error(e.code, body_err)
@@ -657,7 +658,7 @@ class OpenAIProvider(RemoteProvider):
             # 180s socket timeout: cloud TTFT on large summarize chunks (~9k+
             # tokens with thinking) routinely exceeds 30s; cancel still works
             # via abort_hook → resp.close() from another thread, not timeout.
-            resp = urllib.request.urlopen(req, timeout=180)
+            resp = _http.urlopen(req, timeout=180)
             abort_hook(resp)
 
             current_event: Optional[str] = None

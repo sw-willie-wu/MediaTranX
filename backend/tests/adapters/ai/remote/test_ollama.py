@@ -11,7 +11,7 @@ from app.handler.exceptions import RemoteApiError
 from .conftest import make_response, make_http_error, make_url_error
 
 
-PATCH_TARGET = "app.adapters.ai.remote.ollama.urllib.request.urlopen"
+PATCH_TARGET = "app.adapters.ai.remote._http.urlopen"
 
 
 @pytest.fixture(autouse=True)

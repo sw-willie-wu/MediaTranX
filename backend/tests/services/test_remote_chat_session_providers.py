@@ -38,7 +38,7 @@ def test_remote_chat_session_with_openai_chat_completions():
     sess = RemoteChatSession(prov, "gpt-4o-mini")
 
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=_make_sse_response(*lines),
     ):
         result = sess.chat(
@@ -61,7 +61,7 @@ def test_remote_chat_session_with_gemini():
     sess = RemoteChatSession(prov, "gemini-2.5-flash")
 
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=_make_sse_response(*lines),
     ):
         result = sess.chat(
@@ -98,7 +98,7 @@ def test_chat_with_images_openai_uses_image_url_data_uri(tmp_path):
     sess = RemoteChatSession(prov, "gpt-4o-mini")
 
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         result = sess.chat_with_images(
@@ -138,7 +138,7 @@ def test_chat_with_images_gemini_uses_inline_data(tmp_path):
     sess = RemoteChatSession(prov, "gemini-2.5-flash")
 
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         result = sess.chat_with_images(
@@ -174,7 +174,7 @@ def test_chat_with_images_ollama_uses_raw_b64(tmp_path):
     sess = RemoteChatSession(prov, "qwen3vl")
 
     with patch(
-        "app.adapters.ai.remote.ollama.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         sess.chat_with_images(
@@ -211,7 +211,7 @@ def test_kill_process_closes_openai_response():
 
     def call_chat():
         with patch(
-            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=resp,
         ):
             try:

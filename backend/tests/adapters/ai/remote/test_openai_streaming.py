@@ -40,7 +40,7 @@ def test_chat_completions_streaming_parses_data_lines():
 
     prov = OpenAIProvider("https://api.openai.com", "sk-test")
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         result = prov.chat(
@@ -68,7 +68,7 @@ def test_chat_completions_streaming_uses_max_completion_tokens_for_new_models():
 
     prov = OpenAIProvider("https://api.openai.com", "sk-test")
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov.chat(
@@ -93,7 +93,7 @@ def test_chat_completions_streaming_skips_unknown_lines():
         b'data: [DONE]\n',
     ]
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=_make_sse_response(*lines),
     ):
         prov = OpenAIProvider("https://api.openai.com", "sk-test")
@@ -126,7 +126,7 @@ def test_responses_streaming_parses_output_text_delta():
         b'\n',
     ]
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=_make_sse_response(*lines),
     ):
         prov = OpenAIProvider("https://api.openai.com", "sk-test")
@@ -151,7 +151,7 @@ def test_responses_streaming_raises_on_refusal():
         b'data: {}\n',
     ]
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=_make_sse_response(*lines),
     ):
         prov = OpenAIProvider("https://api.openai.com", "sk-test")
@@ -174,7 +174,7 @@ def test_responses_streaming_raises_on_response_failed():
         b'data: {"response":{"error":{"message":"rate_limit"}}}\n',
     ]
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=_make_sse_response(*lines),
     ):
         prov = OpenAIProvider("https://api.openai.com", "sk-test")
@@ -198,7 +198,7 @@ def test_responses_streaming_raises_on_error_event_literal():
         b'data: {"message":"server_overloaded"}\n',
     ]
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=_make_sse_response(*lines),
     ):
         prov = OpenAIProvider("https://api.openai.com", "sk-test")
@@ -233,7 +233,7 @@ def test_responses_streaming_ignores_unknown_events():
         b'data: {}\n',
     ]
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=_make_sse_response(*lines),
     ):
         prov = OpenAIProvider("https://api.openai.com", "sk-test")
@@ -267,7 +267,7 @@ def test_chat_completions_blocking_no_regression():
 
     prov = OpenAIProvider("https://api.openai.com", "sk-test")
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         result = prov.chat(
@@ -305,7 +305,7 @@ def test_responses_blocking_no_regression():
 
     prov = OpenAIProvider("https://api.openai.com", "sk-test")
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         result = prov.chat(
@@ -339,7 +339,7 @@ def test_responses_streaming_sets_reasoning_low_when_task_is_frame_select():
 
     prov = OpenAIProvider("https://api.openai.com", "sk-test")
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov.chat(
@@ -378,7 +378,7 @@ def test_responses_no_reasoning_when_task_not_frame_select():
 
     prov = OpenAIProvider("https://api.openai.com", "sk-test")
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov.chat(
@@ -413,7 +413,7 @@ def test_responses_blocking_sets_reasoning_low_when_task_is_frame_select():
 
     prov = OpenAIProvider("https://api.openai.com", "sk-test")
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov.chat(

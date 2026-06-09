@@ -504,7 +504,7 @@ class TestWireShape:
             return _make_sse_response(DONE_LINE)
 
         with patch(
-            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             side_effect=fake_urlopen,
         ):
             list(self._prov().chat_completions_stream(

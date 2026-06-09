@@ -51,7 +51,7 @@ def test_chat_streaming_sends_stream_true_and_returns_concatenated_content():
         return fake_resp
 
     prov = OllamaProvider("http://localhost:11434", None)
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", side_effect=fake_urlopen):
+    with patch("app.adapters.ai.remote._http.urlopen", side_effect=fake_urlopen):
         result = prov.chat(
             model="qwen3.5:9b",
             messages=[{"role": "user", "content": "hi"}],
@@ -81,7 +81,7 @@ def test_chat_blocking_legacy_path_unchanged():
         return fake_resp
 
     prov = OllamaProvider("http://localhost:11434", None)
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", side_effect=fake_urlopen):
+    with patch("app.adapters.ai.remote._http.urlopen", side_effect=fake_urlopen):
         result = prov.chat(
             model="qwen3.5:9b",
             messages=[{"role": "user", "content": "hi"}],
@@ -104,7 +104,7 @@ def test_chat_streaming_calls_abort_hook_with_response_before_read():
 
     received = []
     prov = OllamaProvider("http://localhost:11434", None)
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+    with patch("app.adapters.ai.remote._http.urlopen", return_value=fake_resp):
         prov.chat(
             model="m", messages=[{"role": "user", "content": "x"}],
             max_tokens=10, temperature=0.0,
@@ -127,7 +127,7 @@ def test_chat_streaming_socket_close_raises_remote_api_error_connection_failed()
     fake_resp.close = MagicMock()
 
     prov = OllamaProvider("http://localhost:11434", None)
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+    with patch("app.adapters.ai.remote._http.urlopen", return_value=fake_resp):
         with pytest.raises(RemoteApiError) as excinfo:
             prov.chat(
                 model="m", messages=[{"role": "user", "content": "x"}],
@@ -158,7 +158,7 @@ def test_chat_with_images_sends_messages_with_base64_images_array(tmp_path):
         return fake_resp
 
     prov = OllamaProvider("http://localhost:11434", None)
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", side_effect=fake_urlopen):
+    with patch("app.adapters.ai.remote._http.urlopen", side_effect=fake_urlopen):
         result = prov.chat_with_images(
             model="qwen3vl:8b",
             prompt="describe",
@@ -196,7 +196,7 @@ def test_chat_with_images_calls_abort_hook(tmp_path):
 
     received = []
     prov = OllamaProvider("http://localhost:11434", None)
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+    with patch("app.adapters.ai.remote._http.urlopen", return_value=fake_resp):
         prov.chat_with_images(
             model="m", prompt="p", images=[img],
             max_tokens=10, temperature=0.0,
@@ -226,7 +226,7 @@ def test_chat_with_images_multiple_images_preserved_order(tmp_path):
         return fake_resp
 
     prov = OllamaProvider("http://localhost:11434", None)
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", side_effect=fake_urlopen):
+    with patch("app.adapters.ai.remote._http.urlopen", side_effect=fake_urlopen):
         prov.chat_with_images(
             model="m", prompt="p", images=imgs,
             max_tokens=10, temperature=0.0,
@@ -263,7 +263,7 @@ def test_proxy_error_frame_with_error_and_detail_surfaces_both():
     fake_resp = _make_fake_urlopen_response(body)
 
     prov = OllamaProvider("http://localhost:11434", None)
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+    with patch("app.adapters.ai.remote._http.urlopen", return_value=fake_resp):
         with pytest.raises(RemoteApiError) as excinfo:
             prov.chat(
                 model="m", messages=[{"role": "user", "content": "x"}],
@@ -290,7 +290,7 @@ def test_proxy_error_frame_with_only_detail_surfaces_detail():
     fake_resp = _make_fake_urlopen_response(body)
 
     prov = OllamaProvider("http://localhost:11434", None)
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+    with patch("app.adapters.ai.remote._http.urlopen", return_value=fake_resp):
         with pytest.raises(RemoteApiError) as excinfo:
             prov.chat(
                 model="m", messages=[{"role": "user", "content": "x"}],
@@ -316,7 +316,7 @@ def test_proxy_error_frame_blocking_path_also_surfaces_detail():
     fake_resp.__exit__ = MagicMock(return_value=False)
 
     prov = OllamaProvider("http://localhost:11434", None)
-    with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+    with patch("app.adapters.ai.remote._http.urlopen", return_value=fake_resp):
         with pytest.raises(RemoteApiError) as excinfo:
             prov.chat(
                 model="m", messages=[{"role": "user", "content": "x"}],
@@ -354,7 +354,7 @@ def test_chat_with_ollama_native_images_emits_preflight_log(caplog):
 
     prov = OllamaProvider("http://localhost:11434", None)
     with caplog.at_level(logging.INFO, logger="app.adapters.ai.remote.ollama"):
-        with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+        with patch("app.adapters.ai.remote._http.urlopen", return_value=fake_resp):
             prov.chat(
                 model="qwen3.5-vllm", messages=messages,
                 max_tokens=200, temperature=0.0,
@@ -389,7 +389,7 @@ def test_chat_with_openai_compat_image_url_emits_preflight_log(caplog):
 
     prov = OllamaProvider("http://localhost:11434", None)
     with caplog.at_level(logging.INFO, logger="app.adapters.ai.remote.ollama"):
-        with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+        with patch("app.adapters.ai.remote._http.urlopen", return_value=fake_resp):
             prov.chat(
                 model="m", messages=messages,
                 max_tokens=100, temperature=0.0,
@@ -413,7 +413,7 @@ def test_text_only_chat_does_not_emit_vlm_preflight_log(caplog):
 
     prov = OllamaProvider("http://localhost:11434", None)
     with caplog.at_level(logging.INFO, logger="app.adapters.ai.remote.ollama"):
-        with patch("app.adapters.ai.remote.ollama.urllib.request.urlopen", return_value=fake_resp):
+        with patch("app.adapters.ai.remote._http.urlopen", return_value=fake_resp):
             prov.chat(
                 model="m",
                 messages=[{"role": "user", "content": "plain text only"}],

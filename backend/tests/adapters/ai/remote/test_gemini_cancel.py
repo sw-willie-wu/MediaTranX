@@ -18,7 +18,7 @@ def test_streaming_invokes_abort_hook_with_resp():
 
     received = []
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=resp,
     ):
         prov = GeminiProvider(
@@ -46,7 +46,7 @@ def test_streaming_oserror_translated_to_connection_failed():
     resp.close = MagicMock()
 
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=resp,
     ):
         prov = GeminiProvider(

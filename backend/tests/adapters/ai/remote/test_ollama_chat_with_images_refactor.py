@@ -42,7 +42,7 @@ def test_ollama_chat_with_images_uses_raw_bytes(tmp_path):
 
     prov = OllamaProvider("http://localhost:11434", None)
     with patch(
-        "app.adapters.ai.remote.ollama.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov.chat_with_images(
@@ -75,7 +75,7 @@ def test_ollama_chat_with_images_wire_shape_matches_legacy(tmp_path):
 
     prov = OllamaProvider("http://localhost:11434", None)
     with patch(
-        "app.adapters.ai.remote.ollama.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov.chat_with_images(
@@ -119,7 +119,7 @@ def test_ollama_chat_with_images_does_not_invoke_pil(tmp_path):
 
     prov = OllamaProvider("http://localhost:11434", None)
     with patch(
-        "app.adapters.ai.remote.ollama.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         # If PIL is anywhere in the stack, this raises UnidentifiedImageError.

@@ -25,7 +25,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-PATCH_TARGET = "app.adapters.ai.remote.ollama.urllib.request.urlopen"
+PATCH_TARGET = "app.adapters.ai.remote._http.urlopen"
 
 
 # ── SSE response helpers ─────────────────────────────────────────────────────
