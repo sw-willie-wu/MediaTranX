@@ -18,6 +18,7 @@ def _models_dir(category: str = "") -> Path:
 
 def remove_model(item_id: str, model_manager) -> None:
     """Delete downloaded model/tool files."""
+    from app.adapters.ai.registry import SOUNDFONT_ID
     if item_id.startswith("whisper-"):
         size = item_id[len("whisper-"):]
         model_dir = _models_dir("whisper") / size
@@ -79,6 +80,12 @@ def remove_model(item_id: str, model_manager) -> None:
             if p.exists():
                 p.unlink()
                 logger.info(f"Removed rife model: {item_id}")
+
+    elif item_id == SOUNDFONT_ID:
+        sf_dir = SETTINGS.path.soundfonts
+        if sf_dir.exists():
+            shutil.rmtree(sf_dir)
+            logger.info("Removed MusyngKite soundfont")
 
     else:
         # PTH models (upscale / face_restore): {family}-{variant}

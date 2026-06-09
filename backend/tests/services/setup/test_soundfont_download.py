@@ -4,7 +4,8 @@ import types
 import pytest
 
 from app.services.setup import model_download_service as mds
-from app.adapters.ai.registry import SOUNDFONT_VERSION_TAG
+from app.services.setup import model_removal_service as mrs
+from app.adapters.ai.registry import SOUNDFONT_VERSION_TAG, SOUNDFONT_ID
 from app.init.configs import SETTINGS
 
 
@@ -57,3 +58,12 @@ def test_handle_model_download_dispatches_soundfont(monkeypatch):
     monkeypatch.setattr(mds, "_download_soundfont", lambda cb: called.setdefault("hit", True))
     mds.handle_model_download({"id": "soundfont-musyngkite"}, lambda f, m: None)
     assert called.get("hit") is True
+
+
+def test_remove_soundfont_deletes_dir(sf_root):
+    (sf_root / "acoustic_grand_piano-mp3").mkdir(parents=True)
+    (sf_root / ".version").write_text('{"tag": "1"}', encoding="utf-8")
+
+    mrs.remove_model(SOUNDFONT_ID, model_manager=None)
+
+    assert not sf_root.exists()
