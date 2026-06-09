@@ -1317,6 +1317,8 @@ export default {
       invalid_request: '請求參數錯誤。',
       invalid_params: '此模型不支援指定的參數。',
       remote_error: '遠端 API 錯誤。',
+      endpoint_https_redirect: '連線網址被導向 https，請將連線位址改為 https://。',
+      endpoint_invalid: '遠端端點拒絕此請求（405），請檢查連線網址是否正確。',
       gpu_unsupported: '顯卡過舊或驅動不支援，且未啟用自動降級為 CPU。請更新顯卡驅動，或於設定開啟「自動降級為 CPU」。',
       vram_insufficient: 'GPU 記憶體不足，且未啟用自動降級為 CPU。請改用較小的模型，或於設定開啟「自動降級為 CPU」。',
     },

@@ -1317,6 +1317,8 @@ export default {
       invalid_request: 'Invalid request parameters.',
       invalid_params: 'Unsupported parameter for this model.',
       remote_error: 'Remote API error.',
+      endpoint_https_redirect: 'The endpoint redirects to https. Update the connection URL to use https://.',
+      endpoint_invalid: 'The remote endpoint rejected the request (405). Check the connection URL.',
       gpu_unsupported: "Your GPU is too old or the driver is unsupported, and auto CPU fallback is off. Update your GPU driver, or enable \"Auto fallback to CPU\" in settings.",
       vram_insufficient: "Not enough GPU memory, and auto CPU fallback is off. Use a smaller model, or enable \"Auto fallback to CPU\" in settings.",
     },
