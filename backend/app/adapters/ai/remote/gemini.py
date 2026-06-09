@@ -661,6 +661,8 @@ class GeminiProvider(RemoteProvider):
             return RemoteApiError("model_not_found", body[:200])
         if status == 400:
             return RemoteApiError("invalid_request", body[:200])
+        if status == 405:
+            return RemoteApiError("endpoint_invalid", body[:200])
         return RemoteApiError("remote_error", f"Gemini {status}: {body[:200]}")
 
     @staticmethod

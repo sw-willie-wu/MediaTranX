@@ -626,6 +626,8 @@ class OllamaProvider(RemoteProvider):
             return RemoteApiError("model_not_found", body[:200])
         if status == 401 or status == 403:
             return RemoteApiError("auth_failed", body[:200])
+        if status == 405:
+            return RemoteApiError("endpoint_invalid", body[:200])
         return RemoteApiError("remote_error", f"Ollama {status}: {body[:200]}")
 
     def pull_model(self, model_name: str, on_progress: Optional[callable] = None) -> bool:

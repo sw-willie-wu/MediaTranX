@@ -748,6 +748,8 @@ class OpenAIProvider(RemoteProvider):
             if "max_tokens" in body_lower or "max_completion_tokens" in body_lower:
                 return RemoteApiError("invalid_params", body[:200])
             return RemoteApiError("invalid_request", body[:200])
+        if status == 405:
+            return RemoteApiError("endpoint_invalid", body[:200])
         return RemoteApiError("remote_error", f"OpenAI {status}: {body[:200]}")
 
     @staticmethod
