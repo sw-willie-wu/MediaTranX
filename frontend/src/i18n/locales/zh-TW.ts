@@ -258,6 +258,8 @@ export default {
       model_exists: '模型已存在',
       downloading_checkpoint: '下載 {0} checkpoint...',
       downloading_rife: '下載 RIFE {0}...',
+      downloading_soundfont: '下載音色庫... {0} / {1}',
+      downloading_soundfont_drums: '下載鼓組...',
       extracting_model: '解壓模型...',
       downloading_repo: '下載 {0}...',
       downloading_file: '下載 {0}（{1}/{2}）...',

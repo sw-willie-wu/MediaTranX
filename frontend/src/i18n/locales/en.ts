@@ -258,6 +258,8 @@ export default {
       model_exists: 'Model already exists',
       downloading_checkpoint: 'Downloading {0} checkpoint...',
       downloading_rife: 'Downloading RIFE {0}...',
+      downloading_soundfont: 'Downloading soundfont... {0} / {1}',
+      downloading_soundfont_drums: 'Downloading drum kit...',
       extracting_model: 'Extracting model...',
       downloading_repo: 'Downloading {0}...',
       downloading_file: 'Downloading {0} ({1}/{2})...',
