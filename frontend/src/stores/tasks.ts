@@ -10,6 +10,9 @@ import { createLogger } from '@/utils/logger'
 
 const log = createLogger('TaskStore')
 
+// Module-level dedup set: each unique notice (code + params) is toasted once per session.
+const shownNotices = new Set<string>()
+
 export const useTaskStore = defineStore('tasks', () => {
   // 狀態
   const tasks = ref<Map<string, Task>>(new Map())
@@ -133,6 +136,68 @@ export const useTaskStore = defineStore('tasks', () => {
     return false
   }
 
+  // 核心：將後端 task 資料陣列套用到 store（可被 refreshTasks 與測試直接呼叫）
+  // previousSnapshot: 若由 refreshTasks 呼叫，傳入 clear 前的快照以正確偵測狀態轉換；
+  //                   直接呼叫時省略，自動從目前 tasks 取快照。
+  function applyTaskUpdates(
+    data: Record<string, unknown>[],
+    previousSnapshot?: Map<string, Task>,
+  ): void {
+    const previousTasks = previousSnapshot ?? new Map(tasks.value)
+    for (const taskData of data) {
+      const existing = previousTasks.get(taskData.task_id as string)
+      // Log status transitions
+      if (existing && existing.status !== taskData.status) {
+        log.info('task status changed', {
+          taskId: taskData.task_id, taskType: taskData.task_type,
+          from: existing.status, to: taskData.status,
+        })
+      }
+      const task: Task = {
+        taskId: taskData.task_id as string,
+        taskType: taskData.task_type as string,
+        status: taskData.status as Task['status'],
+        progress: taskData.progress as number,
+        message: taskData.message as string | null,
+        result: taskData.result as unknown,
+        error: taskData.error as string | null,
+        errorCode: (taskData.error_code as string | null | undefined) ?? null,
+        notices: (taskData.notices as { code: string; params: Record<string, unknown> }[] | undefined) ?? [],
+        createdAt: new Date(taskData.created_at as string),
+        updatedAt: new Date(taskData.updated_at as string),
+        label: existing?.label ?? (taskData.label as string | undefined),
+        fileName: existing?.fileName ?? (taskData.file_name as string | undefined),
+      }
+      tasks.value.set(task.taskId, task)
+      // Feature B: hand a freshly-completed video download to the Video tool.
+      if (
+        task.taskType === 'video.download' &&
+        task.status === 'completed' &&
+        existing?.status !== 'completed' &&
+        task.result
+      ) {
+        // Lazy import: keeps @/i18n out of tasks.ts's static graph so node-env
+        // test suites that import the store don't crash on module load.
+        void import('@/composables/videoDownloadComplete').then((m) =>
+          m.adoptCompletedDownload(task.result as never),
+        )
+      }
+      // Notice dedup + toast: each unique notice (code + params) is shown once per session.
+      for (const n of (taskData.notices as { code: string; params?: Record<string, unknown> }[] | undefined) ?? []) {
+        const key = `${n.code}:${JSON.stringify(n.params ?? {})}`
+        if (shownNotices.has(key)) continue
+        shownNotices.add(key)
+        void Promise.all([import('@/i18n'), import('@/composables/useToast')]).then(
+          ([i18n, toast]) => {
+            // @/i18n default export → use .default.global.t
+            const msg = i18n.default.global.t(`compute.notice.${n.code}`, n.params ?? {})
+            toast.useToast().show(msg, { type: 'warning' })
+          },
+        )
+      }
+    }
+  }
+
   // 重新載入任務列表（輪詢核心）
   async function refreshTasks(): Promise<void> {
     try {
@@ -147,43 +212,8 @@ export const useTaskStore = defineStore('tasks', () => {
       }
       tasks.value.clear()
       for (const [id, t] of frontendTasks) tasks.value.set(id, t)
-      for (const taskData of data) {
-        const existing = previousTasks.get(taskData.task_id)
-        // Log status transitions
-        if (existing && existing.status !== taskData.status) {
-          log.info('task status changed', {
-            taskId: taskData.task_id, taskType: taskData.task_type,
-            from: existing.status, to: taskData.status,
-          })
-        }
-        const task: Task = {
-          taskId: taskData.task_id,
-          taskType: taskData.task_type,
-          status: taskData.status,
-          progress: taskData.progress,
-          message: taskData.message,
-          result: taskData.result,
-          error: taskData.error,
-          createdAt: new Date(taskData.created_at),
-          updatedAt: new Date(taskData.updated_at),
-          label: existing?.label ?? taskData.label,
-          fileName: existing?.fileName ?? taskData.file_name,
-        }
-        tasks.value.set(task.taskId, task)
-        // Feature B: hand a freshly-completed video download to the Video tool.
-        if (
-          task.taskType === 'video.download' &&
-          task.status === 'completed' &&
-          existing?.status !== 'completed' &&
-          task.result
-        ) {
-          // Lazy import: keeps @/i18n out of tasks.ts's static graph so node-env
-          // test suites that import the store don't crash on module load.
-          void import('@/composables/videoDownloadComplete').then((m) =>
-            m.adoptCompletedDownload(task.result as never),
-          )
-        }
-      }
+
+      applyTaskUpdates(data as Record<string, unknown>[], previousTasks)
 
       // 沒有 active task 時停止輪詢
       if (activeTasks.value.length === 0) {
@@ -210,6 +240,7 @@ export const useTaskStore = defineStore('tasks', () => {
     submitTask,
     cancelTask,
     removeTask,
+    applyTaskUpdates,
     refreshTasks,
     startPolling,
     cleanup,

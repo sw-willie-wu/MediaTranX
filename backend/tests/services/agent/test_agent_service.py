@@ -7,7 +7,7 @@ import json
 import pytest
 from contextlib import contextmanager
 from unittest.mock import MagicMock
-from ag_ui.core import UserMessage, SystemMessage, Tool
+from ag_ui.core import UserMessage, SystemMessage, Tool, AssistantMessage, ToolMessage
 from app.services.agent.agent_service import AgentService, AgentError, _msg_to_dict, _tool_to_dict
 from app.services.agent._ag_ui_compat import RunAgentInput
 
@@ -498,3 +498,166 @@ class TestRunCancel:
             async for _ in svc.run(inp):
                 pass
         assert kill_recorded["called"] is True
+
+
+# ── State snapshot tests ─────────────────────────────────────────────
+
+class TestStateSnapshot:
+    async def test_snapshot_folded_into_system_message(self):
+        chat = FakeChatService([{"type": "done"}])
+        svc = AgentService(chat_service=chat, remote_service=FakeRemoteService())
+        state = {
+            "agent_model_choice": "qwen3:8b",
+            "snapshot": {
+                "map": {
+                    "views": [{"route": "/video", "label": "Video",
+                               "subfunctions": ["transcode"]}],
+                    "files": [],
+                    "current_position": {"view": "/video", "subfunction": "transcode"},
+                },
+                "active_panel": None,
+                "active_file": None,
+            },
+        }
+        inp = _make_input(messages=[UserMessage(id="m0", content="hi")], state=state)
+        _ = [e async for e in svc.run(inp)]
+        sysmsg = chat.last_session.received_messages[0]
+        assert sysmsg["role"] == "system"
+        # "## 我在哪" is emitted ONLY by render_state, never by the static prompt
+        # (the prompt's SOP mentions 「# 當前狀態」, so that substring can't
+        # discriminate folded vs not). This proves the snapshot was rendered in.
+        assert "## 我在哪" in sysmsg["content"]
+        assert "/video" in sysmsg["content"]
+        assert "MediaTranX" in sysmsg["content"]   # static prompt still present
+
+    async def test_no_snapshot_falls_back_to_plain_prompt(self):
+        chat = FakeChatService([{"type": "done"}])
+        svc = AgentService(chat_service=chat, remote_service=FakeRemoteService())
+        inp = _make_input(
+            messages=[UserMessage(id="m0", content="hi")],
+            state={"agent_model_choice": "qwen3:8b"},
+        )
+        _ = [e async for e in svc.run(inp)]
+        sysmsg = chat.last_session.received_messages[0]
+        assert sysmsg["role"] == "system"
+        # render-only marker absent → no snapshot block was folded in
+        assert "## 我在哪" not in sysmsg["content"]
+
+
+# ── Model-busy UX tests ──────────────────────────────────────────────
+
+class _RaisingChatSession:
+    def __init__(self, exc):
+        self._exc = exc
+        self.received_messages = None
+    async def stream(self, messages, *, tools=None, max_tokens, temperature):
+        self.received_messages = messages
+        raise self._exc
+        yield  # pragma: no cover  (make it an async generator)
+    def kill_process(self): ...
+
+
+class _RaisingChatService:
+    def __init__(self, exc):
+        self._exc = exc
+        self.last_session = None
+    from contextlib import contextmanager as _cm
+    @_cm
+    def session(self, **kw):
+        self.last_session = _RaisingChatSession(self._exc)
+        yield self.last_session
+
+
+def _execute_history():
+    assistant = AssistantMessage(
+        id="a1", content="",
+        tool_calls=[{
+            "id": "call_exec", "type": "function",
+            "function": {"name": "click_execute", "arguments": "{}"},
+        }],
+    )
+    tool = ToolMessage(id="t1", tool_call_id="call_exec",
+                       content='{"ok": true, "task_id": "task-xyz"}')
+    return [UserMessage(id="m0", content="幫我轉字幕"), assistant, tool]
+
+
+class TestModelBusyUx:
+    async def test_local_execute_success_short_circuits(self):
+        chat = FakeChatService([{"type": "done"}])
+        svc = AgentService(chat_service=chat, remote_service=FakeRemoteService())
+        inp = _make_input(messages=_execute_history(),
+                          state={"agent_model_choice": "qwen3:8b"})
+        events = [e async for e in svc.run(inp)]
+        assert chat.last_session is None
+        assert any("TEXT_MESSAGE_CHUNK" in e for e in events)
+        assert any("task-xyz" in e for e in events)
+        assert any("RUN_FINISHED" in e for e in events)
+        assert not any("RUN_ERROR" in e for e in events)
+
+    async def test_remote_execute_does_not_short_circuit(self):
+        chat = FakeChatService([{"type": "done"}])
+        prov = FakeRemoteService(); prov.provider_map[(3, "openai")] = object()
+        svc = AgentService(chat_service=chat, remote_service=prov)
+        inp = _make_input(messages=_execute_history(),
+                          state={"agent_model_choice": "remote:openai:3:gpt-4o-mini"})
+        _ = [e async for e in svc.run(inp)]
+        assert chat.last_session is not None
+
+    async def test_local_non_execute_does_not_short_circuit(self):
+        chat = FakeChatService([{"type": "done"}])
+        svc = AgentService(chat_service=chat, remote_service=FakeRemoteService())
+        assistant = AssistantMessage(id="a1", content="", tool_calls=[{
+            "id": "call_nav", "type": "function",
+            "function": {"name": "navigate_to", "arguments": '{"route":"/video"}'}}])
+        tool = ToolMessage(id="t1", tool_call_id="call_nav", content='{"ok": true}')
+        inp = _make_input(messages=[UserMessage(id="m0", content="hi"), assistant, tool],
+                          state={"agent_model_choice": "qwen3:8b"})
+        _ = [e async for e in svc.run(inp)]
+        assert chat.last_session is not None
+
+    async def test_local_connection_reset_maps_to_model_busy(self):
+        chat = _RaisingChatService(ConnectionResetError(10054, "forcibly closed"))
+        svc = AgentService(chat_service=chat, remote_service=FakeRemoteService())
+        inp = _make_input(messages=[UserMessage(id="m0", content="hi")],
+                          state={"agent_model_choice": "qwen3:8b"})
+        events = [e async for e in svc.run(inp)]
+        assert any("agent.error.model_busy" in e for e in events)
+        assert not any("agent.error.internal" in e for e in events)
+
+    async def test_remote_connection_reset_stays_internal(self):
+        chat = _RaisingChatService(ConnectionResetError(10054, "forcibly closed"))
+        prov = FakeRemoteService(); prov.provider_map[(3, "openai")] = object()
+        svc = AgentService(chat_service=chat, remote_service=prov)
+        inp = _make_input(messages=[UserMessage(id="m0", content="hi")],
+                          state={"agent_model_choice": "remote:openai:3:gpt-4o-mini"})
+        events = [e async for e in svc.run(inp)]
+        assert any("agent.error.internal" in e for e in events)
+        assert not any("agent.error.model_busy" in e for e in events)
+
+    # ── B false-positive boundary: a click_execute that did NOT start a task ──
+    async def test_local_failed_execute_does_not_short_circuit(self):
+        # click_execute returned an error (no task started) → must NOT short-circuit
+        chat = FakeChatService([{"type": "done"}])
+        svc = AgentService(chat_service=chat, remote_service=FakeRemoteService())
+        assistant = AssistantMessage(id="a1", content="", tool_calls=[{
+            "id": "call_exec", "type": "function",
+            "function": {"name": "click_execute", "arguments": "{}"}}])
+        tool = ToolMessage(id="t1", tool_call_id="call_exec",
+                           content='{"error": "agent.error.no_file_selected"}')
+        inp = _make_input(messages=[UserMessage(id="m0", content="hi"), assistant, tool],
+                          state={"agent_model_choice": "qwen3:8b"})
+        _ = [e async for e in svc.run(inp)]
+        assert chat.last_session is not None
+
+    async def test_local_execute_without_task_id_does_not_short_circuit(self):
+        # ok:true but no task_id → don't emit a "task_id=None" canned msg; normal round
+        chat = FakeChatService([{"type": "done"}])
+        svc = AgentService(chat_service=chat, remote_service=FakeRemoteService())
+        assistant = AssistantMessage(id="a1", content="", tool_calls=[{
+            "id": "call_exec", "type": "function",
+            "function": {"name": "click_execute", "arguments": "{}"}}])
+        tool = ToolMessage(id="t1", tool_call_id="call_exec", content='{"ok": true}')
+        inp = _make_input(messages=[UserMessage(id="m0", content="hi"), assistant, tool],
+                          state={"agent_model_choice": "qwen3:8b"})
+        _ = [e async for e in svc.run(inp)]
+        assert chat.last_session is not None

@@ -32,6 +32,7 @@ class TaskData:
     result: Optional[Any] = None
     error: Optional[str] = None
     error_code: Optional[str] = None
+    notices: list = field(default_factory=list)  # [{"code": str, "params": dict}]
     file_id: Optional[str] = None  # input file the task processes (for response-time name resolution)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

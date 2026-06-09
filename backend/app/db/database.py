@@ -76,6 +76,7 @@ def _run_migrations(engine):
 
     migrations = [
         ("task_history", "error_code", "TEXT"),
+        ("api_connections", "chunk_ctx_budget", "INTEGER"),
     ]
 
     with engine.connect() as conn:

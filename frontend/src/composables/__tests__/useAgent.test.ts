@@ -27,6 +27,8 @@ import { useAgentStore } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
 import { makeFakeAgent } from '@/composables/__tests__/_fakeAgent'
 import { apiFetch } from '@/composables/useApi'
+import type { ActivePanelEntry } from '@/composables/useActivePanel'
+import type { PanelHandle } from '@/stores/panelRegistry'
 
 vi.mock('@/composables/useApi', () => ({
   getApiBase: () => '/api',
@@ -555,6 +557,43 @@ describe('useAgent.runLoop', () => {
     await deleteSession(active)
 
     expect(currentSessionId.value).not.toBe(active)
+  })
+
+  // ─── Agent state snapshot ────────────────────────────────────────────────────
+
+  it('attaches a cloneable two-tier snapshot to agent.state', async () => {
+    const handle = {
+      agentSchema: {
+        panelId: 'video.transcode',
+        fields: [{ name: 'output_format', type: 'enum', options: () => ['mp4', 'mkv'] }],
+        actions: [],
+        execute: { requiresConfirm: true, label: 'Transcode' },
+      },
+      getCurrentValues: () => ({ output_format: 'mp4' }),
+      setField: () => undefined,
+      openField: () => {},
+      execute: async () => ({}),
+      isMultiSelect: () => false,
+      isMounted: { value: true } as any,
+    } as unknown as PanelHandle
+    const activePanel: ActivePanelEntry = {
+      panelId: 'video.transcode', schema: handle.agentSchema, instance: handle, isMounted: true,
+    }
+
+    const fake = makeFakeAgent(() => ({ textDeltas: ['ok'] }))
+    const { sendUserText } = useAgent({
+      agentFactory: fake.factory,
+      activePanelRef: () => activePanel,
+    })
+    await sendUserText('hi')
+
+    const state = (fake.agent as any).state
+    expect(state.agent_model_choice).toBeDefined()
+    expect(state.snapshot.map.views.length).toBeGreaterThan(0)
+    expect(state.snapshot.map.current_position.view).toBe('/video')
+    expect(state.snapshot.active_panel.panel_id).toBe('video.transcode')
+    expect(state.snapshot.active_panel.fields[0].current_value).toBe('mp4')
+    expect(() => structuredClone(state)).not.toThrow()
   })
 
   // ─── Non-abort error ─────────────────────────────────────────────────────────

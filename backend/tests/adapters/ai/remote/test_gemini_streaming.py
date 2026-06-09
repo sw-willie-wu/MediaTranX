@@ -33,7 +33,7 @@ def test_streaming_parses_sse_data_lines():
         return _make_sse_response(*lines)
 
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov = GeminiProvider(
@@ -63,7 +63,7 @@ def test_streaming_url_strips_models_prefix():
         return _make_sse_response()
 
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov = GeminiProvider(
@@ -86,7 +86,7 @@ def test_streaming_handles_multi_part_per_candidate():
         b'data: {"candidates":[{"content":{"parts":[{"text":"A"},{"text":"B"}]}}]}\n',
     ]
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=_make_sse_response(*lines),
     ):
         prov = GeminiProvider(
@@ -109,7 +109,7 @@ def test_streaming_raises_on_safety_finish_reason():
         b'data: {"candidates":[{"content":{"parts":[{"text":"start"}]},"finishReason":"SAFETY"}]}\n',
     ]
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=_make_sse_response(*lines),
     ):
         prov = GeminiProvider(
@@ -135,7 +135,7 @@ def test_streaming_raises_on_other_safety_reasons(reason):
         f'data: {{"candidates":[{{"finishReason":"{reason}"}}]}}\n'.encode(),
     ]
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=_make_sse_response(*lines),
     ):
         prov = GeminiProvider(
@@ -159,7 +159,7 @@ def test_streaming_handles_eof_without_done_marker():
         # No terminal marker; stream just ends
     ]
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=_make_sse_response(*lines),
     ):
         prov = GeminiProvider(
@@ -196,7 +196,7 @@ def test_blocking_no_regression():
         return resp
 
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov = GeminiProvider(
@@ -229,7 +229,7 @@ def test_streaming_thinking_budget_zero_when_task_is_frame_select():
         return _make_sse_response(*lines)
 
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov = GeminiProvider(
@@ -261,7 +261,7 @@ def test_streaming_no_thinking_config_without_task_hint():
         return _make_sse_response(*lines)
 
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov = GeminiProvider(
@@ -297,7 +297,7 @@ def test_blocking_thinking_budget_zero_when_task_is_frame_select():
         return resp
 
     with patch(
-        "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov = GeminiProvider(

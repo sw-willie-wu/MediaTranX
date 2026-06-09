@@ -272,3 +272,20 @@ def test_handle_remote_task_rejects_unsupported_format(tmp_path):
              "remote_model": "gpt-4o", "format": "md"},
             lambda p, m: None,
         )
+
+
+def test_recognize_remote_uses_streaming_session(tmp_path):
+    svc, fs, tm, mm, cs, rs, _src = _make_svc(tmp_path)
+    prov = MagicMock()
+    prov.chat = MagicMock(return_value="ocr text")
+    with patch("app.utils.vision_messages.prepare_image_for_remote_vlm",
+               return_value=("b64", "image/png")), \
+         patch("app.utils.vision_messages.build_vision_chat_messages",
+               return_value=[{"role": "user", "content": "x"}]), \
+         patch("app.adapters.ai.inference_config.get_remote_inference_config",
+               return_value={"temperature": 0.0, "max_tokens": 16384}):
+        out = svc._recognize_remote(str(_src), prov, "qwen-vl", "txt")
+    assert out == "ocr text"
+    _, kwargs = prov.chat.call_args
+    assert kwargs.get("abort_hook") is not None
+    assert kwargs.get("model") == "qwen-vl"

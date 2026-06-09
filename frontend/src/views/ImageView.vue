@@ -18,6 +18,7 @@ import { useImageWorkspace } from '@/composables/useImageWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 import { useViewHost } from '@/composables/useViewHost'
+import { subfunctionsForView } from '@/agent/agentNavCatalog'
 
 const {
   hasFile, fileId, isUploading, currentFileName, imageInfo, isLoadingInfo,
@@ -66,7 +67,7 @@ const filterPreviewParams = ref<FilterPreview | null>(null)
 useViewHost('image', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
-  validSubfunctions: () => ['transcode', 'adjust', 'filter', 'crop', 'remove-bg', 'ai-remove', 'upscale', 'ocr'],
+  validSubfunctions: () => subfunctionsForView('image'),
 })
 
 // ── Per-entry panel settings cache ───────────────────────────────────────────

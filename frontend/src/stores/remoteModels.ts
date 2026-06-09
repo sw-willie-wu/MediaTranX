@@ -32,6 +32,8 @@ export interface RemoteConnection {
   /** Last-4 masked hint like "…AbCd", "⚠ undecryptable", or null. */
   key_hint?: string | null
   enabled: boolean
+  /** Per-connection chunk context budget (ollama-only). null = auto-derive. */
+  chunk_ctx_budget?: number | null
 }
 
 export interface RemoteModelInfo {
@@ -195,7 +197,7 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
   // change immediately via Pinia reactivity.
 
   async function addConnection(payload: {
-    provider: string; name: string; endpoint: string; api_key?: string
+    provider: string; name: string; endpoint: string; api_key?: string; chunk_ctx_budget?: number | null
   }): Promise<boolean> {
     const res = await apiFetch('/setup/remote/connections', {
       method: 'POST',
@@ -219,7 +221,7 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
     id: number,
     // api_key is a write-only field: send a new key to change it, or omit it
     // (null/undefined) to keep the stored one. It is never read back.
-    payload: { name?: string; endpoint?: string; api_key?: string | null; enabled?: boolean },
+    payload: { name?: string; endpoint?: string; api_key?: string | null; enabled?: boolean; chunk_ctx_budget?: number | null },
   ): Promise<boolean> {
     const res = await apiFetch(`/setup/remote/connections/${id}`, {
       method: 'PUT',

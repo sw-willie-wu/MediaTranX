@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import ToolCallCard from './ToolCallCard.vue'
-
 defineProps<{
   content: string
+  /** Kept for API compatibility with ChatMessages; tool calls are no longer
+   *  rendered here — their outcome shows as the compact `name ✓ value` result
+   *  row in ChatMessages.vue instead of a verbose expandable args card. */
   toolCalls: Array<{ id: string; function: { name: string; arguments: string } }>
   isRunning: boolean
 }>()
@@ -24,14 +25,12 @@ function renderText(text: string): string {
 </script>
 
 <template>
-  <div class="assistant-message">
-    <!-- Bubble only when there is something to show. Pure tool-call
-         rounds (no assistant text) skip the bubble entirely so the
-         message list isn't padded with empty rectangles. -->
-    <div
-      v-if="content || (isRunning && toolCalls.length === 0)"
-      class="assistant-bubble"
-    >
+  <!-- Only render when there's text (or a "thinking" placeholder while
+       streaming). A committed pure tool-call round has no text and no card,
+       so it renders nothing here — its tool calls appear as compact result
+       rows in ChatMessages, avoiding empty bubbles / stray gaps. -->
+  <div v-if="content || isRunning" class="assistant-message">
+    <div class="assistant-bubble">
       <!-- Text content -->
       <span
         v-if="content"
@@ -41,18 +40,10 @@ function renderText(text: string): string {
       <!-- Streaming cursor -->
       <span v-if="isRunning && content" class="stream-cursor">▎</span>
       <!-- Thinking placeholder when no content yet -->
-      <span v-if="isRunning && !content && toolCalls.length === 0" class="thinking-label">
+      <span v-if="isRunning && !content" class="thinking-label">
         {{ $t('agent.bubble.thinking') }}
       </span>
     </div>
-
-    <!-- Tool calls embedded in assistant message -->
-    <ToolCallCard
-      v-for="tc in toolCalls"
-      :key="tc.id"
-      :tool-call="tc"
-      :status="'done'"
-    />
   </div>
 </template>
 

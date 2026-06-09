@@ -378,7 +378,11 @@ class TestRealShapeSanity:
         },
         {
             "name": "set_field",
-            "description": "Set a field on the active panel. Field name & valid values are in state.panel_schema.",
+            "description": (
+                "Set a field on the active panel. Use ONLY field names listed in "
+                "the active_panel.fields of the current state; pick values from "
+                "each field's options. Do not invent fields or guess values."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {"field": {"type": "string"}, "value": {}},
@@ -500,7 +504,7 @@ class TestWireShape:
             return _make_sse_response(DONE_LINE)
 
         with patch(
-            "app.adapters.ai.remote.openai.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             side_effect=fake_urlopen,
         ):
             list(self._prov().chat_completions_stream(

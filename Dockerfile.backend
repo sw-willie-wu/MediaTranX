@@ -20,7 +20,7 @@ RUN uv export --frozen --no-hashes --all-extras \
     > requirements.txt \
     && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir --no-deps \
-    git+https://github.com/facebookresearch/demucs
+    https://github.com/sw-willie-wu/MediaTranX/releases/download/vendored-deps/demucs-e976d93.tar.gz
 
 # 安裝 llama-server（從 GitHub releases 下載最新版）
 RUN python -c "\

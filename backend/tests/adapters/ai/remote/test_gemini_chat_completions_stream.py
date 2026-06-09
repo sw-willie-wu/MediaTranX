@@ -78,7 +78,7 @@ class TestGeminiChatCompletionsStream:
             _gemini_text_line(" world"),
         ]
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=_make_sse_response(*lines),
         ):
             chunks = list(_prov().chat_completions_stream(
@@ -97,7 +97,7 @@ class TestGeminiChatCompletionsStream:
             _gemini_usage_line(prompt=20, candidates=8, total=28),
         ]
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=_make_sse_response(*lines),
         ):
             chunks = list(_prov().chat_completions_stream(
@@ -116,7 +116,7 @@ class TestGeminiChatCompletionsStream:
             _gemini_fc_line("navigate_to", {"route": "/video"}),
         ]
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=_make_sse_response(*lines),
         ):
             chunks = list(_prov().chat_completions_stream(
@@ -148,7 +148,7 @@ class TestGeminiChatCompletionsStream:
             _gemini_fc_line("tool_b", {"b": 2}),
         ]
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=_make_sse_response(*lines),
         ):
             chunks = list(_prov().chat_completions_stream(
@@ -179,7 +179,7 @@ class TestGeminiChatCompletionsStream:
         }
         lines = [f"data: {json.dumps(chunk_data)}\n".encode()]
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=_make_sse_response(*lines),
         ):
             chunks = list(_prov().chat_completions_stream(
@@ -207,7 +207,7 @@ class TestGeminiChatCompletionsStream:
         ]
         with caplog.at_level(logging.WARNING, logger="app.adapters.ai.remote.gemini"):
             with patch(
-                "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+                "app.adapters.ai.remote._http.urlopen",
                 return_value=_make_sse_response(*lines),
             ):
                 chunks = list(_prov().chat_completions_stream(
@@ -235,7 +235,7 @@ class TestGeminiChatCompletionsStream:
             raise err
 
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             side_effect=fake_urlopen,
         ):
             with pytest.raises(RemoteApiError) as exc_info:
@@ -252,7 +252,7 @@ class TestGeminiChatCompletionsStream:
         hook_received = []
 
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=resp,
         ):
             list(_prov().chat_completions_stream(
@@ -268,7 +268,7 @@ class TestGeminiChatCompletionsStream:
         lines = [_gemini_text_line("hi")]
         resp = _make_sse_response(*lines)
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=resp,
         ):
             list(_prov().chat_completions_stream(
@@ -290,7 +290,7 @@ class TestGeminiChatCompletionsStream:
             {"role": "user", "content": "hi"},
         ]
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             side_effect=fake_urlopen,
         ):
             list(_prov().chat_completions_stream(
@@ -317,7 +317,7 @@ class TestGeminiChatCompletionsStream:
             "parameters": {"type": "object", "properties": {}},
         }]
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             side_effect=fake_urlopen,
         ):
             list(_prov().chat_completions_stream(
@@ -340,7 +340,7 @@ class TestGeminiChatCompletionsStream:
             return _make_sse_response()
 
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             side_effect=fake_urlopen,
         ):
             list(_prov().chat_completions_stream(
@@ -358,7 +358,7 @@ class TestGeminiChatCompletionsStream:
             _gemini_text_line("done"),
         ]
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=_make_sse_response(*lines),
         ):
             chunks = list(_prov().chat_completions_stream(
@@ -379,7 +379,7 @@ class TestGeminiChatCompletionsStream:
             _gemini_text_line("B"),
         ]
         with patch(
-            "app.adapters.ai.remote.gemini.urllib.request.urlopen",
+            "app.adapters.ai.remote._http.urlopen",
             return_value=_make_sse_response(*lines),
         ):
             chunks = list(_prov().chat_completions_stream(

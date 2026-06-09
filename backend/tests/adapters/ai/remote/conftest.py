@@ -1,7 +1,7 @@
 """Shared HTTP-stub helpers for RemoteProvider tests.
 
-Patches `urllib.request.urlopen` at each provider's namespace; helpers below
-build `urlopen()`-shaped fakes (response object usable as a context manager
+Patches `_http.urlopen` (the shared cross-scheme redirect guard the providers
+route through); helpers below build `urlopen()`-shaped fakes (response object usable as a context manager
 yielding a `.read()`-able). The response object is re-enterable so a single
 `make_response(...)` can be passed to `patch(..., return_value=...)` and used
 across multiple `urlopen` calls without exhausting a generator.

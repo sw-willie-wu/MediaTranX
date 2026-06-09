@@ -1058,6 +1058,9 @@ export default {
       error: 'Unable to read hardware status',
       redetect: 'Re-detect',
       refresh: 'Refresh',
+      compute_policy: 'Compute fallback',
+      cpu_fallback: 'Auto fallback to CPU',
+      cpu_fallback_hint: "When the GPU can't run (too old, unsupported driver, or insufficient memory), automatically run on CPU (slower). When off, tasks that can't run on the GPU will fail.",
     },
 
     ai: {
@@ -1126,6 +1129,9 @@ export default {
       edit: 'Edit',
       refresh: 'Refresh Models',
       delete: 'Delete',
+      chunkCtxBudget: 'Batch context budget',
+      chunkCtxBudgetAuto: 'auto',
+      chunkCtxBudgetHint: 'auto = derive from the model automatically. Translation batches scale with this; summary stays coherent up to ~16k so higher has no extra effect. If too large to fit, you\'ll be warned to lower it.',
     },
 
     agent: {
@@ -1212,6 +1218,7 @@ export default {
       provider_error: 'Provider returned an error',
       context_full: 'Conversation too long. Please clear and start over.',
       internal: 'Internal error',
+      model_busy: 'The model is busy running another task — ask me again once it finishes.',
       unknown_tool: 'Unknown tool: {name}',
       tool_failed: 'Tool {name} failed: {error}',
       invalid_field: 'Field {field} is not valid in the current view',
@@ -1310,6 +1317,19 @@ export default {
       invalid_request: 'Invalid request parameters.',
       invalid_params: 'Unsupported parameter for this model.',
       remote_error: 'Remote API error.',
+      endpoint_https_redirect: 'The endpoint redirects to https. Update the connection URL to use https://.',
+      endpoint_invalid: 'The remote endpoint rejected the request (405). Check the connection URL.',
+      gpu_unsupported: "Your GPU is too old or the driver is unsupported, and auto CPU fallback is off. Update your GPU driver, or enable \"Auto fallback to CPU\" in settings.",
+      vram_insufficient: "Not enough GPU memory, and auto CPU fallback is off. Use a smaller model, or enable \"Auto fallback to CPU\" in settings.",
+    },
+  },
+
+  // ── Compute fallback notices ──────────────────────────────────────────
+  compute: {
+    notice: {
+      gpu_unsupported: 'GPU detected but cannot run (too old or unsupported driver); switched to CPU (slower).',
+      cuda_runtime_missing: 'GPU acceleration components are not ready; switched to CPU (slower).',
+      vram_insufficient: 'Not enough GPU memory to load the model; switched to CPU (slower).',
     },
   },
 

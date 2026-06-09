@@ -17,29 +17,31 @@ app/
 │   └── routes/
 │       ├── audio/, image/, video/, document/
 │       ├── files/, llm/, health/
-│       └── setup/, tasks/
+│       └── setup/, tasks/, agent/            # agent/ = AG-UI run + sessions
 ├── adapters/                           # 外部系統 adapter（需跨層協調）
 │   ├── device.py                       # 硬體/OS 查詢
 │   ├── binary/                         # binary subprocess wrapper
-│   │   ├── ffmpeg.py
-│   │   └── llama_server.py
+│   │   ├── ffmpeg.py, llama_server.py
+│   │   └── ytdlp.py                    # yt-dlp 影片下載
+│   ├── security/                       # secret_cipher.py（API key at-rest 加密）
 │   └── ai/                             # AI domain adapter
 │       ├── model_manager.py            # VRAM slot + acquire 協調（單例）
 │       ├── registry.py                 # 靜態 model metadata
 │       ├── tile_inference.py           # PTH tensor tile/stitch helper
+│       ├── face_pipeline.py            # GFPGAN detect/align/restore 編排
 │       ├── remote/                     # HTTP provider adapter
-│       │   ├── base.py
+│       │   ├── base.py, probe.py
 │       │   └── openai.py, gemini.py, ollama.py
 │       └── wrapper/                    # AI model lifecycle wrapper 家族
 │           ├── base.py                 # BaseWrapper / PackageWrapper / PthWrapper
 │           ├── whisper.py, demucs.py, basic_pitch.py, wav2vec2.py
 │           ├── bsrgan.py, realesrgan.py, swinir.py, waifu2x.py, real_cugan.py
-│           ├── codeformer.py, gfpgan.py
+│           ├── gfpgan.py               # 唯一 face restorer（CodeFormer 已移除）
 │           ├── mobilesam.py, rife.py
 │           └── llm.py                  # 包 binary/llama_server
 ├── services/                           # DI business services
 │   ├── audio/, image/, video/, document/    # modality feature services
-│   └── files/, llm/, setup/, tasks/         # cross-cutting services
+│   └── files/, llm/, setup/, tasks/, agent/ # cross-cutting services（agent/ = AG-UI）
 ├── pipeline/                           # 跨 service domain orchestration
 │   └── translate.py, transcribe.py, ocr.py
 ├── utils/                              # 純技術 helper（技術中性 + 2+ 終端 consumer）
@@ -202,7 +204,8 @@ MediaTranXError
 ├── ModelLoadError          # 模型載入失敗
 ├── InferenceError          # AI 推論錯誤
 ├── TaskError               # 任務執行錯誤
-├── FileNotFoundError_      # 檔案未找到
+├── FileNotFoundError_      # 檔案未找到（→404）
+├── NotFoundError           # 一般資源未找到，如 session（→404）
 ├── ConfigError             # 設定錯誤
 ├── FFmpegError             # FFmpeg 執行失敗
 ├── TaskCancelledError      # 任務被使用者取消
@@ -748,16 +751,15 @@ logger = logging.getLogger(__name__)
 
 ### 8.1 所有路徑透過 `PathSettings`（pydantic-settings）
 
-路徑由 Electron 透過 `MEDIATRANX_*` 環境變數注入，Python 的 `PathSettings` 讀取。Dev 模式下使用預設值（`core/backend/` 子目錄）。
+路徑由 Electron 透過 `MEDIATRANX_*` 環境變數注入，Python 的 `PathSettings` 讀取。Dev 模式下使用預設值（`backend/` 子目錄）。
 
 ```python
 # ✗ 禁止 hardcode
 path = Path("C:/Users/.../models/")
 
-# ✓ 正確：透過 settings
-from app.init.configs import get_settings
-settings = get_settings()
-path = Path(settings.path.models) / "image"
+# ✓ 正確：透過 SETTINGS 單例
+from app.init.configs import SETTINGS
+path = Path(SETTINGS.path.models) / "image"
 ```
 
 ### 8.2 路徑欄位
@@ -778,6 +780,7 @@ Computed fields（從 `root` 衍生，無 env override）：
 | `path.log` | `root/logs` |
 | `path.ffmpeg` | `root/bin/ffmpeg`（Win）/ `ffmpeg`（其他） |
 | `path.llama` | `root/bin/llama` |
+| `path.ytdlp` | `root/bin/yt-dlp`（Win）/ `yt-dlp`（其他） |
 | `path.soundfonts` | `root/bin/soundfonts/musyngkite` |
 
 ### 8.3 新增外部工具
@@ -879,12 +882,13 @@ elif result["mode"] == "completion":
 |------|------|---------|
 | `/api/setup/` | 設定頁面（config、models、remote connections） | `routes/setup/` |
 | `/api/llm/` | LLM 共用查詢（translate languages/styles/status/test） | `routes/llm/` |
-| `/api/video/` | 影片工具（subtitle、transcode、interpolate、enhance） | `routes/video/` |
-| `/api/audio/` | 音訊工具（transcribe、separate、lyrics、midi） | `routes/audio/` |
-| `/api/image/` | 圖片工具（upscale、ocr、remove-bg、filter） | `routes/image/` |
-| `/api/document/` | 文件工具（translate、ocr、pdf-convert、split） | `routes/document/` |
+| `/api/video/` | 影片工具（subtitle、transcode、interpolate、enhance、crop、download、summary 等） | `routes/video/` |
+| `/api/audio/` | 音訊工具（transcribe、separate、lyrics、midi、cut、transcode、volume 等） | `routes/audio/` |
+| `/api/image/` | 圖片工具（upscale、ocr、remove-bg、remove-object、filter、convert、crop 等） | `routes/image/` |
+| `/api/document/` | 文件工具（translate、ocr、pdf-convert、split 等） | `routes/document/` |
 | `/api/files/` | 檔案管理（upload、download、metadata） | `routes/files/` |
 | `/api/tasks/` | 任務管理（active、history） | `routes/tasks/` |
+| `/api/agent/` | Agent 對話（AG-UI run + sessions 持久化） | `routes/agent/` |
 | `/api/health/` | 健康檢查與裝置狀態 | `routes/health/` |
 
 LLM 共用查詢（語言列表、翻譯風格、模型狀態）放在 `/api/llm/`，不重複掛在各 domain router 下。實際執行翻譯/OCR/摘要仍在各 domain service 的 submit endpoint。
@@ -923,6 +927,7 @@ Routes **不寫 try/except**。全域 exception handler（`handler/error_respons
 |---|---|
 | `FileNotFoundError_` | 404 |
 | `ModelNotFoundError` | 404 |
+| `NotFoundError` | 404 |
 | `ValueError` | 400 |
 | `RemoteApiError` | 502 |
 | `FFmpegError` | 500 |
@@ -953,7 +958,7 @@ Adapter 方法失敗時直接拋異常，由上層 Service/TaskManager 處理。
 4. [ ] **註冊 Route**：在 `api/routes/{domain}/__init__.py` include 新 router
 5. [ ] **Import**：外部套件直接 top-level import
 6. [ ] **日誌**：Service 初始化和任務提交/完成有 `logger.info`
-7. [ ] **路徑**：所有路徑透過 `get_settings().path` 取得
+7. [ ] **路徑**：所有路徑透過 `SETTINGS.path`（`from app.init.configs import SETTINGS` 單例）取得
 8. [ ] **命名**：遵循 §1.3（service 後綴、subpackage 內主題命名、`_` prefix 規則）
 9. [ ] **文件**：更新 `docs/ARCHITECTURE.md` 和本文件的相關段落
 

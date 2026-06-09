@@ -9,9 +9,6 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
-import numpy as np
-import soundfile as sf
-
 from app.init.configs import SETTINGS
 
 logger = logging.getLogger(__name__)
@@ -454,6 +451,13 @@ def _download_pth_model(model_id: str, progress_callback: Callable[[float, str],
 
 def _download_basic_pitch(progress_callback: Callable[[float, str], None]) -> None:
     """Trigger basic-pitch model download by running a dummy inference."""
+    # Lazy import: soundfile carries libsndfile native libs. Keep it (and numpy,
+    # only used here) out of module top level — this module is imported eagerly
+    # at startup via container -> SetupService, so a broken dependency must not
+    # crash backend startup, only this download.
+    import numpy as np
+    import soundfile as sf
+
     progress_callback(0.1, "task.progress.downloading_basic_pitch")
 
     # Create a tiny silent audio file to trigger model auto-download

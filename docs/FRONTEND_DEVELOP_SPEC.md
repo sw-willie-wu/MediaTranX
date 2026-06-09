@@ -423,8 +423,9 @@
 | `AppRange` | 所有滑桿 |
 | `AppMediaInfoBar` | 媒體資訊列 |
 | `AppUploadZone` | 拖曳上傳區域 |
-| `AppButtonGroup` | 分段選擇按鈕（如放大倍率 2x/3x/4x） |
 | `AppToast` | 所有 Toast 通知（透過 `useToast` composable） |
+
+> 分段選擇按鈕（如放大倍率 2x/3x/4x）沒有專用元件：用 §8 的 `.btn-choice-group`/`.btn-choice` CSS class，或 `AppRange` + `range-ticks`（見 `ImageUpscalePanel.vue`）。
 
 ---
 
@@ -458,7 +459,7 @@ const options: SelectItem[] = [
 ```ts
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 
-// capability: 'vision' | 'text' | 'tools'
+// capability 為字串（簽名是 `capability: string`，非字面聯集型別），慣例值 'vision' / 'text' / 'tools'
 const { mergedOptions: modelOptions } = useModelOptions('vision', localModelOptions)
 
 // 解析選中的值
@@ -734,7 +735,7 @@ toast.show('超解析 4x 完成', {
 
 | 類型 | 命名規則 | 範例 |
 |---|---|---|
-| 功能獨立的 UI 區塊 | `XxxPanel.vue` | `AiEnvironmentPanel.vue` |
+| 功能獨立的 UI 區塊 | `XxxPanel.vue` | `TranslationOptionsPanel.vue` |
 | Layout 功能元件 | 描述行為 | `ComparisonSlider.vue` |
 | 可複用工具元件 | 放 `common/` | `MarkdownRenderer.vue` |
 | Overlay / Modal | 描述用途 | `UnsupportedFileOverlay.vue` |
@@ -780,11 +781,10 @@ watch(value, v => emit('update:value', v))
 |---|---|---|
 | `ToolLayout.vue` | `ComparisonSlider.vue` | Slider 拖拽比對邏輯 |
 | `ToolLayout.vue` | `UnsupportedFileOverlay.vue` | 不支援格式提示 overlay |
-| `SettingsModels.vue` | `AiEnvironmentPanel.vue` | AI 核心模組安裝/狀態 |
-| `SettingsModels.vue` | `ModelDownloadManager.vue` | 模型下載、進度輪詢 |
+| `SettingsModels.vue` | `ModelDownloadManager.vue` | 模型下載、進度輪詢（AI 環境安裝已改由 Electron 殼層管理）|
 | `SubtitlePanel.vue` | `WhisperAdvancedSettings.vue` | 進階分句參數（VAD、時間戳）|
 | `SubtitlePanel.vue` | `TranslationOptionsPanel.vue` | 翻譯設定（語言、模型、字典）|
-| `OcrResultModal.vue` | `MarkdownRenderer.vue` | Markdown / 表格渲染（`common/`）|
+| `TextPreviewModal.vue` | `MarkdownRenderer.vue` | Markdown / 表格渲染（`common/`）|
 
 ---
 
@@ -813,21 +813,22 @@ watch(value, v => emit('update:value', v))
 
 Titlebar 顯示當前工具名稱，置中對齊。有檔案時顯示 `工具名稱 - 檔名`。
 
-使用 `useTitlebar` composable 動態更新：
+**工具名稱由路由自動對應**（`Titlebar.vue` 的 `toolTitleKeys` 把 `route.path` 映射成 i18n key），開發者不需手動設定工具名。只需透過 `useTitlebar` composable 設定**檔名後綴**：
 
 ```ts
 import { useTitlebar } from '@/composables/useTitlebar'
 
-const { setTitle } = useTitlebar()
-setTitle('圖片工具')
-// 或帶檔名
-setTitle('圖片工具', 'photo.jpg')  // → "圖片工具 - photo.jpg"
+const { setFileName, clearFileName } = useTitlebar()
+setFileName('photo.jpg')   // → Titlebar 顯示「圖片工具 - photo.jpg」
+clearFileName()            // → 只顯示「圖片工具」
 ```
+
+> `useTitlebar` 沒有 `setTitle` —— return 的是 `setFileName` / `clearFileName` / `activeFileName`，以及 undo/redo/save 等動作註冊。
 
 規則：
 - 不顯示 app icon 或 "MediaTranX -" 前綴
-- 標題置中（CSS `text-align: center`）
-- 視窗控制按鈕在右側（最小化、最大化、關閉）
+- 標題置中（`.app-title-wrap` 用絕對定位：`position:absolute; left:50%; transform:translateX(-50%)`）
+- 視窗控制按鈕在右側（最小化、最大化、關閉），僅 Electron 模式顯示（`v-if="isElectron"`）
 
 ---
 
@@ -838,16 +839,20 @@ frontend/src/
 ├── main.ts                     # 應用入口
 ├── App.vue                     # 根元件（Titlebar + RouterView + MainSidebar + AppToast）
 ├── router/index.ts             # 路由定義
-├── stores/
+├── stores/                     # （節選；另有 agent/agentSettings/models/remoteModels/results/videoDownload/panelRegistry/viewRegistry）
 │   ├── tasks.ts                # 任務狀態（Map<taskId, Task> + Polling）
 │   ├── files.ts                # 檔案上傳 / 本地註冊
-│   └── settings.ts             # 使用者偏好（主題、語言）
-├── composables/                # 可組合邏輯（見 §27）
+│   ├── settings.ts             # 使用者偏好（主題、語言）
+│   ├── agent.ts                # Agent 對話泡泡（run 狀態、sessions）
+│   └── results.ts              # 成果抽屜（任務產出）
+├── composables/                # 可組合邏輯（見 §28）
 ├── components/
 │   ├── ToolLayout.vue          # 工具頁面框架（三欄 + 預覽 + slider）
 │   ├── MainSidebar.vue         # 左側導航
 │   ├── Titlebar.vue            # 自訂標題列
 │   ├── common/                 # 可復用 UI 元件
+│   ├── agent/                  # Agent 對話泡泡（ChatBubble、ChatMessages、ConfirmCard、SessionList…）
+│   ├── results/                # 成果抽屜（ResultCard、ResultsBatchBar…）
 │   ├── settings/               # Settings 頁面元件
 │   ├── image/                  # 圖片工具元件
 │   ├── audio/                  # 音訊工具元件
@@ -896,3 +901,5 @@ function tDesc(desc: string): string {
 | `useCropRect` | 裁切框互動（拖曳、把手、長寬比約束） |
 | `useAudioWorkspace` | 音訊工具的多檔案管理 |
 | `useMediaCollection` | 通用多檔案集合管理 |
+| `useAgent` / `useAgentTools` | Agent 對話泡泡：AG-UI client 訂閱、tool dispatcher |
+| `useViewHost` / `useActiveView` / `useActivePanel` | Agent introspection：讓 agent 讀寫當前 view/panel |

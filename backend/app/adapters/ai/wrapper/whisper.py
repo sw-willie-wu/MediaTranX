@@ -8,8 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Any
 
-from faster_whisper import WhisperModel
-
 from app.adapters.ai.wrapper.base import PackageWrapper
 from app.adapters.ai.registry import SLOT_WHISPER, FORMAT_PKG, MODELS_REGISTRY
 
@@ -141,12 +139,24 @@ class WhisperWrapper(PackageWrapper):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
         """Load CTranslate2 model using faster-whisper."""
+        # Lazy import: faster_whisper pulls in ctranslate2 native libs. Keeping it
+        # out of module top level means a broken dependency only fails this
+        # feature, not backend startup (init_container eagerly imports wrappers).
+        from faster_whisper import WhisperModel
+
         if on_progress:
             on_progress(0.2, "task.progress.init_ctranslate2")
 
-        from app.adapters.device import get_compute_type
+        from app.adapters.device import compute_type_for
+        from app.adapters.compute_policy import resolve_device_for_task
 
-        compute_type = config.get("compute_type", get_compute_type())
+        if device == "cuda":
+            device = resolve_device_for_task(
+                config.get("vram_mb") or 0, model_id=config.get("model_id"),
+            )
+            self._device = device  # keep wrapper state consistent
+
+        compute_type = config.get("compute_type", compute_type_for(device))
 
         if on_progress:
             on_progress(0.5, f"task.progress.loading_model_device|{device}")

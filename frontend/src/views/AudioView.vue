@@ -30,6 +30,7 @@ import { useTaskStore } from '@/stores/tasks'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 import { apiFetch } from '@/composables/useApi'
 import { useViewHost } from '@/composables/useViewHost'
+import { subfunctionsForView } from '@/agent/agentNavCatalog'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -141,7 +142,7 @@ const currentFunction = ref('transcode')
 useViewHost('audio', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
-  validSubfunctions: () => ['transcode', 'cut', 'volume', 'midi-edit', 'transcribe', 'separate', 'lyrics'],
+  validSubfunctions: () => subfunctionsForView('audio'),
 })
 
 const volumeGainPreview = ref(1)

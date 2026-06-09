@@ -74,3 +74,18 @@ def configure_logging(settings) -> None:
 
     if settings.is_frozen:
         logging.info(f"Backend started in frozen mode. Error log: {error_log}")
+
+
+def apply_runtime_levels(mode: str) -> None:
+    """Set log levels once the run mode is known (after CLI parsing).
+
+    Production: ROOT → WARNING (suppresses uvicorn/third-party INFO noise such as
+    the access log), but our own ``app.*`` loggers stay at INFO so startup
+    diagnostics (the System Info block), background warmup, and task logs still
+    reach the root StreamHandler (stderr, which Electron pipes into app.log).
+    They are NOT written to core_error.log, whose FileHandler stays
+    WARNING-level. dev: DEBUG everywhere.
+    """
+    is_dev = mode == "dev"
+    logging.getLogger().setLevel(logging.DEBUG if is_dev else logging.WARNING)
+    logging.getLogger("app").setLevel(logging.DEBUG if is_dev else logging.INFO)

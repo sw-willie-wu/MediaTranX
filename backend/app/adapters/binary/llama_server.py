@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import socket
 import subprocess
 import sys
@@ -17,6 +18,46 @@ from typing import Callable, Iterator, Optional, TextIO
 logger = logging.getLogger(__name__)
 
 LLAMA_SERVER_STARTUP_TIMEOUT = 180  # seconds (normal load 10-20s; buffer for cold cache / VRAM pressure)
+
+# Known Windows NTSTATUS exception codes that mean "the process was killed
+# mid-instruction by the OS" (hard crash) — distinct from a graceful non-zero
+# exit. A hard crash on GPU offload is the 0xC0000005 signature of an
+# incompatible CUDA build for this GPU (see spec 2026-06-03).
+_NT_HARD_CRASH = {
+    0xC0000005: "ACCESS_VIOLATION",
+    0xC0000409: "STACK_BUFFER_OVERRUN",
+    0xC000001D: "ILLEGAL_INSTRUCTION",
+    0xC00000FD: "STACK_OVERFLOW",
+    0xC0000374: "HEAP_CORRUPTION",
+}
+
+
+def _classify_exit_code(code: int) -> tuple[bool, str]:
+    """Return (is_hard_crash, human_reason) for a subprocess exit code.
+
+    Windows reports a crashed process's exit code as its NTSTATUS exception
+    code (e.g. 3221225477 == 0xC0000005). Python's Popen.returncode carries it
+    unsigned on Windows; mask to 32 bits so either sign convention maps.
+    """
+    u = code & 0xFFFFFFFF
+    if u in _NT_HARD_CRASH:
+        return True, f"{_NT_HARD_CRASH[u]} (0x{u:08X})"
+    return False, f"exit code {code}"
+
+
+class LlamaServerCrashError(RuntimeError):
+    """llama-server exited unexpectedly. Carries the decoded exit code so
+    callers can distinguish a hard crash (GPU-incompat signature) from a
+    graceful error, and so logs are self-describing even when the captured
+    llama_server.log is empty (a hard crash flushes no stdio)."""
+
+    def __init__(self, code: int, reason: str, is_hard_crash: bool, log_tail: str = ""):
+        self.code = code
+        self.reason = reason
+        self.is_hard_crash = is_hard_crash
+        self.log_tail = log_tail
+        # Keep raw `code` in the message: existing diagnostics/tests match it.
+        super().__init__(f"llama-server exited unexpectedly ({reason}, code {code})")
 
 
 def _find_free_port(start: int = 18080, end: int = 18200) -> int:
@@ -41,6 +82,7 @@ class LlamaServer:
         self._process: Optional[subprocess.Popen] = None
         self._port: Optional[int] = None
         self._log_file: Optional[TextIO] = None
+        self._log_path: Optional[Path] = None
         self._job: Optional[int] = None  # Win32 Job Object handle (F1)
 
     @property
@@ -115,15 +157,25 @@ class LlamaServer:
         log_dir = SETTINGS.path.log
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "llama_server.log"
+        self._log_path = log_path
         self._log_file = open(str(log_path), "a", encoding="utf-8")  # noqa: SIM115
 
         from app.adapters.binary import _proc_lifetime
+
+        # Strip inherited LLAMA_ARG_* env vars so our explicit CLI flags are
+        # authoritative. llama.cpp maps every CLI arg to a LLAMA_ARG_* env var;
+        # a stray one in the user's environment (seen in the wild:
+        # LLAMA_ARG_DEVICE=Vulkan1) otherwise overrides us and makes our CUDA
+        # build exit before serving. We set none of these ourselves.
+        child_env = {k: v for k, v in os.environ.items()
+                     if not k.startswith("LLAMA_ARG_")}
 
         self._process = subprocess.Popen(
             cmd,
             stdout=self._log_file,
             stderr=self._log_file,
             cwd=str(llama_dir),
+            env=child_env,
             preexec_fn=_proc_lifetime.posix_pdeathsig_preexec(),  # None on win32
         )
 
@@ -372,6 +424,18 @@ class LlamaServer:
             except Exception:
                 pass
 
+    def _read_log_tail(self, max_lines: int = 40) -> str:
+        """Best-effort tail of llama-server's own log (its stdout/stderr) for
+        crash diagnostics. Returns '' on any failure — never raises."""
+        if self._log_path is None:
+            return ""
+        try:
+            with open(self._log_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+            return "".join(lines[-max_lines:]).strip()
+        except Exception:
+            return ""
+
     def _wait_ready(
         self,
         on_progress: Optional[Callable[[float, str], None]] = None,
@@ -384,8 +448,23 @@ class LlamaServer:
         step = 0
         while time.time() < deadline:
             if self._process and self._process.poll() is not None:
-                raise RuntimeError(
-                    f"llama-server exited unexpectedly (code {self._process.returncode})"
+                code = self._process.returncode
+                is_hard, reason = _classify_exit_code(code)
+                tail = self._read_log_tail()
+                if tail:
+                    logger.error(
+                        "llama-server exited unexpectedly (%s, code %s). "
+                        "Last llama-server output:\n%s",
+                        reason, code, tail,
+                    )
+                else:
+                    logger.error(
+                        "llama-server exited unexpectedly (%s, code %s); no output "
+                        "captured (likely a hard crash before stdio flush)",
+                        reason, code,
+                    )
+                raise LlamaServerCrashError(
+                    code=code, reason=reason, is_hard_crash=is_hard, log_tail=tail
                 )
             try:
                 url = f"http://127.0.0.1:{self._port}/health"

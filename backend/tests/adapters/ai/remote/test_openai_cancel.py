@@ -24,7 +24,7 @@ def test_chat_completions_streaming_invokes_abort_hook_with_resp():
         received.append(r)
 
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=resp,
     ):
         prov = OpenAIProvider("https://api.openai.com", "sk-test")
@@ -52,7 +52,7 @@ def test_chat_completions_streaming_oserror_translated_to_connection_failed():
     resp.close = MagicMock()
 
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=resp,
     ):
         prov = OpenAIProvider("https://api.openai.com", "sk-test")
@@ -80,7 +80,7 @@ def test_responses_streaming_invokes_abort_hook_with_resp():
 
     received = []
     with patch(
-        "app.adapters.ai.remote.openai.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         return_value=resp,
     ):
         prov = OpenAIProvider("https://api.openai.com", "sk-test")

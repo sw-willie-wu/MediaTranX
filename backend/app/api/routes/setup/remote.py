@@ -7,7 +7,7 @@ from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.init.container import AppContainer
 
@@ -22,6 +22,7 @@ class ConnectionCreate(BaseModel):
     name: str
     endpoint: str
     api_key: Optional[str] = None
+    chunk_ctx_budget: Optional[int] = Field(default=None, ge=2048, le=262144)
 
 
 class ConnectionUpdate(BaseModel):
@@ -29,6 +30,7 @@ class ConnectionUpdate(BaseModel):
     endpoint: Optional[str] = None
     api_key: Optional[str] = None
     enabled: Optional[bool] = None
+    chunk_ctx_budget: Optional[int] = Field(default=None, ge=2048, le=262144)
 
 
 class ConnectionTest(BaseModel):
@@ -59,6 +61,7 @@ async def add_connection(
         name=data.name,
         endpoint=data.endpoint,
         api_key=data.api_key,
+        chunk_ctx_budget=data.chunk_ctx_budget,
     )
     return conn
 
@@ -73,7 +76,7 @@ async def update_connection(
     """Update a connection."""
     return service.update_connection(
         conn_id,
-        **data.model_dump(exclude_none=True),
+        **data.model_dump(exclude_unset=True),
     )
 
 

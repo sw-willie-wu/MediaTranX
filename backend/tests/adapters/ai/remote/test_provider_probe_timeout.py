@@ -1,6 +1,7 @@
 import json
 import pytest
 
+from app.adapters.ai.remote import _http
 from app.adapters.ai.remote.base import PROBE_TIMEOUT, TEST_TIMEOUT
 from app.adapters.ai.remote.ollama import OllamaProvider
 from app.adapters.ai.remote.openai import OpenAIProvider
@@ -24,15 +25,13 @@ class _FakeResp:
 @pytest.fixture
 def capture_timeout(monkeypatch):
     """Patch urllib.request.urlopen everywhere and record the timeout kwarg."""
-    import urllib.request
-
     seen = {"timeout": None}
 
     def fake_urlopen(req, timeout=None):
         seen["timeout"] = timeout
         return _FakeResp({"data": [], "models": []})
 
-    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(_http, "urlopen", fake_urlopen)
     return seen
 
 

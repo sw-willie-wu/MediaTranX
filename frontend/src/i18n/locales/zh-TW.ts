@@ -1058,6 +1058,9 @@ export default {
       error: '無法讀取硬體狀態',
       redetect: '重新偵測',
       refresh: '重新整理',
+      compute_policy: '運算降級',
+      cpu_fallback: '自動降級為 CPU',
+      cpu_fallback_hint: '當 GPU 無法執行（顯卡過舊、驅動不支援或記憶體不足）時，自動改用 CPU 執行（速度較慢）。關閉後 GPU 跑不動會直接讓任務失敗。',
     },
 
     ai: {
@@ -1126,6 +1129,9 @@ export default {
       edit: '編輯',
       refresh: '重新整理模型',
       delete: '刪除',
+      chunkCtxBudget: '批次 context 預算',
+      chunkCtxBudgetAuto: '自動',
+      chunkCtxBudgetHint: '自動＝依模型自動決定。翻譯批次隨之變動；摘要為保連貫約 16k 後無額外效果；過大若塞不進會提示調小。',
     },
 
     agent: {
@@ -1212,6 +1218,7 @@ export default {
       provider_error: '服務提供者回傳錯誤',
       context_full: '對話過長，請清除後重新開始。',
       internal: '內部錯誤',
+      model_busy: '模型正忙於另一個任務，請等它跑完再問我。',
       unknown_tool: '未知工具：{name}',
       tool_failed: '工具 {name} 執行失敗：{error}',
       invalid_field: '目前畫面中找不到欄位 {field}',
@@ -1310,6 +1317,19 @@ export default {
       invalid_request: '請求參數錯誤。',
       invalid_params: '此模型不支援指定的參數。',
       remote_error: '遠端 API 錯誤。',
+      endpoint_https_redirect: '連線網址被導向 https，請將連線位址改為 https://。',
+      endpoint_invalid: '遠端端點拒絕此請求（405），請檢查連線網址是否正確。',
+      gpu_unsupported: '顯卡過舊或驅動不支援，且未啟用自動降級為 CPU。請更新顯卡驅動，或於設定開啟「自動降級為 CPU」。',
+      vram_insufficient: 'GPU 記憶體不足，且未啟用自動降級為 CPU。請改用較小的模型，或於設定開啟「自動降級為 CPU」。',
+    },
+  },
+
+  // ── 運算降級通知 ───────────────────────────────────────────────────────
+  compute: {
+    notice: {
+      gpu_unsupported: '偵測到 GPU 但無法執行（顯卡過舊或驅動不支援），已改用 CPU 執行（速度較慢）。',
+      cuda_runtime_missing: 'GPU 加速元件未就緒，已改用 CPU 執行（速度較慢）。',
+      vram_insufficient: 'GPU 記憶體不足以載入模型，已改用 CPU 執行（速度較慢）。',
     },
   },
 

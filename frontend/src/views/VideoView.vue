@@ -16,6 +16,7 @@ import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTitlebar } from '@/composables/useTitlebar'
 import { useViewHost } from '@/composables/useViewHost'
+import { subfunctionsForView } from '@/agent/agentNavCatalog'
 
 const { t } = useI18n()
 
@@ -76,7 +77,7 @@ const currentFunction = ref('transcode')
 useViewHost('video', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
-  validSubfunctions: () => ['transcode', 'cut', 'crop', 'subtitle', 'summary', 'interpolate', 'enhance'],
+  validSubfunctions: () => subfunctionsForView('video'),
 })
 
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')

@@ -14,6 +14,7 @@ import { useDocumentWorkspace } from '@/composables/useDocumentWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 import { useViewHost } from '@/composables/useViewHost'
+import { subfunctionsForView } from '@/agent/agentNavCatalog'
 
 const { t } = useI18n()
 
@@ -48,7 +49,7 @@ const currentFunction = ref('split')
 useViewHost('document', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
-  validSubfunctions: () => ['split', 'pdf-convert', 'ocr', 'translate'],
+  validSubfunctions: () => subfunctionsForView('document'),
 })
 
 const currentFileExt = computed(() => {

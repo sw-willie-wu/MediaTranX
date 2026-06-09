@@ -37,20 +37,78 @@ class LlmWrapper(BaseWrapper):
                 logger.warning(
                     f"Failed to stop prior llama-server before reload: {e}"
                 )
-        from app.adapters.device import has_nvidia_gpu
 
-        n_gpu_layers = config.get("layers", 99) if has_nvidia_gpu() else 0
+        from app.adapters.compute_policy import resolve_device_for_task
+        from app.adapters import device as device_mod
+        from app.adapters.ai.llama_offload_state import (
+            llama_offload_known_broken,
+            mark_llama_offload_broken,
+        )
+        from app.utils.task_notices import push_task_notice
+        from app.adapters.binary.llama_server import LlamaServerCrashError
+
+        required_vram = config.get("required_vram_mb", 0)
+        model_id = config.get("model_id")
+        # Compatibility-aware device choice (kernel probe + VRAM + fallback policy),
+        # shared with Whisper/PyTorch. llama uses GPU only for "cuda" (not dml/cpu).
+        device_choice = resolve_device_for_task(required_vram, model_id=model_id)
+        use_gpu = device_choice == "cuda"
+        if use_gpu:
+            # Only hit the sticky-state DB when we'd actually use the GPU. A DB
+            # hiccup must not abort an otherwise-working load — degrade to
+            # "attempt GPU" (the reactive net below still catches a real crash).
+            try:
+                if llama_offload_known_broken():
+                    use_gpu = False
+            except Exception:
+                logger.warning(
+                    "llama_offload_state unavailable; attempting GPU offload anyway",
+                    exc_info=True,
+                )
+        n_gpu_layers = config.get("layers", 99) if use_gpu else 0
         n_ctx = config.get("n_ctx", 4096)
         mmproj_path = config.get("mmproj_path")
 
         server = LlamaServer()
-        server.start(
-            model_path=model_path,
-            n_ctx=n_ctx,
-            n_gpu_layers=n_gpu_layers,
-            mmproj_path=mmproj_path,
-            on_progress=on_progress,
-        )
+
+        def _do_start(ngl: int) -> None:
+            server.start(
+                model_path=model_path,
+                n_ctx=n_ctx,
+                n_gpu_layers=ngl,
+                mmproj_path=mmproj_path,
+                on_progress=on_progress,
+            )
+
+        try:
+            _do_start(n_gpu_layers)
+        except LlamaServerCrashError as e:
+            # Reactive safety net: torch's kernel probe is a strong but imperfect
+            # proxy for llama's separate CUDA build. If GPU offload still hard-
+            # crashes (0xC0000005) and fallback is allowed, record + retry on CPU.
+            if n_gpu_layers > 0 and e.is_hard_crash and device_mod.is_cpu_fallback_allowed():
+                logger.warning(
+                    "llama-server hard-crashed on GPU offload (%s); "
+                    "marking GPU offload unusable and retrying on CPU",
+                    e.reason,
+                )
+                # Bookkeeping must never abort the CPU retry — a DB/notice
+                # hiccup on a machine that can run on CPU would defeat the whole
+                # fallback. Best-effort; the retry below is the critical path.
+                try:
+                    mark_llama_offload_broken()
+                    push_task_notice("gpu_unsupported", model=model_id)
+                except Exception:
+                    logger.warning(
+                        "post-crash bookkeeping failed; proceeding with CPU retry",
+                        exc_info=True,
+                    )
+                server.stop()  # clear the dead process + old log handle before
+                #                the clean CPU restart (avoids a misleading
+                #                "existing llama-server" warning from start())
+                _do_start(0)
+            else:
+                raise
         return server  # becomes self._model
 
     def _unload_impl(self) -> None:
@@ -178,6 +236,7 @@ class LlmWrapper(BaseWrapper):
             "quantization": quant,
             "layers": specs["layers"],
             "n_ctx": specs.get("n_ctx_default", specs.get("n_ctx", 4096)),
+            "required_vram_mb": manager.get_vram_requirement(model_id, f"{size}:{quant}"),
         }
 
         if "mmproj_filename" in variant_spec:

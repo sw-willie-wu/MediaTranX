@@ -1032,3 +1032,19 @@ describe('settings.general panel registration smoke', () => {
     expect(entry.agentSchema.actions.map(a => a.name)).toContain('clear_history')
   })
 })
+
+// ─── tool description hardening (Task 4 — agent state snapshot) ───────────────
+
+describe('getTools — tool description assertions', () => {
+  it('click_execute description carries explicit MUST/MUST-NOT trigger rules', () => {
+    const ce = getTools(null).find(t => t.name === 'click_execute')!
+    expect(ce.description).toMatch(/MUST NOT/i)
+    expect(ce.description.toLowerCase()).toContain('explicit')
+  })
+
+  it('set_field description drops the panel_schema phantom reference', () => {
+    const sf = getTools(null).find(t => t.name === 'set_field')!
+    expect(sf.description).not.toContain('panel_schema')
+    expect(sf.description).toContain('current state')
+  })
+})

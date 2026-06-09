@@ -46,6 +46,10 @@ def _calc_srt_batch_size(n_ctx: int, seg_dicts: list[dict], max_batch: int = 0) 
     # Each segment appears in both input AND output (translation ≈ same length)
     # Total per segment ≈ input + output = 2 × avg_seg_tokens
     # Conservative: 50% utilization to absorb token estimation error + prompt overhead
+    #
+    # DO NOT REMOVE the `* 2` or the `// 2`: together they reserve output
+    # headroom. The context window is shared by prompt+generation, so packing
+    # input to the full n_ctx would leave no room for the model to respond.
     tokens_per_seg = avg_seg_tokens * 2
     batch_size = max(1, n_ctx // 2 // tokens_per_seg)
 
@@ -90,7 +94,8 @@ def translate_srt_cloud(
 
     if batch_size is None:
         n_ctx = get_cloud_ctx(prov, model)
-        batch_size = _calc_srt_batch_size(n_ctx, seg_dicts)
+        max_batch = remote_config.get("max_srt_batch", 0)
+        batch_size = _calc_srt_batch_size(n_ctx, seg_dicts, max_batch=max_batch)
 
     total = len(seg_dicts)
     num_batches = (total + batch_size - 1) // batch_size
@@ -118,9 +123,14 @@ def translate_srt_cloud(
             {"role": "user", "content": prompt},
         ]
         max_tokens = min(len(srt_text) * 3, remote_config["max_tokens"])
+        # Non-None abort_hook selects the provider's streaming path (gap-based
+        # per-recv timeout) instead of the 300s single-read blocking path. A
+        # no-op hook keeps pipeline/ free of a services/ import (layering); the
+        # SRT path's cancellation is handled between batches via on_progress.
         translated_srt = prov.chat(
             model=model, messages=messages,
             max_tokens=max_tokens, temperature=remote_config["temperature"],
+            abort_hook=lambda _resp: None,
         )
 
         batch_translated = parse_srt_response(translated_srt, batch)

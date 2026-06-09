@@ -15,9 +15,7 @@ from pathlib import Path
 from typing import Optional, Callable, Any
 
 import numpy as np
-import soundfile as sf
 import torch
-from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +207,11 @@ class AlignmentEngine:
         models_dir.mkdir(parents=True, exist_ok=True)
         cache_dir = str(models_dir / "alignment")
 
+        # Lazy import: transformers is heavy (pulls torch). Keep it out of module
+        # top level so a broken dependency only fails alignment, not backend
+        # startup (init_container eagerly imports wrappers).
+        from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
+
         logger.info(f"Loading alignment model: {model_id} on {self._device}")
         self._processor = Wav2Vec2Processor.from_pretrained(model_id, cache_dir=cache_dir)
         self._model = Wav2Vec2ForCTC.from_pretrained(model_id, cache_dir=cache_dir)
@@ -233,6 +236,10 @@ class AlignmentEngine:
 
     def _load_audio(self, audio_path: str, ffmpeg_path: str) -> list[float]:
         """Read audio and resample to 16kHz mono. ffmpeg_path is required."""
+        # Lazy import: soundfile carries libsndfile native libs. Keep it out of
+        # module top level so a broken dependency only fails alignment, not
+        # backend startup (init_container eagerly imports wrappers).
+        import soundfile as sf
 
         # Use ffmpeg to convert to 16kHz mono PCM
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)

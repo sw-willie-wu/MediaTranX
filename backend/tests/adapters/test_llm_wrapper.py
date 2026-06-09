@@ -69,26 +69,26 @@ def test_unload_stops_server():
 
 
 class TestLoadImpl:
-    def test_load_impl_starts_llamaserver_with_gpu_layers_when_nvidia(self, tmp_path):
+    def test_load_impl_starts_llamaserver_with_gpu_layers_when_compatible(self, tmp_path):
         w = LlmWrapper(slot="llm")
         fake_server = MagicMock()
         with patch("app.adapters.ai.wrapper.llm.LlamaServer", return_value=fake_server), \
-             patch("app.adapters.device.has_nvidia_gpu", return_value=True):
+             patch("app.adapters.compute_policy.resolve_device_for_task", return_value="cuda"), \
+             patch("app.adapters.ai.llama_offload_state.llama_offload_known_broken", return_value=False):
             result = w._load_impl(tmp_path / "model.gguf", config={"n_ctx": 8192})
-
         assert result is fake_server
         fake_server.start.assert_called_once()
         kwargs = fake_server.start.call_args.kwargs
         assert kwargs["n_gpu_layers"] == 99
         assert kwargs["n_ctx"] == 8192
 
-    def test_load_impl_uses_cpu_when_no_nvidia(self, tmp_path):
+    def test_load_impl_uses_cpu_when_device_not_cuda(self, tmp_path):
         w = LlmWrapper(slot="llm")
         fake_server = MagicMock()
         with patch("app.adapters.ai.wrapper.llm.LlamaServer", return_value=fake_server), \
-             patch("app.adapters.device.has_nvidia_gpu", return_value=False):
+             patch("app.adapters.compute_policy.resolve_device_for_task", return_value="cpu"), \
+             patch("app.adapters.ai.llama_offload_state.llama_offload_known_broken", return_value=False):
             w._load_impl(tmp_path / "model.gguf", config={})
-
         kwargs = fake_server.start.call_args.kwargs
         assert kwargs["n_gpu_layers"] == 0
 
@@ -98,9 +98,9 @@ class TestLoadImpl:
         mmproj = tmp_path / "mmproj.gguf"
         mmproj.write_bytes(b"")
         with patch("app.adapters.ai.wrapper.llm.LlamaServer", return_value=fake_server), \
-             patch("app.adapters.device.has_nvidia_gpu", return_value=False):
+             patch("app.adapters.compute_policy.resolve_device_for_task", return_value="cpu"), \
+             patch("app.adapters.ai.llama_offload_state.llama_offload_known_broken", return_value=False):
             w._load_impl(tmp_path / "model.gguf", config={"mmproj_path": mmproj})
-
         kwargs = fake_server.start.call_args.kwargs
         assert kwargs["mmproj_path"] == mmproj
 
@@ -212,9 +212,9 @@ class TestLoadImplStopsPrior:
         old_server = MagicMock()
         w._model = old_server
         new_server = MagicMock()
-        with patch("app.adapters.ai.wrapper.llm.LlamaServer",
-                   return_value=new_server), \
-             patch("app.adapters.device.has_nvidia_gpu", return_value=False):
+        with patch("app.adapters.ai.wrapper.llm.LlamaServer", return_value=new_server), \
+             patch("app.adapters.compute_policy.resolve_device_for_task", return_value="cpu"), \
+             patch("app.adapters.ai.llama_offload_state.llama_offload_known_broken", return_value=False):
             result = w._load_impl(tmp_path / "m.gguf", config={})
         old_server.stop.assert_called_once()
         assert result is new_server

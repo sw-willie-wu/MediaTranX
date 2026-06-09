@@ -12,6 +12,8 @@ from app.db.models.api_connection import ApiConnection
 
 logger = logging.getLogger(__name__)
 
+_UNSET = object()
+
 
 class ApiConnectionDAO:
     """Remote API connection settings data access."""
@@ -22,6 +24,7 @@ class ApiConnectionDAO:
         name: str,
         endpoint: str,
         api_key: Optional[str] = None,
+        chunk_ctx_budget: Optional[int] = None,
     ) -> ApiConnection:
         """Add a connection setting."""
         with Session(get_engine()) as session:
@@ -30,6 +33,7 @@ class ApiConnectionDAO:
                 name=name,
                 endpoint=endpoint,
                 api_key=api_key,
+                chunk_ctx_budget=chunk_ctx_budget,
             )
             session.add(conn)
             session.commit()
@@ -69,6 +73,7 @@ class ApiConnectionDAO:
         endpoint: Optional[str] = None,
         api_key: Optional[str] = None,
         enabled: Optional[bool] = None,
+        chunk_ctx_budget=_UNSET,
     ) -> Optional[ApiConnection]:
         """Update a connection setting."""
         with Session(get_engine()) as session:
@@ -86,6 +91,8 @@ class ApiConnectionDAO:
                 conn.api_key = api_key
             if enabled is not None:
                 conn.enabled = enabled
+            if chunk_ctx_budget is not _UNSET:
+                conn.chunk_ctx_budget = chunk_ctx_budget  # None -> clear to auto; int -> set
             conn.updated_at = datetime.now().isoformat()
             session.commit()
             session.refresh(conn)

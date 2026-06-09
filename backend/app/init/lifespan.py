@@ -34,6 +34,17 @@ def _warmup_domain_services(container) -> None:
     etc. load silently in the background.
     """
     start = time.monotonic()
+
+    # Log the environment first (OS/GPU/compute-capability/driver/torch build) so
+    # a tester's app.log is self-describing. In the background thread so the torch
+    # import it triggers doesn't block startup; runs well before any task.
+    try:
+        from app.init.configs import SETTINGS
+        from app.init.system_info import log_system_info
+        log_system_info(SETTINGS)
+    except Exception as e:
+        LOGGER.warning(f"system info logging failed: {e}")
+
     providers = [
         # Audio
         container.audio_transcode,
@@ -128,6 +139,15 @@ def build_lifespan():
         LOGGER.info("Output files restored from sidecars")
 
         _warmup_setup_services(container)
+
+        # Apply persisted CPU-fallback policy before any task can run.
+        try:
+            from app.adapters import device as _device
+            _cs = container.compute_settings_service().get_settings()
+            _device.set_allow_cpu_fallback(_cs.allow_cpu_fallback)
+            LOGGER.info("CPU-fallback policy applied: allow=%s", _cs.allow_cpu_fallback)
+        except Exception:
+            LOGGER.exception("Failed to apply CPU-fallback policy (using default ON)")
 
         # Import heavy domain services in the background so the server
         # starts accepting connections immediately (cold-start optimization).

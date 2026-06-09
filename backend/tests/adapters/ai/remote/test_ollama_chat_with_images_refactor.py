@@ -42,7 +42,7 @@ def test_ollama_chat_with_images_uses_raw_bytes(tmp_path):
 
     prov = OllamaProvider("http://localhost:11434", None)
     with patch(
-        "app.adapters.ai.remote.ollama.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov.chat_with_images(
@@ -75,7 +75,7 @@ def test_ollama_chat_with_images_wire_shape_matches_legacy(tmp_path):
 
     prov = OllamaProvider("http://localhost:11434", None)
     with patch(
-        "app.adapters.ai.remote.ollama.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         prov.chat_with_images(
@@ -89,8 +89,7 @@ def test_ollama_chat_with_images_wire_shape_matches_legacy(tmp_path):
 
     expected_b64_a = base64.b64encode(b"AAAA").decode("ascii")
     expected_b64_b = base64.b64encode(b"BBBB").decode("ascii")
-    # num_ctx is auto-computed from messages+max_tokens; spot-check the rest
-    # of the wire shape and that num_ctx is present + at least the floor.
+    # Spot-check the wire shape; num_ctx must NOT be present (server self-manages).
     body = captured["data"]
     assert body["model"] == "qwen3vl"
     assert body["stream"] is True
@@ -101,7 +100,7 @@ def test_ollama_chat_with_images_wire_shape_matches_legacy(tmp_path):
     }]
     assert body["options"]["num_predict"] == 42
     assert body["options"]["temperature"] == 0.3
-    assert body["options"]["num_ctx"] >= 4096
+    assert "num_ctx" not in body["options"]
 
 
 def test_ollama_chat_with_images_does_not_invoke_pil(tmp_path):
@@ -120,7 +119,7 @@ def test_ollama_chat_with_images_does_not_invoke_pil(tmp_path):
 
     prov = OllamaProvider("http://localhost:11434", None)
     with patch(
-        "app.adapters.ai.remote.ollama.urllib.request.urlopen",
+        "app.adapters.ai.remote._http.urlopen",
         side_effect=fake_urlopen,
     ):
         # If PIL is anywhere in the stack, this raises UnidentifiedImageError.

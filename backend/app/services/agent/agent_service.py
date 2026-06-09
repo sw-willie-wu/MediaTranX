@@ -10,8 +10,10 @@ its own).
 """
 from __future__ import annotations
 import asyncio
+import json
 import logging
 from typing import AsyncIterator
+from uuid import uuid4
 
 from app.services.agent._ag_ui_compat import (
     RunAgentInput, RunStartedEvent, RunFinishedEvent, RunErrorEvent,
@@ -19,6 +21,7 @@ from app.services.agent._ag_ui_compat import (
     make_encoder, emit_run_finished_with_usage,
 )
 from app.services.agent._system_prompt import AGENT_SYSTEM_PROMPT
+from app.services.agent._render_state import render_state
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +76,44 @@ def _tool_to_dict(t) -> dict:
     return t.model_dump(exclude_none=True, by_alias=False)
 
 
+_TASK_SUBMITTED_TEXT = "✅ 已送出任務（task_id={task_id}）。可在工作列追蹤進度，完成後再問我。"
+
+
+def _last_tool_result_is_execute_success(messages: list[dict]) -> str | None:
+    """If messages[-1] is a successful click_execute tool result, return its
+    task_id; else None. Matches the tool result's tool_call_id back to a
+    click_execute tool_call in a preceding assistant message, then parses the
+    result content for {ok: true, task_id}. Conservative: ambiguity → None."""
+    if not messages:
+        return None
+    last = messages[-1]
+    if last.get("role") != "tool":
+        return None
+    tcid = last.get("tool_call_id") or last.get("toolCallId")
+    if not tcid:
+        return None
+    is_execute = False
+    for m in messages:
+        if m.get("role") != "assistant":
+            continue
+        for tc in (m.get("tool_calls") or m.get("toolCalls") or []):
+            if tc.get("id") == tcid and (tc.get("function") or {}).get("name") == "click_execute":
+                is_execute = True
+                break
+        if is_execute:
+            break
+    if not is_execute:
+        return None
+    content = last.get("content")
+    try:
+        data = json.loads(content) if isinstance(content, str) else content
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if isinstance(data, dict) and data.get("ok") is True and data.get("task_id"):
+        return str(data["task_id"])
+    return None
+
+
 class AgentService:
     """Single LLM-round orchestrator. Stateless across rounds.
 
@@ -96,10 +137,13 @@ class AgentService:
         session = None
         usage: dict | None = None
         errored = False                          # ★ AG-UI conformance: track RUN_ERROR
+        is_local = False
         try:
             choice = (input.state or {}).get("agent_model_choice")
             if not choice:
                 raise AgentError("agent.error.no_model")
+
+            is_local = bool(choice) and not choice.startswith("remote:")
 
             session_kwargs = self._resolve_model_choice(choice)
 
@@ -110,14 +154,31 @@ class AgentService:
             if not messages:
                 raise AgentError("agent.error.internal", "empty messages list")
 
-            # Prepend system prompt (M22) if no system message in input
+            # Prepend system prompt (M22) if no system message in input.
+            # Fold the live UI state snapshot (if the frontend supplied one) into
+            # the single system message — fresh each request, never persisted to
+            # history (it rides input.state, not input.messages).
             if not any(m.get("role") == "system" for m in messages):
-                messages.insert(0, {
-                    "role": "system",
-                    "content": AGENT_SYSTEM_PROMPT,
-                })
+                snapshot = (input.state or {}).get("snapshot")
+                content = AGENT_SYSTEM_PROMPT
+                if snapshot:
+                    content = AGENT_SYSTEM_PROMPT + "\n\n" + render_state(snapshot)
+                messages.insert(0, {"role": "system", "content": content})
 
             tools: list[dict] = [_tool_to_dict(t) for t in (input.tools or [])]
+
+            # B: local model + last message is a successful click_execute tool
+            # result → the task already started; another LLM round here would hit
+            # the just-evicted llama-server (or re-load it and evict the running
+            # task). Reply with a canned confirmation and skip the LLM entirely.
+            if is_local:
+                task_id = _last_tool_result_is_execute_success(messages)
+                if task_id is not None:
+                    yield encoder.encode(TextMessageChunkEvent(
+                        message_id=uuid4().hex, role="assistant",
+                        delta=_TASK_SUBMITTED_TEXT.format(task_id=task_id),
+                    ))
+                    return  # finally emits RUN_FINISHED (errored stays False)
 
             with self._chat.session(**session_kwargs) as session:
                 async for chunk in session.stream(
@@ -159,6 +220,19 @@ class AgentService:
                 code="agent.error.tools_not_supported",
                 message=str(e),
             ))
+            errored = True
+        except ConnectionError as e:
+            # Local llama-server torn down mid-request (model_manager evicted the
+            # 'llm' slot for a task the agent just submitted). Surface a friendly
+            # typed error instead of the raw ConnectionResetError [WinError 10054].
+            # Remote providers aren't evicted — keep their connection errors generic.
+            if is_local:
+                yield encoder.encode(RunErrorEvent(
+                    code="agent.error.model_busy", message=""))
+            else:
+                logger.exception("Agent run failed (remote connection error)")
+                yield encoder.encode(RunErrorEvent(
+                    code="agent.error.internal", message=str(e)))
             errored = True
         except Exception as e:
             logger.exception("Agent run failed")
