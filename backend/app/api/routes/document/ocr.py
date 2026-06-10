@@ -18,9 +18,9 @@ router = APIRouter()
 class DocumentOcrRequest(BaseModel):
     file_id: str = Field(..., description="Input file ID")
     model_family: Optional[str] = Field(default=None, description="VLM model family (None=use default)")
-    size: str = Field(default="4b")
+    model_size: str = Field(default="4b")
     quantization: Optional[str] = Field(default=None)
-    format: str = Field(default="md", description="Output format: txt or md")
+    output_format: str = Field(default="md", description="Output format: txt or md")
     # Cloud model
     remote: bool = Field(default=False, description="Whether to use a cloud model")
     provider: Optional[str] = Field(default=None, description="Cloud provider")
@@ -42,16 +42,16 @@ async def ocr_document(
             provider=request.provider,
             conn_id=request.conn_id,
             remote_model=request.remote_model,
-            format=request.format,
+            output_format=request.output_format,
         )
     else:
         model_family = request.model_family or language_service.get_default_vlm_model()
         task_id = await service.submit(
             file_id=request.file_id,
             model_family=model_family,
-            size=request.size,
+            model_size=request.model_size,
             quantization=request.quantization,
-            format=request.format,
+            output_format=request.output_format,
         )
     return {"task_id": task_id, "message": "OCR task submitted"}
 
