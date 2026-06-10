@@ -34,6 +34,8 @@ def handle_model_download(params: dict, progress_callback: Callable[[float, str]
     logger.info(f"Starting model download: {item_id}")
     progress_callback(0.05, f"task.progress.download_preparing|{item_id}")
 
+    from app.adapters.ai.registry import SOUNDFONT_ID
+
     try:
         from huggingface_hub import hf_hub_download, snapshot_download
     except ImportError:
@@ -66,6 +68,9 @@ def handle_model_download(params: dict, progress_callback: Callable[[float, str]
 
     elif item_id == "basic-pitch":
         _download_basic_pitch(progress_callback)
+
+    elif item_id == SOUNDFONT_ID:
+        _download_soundfont(progress_callback)
 
     else:
         _download_pth_model(item_id, progress_callback)
@@ -484,3 +489,62 @@ def _download_basic_pitch(progress_callback: Callable[[float, str], None]) -> No
     progress_callback(0.95, "task.progress.basic_pitch_ready")
 
 
+def _soundfont_instruments() -> list[str]:
+    """回 GM 樂器清單（獨立函式，方便測試只跑 1 個樂器）。"""
+    from app.adapters.ai.registry import GM_INSTRUMENTS
+    return GM_INSTRUMENTS
+
+
+def _download_soundfont(progress_callback: Callable[[float, str], None]) -> None:
+    """Download MusyngKite GM soundfont (移植自 electron/setup.js downloadSoundfonts).
+
+    樂器佔進度 0.0–0.9、鼓組佔 0.9–1.0（鼓組在樂器後跑，避免提早 100%）。
+    單檔失敗 warn 後續跑，不整批中斷。
+    """
+    import base64
+    import json
+    import re
+    import requests
+    from app.adapters.ai.registry import (
+        SOUNDFONT_BASE_URL, SOUNDFONT_DRUM_BASE_URL, SOUNDFONT_VERSION_TAG,
+    )
+
+    sf_dir = SETTINGS.path.soundfonts
+    sf_dir.mkdir(parents=True, exist_ok=True)
+
+    note_re = re.compile(r'''["']([A-G][b#]?\d)["']\s*:\s*["']data:audio/mp3;base64,([^"']+)["']''')
+    instruments = _soundfont_instruments()
+    total = len(instruments)
+
+    for i, instrument in enumerate(instruments):
+        progress_callback(i / total * 0.9, f"task.progress.downloading_soundfont|{i + 1}|{total}")
+        url = f"{SOUNDFONT_BASE_URL}/{instrument}-mp3.js"
+        try:
+            resp = requests.get(url, timeout=60)
+            resp.raise_for_status()
+            text = resp.text
+            inst_dir = sf_dir / f"{instrument}-mp3"
+            inst_dir.mkdir(parents=True, exist_ok=True)
+            for note, b64 in note_re.findall(text):
+                (inst_dir / f"{note}.mp3").write_bytes(base64.b64decode(b64.strip()))
+        except Exception as e:
+            logger.warning(f"[soundfont] failed {instrument}: {e}")
+
+    # Drum kit (notes 35-81) from WebAudioFont
+    progress_callback(0.9, "task.progress.downloading_soundfont_drums")
+    drum_dir = sf_dir / "drums-mp3"
+    drum_dir.mkdir(parents=True, exist_ok=True)
+    file_re = re.compile(r"file\s*:\s*'([A-Za-z0-9+/=]+)'")
+    for note in range(35, 82):
+        url = f"{SOUNDFONT_DRUM_BASE_URL}/128{note}_0_FluidR3_GM_sf2_file.js"
+        try:
+            resp = requests.get(url, timeout=60)
+            resp.raise_for_status()
+            text = resp.text
+            m = file_re.search(text)
+            if m:
+                (drum_dir / f"{note}.mp3").write_bytes(base64.b64decode(m.group(1)))
+        except Exception as e:
+            logger.warning(f"[soundfont] failed drum {note}: {e}")
+
+    (sf_dir / ".version").write_text(json.dumps({"tag": SOUNDFONT_VERSION_TAG}), encoding="utf-8")

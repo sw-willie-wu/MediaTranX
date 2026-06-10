@@ -15,7 +15,6 @@ const http = require('http');
 // ---------------------------------------------------------------------------
 const TOOL_VERSIONS = {
   ffmpeg: '8.1',            // GyanD/codexffmpeg release tag
-  soundfonts: '1',          // MusyngKite GM instrument samples version
   llama: 'b8763',          // ggml-org/llama.cpp release tag
   ytdlp: '2026.03.17',     // yt-dlp/yt-dlp release tag (date-format YYYY.MM.DD)
 };
@@ -747,128 +746,6 @@ async function downloadYtDlp(binDir, onProgress, force = false) {
 }
 
 // ---------------------------------------------------------------------------
-// 7. downloadSoundfonts(binDir, onProgress)
-// ---------------------------------------------------------------------------
-
-const SOUNDFONT_BASE_URL = 'https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/gh-pages/MusyngKite';
-
-const GM_INSTRUMENTS = [
-  'acoustic_grand_piano','bright_acoustic_piano','electric_grand_piano','honkytonk_piano',
-  'electric_piano_1','electric_piano_2','harpsichord','clavinet',
-  'celesta','glockenspiel','music_box','vibraphone','marimba','xylophone','tubular_bells','dulcimer',
-  'drawbar_organ','percussive_organ','rock_organ','church_organ','reed_organ','accordion','harmonica','tango_accordion',
-  'acoustic_guitar_nylon','acoustic_guitar_steel','electric_guitar_jazz','electric_guitar_clean',
-  'electric_guitar_muted','overdriven_guitar','distortion_guitar','guitar_harmonics',
-  'acoustic_bass','electric_bass_finger','electric_bass_pick','fretless_bass',
-  'slap_bass_1','slap_bass_2','synth_bass_1','synth_bass_2',
-  'violin','viola','cello','contrabass','tremolo_strings','pizzicato_strings','orchestral_harp','timpani',
-  'string_ensemble_1','string_ensemble_2','synth_strings_1','synth_strings_2',
-  'choir_aahs','voice_oohs','synth_choir','orchestra_hit',
-  'trumpet','trombone','tuba','muted_trumpet','french_horn','brass_section','synth_brass_1','synth_brass_2',
-  'soprano_sax','alto_sax','tenor_sax','baritone_sax','oboe','english_horn','bassoon','clarinet',
-  'piccolo','flute','recorder','pan_flute','blown_bottle','shakuhachi','whistle','ocarina',
-  'lead_1_square','lead_2_sawtooth','lead_3_calliope','lead_4_chiff',
-  'lead_5_charang','lead_6_voice','lead_7_fifths','lead_8_bass__lead',
-  'pad_1_new_age','pad_2_warm','pad_3_polysynth','pad_4_choir',
-  'pad_5_bowed','pad_6_metallic','pad_7_halo','pad_8_sweep',
-  'fx_1_rain','fx_2_soundtrack','fx_3_crystal','fx_4_atmosphere',
-  'fx_5_brightness','fx_6_goblins','fx_7_echoes','fx_8_scifi',
-  'sitar','banjo','shamisen','koto','kalimba','bagpipe','fiddle','shanai',
-  'tinkle_bell','agogo','steel_drums','woodblock','taiko_drum','melodic_tom','synth_drum','reverse_cymbal',
-  'guitar_fret_noise','breath_noise','seashore','bird_tweet',
-  'telephone_ring','helicopter','applause','gunshot',
-];
-
-/**
- * Download MusyngKite GM instrument samples from GitHub and save as individual MP3 files.
- * Each instrument JS file contains base64-encoded MP3 samples in MIDI.js format.
- * Files are saved to binDir/soundfonts/musyngkite/{instrument_name}-mp3/
- * @param {string} binDir
- * @param {(msg: string, downloaded?: number, total?: number) => void} [onProgress]
- * @param {boolean} [force]
- * @returns {Promise<void>}
- */
-async function downloadSoundfonts(binDir, onProgress, force = false) {
-  const soundfontsDir = path.join(binDir, 'soundfonts', 'musyngkite');
-  const expectedTag = TOOL_VERSIONS.soundfonts;
-  const totalInstruments = GM_INSTRUMENTS.length;
-
-  // Note: musyngkite is cross-platform — no platform check needed
-
-  if (!needsDownload(soundfontsDir, expectedTag, force)) {
-    if (onProgress) onProgress('Soundfonts up to date.');
-    return;
-  }
-
-  fs.mkdirSync(soundfontsDir, { recursive: true });
-
-  // Regex to extract note → base64 data URI mappings from MIDI.js JS format
-  const NOTE_REGEX = /["']([A-G][b#]?\d)["']\s*:\s*["'](data:audio\/mp3;base64,([^"']+))["']/g;
-
-  for (let i = 0; i < totalInstruments; i++) {
-    const instrument = GM_INSTRUMENTS[i];
-    const jsUrl = `${SOUNDFONT_BASE_URL}/${instrument}-mp3.js`;
-    const instrumentDir = path.join(soundfontsDir, `${instrument}-mp3`);
-
-    if (onProgress) onProgress(`${instrument} (${i + 1}/${totalInstruments})`);
-
-    // Download the JS file to a temp path
-    const tmpJs = path.join(os.tmpdir(), `soundfont_${instrument}_${Date.now()}.js`);
-    try {
-      await downloadFile(jsUrl, tmpJs, null);
-
-      const jsContent = fs.readFileSync(tmpJs, 'utf-8');
-
-      // Parse all note entries
-      fs.mkdirSync(instrumentDir, { recursive: true });
-      let match;
-      NOTE_REGEX.lastIndex = 0;
-      while ((match = NOTE_REGEX.exec(jsContent)) !== null) {
-        const note = match[1];    // e.g. "A4"
-        const base64Data = match[3]; // raw base64 string
-        const mp3Path = path.join(instrumentDir, `${note}.mp3`);
-        const buffer = Buffer.from(base64Data.trim(), 'base64');
-        fs.writeFileSync(mp3Path, buffer);
-      }
-    } catch (err) {
-      console.warn(`[soundfonts] Failed to download ${instrument}: ${err.message}`);
-    } finally {
-      try { fs.unlinkSync(tmpJs); } catch (_) {}
-    }
-  }
-
-  // Download GM drum kit from WebAudioFont (notes 35-81)
-  const drumDir = path.join(soundfontsDir, 'drums-mp3');
-  fs.mkdirSync(drumDir, { recursive: true });
-  const DRUM_BASE_URL = 'https://surikov.github.io/webaudiofontdata/sound';
-  const FILE_REGEX = /file\s*:\s*'([A-Za-z0-9+/=]+)'/;
-
-  for (let note = 35; note <= 81; note++) {
-    const mp3Path = path.join(drumDir, `${note}.mp3`);
-    if (fs.existsSync(mp3Path) && !force) continue;
-
-    const jsUrl = `${DRUM_BASE_URL}/128${note}_0_FluidR3_GM_sf2_file.js`;
-    const tmpJs = path.join(os.tmpdir(), `drum_${note}_${Date.now()}.js`);
-    try {
-      await downloadFile(jsUrl, tmpJs, null);
-      const content = fs.readFileSync(tmpJs, 'utf-8');
-      const match = FILE_REGEX.exec(content);
-      if (match) {
-        fs.writeFileSync(mp3Path, Buffer.from(match[1], 'base64'));
-      }
-    } catch (err) {
-      console.warn(`[soundfonts] Failed to download drum note ${note}: ${err.message}`);
-    } finally {
-      try { fs.unlinkSync(tmpJs); } catch (_) {}
-    }
-  }
-  if (onProgress) onProgress(`Drum kit downloaded`);
-
-  fs.writeFileSync(path.join(soundfontsDir, '.version'), JSON.stringify({ tag: expectedTag }), 'utf8');
-  if (onProgress) onProgress('Soundfonts installed.');
-}
-
-// ---------------------------------------------------------------------------
 // 7. downloadLlamaServer(binDir, gpuInfo, onProgress)
 // ---------------------------------------------------------------------------
 
@@ -1083,7 +960,6 @@ module.exports = {
   selectLlamaAsset,
   downloadFFmpeg,
   downloadYtDlp,
-  downloadSoundfonts,
   downloadLlamaServer,
   downloadLlamaCudart,
 };

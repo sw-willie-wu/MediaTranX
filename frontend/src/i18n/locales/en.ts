@@ -258,6 +258,8 @@ export default {
       model_exists: 'Model already exists',
       downloading_checkpoint: 'Downloading {0} checkpoint...',
       downloading_rife: 'Downloading RIFE {0}...',
+      downloading_soundfont: 'Downloading soundfont... {0} / {1}',
+      downloading_soundfont_drums: 'Downloading drum kit...',
       extracting_model: 'Extracting model...',
       downloading_repo: 'Downloading {0}...',
       downloading_file: 'Downloading {0} ({1}/{2})...',
@@ -1401,6 +1403,7 @@ export default {
     // Interpolation
     rife: 'Video Frame Interpolation',
     basic_pitch: 'Audio to MIDI',
+    soundfont: 'MIDI Playback Soundfont (GM Instruments)',
     // LLM families (GGUF)
     qwen3: 'Qwen3 Translation Model',
     qwen3vl: 'Qwen3-VL Vision-Language Model (OCR)',
