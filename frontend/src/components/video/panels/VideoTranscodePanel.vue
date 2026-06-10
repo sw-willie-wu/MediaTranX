@@ -245,7 +245,7 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, isAudioFormat, getP
     <p class="form-hint">{{ $t('video.transcode.description') }}</p>
 
     <div class="form-group">
-      <label>{{ $t('video.transcode.format') }}</label>
+      <label>{{ $t('common.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="formats" />
     </div>
 

@@ -144,7 +144,7 @@ useAgentPanelHost('audio.transcode', {
     <p class="form-hint">{{ $t('audio.transcode.description') }}</p>
 
     <div class="form-group">
-      <label>{{ $t('audio.transcode.format') }}</label>
+      <label>{{ $t('common.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="formats" />
     </div>
 

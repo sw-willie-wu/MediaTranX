@@ -217,7 +217,7 @@ onMounted(() => {
     </div>
 
     <div class="form-group">
-      <label>{{ $t('audio.lyrics.output_format') }}</label>
+      <label>{{ $t('common.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 

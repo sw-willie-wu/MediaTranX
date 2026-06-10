@@ -156,7 +156,7 @@ defineExpose({ execute, isDisabled, isLoading, convertFormat, getParams })
     <p class="form-hint">{{ $t('image.convert.description') }}</p>
 
     <div class="form-group">
-      <label>{{ $t('image.convert.output_format') }}</label>
+      <label>{{ $t('common.output_format') }}</label>
       <AppSelect v-model="convertFormat" :options="convertFormats" />
     </div>
 
