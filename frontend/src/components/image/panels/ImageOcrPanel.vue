@@ -102,7 +102,7 @@ const isLoading  = computed(() => isProcessing.value)
 function getParams(): Record<string, unknown> {
   const parsed = parseModelValue(selectedModel.value)
   const params: Record<string, unknown> = {
-    format: outputFormat.value,
+    output_format: outputFormat.value,
   }
 
   if (parsed.isRemote) {
@@ -113,7 +113,7 @@ function getParams(): Record<string, unknown> {
   } else {
     const [family, size] = selectedModel.value.split(':')
     params.model_family = family
-    params.size = size
+    params.model_size = size
   }
   return params
 }

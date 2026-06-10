@@ -62,7 +62,7 @@ class SubtitleService:
     async def submit_subtitle_generate(
         self,
         file_id: str,
-        language: Optional[str] = None,
+        source_language: Optional[str] = None,
         model_size: str = "medium",
         output_format: str = "srt",
         target_language: Optional[str] = None,
@@ -93,7 +93,7 @@ class SubtitleService:
 
         Args:
             file_id: Input video file ID
-            language: Language code (None=auto-detect, "zh"=Chinese, "en"=English...)
+            source_language: Language code (None=auto-detect, "zh"=Chinese, "en"=English...)
             model_size: Model size (tiny, base, small, medium, large-v3)
             output_format: Output format (srt, vtt)
             target_language: Translation target language (None=no translation)
@@ -114,7 +114,7 @@ class SubtitleService:
         # Build task parameters
         params = {
             "file_id": file_id,
-            "language": language,
+            "source_language": source_language,
             "model_size": model_size,
             "output_format": output_format,
             "target_language": target_language,
@@ -172,7 +172,7 @@ class SubtitleService:
         file_id = params["file_id"]
         file_info = self._file_service.require_file(file_id)
 
-        language = params.get("language")  # None = auto detect
+        source_language = params.get("source_language")  # None = auto detect
         model_size = params.get("model_size", "medium")
         output_format = params.get("output_format", "srt")
         target_language = params.get("target_language")  # None = no translation
@@ -229,7 +229,7 @@ class SubtitleService:
                 stage_progress("transcribe", p, m)
 
             opts = TranscribeOptions(
-                language=language,
+                language=source_language,
                 model_size=model_size,
                 word_timestamps=word_timestamps,
                 condition_on_previous_text=condition_on_previous_text,
@@ -381,6 +381,7 @@ class SubtitleService:
                 "output_filename": output_filename,
                 "output_size": output_size,
                 "output_files": output_files,
+                # detected language (frozen output key, distinct from the source_language input param)
                 "language": result.language,
                 "language_probability": result.language_probability,
                 "segment_count": len(result.segments),

@@ -18,13 +18,13 @@ router = APIRouter()
 
 class AudioTranscribeRequest(BaseModel):
     file_id: str = Field(..., description="Input file ID")
-    language: Optional[str] = Field(default=None, description="Language code, None=auto-detect")
+    source_language: Optional[str] = Field(default=None, description="Language code, None=auto-detect")
     model_size: str = Field(default="medium", description="Whisper model size")
     output_format: str = Field(default="txt", description="Output format (txt, srt)")
     vocal_separation: bool = Field(default=False, description="Vocal separation preprocessing")
     align: bool = Field(default=False, description="Precise alignment")
     translate: bool = Field(default=False, description="Translation")
-    target_lang: Optional[str] = Field(default=None, description="Translation target language")
+    target_language: Optional[str] = Field(default=None, description="Translation target language")
     translate_model_family: str = Field(default="gemma4", description="Translation model family")
     translate_model_size: str = Field(default="4b", description="Translation model size")
     translate_quantization: Optional[str] = Field(default=None, description="Translation model quantization")
@@ -70,13 +70,13 @@ async def transcribe_audio(
 ):
     task_id = await service.submit_transcribe(
         file_id=request.file_id,
-        language=request.language,
+        source_language=request.source_language,
         model_size=request.model_size,
         output_format=request.output_format,
         vocal_separation=request.vocal_separation,
         align=request.align,
         translate=request.translate,
-        target_lang=request.target_lang,
+        target_language=request.target_language,
         translate_model_family=request.translate_model_family,
         translate_model_size=request.translate_model_size,
         translate_quantization=request.translate_quantization,

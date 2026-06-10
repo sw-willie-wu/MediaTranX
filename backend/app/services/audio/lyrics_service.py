@@ -52,10 +52,10 @@ class AudioLyricsService:
         self,
         file_id: str,
         whisper_model: str = "faster-whisper",
-        whisper_size: str = "medium",
+        model_size: str = "medium",
         align: bool = False,
         translate: bool = False,
-        target_lang: Optional[str] = None,
+        target_language: Optional[str] = None,
         translate_model_family: str = "gemma4",
         translate_model_size: str = "4b",
         translate_quantization: Optional[str] = None,
@@ -69,10 +69,10 @@ class AudioLyricsService:
         params = {
             "file_id": file_id,
             "whisper_model": whisper_model,
-            "whisper_size": whisper_size,
+            "model_size": model_size,
             "align": align,
             "translate": translate,
-            "target_lang": target_lang,
+            "target_language": target_language,
             "translate_model_family": translate_model_family,
             "translate_model_size": translate_model_size,
             "translate_quantization": translate_quantization,
@@ -93,9 +93,9 @@ class AudioLyricsService:
         file_id = params["file_id"]
         file_info = self._file_service.require_file(file_id)
 
-        whisper_size = params.get("whisper_size", "medium")
+        model_size = params.get("model_size", "medium")
         do_translate = params.get("translate", False)
-        target_lang = params.get("target_lang")
+        target_language = params.get("target_language")
         output_format = params.get("output_format", "lrc")
 
         original_stem = Path(file_info.original_filename).stem
@@ -113,8 +113,9 @@ class AudioLyricsService:
 
         # === Transcribe (Demucs + Whisper + align) via shared primitive ===
         opts = TranscribeOptions(
+            # lyrics has no source-language input param → always None → Whisper auto-detect
             language=params.get("language"),
-            model_size=whisper_size,
+            model_size=model_size,
             word_timestamps=True,  # lyrics need word-level timing for alignment
             condition_on_previous_text=params.get("condition_on_previous_text", True),
             min_silence_duration_ms=params.get("min_silence_duration_ms", 200),
@@ -149,7 +150,7 @@ class AudioLyricsService:
 
         original_segments = list(result.segments)
 
-        if do_translate and target_lang:
+        if do_translate and target_language:
             stage_progress("translate", 0.0, "task.progress.lyrics_prepare_translate")
 
             translate_remote = params.get("translate_remote", False)
@@ -169,7 +170,7 @@ class AudioLyricsService:
                         f"No available {params.get('translate_provider', '')} connection"
                     )
                 translated_all = translate_srt_auto(
-                    seg_dicts, src, target_lang,
+                    seg_dicts, src, target_language,
                     on_progress=lambda p, m: stage_progress("translate", p, m),
                     prov=prov,
                     remote_model=params.get("translate_remote_model", ""),
@@ -186,7 +187,7 @@ class AudioLyricsService:
                     load_band=(0.0, 0.05),
                 ) as session:
                     translated_all = translate_srt_auto(
-                        seg_dicts, src, target_lang,
+                        seg_dicts, src, target_language,
                         on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
                         session=session,
                         model_family=translate_model_family,
@@ -205,9 +206,9 @@ class AudioLyricsService:
         # === Write output files ===
         stage_progress("write", 0.0, "task.progress.lyrics_writing")
 
-        if do_translate and target_lang:
+        if do_translate and target_language:
             src_filename = f"{base_name}.{detected_lang}.{output_format}"
-            tgt_filename = f"{base_name}.{target_lang}.{output_format}"
+            tgt_filename = f"{base_name}.{target_language}.{output_format}"
             source_text = self._format_output(original_segments, output_format)
             target_text = self._format_output(result.segments, output_format)
         else:
@@ -222,7 +223,7 @@ class AudioLyricsService:
             source_lang=detected_lang,
             target_filename=tgt_filename,
             target_text=target_text,
-            target_lang=target_lang if (do_translate and target_lang) else None,
+            target_lang=target_language if (do_translate and target_language) else None,
             output_dir=output_dir,
             original_filename=file_info.original_filename,
             file_service=self._file_service,
@@ -230,11 +231,11 @@ class AudioLyricsService:
 
         # Annotate "type" (service-specific metadata, not in helper shape)
         written[0]["type"] = "source"
-        if do_translate and target_lang:
+        if do_translate and target_language:
             written[1]["type"] = "translated"
 
         output_files = written
-        primary = written[1] if (do_translate and target_lang) else written[0]
+        primary = written[1] if (do_translate and target_language) else written[0]
         output_file_id = primary["file_id"]
         output_filename_result = primary["filename"]
 
@@ -251,8 +252,8 @@ class AudioLyricsService:
             "text_content": text_content,
             "detected_language": detected_lang,
             "segment_count": len(result.segments),
-            "translated": do_translate and target_lang is not None,
-            "target_language": target_lang,
+            "translated": do_translate and target_language is not None,
+            "target_language": target_language,
         }
 
     @staticmethod
