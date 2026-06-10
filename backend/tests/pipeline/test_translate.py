@@ -285,3 +285,16 @@ def test_translate_srt_cloud_completes_via_streaming_provider():
          patch("app.pipeline.translate.get_cloud_ctx", return_value=1_000_000):
         out = tr.translate_srt_cloud(_segs(2), "en", "zh", prov, "gpt-4o")
     assert out == _segs(2)   # parse_srt_response stub returns the batch unchanged
+
+
+class TestSrtProgressMsg:
+    """Regression: a single-batch local SRT translation must not freeze the
+    numerator at 1 while fake_progress animates the bar — it shows the segment
+    count instead, mirroring translate_srt_cloud's num_batches==1 handling."""
+
+    def test_single_batch_uses_total_count_not_frozen_index(self):
+        assert tr._srt_progress_msg(0, 150, 1) == "task.progress.translating_total|150"
+
+    def test_multi_batch_uses_segment_index(self):
+        assert tr._srt_progress_msg(0, 150, 5) == "task.progress.translating_segment|1|150"
+        assert tr._srt_progress_msg(50, 150, 5) == "task.progress.translating_segment|51|150"

@@ -19,6 +19,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _text_progress_msg(i: int, total: int) -> str:
+    """Progress message shown *during* chunk ``i`` of a plain-text translation.
+
+    A single-chunk doc has no meaningful running index — it would be frozen at
+    1/1 while the bar animates (fake_progress). Show the generic 'translating'
+    instead, mirroring ``translate_text_cloud``'s ``total == 1`` handling.
+    """
+    if total <= 1:
+        return "task.progress.translating"
+    return f"task.progress.translating_segment|{i + 1}|{total}"
+
+
 def _get_cloud_text_chunk_size(prov, model: str = "") -> int:
     """Get plain-text translation chunk size (in characters) based on provider context."""
     from app.pipeline.translate import get_cloud_ctx
@@ -128,7 +140,7 @@ def translate_text_local(
         chunk_end_pct = (i + 1) / total
 
         with fake_progress(on_progress, chunk_start_pct, chunk_end_pct,
-                           f"task.progress.translating_segment|{i + 1}|{total}",
+                           _text_progress_msg(i, total),
                            cancellable=session):
             if result["mode"] == "chat":
                 output = session.chat(
@@ -145,6 +157,6 @@ def translate_text_local(
         translated_chunks.append(output)
 
         if on_progress:
-            on_progress(chunk_end_pct, f"task.progress.translating_segment|{i + 1}|{total}")
+            on_progress(chunk_end_pct, _text_progress_msg(i, total))
 
     return "\n\n".join(translated_chunks)

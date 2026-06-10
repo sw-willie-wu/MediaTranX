@@ -148,3 +148,38 @@ def test_translate_text_local_emits_translating_segment_progress():
         )
     msgs = [m for _, m in events]
     assert all(m.startswith("task.progress.translating_segment") for m in msgs)
+
+
+def test_text_progress_msg_single_chunk_is_generic_not_frozen():
+    # single chunk → no running index; generic 'translating', not a frozen 1/1
+    assert txt_mod._text_progress_msg(0, 1) == "task.progress.translating"
+
+
+def test_text_progress_msg_multi_chunk_uses_segment_index():
+    assert txt_mod._text_progress_msg(0, 3) == "task.progress.translating_segment|1|3"
+    assert txt_mod._text_progress_msg(2, 3) == "task.progress.translating_segment|3|3"
+
+
+def test_translate_text_local_single_chunk_no_frozen_numerator():
+    """Regression: a single-chunk local translation must not emit a frozen
+    'translating_segment|1|1' (numerator stuck at 1 while the bar advances)."""
+    session = MagicMock()
+    session.chat = MagicMock(return_value="out")
+    fake_builder = lambda *a, **k: {"mode": "chat", "messages": []}
+
+    events = []
+    def on_progress(p, m): events.append((p, m))
+
+    with patch("app.adapters.ai.inference_config.get_inference_config", return_value=_FAKE_CONFIG), \
+         patch("app.utils.prompts.get_prompt_builder", return_value=fake_builder), \
+         patch("app.utils.text_chunking.split_text", return_value=["only-chunk"]), \
+         patch("app.utils.inference.fake_progress", _noop_fake_progress), \
+         patch("app.utils.inference.calc_max_tokens", return_value=512), \
+         patch("app.utils.inference.estimate_tokens", return_value=10):
+        txt_mod.translate_text_local(
+            "in", "en", "zh-TW", session, max_chars=5000,
+            on_progress=on_progress,
+        )
+    msgs = [m for _, m in events]
+    assert "task.progress.translating_segment|1|1" not in msgs
+    assert any(m == "task.progress.translating" for m in msgs)
