@@ -125,6 +125,9 @@ export default {
     output_format: 'Output Format',
     source_language: 'Source Language',
     target_language: 'Target Language',
+    translate_style_colloquial: 'Colloquial',
+    translate_style_formal: 'Formal',
+    translate_style_literal: 'Literal',
   },
 
   // ── Panel execute buttons ──────────────────────────────────────────────
@@ -646,9 +649,6 @@ export default {
       english: 'English',
       japanese: 'Japanese',
       korean: 'Korean',
-      style_colloquial: 'Colloquial',
-      style_formal: 'Formal',
-      style_literal: 'Literal',
       no_model_downloaded: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
     },
 

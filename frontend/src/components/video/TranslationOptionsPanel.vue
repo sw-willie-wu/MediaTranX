@@ -56,9 +56,9 @@ const translateLanguages = ref<{ code: string; name: string }[]>([
 const rawTranslateStyles = ref<{ value: string; label: string }[]>([])
 
 const styleI18nKey: Record<string, string> = {
-  colloquial: 'video.translate.style_colloquial',
-  formal: 'video.translate.style_formal',
-  literal: 'video.translate.style_literal',
+  colloquial: 'common.translate_style_colloquial',
+  formal: 'common.translate_style_formal',
+  literal: 'common.translate_style_literal',
 }
 
 const translateStyles = computed(() =>

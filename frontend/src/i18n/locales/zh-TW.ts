@@ -125,6 +125,9 @@ export default {
     output_format: '輸出格式',
     source_language: '來源語言',
     target_language: '目標語言',
+    translate_style_colloquial: '口語化',
+    translate_style_formal: '正式',
+    translate_style_literal: '直譯',
   },
 
   // ── 面板執行按鈕 ──────────────────────────────────────────────────────
@@ -646,9 +649,6 @@ export default {
       english: '英文',
       japanese: '日文',
       korean: '韓文',
-      style_colloquial: '口語化',
-      style_formal: '正式',
-      style_literal: '直譯',
       no_model_downloaded: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
     },
 
