@@ -118,8 +118,8 @@ export default {
     remove_not_supported: '物件移除不支援動態圖片',
     model_not_ready: '模型尚未下載',
     no_models_available: '無可用模型',
-    model_not_downloaded_hint: '選擇的模型尚未下載，是否前往模型管理頁面下載？',
-    go_to_model_manager: '前往模型管理',
+    model_not_downloaded_hint: '選擇的模型尚未下載，是否前往模型與資源頁面下載？',
+    go_to_model_manager: '前往模型與資源',
   },
 
   // ── 面板執行按鈕 ──────────────────────────────────────────────────────
@@ -540,7 +540,7 @@ export default {
       select_output: '選擇輸出位置',
       task_label: '圖片 · 文字辨識',
       result_title: 'OCR 辨識結果',
-      no_model_downloaded: '所選模型尚未下載，請至設定 → 模型管理下載。',
+      no_model_downloaded: '所選模型尚未下載，請至設定 → 模型與資源下載。',
     },
   },
 
@@ -652,7 +652,7 @@ export default {
       style_colloquial: '口語化',
       style_formal: '正式',
       style_literal: '直譯',
-      no_model_downloaded: '尚未下載翻譯模型，請至設定 → 模型管理下載。',
+      no_model_downloaded: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
     },
 
     whisper_advanced: {
@@ -804,7 +804,7 @@ export default {
       output_file: '輸出路徑',
       select_output: '選擇輸出路徑',
       task_label: '音訊 · 逐字稿',
-      no_translate_model: '尚未下載翻譯模型，請至設定 → 模型管理下載。',
+      no_translate_model: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
     },
 
     lyrics: {
@@ -823,7 +823,7 @@ export default {
       select_output: '選擇輸出路徑',
       task_label: '音訊 · 歌詞提取',
       result_title: '歌詞',
-      no_translate_model: '尚未下載翻譯模型，請至設定 → 模型管理下載。',
+      no_translate_model: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
     },
 
     separate: {
@@ -838,7 +838,7 @@ export default {
       stem_piano: '鋼琴',
       stem_other: '其他',
       task_label: '音訊 · 音源分離',
-      model_not_downloaded: '分離模型尚未下載，請至設定 → AI 模組管理下載。',
+      model_not_downloaded: '分離模型尚未下載，請至設定 → 模型與資源下載。',
       output_format: '輸出格式',
       output_file: '輸出路徑',
       select_output: '選擇輸出路徑',
@@ -950,7 +950,7 @@ export default {
       output_file: '輸出檔案',
       select_output: '選擇輸出位置',
       task_label: '文件 · 文字辨識',
-      no_model_downloaded: '所選模型尚未下載，請至設定 → 模型管理下載。',
+      no_model_downloaded: '所選模型尚未下載，請至設定 → 模型與資源下載。',
     },
 
     pdf_convert: {
@@ -993,7 +993,7 @@ export default {
       installing_toast: '開始安裝翻譯功能，請稍候...',
       install_complete: '翻譯功能安裝完成',
       install_error: '安裝失敗，請查看任務列表',
-      no_model_downloaded: '尚未下載翻譯模型，請至設定 → 模型管理下載。',
+      no_model_downloaded: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
     },
   },
 
@@ -1002,8 +1002,8 @@ export default {
     tab: {
       general: '一般',
       system: '系統資訊',
-      models: 'AI 模型管理',
-      agent: 'Agent',
+      models: '模型與資源',
+      agent: '智慧助手',
       'video-download': '影片下載',
       about: '關於',
     },
@@ -1023,7 +1023,7 @@ export default {
       reset_layout: '重設面板寬度',
       file_paths: '檔案路徑',
       temp_folder: '暫存資料夾',
-      models_dir: 'AI 模型存放目錄',
+      models_dir: '模型與資源存放目錄',
       restart_required: '重新啟動後生效',
       temp_usage: '目前占用',
       clear_temp: '清除暫存檔',
@@ -1137,7 +1137,7 @@ export default {
     },
 
     agent: {
-      title: 'Agent 設定',
+      title: '智慧助手 設定',
       model: {
         label: '模型',
         placeholder: '選擇支援 tools 的模型…',
@@ -1162,10 +1162,10 @@ export default {
     },
   },
 
-  // ── Agent ──────────────────────────────────────────────────────────────
+  // ── 智慧助手 ──────────────────────────────────────────────────────────────
   agent: {
     banner: {
-      prefix: 'Agent：',
+      prefix: '智慧助手：',
       queued: '等待中…',
       cancelled: '已中斷',
       waiting_confirm: '等待確認中…',
@@ -1183,14 +1183,14 @@ export default {
       },
     },
     bubble: {
-      title: 'Agent 對話',
-      placeholder: '請告訴 Agent 你想做什麼…',
+      title: '智慧助手 對話',
+      placeholder: '請告訴 智慧助手 你想做什麼…',
       empty: '尚無對話',
       thinking: '思考中…',
       token_count: '輸入: {prompt} / 輸出: {completion}',
       clear: '清除對話紀錄',
-      show: '顯示 Agent 對話泡泡',
-      hide: '隱藏 Agent 對話泡泡',
+      show: '顯示 智慧助手 對話泡泡',
+      hide: '隱藏 智慧助手 對話泡泡',
     },
     session: {
       new_chat: '+ 新對話',
@@ -1214,7 +1214,7 @@ export default {
       with_values: '確認以下數值執行此動作？',
     },
     error: {
-      no_model: '尚未設定 Agent 模型',
+      no_model: '尚未設定 智慧助手 模型',
       model_unavailable: '所選模型目前不可用',
       tools_not_supported: '此模型不支援工具呼叫',
       provider_error: '服務提供者回傳錯誤',

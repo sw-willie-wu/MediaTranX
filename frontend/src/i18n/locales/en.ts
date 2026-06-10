@@ -118,8 +118,8 @@ export default {
     remove_not_supported: 'Object removal does not support animated images',
     model_not_ready: 'Model Not Downloaded',
     no_models_available: 'No models available',
-    model_not_downloaded_hint: 'The selected model has not been downloaded yet. Go to model manager to download it?',
-    go_to_model_manager: 'Go to Model Manager',
+    model_not_downloaded_hint: 'The selected model has not been downloaded yet. Go to Models & Resources to download it?',
+    go_to_model_manager: 'Go to Models & Resources',
   },
 
   // ── Panel execute buttons ──────────────────────────────────────────────
@@ -540,7 +540,7 @@ export default {
       select_output: 'Select Output Location',
       task_label: 'Image · OCR',
       result_title: 'OCR Result',
-      no_model_downloaded: 'Selected model is not downloaded. Please download it in Settings → Models.',
+      no_model_downloaded: 'Selected model is not downloaded. Please download it in Settings → Models & Resources.',
     },
   },
 
@@ -652,7 +652,7 @@ export default {
       style_colloquial: 'Colloquial',
       style_formal: 'Formal',
       style_literal: 'Literal',
-      no_model_downloaded: 'No translation model downloaded. Please download one in Settings → Models.',
+      no_model_downloaded: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
     },
 
     whisper_advanced: {
@@ -804,7 +804,7 @@ export default {
       output_file: 'Output Path',
       select_output: 'Select output path',
       task_label: 'Audio · Transcribe',
-      no_translate_model: 'No translation model downloaded. Please download one in Settings → Models.',
+      no_translate_model: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
     },
 
     lyrics: {
@@ -823,7 +823,7 @@ export default {
       select_output: 'Select output path',
       task_label: 'Audio · Lyrics',
       result_title: 'Lyrics',
-      no_translate_model: 'No translation model downloaded. Please download one in Settings → Models.',
+      no_translate_model: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
     },
 
     separate: {
@@ -838,7 +838,7 @@ export default {
       stem_piano: 'Piano',
       stem_other: 'Other',
       task_label: 'Audio · Separate',
-      model_not_downloaded: 'Separation model not downloaded. Please download it in Settings → AI Module Management.',
+      model_not_downloaded: 'Separation model not downloaded. Please download it in Settings → Models & Resources.',
       output_format: 'Output Format',
       output_file: 'Output Path',
       select_output: 'Select output path',
@@ -950,7 +950,7 @@ export default {
       output_file: 'Output File',
       select_output: 'Select Output Location',
       task_label: 'Document · OCR',
-      no_model_downloaded: 'Selected model is not downloaded. Please download it in Settings → Models.',
+      no_model_downloaded: 'Selected model is not downloaded. Please download it in Settings → Models & Resources.',
     },
 
     pdf_convert: {
@@ -993,7 +993,7 @@ export default {
       installing_toast: 'Installing translation feature, please wait...',
       install_complete: 'Translation feature installed',
       install_error: 'Installation failed, check task list',
-      no_model_downloaded: 'No translation model downloaded. Please download one in Settings → Models.',
+      no_model_downloaded: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
     },
   },
 
@@ -1002,8 +1002,8 @@ export default {
     tab: {
       general: 'General',
       system: 'System Info',
-      models: 'AI Models',
-      agent: 'Agent',
+      models: 'Models & Resources',
+      agent: 'Assistant',
       'video-download': 'Video Download',
       about: 'About',
     },
@@ -1023,7 +1023,7 @@ export default {
       reset_layout: 'Reset Panel Widths',
       file_paths: 'File Paths',
       temp_folder: 'Temp Folder',
-      models_dir: 'AI Models Directory',
+      models_dir: 'Models & Resources Directory',
       restart_required: 'Restart required to take effect',
       temp_usage: 'Current usage',
       clear_temp: 'Clear temp files',
@@ -1137,7 +1137,7 @@ export default {
     },
 
     agent: {
-      title: 'Agent settings',
+      title: 'Assistant settings',
       model: {
         label: 'Model',
         placeholder: 'Select a tool-capable model…',
@@ -1162,10 +1162,10 @@ export default {
     },
   },
 
-  // ── Agent ──────────────────────────────────────────────────────────────
+  // ── Assistant ──────────────────────────────────────────────────────────────
   agent: {
     banner: {
-      prefix: 'Agent: ',
+      prefix: 'Assistant: ',
       queued: 'Waiting…',
       cancelled: 'Cancelled',
       waiting_confirm: 'Waiting for confirmation…',
@@ -1183,8 +1183,8 @@ export default {
       },
     },
     bubble: {
-      title: 'Agent Chat',
-      placeholder: 'Ask agent to do something…',
+      title: 'Assistant Chat',
+      placeholder: 'Ask the assistant to do something…',
       empty: 'No messages yet',
       thinking: 'Thinking…',
       token_count: 'in: {prompt} / out: {completion}',
@@ -1214,7 +1214,7 @@ export default {
       with_values: 'Confirm action with the following values?',
     },
     error: {
-      no_model: 'No agent model configured',
+      no_model: 'No assistant model configured',
       model_unavailable: 'Selected model is unavailable',
       tools_not_supported: 'This model does not support tool use',
       provider_error: 'Provider returned an error',
