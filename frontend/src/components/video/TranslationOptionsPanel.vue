@@ -180,7 +180,7 @@ defineExpose({
 
     <div v-if="enableTranslation" class="sub-params">
         <div class="form-group">
-          <label class="sub-label">{{ $t('video.translate.target_language') }}</label>
+          <label class="sub-label">{{ $t('common.target_language') }}</label>
           <AppSelect v-model="targetLanguage" :options="targetLanguageOptions" />
         </div>
 

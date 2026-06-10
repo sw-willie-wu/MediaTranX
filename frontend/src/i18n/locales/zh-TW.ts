@@ -123,6 +123,8 @@ export default {
     width: '寬度',
     height: '高度',
     output_format: '輸出格式',
+    source_language: '來源語言',
+    target_language: '目標語言',
   },
 
   // ── 面板執行按鈕 ──────────────────────────────────────────────────────
@@ -616,7 +618,6 @@ export default {
 
     subtitle: {
       title: '字幕設定',
-      language: '語言',
       model_settings: '模型設定',
       srt: 'SRT',
       vtt: 'VTT (WebVTT)',
@@ -631,7 +632,6 @@ export default {
 
     translate: {
       enable: '翻譯字幕',
-      target_language: '目標語言',
       model: '翻譯模型',
       style: '翻譯風格',
       keep_names: '保留人名和專有名詞原文',
@@ -777,7 +777,6 @@ export default {
       description: '使用 Whisper 將音訊內容轉為文字或 SRT 字幕檔。',
       not_installed: 'AI 核心環境未安裝，請先至設定頁面安裝。',
       model: '語音辨識模型',
-      language: '語言',
       txt_format: 'TXT（純文字）',
       srt_format: 'SRT（含時間碼）',
       srt_hint: '輸出含時間碼的 SRT 字幕格式',
@@ -787,7 +786,6 @@ export default {
       align: '精準對齊',
       align_hint: '使用 Wav2Vec2 進行逐詞時間軸對齊',
       translate: '翻譯',
-      target_language: '目標語言',
       translate_model: '翻譯模型',
       summarize: '大綱整理',
       summarize_hint: '使用 LLM 生成逐字稿摘要大綱',
@@ -807,7 +805,6 @@ export default {
       align: '精準對齊',
       align_hint: '使用 Wav2Vec2 進行逐詞時間軸對齊',
       translate: '翻譯歌詞',
-      target_language: '目標語言',
       translate_model: '翻譯模型',
       lrc: 'LRC（含時間軸）',
       txt: '純文字',
@@ -974,8 +971,6 @@ export default {
       install_button: '安裝翻譯功能',
       installing: '安裝中...',
       model: '翻譯模型',
-      source_language: '來源語言',
-      target_language: '目標語言',
       style: '翻譯風格',
       glossary: '專有名詞字典',
       optional: '（選填）',

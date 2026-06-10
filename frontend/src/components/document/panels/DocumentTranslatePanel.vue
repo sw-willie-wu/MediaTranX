@@ -275,13 +275,13 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
 
       <!-- 來源語言 -->
       <div class="form-group">
-        <label>{{ $t('document.translate.source_language') }}</label>
+        <label>{{ $t('common.source_language') }}</label>
         <AppSelect v-model="sourceLanguage" :options="languageOptions" />
       </div>
 
       <!-- 目標語言 -->
       <div class="form-group">
-        <label>{{ $t('document.translate.target_language') }}</label>
+        <label>{{ $t('common.target_language') }}</label>
         <AppSelect v-model="targetLanguage" :options="languageOptions" />
       </div>
 

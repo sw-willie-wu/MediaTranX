@@ -123,6 +123,8 @@ export default {
     width: 'Width',
     height: 'Height',
     output_format: 'Output Format',
+    source_language: 'Source Language',
+    target_language: 'Target Language',
   },
 
   // ── Panel execute buttons ──────────────────────────────────────────────
@@ -616,7 +618,6 @@ export default {
 
     subtitle: {
       title: 'Subtitle Settings',
-      language: 'Language',
       model_settings: 'Model Settings',
       srt: 'SRT',
       vtt: 'VTT (WebVTT)',
@@ -631,7 +632,6 @@ export default {
 
     translate: {
       enable: 'Translate Subtitles',
-      target_language: 'Target Language',
       model: 'Translation Model',
       style: 'Translation Style',
       keep_names: 'Keep names and proper nouns in original language',
@@ -777,7 +777,6 @@ export default {
       description: 'Use Whisper to convert audio to text or SRT subtitle file.',
       not_installed: 'AI core environment not installed. Please install in Settings first.',
       model: 'Speech Recognition Model',
-      language: 'Language',
       txt_format: 'TXT (Plain Text)',
       srt_format: 'SRT (With Timestamps)',
       srt_hint: 'Output SRT subtitle format with timestamps',
@@ -787,7 +786,6 @@ export default {
       align: 'Precise Alignment',
       align_hint: 'Use Wav2Vec2 for word-level timestamp alignment',
       translate: 'Translate',
-      target_language: 'Target Language',
       translate_model: 'Translation Model',
       summarize: 'Outline Summary',
       summarize_hint: 'Use LLM to generate a summary of the transcript',
@@ -807,7 +805,6 @@ export default {
       align: 'Precise Alignment',
       align_hint: 'Use Wav2Vec2 for word-level timestamp alignment',
       translate: 'Translate Lyrics',
-      target_language: 'Target Language',
       translate_model: 'Translation Model',
       lrc: 'LRC (with timestamps)',
       txt: 'Plain Text',
@@ -974,8 +971,6 @@ export default {
       install_button: 'Install Translation',
       installing: 'Installing...',
       model: 'Translation Model',
-      source_language: 'Source Language',
-      target_language: 'Target Language',
       style: 'Translation Style',
       glossary: 'Glossary',
       optional: '(Optional)',
