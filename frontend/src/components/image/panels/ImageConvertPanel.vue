@@ -156,7 +156,7 @@ defineExpose({ execute, isDisabled, isLoading, convertFormat, getParams })
     <p class="form-hint">{{ $t('image.convert.description') }}</p>
 
     <div class="form-group">
-      <label>{{ $t('image.convert.output_format') }}</label>
+      <label>{{ $t('common.output_format') }}</label>
       <AppSelect v-model="convertFormat" :options="convertFormats" />
     </div>
 
@@ -192,7 +192,7 @@ defineExpose({ execute, isDisabled, isLoading, convertFormat, getParams })
 
     <div v-if="convertResizeMode === 'custom'" class="form-group size-inputs">
       <div class="size-input-group">
-        <label>{{ $t('image.convert.width') }}</label>
+        <label>{{ $t('common.width') }}</label>
         <input
           type="number"
           class="form-input"
@@ -204,7 +204,7 @@ defineExpose({ execute, isDisabled, isLoading, convertFormat, getParams })
       </div>
       <span class="size-separator">×</span>
       <div class="size-input-group">
-        <label>{{ $t('image.convert.height') }}</label>
+        <label>{{ $t('common.height') }}</label>
         <input
           type="number"
           class="form-input"

@@ -217,7 +217,7 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, getParams })
     </div>
 
     <div class="form-group">
-      <label>{{ $t('document.ocr.output_format') }}</label>
+      <label>{{ $t('common.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
   </div>

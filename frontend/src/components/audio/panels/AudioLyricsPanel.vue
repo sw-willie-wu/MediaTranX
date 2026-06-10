@@ -217,7 +217,7 @@ onMounted(() => {
     </div>
 
     <div class="form-group">
-      <label>{{ $t('audio.lyrics.output_format') }}</label>
+      <label>{{ $t('common.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 
@@ -238,7 +238,7 @@ onMounted(() => {
           <AppToggle v-model="translateEnabled">{{ $t('audio.lyrics.translate') }}</AppToggle>
           <div v-if="translateEnabled" class="sub-params">
             <div class="form-group">
-              <label class="sub-label">{{ $t('audio.lyrics.target_language') }}</label>
+              <label class="sub-label">{{ $t('common.target_language') }}</label>
               <AppSelect v-model="targetLanguage" :options="translateLanguages" />
             </div>
             <div class="form-group">

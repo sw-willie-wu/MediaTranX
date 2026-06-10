@@ -56,9 +56,9 @@ const translateLanguages = ref<{ code: string; name: string }[]>([
 const rawTranslateStyles = ref<{ value: string; label: string }[]>([])
 
 const styleI18nKey: Record<string, string> = {
-  colloquial: 'video.translate.style_colloquial',
-  formal: 'video.translate.style_formal',
-  literal: 'video.translate.style_literal',
+  colloquial: 'common.translate_style_colloquial',
+  formal: 'common.translate_style_formal',
+  literal: 'common.translate_style_literal',
 }
 
 const translateStyles = computed(() =>
@@ -180,7 +180,7 @@ defineExpose({
 
     <div v-if="enableTranslation" class="sub-params">
         <div class="form-group">
-          <label class="sub-label">{{ $t('video.translate.target_language') }}</label>
+          <label class="sub-label">{{ $t('common.target_language') }}</label>
           <AppSelect v-model="targetLanguage" :options="targetLanguageOptions" />
         </div>
 

@@ -120,6 +120,14 @@ export default {
     no_models_available: 'No models available',
     model_not_downloaded_hint: 'The selected model has not been downloaded yet. Go to Models & Resources to download it?',
     go_to_model_manager: 'Go to Models & Resources',
+    width: 'Width',
+    height: 'Height',
+    output_format: 'Output Format',
+    source_language: 'Source Language',
+    target_language: 'Target Language',
+    translate_style_colloquial: 'Colloquial',
+    translate_style_formal: 'Formal',
+    translate_style_literal: 'Literal',
   },
 
   // ── Panel execute buttons ──────────────────────────────────────────────
@@ -141,6 +149,8 @@ export default {
     doc_ocr:         { execute: 'Run OCR' },             // Phase 2.E new
     doc_pdf_convert: { execute: 'Convert PDF' },         // Phase 2.E new
     doc_split:       { execute: 'Split Document' },      // Phase 2.E new
+    transcribe:      { execute: 'Transcribe' },          // Audio transcription button
+    subtitle:        { execute: 'Generate Subtitles' },  // Subtitle generation button
   },
 
   // ── Toast notifications ───────────────────────────────────────────────
@@ -425,7 +435,6 @@ export default {
     convert: {
       title: 'Convert Settings',
       description: 'Convert image format with adjustable output quality.',
-      output_format: 'Output Format',
       quality: 'Quality:',
       quality_hint: 'Higher values mean better quality and larger files',
       resize_mode: 'Resize',
@@ -433,8 +442,6 @@ export default {
       scale: 'Scale',
       custom_size: 'Custom Size',
       scale_label: 'Scale:',
-      width: 'Width',
-      height: 'Height',
       aspect_ratio_hint: 'Leave empty for proportional scaling',
       task_label: 'Image · Convert',
     },
@@ -532,8 +539,7 @@ export default {
       description: 'Use AI to recognize text in images, output as editable format.',
       server_not_found: 'llama-server not found. Please install AI core in Settings.',
       go_to_settings: 'Go to Settings',
-      model: 'Recognition Model',
-      output_format: 'Output Format',
+      model: 'Text Recognition Model',
       markdown: 'Markdown (.md)',
       text: 'Plain Text (.txt)',
       output_file: 'Output File',
@@ -569,7 +575,6 @@ export default {
     transcode: {
       title: 'Transcode Settings',
       description: 'Convert video format with adjustable resolution, quality, and audio settings.',
-      format: 'Output Format',
       mp3: 'MP3 (Audio Only)',
       aac: 'AAC (Audio Only)',
       wav: 'WAV (Audio Only)',
@@ -589,8 +594,6 @@ export default {
       crf_hint: 'Lower values mean higher quality and larger files (recommended 18-28)',
       bitrate: 'Bitrate',
       extract_audio: 'Extract Audio',
-      width: 'Width',
-      height: 'Height',
       task_label: 'Video · Transcode',
     },
 
@@ -618,9 +621,7 @@ export default {
 
     subtitle: {
       title: 'Subtitle Settings',
-      language: 'Language',
       model_settings: 'Model Settings',
-      output_format: 'Output Format',
       srt: 'SRT',
       vtt: 'VTT (WebVTT)',
       select_output: 'Select Output Location',
@@ -634,7 +635,6 @@ export default {
 
     translate: {
       enable: 'Translate Subtitles',
-      target_language: 'Target Language',
       model: 'Translation Model',
       style: 'Translation Style',
       keep_names: 'Keep names and proper nouns in original language',
@@ -649,9 +649,6 @@ export default {
       english: 'English',
       japanese: 'Japanese',
       korean: 'Korean',
-      style_colloquial: 'Colloquial',
-      style_formal: 'Formal',
-      style_literal: 'Literal',
       no_model_downloaded: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
     },
 
@@ -674,7 +671,7 @@ export default {
     interpolate: {
       title: 'Frame Interpolation Settings',
       description: 'Increase video frame rate using AI interpolation.',
-      model: 'Model',
+      model: 'Interpolation Model',
       model_recommended: '(Recommended)',
       model_fast: '(Fast)',
       mode: 'Interpolation Mode',
@@ -685,7 +682,6 @@ export default {
       current_fps: 'Current FPS',
       output_fps: 'Output FPS',
       fps_warning: 'Target FPS must be higher than source FPS',
-      output_format: 'Output Format',
       video_codec: 'Video Codec',
       task_label: 'Video · Frame Interpolation',
     },
@@ -693,9 +689,8 @@ export default {
     enhance: {
       title: 'Video Enhancement Settings',
       description: 'Upscale video resolution using AI super-resolution.',
-      model: 'Model',
+      model: 'Enhancement Model',
       output_resolution: 'Output Resolution',
-      output_format: 'Output Format',
       video_codec: 'Video Codec',
       task_label: 'Video · Enhancement',
     },
@@ -703,7 +698,7 @@ export default {
     summary: {
       title: 'Video Summary',
       description: 'LLM-organized markdown summary of video subtitles with key frames, packaged as a ZIP.',
-      whisper_model: 'Speech recognition model',
+      whisper_model: 'Speech Recognition Model',
       vocal_separation: 'Separate vocals (Demucs)',
       vocal_separation_hint: 'Enable if background music interferes with transcription; adds processing time.',
       llm_model: 'Summary Model (text)',
@@ -745,7 +740,6 @@ export default {
     transcode: {
       title: 'Transcode Settings',
       description: 'Convert audio format with adjustable bitrate and sample rate.',
-      format: 'Output Format',
       lossy: 'Lossy',
       lossless: 'Lossless',
       bitrate: 'Bitrate',
@@ -782,9 +776,7 @@ export default {
       title: 'Transcription Settings',
       description: 'Use Whisper to convert audio to text or SRT subtitle file.',
       not_installed: 'AI core environment not installed. Please install in Settings first.',
-      model: 'Recognition Model',
-      language: 'Language',
-      output_format: 'Output Format',
+      model: 'Speech Recognition Model',
       txt_format: 'TXT (Plain Text)',
       srt_format: 'SRT (With Timestamps)',
       srt_hint: 'Output SRT subtitle format with timestamps',
@@ -794,7 +786,6 @@ export default {
       align: 'Precise Alignment',
       align_hint: 'Use Wav2Vec2 for word-level timestamp alignment',
       translate: 'Translate',
-      target_language: 'Target Language',
       translate_model: 'Translation Model',
       summarize: 'Outline Summary',
       summarize_hint: 'Use LLM to generate a summary of the transcript',
@@ -810,13 +801,11 @@ export default {
     lyrics: {
       title: 'Lyrics Extraction Settings',
       description: 'Extract lyrics from music using AI vocal separation and speech recognition.',
-      model: 'Recognition Model',
+      model: 'Speech Recognition Model',
       align: 'Precise Alignment',
       align_hint: 'Use Wav2Vec2 for word-level timestamp alignment',
       translate: 'Translate Lyrics',
-      target_language: 'Target Language',
       translate_model: 'Translation Model',
-      output_format: 'Output Format',
       lrc: 'LRC (with timestamps)',
       txt: 'Plain Text',
       output_file: 'Output Path',
@@ -829,7 +818,7 @@ export default {
     separate: {
       title: 'Source Separation Settings',
       description: 'Use HDemucs to separate audio into vocals, drums, bass, and other stems.',
-      model: 'Model',
+      model: 'Separation Model',
       stems: 'Output Stems',
       stem_vocals: 'Vocals',
       stem_drums: 'Drums',
@@ -839,7 +828,6 @@ export default {
       stem_other: 'Other',
       task_label: 'Audio · Separate',
       model_not_downloaded: 'Separation model not downloaded. Please download it in Settings → Models & Resources.',
-      output_format: 'Output Format',
       output_file: 'Output Path',
       select_output: 'Select output path',
       generate_midi: 'Generate MIDI',
@@ -945,8 +933,7 @@ export default {
       server_not_found: 'llama-server not found. Please install AI core in Settings.',
       go_to_settings: 'Go to Settings',
       format_not_supported: 'OCR only supports PDF and image formats',
-      model: 'Recognition Model',
-      output_format: 'Output Format',
+      model: 'Text Recognition Model',
       markdown: 'Markdown (.md)',
       text: 'Plain Text (.txt)',
       output_file: 'Output File',
@@ -958,8 +945,8 @@ export default {
     pdf_convert: {
       title: 'PDF Convert Settings',
       description: 'Convert PDF to plain text, Markdown, or page images.',
-      output_format: 'Output Format',
       text_format: 'Plain Text (.txt)',
+      markdown_format: 'Markdown (.md)',
       images_format: 'Page Images (.zip)',
       output_file: 'Output File',
       select_output: 'Select Output Location',
@@ -985,8 +972,6 @@ export default {
       install_button: 'Install Translation',
       installing: 'Installing...',
       model: 'Translation Model',
-      source_language: 'Source Language',
-      target_language: 'Target Language',
       style: 'Translation Style',
       glossary: 'Glossary',
       optional: '(Optional)',

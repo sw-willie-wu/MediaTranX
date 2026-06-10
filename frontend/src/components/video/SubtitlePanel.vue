@@ -276,7 +276,7 @@ onMounted(() => { loadLanguages(); modelStore.ensureLoaded() })
     </div>
 
     <div class="form-group">
-      <label>{{ $t('video.subtitle.language') }}</label>
+      <label>{{ $t('common.source_language') }}</label>
       <AppSelect v-model="language" :options="languages" />
     </div>
 
@@ -291,7 +291,7 @@ onMounted(() => { loadLanguages(); modelStore.ensureLoaded() })
     </div>
 
     <div class="form-group">
-      <label>{{ $t('video.subtitle.output_format') }}</label>
+      <label>{{ $t('common.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 

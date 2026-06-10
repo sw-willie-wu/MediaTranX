@@ -111,12 +111,12 @@ defineExpose({ execute, isDisabled, isLoading, showCropOverlay, aspectRatio })
       <label>{{ $t('video.crop.crop_size') }}</label>
       <div class="coord-row">
         <div class="coord-field">
-          <span class="coord-label">{{ $t('image.convert.width') }}</span>
+          <span class="coord-label">{{ $t('common.width') }}</span>
           <input type="number" class="form-input" v-model.number="cropWidth"
             :min="1" :max="maxW" placeholder="px" />
         </div>
         <div class="coord-field">
-          <span class="coord-label">{{ $t('image.convert.height') }}</span>
+          <span class="coord-label">{{ $t('common.height') }}</span>
           <input type="number" class="form-input" v-model.number="cropHeight"
             :min="1" :max="maxH" placeholder="px"
             :disabled="aspectRatio !== 'free'" />
