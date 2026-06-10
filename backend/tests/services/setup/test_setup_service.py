@@ -56,7 +56,7 @@ class TestGetSystemStatus:
 
 
 class TestComponentVersions:
-    """`SETTINGS.path.{ffmpeg,llama,soundfonts}` are computed_fields derived
+    """`SETTINGS.path.{ffmpeg,ytdlp,llama,soundfonts}` are computed_fields derived
     from `root` — can't monkeypatch them directly. Build a duck-typed fake
     settings namespace and pass it in."""
 
@@ -64,6 +64,7 @@ class TestComponentVersions:
         from types import SimpleNamespace
         return SimpleNamespace(path=SimpleNamespace(
             ffmpeg=tmp_path / "ffmpeg",
+            ytdlp=tmp_path / "yt-dlp",
             llama=tmp_path / "llama",
             soundfonts=tmp_path / "soundfonts",
         ))
@@ -74,12 +75,15 @@ class TestComponentVersions:
         (s.path.ffmpeg / ".version").write_text(
             '{"tag": "n7.0", "variant": "win64-gpl"}', encoding="utf-8"
         )
+        s.path.ytdlp.mkdir()
+        (s.path.ytdlp / ".version").write_text('{"tag": "2026.03.17"}', encoding="utf-8")
         s.path.llama.mkdir()
         s.path.soundfonts.mkdir()
 
         result = SetupService._get_component_versions(s)
         assert "ffmpeg" in result
         assert result["ffmpeg"]["tag"] == "n7.0"
+        assert result["ytdlp"]["tag"] == "2026.03.17"
 
     def test_skips_tools_without_version_file(self, tmp_path):
         s = self._fake_settings(tmp_path)

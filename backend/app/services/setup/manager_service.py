@@ -55,6 +55,7 @@ class SetupService:
         versions = {}
         tool_dirs = {
             "ffmpeg": settings.path.ffmpeg,
+            "ytdlp": settings.path.ytdlp,
             "llama": settings.path.llama,
             "soundfonts": settings.path.soundfonts,
         }

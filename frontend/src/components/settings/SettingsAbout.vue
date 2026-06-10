@@ -5,11 +5,16 @@ import { useConfirm } from '@/composables/useConfirm'
 import { apiFetch } from '@/composables/useApi'
 import AppIcon from '@/assets/icon.svg'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
+import { useVideoDownloadStore } from '@/stores/videoDownload'
 
 const { t } = useI18n()
 const { confirm } = useConfirm()
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const electron = (window as any).electron
+
+// yt-dlp 元件只在使用者同意影片下載條款後顯示（它是影片下載專用工具）
+const vdStore = useVideoDownloadStore()
+const vdAgreed = computed(() => vdStore.settings.agreed)
 
 const appVersion = electron?.appVersion ?? 'dev'
 
@@ -95,6 +100,7 @@ function restartApp() {
 
 onMounted(() => {
   loadEnvInfo()
+  if (!vdStore.loaded) vdStore.load()
   electron?.onReinstallProgress(handleReinstallProgress)
 })
 
@@ -143,6 +149,10 @@ useAgentPanelHost('settings.about', {
     <div class="component-row" v-if="components.ffmpeg">
       <span class="component-label">FFmpeg</span>
       <span class="component-value">{{ toolTag(components.ffmpeg) }}</span>
+    </div>
+    <div class="component-row" v-if="components.ytdlp && vdAgreed">
+      <span class="component-label">yt-dlp</span>
+      <span class="component-value">{{ toolTag(components.ytdlp) }}</span>
     </div>
     <div class="component-row" v-if="components.soundfonts">
       <span class="component-label">Soundfonts</span>
