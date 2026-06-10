@@ -409,8 +409,8 @@ export default {
     },
 
     group: {
-      edit: '編輯',
-      ai: 'AI 工具',
+      edit: '基本工具',
+      ai: '進階工具',
     },
 
     multi_labels: {
@@ -562,8 +562,8 @@ export default {
     },
 
     group: {
-      edit: '編輯',
-      ai: 'AI 工具',
+      edit: '基本工具',
+      ai: '進階工具',
     },
 
     transcode: {
@@ -738,8 +738,8 @@ export default {
     },
 
     group: {
-      edit: '編輯',
-      ai: 'AI 工具',
+      edit: '基本工具',
+      ai: '進階工具',
     },
 
     transcode: {
@@ -853,6 +853,8 @@ export default {
       title: 'MIDI 編輯設定',
       description: '編輯 MIDI 音符、調整音色、匯出音訊。',
       unsupported: '此檔案格式不支援 MIDI 編輯，請載入 .mid 檔案。',
+      soundfont_missing: '尚未安裝音色庫，MIDI 播放會無聲，請先安裝音色庫。',
+      soundfont_install: '前往安裝',
       task_label: '音訊 · MIDI 匯出',
       tracks: '音軌管理',
       add_track: '新增音軌',
@@ -933,8 +935,8 @@ export default {
     },
 
     group: {
-      edit: '編輯',
-      ai: 'AI 工具',
+      edit: '基本工具',
+      ai: '進階工具',
     },
 
     ocr: {

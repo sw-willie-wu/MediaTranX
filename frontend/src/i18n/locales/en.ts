@@ -409,8 +409,8 @@ export default {
     },
 
     group: {
-      edit: 'Edit',
-      ai: 'AI Tools',
+      edit: 'Basic',
+      ai: 'Advanced',
     },
 
     multi_labels: {
@@ -562,8 +562,8 @@ export default {
     },
 
     group: {
-      edit: 'Edit',
-      ai: 'AI Tools',
+      edit: 'Basic',
+      ai: 'Advanced',
     },
 
     transcode: {
@@ -738,8 +738,8 @@ export default {
     },
 
     group: {
-      edit: 'Edit',
-      ai: 'AI Tools',
+      edit: 'Basic',
+      ai: 'Advanced',
     },
 
     transcode: {
@@ -853,6 +853,8 @@ export default {
       title: 'MIDI Edit Settings',
       description: 'Edit MIDI notes, adjust instruments, and export audio.',
       unsupported: 'This file format does not support MIDI editing. Please load a .mid file.',
+      soundfont_missing: 'Soundfont not installed — MIDI playback will be silent. Please install it first.',
+      soundfont_install: 'Install now',
       task_label: 'Audio · MIDI Export',
       tracks: 'Track Management',
       add_track: 'Add Track',
@@ -933,8 +935,8 @@ export default {
     },
 
     group: {
-      edit: 'Edit',
-      ai: 'AI Tools',
+      edit: 'Basic',
+      ai: 'Advanced',
     },
 
     ocr: {

@@ -31,9 +31,14 @@ import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar
 import { apiFetch } from '@/composables/useApi'
 import { useViewHost } from '@/composables/useViewHost'
 import { subfunctionsForView } from '@/agent/agentNavCatalog'
+import { useRouter } from 'vue-router'
+import { useModelStore } from '@/stores/models'
+import { SOUNDFONT_MODEL_ID } from '@/constants/gmSoundfontNames'
 
 const { t } = useI18n()
 const toast = useToast()
+const router = useRouter()
+const modelStore = useModelStore()
 
 const {
   hasFile, activeFileId, activePreviewUrl, isUploading, sourceDir, currentFileName, hasResult, audioInfo,
@@ -156,7 +161,7 @@ watch([() => currentFunction.value, () => currentFileName.value], ([fn, name]) =
 })
 
 // Clear overlays when switching panels + stop MIDI playback
-watch(currentFunction, (_newFn, oldFn) => {
+watch(currentFunction, (newFn, oldFn) => {
   trimRange.value = null
   volumeGainPreview.value = 1
   expandedTrackIdx.value = null
@@ -164,7 +169,27 @@ watch(currentFunction, (_newFn, oldFn) => {
   if (oldFn === 'midi-edit') {
     midiPlayback.stop()
   }
+  // Entering MIDI edit: warn if the soundfont (音色庫) isn't installed yet,
+  // with a shortcut to the model manager (audio tab) to install it.
+  if (newFn === 'midi-edit') {
+    void warnIfSoundfontMissing()
+  }
 })
+
+async function warnIfSoundfontMissing() {
+  await modelStore.ensureLoaded()
+  const sf = modelStore.models.find(m => m.id === SOUNDFONT_MODEL_ID)
+  if (sf?.downloaded === true) return
+  toast.show(t('audio.midi.soundfont_missing'), {
+    type: 'warning',
+    icon: 'bi-exclamation-triangle',
+    duration: 8000,
+    action: {
+      label: t('audio.midi.soundfont_install'),
+      callback: () => router.push({ path: '/settings', query: { tab: 'models', category: 'audio' } }),
+    },
+  })
+}
 
 const executeDisabled = computed(() => {
   if (currentFunction.value === 'transcode')  return transcodePanelRef.value?.isDisabled  ?? !hasFile.value
