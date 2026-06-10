@@ -262,12 +262,12 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, isAudioFormat, getP
 
       <div v-if="resolution === 'custom'" class="form-group size-inputs">
         <div class="size-input-group">
-          <label>{{ $t('video.transcode.width') }}</label>
+          <label>{{ $t('common.width') }}</label>
           <input v-model.number="customResWidth" type="number" class="form-input" min="1" />
         </div>
         <span class="size-separator">x</span>
         <div class="size-input-group">
-          <label>{{ $t('video.transcode.height') }}</label>
+          <label>{{ $t('common.height') }}</label>
           <input v-model.number="customResHeight" type="number" class="form-input" min="1" />
         </div>
       </div>

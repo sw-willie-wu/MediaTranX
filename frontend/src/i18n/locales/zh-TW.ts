@@ -120,6 +120,8 @@ export default {
     no_models_available: '無可用模型',
     model_not_downloaded_hint: '選擇的模型尚未下載，是否前往模型與資源頁面下載？',
     go_to_model_manager: '前往模型與資源',
+    width: '寬度',
+    height: '高度',
   },
 
   // ── 面板執行按鈕 ──────────────────────────────────────────────────────
@@ -435,8 +437,6 @@ export default {
       scale: '縮放比例',
       custom_size: '自訂尺寸',
       scale_label: '縮放比例:',
-      width: '寬度',
-      height: '高度',
       aspect_ratio_hint: '留空則等比縮放',
       task_label: '圖片 · 轉檔',
     },
@@ -591,8 +591,6 @@ export default {
       crf_hint: '數值越小品質越高、檔案越大（建議 18-28）',
       bitrate: '位元率',
       extract_audio: '提取音訊',
-      width: '寬度',
-      height: '高度',
       task_label: '影片 · 轉檔',
     },
 

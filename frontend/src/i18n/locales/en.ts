@@ -120,6 +120,8 @@ export default {
     no_models_available: 'No models available',
     model_not_downloaded_hint: 'The selected model has not been downloaded yet. Go to Models & Resources to download it?',
     go_to_model_manager: 'Go to Models & Resources',
+    width: 'Width',
+    height: 'Height',
   },
 
   // ── Panel execute buttons ──────────────────────────────────────────────
@@ -435,8 +437,6 @@ export default {
       scale: 'Scale',
       custom_size: 'Custom Size',
       scale_label: 'Scale:',
-      width: 'Width',
-      height: 'Height',
       aspect_ratio_hint: 'Leave empty for proportional scaling',
       task_label: 'Image · Convert',
     },
@@ -591,8 +591,6 @@ export default {
       crf_hint: 'Lower values mean higher quality and larger files (recommended 18-28)',
       bitrate: 'Bitrate',
       extract_audio: 'Extract Audio',
-      width: 'Width',
-      height: 'Height',
       task_label: 'Video · Transcode',
     },
 
