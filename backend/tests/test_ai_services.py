@@ -212,10 +212,10 @@ class TestAudioLyricsService:
         fd = c.file_service().register_local_file(str(_make_silent_wav(tmp_path)))
 
         result = svc._handle_task(
-            # lyrics service uses `whisper_size` (not `model_size`)
-            {"file_id": fd.file_id, "language": "en", "whisper_size": "large-v3",
+            # lyrics service uses `model_size` (normalised in Task4)
+            {"file_id": fd.file_id, "language": "en", "model_size": "large-v3",
              "output_format": "lrc",
-             "vocal_separation": False, "translate": False, "target_lang": None,
+             "vocal_separation": False, "translate": False, "target_language": None,
              "translate_model_family": "qwen3", "translate_model_size": "8b",
              "translate_quantization": "Q4_K_M"},
             lambda p, m: None,

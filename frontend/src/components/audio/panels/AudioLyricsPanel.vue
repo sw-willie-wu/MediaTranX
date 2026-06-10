@@ -135,14 +135,14 @@ async function execute() {
 
   const body: Record<string, unknown> = {
     file_id: props.fileId,
-    whisper_size: modelSize.value,
+    model_size: modelSize.value,
     align: alignEnabled.value,
     output_format: outputFormat.value,
     translate: translateEnabled.value,
   }
 
   if (translateEnabled.value && targetLanguage.value) {
-    body.target_lang = targetLanguage.value
+    body.target_language = targetLanguage.value
     const parsed = parseModelValue(selectedTranslateModel.value)
     if (parsed.isRemote) {
       body.translate_remote = true
@@ -172,14 +172,14 @@ const isLoading  = computed(() => isProcessing.value)
 
 function getParams() {
   const body: Record<string, unknown> = {
-    whisper_size: modelSize.value,
+    model_size: modelSize.value,
     align: alignEnabled.value,
     output_format: outputFormat.value,
     translate: translateEnabled.value,
   }
 
   if (translateEnabled.value && targetLanguage.value) {
-    body.target_lang = targetLanguage.value
+    body.target_language = targetLanguage.value
     const parsed = parseModelValue(selectedTranslateModel.value)
     if (parsed.isRemote) {
       body.translate_remote = true

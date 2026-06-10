@@ -21,10 +21,10 @@ router = APIRouter()
 
 class LyricsRequest(BaseModel):
     file_id: str = Field(..., description="Input file ID")
-    whisper_size: str = Field(default="medium", description="Whisper model size")
+    model_size: str = Field(default="medium", description="Whisper model size")
     align: bool = Field(default=False, description="Enable Wav2Vec2 precise alignment")
     translate: bool = Field(default=False, description="Whether to translate lyrics")
-    target_lang: Optional[str] = Field(default=None, description="Translation target language")
+    target_language: Optional[str] = Field(default=None, description="Translation target language")
     translate_model_family: str = Field(default="gemma4", description="Translation model family")
     translate_model_size: str = Field(default="4b", description="Translation model size")
     translate_quantization: Optional[str] = Field(default=None, description="Translation model quantization")
@@ -48,10 +48,10 @@ async def extract_lyrics(
 ):
     task_id = await service.submit_lyrics(
         file_id=request.file_id,
-        whisper_size=request.whisper_size,
+        model_size=request.model_size,
         align=request.align,
         translate=request.translate,
-        target_lang=request.target_lang,
+        target_language=request.target_language,
         translate_model_family=request.translate_model_family,
         translate_model_size=request.translate_model_size,
         translate_quantization=request.translate_quantization,
