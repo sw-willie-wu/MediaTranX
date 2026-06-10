@@ -141,6 +141,8 @@ export default {
     doc_ocr:         { execute: 'Run OCR' },             // Phase 2.E new
     doc_pdf_convert: { execute: 'Convert PDF' },         // Phase 2.E new
     doc_split:       { execute: 'Split Document' },      // Phase 2.E new
+    transcribe:      { execute: 'Transcribe' },          // Audio transcription button
+    subtitle:        { execute: 'Generate Subtitles' },  // Subtitle generation button
   },
 
   // ── Toast notifications ───────────────────────────────────────────────

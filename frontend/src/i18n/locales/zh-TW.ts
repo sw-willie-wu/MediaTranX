@@ -141,6 +141,8 @@ export default {
     doc_ocr:         { execute: '執行 OCR' },            // Phase 2.E new
     doc_pdf_convert: { execute: '轉換 PDF' },            // Phase 2.E new
     doc_split:       { execute: '切割文件' },            // Phase 2.E new
+    transcribe:      { execute: '轉錄' },                // 音訊轉錄按鈕
+    subtitle:        { execute: '產生字幕' },            // 字幕生成按鈕
   },
 
   // ── Toast 通知 ─────────────────────────────────────────────────────────
