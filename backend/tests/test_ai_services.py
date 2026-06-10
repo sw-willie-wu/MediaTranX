@@ -108,7 +108,7 @@ class TestImageOcrService:
 
         result = svc._handle_task(
             {"file_id": fd.file_id, "model_family": "qwen3vl",
-             "size": "8b", "quantization": "Q4_K_M", "format": "md"},
+             "model_size": "8b", "quantization": "Q4_K_M", "output_format": "md"},
             lambda p, m: None,
         )
 
