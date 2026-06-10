@@ -64,6 +64,7 @@ async function onMaxHeight(v: number) { await store.update({ max_height: v }) }
       :disabled="!agreed"
       @update:model-value="onEnable"
     >{{ $t('video_download.enable') }}</AppToggle>
+    <p v-if="enabled" data-test="vd-usage-hint" class="vd-hint">{{ $t('video_download.usage_hint') }}</p>
   </div>
 
   <div class="setting-item">
@@ -111,5 +112,11 @@ async function onMaxHeight(v: number) { await store.update({ max_height: v }) }
   li {
     margin-bottom: 4px;
   }
+}
+.vd-hint {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 </style>

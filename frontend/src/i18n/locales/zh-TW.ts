@@ -1348,6 +1348,7 @@ export default {
     ],
     agree: '我已閱讀並同意上述條款',
     enable: '啟用影片下載',
+    usage_hint: '啟用後,可在首頁或影片工具頁面直接貼上影片網址(Ctrl+V),即可下載並自動載入影片工具。',
     quality_mode: '下載畫質',
     quality_auto: '最佳畫質(自動)',
     quality_cap: '限制解析度',

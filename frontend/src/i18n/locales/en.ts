@@ -1348,6 +1348,7 @@ export default {
     ],
     agree: 'I have read and agree to the above',
     enable: 'Enable video download',
+    usage_hint: 'Once enabled, paste a video link (Ctrl+V) directly on the Home page or a Video tool page to download it and load it into the Video tool.',
     quality_mode: 'Download quality',
     quality_auto: 'Best available (auto)',
     quality_cap: 'Cap resolution',
