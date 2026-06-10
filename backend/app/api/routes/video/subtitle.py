@@ -22,9 +22,9 @@ router = APIRouter()
 class SubtitleGenerateRequest(BaseModel):
     """Subtitle generation request."""
     file_id: str = Field(..., description="Input video file ID")
-    language: Optional[str] = Field(
+    source_language: Optional[str] = Field(
         default=None,
-        description="Language code (None=auto-detect, zh=Chinese, en=English, ja=Japanese...)"
+        description="Source language code (None=auto-detect, zh=Chinese, en=English, ja=Japanese...)"
     )
     model_size: str = Field(
         default="medium",
@@ -139,7 +139,7 @@ async def generate_subtitle(
     Optionally translates subtitles to a target language.
 
     Supported options:
-    - **language**: None (auto-detect), zh, en, ja, ko, fr, de, es...
+    - **source_language**: None (auto-detect), zh, en, ja, ko, fr, de, es...
     - **model_size**: tiny, base, small, medium (recommended), large-v3
     - **output_format**: srt (default), vtt
     - **target_language**: None (no translation), zh-TW, en, ja...
@@ -153,7 +153,7 @@ async def generate_subtitle(
     """
     task_id = await service.submit_subtitle_generate(
         file_id=request.file_id,
-        language=request.language,
+        source_language=request.source_language,
         model_size=request.model_size,
         output_format=request.output_format,
         target_language=request.target_language,

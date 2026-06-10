@@ -138,7 +138,7 @@ async function submitGenerate() {
       vocal_separation: vocalSeparation.value,
     }
 
-    if (language.value) body.language = language.value
+    if (language.value) body.source_language = language.value
 
     if (translationOptions.value?.enableTranslation && translationOptions.value.targetLanguage) {
       const parsed = parseModelValue(translationOptions.value.selectedTranslateModel)

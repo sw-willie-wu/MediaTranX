@@ -160,7 +160,7 @@ class TestVideoSubtitleService:
         fd = c.file_service().register_local_file(str(_make_silent_wav(tmp_path)))
 
         result = svc._handle_task(
-            {"file_id": fd.file_id, "language": "en", "model_size": "large-v3",
+            {"file_id": fd.file_id, "source_language": "en", "model_size": "large-v3",
              "output_format": "srt", "target_language": None,
              "vocal_separation": False, "align": False},
             lambda p, m: None,
