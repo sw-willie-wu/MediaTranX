@@ -132,9 +132,9 @@ class TestAudioTranscribeService:
         fd = c.file_service().register_local_file(str(_make_silent_wav(tmp_path)))
 
         result = svc._handle_task(
-            {"file_id": fd.file_id, "language": "en", "model_size": "large-v3",
+            {"file_id": fd.file_id, "source_language": "en", "model_size": "large-v3",
              "output_format": "txt", "vocal_separation": False, "align": False,
-             "translate": False, "target_lang": None, "summarize": False},
+             "translate": False, "target_language": None, "summarize": False},
             lambda p, m: None,
         )
 

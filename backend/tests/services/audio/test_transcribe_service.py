@@ -61,13 +61,13 @@ def _build(tmp_path):
 
 BASE_PARAMS = {
     "file_id": "f",
-    "language": "en",
+    "source_language": "en",
     "model_size": "large-v3",
     "output_format": "txt",
     "vocal_separation": False,
     "align": False,
     "translate": False,
-    "target_lang": None,
+    "target_language": None,
     "summarize": False,
 }
 
@@ -103,15 +103,15 @@ class TestSubmit:
             whisper=MagicMock(),
         )
         tid = await svc.submit_transcribe(
-            file_id="fid", language="ja", model_size="large-v3",
-            output_format="srt", translate=True, target_lang="zh-TW",
+            file_id="fid", source_language="ja", model_size="large-v3",
+            output_format="srt", translate=True, target_language="zh-TW",
         )
         assert tid == "tid"
         args, _ = tm.submit.call_args
         assert args[0] == TASK_TYPE_AUDIO_TRANSCRIBE
-        assert args[1]["language"] == "ja"
+        assert args[1]["source_language"] == "ja"
         assert args[1]["translate"] is True
-        assert args[1]["target_lang"] == "zh-TW"
+        assert args[1]["target_language"] == "zh-TW"
 
 
 class TestExecuteTranscribeOnly:
@@ -146,7 +146,7 @@ class TestExecuteWithTranslate:
              patch("app.services.audio.transcribe_service.service.write_bilingual_or_single",
                    return_value=_bilingual_return(with_translation=True)):
             result = svc._execute(
-                {**BASE_PARAMS, "translate": True, "target_lang": "zh-TW",
+                {**BASE_PARAMS, "translate": True, "target_language": "zh-TW",
                  "translate_remote": False, "translate_model_family": "qwen3",
                  "translate_model_size": "8b", "translate_quantization": "Q4_K_M"},
                 lambda p, m: None,
@@ -170,7 +170,7 @@ class TestExecuteWithTranslate:
              patch("app.services.audio.transcribe_service.service.write_bilingual_or_single",
                    return_value=_bilingual_return(with_translation=True)):
             svc._execute(
-                {**BASE_PARAMS, "translate": True, "target_lang": "zh-TW",
+                {**BASE_PARAMS, "translate": True, "target_language": "zh-TW",
                  "translate_remote": True, "translate_provider": "openai",
                  "translate_conn_id": "abc",
                  "translate_remote_model": "gpt-4o"},
@@ -188,7 +188,7 @@ class TestExecuteWithTranslate:
                    return_value=_make_transcribe_result()):
             with pytest.raises(ValueError, match="No available"):
                 svc._execute(
-                    {**BASE_PARAMS, "translate": True, "target_lang": "zh-TW",
+                    {**BASE_PARAMS, "translate": True, "target_language": "zh-TW",
                      "translate_remote": True, "translate_provider": "openai",
                      "translate_conn_id": "missing"},
                     lambda p, m: None,

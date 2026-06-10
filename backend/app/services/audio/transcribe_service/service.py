@@ -56,13 +56,13 @@ class AudioTranscribeService:
     async def submit_transcribe(
         self,
         file_id: str,
-        language: Optional[str] = None,
+        source_language: Optional[str] = None,
         model_size: str = "medium",
         output_format: str = "txt",
         vocal_separation: bool = False,
         align: bool = False,
         translate: bool = False,
-        target_lang: Optional[str] = None,
+        target_language: Optional[str] = None,
         translate_model_family: str = "gemma4",
         translate_model_size: str = "4b",
         translate_quantization: Optional[str] = None,
@@ -82,13 +82,13 @@ class AudioTranscribeService:
         file_info = self._file_service.require_file(file_id)
         params = {
             "file_id": file_id,
-            "language": language,
+            "source_language": source_language,
             "model_size": model_size,
             "output_format": output_format,
             "vocal_separation": vocal_separation,
             "align": align,
             "translate": translate,
-            "target_lang": target_lang,
+            "target_language": target_language,
             "translate_model_family": translate_model_family,
             "translate_model_size": translate_model_size,
             "translate_quantization": translate_quantization,
@@ -119,7 +119,7 @@ class AudioTranscribeService:
         output_format = params.get("output_format", "txt")
         do_align = params.get("align", False)
         do_translate = params.get("translate", False)
-        target_lang = params.get("target_lang")
+        target_lang = params.get("target_language")
         do_summarize = params.get("summarize", False)
 
         original_stem = Path(file_info.original_filename).stem
@@ -146,7 +146,7 @@ class AudioTranscribeService:
 
         # === Transcribe (Demucs + Whisper + align) via shared primitive ===
         opts = TranscribeOptions(
-            language=params.get("language"),
+            language=params.get("source_language"),
             model_size=params.get("model_size", "medium"),
             word_timestamps=params.get("word_timestamps", do_align),
             condition_on_previous_text=params.get("condition_on_previous_text", True),
