@@ -946,6 +946,7 @@ export default {
       title: 'PDF Convert Settings',
       description: 'Convert PDF to plain text, Markdown, or page images.',
       text_format: 'Plain Text (.txt)',
+      markdown_format: 'Markdown (.md)',
       images_format: 'Page Images (.zip)',
       output_file: 'Output File',
       select_output: 'Select Output Location',

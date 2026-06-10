@@ -26,7 +26,7 @@ const isPdf = computed(() => props.currentFileExt === 'pdf')
 const outputFormatOptions = computed(() => {
   const opts = [
     { value: 'txt', label: t('document.pdf_convert.text_format') },
-    { value: 'md',  label: 'Markdown (.md)' },
+    { value: 'md',  label: t('document.pdf_convert.markdown_format') },
   ]
   if (isPdf.value) opts.push({ value: 'images', label: t('document.pdf_convert.images_format') })
   return opts

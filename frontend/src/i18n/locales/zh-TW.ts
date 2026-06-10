@@ -946,6 +946,7 @@ export default {
       title: 'PDF 轉換設定',
       description: '將 PDF 轉換為純文字、Markdown 或頁面圖片。',
       text_format: '純文字 (.txt)',
+      markdown_format: 'Markdown (.md)',
       images_format: '頁面圖片 (.zip)',
       output_file: '輸出檔案',
       select_output: '選擇輸出位置',
