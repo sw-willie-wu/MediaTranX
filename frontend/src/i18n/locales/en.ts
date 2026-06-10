@@ -1091,7 +1091,7 @@ export default {
     },
 
     models: {
-      title: 'Model List',
+      title: 'Models & Resources List',
       hint: 'Max 4 concurrent downloads, extras will be queued',
       loading: 'Loading...',
       refresh: 'Refresh',

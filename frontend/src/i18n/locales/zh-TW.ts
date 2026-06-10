@@ -1091,7 +1091,7 @@ export default {
     },
 
     models: {
-      title: '模型列表',
+      title: '模型與資源列表',
       hint: '最多同時進行 4 個下載，超過將自動排隊',
       loading: '載入中...',
       refresh: '重新整理',
