@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TranscribeOptions:
-    language: Optional[str] = None  # None = auto-detect
+    # None = auto-detect. Field name mirrors Whisper's own `language` arg (kept
+    # despite the payload contract key being `source_language` — see naming §1.3.6).
+    language: Optional[str] = None
     model_size: str = "medium"
     # Whisper advanced
     word_timestamps: bool = False
@@ -31,7 +33,7 @@ class TranscribeOptions:
     min_silence_duration_ms: int = 200
     vad_threshold: float = 0.3
     # Optional pre: Demucs vocal separation
-    separate_vocals: bool = False
+    vocal_separation: bool = False
     # Optional post: wav2vec2 forced alignment
     align: bool = False
 
@@ -41,7 +43,7 @@ _STAGE_WEIGHTS = {"demucs": 3, "whisper": 5, "align": 1}
 
 def _build_stage_list(options: TranscribeOptions) -> list[str]:
     stages: list[str] = []
-    if options.separate_vocals:
+    if options.vocal_separation:
         stages.append("demucs")
     stages.append("whisper")
     if options.align:
@@ -81,7 +83,7 @@ def transcribe_audio_sync(
 
     Wrapper instances are passed in by the caller (DI-injected) instead of
     pulled from module-level singletons. `demucs` is required when
-    `options.separate_vocals` is True; `alignment_engine` when
+    `options.vocal_separation` is True; `alignment_engine` when
     `options.align` is True. Callers that don't use those features may
     pass None.
 
@@ -98,9 +100,9 @@ def transcribe_audio_sync(
     try:
         # Stage 1: Demucs vocal separation (optional)
         working_audio = audio_path
-        if options.separate_vocals:
+        if options.vocal_separation:
             if demucs is None:
-                raise ValueError("demucs wrapper required when separate_vocals=True")
+                raise ValueError("demucs wrapper required when vocal_separation=True")
             import soundfile as sf
 
             stage_progress("demucs", 0.0, "task.progress.separating_vocals")

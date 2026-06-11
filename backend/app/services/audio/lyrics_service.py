@@ -120,7 +120,7 @@ class AudioLyricsService:
             condition_on_previous_text=params.get("condition_on_previous_text", True),
             min_silence_duration_ms=params.get("min_silence_duration_ms", 200),
             vad_threshold=params.get("vad_threshold", 0.3),
-            separate_vocals=True,  # lyrics ALWAYS use demucs
+            vocal_separation=True,  # lyrics ALWAYS use demucs
             align=True,            # lyrics ALWAYS align
         )
 

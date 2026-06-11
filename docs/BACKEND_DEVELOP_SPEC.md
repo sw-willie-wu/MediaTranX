@@ -283,6 +283,18 @@ TASK_TYPE_IMAGE_UPSCALE = "image.upscale"
 TASK_TYPE_VIDEO_TRANSCODE = "video.transcode"
 ```
 
+#### 1.3.6 Task 參數命名慣例
+
+task payload（`params` dict）及對應 route `Field` 的 key 命名原則：
+
+- **單一模型/服務維度工具**：使用裸名，不加前綴  
+  例：`model_family`、`quantization`、`remote`、`provider`、`conn_id`、`remote_model`
+- **多維度工具**（同一任務有多個 LLM/服務角色）：使用 `<service>_` 前綴區分  
+  例：summary 工具的 `whisper_model_size`、`llm_model_size`、`vlm_model_size`；transcribe 工具的 `translate_model_family`、`summarize_model_family`
+- **共用 option dataclass 欄位名應與 payload 契約 key 一致**  
+  例：`TranscribeOptions.vocal_separation` 對應 payload `"vocal_separation"`；`TranscribeOptions.align` 對應 `"align"`  
+  例外：刻意鏡射第三方 API 參數名時（如 `TranscribeOptions.language` 對應 Whisper 的 `language` 參數），保留第三方命名並在 dataclass 行內加註說明
+
 ### 1.4 層級依賴規則
 
 導入方向：
