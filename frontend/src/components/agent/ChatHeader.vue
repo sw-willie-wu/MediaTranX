@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
+import { parseModelValue } from '@/composables/useModelOptions'
 
 const props = defineProps<{
   tokenUsage: { prompt: number; completion: number }
@@ -16,13 +17,16 @@ const settingsStore = useAgentSettingsStore()
  * Human-readable label for the badge.
  * Local models are stored as `family:size[:quant]` (e.g. `qwen3:8b:Q4_K_M`)
  * — drop the quant suffix and show `family:size` (`qwen3:8b`).
- * Remote models are stored as `remote:<provider>:<index>:<model>` (e.g.
- * `remote:openai:1:gpt-4o-mini`) — show the trailing model name.
+ * Remote models are stored as `remote:<provider>:<connId>:<modelId>` (e.g.
+ * `remote:openai:1:gpt-4o-mini`) — show the modelId. Note modelId itself can
+ * contain a colon (Ollama tags like `gpt-oss:120b`), so we reuse the canonical
+ * parseModelValue (slice(3).join(':')) rather than a naive `.pop()`, which
+ * would drop everything before the tag colon and show just `120b`.
  */
 const modelLabel = computed(() => {
   const m = settingsStore.modelChoice
   if (!m) return ''
-  if (m.startsWith('remote:')) return m.split(':').pop() || m
+  if (m.startsWith('remote:')) return parseModelValue(m).modelId || m
   return m.split(':').slice(0, 2).join(':')
 })
 </script>
