@@ -107,7 +107,7 @@ async function loadTranslateLanguages() {
 watch(translateEnabled, (val) => { if (val) loadTranslateLanguages() })
 
 // ── Demucs / wav2vec2 readiness ─────────────────────────────────
-// Lyrics ALWAYS runs Demucs (backend hardcoded separate_vocals=True).
+// Lyrics ALWAYS runs Demucs (backend hardcoded vocal_separation=True).
 // Align is optional (controlled by alignEnabled toggle).
 const demucsReady = computed(() =>
   modelStore.byCategory('separate').some(
