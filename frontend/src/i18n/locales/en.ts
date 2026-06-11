@@ -1178,6 +1178,7 @@ export default {
       clear: 'Clear chat history',
       show: 'Show chat bubble',
       hide: 'Hide chat bubble',
+      abort: 'Stop',
     },
     session: {
       new_chat: '+ New chat',

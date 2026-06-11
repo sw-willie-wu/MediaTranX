@@ -1178,6 +1178,7 @@ export default {
       clear: '清除對話紀錄',
       show: '顯示 智慧助手 對話泡泡',
       hide: '隱藏 智慧助手 對話泡泡',
+      abort: '中止',
     },
     session: {
       new_chat: '+ 新對話',

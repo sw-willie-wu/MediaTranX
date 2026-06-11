@@ -38,6 +38,41 @@ function toggle() {
   bubbleExpanded.value = !bubbleExpanded.value
 }
 
+/**
+ * Running-banner label. While the agent is between/before tool actions (e.g.
+ * generating text) currentAction is empty → show the generic "working" label.
+ * Once a tool dispatches, store.currentAction holds an `agent.banner.act.*` key
+ * + args (set by useAgentTools), so the banner reads e.g. "Setting model = X".
+ */
+/**
+ * Localize raw identifiers in an action's args before rendering, so the banner
+ * shows human names instead of routes/ids. navigate_to's `route` (e.g. "/video")
+ * → the localized domain name via `nav.*`. Other tools' args (panel field/option
+ * ids, file ids, task ids) have no central translation map, so they pass through.
+ */
+function localizeActionArgs(key: string, args: Record<string, unknown>): Record<string, unknown> {
+  if (key === 'agent.banner.act.navigate_to') {
+    const word = String(args.route ?? '').trim().toLowerCase().replace(/^\/+/, '')
+    const navKey = `nav.${word === '' ? 'home' : word}`
+    const label = t(navKey)
+    return { route: label === navKey ? String(args.route ?? '') : label }
+  }
+  return args
+}
+
+const bannerLabel = computed(() => {
+  const ca = store.currentAction
+  // A live tool action → show it; otherwise (streaming / a plain text reply
+  // with no recognised action) the agent is thinking.
+  return ca.key ? t(ca.key, localizeActionArgs(ca.key, ca.args)) : t('agent.bubble.thinking')
+})
+
+/** Collapse the panel back to the floating bubble. Shared by the Escape
+ * key and the full-screen backdrop click. */
+function collapse() {
+  bubbleExpanded.value = false
+}
+
 function onBubblePointerDown(e: PointerEvent) {
   onPointerDown(e, toggle)
 }
@@ -86,7 +121,7 @@ const panelStyle = computed<Record<string, string>>(() => {
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && bubbleExpanded.value) {
-    bubbleExpanded.value = false
+    collapse()
   }
 }
 
@@ -106,18 +141,57 @@ onBeforeUnmount(() => {
          nor the expanded panel renders; the user controls visibility
          from the Titlebar chat_bubble icon. -->
     <template v-if="bubbleVisible">
+    <!-- Full-screen backdrop. Shown when the panel is expanded (click-away to
+         collapse) AND/OR while the agent is running — in the running case it
+         keeps blocking the app even after the user collapses the chat, so the
+         user can't fight the agent for the same panel state mid-run. Sits below
+         the bubble/panel (z-index) so both stay interactive above it. -->
+    <div
+      v-if="bubbleExpanded || store.isRunning"
+      class="chat-bubble-backdrop"
+      :class="{ 'is-watch': store.isRunning && !bubbleExpanded }"
+      @pointerdown="collapse"
+      aria-hidden="true"
+    ></div>
+
+    <!-- Running banner: fixed top-centre pill shown while the agent runs but
+         only when the chat is collapsed. When expanded, the panel itself shows
+         progress (+ ChatInput has its own cancel), so the banner would just
+         clutter the top alongside the panel and the X-bubble. Tapping the body
+         opens the chat (e.g. to see/approve a pending confirm); the square stop
+         button aborts the run. -->
+    <div
+      v-if="store.isRunning && !bubbleExpanded"
+      class="agent-running-banner"
+      role="status"
+      @click="bubbleExpanded = true"
+    >
+      <span class="banner-label">{{ bannerLabel }}</span>
+      <button
+        class="banner-stop"
+        @click.stop="agent.cancelRun()"
+        :aria-label="$t('agent.bubble.abort')"
+        :title="$t('agent.bubble.abort')"
+      >
+        <i class="bi bi-stop-fill"></i>
+      </button>
+    </div>
+
     <!-- Bubble (always mounted while visible, draggable, toggle on
          click). When expanded, it flies up to EXPANDED_TOP_PX and acts
          as the close button. -->
     <button
       class="chat-bubble-btn"
-      :class="{ 'is-running': store.isRunning, 'is-dragging': isDragging, 'is-expanded': bubbleExpanded }"
+      :class="{
+        'is-running': store.isRunning,
+        'is-dragging': isDragging,
+        'is-expanded': bubbleExpanded,
+      }"
       :style="bubbleStyleFinal"
       @pointerdown="onBubblePointerDown"
       :aria-label="$t('agent.bubble.title')"
     >
       <i class="bi" :class="bubbleExpanded ? 'bi-x-lg' : 'bi-robot'"></i>
-      <span v-if="store.isRunning && !bubbleExpanded" class="bubble-pulse"></span>
     </button>
 
     <!-- Panel (mounted only when expanded, anchored next to bubble) -->
@@ -195,21 +269,118 @@ onBeforeUnmount(() => {
   }
 }
 
-.bubble-pulse {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--color-success);
-  animation: pulse-ring 1.4s ease-out infinite;
+@property --beam-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
 }
 
-@keyframes pulse-ring {
-  0%   { transform: scale(0.9); opacity: 1; }
-  70%  { transform: scale(1.3); opacity: 0.5; }
-  100% { transform: scale(0.9); opacity: 1; }
+@keyframes beam-rotate {
+  to { --beam-angle: 360deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-running-banner::before { animation: none; }
+}
+
+.chat-bubble-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8999; /* below bubble/panel (9000), above all app content */
+  background: rgba(0, 0, 0, 0.18);
+  cursor: default; /* it blocks the app — don't imply it's a click target */
+  animation: backdrop-in 0.2s ease-out;
+
+  /* Agent running while collapsed: keep blocking clicks but go transparent so
+     the user can watch the agent manipulate panels live. The top banner already
+     explains why the app is non-interactive. */
+  &.is-watch {
+    background: transparent;
+  }
+}
+
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.agent-running-banner {
+  position: fixed;
+  top: 68px; /* clear of the 40px titlebar drag zone AND offset from the
+                panel's top edge (24px) so it doesn't sit flush with it */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9500; /* above bubble/panel so the stop button is always reachable */
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.6rem 0.55rem 1.1rem;
+  border-radius: 999px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  cursor: default;
+  /* Electron frameless: the 40px titlebar is a -webkit-app-region:drag zone.
+     This pill sits at top:12px and overlaps it, so without no-drag the OS
+     swallows hover/click as window-drag and the stop button is unreachable. */
+  -webkit-app-region: no-drag;
+  animation: banner-in 0.2s ease-out;
+
+  /* Thin flowing border ring echoing the bubble. Muted lavender palette tuned
+     to the theme primary (#7c6fad) so it harmonises with the bubble rather than
+     clashing as a vivid cool ring. */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(
+      from var(--beam-angle),
+      #6366f1, #22d3ee, #a855f7, #38bdf8, #6366f1
+    );
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude; /* show only the ring */
+    opacity: 0.6;
+    pointer-events: none; /* decorative — never intercept clicks (mask hides it
+                             visually but the full box still hit-tests) */
+    animation: beam-rotate 3s linear infinite;
+  }
+}
+
+.banner-label {
+  font-weight: 500;
+}
+
+.banner-stop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: var(--color-danger);
+    color: white;
+  }
+}
+
+@keyframes banner-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 .chat-bubble-panel {
