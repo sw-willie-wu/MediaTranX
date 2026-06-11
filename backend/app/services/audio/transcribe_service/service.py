@@ -119,7 +119,7 @@ class AudioTranscribeService:
         output_format = params.get("output_format", "txt")
         do_align = params.get("align", False)
         do_translate = params.get("translate", False)
-        target_lang = params.get("target_language")
+        target_language = params.get("target_language")
         do_summarize = params.get("summarize", False)
 
         original_stem = Path(file_info.original_filename).stem
@@ -152,7 +152,7 @@ class AudioTranscribeService:
             condition_on_previous_text=params.get("condition_on_previous_text", True),
             min_silence_duration_ms=params.get("min_silence_duration_ms", 200),
             vad_threshold=params.get("vad_threshold", 0.3),
-            separate_vocals=do_vocal_sep,
+            vocal_separation=do_vocal_sep,
             align=do_align,
         )
 
@@ -186,7 +186,7 @@ class AudioTranscribeService:
 
         original_segments = list(result.segments)
 
-        if do_translate and target_lang:
+        if do_translate and target_language:
             stage_progress("translate", 0.0, "task.progress.prepare_translate_audio")
 
             translate_remote = params.get("translate_remote", False)
@@ -207,7 +207,7 @@ class AudioTranscribeService:
                         f"No available {params.get('translate_provider', '')} connection"
                     )
                 translated_all = translate_srt_auto(
-                    seg_dicts, src, target_lang,
+                    seg_dicts, src, target_language,
                     on_progress=lambda p, m: stage_progress("translate", p, m),
                     prov=prov,
                     remote_model=translate_remote_model,
@@ -224,7 +224,7 @@ class AudioTranscribeService:
                     load_band=(0.0, 0.05),
                 ) as session:
                     translated_all = translate_srt_auto(
-                        seg_dicts, src, target_lang,
+                        seg_dicts, src, target_language,
                         on_progress=lambda p, m: stage_progress("translate", 0.05 + p * 0.95, m),
                         session=session,
                         model_family=translate_model_family,
@@ -340,9 +340,9 @@ class AudioTranscribeService:
                 return format_vtt(seg_list)
             return format_txt(seg_list)
 
-        if do_translate and target_lang:
+        if do_translate and target_language:
             src_filename = f"{base_name}.{detected_lang}.{output_format}"
-            tgt_filename = f"{base_name}.{target_lang}.{output_format}"
+            tgt_filename = f"{base_name}.{target_language}.{output_format}"
             source_text = _format_segments(original_segments)
             target_text = _format_segments(result.segments)
         else:
@@ -357,7 +357,7 @@ class AudioTranscribeService:
             source_lang=detected_lang,
             target_filename=tgt_filename,
             target_text=target_text,
-            target_lang=target_lang if (do_translate and target_lang) else None,
+            target_lang=target_language if (do_translate and target_language) else None,
             output_dir=output_dir,
             original_filename=file_info.original_filename,
             file_service=self._file_service,
@@ -365,11 +365,11 @@ class AudioTranscribeService:
 
         # Annotate "type" (service-specific metadata not in helper shape)
         written[0]["type"] = "source"
-        if do_translate and target_lang:
+        if do_translate and target_language:
             written[1]["type"] = "translated"
 
         output_files = written
-        primary = written[1] if (do_translate and target_lang) else written[0]
+        primary = written[1] if (do_translate and target_language) else written[0]
         output_file_id = primary["file_id"]
         output_filename_result = primary["filename"]
 
@@ -407,7 +407,7 @@ class AudioTranscribeService:
             "text_content": text_content,
             "detected_language": detected_lang,
             "segment_count": len(result.segments),
-            "translated": do_translate and target_lang is not None,
-            "target_language": target_lang,
+            "translated": do_translate and target_language is not None,
+            "target_language": target_language,
             "summarized": do_summarize,
         }

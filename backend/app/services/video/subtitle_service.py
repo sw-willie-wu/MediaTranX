@@ -236,7 +236,7 @@ class SubtitleService:
                 min_silence_duration_ms=min_silence_duration_ms,
                 vad_threshold=vad_threshold,
                 align=params.get("align", False),
-                separate_vocals=params.get("vocal_separation", False),
+                vocal_separation=params.get("vocal_separation", False),
             )
             result = transcribe_audio_sync(
                 temp_audio_path, opts,
