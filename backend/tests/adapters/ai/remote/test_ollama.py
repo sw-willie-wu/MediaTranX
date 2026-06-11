@@ -117,7 +117,12 @@ def test_list_models_caches_capabilities_per_model():
 
 
 def test_list_models_show_request_carries_correct_body():
-    """/api/show POST body must be JSON `{"name": <model_name>}`."""
+    """/api/show POST body must use the canonical `{"model": <model_name>}`.
+
+    The deprecated `{"name": ...}` form is rejected with HTTP 400 by stricter
+    re-implementations (e.g. self-hosted ollama-bridge-go), which silently
+    killed capability detection (tools/vision) against those endpoints.
+    """
     prov = OllamaProvider()
     page = {"models": [
         {"name": "mistral:7b", "size": 1, "details": {"family": "mistral"}},
@@ -131,7 +136,7 @@ def test_list_models_show_request_carries_correct_body():
         return make_response(page)
     with patch(PATCH_TARGET, side_effect=_side_effect):
         prov.list_models()
-    assert show_bodies == [{"name": "mistral:7b"}]
+    assert show_bodies == [{"model": "mistral:7b"}]
 
 
 def test_list_models_capability_detection_vision_keyword_fallback():
