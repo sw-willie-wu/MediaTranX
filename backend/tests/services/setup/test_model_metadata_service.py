@@ -121,6 +121,46 @@ class TestDownloadStatus:
         assert pth and all(m["downloaded"] for m in pth)
 
 
+class TestNcnnEnumeration:
+    """FORMAT_NCNN enumerator: replaces the migrated families' rows that the
+    PTH-shadow guard removes. `downloaded` is a direct filesystem check of the
+    .param+.bin pair under models/<slot>/ (NOT via get_model_path)."""
+
+    def test_ncnn_variants_listed_and_not_downloaded_without_files(self, svc, monkeypatch, tmp_path):
+        from app.init.configs import SETTINGS
+        monkeypatch.setattr(SETTINGS.path, "models", tmp_path)
+        models = svc.list_all()["models"]
+        ncnn = [m for m in models if m["family"] in ("realesrgan", "waifu2x", "real-cugan")]
+        assert ncnn, "migrated SR families must be listed via the NCNN enumerator"
+        assert all(not m["downloaded"] for m in ncnn)
+        ids = {m["id"] for m in ncnn}
+        assert "realesrgan-x4plus" in ids
+        assert "realesrgan-animevideov3-x2" in ids          # animevideov3 split
+        assert "realesrgan-x2plus" not in ids               # dropped (D-P1-1)
+
+    def test_ncnn_downloaded_true_when_both_files_present(self, svc, monkeypatch, tmp_path):
+        from app.init.configs import SETTINGS
+        monkeypatch.setattr(SETTINGS.path, "models", tmp_path)
+        slot_dir = tmp_path / "waifu2x"
+        slot_dir.mkdir(parents=True)
+        for f in ("scale2.0x_model.param", "scale2.0x_model.bin"):
+            (slot_dir / f).write_bytes(b"x")
+        models = svc.list_all()["models"]
+        waifu = next(m for m in models if m["id"] == "waifu2x-cunet-art-2x")
+        assert waifu["downloaded"] is True
+
+    def test_no_duplicate_ids_across_list_all(self, svc, monkeypatch, tmp_path):
+        from app.init.configs import SETTINGS
+        monkeypatch.setattr(SETTINGS.path, "models", tmp_path)
+        ids = [m["id"] for m in svc.list_all()["models"]]
+        assert len(ids) == len(set(ids))
+
+    def test_pth_upscalers_still_listed(self, svc):
+        ids = [m["id"] for m in svc.list_all()["models"]]
+        assert any(i.startswith("bsrgan-") for i in ids)
+        assert any(i.startswith("swinir-") for i in ids)
+
+
 class TestPthShadowGuard:
     """During the NCNN transition the migrated SR families resolve as NCNN, so
     the PTH enumerator must not also surface them — a duplicate PTH row would

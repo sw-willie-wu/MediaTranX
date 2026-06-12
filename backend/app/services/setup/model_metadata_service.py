@@ -112,6 +112,7 @@ class ModelMetadataService:
         all_models = []
 
         all_models.extend(self._enumerate_pth_models())
+        all_models.extend(self._enumerate_ncnn_models())
         all_models.extend(self._enumerate_whisper_models())
         all_models.extend(self._enumerate_demucs_models())
         all_models.extend(self._enumerate_gguf_models())
@@ -160,6 +161,48 @@ class ModelMetadataService:
                 downloaded = model_path is not None and model_path.exists()
 
                 variant_label = variant_spec.get("label", variant_name)
+
+                items.append({
+                    "id": f"{model_family}-{variant_name}",
+                    "family": model_family,
+                    "family_label": family_label,
+                    "variant": variant_name,
+                    "variant_label": variant_label,
+                    "category": variant_spec.get("subcategory", family_category),
+                    "description": family_desc,
+                    "downloaded": downloaded,
+                    "size_mb": variant_spec.get("size_mb", 0),
+                    "vram_mb": variant_spec.get("vram_mb", 0),
+                    "max_scale": variant_spec.get("scale", 4),
+                })
+        return items
+
+    def _enumerate_ncnn_models(self) -> list[dict]:
+        """Enumerate ncnn-vulkan SR models (FORMAT_NCNN).
+
+        Emits the SAME item shape as `_enumerate_pth_models` (label/subcategory
+        are synthesized later in `list_all`), and replaces the rows the
+        PTH-shadow guard removes for the migrated families. `downloaded` is a
+        direct filesystem check that every file of the .param+.bin pair exists
+        under models/<slot>/ — NOT via `get_model_path` (which the wrapper owns).
+        """
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN
+        from app.init.configs import SETTINGS
+
+        items = []
+        ncnn_models = MODELS_REGISTRY.get(FORMAT_NCNN, {})
+        models_dir = SETTINGS.path.models
+
+        for model_family, config in ncnn_models.items():
+            family_label = config.get("label", model_family)
+            family_category = config.get("category", "upscale")
+            family_desc = config.get("description", "")
+            slot_dir = models_dir / config.get("slot", "")
+
+            for variant_name, variant_spec in config.get("variants", {}).items():
+                variant_label = variant_spec.get("label", variant_name)
+                files = variant_spec.get("files", [])
+                downloaded = bool(files) and all((slot_dir / f).exists() for f in files)
 
                 items.append({
                     "id": f"{model_family}-{variant_name}",
