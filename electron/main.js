@@ -6,7 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const net = require('net');
-const { detectGPU, updatePyprojectSources, runUvSync, downloadFFmpeg, downloadYtDlp, downloadLlamaServer, downloadLlamaCudart } = require('./setup.js');
+const { detectGPU, updatePyprojectSources, runUvSync, downloadFFmpeg, downloadYtDlp, downloadLlamaServer, downloadLlamaCudart, downloadUpscalers } = require('./setup.js');
 const { resolve } = require('path');
 
 // 載入 .env 檔（簡易 parser，不依賴 dotenv）
@@ -407,7 +407,8 @@ function createWindow() {
       const downloads = [
         { fn: downloadFFmpeg, args: [binDir, noop, true], label: 'FFmpeg', pct: 58 },
         { fn: downloadYtDlp, args: [binDir, noop, true], label: 'yt-dlp', pct: 70 },
-        { fn: downloadLlamaServer, args: [binDir, gpu, noop, true], label: 'llama-server', pct: 85 },
+        { fn: downloadLlamaServer, args: [binDir, gpu, noop, true], label: 'llama-server', pct: 82 },
+        { fn: downloadUpscalers, args: [binDir, noop, true], label: 'Upscalers', pct: 90 },
         { fn: downloadLlamaCudart, args: [binDir, gpu, noop, true], label: 'CUDA Runtime', pct: 95 },
       ];
       for (const dl of downloads) {
@@ -509,8 +510,9 @@ async function setupEnvironment(window) {
   const downloads = [
     { fn: downloadFFmpeg, args: [binDir], start: 50, weight: 12, label: 'FFmpeg' },
     { fn: downloadYtDlp, args: [binDir], start: 62, weight: 10, label: 'yt-dlp' },
-    { fn: downloadLlamaServer, args: [binDir, gpu], start: 72, weight: 18, label: 'llama-server' },
-    { fn: downloadLlamaCudart, args: [binDir, gpu], start: 90, weight: 9, label: 'CUDA Runtime' },
+    { fn: downloadLlamaServer, args: [binDir, gpu], start: 72, weight: 14, label: 'llama-server' },
+    { fn: downloadUpscalers, args: [binDir], start: 86, weight: 7, label: 'Upscalers' },
+    { fn: downloadLlamaCudart, args: [binDir, gpu], start: 93, weight: 6, label: 'CUDA Runtime' },
   ];
   let maxPercent = 50;
   for (const dl of downloads) {

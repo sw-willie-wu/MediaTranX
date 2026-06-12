@@ -17,6 +17,9 @@ const TOOL_VERSIONS = {
   ffmpeg: '8.1',            // GyanD/codexffmpeg release tag
   llama: 'b8763',          // ggml-org/llama.cpp release tag
   ytdlp: '2026.03.17',     // yt-dlp/yt-dlp release tag (date-format YYYY.MM.DD)
+  ncnnRealesrgan: 'v0.2.5.0',  // xinntao/Real-ESRGAN release tag (ncnn-vulkan exe)
+  ncnnWaifu2x: '20250915',     // nihui/waifu2x-ncnn-vulkan release tag
+  ncnnRealcugan: '20220728',   // nihui/realcugan-ncnn-vulkan release tag
 };
 
 // ---------------------------------------------------------------------------
@@ -946,6 +949,89 @@ async function downloadLlamaCudart(binDir, gpuInfo, onProgress, force = false) {
 }
 
 // ---------------------------------------------------------------------------
+// downloadUpscalers(binDir, onProgress, force)
+// ---------------------------------------------------------------------------
+
+// The three ncnn-vulkan super-resolution CLIs. Each ships from a DIFFERENT repo
+// and the Linux asset keyword differs (waifu2x uses "linux"; the other two use
+// "ubuntu"). Only the EXEs are downloaded here — the .param/.bin model weights
+// are re-hosted separately and fetched by the backend (D-P1-2). Dest dir name is
+// the backend `_exe_path` tool key (realesrgan/waifu2x/realcugan), NOT the
+// TOOL_VERSIONS pin key, so it resolves to {root}/bin/ncnn/<tool>/<exe>.
+const UPSCALER_TOOLS = [
+  { name: 'realesrgan', repo: 'xinntao/Real-ESRGAN',          tag: TOOL_VERSIONS.ncnnRealesrgan, linuxKeyword: 'ubuntu' },
+  { name: 'waifu2x',    repo: 'nihui/waifu2x-ncnn-vulkan',    tag: TOOL_VERSIONS.ncnnWaifu2x,    linuxKeyword: 'linux'  },
+  { name: 'realcugan',  repo: 'nihui/realcugan-ncnn-vulkan',  tag: TOOL_VERSIONS.ncnnRealcugan,  linuxKeyword: 'ubuntu' },
+];
+
+function _ncnnPlatformKeyword(tool) {
+  if (process.platform === 'win32') return 'windows';
+  if (process.platform === 'darwin') return 'macos';
+  return tool.linuxKeyword;
+}
+
+/**
+ * Download the three ncnn-vulkan upscaler CLIs (exe-only) to binDir/ncnn/<tool>/.
+ * @param {string} binDir
+ * @param {(msg: string, downloaded?: number, total?: number) => void} [onProgress]
+ * @param {boolean} [force]
+ * @returns {Promise<void>}
+ */
+async function downloadUpscalers(binDir, onProgress, force = false) {
+  for (const tool of UPSCALER_TOOLS) {
+    const toolDir = path.join(binDir, 'ncnn', tool.name);
+
+    if (!needsDownload(toolDir, tool.tag, force)) {
+      if (onProgress) onProgress(`${tool.name}-ncnn-vulkan up to date, skipping.`);
+      continue;
+    }
+
+    if (onProgress) onProgress(`Fetching ${tool.name}-ncnn-vulkan release info...`);
+    const releaseInfo = await fetchJSON(
+      `https://api.github.com/repos/${tool.repo}/releases/tags/${tool.tag}`
+    );
+
+    const assets  = releaseInfo.assets || [];
+    const keyword = _ncnnPlatformKeyword(tool);
+    const asset   = assets.find(a => a.name.includes(keyword) && a.name.endsWith('.zip'));
+    if (!asset) {
+      throw new Error(
+        `Could not find a ${tool.name}-ncnn-vulkan asset for platform=${process.platform} (keyword=${keyword}).\n` +
+        `Available: ${assets.map(a => a.name).slice(0, 20).join(', ')}`
+      );
+    }
+
+    const tmpFile = path.join(os.tmpdir(), `${tool.name}_ncnn_${Date.now()}.zip`);
+    if (onProgress) onProgress(`Downloading ${tool.name}-ncnn-vulkan: ${asset.name}`);
+    await downloadFile(asset.browser_download_url, tmpFile, (dl, total) => {
+      if (onProgress) onProgress(`Downloading ${tool.name}-ncnn-vulkan...`, dl, total);
+    });
+
+    const dlSize = fs.statSync(tmpFile).size;
+    if (dlSize < 1000) throw new Error(`Downloaded ${tool.name} file too small (${dlSize} bytes), likely corrupted`);
+
+    if (onProgress) onProgress(`Extracting ${tool.name}-ncnn-vulkan...`);
+    fs.mkdirSync(toolDir, { recursive: true });
+    // fileFilter=null → _copyExtractedFiles default copy set (*.exe/*.dll/*.so/
+    // no-extension), which EXCLUDES the .param/.bin/.jpg/.md the upstream zips
+    // also ship — exactly D-P1-2's exe-only intent (models are re-hosted).
+    await extractZip(tmpFile, toolDir, null);
+    try { fs.unlinkSync(tmpFile); } catch (_) {}
+
+    if (process.platform !== 'win32') {
+      const exe = path.join(toolDir, `${tool.name}-ncnn-vulkan`);
+      if (fs.existsSync(exe)) { try { fs.chmodSync(exe, 0o755); } catch (_) {} }
+    }
+
+    fs.writeFileSync(path.join(toolDir, '.version'), JSON.stringify({
+      tag: releaseInfo.tag_name || tool.tag,
+      asset: asset.name,
+    }), 'utf8');
+    if (onProgress) onProgress(`${tool.name}-ncnn-vulkan installed.`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -962,4 +1048,5 @@ module.exports = {
   downloadYtDlp,
   downloadLlamaServer,
   downloadLlamaCudart,
+  downloadUpscalers,
 };
