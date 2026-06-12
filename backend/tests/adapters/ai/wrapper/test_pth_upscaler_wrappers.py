@@ -14,17 +14,15 @@ from PIL import Image
 
 from app.adapters.ai.wrapper.bsrgan import BSRGANWrapper
 from app.adapters.ai.wrapper.real_cugan import RealCUGANWrapper
-from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper
 from app.adapters.ai.wrapper.swinir import SwinIRWrapper
-from app.adapters.ai.wrapper.waifu2x import Waifu2xWrapper
 
 
+# realesrgan + waifu2x migrated to NcnnUpscaleWrapper in Phase 1 (T10/T11) and
+# their torch wrappers were deleted; bsrgan/swinir/real-cugan stay on torch.
 UPSCALERS = [
     pytest.param(BSRGANWrapper,     "bsrgan",     "default",           4, id="bsrgan"),
     pytest.param(RealCUGANWrapper,  "real-cugan", "up4x-conservative", 4, id="real_cugan"),
-    pytest.param(RealESRGANWrapper, "realesrgan", "x4plus",            4, id="realesrgan"),
     pytest.param(SwinIRWrapper,     "swinir",     "realworld-x4",      4, id="swinir"),
-    pytest.param(Waifu2xWrapper,    "waifu2x",    "cunet-art-2x",      2, id="waifu2x"),
 ]
 
 

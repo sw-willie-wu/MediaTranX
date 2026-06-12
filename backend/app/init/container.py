@@ -99,14 +99,12 @@ class AppContainer(containers.DeclarativeContainer):
     rife_wrapper = providers.Singleton(
         _lazy("app.adapters.ai.wrapper.rife", "RIFEWrapper"),
     )
-    # Phase-1 de-torch: realesrgan + waifu2x now run on the ncnn-vulkan CLI
-    # (one NcnnUpscaleWrapper per family, shared 'upscale' slot). swinir/bsrgan/
-    # real-cugan stay on the torch PthWrapper until their own phase (Gate B /
-    # Phase 7). The dict keys below are unchanged so the dispatcher + video_enhance
-    # injection pick up the new wrappers transparently.
+    # Phase-1 de-torch: realesrgan + waifu2x now run on the ncnn-vulkan CLI. One
+    # wrapper per model (RealESRGANWrapper / Waifu2xWrapper, both thin subclasses
+    # of NcnnUpscaleWrapper). swinir/bsrgan/real-cugan stay on the torch
+    # PthWrapper until their own phase (Gate B / Phase 7).
     realesrgan_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.ncnn_upscale", "NcnnUpscaleWrapper"),
-        family="realesrgan",
+        _lazy("app.adapters.ai.wrapper.realesrgan", "RealESRGANWrapper"),
     )
     swinir_wrapper = providers.Singleton(
         _lazy("app.adapters.ai.wrapper.swinir", "SwinIRWrapper"),
@@ -118,8 +116,7 @@ class AppContainer(containers.DeclarativeContainer):
         _lazy("app.adapters.ai.wrapper.real_cugan", "RealCUGANWrapper"),
     )
     waifu2x_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.ncnn_upscale", "NcnnUpscaleWrapper"),
-        family="waifu2x",
+        _lazy("app.adapters.ai.wrapper.waifu2x", "Waifu2xWrapper"),
     )
     gfpgan_wrapper = providers.Singleton(
         _lazy("app.adapters.ai.wrapper.gfpgan", "GFPGANWrapper"),

@@ -1,7 +1,7 @@
 """NcnnUpscaleWrapper: slot/family, CLI assembly, CPU fallback, progress
 accumulation (count completions, not dips), output checks, NFR2 device lines.
 
-Seams: patch `ncnn_upscale.CliSidecar` (the binary), `ncnn_upscale._exe_path`
+Seams: patch `ncnn_upscale.CliSidecar` (the binary); the wrapper's `_exe_path`
 (the installed exe), and the SOURCE `app.adapters.device.has_vulkan` (imported
 lazily inside `_build_args`). Acquire is faked the way test_pth_upscaler_wrappers
 fakes the manager.
@@ -16,7 +16,8 @@ import pytest
 from PIL import Image
 
 from app.adapters.ai.wrapper import ncnn_upscale
-from app.adapters.ai.wrapper.ncnn_upscale import NcnnUpscaleWrapper
+from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper
+from app.adapters.ai.wrapper.waifu2x import Waifu2xWrapper
 from app.adapters.binary.sidecar_base import SidecarError
 
 
@@ -63,7 +64,7 @@ def _fake_sidecar(lines=(), out_files=1):
 # -- slot / family --------------------------------------------------------
 
 def test_slot_is_upscale_and_family_recorded():
-    w = NcnnUpscaleWrapper("waifu2x")
+    w = Waifu2xWrapper()
     assert w.slot == "upscale"
     assert w.family == "waifu2x"
 
@@ -71,7 +72,7 @@ def test_slot_is_upscale_and_family_recorded():
 # -- _load_impl -----------------------------------------------------------
 
 def test_load_fails_listing_missing_model_files(tmp_path):
-    w = NcnnUpscaleWrapper("realesrgan")
+    w = RealESRGANWrapper()
     param = tmp_path / "realesrgan" / "realesrgan-x4plus.param"
     param.parent.mkdir(parents=True)
     param.write_bytes(b"x")   # .param present, .bin absent
@@ -82,7 +83,7 @@ def test_load_fails_listing_missing_model_files(tmp_path):
 
 
 def test_load_impl_none_path_names_expected_location():
-    w = NcnnUpscaleWrapper("realesrgan")
+    w = RealESRGANWrapper()
     with pytest.raises(FileNotFoundError, match="(?i)realesrgan"):
         w._load_impl(None, {"variant": "x4plus", "slot": "realesrgan"})
 
@@ -91,7 +92,7 @@ def test_load_impl_none_path_names_expected_location():
 
 def test_build_args_realesrgan_model_name_no_verbose(tmp_path, monkeypatch):
     monkeypatch.setattr("app.adapters.device.has_vulkan", lambda: True)
-    w = NcnnUpscaleWrapper("realesrgan")
+    w = RealESRGANWrapper()
     w._model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
                            cli_model_name="realesrgan-x4plus")
     args = w._build_args(Path("in.png"), Path("out.png"))
@@ -104,7 +105,7 @@ def test_build_args_realesrgan_model_name_no_verbose(tmp_path, monkeypatch):
 
 def test_build_args_waifu2x_noise_verbose(tmp_path, monkeypatch):
     monkeypatch.setattr("app.adapters.device.has_vulkan", lambda: True)
-    w = NcnnUpscaleWrapper("waifu2x")
+    w = Waifu2xWrapper()
     w._model = _model_dict(tmp_path, exe_tool="waifu2x", scale=2, cli_noise=-1)
     args = w._build_args(Path("in.png"), Path("out.png"))
     assert args[-3:] == ["-n", "-1", "-v"]
@@ -113,7 +114,7 @@ def test_build_args_waifu2x_noise_verbose(tmp_path, monkeypatch):
 
 def test_build_args_appends_cpu_flag_without_vulkan(tmp_path, monkeypatch):
     monkeypatch.setattr("app.adapters.device.has_vulkan", lambda: False)
-    w = NcnnUpscaleWrapper("realesrgan")
+    w = RealESRGANWrapper()
     w._model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
                            cli_model_name="realesrgan-x4plus")
     args = w._build_args(Path("in.png"), Path("out.png"))
@@ -131,7 +132,7 @@ def _fake_acquire(w, model):
 
 
 def test_enhance_round_trips_and_checks_output(tmp_path, monkeypatch):
-    w = NcnnUpscaleWrapper("realesrgan")
+    w = RealESRGANWrapper()
     model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
                         cli_model_name="realesrgan-x4plus")
     monkeypatch.setattr(ncnn_upscale, "CliSidecar", _fake_sidecar())
@@ -142,7 +143,7 @@ def test_enhance_round_trips_and_checks_output(tmp_path, monkeypatch):
 
 
 def test_enhance_raises_when_cli_silently_succeeds_without_output(tmp_path, monkeypatch):
-    w = NcnnUpscaleWrapper("realesrgan")
+    w = RealESRGANWrapper()
     model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
                         cli_model_name="realesrgan-x4plus")
 
@@ -166,7 +167,7 @@ def test_enhance_raises_when_cli_silently_succeeds_without_output(tmp_path, monk
 # resets; the chunk's output-file count is the real completion gate.
 
 def test_progress_realesrgan_frame_starts_drive_monotonic(tmp_path, monkeypatch):
-    w = NcnnUpscaleWrapper("realesrgan")
+    w = RealESRGANWrapper()
     w._model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
                            cli_model_name="realesrgan-x4plus")
     # 3 frames, each "0.00%" then a mid tile — no 100.00% anywhere.
@@ -185,7 +186,7 @@ def test_progress_realesrgan_advances_without_ever_seeing_100pct(tmp_path, monke
     # REGRESSION (T8): the old logic counted "100.00%" completions, which the
     # real CLI never emits → the 2nd frame would freeze at the 1st frame's ~98%.
     # Counting 0.00% frame-starts must advance past frame 1 with NO 100% line.
-    w = NcnnUpscaleWrapper("realesrgan")
+    w = RealESRGANWrapper()
     w._model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
                            cli_model_name="realesrgan-x4plus")
     monkeypatch.setattr(ncnn_upscale, "CliSidecar",
@@ -201,7 +202,7 @@ def test_progress_realesrgan_advances_without_ever_seeing_100pct(tmp_path, monke
 def test_progress_waifu2x_counts_done_lines(tmp_path, monkeypatch):
     # waifu2x-ncnn-vulkan prints no percentages; with -v it emits one
     # "<in> -> <out> done" line per file (on stdout, merged by CliSidecar).
-    w = NcnnUpscaleWrapper("waifu2x")
+    w = Waifu2xWrapper()
     w._model = _model_dict(tmp_path, exe_tool="waifu2x", scale=2, cli_noise=-1)
     monkeypatch.setattr(ncnn_upscale, "CliSidecar", _fake_sidecar(
         lines=["f0.png -> o0.png done", "f1.png -> o1.png done"]))
@@ -218,7 +219,7 @@ def test_progress_waifu2x_counts_done_lines(tmp_path, monkeypatch):
 # -- enhance_dir output count + NFR2 lines --------------------------------
 
 def test_enhance_dir_raises_on_short_output_count(tmp_path, monkeypatch):
-    w = NcnnUpscaleWrapper("realesrgan")
+    w = RealESRGANWrapper()
     model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
                         cli_model_name="realesrgan-x4plus")
     monkeypatch.setattr(ncnn_upscale, "CliSidecar", _fake_sidecar(out_files=1))
@@ -232,7 +233,7 @@ def test_enhance_dir_raises_on_short_output_count(tmp_path, monkeypatch):
 
 
 def test_device_lines_retained_for_nfr2(tmp_path, monkeypatch):
-    w = NcnnUpscaleWrapper("realesrgan")
+    w = RealESRGANWrapper()
     w._model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
                            cli_model_name="realesrgan-x4plus")
     monkeypatch.setattr(ncnn_upscale, "CliSidecar",

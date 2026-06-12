@@ -242,10 +242,10 @@ class ModelManager:
         Returns:
             FORMAT_PKG / FORMAT_GGUF / FORMAT_NCNN / FORMAT_PTH / None
         """
-        # NCNN before PTH: during the Phase-1 transition the migrated SR families
-        # (realesrgan/waifu2x) exist in BOTH trees and NCNN must win; Task 11
-        # removes the shadowed PTH pair. (real-cugan was dropped from the ncnn
-        # migration over weight licensing — R6 — so it stays PTH-only, unshadowed.)
+        # Search order PKG, GGUF, NCNN, PTH. realesrgan/waifu2x now live only in
+        # the NCNN tree (PTH entries deleted in T11); the ordering is kept so any
+        # future dual-listed family would resolve to NCNN first. (real-cugan was
+        # dropped from the ncnn migration over weight licensing — R6 — PTH-only.)
         for fmt in [FORMAT_PKG, FORMAT_GGUF, FORMAT_NCNN, FORMAT_PTH]:
             if model_id in MODELS_REGISTRY.get(fmt, {}):
                 return fmt

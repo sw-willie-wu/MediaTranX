@@ -9,6 +9,11 @@ of natural-image fixtures (the NFR1 PSNR>=40 bar assumes real content, not noise
   MEDIATRANX_NCNN_SMOKE_ROOT=<root> SR_PARITY_FIXTURES=<photos> \
     uv run python ../scripts/sr_parity_check.py
 
+NOTE: the torch reference path needs the spandrel-based RealESRGAN/Waifu2x
+wrappers, which T11 replaced with the ncnn subclasses — so re-running requires a
+pre-T11 checkout (or installing torch + spandrel and loading the .pth directly).
+This file is retained as the recorded T9 result/methodology, below.
+
 RESULT (2026-06-13, RTX 3080, input.jpg/input2.jpg canonical realesrgan photos):
   waifu2x  cunet-2x : SSIM 0.9999, PSNR 46-51 dB  → PASSES strict NFR1 (same
                       cunet/art/scale2x weights torch- and ncnn-side).
@@ -39,7 +44,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
 from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper
 from app.adapters.ai.wrapper.waifu2x import Waifu2xWrapper
-from app.adapters.ai.wrapper.ncnn_upscale import NcnnUpscaleWrapper, _exe_path
+from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper as _RealesrganNcnn
+from app.adapters.ai.wrapper.waifu2x import Waifu2xWrapper as _Waifu2xNcnn
 from app.adapters.ai.model_manager import ModelManager
 from tests.parity.harness import ssim, psnr
 
@@ -107,15 +113,18 @@ def _torch_ref(cls, pth: Path, img: Image.Image, variant: str, scale: int) -> Im
         return w.enhance(img, model_id=variant, scale=scale)
 
 
+_NCNN_WRAPPER = {"realesrgan": _RealesrganNcnn, "waifu2x": _Waifu2xNcnn}
+
+
 def _ncnn_out(family: str, variant: str) -> "callable":
     mm = ModelManager()
     cfg = mm.get_model_config(family, variant)
     param = mm.get_model_path(family, variant)
     if not cfg or param is None:
         raise SystemExit(f"ncnn {family}/{variant} not installed under the smoke root")
-    model = {"exe": str(_exe_path(cfg["exe_tool"])), "model_dir": param.parent,
+    w = _NCNN_WRAPPER[family]()
+    model = {"exe": str(w._exe_path()), "model_dir": param.parent,
              "config": {**cfg, "variant": variant}}
-    w = NcnnUpscaleWrapper(family)
 
     @contextmanager
     def _acq(model_id=None, variant=None, on_progress=None):

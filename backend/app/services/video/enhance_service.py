@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 from app.adapters.binary.ffmpeg import FFmpegWrapper
-from app.adapters.ai.wrapper.ncnn_upscale import NcnnUpscaleWrapper
+from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -25,7 +25,7 @@ class EnhanceService:
     """Video frame-by-frame enhancement using Real-ESRGAN super-resolution."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
-                 ffmpeg: FFmpegWrapper, realesrgan: NcnnUpscaleWrapper):
+                 ffmpeg: FFmpegWrapper, realesrgan: RealESRGANWrapper):
         self._file_service = file_service
         self._task_manager = task_manager
         self._ffmpeg = ffmpeg

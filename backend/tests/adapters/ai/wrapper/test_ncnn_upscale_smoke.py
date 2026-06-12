@@ -13,9 +13,8 @@ HERMETIC + env-gated: it points SETTINGS.path at a dedicated root given by
     <root>/models/waifu2x/models-cunet/scale2.0x_model.{param,bin}
 
 Skips when the env var is unset or the layout is incomplete, so CI is a no-op.
-It deliberately does NOT read the default `models/` slot dir: during the Phase-1
-transition the torch RealESRGANWrapper is still wired, and feeding it an ncnn
-`.param` from the shared slot would crash the PTH e2e tests (documented hazard).
+It uses a dedicated root rather than the default `models/` slot so it stays
+independent of any locally-downloaded models and of the other AI tests.
 Marked `ai`: deselected by the default `-m "not ai"` run.
 """
 from __future__ import annotations
@@ -29,12 +28,13 @@ import pytest
 from PIL import Image
 
 from app.adapters.ai.model_manager import ModelManager
-from app.adapters.ai.wrapper import ncnn_upscale
-from app.adapters.ai.wrapper.ncnn_upscale import NcnnUpscaleWrapper
+from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper
+from app.adapters.ai.wrapper.waifu2x import Waifu2xWrapper
 
 pytestmark = pytest.mark.ai
 
 SMOKE_ROOT_ENV = "MEDIATRANX_NCNN_SMOKE_ROOT"
+_WRAPPER = {"realesrgan": RealESRGANWrapper, "waifu2x": Waifu2xWrapper}
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ def _model_dict(family: str, variant: str):
     if not cfg or param is None:
         return None
     try:
-        exe = ncnn_upscale._exe_path(cfg["exe_tool"])
+        exe = _WRAPPER[family]()._exe_path()   # per-model wrapper owns its binary
     except FileNotFoundError:
         return None
     return {"exe": str(exe), "model_dir": param.parent,
@@ -88,7 +88,7 @@ def test_real_cli_upscales_and_reports_gpu(smoke_paths, family, variant, scale):
     if family == "waifu2x":
         assert model["model_dir"].name == "models-cunet", model["model_dir"]
 
-    w = NcnnUpscaleWrapper(family)
+    w = _WRAPPER[family]()
     progress: list[float] = []
     src = Image.new("RGB", (48, 48), (123, 222, 64))
     with patch.object(w, "acquire", _fake_acquire(w, model)):

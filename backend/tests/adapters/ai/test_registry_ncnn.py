@@ -39,9 +39,9 @@ def test_cli_fields_are_mutually_exclusive_by_tool():
             assert "cli_noise" in v and "cli_model_name" not in v
 
 
-def test_family_text_copied_from_pth_originals():
-    pth = registry.MODELS_REGISTRY[registry.FORMAT_PTH]
+def test_migrated_families_have_ui_text():
+    # (The PTH realesrgan/waifu2x entries were deleted in T11, so there are no
+    # originals left to compare against — just assert the NCNN rows carry text.)
     ncnn = registry.MODELS_REGISTRY[registry.FORMAT_NCNN]
     for fam in ("realesrgan", "waifu2x"):
-        assert ncnn[fam]["label"] == pth[fam]["label"]
-        assert ncnn[fam].get("description") == pth[fam].get("description")
+        assert ncnn[fam]["label"] and ncnn[fam].get("description")

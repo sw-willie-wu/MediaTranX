@@ -672,53 +672,9 @@ MODELS_REGISTRY = {
     # PTH format: PyTorch image processing models
     # ───────────────────────────────────────────────────────
     FORMAT_PTH: {
-        # ▸ Real-ESRGAN series
-        "realesrgan": {
-            "slot": "realesrgan",
-            "label": "Real-ESRGAN",
-            "category": "upscale",
-            "description": "models.realesrgan",
-            "variants": {
-                "x2plus": {
-                    "label": "2x",
-                    "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth",
-                    "filename": "RealESRGAN_x2plus.pth",
-                    "size_mb": 64,
-                    "vram_mb": 1500,
-                    "scale": 2,
-                    "arch": "RRDBNet",
-                },
-                "x4plus": {
-                    "label": "4x",
-                    "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
-                    "filename": "RealESRGAN_x4plus.pth",
-                    "size_mb": 64,
-                    "vram_mb": 2000,
-                    "scale": 4,
-                    "arch": "RRDBNet",
-                },
-                "x4plus-anime": {
-                    "label": "4x - anime",
-                    "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
-                    "filename": "RealESRGAN_x4plus_anime_6B.pth",
-                    "size_mb": 18,
-                    "vram_mb": 2000,
-                    "scale": 4,
-                    "arch": "RRDBNet",
-                },
-                "animevideov3": {
-                    "label": "4x - video",
-                    "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-animevideov3.pth",
-                    "filename": "realesr-animevideov3.pth",
-                    "size_mb": 2,
-                    "vram_mb": 500,
-                    "scale": 4,
-                    "arch": "SRVGGNetCompact",
-                    "subcategory": "video_enhance",
-                },
-            },
-        },
-        
+        # Real-ESRGAN + waifu2x migrated to FORMAT_NCNN in Phase 1 (de-torch);
+        # their PTH entries were removed in T11. swinir/bsrgan/real-cugan remain
+        # torch until their own phase.
         # ▸ SwinIR series
         "swinir": {
             "slot": "swinir",
@@ -893,38 +849,15 @@ MODELS_REGISTRY = {
             },
         },
 
-        # ▸ Waifu2x series
-        "waifu2x": {
-            "slot": "waifu2x",
-            "label": "Waifu2x",
-            "category": "upscale",
-            "description": "models.waifu2x",
-            "variants": {
-                "cunet-art-2x": {
-                    "label": "2x - cunet",
-                    "url": "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20250502.zip",
-                    "filename": "waifu2x_cunet_art_2x.pth",
-                    "unzip": True,
-                    "archive_path": "pretrained_models/cunet/art/scale2x.pth",
-                    "size_mb": 440,
-                    "vram_mb": 1200,
-                    "scale": 2,
-                },
-                # cunet-art-4x and swin-unet variants removed:
-                # nunif's 4x models use SwinUNet architecture (not CUNet),
-                # which is not supported by Spandrel.
-            },
-        },
+        # (Real-ESRGAN + waifu2x are now FORMAT_NCNN — see the NCNN tree below.)
     },
 
     # ───────────────────────────────────────────────────────
-    # NCNN format: ncnn-vulkan CLI sidecar SR models (Phase 1).
-    # Family slot/label/description/category are copied VERBATIM from the
-    # FORMAT_PTH originals so the UI text does not drift during the T3→T11
-    # transition window (Task 11 removes the shadowed PTH trio). Per-file URL
-    # is built by the download service from _NCNN_BASE_URL + filename (D-P1-2).
-    # Real-ESRGAN x2plus is DROPPED (no ncnn model); the single PTH
-    # animevideov3 (4x) splits into three explicit ncnn variants (x2/x3/x4).
+    # NCNN format: ncnn-vulkan CLI sidecar SR models (Phase 1). These REPLACED
+    # the FORMAT_PTH realesrgan/waifu2x entries (removed in T11). Per-file URL is
+    # built by the download service from _NCNN_BASE_URL + filename (D-P1-2).
+    # Real-ESRGAN x2plus is DROPPED (no ncnn model); the old single PTH
+    # animevideov3 (4x) split into three explicit ncnn variants (x2/x3/x4).
     # ───────────────────────────────────────────────────────
     FORMAT_NCNN: {
         # ▸ Real-ESRGAN series (exe: realesrgan-ncnn-vulkan; -n <name> -s <scale>)
@@ -1012,8 +945,7 @@ MODELS_REGISTRY = {
         # Real-CUGAN is intentionally absent from the NCNN tree: its bilibili/ailab
         # weights are unlicensed (R6) so we do not re-host them. The legacy
         # FORMAT_PTH "real-cugan" entry stays until the Phase 7 torch teardown
-        # (it gets no ncnn replacement and exits with torch). Because it is no
-        # longer shadowed by an NCNN family, the PTH-shadow guard keeps it visible.
+        # (it gets no ncnn replacement and exits with torch) — it is PTH-only.
     },
 
 }

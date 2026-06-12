@@ -1,81 +1,42 @@
-"""
-Real-ESRGAN super-resolution inference wrapper (Three-Layer Architecture V3).
-Refactored: inherits PthWrapper, supports CUDA/CPU auto-switching and DirectML reservation.
+"""Real-ESRGAN super-resolution wrapper (ncnn-vulkan CLI, Phase-1 de-torch).
+
+Concrete NcnnUpscaleWrapper subclass: implements how realesrgan-ncnn-vulkan is
+driven. Replaced the torch/spandrel RealESRGANWrapper when SR moved off PyTorch.
 """
 from __future__ import annotations
 
-import logging
-from typing import Optional, Callable
+import re
+from typing import Optional
 
-import numpy as np
-import torch
-from PIL import Image
+from app.adapters.ai.wrapper.ncnn_upscale import NcnnUpscaleWrapper
 
-from app.adapters.ai.wrapper.base import PthWrapper
-from app.adapters.ai.registry import FORMAT_PTH, MODELS_REGISTRY
-
-logger = logging.getLogger(__name__)
+# realesrgan prints `NN.NN%` per tile and emits exactly ONE 0.00% line per frame.
+_PERCENT_RE = re.compile(r"^(\d{1,3}\.\d{2})%")
 
 
-class RealESRGANWrapper(PthWrapper):
-    """
-    Real-ESRGAN super-resolution wrapper (inherits PthWrapper).
+class RealESRGANWrapper(NcnnUpscaleWrapper):
+    """Real-ESRGAN via realesrgan-ncnn-vulkan (x4plus / x4plus-anime / animevideov3)."""
 
-    Responsibilities:
-    1. Image super-resolution inference (2x/4x)
-    2. Tile processing (large image chunking)
-    3. Device auto-switching handled by PthWrapper
-    """
+    family = "realesrgan"
+    exe_name = "realesrgan-ncnn-vulkan"
 
-    def __init__(self):
-        super().__init__(slot="upscale", use_spandrel=True)
-        logger.info("RealESRGANWrapper initialized (PthWrapper, spandrel)")
-    
-    def enhance(
-        self,
-        image: Image.Image,
-        model_id: str = "x4plus",
-        scale: int = 4,
-        on_progress: Optional[Callable[[float, str], None]] = None,
-    ) -> Image.Image:
-        """
-        Run super-resolution inference.
+    def _model_flags(self, cfg: dict) -> list[str]:
+        # picks the model by name; -s already set by the base from cfg["scale"].
+        return ["-n", cfg["cli_model_name"]]
 
-        Args:
-            image: Input image.
-            model_id: Model variant (x2plus/x4plus/x4plus-anime).
-            scale: Scale factor.
-            on_progress: Progress callback.
-
-        Returns:
-            Enhanced image.
-        """
-        # Get VRAM requirement and acquire lock
-        variant_spec = MODELS_REGISTRY[FORMAT_PTH]["realesrgan"]["variants"].get(model_id)
-        if not variant_spec:
-            raise ValueError(f"Unknown RealESRGAN variant: {model_id}")
-        
-        vram_needed = variant_spec["vram_mb"]  # noqa: F841 — used by outer mm.acquire (Wave D)
-
-        with self.acquire(
-            model_id="realesrgan",
-            variant=model_id,
-            on_progress=on_progress
-        ):
-            img_array = np.array(image.convert("RGB"))
-            img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0).float() / 255.0
-            img_tensor = img_tensor.to(self._device)
-
-            def infer_cb(p: float, m: str) -> None:
-                if on_progress:
-                    on_progress(1.0 + p, m)
-
-            output_tensor = self.run_inference(self._model, img_tensor, scale=scale, on_progress=infer_cb)
-            output_array = (output_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
-            result = Image.fromarray(output_array)
-
-            # Release GPU tensors to avoid OOM during batch processing
-            del img_tensor, output_tensor
-            torch.cuda.empty_cache()
-
-            return result
+    def _progress(self, line: str, state: dict, base_done: int,
+                  total_frames: int) -> Optional[tuple[float, str]]:
+        m = _PERCENT_RE.match(line.strip())
+        if not m:
+            return None
+        # A fresh frame restarts the counter at 0.00% (dir mode interleaves
+        # frames but each still prints 0.00% once) and it NEVER prints 100.00%,
+        # so count 0.00% lines as frames entered; the chunk's output-count check
+        # is the real completion gate.
+        pct = float(m.group(1)) / 100.0
+        if pct == 0.0:
+            state["started"] = state.get("started", 0) + 1
+        state["cur"] = min(pct, 0.999)
+        advanced = max(state.get("started", 0) - 1, 0) + state["cur"]
+        frac = (base_done + min(advanced, total_frames)) / max(total_frames, 1)
+        return frac, "task.progress.upscale_running"

@@ -122,9 +122,9 @@ class TestDownloadStatus:
 
 
 class TestNcnnEnumeration:
-    """FORMAT_NCNN enumerator: replaces the migrated families' rows that the
-    PTH-shadow guard removes. `downloaded` is a direct filesystem check of the
-    .param+.bin pair under models/<slot>/ (NOT via get_model_path)."""
+    """FORMAT_NCNN enumerator: lists the SR families migrated to ncnn
+    (realesrgan/waifu2x). `downloaded` is a direct filesystem check of the
+    .param+.bin pair under the variant dir (NOT via get_model_path)."""
 
     def test_ncnn_variants_listed_and_not_downloaded_without_files(self, svc, monkeypatch, tmp_path):
         from app.init.configs import SETTINGS
@@ -162,14 +162,14 @@ class TestNcnnEnumeration:
         assert any(i.startswith("swinir-") for i in ids)
 
 
-class TestPthShadowGuard:
-    """During the NCNN transition the migrated SR families resolve as NCNN, so
-    the PTH enumerator must not also surface them — a duplicate PTH row would
-    carry a lying `downloaded` flag. Task 11 deletes the shadowed PTH pair."""
+class TestPthEnumerationAfterNcnnMigration:
+    """realesrgan/waifu2x were migrated to NCNN and their PTH entries deleted in
+    T11, so the PTH enumerator must not surface them (regression guard: they must
+    not reappear). bsrgan/swinir/real-cugan stay on torch and remain listed."""
 
     def test_pth_enumeration_omits_ncnn_migrated_families(self, svc):
         fams = {m["family"] for m in svc._enumerate_pth_models()}
         assert not (fams & {"realesrgan", "waifu2x"})
         # non-migrated PTH upscalers stay enumerated. real-cugan was dropped from
-        # the ncnn port (R6 licensing) so it is NOT shadowed → stays PTH-listed.
+        # the ncnn port (R6 licensing) so it stays PTH-listed.
         assert {"bsrgan", "swinir", "real-cugan"} <= fams

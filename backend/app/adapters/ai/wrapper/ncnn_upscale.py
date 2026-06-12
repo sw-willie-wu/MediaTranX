@@ -1,22 +1,25 @@
-"""ncnn-vulkan CLI upscaler wrapper (Real-ESRGAN / waifu2x).
+"""Shared base for the ncnn-vulkan CLI upscalers.
 
-BaseWrapper subclass with slot="upscale" (dispatcher contract) that shells out
-to the official ncnn-vulkan CLIs via CliSidecar — same wrapper↔binary layering
-as LlmWrapper↔LlamaServer. Single images round-trip through temp PNGs; frame
-batches use the CLIs' directory mode in CHUNKS (one spawn per chunk amortizes
-Vulkan warmup while bounding temp disk).
+ABSTRACT base (one CONCRETE subclass per model — RealESRGANWrapper /
+Waifu2xWrapper), mirroring the PthWrapper→per-model pattern. The base owns the
+machinery every ncnn upscaler shares — temp-PNG round-trip for single images,
+the CLIs' directory mode in CHUNKS for frame batches (one spawn per chunk
+amortizes Vulkan warmup while bounding temp disk), the CliSidecar wiring (same
+wrapper↔binary layering as LlmWrapper↔LlamaServer), output-existence check, CPU
+fallback (`-g -1`, FR5), and the inference-band progress wrapping.
 
-Verified CLI quirks handled here (2026-06-12):
-- realesrgan prints `NN.NN%` to stderr, restarting per image in directory mode
-  → progress ACCUMULATES (done + pct/100)/total; waifu2x prints no
-  percentages → `-v` done-lines are counted instead.
-- realesrgan can exit 0 on decode failure → output existence is always checked.
-- `-g -1` = CPU mode (used when no Vulkan loader is present; FR5).
+Each MODEL declares its binary (`exe_name`) and IMPLEMENTS the two things that
+genuinely differ between CLIs:
+  - `_model_flags(cfg)`  — the flags that pick the model (`-n <name>` vs
+                           `-n <noise> -v`),
+  - `_progress(line, …)` — how that CLI's output maps to a progress fraction
+                           (realesrgan's `NN.NN%` tiles vs waifu2x's `done`
+                           lines).
+No model-type branching lives in the base.
 """
 from __future__ import annotations
 
 import logging
-import re
 import sys
 import tempfile
 from pathlib import Path
@@ -29,33 +32,46 @@ from app.adapters.binary.sidecar_base import CliSidecar, SidecarError
 
 logger = logging.getLogger(__name__)
 
-_PERCENT_RE = re.compile(r"^(\d{1,3}\.\d{2})%")
-# Keyed by the registry's `exe_tool` field; dir name == tool name == exe stem.
-_EXE_NAMES = {
-    "realesrgan": "realesrgan-ncnn-vulkan",
-    "waifu2x": "waifu2x-ncnn-vulkan",
-}
 _SINGLE_TIMEOUT_S = 600.0
 _CHUNK_TIMEOUT_S = 1800.0
 
 
-def _exe_path(exe_tool: str) -> Path:
-    from app.init.configs import SETTINGS  # lazy: wrapper-module convention
-    name = _EXE_NAMES[exe_tool] + (".exe" if sys.platform == "win32" else "")
-    p = SETTINGS.path.ncnn / exe_tool / name
-    if p.exists():
-        return p
-    raise FileNotFoundError(
-        f"{name} not installed (expected {p}); run setup / reinstall AI env")
-
-
 class NcnnUpscaleWrapper(BaseWrapper):
-    """One instance per family; dispatched under the shared 'upscale' slot."""
+    """Abstract base — use a per-model subclass (sets `family` + `exe_name` and
+    implements `_model_flags` / `_progress`). All run under the 'upscale' slot."""
 
-    def __init__(self, family: str):
+    family: str = ""      # subclass: e.g. "realesrgan"
+    exe_name: str = ""    # subclass: e.g. "realesrgan-ncnn-vulkan"
+
+    def __init__(self) -> None:
         super().__init__(slot="upscale")
-        self.family = family
+        if not self.family or not self.exe_name:
+            raise TypeError(
+                f"{type(self).__name__} must set `family` and `exe_name` — "
+                "NcnnUpscaleWrapper is abstract; use a per-model subclass "
+                "(RealESRGANWrapper / Waifu2xWrapper)")
         self.last_run_lines: list[str] = []
+
+    # ── per-model implementation hooks ──────────────────────────────────────
+    def _model_flags(self, cfg: dict) -> list[str]:
+        """CLI flags that select the model from the registry config."""
+        raise NotImplementedError
+
+    def _progress(self, line: str, state: dict, base_done: int,
+                  total_frames: int) -> Optional[tuple[float, str]]:
+        """Map one merged-output line to (job_fraction, i18n_message), or None
+        when the line carries no progress. `state` persists across the run."""
+        raise NotImplementedError
+
+    # ── shared mechanics ────────────────────────────────────────────────────
+    def _exe_path(self) -> Path:
+        from app.init.configs import SETTINGS  # lazy: wrapper-module convention
+        name = self.exe_name + (".exe" if sys.platform == "win32" else "")
+        p = SETTINGS.path.ncnn / self.family / name
+        if p.exists():
+            return p
+        raise FileNotFoundError(
+            f"{name} not installed (expected {p}); run setup / reinstall AI env")
 
     def _load_impl(self, model_path: Any, config: dict,
                    on_progress: Optional[Callable[[float, str], None]] = None) -> Any:
@@ -71,12 +87,10 @@ class NcnnUpscaleWrapper(BaseWrapper):
         missing = [f for f in config["files"] if not (param.parent / f).exists()]
         if missing:
             raise FileNotFoundError(f"ncnn model files missing: {missing}")
-        return {"exe": _exe_path(config["exe_tool"]), "model_dir": param.parent, "config": config}
+        return {"exe": self._exe_path(), "model_dir": param.parent, "config": config}
 
     def _unload_impl(self) -> None:
         pass  # nothing resident: the CLI owns GPU memory per run
-
-    # -- CLI assembly ---------------------------------------------------------
 
     def _build_args(self, in_path: Path, out_path: Path) -> list[str]:
         from app.adapters.device import has_vulkan
@@ -84,10 +98,7 @@ class NcnnUpscaleWrapper(BaseWrapper):
         args = ["-i", str(in_path), "-o", str(out_path),
                 "-m", str(self._model["model_dir"]),
                 "-s", str(cfg["scale"]), "-f", "png"]
-        if "cli_model_name" in cfg:                      # realesrgan
-            args += ["-n", cfg["cli_model_name"]]
-        else:                                            # waifu2x
-            args += ["-n", str(cfg["cli_noise"]), "-v"]
+        args += self._model_flags(cfg)
         if not has_vulkan():
             logger.warning(f"no Vulkan loader; {self.family} ncnn running in CPU mode (-g -1)")
             args += ["-g", "-1"]
@@ -97,7 +108,7 @@ class NcnnUpscaleWrapper(BaseWrapper):
                  on_progress: Optional[Callable[[float, str], None]],
                  total_frames: int, base_done: int, timeout: float) -> None:
         self.last_run_lines = []               # per-run NFR2 evidence (no stale carryover)
-        state = {"done": 0, "started": 0, "cur": 0.0}
+        state: dict = {}
 
         def _on_line(line: str) -> None:
             logger.debug(f"[{self.family}] {line}")
@@ -106,26 +117,10 @@ class NcnnUpscaleWrapper(BaseWrapper):
                 self.last_run_lines.pop(0)
             if on_progress is None:
                 return
-            m = _PERCENT_RE.match(line.strip())
-            if m:
-                # realesrgan prints N.NN% per tile and emits exactly ONE 0.00%
-                # line per frame (a fresh frame restarts the counter; in dir mode
-                # frames interleave but each still prints 0.00% once) — and it
-                # NEVER prints 100.00%. So count 0.00% lines as frames entered;
-                # the chunk's final output-count check is the real completion gate.
-                pct = float(m.group(1)) / 100.0
-                if pct == 0.0:
-                    state["started"] += 1
-                state["cur"] = min(pct, 0.999)
-                # frames fully entered = started-1 (the newest is in flight at cur)
-                advanced = max(state["started"] - 1, 0) + state["cur"]
-                frac = (base_done + min(advanced, total_frames)) / max(total_frames, 1)
-                on_progress(1.0 + min(frac, 0.999), "task.progress.upscale_running")
-            elif "done" in line:                   # waifu2x -v per-file line (stdout, merged)
-                state["done"] += 1
-                frac = (base_done + state["done"]) / max(total_frames, 1)
-                on_progress(1.0 + min(frac, 0.999),
-                            f"task.progress.upscale_frame|{base_done + state['done']}|{total_frames}")
+            result = self._progress(line, state, base_done, total_frames)
+            if result is not None:
+                frac, msg = result
+                on_progress(1.0 + min(frac, 0.999), msg)   # inference band: [1.0, 2.0)
 
         sc = CliSidecar(exe=str(self._model["exe"]), on_line=_on_line)
         sc.run(self._build_args(in_path, out_path), timeout=timeout)
@@ -134,8 +129,7 @@ class NcnnUpscaleWrapper(BaseWrapper):
         raise SidecarError(str(self._model["exe"]), 0,
                            f"CLI exited 0 but produced no output at {out_path}")
 
-    # -- public inference API (self-acquiring, like the torch-era wrappers) ----
-
+    # ── public inference API (self-acquiring, like the torch-era wrappers) ───
     def enhance(self, image: Image.Image, model_id: str = "", scale: int = 0,
                 on_progress: Optional[Callable[[float, str], None]] = None) -> Image.Image:
         """PIL → PIL. `model_id` = variant (service convention); native scale applies."""
