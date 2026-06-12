@@ -199,6 +199,7 @@ export default {
       interpolate_complete: '補幀完成',
       // upscale
       load_model: '正在載入模型: {0}...',
+      upscale_running: '超解析處理中...',
       upscale_frame: '超解析中 ({0}/{1})...',
       upscale_complete: '超解析完成',
       load_face_model: '正在載入人臉修復模型: {0}...',

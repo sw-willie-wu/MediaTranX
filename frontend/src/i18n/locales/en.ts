@@ -199,6 +199,7 @@ export default {
       interpolate_complete: 'Interpolation complete',
       // upscale
       load_model: 'Loading model: {0}...',
+      upscale_running: 'Upscaling...',
       upscale_frame: 'Upscaling ({0}/{1})...',
       upscale_complete: 'Upscale complete',
       load_face_model: 'Loading face restore model: {0}...',
