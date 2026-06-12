@@ -196,26 +196,27 @@ def test_init_has_log_path_attr():
 
 
 # ---------------------------------------------------------------------------
-# _classify_exit_code + LlamaServerCrashError
+# classify_exit_code (moved to _proc_lifetime) + LlamaServerCrashError
 # ---------------------------------------------------------------------------
 
-from app.adapters.binary.llama_server import _classify_exit_code, LlamaServerCrashError
+from app.adapters.binary.llama_server import LlamaServerCrashError
+from app.adapters.binary._proc_lifetime import classify_exit_code
 
 
 def test_classify_exit_code_access_violation():
-    is_hard, reason = _classify_exit_code(3221225477)  # 0xC0000005
+    is_hard, reason = classify_exit_code(3221225477)  # 0xC0000005
     assert is_hard is True
     assert "ACCESS_VIOLATION" in reason
     assert "0xC0000005" in reason
 
 
 def test_classify_exit_code_other_nt_exceptions():
-    assert _classify_exit_code(0xC0000409)[0] is True   # STACK_BUFFER_OVERRUN
-    assert _classify_exit_code(0xC000001D)[0] is True   # ILLEGAL_INSTRUCTION
+    assert classify_exit_code(0xC0000409)[0] is True   # STACK_BUFFER_OVERRUN
+    assert classify_exit_code(0xC000001D)[0] is True   # ILLEGAL_INSTRUCTION
 
 
 def test_classify_exit_code_graceful_exit_is_not_hard_crash():
-    is_hard, reason = _classify_exit_code(1)
+    is_hard, reason = classify_exit_code(1)
     assert is_hard is False
     assert "1" in reason
 

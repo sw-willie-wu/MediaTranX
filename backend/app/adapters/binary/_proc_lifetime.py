@@ -7,9 +7,13 @@ the kernel kills the assigned child. No Python GC / __del__ / atexit is
 involved (none of those run on `/F`). Retaining the job handle on the caller
 only prevents a *premature* close while the child should still live.
 
-POSIX (dev-only; the app is win32-primary): prctl(PR_SET_PDEATHSIG). Accepted
-risk — PDEATHSIG fires on the spawning *thread's* death, not the process's;
-not guaranteed correct across thread-pool recycling. Tolerated, dev-only.
+Linux (dev-only): prctl(PR_SET_PDEATHSIG). Accepted risk — PDEATHSIG fires on
+the spawning *thread's* death, not the process's; not guaranteed correct
+across thread-pool recycling. Tolerated, dev-only.
+
+macOS: NO lifetime binding is armed — prctl/PDEATHSIG are Linux-only and Job
+Objects are Windows-only; orphan cleanup relies on the explicit kill paths
+(stop()/timeout handling) of each adapter.
 """
 from __future__ import annotations
 
@@ -156,10 +160,13 @@ def close_job(job: int) -> None:
 def posix_pdeathsig_preexec() -> Optional[Callable[[], None]]:
     """Return a Popen ``preexec_fn`` that arms PR_SET_PDEATHSIG=SIGKILL.
 
-    ``None`` on win32 (Popen requires preexec_fn=None there). Dev-only;
-    thread-recycle caveat documented in the module docstring / spec.
+    ``None`` everywhere except Linux: win32 Popen requires preexec_fn=None,
+    and prctl/PR_SET_PDEATHSIG are Linux-only — on macOS the closure would
+    raise in the forked child (no libc.so.6, no prctl), making EVERY spawn
+    fail ("Exception occurred in preexec_fn"). Dev-only; thread-recycle
+    caveat documented in the module docstring.
     """
-    if sys.platform == "win32":
+    if not sys.platform.startswith("linux"):
         return None
 
     def _set_pdeathsig() -> None:  # pragma: no cover - POSIX dev only
@@ -169,3 +176,31 @@ def posix_pdeathsig_preexec() -> Optional[Callable[[], None]]:
         libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL)
 
     return _set_pdeathsig
+
+
+# --- Exit-code classification (winnt.h NTSTATUS) -------------------------------
+
+# Known Windows NTSTATUS exception codes that mean "the process was killed
+# mid-instruction by the OS" (hard crash) — distinct from a graceful non-zero
+# exit. A hard crash on GPU offload is the 0xC0000005 signature of an
+# incompatible CUDA build for this GPU (see spec 2026-06-03).
+NT_HARD_CRASH = {
+    0xC0000005: "ACCESS_VIOLATION",
+    0xC0000409: "STACK_BUFFER_OVERRUN",
+    0xC000001D: "ILLEGAL_INSTRUCTION",
+    0xC00000FD: "STACK_OVERFLOW",
+    0xC0000374: "HEAP_CORRUPTION",
+}
+
+
+def classify_exit_code(code: int) -> tuple[bool, str]:
+    """Return (is_hard_crash, human_reason) for a subprocess exit code.
+
+    Windows reports a crashed process's exit code as its NTSTATUS exception
+    code (e.g. 3221225477 == 0xC0000005). Python's Popen.returncode carries it
+    unsigned on Windows; mask to 32 bits so either sign convention maps.
+    """
+    u = code & 0xFFFFFFFF
+    if u in NT_HARD_CRASH:
+        return True, f"{NT_HARD_CRASH[u]} (0x{u:08X})"
+    return False, f"exit code {code}"

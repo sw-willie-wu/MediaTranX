@@ -15,34 +15,13 @@ import time
 from pathlib import Path
 from typing import Callable, Iterator, Optional, TextIO
 
+# NTSTATUS hard-crash decoding lives in _proc_lifetime (pure process knowledge,
+# shared with CliSidecar).
+from app.adapters.binary._proc_lifetime import classify_exit_code
+
 logger = logging.getLogger(__name__)
 
 LLAMA_SERVER_STARTUP_TIMEOUT = 180  # seconds (normal load 10-20s; buffer for cold cache / VRAM pressure)
-
-# Known Windows NTSTATUS exception codes that mean "the process was killed
-# mid-instruction by the OS" (hard crash) — distinct from a graceful non-zero
-# exit. A hard crash on GPU offload is the 0xC0000005 signature of an
-# incompatible CUDA build for this GPU (see spec 2026-06-03).
-_NT_HARD_CRASH = {
-    0xC0000005: "ACCESS_VIOLATION",
-    0xC0000409: "STACK_BUFFER_OVERRUN",
-    0xC000001D: "ILLEGAL_INSTRUCTION",
-    0xC00000FD: "STACK_OVERFLOW",
-    0xC0000374: "HEAP_CORRUPTION",
-}
-
-
-def _classify_exit_code(code: int) -> tuple[bool, str]:
-    """Return (is_hard_crash, human_reason) for a subprocess exit code.
-
-    Windows reports a crashed process's exit code as its NTSTATUS exception
-    code (e.g. 3221225477 == 0xC0000005). Python's Popen.returncode carries it
-    unsigned on Windows; mask to 32 bits so either sign convention maps.
-    """
-    u = code & 0xFFFFFFFF
-    if u in _NT_HARD_CRASH:
-        return True, f"{_NT_HARD_CRASH[u]} (0x{u:08X})"
-    return False, f"exit code {code}"
 
 
 class LlamaServerCrashError(RuntimeError):
@@ -176,7 +155,7 @@ class LlamaServer:
             stderr=self._log_file,
             cwd=str(llama_dir),
             env=child_env,
-            preexec_fn=_proc_lifetime.posix_pdeathsig_preexec(),  # None on win32
+            preexec_fn=_proc_lifetime.posix_pdeathsig_preexec(),  # None except Linux
         )
 
         # F1: bind the child to a kill-on-close Job Object so it cannot
@@ -449,7 +428,7 @@ class LlamaServer:
         while time.time() < deadline:
             if self._process and self._process.poll() is not None:
                 code = self._process.returncode
-                is_hard, reason = _classify_exit_code(code)
+                is_hard, reason = classify_exit_code(code)
                 tail = self._read_log_tail()
                 if tail:
                     logger.error(

@@ -78,8 +78,10 @@ def test_close_job_swallows_errors():
         pl.close_job(555)  # must not raise
 
 
-def test_posix_preexec_is_none_on_win32():
-    if sys.platform == "win32":
-        assert pl.posix_pdeathsig_preexec() is None
-    else:
+def test_posix_preexec_is_linux_only():
+    if sys.platform.startswith("linux"):
         assert callable(pl.posix_pdeathsig_preexec())
+    else:
+        # win32 (Popen requires None) AND darwin (no libc.so.6/prctl — the
+        # closure would crash every spawn inside the forked child).
+        assert pl.posix_pdeathsig_preexec() is None
