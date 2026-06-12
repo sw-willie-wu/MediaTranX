@@ -140,6 +140,74 @@ def has_directml() -> bool:
     except Exception:
         return False
 
+
+# --- ONNX Execution-Provider selection (torch-free; survives Phase 7) ---------
+# Priority: native cross-vendor desktop EPs first, then server CUDA, CPU last.
+_GPU_PROVIDERS = (
+    "DmlExecutionProvider",      # Windows DirectX 12 (AMD/Intel/NVIDIA)
+    "CoreMLExecutionProvider",   # macOS (Apple GPU/ANE)
+    "CUDAExecutionProvider",     # Linux/server NVIDIA
+)
+_PROVIDER_PREFERENCE = _GPU_PROVIDERS + ("CPUExecutionProvider",)
+
+
+@lru_cache(maxsize=1)
+def available_onnx_providers() -> list[str]:
+    """Providers the installed onnxruntime build exposes. Empty if ORT missing.
+    Lazy onnxruntime import, like has_directml(). Cached; cleared by
+    refresh_device_cache()."""
+    try:
+        import onnxruntime as ort
+        return list(ort.get_available_providers())
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"onnxruntime not importable: {e}")
+        return []
+
+
+def is_gpu_provider(name: str) -> bool:
+    return name in _GPU_PROVIDERS
+
+
+def select_onnx_providers(prefer: str | None = None) -> list[str]:
+    """Ordered EP list for an InferenceSession: best available GPU EP first,
+    CPU always last as fallback.
+
+    `prefer` is the spec-C5 config override point (e.g. Docker/service forcing
+    CUDAExecutionProvider): when that EP is available it moves to the front;
+    when absent the default ladder applies unchanged.
+    """
+    avail = set(available_onnx_providers())
+    ordered = [p for p in _PROVIDER_PREFERENCE if p in avail]
+    if prefer and prefer in avail:
+        if prefer in ordered:
+            ordered.remove(prefer)
+        ordered.insert(0, prefer)
+    if "CPUExecutionProvider" not in ordered:
+        ordered.append("CPUExecutionProvider")  # ORT always has CPU
+    return ordered
+
+
+def preferred_gpu_provider() -> str | None:
+    """The single GPU EP we expect to run on, or None (CPU-only host)."""
+    return next((p for p in select_onnx_providers() if is_gpu_provider(p)), None)
+
+
+@lru_cache(maxsize=1)
+def has_vulkan() -> bool:
+    """Vulkan loader present on this host? Presence probe ONLY (the ncnn /
+    demucs-rs CLIs select and report their own adapters); full adapter
+    enumeration is deferred to the first phase needing host-side adapter data.
+    Cached; cleared by refresh_device_cache()."""
+    import ctypes
+    name = {"win32": "vulkan-1.dll", "darwin": "libvulkan.1.dylib"}.get(
+        sys.platform, "libvulkan.so.1")
+    try:
+        ctypes.CDLL(name)
+        return True
+    except OSError:
+        return False
+
+
 def _cuda_can_run_kernels() -> bool:
     """True only if the GPU can actually launch a CUDA kernel with the installed
     torch build.
@@ -533,6 +601,8 @@ def refresh_device_cache() -> None:
         has_nvidia_gpu,
         _get_gpu_name_via_smi,
         get_driver_version,
+        available_onnx_providers,
+        has_vulkan,
     ):
         _clear = getattr(_fn, "cache_clear", None)
         if _clear is not None:
