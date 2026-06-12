@@ -7,11 +7,12 @@ from app.init.configs import SETTINGS
 def test_get_model_format_resolves_ncnn_families():
     mm = ModelManager()
     assert mm.get_model_format("waifu2x") == registry.FORMAT_NCNN
-    assert mm.get_model_format("real-cugan") == registry.FORMAT_NCNN
     # realesrgan lives in BOTH trees during the transition → NCNN must win
     # (search order PKG, GGUF, NCNN, PTH).
     assert mm.get_model_format("realesrgan") == registry.FORMAT_NCNN
-    # families with no NCNN entry stay PTH.
+    # families with no NCNN entry stay PTH. real-cugan was dropped from the ncnn
+    # port over weight licensing (R6) → it stays PTH-only like bsrgan/swinir.
+    assert mm.get_model_format("real-cugan") == registry.FORMAT_PTH
     assert mm.get_model_format("bsrgan") == registry.FORMAT_PTH
 
 
@@ -29,15 +30,15 @@ def test_get_model_config_merges_slot_and_variant():
 def test_get_model_path_param_when_all_files_exist_else_none(monkeypatch, tmp_path):
     monkeypatch.setattr(SETTINGS.path, "models", tmp_path)
     mm = ModelManager()
-    slot_dir = tmp_path / "real-cugan"
+    slot_dir = tmp_path / "waifu2x"
     slot_dir.mkdir(parents=True)
-    files = ["up2x-conservative.param", "up2x-conservative.bin"]
+    files = ["scale2.0x_model.param", "scale2.0x_model.bin"]
     for f in files:
         (slot_dir / f).write_bytes(b"x")
 
     # all files present → returns the .param path (wrapper derives model_dir).
-    assert mm.get_model_path("real-cugan", "up2x-conservative") == slot_dir / "up2x-conservative.param"
+    assert mm.get_model_path("waifu2x", "cunet-art-2x") == slot_dir / "scale2.0x_model.param"
 
     # any file missing → None (same no-raise/no-download contract as the PTH branch).
-    (slot_dir / "up2x-conservative.bin").unlink()
-    assert mm.get_model_path("real-cugan", "up2x-conservative") is None
+    (slot_dir / "scale2.0x_model.bin").unlink()
+    assert mm.get_model_path("waifu2x", "cunet-art-2x") is None

@@ -53,7 +53,7 @@ class PathSettings(BaseModel):
     @computed_field
     @property
     def ncnn(self) -> Path:
-        """ncnn-vulkan upscaler CLIs: {root}/bin/ncnn/<tool>/ (realesrgan|waifu2x|realcugan)."""
+        """ncnn-vulkan upscaler CLIs: {root}/bin/ncnn/<tool>/ (realesrgan|waifu2x)."""
         return self.root / "bin" / "ncnn"
 
     @computed_field

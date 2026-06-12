@@ -1,4 +1,4 @@
-"""ncnn-vulkan CLI upscaler wrapper (Real-ESRGAN / waifu2x / Real-CUGAN).
+"""ncnn-vulkan CLI upscaler wrapper (Real-ESRGAN / waifu2x).
 
 BaseWrapper subclass with slot="upscale" (dispatcher contract) that shells out
 to the official ncnn-vulkan CLIs via CliSidecar — same wrapper↔binary layering
@@ -8,7 +8,7 @@ Vulkan warmup while bounding temp disk).
 
 Verified CLI quirks handled here (2026-06-12):
 - realesrgan prints `NN.NN%` to stderr, restarting per image in directory mode
-  → progress ACCUMULATES (done + pct/100)/total; waifu2x/realcugan print no
+  → progress ACCUMULATES (done + pct/100)/total; waifu2x prints no
   percentages → `-v` done-lines are counted instead.
 - realesrgan can exit 0 on decode failure → output existence is always checked.
 - `-g -1` = CPU mode (used when no Vulkan loader is present; FR5).
@@ -34,7 +34,6 @@ _PERCENT_RE = re.compile(r"^(\d{1,3}\.\d{2})%")
 _EXE_NAMES = {
     "realesrgan": "realesrgan-ncnn-vulkan",
     "waifu2x": "waifu2x-ncnn-vulkan",
-    "realcugan": "realcugan-ncnn-vulkan",
 }
 _SINGLE_TIMEOUT_S = 600.0
 _CHUNK_TIMEOUT_S = 1800.0
@@ -87,7 +86,7 @@ class NcnnUpscaleWrapper(BaseWrapper):
                 "-s", str(cfg["scale"]), "-f", "png"]
         if "cli_model_name" in cfg:                      # realesrgan
             args += ["-n", cfg["cli_model_name"]]
-        else:                                            # waifu2x / realcugan
+        else:                                            # waifu2x
             args += ["-n", str(cfg["cli_noise"]), "-v"]
         if not has_vulkan():
             logger.warning(f"no Vulkan loader; {self.family} ncnn running in CPU mode (-g -1)")
@@ -118,7 +117,7 @@ class NcnnUpscaleWrapper(BaseWrapper):
                 cur = min(pct, 0.999) if pct < 1.0 else 0.0
                 frac = (base_done + state["done"] + cur) / max(total_frames, 1)
                 on_progress(1.0 + min(frac, 0.999), "task.progress.upscale_running")
-            elif "done" in line:                   # waifu2x/realcugan -v per-file line
+            elif "done" in line:                   # waifu2x -v per-file line
                 state["done"] += 1
                 frac = (base_done + state["done"]) / max(total_frames, 1)
                 on_progress(1.0 + min(frac, 0.999),

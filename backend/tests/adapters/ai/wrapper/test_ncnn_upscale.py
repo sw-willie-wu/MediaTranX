@@ -63,9 +63,9 @@ def _fake_sidecar(lines=(), out_files=1):
 # -- slot / family --------------------------------------------------------
 
 def test_slot_is_upscale_and_family_recorded():
-    w = NcnnUpscaleWrapper("real-cugan")
+    w = NcnnUpscaleWrapper("waifu2x")
     assert w.slot == "upscale"
-    assert w.family == "real-cugan"
+    assert w.family == "waifu2x"
 
 
 # -- _load_impl -----------------------------------------------------------

@@ -130,7 +130,7 @@ class TestNcnnEnumeration:
         from app.init.configs import SETTINGS
         monkeypatch.setattr(SETTINGS.path, "models", tmp_path)
         models = svc.list_all()["models"]
-        ncnn = [m for m in models if m["family"] in ("realesrgan", "waifu2x", "real-cugan")]
+        ncnn = [m for m in models if m["family"] in ("realesrgan", "waifu2x")]
         assert ncnn, "migrated SR families must be listed via the NCNN enumerator"
         assert all(not m["downloaded"] for m in ncnn)
         ids = {m["id"] for m in ncnn}
@@ -164,10 +164,11 @@ class TestNcnnEnumeration:
 class TestPthShadowGuard:
     """During the NCNN transition the migrated SR families resolve as NCNN, so
     the PTH enumerator must not also surface them — a duplicate PTH row would
-    carry a lying `downloaded` flag. Task 11 deletes the shadowed PTH trio."""
+    carry a lying `downloaded` flag. Task 11 deletes the shadowed PTH pair."""
 
     def test_pth_enumeration_omits_ncnn_migrated_families(self, svc):
         fams = {m["family"] for m in svc._enumerate_pth_models()}
-        assert not (fams & {"realesrgan", "waifu2x", "real-cugan"})
-        # non-migrated PTH upscalers stay enumerated
-        assert {"bsrgan", "swinir"} <= fams
+        assert not (fams & {"realesrgan", "waifu2x"})
+        # non-migrated PTH upscalers stay enumerated. real-cugan was dropped from
+        # the ncnn port (R6 licensing) so it is NOT shadowed → stays PTH-listed.
+        assert {"bsrgan", "swinir", "real-cugan"} <= fams

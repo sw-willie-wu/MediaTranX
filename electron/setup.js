@@ -19,7 +19,6 @@ const TOOL_VERSIONS = {
   ytdlp: '2026.03.17',     // yt-dlp/yt-dlp release tag (date-format YYYY.MM.DD)
   ncnnRealesrgan: 'v0.2.5.0',  // xinntao/Real-ESRGAN release tag (ncnn-vulkan exe)
   ncnnWaifu2x: '20250915',     // nihui/waifu2x-ncnn-vulkan release tag
-  ncnnRealcugan: '20220728',   // nihui/realcugan-ncnn-vulkan release tag
 };
 
 // ---------------------------------------------------------------------------
@@ -952,16 +951,16 @@ async function downloadLlamaCudart(binDir, gpuInfo, onProgress, force = false) {
 // downloadUpscalers(binDir, onProgress, force)
 // ---------------------------------------------------------------------------
 
-// The three ncnn-vulkan super-resolution CLIs. Each ships from a DIFFERENT repo
-// and the Linux asset keyword differs (waifu2x uses "linux"; the other two use
-// "ubuntu"). Only the EXEs are downloaded here — the .param/.bin model weights
-// are re-hosted separately and fetched by the backend (D-P1-2). Dest dir name is
-// the backend `_exe_path` tool key (realesrgan/waifu2x/realcugan), NOT the
-// TOOL_VERSIONS pin key, so it resolves to {root}/bin/ncnn/<tool>/<exe>.
+// The ncnn-vulkan super-resolution CLIs. Each ships from a DIFFERENT repo and the
+// Linux asset keyword differs (waifu2x uses "linux"; realesrgan uses "ubuntu").
+// Only the EXEs are downloaded here — the .param/.bin model weights are re-hosted
+// separately and fetched by the backend (D-P1-2). Dest dir name is the backend
+// `_exe_path` tool key (realesrgan/waifu2x), NOT the TOOL_VERSIONS pin key, so it
+// resolves to {root}/bin/ncnn/<tool>/<exe>. (Real-CUGAN was dropped over weight
+// licensing — R6 — so its CLI is no longer fetched.)
 const UPSCALER_TOOLS = [
   { name: 'realesrgan', repo: 'xinntao/Real-ESRGAN',          tag: TOOL_VERSIONS.ncnnRealesrgan, linuxKeyword: 'ubuntu' },
   { name: 'waifu2x',    repo: 'nihui/waifu2x-ncnn-vulkan',    tag: TOOL_VERSIONS.ncnnWaifu2x,    linuxKeyword: 'linux'  },
-  { name: 'realcugan',  repo: 'nihui/realcugan-ncnn-vulkan',  tag: TOOL_VERSIONS.ncnnRealcugan,  linuxKeyword: 'ubuntu' },
 ];
 
 function _ncnnPlatformKeyword(tool) {

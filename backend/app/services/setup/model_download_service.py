@@ -152,10 +152,12 @@ def _stream_download(
 # --- Format-specific downloaders ---
 
 def _match_ncnn_family(item_id: str):
-    """Longest-prefix family match against the FORMAT_NCNN tree so a multi-hyphen
-    id like `real-cugan-up2x-conservative` resolves to family `real-cugan` (not
-    `real`). Mirrors the PTH idiom in _download_pth_model. Returns (family,
-    variant) or None.
+    """Longest-prefix family match against the FORMAT_NCNN tree so an id like
+    `realesrgan-x4plus-anime` resolves to family `realesrgan`, variant
+    `x4plus-anime`. The current NCNN families (realesrgan/waifu2x) have no hyphen
+    in the family name, but longest-prefix is kept defensively and to mirror the
+    PTH idiom in _download_pth_model (where hyphenated family names exist).
+    Returns (family, variant) or None.
     """
     from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN
 

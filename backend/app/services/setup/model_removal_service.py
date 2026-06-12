@@ -17,9 +17,11 @@ def _models_dir(category: str = "") -> Path:
 
 
 def _match_ncnn_family(item_id: str):
-    """Longest-prefix family match against the FORMAT_NCNN tree so a multi-hyphen
-    id like `real-cugan-up2x-conservative` resolves to family `real-cugan` (not
-    `real`) — the PTH else-branch's split('-', 1) below gets that wrong. Returns
+    """Longest-prefix family match against the FORMAT_NCNN tree so an id like
+    `realesrgan-x4plus-anime` resolves to family `realesrgan`, variant
+    `x4plus-anime`. The current NCNN families (realesrgan/waifu2x) have no hyphen
+    in the family name; longest-prefix is kept defensively (the PTH else-branch's
+    split('-', 1) below would mis-split a future hyphenated family). Returns
     (family, variant) or None.
     """
     from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN
@@ -110,8 +112,8 @@ def remove_model(item_id: str, model_manager) -> None:
         from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN, FORMAT_PTH
 
         # SR families re-hosted as ncnn (.param/.bin pairs) are matched FIRST via
-        # longest-prefix (handles the multi-hyphen real-cugan id). Delete the
-        # pair and the slot dir if it is left empty.
+        # longest-prefix (realesrgan/waifu2x). Delete the pair and the slot dir if
+        # it is left empty.
         ncnn_match = _match_ncnn_family(item_id)
         if ncnn_match:
             family, variant = ncnn_match

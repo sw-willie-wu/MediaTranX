@@ -48,15 +48,16 @@ class TestNcnnDownloadRouting:
              models_root / "waifu2x" / "scale2.0x_model.bin"),
         ]
 
-    def test_real_cugan_longest_prefix_routing(self, models_root, monkeypatch):
-        # multi-hyphen family must resolve to `real-cugan`, not `real`.
+    def test_multi_hyphen_variant_id_routing(self, models_root, monkeypatch):
+        # a multi-hyphen id must decompose to family `realesrgan`, variant
+        # `x4plus-anime` (longest-prefix family match, then the rest is the variant).
         calls = _record_downloads(monkeypatch)
-        mds.handle_model_download({"id": "real-cugan-up2x-conservative"}, _noop)
+        mds.handle_model_download({"id": "realesrgan-x4plus-anime"}, _noop)
         assert calls == [
-            (f"{_NCNN_BASE_URL}/up2x-conservative.param",
-             models_root / "real-cugan" / "up2x-conservative.param"),
-            (f"{_NCNN_BASE_URL}/up2x-conservative.bin",
-             models_root / "real-cugan" / "up2x-conservative.bin"),
+            (f"{_NCNN_BASE_URL}/realesrgan-x4plus-anime.param",
+             models_root / "realesrgan" / "realesrgan-x4plus-anime.param"),
+            (f"{_NCNN_BASE_URL}/realesrgan-x4plus-anime.bin",
+             models_root / "realesrgan" / "realesrgan-x4plus-anime.bin"),
         ]
 
     def test_skips_existing_file(self, models_root, monkeypatch):
@@ -86,11 +87,11 @@ class TestNcnnRemoval:
         assert not (slot / "scale2.0x_model.param").exists()
         assert not (slot / "scale2.0x_model.bin").exists()
 
-    def test_removes_both_files_real_cugan_longest_prefix(self, models_root):
-        slot = models_root / "real-cugan"
+    def test_removes_both_files_multi_hyphen_variant(self, models_root):
+        slot = models_root / "realesrgan"
         slot.mkdir(parents=True)
-        for f in ("up2x-conservative.param", "up2x-conservative.bin"):
+        for f in ("realesrgan-x4plus-anime.param", "realesrgan-x4plus-anime.bin"):
             (slot / f).write_bytes(b"x")
-        mrs.remove_model("real-cugan-up2x-conservative", MagicMock())
-        assert not (slot / "up2x-conservative.param").exists()
-        assert not (slot / "up2x-conservative.bin").exists()
+        mrs.remove_model("realesrgan-x4plus-anime", MagicMock())
+        assert not (slot / "realesrgan-x4plus-anime.param").exists()
+        assert not (slot / "realesrgan-x4plus-anime.bin").exists()

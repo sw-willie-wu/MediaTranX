@@ -38,9 +38,12 @@ SOUNDFONT_BASE_URL = "https://raw.githubusercontent.com/gleitz/midi-js-soundfont
 SOUNDFONT_DRUM_BASE_URL = "https://surikov.github.io/webaudiofontdata/sound"
 
 # ncnn-vulkan SR model files (.param/.bin) are re-hosted on our own release tag
-# (D-P1-2: upstream realesrgan zip ships no LICENSE; bilibili real-cugan weights
-# are unlicensed — R6). The download service builds each file's URL as
-# f"{_NCNN_BASE_URL}/{filename}". See plan Task 1 (packager → ncnn-models-v1).
+# (D-P1-2: upstream realesrgan zip ships only a README, no LICENSE; re-hosting
+# gives a stable URL with the BSD-3/MIT weight licenses bundled alongside). Only
+# clean-licensed weights are re-hosted: Real-ESRGAN (BSD-3) + waifu2x (MIT).
+# Real-CUGAN was DROPPED from the ncnn migration (R6: bilibili/ailab weights carry
+# no license — Real-ESRGAN-anime covers the same use case; see PROGRESS doc). The
+# download service builds each file's URL as f"{_NCNN_BASE_URL}/{filename}".
 _NCNN_BASE_URL = "https://github.com/sw-willie-wu/MediaTranX/releases/download/ncnn-models-v1"
 
 # 128 General MIDI instruments (移植自 electron/setup.js GM_INSTRUMENTS)
@@ -1001,42 +1004,11 @@ MODELS_REGISTRY = {
             },
         },
 
-        # ▸ Real-CUGAN series (exe: realcugan-ncnn-vulkan; -n -1 -s {2,3,4} → up{s}x-conservative)
-        "real-cugan": {
-            "slot": "real-cugan",
-            "label": "Real-CUGAN",
-            "category": "upscale",
-            "description": "models.real_cugan",
-            "variants": {
-                "up2x-conservative": {
-                    "label": "2x - conservative",
-                    "exe_tool": "realcugan",
-                    "cli_noise": -1,
-                    "files": ["up2x-conservative.param", "up2x-conservative.bin"],
-                    "size_mb": 3,
-                    "vram_mb": 1200,
-                    "scale": 2,
-                },
-                "up3x-conservative": {
-                    "label": "3x - conservative",
-                    "exe_tool": "realcugan",
-                    "cli_noise": -1,
-                    "files": ["up3x-conservative.param", "up3x-conservative.bin"],
-                    "size_mb": 3,
-                    "vram_mb": 1500,
-                    "scale": 3,
-                },
-                "up4x-conservative": {
-                    "label": "4x - conservative",
-                    "exe_tool": "realcugan",
-                    "cli_noise": -1,
-                    "files": ["up4x-conservative.param", "up4x-conservative.bin"],
-                    "size_mb": 3,
-                    "vram_mb": 1800,
-                    "scale": 4,
-                },
-            },
-        },
+        # Real-CUGAN is intentionally absent from the NCNN tree: its bilibili/ailab
+        # weights are unlicensed (R6) so we do not re-host them. The legacy
+        # FORMAT_PTH "real-cugan" entry stays until the Phase 7 torch teardown
+        # (it gets no ncnn replacement and exits with torch). Because it is no
+        # longer shadowed by an NCNN family, the PTH-shadow guard keeps it visible.
     },
 
 }

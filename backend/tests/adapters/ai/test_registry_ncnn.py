@@ -9,8 +9,10 @@ def _variants():
 
 
 def test_ncnn_tree_has_exactly_the_migrated_families():
+    # Real-CUGAN is intentionally absent: its bilibili/ailab weights are
+    # unlicensed (R6) so the ncnn port was dropped; it stays PTH-only.
     assert set(registry.MODELS_REGISTRY[registry.FORMAT_NCNN]) == {
-        "realesrgan", "waifu2x", "real-cugan"}
+        "realesrgan", "waifu2x"}
 
 
 def test_every_variant_has_param_bin_pair_and_core_fields():
@@ -18,7 +20,7 @@ def test_every_variant_has_param_bin_pair_and_core_fields():
         assert spec["slot"] and spec["label"] and spec["category"] == "upscale"
         exts = sorted(f.rsplit(".", 1)[1] for f in v["files"])
         assert exts == ["bin", "param"], (family, vname)
-        assert v["exe_tool"] in {"realesrgan", "waifu2x", "realcugan"}
+        assert v["exe_tool"] in {"realesrgan", "waifu2x"}
         assert v["scale"] in (2, 3, 4)
         assert v["vram_mb"] > 0 and v["size_mb"] > 0
 
@@ -40,6 +42,6 @@ def test_cli_fields_are_mutually_exclusive_by_tool():
 def test_family_text_copied_from_pth_originals():
     pth = registry.MODELS_REGISTRY[registry.FORMAT_PTH]
     ncnn = registry.MODELS_REGISTRY[registry.FORMAT_NCNN]
-    for fam in ("realesrgan", "waifu2x", "real-cugan"):
+    for fam in ("realesrgan", "waifu2x"):
         assert ncnn[fam]["label"] == pth[fam]["label"]
         assert ncnn[fam].get("description") == pth[fam].get("description")
