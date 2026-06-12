@@ -21,6 +21,7 @@ class PathSettings(BaseModel):
       - `log`        : log files (root/logs)
       - `ffmpeg`     : Windows root/bin/ffmpeg/; Linux/macOS = system 'ffmpeg'
       - `llama`      : root/bin/llama/
+      - `ncnn`       : root/bin/ncnn/ (ncnn-vulkan upscaler CLIs)
       - `ytdlp`      : Windows root/bin/yt-dlp/; Linux/macOS = system 'yt-dlp'
       - `soundfonts` : root/bin/soundfonts/musyngkite/
     """
@@ -48,6 +49,12 @@ class PathSettings(BaseModel):
     @property
     def llama(self) -> Path:
         return self.root / "bin" / "llama"
+
+    @computed_field
+    @property
+    def ncnn(self) -> Path:
+        """ncnn-vulkan upscaler CLIs: {root}/bin/ncnn/<tool>/ (realesrgan|waifu2x|realcugan)."""
+        return self.root / "bin" / "ncnn"
 
     @computed_field
     @property
