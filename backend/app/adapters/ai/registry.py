@@ -11,7 +11,8 @@ This is the Single Source of Truth for the system.
 FORMAT_PKG = "PKG"     # Package-managed models (Whisper, Demucs)
 FORMAT_GGUF = "GGUF"   # llama-cpp-python single-file (LLM)
 FORMAT_PTH = "PTH"     # PyTorch weight files (CV)
-FORMAT_ONNX = "ONNX"   # ONNX Runtime (reserved for DirectML extension)
+FORMAT_ONNX = "ONNX"   # in-process onnxruntime models (face/SAM/wav2vec2/LaMa/rembg)
+FORMAT_NCNN = "NCNN"   # ncnn-vulkan CLI sidecar models (SR/RIFE): .param + .bin pair
 
 # ═══════════════════════════════════════════════════════════
 # Slot Constants
