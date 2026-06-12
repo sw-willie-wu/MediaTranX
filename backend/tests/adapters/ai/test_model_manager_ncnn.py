@@ -30,15 +30,19 @@ def test_get_model_config_merges_slot_and_variant():
 def test_get_model_path_param_when_all_files_exist_else_none(monkeypatch, tmp_path):
     monkeypatch.setattr(SETTINGS.path, "models", tmp_path)
     mm = ModelManager()
-    slot_dir = tmp_path / "waifu2x"
-    slot_dir.mkdir(parents=True)
+    # waifu2x nests under cli_model_subdir `models-cunet` so the wrapper's
+    # model_dir = param.parent has the basename the exe requires.
+    mc_dir = tmp_path / "waifu2x" / "models-cunet"
+    mc_dir.mkdir(parents=True)
     files = ["scale2.0x_model.param", "scale2.0x_model.bin"]
     for f in files:
-        (slot_dir / f).write_bytes(b"x")
+        (mc_dir / f).write_bytes(b"x")
 
-    # all files present → returns the .param path (wrapper derives model_dir).
-    assert mm.get_model_path("waifu2x", "cunet-art-2x") == slot_dir / "scale2.0x_model.param"
+    # all files present → returns the .param path under models-cunet.
+    got = mm.get_model_path("waifu2x", "cunet-art-2x")
+    assert got == mc_dir / "scale2.0x_model.param"
+    assert got.parent.name == "models-cunet"
 
     # any file missing → None (same no-raise/no-download contract as the PTH branch).
-    (slot_dir / "scale2.0x_model.bin").unlink()
+    (mc_dir / "scale2.0x_model.bin").unlink()
     assert mm.get_model_path("waifu2x", "cunet-art-2x") is None

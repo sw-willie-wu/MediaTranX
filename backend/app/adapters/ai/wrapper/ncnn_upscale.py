@@ -97,7 +97,7 @@ class NcnnUpscaleWrapper(BaseWrapper):
                  on_progress: Optional[Callable[[float, str], None]],
                  total_frames: int, base_done: int, timeout: float) -> None:
         self.last_run_lines = []               # per-run NFR2 evidence (no stale carryover)
-        state = {"done": 0}
+        state = {"done": 0, "started": 0, "cur": 0.0}
 
         def _on_line(line: str) -> None:
             logger.debug(f"[{self.family}] {line}")
@@ -108,16 +108,20 @@ class NcnnUpscaleWrapper(BaseWrapper):
                 return
             m = _PERCENT_RE.match(line.strip())
             if m:
-                # realesrgan restarts 0→100 per image; "100.00%" is the only
-                # reliable per-image completion marker (dip-detection misses
-                # untiled frames that print a single 100.00% line).
+                # realesrgan prints N.NN% per tile and emits exactly ONE 0.00%
+                # line per frame (a fresh frame restarts the counter; in dir mode
+                # frames interleave but each still prints 0.00% once) — and it
+                # NEVER prints 100.00%. So count 0.00% lines as frames entered;
+                # the chunk's final output-count check is the real completion gate.
                 pct = float(m.group(1)) / 100.0
-                if pct >= 1.0:
-                    state["done"] += 1
-                cur = min(pct, 0.999) if pct < 1.0 else 0.0
-                frac = (base_done + state["done"] + cur) / max(total_frames, 1)
+                if pct == 0.0:
+                    state["started"] += 1
+                state["cur"] = min(pct, 0.999)
+                # frames fully entered = started-1 (the newest is in flight at cur)
+                advanced = max(state["started"] - 1, 0) + state["cur"]
+                frac = (base_done + min(advanced, total_frames)) / max(total_frames, 1)
                 on_progress(1.0 + min(frac, 0.999), "task.progress.upscale_running")
-            elif "done" in line:                   # waifu2x -v per-file line
+            elif "done" in line:                   # waifu2x -v per-file line (stdout, merged)
                 state["done"] += 1
                 frac = (base_done + state["done"]) / max(total_frames, 1)
                 on_progress(1.0 + min(frac, 0.999),

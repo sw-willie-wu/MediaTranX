@@ -382,12 +382,14 @@ class ModelManager:
         # no-download contract as PTH: all files present → return the .param Path
         # (the wrapper derives model_dir = param.parent); any missing → None.
         elif fmt == FORMAT_NCNN:
+            from app.adapters.ai.registry import ncnn_variant_dir
             if not variant:
                 variant = list(family["variants"].keys())[0]
             variant_spec = family["variants"].get(variant)
             if not variant_spec or "files" not in variant_spec:
                 return None
-            paths = [base_dir / f for f in variant_spec["files"]]
+            vdir = ncnn_variant_dir(models_dir, slot, variant_spec)
+            paths = [vdir / f for f in variant_spec["files"]]
             if not all(p.exists() for p in paths):
                 return None
             return next((p for p in paths if p.suffix == ".param"), None)

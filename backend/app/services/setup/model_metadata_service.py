@@ -184,9 +184,12 @@ class ModelMetadataService:
         are synthesized later in `list_all`), and replaces the rows the
         PTH-shadow guard removes for the migrated families. `downloaded` is a
         direct filesystem check that every file of the .param+.bin pair exists
-        under models/<slot>/ — NOT via `get_model_path` (which the wrapper owns).
+        under its on-disk dir (ncnn_variant_dir, nested under cli_model_subdir
+        for waifu2x) — NOT via `get_model_path` (which the wrapper owns).
         """
-        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN
+        from app.adapters.ai.registry import (
+            MODELS_REGISTRY, FORMAT_NCNN, ncnn_variant_dir,
+        )
         from app.init.configs import SETTINGS
 
         items = []
@@ -197,12 +200,13 @@ class ModelMetadataService:
             family_label = config.get("label", model_family)
             family_category = config.get("category", "upscale")
             family_desc = config.get("description", "")
-            slot_dir = models_dir / config.get("slot", "")
+            slot = config.get("slot", "")
 
             for variant_name, variant_spec in config.get("variants", {}).items():
                 variant_label = variant_spec.get("label", variant_name)
                 files = variant_spec.get("files", [])
-                downloaded = bool(files) and all((slot_dir / f).exists() for f in files)
+                vdir = ncnn_variant_dir(models_dir, slot, variant_spec)
+                downloaded = bool(files) and all((vdir / f).exists() for f in files)
 
                 items.append({
                     "id": f"{model_family}-{variant_name}",

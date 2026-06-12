@@ -985,7 +985,11 @@ MODELS_REGISTRY = {
             },
         },
 
-        # ▸ Waifu2x series (exe: waifu2x-ncnn-vulkan; -n -1 -s 2 → scale2.0x_model)
+        # ▸ Waifu2x series (exe: waifu2x-ncnn-vulkan; -n -1 -s 2 → scale2.0x_model).
+        # waifu2x-ncnn-vulkan infers the model architecture from the -m dir's
+        # BASENAME and rejects anything else with "unknown model dir type", so the
+        # .param/.bin pair must live in a dir literally named `models-cunet`
+        # (cli_model_subdir) — unlike realesrgan, which picks the model via -n.
         "waifu2x": {
             "slot": "waifu2x",
             "label": "Waifu2x",
@@ -996,6 +1000,7 @@ MODELS_REGISTRY = {
                     "label": "2x - cunet",
                     "exe_tool": "waifu2x",
                     "cli_noise": -1,
+                    "cli_model_subdir": "models-cunet",
                     "files": ["scale2.0x_model.param", "scale2.0x_model.bin"],
                     "size_mb": 3,
                     "vram_mb": 1200,
@@ -1012,6 +1017,23 @@ MODELS_REGISTRY = {
     },
 
 }
+
+
+def ncnn_variant_dir(models_root, slot, variant_spec):
+    """On-disk directory holding an NCNN variant's .param/.bin pair.
+
+    Normally `models/<slot>/`, but nested under `cli_model_subdir` when the CLI
+    derives the model architecture from the model-dir basename:
+    waifu2x-ncnn-vulkan rejects an arbitrary `-m` dir with "unknown model dir
+    type" unless the basename is a known type (e.g. `models-cunet`). realesrgan
+    selects the model via `-n` and sets no subdir. Single source of truth shared
+    by download / get_model_path / metadata-enumerate / removal so the layout
+    cannot drift between writer and readers.
+    """
+    base = models_root / slot
+    sub = variant_spec.get("cli_model_subdir")
+    return base / sub if sub else base
+
 
 # ═══════════════════════════════════════════════════════════
 # Remote Inference Defaults

@@ -39,13 +39,15 @@ def _record_downloads(monkeypatch):
 
 class TestNcnnDownloadRouting:
     def test_waifu2x_exact_urls_and_targets(self, models_root, monkeypatch):
+        # waifu2x nests under cli_model_subdir `models-cunet` (the exe infers the
+        # arch from the -m dir basename); the download URL stays flat.
         calls = _record_downloads(monkeypatch)
         mds.handle_model_download({"id": "waifu2x-cunet-art-2x"}, _noop)
         assert calls == [
             (f"{_NCNN_BASE_URL}/scale2.0x_model.param",
-             models_root / "waifu2x" / "scale2.0x_model.param"),
+             models_root / "waifu2x" / "models-cunet" / "scale2.0x_model.param"),
             (f"{_NCNN_BASE_URL}/scale2.0x_model.bin",
-             models_root / "waifu2x" / "scale2.0x_model.bin"),
+             models_root / "waifu2x" / "models-cunet" / "scale2.0x_model.bin"),
         ]
 
     def test_multi_hyphen_variant_id_routing(self, models_root, monkeypatch):
@@ -61,9 +63,9 @@ class TestNcnnDownloadRouting:
         ]
 
     def test_skips_existing_file(self, models_root, monkeypatch):
-        slot = models_root / "waifu2x"
-        slot.mkdir(parents=True)
-        (slot / "scale2.0x_model.param").write_bytes(b"x")   # already present
+        mc = models_root / "waifu2x" / "models-cunet"
+        mc.mkdir(parents=True)
+        (mc / "scale2.0x_model.param").write_bytes(b"x")   # already present
         calls = _record_downloads(monkeypatch)
         mds.handle_model_download({"id": "waifu2x-cunet-art-2x"}, _noop)
         assert [c[1].name for c in calls] == ["scale2.0x_model.bin"]
@@ -78,14 +80,17 @@ class TestNcnnDownloadRouting:
 
 
 class TestNcnnRemoval:
-    def test_removes_both_files_waifu2x(self, models_root):
+    def test_removes_both_files_waifu2x_and_prunes_subdir(self, models_root):
         slot = models_root / "waifu2x"
-        slot.mkdir(parents=True)
+        mc = slot / "models-cunet"
+        mc.mkdir(parents=True)
         for f in ("scale2.0x_model.param", "scale2.0x_model.bin"):
-            (slot / f).write_bytes(b"x")
+            (mc / f).write_bytes(b"x")
         mrs.remove_model("waifu2x-cunet-art-2x", MagicMock())
-        assert not (slot / "scale2.0x_model.param").exists()
-        assert not (slot / "scale2.0x_model.bin").exists()
+        assert not (mc / "scale2.0x_model.param").exists()
+        assert not (mc / "scale2.0x_model.bin").exists()
+        assert not mc.exists()      # empty cli_model_subdir pruned
+        assert not slot.exists()    # empty slot dir pruned too
 
     def test_removes_both_files_multi_hyphen_variant(self, models_root):
         slot = models_root / "realesrgan"

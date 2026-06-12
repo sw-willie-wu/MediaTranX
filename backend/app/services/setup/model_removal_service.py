@@ -112,22 +112,27 @@ def remove_model(item_id: str, model_manager) -> None:
         from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN, FORMAT_PTH
 
         # SR families re-hosted as ncnn (.param/.bin pairs) are matched FIRST via
-        # longest-prefix (realesrgan/waifu2x). Delete the pair and the slot dir if
-        # it is left empty.
+        # longest-prefix (realesrgan/waifu2x). Delete the pair, then prune the
+        # variant dir (a cli_model_subdir like waifu2x/models-cunet) and the slot
+        # dir, each only when left empty.
         ncnn_match = _match_ncnn_family(item_id)
         if ncnn_match:
+            from app.adapters.ai.registry import ncnn_variant_dir
             family, variant = ncnn_match
             family_spec = MODELS_REGISTRY[FORMAT_NCNN][family]
             variant_spec = family_spec.get("variants", {}).get(variant)
             if variant_spec:
-                slot_dir = _models_dir(family_spec.get("slot", ""))
+                slot = family_spec.get("slot", "")
+                slot_dir = _models_dir(slot)
+                vdir = ncnn_variant_dir(_models_dir(""), slot, variant_spec)
                 for fname in variant_spec.get("files", []):
-                    p = slot_dir / fname
+                    p = vdir / fname
                     if p.exists():
                         p.unlink()
                         logger.info(f"Removed ncnn file: {fname}")
-                if slot_dir.exists() and not any(slot_dir.iterdir()):
-                    slot_dir.rmdir()
+                for d in dict.fromkeys([vdir, slot_dir]):   # subdir then slot, deduped
+                    if d.exists() and not any(d.iterdir()):
+                        d.rmdir()
             return
 
         # PTH models (upscale / face_restore): {family}-{variant}

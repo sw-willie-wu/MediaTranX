@@ -141,7 +141,8 @@ class TestNcnnEnumeration:
     def test_ncnn_downloaded_true_when_both_files_present(self, svc, monkeypatch, tmp_path):
         from app.init.configs import SETTINGS
         monkeypatch.setattr(SETTINGS.path, "models", tmp_path)
-        slot_dir = tmp_path / "waifu2x"
+        # waifu2x files live under the cli_model_subdir `models-cunet`.
+        slot_dir = tmp_path / "waifu2x" / "models-cunet"
         slot_dir.mkdir(parents=True)
         for f in ("scale2.0x_model.param", "scale2.0x_model.bin"):
             (slot_dir / f).write_bytes(b"x")

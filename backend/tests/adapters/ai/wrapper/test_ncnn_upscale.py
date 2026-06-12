@@ -160,36 +160,59 @@ def test_enhance_raises_when_cli_silently_succeeds_without_output(tmp_path, monk
 
 
 # -- progress accumulation (realesrgan % stream) -------------------------
+# Real realesrgan-ncnn-vulkan stderr (captured 2026-06-12, T8 dry-run):
+# each frame prints exactly ONE "0.00%" then climbs by ~2% per tile and STOPS
+# at "97.96%" — it NEVER prints "100.00%". Frame counting keys on the 0.00%
+# resets; the chunk's output-file count is the real completion gate.
 
-def test_progress_accumulates_across_dir_mode_images(tmp_path, monkeypatch):
+def test_progress_realesrgan_frame_starts_drive_monotonic(tmp_path, monkeypatch):
     w = NcnnUpscaleWrapper("realesrgan")
     w._model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
                            cli_model_name="realesrgan-x4plus")
-    monkeypatch.setattr(ncnn_upscale, "CliSidecar",
-                        _fake_sidecar(lines=["50.00%", "100.00%", "10.00%"]))
+    # 3 frames, each "0.00%" then a mid tile — no 100.00% anywhere.
+    monkeypatch.setattr(ncnn_upscale, "CliSidecar", _fake_sidecar(
+        lines=["0.00%", "49.98%", "0.00%", "49.98%", "0.00%", "97.96%"]))
     out_dir = tmp_path / "out"
     progress = []
     w._run_cli(tmp_path / "in", out_dir, lambda p, m: progress.append(p),
                total_frames=3, base_done=0, timeout=10)
     assert progress == sorted(progress)        # monotonic non-decreasing
-    assert all(p > 1.0 for p in progress)      # inference band convention
+    assert all(p >= 1.0 for p in progress)     # inference band convention
+    assert progress[-1] > 1.6                  # ~3rd frame in flight, advanced
 
 
-def test_progress_counts_untiled_frames(tmp_path, monkeypatch):
-    # ADVERSARIAL: two single-line "100.00%" frames (no tiling dips) must both
-    # be counted — pins count-completions, not dip-detection.
+def test_progress_realesrgan_advances_without_ever_seeing_100pct(tmp_path, monkeypatch):
+    # REGRESSION (T8): the old logic counted "100.00%" completions, which the
+    # real CLI never emits → the 2nd frame would freeze at the 1st frame's ~98%.
+    # Counting 0.00% frame-starts must advance past frame 1 with NO 100% line.
     w = NcnnUpscaleWrapper("realesrgan")
     w._model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
                            cli_model_name="realesrgan-x4plus")
     monkeypatch.setattr(ncnn_upscale, "CliSidecar",
-                        _fake_sidecar(lines=["100.00%", "100.00%"]))
+                        _fake_sidecar(lines=["0.00%", "97.96%", "0.00%", "97.96%"]))
     out_dir = tmp_path / "out"
     progress = []
     w._run_cli(tmp_path / "in", out_dir, lambda p, m: progress.append(p),
                total_frames=2, base_done=0, timeout=10)
-    assert len(progress) == 2
-    assert progress[0] == pytest.approx(1.5)
-    assert progress[1] > 1.99                  # 2nd frame counted, not frozen
+    assert progress == sorted(progress)
+    assert progress[-1] > 1.9                  # 2nd frame counted, not frozen at ~1.49
+
+
+def test_progress_waifu2x_counts_done_lines(tmp_path, monkeypatch):
+    # waifu2x-ncnn-vulkan prints no percentages; with -v it emits one
+    # "<in> -> <out> done" line per file (on stdout, merged by CliSidecar).
+    w = NcnnUpscaleWrapper("waifu2x")
+    w._model = _model_dict(tmp_path, exe_tool="waifu2x", scale=2, cli_noise=-1)
+    monkeypatch.setattr(ncnn_upscale, "CliSidecar", _fake_sidecar(
+        lines=["f0.png -> o0.png done", "f1.png -> o1.png done"]))
+    out_dir = tmp_path / "out"
+    progress, msgs = [], []
+    w._run_cli(tmp_path / "in", out_dir,
+               lambda p, m: (progress.append(p), msgs.append(m)),
+               total_frames=2, base_done=0, timeout=10)
+    assert progress[0] == pytest.approx(1.5)   # 1 of 2 done
+    assert progress[1] > 1.99                  # 2nd done counted
+    assert all("upscale_frame" in m for m in msgs)
 
 
 # -- enhance_dir output count + NFR2 lines --------------------------------

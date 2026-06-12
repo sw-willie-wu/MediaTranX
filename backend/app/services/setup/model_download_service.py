@@ -179,7 +179,9 @@ def _download_ncnn(family: str, variant: str, progress_callback: Callable[[float
     (same skip-if-exists semantics as _download_demucs / _download_rife; the PTH
     path has no skip, so do not cite it).
     """
-    from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN, _NCNN_BASE_URL
+    from app.adapters.ai.registry import (
+        MODELS_REGISTRY, FORMAT_NCNN, _NCNN_BASE_URL, ncnn_variant_dir,
+    )
 
     family_spec = MODELS_REGISTRY.get(FORMAT_NCNN, {}).get(family)
     if not family_spec:
@@ -192,7 +194,10 @@ def _download_ncnn(family: str, variant: str, progress_callback: Callable[[float
     if not slot:
         raise ValueError(f"ncnn model {family} missing slot configuration")
 
-    target_dir = _models_dir(slot)
+    # ncnn_variant_dir nests under cli_model_subdir (e.g. waifu2x → models-cunet)
+    # so the layout matches what get_model_path / the wrapper read back.
+    target_dir = ncnn_variant_dir(_models_dir(""), slot, variant_spec)
+    target_dir.mkdir(parents=True, exist_ok=True)
     files = variant_spec["files"]
     n = len(files)
     span_lo, span_hi = 0.1, 0.95
