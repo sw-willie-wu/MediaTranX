@@ -1,6 +1,6 @@
 """Wrapper base classes — pure model executor wrappers.
 
-This module consolidates the three base classes used by concrete wrappers:
+This module consolidates the four base classes used by concrete wrappers:
 
 - ``BaseWrapper``: abstract base. Model API only; lifecycle and orchestration
   (acquire / load / unload coordination) are owned by ModelManager. Does NOT
@@ -10,6 +10,9 @@ This module consolidates the three base classes used by concrete wrappers:
   cleanup.
 - ``PthWrapper``: base for .pth PyTorch checkpoint models (e.g. Real-ESRGAN,
   SwinIR). Handles Spandrel/torch loading + smart tiled inference.
+- ``OnnxWrapper``: base for in-process ONNX Runtime models (face restore, SAM,
+  wav2vec2, LaMa, rembg). EP selection via app.adapters.device; lazy
+  onnxruntime import; numpy I/O.
 """
 import logging
 import threading
@@ -20,6 +23,15 @@ from typing import Optional, Callable, Any
 
 import torch
 import torch.nn.functional as F
+
+import numpy as np
+
+from app.adapters.device import (
+    is_cpu_fallback_allowed,
+    is_gpu_provider,
+    preferred_gpu_provider,
+    select_onnx_providers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -487,3 +499,80 @@ class PthWrapper(BaseWrapper):
         }
 
         return model_path, config
+
+
+class OnnxWrapper(BaseWrapper):
+    """In-process ONNX Runtime executor (DirectML / CoreML / CUDA / CPU).
+
+    Replaces the torch PthWrapper path for in-process models (face restore, SAM,
+    wav2vec2, LaMa, rembg). Subclasses do pre/post-processing in numpy and call
+    self.infer(feeds); this base owns session creation + EP selection. One session
+    loaded at a time per instance (ModelManager-coordinated, like the siblings).
+    """
+
+    def __init__(self, slot: str):
+        super().__init__(slot)
+        self.active_provider: Optional[str] = None
+
+    def _load_impl(
+        self,
+        model_path: Any,
+        config: dict,
+        on_progress: Optional[Callable[[float, str], None]] = None,
+    ) -> Any:
+        # Lazy import: a broken onnxruntime must fail THIS load, not backend
+        # startup via init_container (v1.5.0 crash class — see
+        # tests/test_lazy_model_imports.py).
+        import onnxruntime as ort
+
+        if on_progress:
+            on_progress(0.2, "task.progress.init_onnx")
+        providers = select_onnx_providers()
+        so = ort.SessionOptions()
+        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        if "DmlExecutionProvider" in providers:
+            # The DirectML EP does not support memory-pattern optimization;
+            # leaving it on triggers a per-session ORT warning (or an error on
+            # older builds).
+            so.enable_mem_pattern = False
+        session = ort.InferenceSession(str(model_path), sess_options=so, providers=providers)
+        active = session.get_providers()[0]
+        if (not is_cpu_fallback_allowed()
+                and preferred_gpu_provider() is not None
+                and not is_gpu_provider(active)):
+            # EP-layer expression of the existing compute policy: with fallback
+            # OFF on a GPU-capable host, surface the failure instead of running
+            # silently on CPU (mirrors get_device()'s contract).
+            raise RuntimeError(
+                f"{type(self).__name__}(slot={self.slot!r}): a GPU EP is "
+                f"available but the session bound {active} and "
+                f"CPU fallback is disabled"
+            )
+        # Assign only after the gate: a rejected load must not leave a zombie
+        # active_provider on a wrapper whose _model was never set.
+        self.active_provider = active
+        logger.info(f"ONNX session for {Path(str(model_path)).name} bound to "
+                    f"{self.active_provider}")
+        return session
+
+    def _unload_impl(self) -> None:
+        # Drop the session reference NOW: BaseWrapper.load() calls _unload_impl
+        # then _load_impl on reload, and only unload() clears _model — without
+        # this line a model switch would hold TWO native sessions (and their EP
+        # allocations) simultaneously at the peak-pressure moment. ORT frees
+        # native memory when the session object is GC'd.
+        self._model = None
+        self.active_provider = None
+
+    def ran_on_gpu(self) -> bool:
+        """NFR2 pre-filter: True iff a GPU EP was *selected* as the session's first
+        provider. NOT proof every node executed on GPU — ORT can per-node fall back
+        to CPU silently. A migrating phase adds a stronger throughput/profiling check;
+        this is the cheap gate that catches 'no GPU EP bound at all'."""
+        return self.active_provider is not None and is_gpu_provider(self.active_provider)
+
+    def infer(self, feeds: dict[str, np.ndarray], output_names: Optional[list[str]] = None):
+        """Run the loaded session. `feeds` maps graph input names → numpy arrays."""
+        if self._model is None:
+            raise RuntimeError(f"{type(self).__name__}(slot={self.slot!r}): no session loaded")
+        return self._model.run(output_names, feeds)

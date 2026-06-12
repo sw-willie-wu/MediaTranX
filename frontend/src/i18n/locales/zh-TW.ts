@@ -360,6 +360,7 @@ export default {
       removing_bg: '去除背景中 ({0}/{1})...',
       // runtime
       init_pytorch: '正在初始化 PyTorch...',
+      init_onnx: '正在初始化 ONNX Runtime...',
       loading_weights: '正在載入權重檔 ({0})...',
       tile_inference: '分塊推理 {0}/{1}',
       preparing_llama: '正在準備 llama-server...',

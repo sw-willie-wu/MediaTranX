@@ -360,6 +360,7 @@ export default {
       removing_bg: 'Removing background ({0}/{1})...',
       // runtime
       init_pytorch: 'Initializing PyTorch...',
+      init_onnx: 'Initializing ONNX Runtime...',
       loading_weights: 'Loading weights ({0})...',
       tile_inference: 'Tile inference {0}/{1}',
       preparing_llama: 'Preparing llama-server...',

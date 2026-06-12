@@ -36,6 +36,7 @@ _CASES = [
     ("app.adapters.ai.wrapper.wav2vec2", "transformers"),
     ("app.adapters.ai.wrapper.wav2vec2", "soundfile"),
     ("app.services.setup.model_download_service", "soundfile"),
+    ("app.adapters.ai.wrapper.base", "onnxruntime"),
 ]
 
 
