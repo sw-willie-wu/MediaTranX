@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 from app.adapters.binary.ffmpeg import FFmpegWrapper
-from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper
+from app.adapters.ai.wrapper.ncnn_upscale import NcnnUpscaleWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -25,7 +25,7 @@ class EnhanceService:
     """Video frame-by-frame enhancement using Real-ESRGAN super-resolution."""
 
     def __init__(self, file_service: FileService, task_manager: TaskManager,
-                 ffmpeg: FFmpegWrapper, realesrgan: RealESRGANWrapper):
+                 ffmpeg: FFmpegWrapper, realesrgan: NcnnUpscaleWrapper):
         self._file_service = file_service
         self._task_manager = task_manager
         self._ffmpeg = ffmpeg
@@ -49,7 +49,7 @@ class EnhanceService:
         return self._execute(params, progress_callback)
 
     def _execute(self, params: dict, progress_callback: Callable[[float, str], None]) -> dict:
-        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PTH
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN
         from app.utils.video_frames import FramePipe
 
         file_id = params["file_id"]
@@ -59,7 +59,7 @@ class EnhanceService:
 
         file_info = self._file_service.require_file(file_id)
 
-        variant_spec = MODELS_REGISTRY[FORMAT_PTH]["realesrgan"]["variants"].get(variant)
+        variant_spec = MODELS_REGISTRY[FORMAT_NCNN]["realesrgan"]["variants"].get(variant)
         if not variant_spec:
             raise ValueError(f"Unknown variant: {variant}")
         scale = variant_spec.get("scale", 4)

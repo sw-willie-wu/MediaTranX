@@ -33,6 +33,7 @@ def _stub_real_loads():
     from app.adapters.ai.wrapper.base import PthWrapper, PackageWrapper
     from app.adapters.ai.wrapper.mobilesam import MobileSAMWrapper
     from app.adapters.ai.wrapper.whisper import WhisperWrapper
+    from app.adapters.ai.wrapper.ncnn_upscale import NcnnUpscaleWrapper
 
     fake_resolve = lambda *a, **k: ("/fake/path", {"_key": "fake"})
 
@@ -40,7 +41,10 @@ def _stub_real_loads():
          patch.object(PthWrapper, "_unload_impl"), \
          patch.object(PackageWrapper, "_load_impl", return_value=MagicMock()), \
          patch.object(PackageWrapper, "_unload_impl"), \
+         patch.object(NcnnUpscaleWrapper, "_load_impl", return_value=MagicMock()), \
+         patch.object(NcnnUpscaleWrapper, "_unload_impl"), \
          patch.object(PthWrapper, "_resolve_model_path", side_effect=fake_resolve), \
+         patch.object(NcnnUpscaleWrapper, "_resolve_model_path", side_effect=fake_resolve), \
          patch.object(MobileSAMWrapper, "_resolve_model_path", side_effect=fake_resolve), \
          patch.object(WhisperWrapper, "_resolve_model_path", side_effect=fake_resolve):
         yield
@@ -53,10 +57,11 @@ def test_upscale_dispatch_acquires_correct_wrapper(container, family):
     """mm.acquire('upscale', family) should return the family-specific wrapper."""
     mm = container.model_manager()
     with mm.acquire(slot="upscale", model_id=family, variant="default") as runtime:
-        # runtime is the family wrapper; class-name contains family token
+        # Torch wrappers encode the family in the class name; the shared
+        # NcnnUpscaleWrapper (realesrgan/waifu2x) encodes it in `.family` instead.
         cls_name = runtime.__class__.__name__.lower()
         token = family.replace("-", "").replace("_", "")
-        assert token in cls_name or token[:6] in cls_name, (
+        assert token in cls_name or token[:6] in cls_name or getattr(runtime, "family", None) == family, (
             f"upscale dispatcher returned {runtime.__class__.__name__} for family {family!r}"
         )
 

@@ -91,11 +91,11 @@ class ImageUpscaleService:
             if upscaler is None:
                 raise ValueError(f"Unknown upscale family: {upscale_family}. Available: {list(self._upscalers)}")
 
-            # Query the model's native scale
-            from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PTH
-            native_scale = MODELS_REGISTRY.get(FORMAT_PTH, {}).get(upscale_family, {}).get(
-                "variants", {}
-            ).get(upscale_variant, {}).get("scale", 4)
+            # Query the model's native scale, format-aware: realesrgan/waifu2x are
+            # NCNN, swinir/bsrgan/real-cugan are still PTH — get_model_config
+            # resolves the right tree (NCNN before PTH) and merges the variant spec.
+            native_cfg = self._model_manager.get_model_config(upscale_family, upscale_variant)
+            native_scale = (native_cfg or {}).get("scale", 4)
 
             # TODO(audit-a10-upscale): deferred migration; extract_frames semantics diverge from process_gif_frames
             # because upscale needs per-frame progress_start/progress_end bounds for sub-frame reporting,

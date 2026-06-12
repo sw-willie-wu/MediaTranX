@@ -58,7 +58,9 @@ def _make_pipe_factory(frame_count=3):
     return _factory
 
 
-FAKE_REGISTRY = {"PTH": {"realesrgan": {"variants": {
+# realesrgan is now FORMAT_NCNN (Phase-1 de-torch). x2plus has no ncnn port, but
+# the fake registry only needs scale values to exercise the frame-loop mechanics.
+FAKE_REGISTRY = {"NCNN": {"realesrgan": {"variants": {
     "x4plus": {"scale": 4},
     "x2plus": {"scale": 2},
 }}}}

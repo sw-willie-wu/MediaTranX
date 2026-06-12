@@ -30,16 +30,17 @@ const outputFormat = ref('mp4')
 const videoCodec = ref('h264')
 const showAdvanced = ref(false)
 
-const variantOptions = computed(() => {
-  const allModels = [...modelStore.forPanel(modelStore.byCategory('upscale')), ...modelStore.forPanel(modelStore.byCategory('video_enhance'))]
-  return allModels
-    .filter(m => m.family === 'realesrgan')
-    .map(m => ({
-      value: m.variant,
-      label: m.label,
-      badge: (m.downloaded ? 'ok' : 'err') as 'ok' | 'err',
-    }))
-})
+const realesrganModels = computed(() =>
+  [...modelStore.forPanel(modelStore.byCategory('upscale')),
+   ...modelStore.forPanel(modelStore.byCategory('video_enhance'))]
+    .filter(m => m.family === 'realesrgan'))
+
+const variantOptions = computed(() =>
+  realesrganModels.value.map(m => ({
+    value: m.variant,
+    label: m.label,
+    badge: (m.downloaded ? 'ok' : 'err') as 'ok' | 'err',
+  })))
 
 const formatOptions = computed(() => [
   { value: 'mp4', label: 'MP4' },
@@ -55,7 +56,12 @@ const codecOptions = computed(() => [
   { value: 'av1', label: 'AV1' },
 ])
 
-const scale = computed(() => variant.value.includes('x2') ? 2 : 4)
+// native scale comes from the model's max_scale (animevideov3 splits into x2/x3/x4,
+// so the old `includes('x2')?2:4` heuristic mis-scaled x3). Fall back to it only
+// if the model list hasn't loaded yet.
+const scale = computed(() =>
+  realesrganModels.value.find(m => m.variant === variant.value)?.max_scale
+    ?? (variant.value.includes('x2') ? 2 : 4))
 
 const outputResolution = computed(() => {
   if (!props.mediaInfo?.width || !props.mediaInfo?.height) return ''

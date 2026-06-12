@@ -60,6 +60,11 @@ class TestParseModelId:
 def _build(tmp_path, face_restorers=None):
     fs = make_file_service_mock(tmp_path)
     mm = make_model_manager_mock()
+    # native scale now comes from model_manager.get_model_config (format-aware),
+    # not a direct MODELS_REGISTRY read — resolve it from the fake tree.
+    mm.get_model_config.side_effect = lambda fam, var=None: (
+        FAKE_REGISTRY["PTH"].get(fam, {}).get("variants", {}).get(var)
+    )
     upscaler = MagicMock()
     upscaler.enhance = MagicMock(return_value=Image.new("RGB", (256, 256), (200, 200, 200)))
     upscalers = {"realesrgan": upscaler, "real-cugan": upscaler}
