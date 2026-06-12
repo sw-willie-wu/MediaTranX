@@ -50,6 +50,8 @@ htmlcov/
 
 # Build artifacts
 src/backend/static/
+ncnn-models/
+backend/ncnn-models/
 
 # Binaries
 backend/bin/
