@@ -73,7 +73,13 @@ def handle_model_download(params: dict, progress_callback: Callable[[float, str]
         _download_soundfont(progress_callback)
 
     else:
-        _download_pth_model(item_id, progress_callback)
+        # SR families re-hosted as ncnn (.param/.bin pairs) route here FIRST via
+        # longest-prefix family match; everything else is a PTH model.
+        ncnn_match = _match_ncnn_family(item_id)
+        if ncnn_match:
+            _download_ncnn(ncnn_match[0], ncnn_match[1], progress_callback)
+        else:
+            _download_pth_model(item_id, progress_callback)
 
     progress_callback(1.0, "task.progress.download_complete")
     return {"status": "ok", "id": item_id}
@@ -144,6 +150,59 @@ def _stream_download(
 
 
 # --- Format-specific downloaders ---
+
+def _match_ncnn_family(item_id: str):
+    """Longest-prefix family match against the FORMAT_NCNN tree so a multi-hyphen
+    id like `real-cugan-up2x-conservative` resolves to family `real-cugan` (not
+    `real`). Mirrors the PTH idiom in _download_pth_model. Returns (family,
+    variant) or None.
+    """
+    from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN
+
+    ncnn_models = MODELS_REGISTRY.get(FORMAT_NCNN, {})
+    matched = [
+        (family_name, item_id[len(family_name) + 1:])
+        for family_name in ncnn_models
+        if item_id.startswith(family_name + "-")
+    ]
+    if not matched:
+        return None
+    return max(matched, key=lambda x: len(x[0]))
+
+
+def _download_ncnn(family: str, variant: str, progress_callback: Callable[[float, str], None]) -> None:
+    """Download an ncnn-vulkan SR model's .param+.bin pair from our re-host
+    release (ncnn-models-v1) into models/<slot>/. Skips files already on disk
+    (same skip-if-exists semantics as _download_demucs / _download_rife; the PTH
+    path has no skip, so do not cite it).
+    """
+    from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN, _NCNN_BASE_URL
+
+    family_spec = MODELS_REGISTRY.get(FORMAT_NCNN, {}).get(family)
+    if not family_spec:
+        raise ValueError(f"Unknown ncnn model family: {family}")
+    variant_spec = family_spec.get("variants", {}).get(variant)
+    if not variant_spec:
+        raise ValueError(f"Unknown ncnn model variant: {family}-{variant}")
+
+    slot = family_spec.get("slot", "")
+    if not slot:
+        raise ValueError(f"ncnn model {family} missing slot configuration")
+
+    target_dir = _models_dir(slot)
+    files = variant_spec["files"]
+    n = len(files)
+    span_lo, span_hi = 0.1, 0.95
+    for i, fname in enumerate(files):
+        target_path = target_dir / fname
+        if target_path.exists():
+            continue                       # skip-if-exists (no byte check)
+        base = span_lo + (span_hi - span_lo) * (i / n)
+        end = span_lo + (span_hi - span_lo) * ((i + 1) / n)
+        progress_callback(base, f"task.progress.downloading_variant|{family}|{variant}")
+        url = f"{_NCNN_BASE_URL}/{fname}"
+        _download_from_url(url, target_path, progress_callback, base_progress=base, end_progress=end)
+
 
 def _download_whisper(size: str, progress_callback: Callable[[float, str], None], snapshot_download) -> None:
     from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PKG

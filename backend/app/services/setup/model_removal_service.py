@@ -16,6 +16,25 @@ def _models_dir(category: str = "") -> Path:
     return d / category if category else d
 
 
+def _match_ncnn_family(item_id: str):
+    """Longest-prefix family match against the FORMAT_NCNN tree so a multi-hyphen
+    id like `real-cugan-up2x-conservative` resolves to family `real-cugan` (not
+    `real`) — the PTH else-branch's split('-', 1) below gets that wrong. Returns
+    (family, variant) or None.
+    """
+    from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN
+
+    ncnn_models = MODELS_REGISTRY.get(FORMAT_NCNN, {})
+    matched = [
+        (family_name, item_id[len(family_name) + 1:])
+        for family_name in ncnn_models
+        if item_id.startswith(family_name + "-")
+    ]
+    if not matched:
+        return None
+    return max(matched, key=lambda x: len(x[0]))
+
+
 def remove_model(item_id: str, model_manager) -> None:
     """Delete downloaded model/tool files."""
     from app.adapters.ai.registry import SOUNDFONT_ID
@@ -88,9 +107,28 @@ def remove_model(item_id: str, model_manager) -> None:
             logger.info("Removed MusyngKite soundfont")
 
     else:
-        # PTH models (upscale / face_restore): {family}-{variant}
-        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PTH
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN, FORMAT_PTH
 
+        # SR families re-hosted as ncnn (.param/.bin pairs) are matched FIRST via
+        # longest-prefix (handles the multi-hyphen real-cugan id). Delete the
+        # pair and the slot dir if it is left empty.
+        ncnn_match = _match_ncnn_family(item_id)
+        if ncnn_match:
+            family, variant = ncnn_match
+            family_spec = MODELS_REGISTRY[FORMAT_NCNN][family]
+            variant_spec = family_spec.get("variants", {}).get(variant)
+            if variant_spec:
+                slot_dir = _models_dir(family_spec.get("slot", ""))
+                for fname in variant_spec.get("files", []):
+                    p = slot_dir / fname
+                    if p.exists():
+                        p.unlink()
+                        logger.info(f"Removed ncnn file: {fname}")
+                if slot_dir.exists() and not any(slot_dir.iterdir()):
+                    slot_dir.rmdir()
+            return
+
+        # PTH models (upscale / face_restore): {family}-{variant}
         # Decompose ID: family-variant
         if '-' in item_id:
             family, variant = item_id.split('-', 1)
