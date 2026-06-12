@@ -37,6 +37,12 @@ SOUNDFONT_VERSION_TAG = "1"  # 對齊 electron/setup.js 既有 .version，舊使
 SOUNDFONT_BASE_URL = "https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/gh-pages/MusyngKite"
 SOUNDFONT_DRUM_BASE_URL = "https://surikov.github.io/webaudiofontdata/sound"
 
+# ncnn-vulkan SR model files (.param/.bin) are re-hosted on our own release tag
+# (D-P1-2: upstream realesrgan zip ships no LICENSE; bilibili real-cugan weights
+# are unlicensed — R6). The download service builds each file's URL as
+# f"{_NCNN_BASE_URL}/{filename}". See plan Task 1 (packager → ncnn-models-v1).
+_NCNN_BASE_URL = "https://github.com/sw-willie-wu/MediaTranX/releases/download/ncnn-models-v1"
+
 # 128 General MIDI instruments (移植自 electron/setup.js GM_INSTRUMENTS)
 GM_INSTRUMENTS = [
     "acoustic_grand_piano", "bright_acoustic_piano", "electric_grand_piano", "honkytonk_piano",
@@ -904,6 +910,131 @@ MODELS_REGISTRY = {
                 # cunet-art-4x and swin-unet variants removed:
                 # nunif's 4x models use SwinUNet architecture (not CUNet),
                 # which is not supported by Spandrel.
+            },
+        },
+    },
+
+    # ───────────────────────────────────────────────────────
+    # NCNN format: ncnn-vulkan CLI sidecar SR models (Phase 1).
+    # Family slot/label/description/category are copied VERBATIM from the
+    # FORMAT_PTH originals so the UI text does not drift during the T3→T11
+    # transition window (Task 11 removes the shadowed PTH trio). Per-file URL
+    # is built by the download service from _NCNN_BASE_URL + filename (D-P1-2).
+    # Real-ESRGAN x2plus is DROPPED (no ncnn model); the single PTH
+    # animevideov3 (4x) splits into three explicit ncnn variants (x2/x3/x4).
+    # ───────────────────────────────────────────────────────
+    FORMAT_NCNN: {
+        # ▸ Real-ESRGAN series (exe: realesrgan-ncnn-vulkan; -n <name> -s <scale>)
+        "realesrgan": {
+            "slot": "realesrgan",
+            "label": "Real-ESRGAN",
+            "category": "upscale",
+            "description": "models.realesrgan",
+            "variants": {
+                "x4plus": {
+                    "label": "4x",
+                    "exe_tool": "realesrgan",
+                    "cli_model_name": "realesrgan-x4plus",
+                    "files": ["realesrgan-x4plus.param", "realesrgan-x4plus.bin"],
+                    "size_mb": 32,
+                    "vram_mb": 2000,
+                    "scale": 4,
+                },
+                "x4plus-anime": {
+                    "label": "4x - anime",
+                    "exe_tool": "realesrgan",
+                    "cli_model_name": "realesrgan-x4plus-anime",
+                    "files": ["realesrgan-x4plus-anime.param", "realesrgan-x4plus-anime.bin"],
+                    "size_mb": 9,
+                    "vram_mb": 2000,
+                    "scale": 4,
+                },
+                "animevideov3-x2": {
+                    "label": "2x - video",
+                    "exe_tool": "realesrgan",
+                    "cli_model_name": "realesr-animevideov3-x2",
+                    "files": ["realesr-animevideov3-x2.param", "realesr-animevideov3-x2.bin"],
+                    "size_mb": 2,
+                    "vram_mb": 500,
+                    "scale": 2,
+                    "subcategory": "video_enhance",
+                },
+                "animevideov3-x3": {
+                    "label": "3x - video",
+                    "exe_tool": "realesrgan",
+                    "cli_model_name": "realesr-animevideov3-x3",
+                    "files": ["realesr-animevideov3-x3.param", "realesr-animevideov3-x3.bin"],
+                    "size_mb": 2,
+                    "vram_mb": 500,
+                    "scale": 3,
+                    "subcategory": "video_enhance",
+                },
+                "animevideov3-x4": {
+                    "label": "4x - video",
+                    "exe_tool": "realesrgan",
+                    "cli_model_name": "realesr-animevideov3-x4",
+                    "files": ["realesr-animevideov3-x4.param", "realesr-animevideov3-x4.bin"],
+                    "size_mb": 2,
+                    "vram_mb": 500,
+                    "scale": 4,
+                    "subcategory": "video_enhance",
+                },
+            },
+        },
+
+        # ▸ Waifu2x series (exe: waifu2x-ncnn-vulkan; -n -1 -s 2 → scale2.0x_model)
+        "waifu2x": {
+            "slot": "waifu2x",
+            "label": "Waifu2x",
+            "category": "upscale",
+            "description": "models.waifu2x",
+            "variants": {
+                "cunet-art-2x": {
+                    "label": "2x - cunet",
+                    "exe_tool": "waifu2x",
+                    "cli_noise": -1,
+                    "files": ["scale2.0x_model.param", "scale2.0x_model.bin"],
+                    "size_mb": 3,
+                    "vram_mb": 1200,
+                    "scale": 2,
+                },
+            },
+        },
+
+        # ▸ Real-CUGAN series (exe: realcugan-ncnn-vulkan; -n -1 -s {2,3,4} → up{s}x-conservative)
+        "real-cugan": {
+            "slot": "real-cugan",
+            "label": "Real-CUGAN",
+            "category": "upscale",
+            "description": "models.real_cugan",
+            "variants": {
+                "up2x-conservative": {
+                    "label": "2x - conservative",
+                    "exe_tool": "realcugan",
+                    "cli_noise": -1,
+                    "files": ["up2x-conservative.param", "up2x-conservative.bin"],
+                    "size_mb": 3,
+                    "vram_mb": 1200,
+                    "scale": 2,
+                },
+                "up3x-conservative": {
+                    "label": "3x - conservative",
+                    "exe_tool": "realcugan",
+                    "cli_noise": -1,
+                    "files": ["up3x-conservative.param", "up3x-conservative.bin"],
+                    "size_mb": 3,
+                    "vram_mb": 1500,
+                    "scale": 3,
+                },
+                "up4x-conservative": {
+                    "label": "4x - conservative",
+                    "exe_tool": "realcugan",
+                    "cli_noise": -1,
+                    "files": ["up4x-conservative.param", "up4x-conservative.bin"],
+                    "size_mb": 3,
+                    "vram_mb": 1800,
+                    "scale": 4,
+                },
             },
         },
     },
