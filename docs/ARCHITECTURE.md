@@ -122,7 +122,8 @@ graph TB
         FORMAT_PKG["FORMAT_PKG<br/>Whisper, Demucs"]
         FORMAT_GGUF["FORMAT_GGUF<br/>LLM: Qwen3/Gemma; VLM: Qwen3-VL/InternVL (mmproj)"]
         FORMAT_PTH["FORMAT_PTH<br/>Real-ESRGAN, GFPGAN, ..."]
-        FORMAT_ONNX["FORMAT_ONNX<br/>(reserved, DirectML)"]
+        FORMAT_ONNX["FORMAT_ONNX<br/>in-process onnxruntime (de-torch target)"]
+        FORMAT_NCNN["FORMAT_NCNN<br/>ncnn-vulkan CLI sidecars (de-torch target)"]
     end
 
     subgraph Manager["ModelManager (adapters/ai/model_manager.py)"]
