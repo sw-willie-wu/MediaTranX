@@ -56,11 +56,12 @@ class TestListAll:
 
 
 class TestPthEnumeration:
-    def test_includes_realesrgan(self, svc):
-        result = svc.list_all()
-        ids = [m["id"] for m in result["models"]]
-        # Real-ESRGAN has variants like x4plus / x2plus
-        assert any(i.startswith("realesrgan-") for i in ids)
+    def test_includes_bsrgan(self, svc):
+        # bsrgan is a PTH upscaler that stays torch through Phase 1 (Real-ESRGAN
+        # moved to NCNN; see TestPthShadowGuard). Pins that the PTH enumerator
+        # still yields upscaler rows.
+        ids = [m["id"] for m in svc.list_all()["models"]]
+        assert any(i.startswith("bsrgan-") for i in ids)
 
     def test_includes_gfpgan(self, svc):
         ids = [m["id"] for m in svc.list_all()["models"]]
@@ -102,7 +103,7 @@ class TestDownloadStatus:
         result = svc.list_all()
         # At least one PTH/GGUF model should be reported not-downloaded
         non_dl = [m for m in result["models"]
-                  if m["family"] in ("realesrgan", "qwen3", "qwen3vl")
+                  if m["family"] in ("bsrgan", "qwen3", "qwen3vl")
                   and not m["downloaded"]]
         assert non_dl, "expected at least one not-downloaded PTH/GGUF model"
 
@@ -114,6 +115,19 @@ class TestDownloadStatus:
         mm.get_model_path.return_value = fake_file
         svc = ModelMetadataService(model_manager=mm)
         models = svc.list_all()["models"]
-        # PTH families take the get_model_path path; all should show downloaded=True
-        pth = [m for m in models if m["family"] == "realesrgan"]
+        # PTH families take the get_model_path path; all should show downloaded=True.
+        # (realesrgan moved to NCNN — use a surviving PTH family.)
+        pth = [m for m in models if m["family"] == "bsrgan"]
         assert pth and all(m["downloaded"] for m in pth)
+
+
+class TestPthShadowGuard:
+    """During the NCNN transition the migrated SR families resolve as NCNN, so
+    the PTH enumerator must not also surface them — a duplicate PTH row would
+    carry a lying `downloaded` flag. Task 11 deletes the shadowed PTH trio."""
+
+    def test_pth_enumeration_omits_ncnn_migrated_families(self, svc):
+        fams = {m["family"] for m in svc._enumerate_pth_models()}
+        assert not (fams & {"realesrgan", "waifu2x", "real-cugan"})
+        # non-migrated PTH upscalers stay enumerated
+        assert {"bsrgan", "swinir"} <= fams

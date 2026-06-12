@@ -135,13 +135,21 @@ class ModelMetadataService:
 
     def _enumerate_pth_models(self) -> list[dict]:
         """Enumerate PyTorch models (super-resolution, face restoration, segmentation)."""
-        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PTH
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_NCNN, FORMAT_PTH
 
         manager = self._model_manager
         items = []
         pth_models = MODELS_REGISTRY.get(FORMAT_PTH, {})
+        ncnn_families = MODELS_REGISTRY.get(FORMAT_NCNN, {})
 
         for model_family, config in pth_models.items():
+            # PTH-shadow guard: families migrated to NCNN resolve as NCNN (the
+            # manager search order puts NCNN before PTH), so their PTH rows must
+            # not also surface here — a duplicate row would carry a lying
+            # `downloaded` flag during the T3→T10 window. Task 5 adds the NCNN
+            # enumerator that replaces these rows; Task 11 deletes the PTH trio.
+            if model_family in ncnn_families:
+                continue
             family_label = config.get("label", model_family)
             family_category = config.get("category", "upscale")
             family_desc = config.get("description", "")

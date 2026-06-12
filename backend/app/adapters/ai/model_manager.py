@@ -17,6 +17,7 @@ from .registry import (
     MODELS_REGISTRY,
     FORMAT_PKG,
     FORMAT_GGUF,
+    FORMAT_NCNN,
     FORMAT_PTH,
 )
 
@@ -239,9 +240,12 @@ class ModelManager:
         Query the format a model belongs to.
 
         Returns:
-            FORMAT_PKG / FORMAT_GGUF / FORMAT_PTH / None
+            FORMAT_PKG / FORMAT_GGUF / FORMAT_NCNN / FORMAT_PTH / None
         """
-        for fmt in [FORMAT_PKG, FORMAT_GGUF, FORMAT_PTH]:
+        # NCNN before PTH: during the Phase-1 transition the migrated SR families
+        # (realesrgan/waifu2x/real-cugan) exist in BOTH trees and NCNN must win;
+        # Task 11 removes the shadowed PTH trio.
+        for fmt in [FORMAT_PKG, FORMAT_GGUF, FORMAT_NCNN, FORMAT_PTH]:
             if model_id in MODELS_REGISTRY.get(fmt, {}):
                 return fmt
         return None
@@ -293,8 +297,18 @@ class ModelManager:
             # PTH: variants -> variant
             return family["variants"].get(variant) if variant else None
 
+        elif fmt == FORMAT_NCNN:
+            # NCNN: variant spec merged with the family `slot` (the CLI wrapper
+            # needs the slot to locate models/<slot>/; mirror the PTH shape).
+            if not variant:
+                return None
+            variant_spec = family["variants"].get(variant)
+            if not variant_spec:
+                return None
+            return {**variant_spec, "slot": family.get("slot", "")}
+
         return None
-    
+
     def get_vram_requirement(self, model_id: str, variant: Optional[str] = None) -> int:
         """
         Get model VRAM requirement (MB).
@@ -362,6 +376,20 @@ class ModelManager:
                 return None
             target = base_dir / variant_spec["filename"]
             return target if target.exists() else None
+
+        # NCNN format (.param + .bin pair under models/<slot>/). Same no-raise /
+        # no-download contract as PTH: all files present → return the .param Path
+        # (the wrapper derives model_dir = param.parent); any missing → None.
+        elif fmt == FORMAT_NCNN:
+            if not variant:
+                variant = list(family["variants"].keys())[0]
+            variant_spec = family["variants"].get(variant)
+            if not variant_spec or "files" not in variant_spec:
+                return None
+            paths = [base_dir / f for f in variant_spec["files"]]
+            if not all(p.exists() for p in paths):
+                return None
+            return next((p for p in paths if p.suffix == ".param"), None)
 
         return None
 
