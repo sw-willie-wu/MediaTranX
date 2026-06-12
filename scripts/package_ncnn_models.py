@@ -12,7 +12,9 @@ Real-CUGAN is intentionally EXCLUDED: its bilibili/ailab weights carry NO
 upstream license, so re-hosting them was dropped in the R6 review (Real-ESRGAN
 -anime covers the same anime-SR use case). Only clean-licensed weights ship here.
 Writes ./ncnn-models/ + manifest.json (per-file byte sizes, for registry
-size_mb). Upload EVERYTHING to release tag `ncnn-models-v1`.
+size_mb). Upload EVERYTHING to the shared `vendored-deps` GitHub release on
+sw-willie-wu/MediaTranX (same release that already hosts the demucs tarball —
+we reuse it instead of minting a per-asset tag).
 """
 from __future__ import annotations
 
@@ -83,7 +85,7 @@ def main() -> int:
     print(f"\nWrote {len(manifest)} model files + weights licenses to {out}/.")
     print("R6: realesrgan weights = BSD-3 (bundled), waifu2x = MIT (bundled). "
           "Real-CUGAN dropped (unlicensed bilibili weights) — clean-licensed only.")
-    print("Upload ALL contents to release tag 'ncnn-models-v1' of sw-willie-wu/MediaTranX.")
+    print("Upload ALL contents to the shared 'vendored-deps' release of sw-willie-wu/MediaTranX.")
     return 0
 
 

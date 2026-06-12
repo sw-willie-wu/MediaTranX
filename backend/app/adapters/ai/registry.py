@@ -44,7 +44,7 @@ SOUNDFONT_DRUM_BASE_URL = "https://surikov.github.io/webaudiofontdata/sound"
 # Real-CUGAN was DROPPED from the ncnn migration (R6: bilibili/ailab weights carry
 # no license — Real-ESRGAN-anime covers the same use case; see PROGRESS doc). The
 # download service builds each file's URL as f"{_NCNN_BASE_URL}/{filename}".
-_NCNN_BASE_URL = "https://github.com/sw-willie-wu/MediaTranX/releases/download/ncnn-models-v1"
+_NCNN_BASE_URL = "https://github.com/sw-willie-wu/MediaTranX/releases/download/vendored-deps"
 
 # 128 General MIDI instruments (移植自 electron/setup.js GM_INSTRUMENTS)
 GM_INSTRUMENTS = [

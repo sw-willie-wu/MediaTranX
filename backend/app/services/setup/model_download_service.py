@@ -174,7 +174,8 @@ def _match_ncnn_family(item_id: str):
 
 def _download_ncnn(family: str, variant: str, progress_callback: Callable[[float, str], None]) -> None:
     """Download an ncnn-vulkan SR model's .param+.bin pair from our re-host
-    release (ncnn-models-v1) into models/<slot>/. Skips files already on disk
+    release (the shared `vendored-deps` tag) into models/<slot>/. Skips files
+    already on disk
     (same skip-if-exists semantics as _download_demucs / _download_rife; the PTH
     path has no skip, so do not cite it).
     """
