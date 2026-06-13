@@ -81,7 +81,9 @@ backend/app/
 │   ├── setup/, tasks/, agent/                # agent/ = AG-UI run + sessions
 ├── adapters/                        # External-system adapters (需跨層協調)
 │   ├── device.py                    # GPU/CPU detection
-│   ├── binary/                      # Binary subprocess wrappers
+│   ├── binary/                      # Binary subprocess adapters (thin, model-agnostic)
+│   │   ├── sidecar.py               # CliSidecar: safe one-shot subprocess engine (pump/orphan-kill/crash-classify)
+│   │   ├── ncnn.py                  # NcnnVulkan: ncnn-vulkan upscaler exe adapter (-i/-o/-m/-s/-f/-g, temp/dir round-trip)
 │   │   ├── ffmpeg.py, llama_server.py
 │   │   └── ytdlp.py                 # yt-dlp video download
 │   ├── security/                    # secret_cipher.py (API key at-rest encryption)
@@ -94,7 +96,8 @@ backend/app/
 │       └── wrapper/                 # AI model lifecycle wrapper family
 │           ├── base.py              # BaseWrapper / PackageWrapper / PthWrapper
 │           ├── whisper.py, demucs.py, basic_pitch.py, wav2vec2.py
-│           ├── bsrgan.py, realesrgan.py, swinir.py, waifu2x.py, real_cugan.py
+│           ├── realesrgan.py, waifu2x.py    # ncnn-vulkan SR (BaseWrapper → binary/ncnn) [Phase 1 de-torch]
+│           ├── bsrgan.py, swinir.py, real_cugan.py   # torch PTH SR (de-torch pending)
 │           ├── gfpgan.py            # face restoration (only restorer; CodeFormer removed)
 │           ├── mobilesam.py, rife.py
 │           └── llm.py               # LlmWrapper (wraps binary/llama_server)
@@ -135,13 +138,32 @@ graph TB
         PKG["PackageWrapper"]
         PTH["PthWrapper<br/>+ tile_inference"]
         LLM["LlmWrapper<br/>→ binary/llama_server"]
+        NCNN["RealESRGAN / Waifu2x Wrapper<br/>(BaseWrapper subclass:<br/>lifecycle + CLI flags/progress)"]
+    end
+
+    subgraph Binary["Binary adapters (adapters/binary/)"]
+        NcnnAd["NcnnVulkan<br/>(ncnn-vulkan exe adapter,<br/>model-agnostic)"]
+        Sidecar["CliSidecar<br/>(one-shot subprocess engine)"]
     end
 
     FORMAT_PKG --> PKG
     FORMAT_PTH --> PTH
     FORMAT_GGUF --> LLM
+    FORMAT_NCNN --> NCNN
+    NCNN -->|"delegates exe run"| NcnnAd
+    NcnnAd --> Sidecar
     Manager -->|"acquire/evict"| Wrappers
 ```
+
+**Binary-adapter layering** (mirrors `ffmpeg.py` / `ytdlp.py`): a model wrapper owns
+the model lifecycle (slot, file validation, `acquire`) plus its CLI knowledge
+(model-selecting flags, progress parser) and delegates the actual exe run to a thin,
+model-agnostic binary adapter. `NcnnVulkan` resolves the exe under
+`bin/ncnn/<tool>/`, builds the `-i/-o/-m/-s/-f/-g` arg skeleton, handles the
+temp-PNG (single image) / directory-chunk (frame batch) round-trip and output check;
+the safe one-shot subprocess (deadlock-free pump, Job-Object orphan-kill, NTSTATUS
+crash classification, `-g -1` CPU fallback) lives in `CliSidecar`, reused by future
+Vulkan sidecars (RIFE Phase 2, demucs-rs Phase 6).
 
 ### Remote API Providers
 

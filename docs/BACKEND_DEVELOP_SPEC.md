@@ -20,7 +20,9 @@ app/
 │       └── setup/, tasks/, agent/            # agent/ = AG-UI run + sessions
 ├── adapters/                           # 外部系統 adapter（需跨層協調）
 │   ├── device.py                       # 硬體/OS 查詢
-│   ├── binary/                         # binary subprocess wrapper
+│   ├── binary/                         # binary subprocess adapter（薄、model-agnostic）
+│   │   ├── sidecar.py                  # CliSidecar：安全一次性 subprocess 引擎（pump/orphan-kill/crash 分類）
+│   │   ├── ncnn.py                     # NcnnVulkan：ncnn-vulkan upscaler exe adapter（-i/-o/-m/-s/-f/-g）
 │   │   ├── ffmpeg.py, llama_server.py
 │   │   └── ytdlp.py                    # yt-dlp 影片下載
 │   ├── security/                       # secret_cipher.py（API key at-rest 加密）
@@ -35,7 +37,8 @@ app/
 │       └── wrapper/                    # AI model lifecycle wrapper 家族
 │           ├── base.py                 # BaseWrapper / PackageWrapper / PthWrapper
 │           ├── whisper.py, demucs.py, basic_pitch.py, wav2vec2.py
-│           ├── bsrgan.py, realesrgan.py, swinir.py, waifu2x.py, real_cugan.py
+│           ├── realesrgan.py, waifu2x.py   # ncnn-vulkan SR（BaseWrapper → binary/ncnn）[Phase 1 de-torch]
+│           ├── bsrgan.py, swinir.py, real_cugan.py   # torch PTH SR（de-torch 待遷移）
 │           ├── gfpgan.py               # 唯一 face restorer（CodeFormer 已移除）
 │           ├── mobilesam.py, rife.py
 │           └── llm.py                  # 包 binary/llama_server
@@ -130,7 +133,7 @@ services/video/summary_service/
 | 塊 | 內容 |
 |---|---|
 | `device.py` | 硬體查詢（CUDA 偵測、compute type 選擇） |
-| `binary/` | binary subprocess wrapper：`ffmpeg.py`、`llama_server.py` |
+| `binary/` | binary subprocess adapter（薄、model-agnostic）：`ffmpeg.py`、`ytdlp.py`、`llama_server.py`、`sidecar.py`（CliSidecar 一次性 subprocess 引擎）、`ncnn.py`（NcnnVulkan upscaler exe adapter） |
 | `ai/` | AI domain adapter（見下） |
 
 **`adapters/ai/` 內部**：
@@ -155,6 +158,11 @@ services/video/summary_service/
 - `binary/llama_server.py` = 純 binary adapter（subprocess + HTTP），不知道 model registry / mmproj / VRAM slot
 - `ai/wrapper/llm.py`（`LlmWrapper`）= AI-domain lifecycle；繼承 wrapper base class，組合 `LlamaServer` 做為實作細節，知道 registry + load/unload 語義
 - 類比 ffmpeg：也是 binary subprocess wrapper，但不綁特定 domain，獨立在 `binary/`
+
+**ncnn-vulkan SR 為什麼也拆成 `binary/ncnn.py` + `binary/sidecar.py` + per-model wrapper？**（Phase 1 de-torch，比照 llama_server 分層）
+- `binary/sidecar.py`（`CliSidecar`）= 通用安全一次性 subprocess 引擎（deadlock-free pump、Job-Object orphan-kill、NTSTATUS crash 分類），不知 domain；RIFE（Phase 2）、demucs-rs（Phase 6）會重用。
+- `binary/ncnn.py`（`NcnnVulkan`）= 薄 binary adapter（ffmpeg.py 同類）：exe 路徑解析（`bin/ncnn/<tool>/`）+ `-i/-o/-m/-s/-f/-g` arg 骨架 + temp-PNG（單圖）/ directory-chunk（影格批）round-trip + output check + `-g -1` CPU fallback，經 CliSidecar 執行；**通用、caller 傳 flags + progress parser、不知特定 model**。
+- `ai/wrapper/realesrgan.py` / `waifu2x.py` = 各自 `BaseWrapper` 子類（一模型一 wrapper）：model lifecycle（slot / `_load_impl` 檔案驗證 / `acquire`）+ 該 CLI 的 model 知識（`_model_flags` / `_progress` parser）+ 薄 `enhance`/`enhance_dir` 委派 `self._ncnn`。`enhance` 會 `acquire` 故不是純 util、也不在 BaseWrapper（只管 lifecycle）；純轉換留在 binary 層。lifecycle/enhance 殼約 25 行在兩 model 重複＝無中間 base 的代價，刻意接受。
 
 **Remote Provider 介面**（`adapters/ai/remote/`）：
 - 每個 Provider 實作 `connect()` / `list_models()` / `chat()`
@@ -981,6 +989,7 @@ Adapter 方法失敗時直接拋異常，由上層 Service/TaskManager 處理。
    - Image PTH 模型：`PthWrapper`（torch state_dict 載入，VRAM-aware tile inference via `tile_inference.py`）
    - Python 套件模型：`PackageWrapper`（第三方套件自帶載入，如 faster-whisper / demucs）
    - LLM (GGUF)：繼承合適基類；包 `adapters/binary/llama_server.py`
+   - ncnn-vulkan CLI 模型（SR 等）：`BaseWrapper` 子類，組合 `adapters/binary/ncnn.py`（`NcnnVulkan`）；wrapper 提供 `_model_flags`/`_progress`，exe 執行委派 binary 層（見 §1.2.5 ncnn 分層）
 3. [ ] 在 `container.py` 加 `_lazy()` Singleton provider；於 `init_container()` 呼叫 `mm.register_runtime_provider(slot, provider)`（非 dispatcher slot）或 `mm.register_dispatcher(slot, dispatcher)`（如 upscale/face_restore）
 4. [ ] 在 Service 的 `_execute` 方法中透過 `mm.acquire(slot, model_id, variant)` 呼叫
 
