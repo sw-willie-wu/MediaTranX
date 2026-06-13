@@ -78,7 +78,7 @@ def _build(tmp_path):
 
 BASE_PARAMS = {
     "file_id": "f",
-    "language": None,
+    "source_language": None,
     "model_size": "medium",
     "output_format": "srt",
     "target_language": None,
@@ -128,13 +128,13 @@ class TestSubmit:
             whisper=MagicMock(),
         )
         tid = await svc.submit_subtitle_generate(
-            file_id="fid", language="en", model_size="large",
+            file_id="fid", source_language="en", model_size="large",
             output_format="srt", target_language="zh-TW",
         )
         assert tid == "tid"
         args, _ = tm.submit.call_args
         assert args[0] == TASK_TYPE_VIDEO_SUBTITLE_GENERATE
-        assert args[1]["language"] == "en"
+        assert args[1]["source_language"] == "en"
         assert args[1]["target_language"] == "zh-TW"
 
 

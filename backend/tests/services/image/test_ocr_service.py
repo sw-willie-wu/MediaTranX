@@ -100,21 +100,21 @@ async def test_submit_ocr_validates_file_and_submits(tmp_path):
         return "t1"
     tm.submit.side_effect = lambda *a, **k: _async_submit(*a, **k)
 
-    task_id = await svc.submit_ocr(file_id="fid", model_family="qwen3vl", size="4b", format="md")
+    task_id = await svc.submit_ocr(file_id="fid", model_family="qwen3vl", model_size="4b", output_format="md")
     assert task_id == "t1"
     fs.require_file.assert_called_once_with("fid")
     args, _ = tm.submit.call_args
     assert args[0] == TASK_TYPE_IMAGE_OCR
     assert args[1]["file_id"] == "fid"
     assert args[1]["model_family"] == "qwen3vl"
-    assert args[1]["format"] == "md"
+    assert args[1]["output_format"] == "md"
 
 
 def test_handle_task_raises_when_llama_not_ready(tmp_path):
     svc, *_ = _make_svc(tmp_path, llama_ready=False)
     with pytest.raises(RuntimeError, match="llama-server not installed"):
         svc._handle_task(
-            {"file_id": "fid", "model_family": "qwen3vl", "size": "4b", "format": "md"},
+            {"file_id": "fid", "model_family": "qwen3vl", "model_size": "4b", "output_format": "md"},
             lambda p, m: None,
         )
 
@@ -128,7 +128,7 @@ def test_handle_task_writes_output_and_emits_complete(tmp_path):
 
     with patch("app.pipeline.ocr.recognize_image_local", return_value="recognized text\n"):
         result = svc._handle_task(
-            {"file_id": "fid", "model_family": "qwen3vl", "size": "4b", "format": "md"},
+            {"file_id": "fid", "model_family": "qwen3vl", "model_size": "4b", "output_format": "md"},
             on_progress,
         )
 
@@ -146,7 +146,7 @@ def test_handle_task_substitutes_placeholder_when_empty(tmp_path):
     svc, fs, *_ = _make_svc(tmp_path)
     with patch("app.pipeline.ocr.recognize_image_local", return_value="   \n"):
         result = svc._handle_task(
-            {"file_id": "fid", "model_family": "qwen3vl", "size": "4b", "format": "md"},
+            {"file_id": "fid", "model_family": "qwen3vl", "model_size": "4b", "output_format": "md"},
             lambda p, m: None,
         )
     written = (fs.output_dir / "in_ocr.md").read_text(encoding="utf-8")
@@ -164,7 +164,7 @@ async def test_submit_ocr_remote_passes_provider_params(tmp_path):
 
     task_id = await svc.submit_ocr_remote(
         file_id="fid", provider="openai", conn_id=7,
-        remote_model="gpt-4o", format="txt",
+        remote_model="gpt-4o", output_format="txt",
     )
     assert task_id == "tr1"
     args, _ = tm.submit.call_args
@@ -172,7 +172,7 @@ async def test_submit_ocr_remote_passes_provider_params(tmp_path):
     assert args[1]["provider"] == "openai"
     assert args[1]["conn_id"] == 7
     assert args[1]["remote_model"] == "gpt-4o"
-    assert args[1]["format"] == "txt"
+    assert args[1]["output_format"] == "txt"
 
 
 def test_handle_remote_task_raises_when_provider_unavailable(tmp_path):
@@ -181,7 +181,7 @@ def test_handle_remote_task_raises_when_provider_unavailable(tmp_path):
     with pytest.raises(RuntimeError, match="Provider not available"):
         svc._handle_remote_task(
             {"file_id": "fid", "provider": "openai", "conn_id": 1,
-             "remote_model": "gpt-4o", "format": "md"},
+             "remote_model": "gpt-4o", "output_format": "md"},
             lambda p, m: None,
         )
 
@@ -200,7 +200,7 @@ def test_handle_remote_task_writes_output(tmp_path):
                return_value={"max_tokens": 4096, "temperature": 0.1}):
         result = svc._handle_remote_task(
             {"file_id": "fid", "provider": "openai", "conn_id": 1,
-             "remote_model": "gpt-4o", "format": "md"},
+             "remote_model": "gpt-4o", "output_format": "md"},
             lambda p, m: None,
         )
     assert result["char_count"] == len("remote-text")
@@ -221,7 +221,7 @@ def test_handle_remote_task_uses_streaming_session(tmp_path):
                return_value={"max_tokens": 4096, "temperature": 0.1}):
         svc._handle_remote_task(
             {"file_id": "fid", "provider": "openai", "conn_id": 1,
-             "remote_model": "gpt-4o", "format": "md"},
+             "remote_model": "gpt-4o", "output_format": "md"},
             lambda p, m: None,
         )
     _, kwargs = prov.chat.call_args

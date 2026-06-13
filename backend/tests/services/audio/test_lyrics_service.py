@@ -72,15 +72,15 @@ async def test_submit_lyrics_passes_params(tmp_path):
     async def _submit(*a, **k): return "tl"
     tm.submit.side_effect = lambda *a, **k: _submit(*a, **k)
     task_id = await svc.submit_lyrics(
-        file_id="fid", whisper_size="medium",
-        translate=True, target_lang="zh-TW",
+        file_id="fid", model_size="medium",
+        translate=True, target_language="zh-TW",
     )
     assert task_id == "tl"
     args, _ = tm.submit.call_args
     p = args[1]
-    assert p["whisper_size"] == "medium"
+    assert p["model_size"] == "medium"
     assert p["translate"] is True
-    assert p["target_lang"] == "zh-TW"
+    assert p["target_language"] == "zh-TW"
 
 
 def test_execute_no_translate_writes_single_lrc(tmp_path):
@@ -88,7 +88,7 @@ def test_execute_no_translate_writes_single_lrc(tmp_path):
     with patch("app.services.audio.lyrics_service.transcribe_audio_sync",
                return_value=_fake_transcribe_result()):
         result = svc._execute({
-            "file_id": "fid", "whisper_size": "medium",
+            "file_id": "fid", "model_size": "medium",
             "translate": False, "output_format": "lrc",
         }, lambda p, m: None)
     assert result["translated"] is False
@@ -108,8 +108,8 @@ def test_execute_translate_local_uses_chat_session(tmp_path):
          patch("app.pipeline.translate.translate_srt_auto",
                return_value=fake_translated) as tsa:
         result = svc._execute({
-            "file_id": "fid", "whisper_size": "medium",
-            "translate": True, "target_lang": "zh-TW",
+            "file_id": "fid", "model_size": "medium",
+            "translate": True, "target_language": "zh-TW",
             "translate_model_family": "gemma4", "translate_model_size": "4b",
             "translate_remote": False, "output_format": "lrc",
         }, lambda p, m: None)
@@ -131,8 +131,8 @@ def test_execute_translate_remote_uses_provider(tmp_path):
          patch("app.pipeline.translate.translate_srt_auto",
                return_value=fake_translated) as tsa:
         svc._execute({
-            "file_id": "fid", "whisper_size": "medium",
-            "translate": True, "target_lang": "zh-TW",
+            "file_id": "fid", "model_size": "medium",
+            "translate": True, "target_language": "zh-TW",
             "translate_remote": True, "translate_provider": "openai",
             "translate_conn_id": 1, "translate_remote_model": "gpt-4o",
             "output_format": "lrc",
@@ -151,8 +151,8 @@ def test_execute_translate_remote_raises_when_provider_unavailable(tmp_path):
                return_value=_fake_transcribe_result()):
         with pytest.raises(ValueError, match="No available openai connection"):
             svc._execute({
-                "file_id": "fid", "whisper_size": "medium",
-                "translate": True, "target_lang": "zh-TW",
+                "file_id": "fid", "model_size": "medium",
+                "translate": True, "target_language": "zh-TW",
                 "translate_remote": True, "translate_provider": "openai",
                 "translate_conn_id": 1, "translate_remote_model": "gpt-4o",
                 "output_format": "lrc",
@@ -169,7 +169,7 @@ def test_execute_emits_progress_keys_only(tmp_path):
     with patch("app.services.audio.lyrics_service.transcribe_audio_sync",
                return_value=_fake_transcribe_result()):
         svc._execute({
-            "file_id": "fid", "whisper_size": "medium",
+            "file_id": "fid", "model_size": "medium",
             "translate": False, "output_format": "lrc",
         }, cb)
     bad = [m for _, m in events if not progress_re.match(m)]
@@ -183,7 +183,7 @@ def test_execute_output_format_txt_writes_txt_file(tmp_path):
     with patch("app.services.audio.lyrics_service.transcribe_audio_sync",
                return_value=_fake_transcribe_result()):
         result = svc._execute({
-            "file_id": "fid", "whisper_size": "medium",
+            "file_id": "fid", "model_size": "medium",
             "translate": False, "output_format": "txt",
         }, lambda p, m: None)
     assert len(result["output_files"]) == 1

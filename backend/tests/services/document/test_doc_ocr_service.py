@@ -98,8 +98,8 @@ async def test_submit_validates_file_and_submits_local(tmp_path):
     tm.submit.side_effect = lambda *a, **k: _async_submit(*a, **k)
 
     task_id = await svc.submit(
-        file_id="fid", model_family="qwen3vl", size="4b",
-        quantization="Q4_K_M", format="md",
+        file_id="fid", model_family="qwen3vl", model_size="4b",
+        quantization="Q4_K_M", output_format="md",
     )
     assert task_id == "t1"
     fs.require_file.assert_called_once_with("fid")
@@ -108,9 +108,9 @@ async def test_submit_validates_file_and_submits_local(tmp_path):
     p = args[1]
     assert p["file_id"] == "fid"
     assert p["model_family"] == "qwen3vl"
-    assert p["size"] == "4b"
+    assert p["model_size"] == "4b"
     assert p["quantization"] == "Q4_K_M"
-    assert p["format"] == "md"
+    assert p["output_format"] == "md"
 
 
 @pytest.mark.asyncio
@@ -124,7 +124,7 @@ async def test_submit_remote_passes_provider_params(tmp_path):
 
     task_id = await svc.submit_remote(
         file_id="fid", provider="openai", conn_id=7,
-        remote_model="gpt-4o", format="txt",
+        remote_model="gpt-4o", output_format="txt",
     )
     assert task_id == "tr1"
     args, _ = tm.submit.call_args
@@ -133,15 +133,15 @@ async def test_submit_remote_passes_provider_params(tmp_path):
     assert p["provider"] == "openai"
     assert p["conn_id"] == 7
     assert p["remote_model"] == "gpt-4o"
-    assert p["format"] == "txt"
+    assert p["output_format"] == "txt"
 
 
 def test_handle_task_image_path_writes_output(tmp_path):
     svc, fs, *_rest = _make_svc(tmp_path, "in.png")
     with patch("app.pipeline.ocr.recognize_image_local", return_value="img-text"):
         result = svc._handle_task(
-            {"file_id": "fid", "model_family": "qwen3vl", "size": "4b",
-             "quantization": None, "format": "md"},
+            {"file_id": "fid", "model_family": "qwen3vl", "model_size": "4b",
+             "quantization": None, "output_format": "md"},
             lambda p, m: None,
         )
     assert result["char_count"] == len("img-text")
@@ -155,8 +155,8 @@ def test_handle_task_pdf_path_joins_pages_with_md_headers(tmp_path):
          patch("app.pipeline.ocr.ocr_pdf_pages",
                side_effect=lambda pdf_path, recognize_fn, on_progress=None: [recognize_fn(f"img-{i}") for i in range(2)]):
         svc._handle_task(
-            {"file_id": "fid", "model_family": "qwen3vl", "size": "4b",
-             "quantization": None, "format": "md"},
+            {"file_id": "fid", "model_family": "qwen3vl", "model_size": "4b",
+             "quantization": None, "output_format": "md"},
             lambda p, m: None,
         )
     written = (fs.output_dir / "in_ocr.md").read_text(encoding="utf-8")
@@ -172,8 +172,8 @@ def test_handle_task_pdf_txt_format_joins_with_blank_line(tmp_path):
          patch("app.pipeline.ocr.ocr_pdf_pages",
                side_effect=lambda pdf_path, recognize_fn, on_progress=None: [recognize_fn(f"img-{i}") for i in range(2)]):
         svc._handle_task(
-            {"file_id": "fid", "model_family": "qwen3vl", "size": "4b",
-             "quantization": None, "format": "txt"},
+            {"file_id": "fid", "model_family": "qwen3vl", "model_size": "4b",
+             "quantization": None, "output_format": "txt"},
             lambda p, m: None,
         )
     written = (fs.output_dir / "in_ocr.txt").read_text(encoding="utf-8")
@@ -184,8 +184,8 @@ def test_handle_task_rejects_unsupported_format(tmp_path):
     svc, *_ = _make_svc(tmp_path, "in.docx")
     with pytest.raises(ValueError, match="Unsupported file format"):
         svc._handle_task(
-            {"file_id": "fid", "model_family": "qwen3vl", "size": "4b",
-             "quantization": None, "format": "md"},
+            {"file_id": "fid", "model_family": "qwen3vl", "model_size": "4b",
+             "quantization": None, "output_format": "md"},
             lambda p, m: None,
         )
 
@@ -194,8 +194,8 @@ def test_handle_task_substitutes_placeholder_for_empty(tmp_path):
     svc, fs, *_rest = _make_svc(tmp_path, "in.png")
     with patch("app.pipeline.ocr.recognize_image_local", return_value="   "):
         svc._handle_task(
-            {"file_id": "fid", "model_family": "qwen3vl", "size": "4b",
-             "quantization": None, "format": "md"},
+            {"file_id": "fid", "model_family": "qwen3vl", "model_size": "4b",
+             "quantization": None, "output_format": "md"},
             lambda p, m: None,
         )
     written = (fs.output_dir / "in_ocr.md").read_text(encoding="utf-8")
@@ -206,8 +206,8 @@ def test_handle_task_raises_when_llama_not_ready(tmp_path):
     svc, *_ = _make_svc(tmp_path, "in.png", llama_ready=False)
     with pytest.raises(RuntimeError, match="llama-server not installed"):
         svc._handle_task(
-            {"file_id": "fid", "model_family": "qwen3vl", "size": "4b",
-             "quantization": None, "format": "md"},
+            {"file_id": "fid", "model_family": "qwen3vl", "model_size": "4b",
+             "quantization": None, "output_format": "md"},
             lambda p, m: None,
         )
 
@@ -218,7 +218,7 @@ def test_handle_remote_task_provider_unavailable(tmp_path):
     with pytest.raises(RuntimeError, match="Provider not available"):
         svc._handle_remote_task(
             {"file_id": "fid", "provider": "openai", "conn_id": 1,
-             "remote_model": "gpt-4o", "format": "md"},
+             "remote_model": "gpt-4o", "output_format": "md"},
             lambda p, m: None,
         )
 
@@ -237,7 +237,7 @@ def test_handle_remote_task_image_writes_output(tmp_path):
                return_value={"max_tokens": 4096, "temperature": 0.1}):
         result = svc._handle_remote_task(
             {"file_id": "fid", "provider": "openai", "conn_id": 1,
-             "remote_model": "gpt-4o", "format": "md"},
+             "remote_model": "gpt-4o", "output_format": "md"},
             lambda p, m: None,
         )
     assert result["char_count"] == len("remote-img-text")
@@ -254,7 +254,7 @@ def test_handle_remote_task_pdf_joins_pages(tmp_path):
                side_effect=lambda pdf_path, recognize_fn, on_progress=None: [recognize_fn(f"img-{i}") for i in range(2)]):
         svc._handle_remote_task(
             {"file_id": "fid", "provider": "openai", "conn_id": 1,
-             "remote_model": "gpt-4o", "format": "md"},
+             "remote_model": "gpt-4o", "output_format": "md"},
             lambda p, m: None,
         )
     written = (fs.output_dir / "in_ocr.md").read_text(encoding="utf-8")
@@ -269,7 +269,7 @@ def test_handle_remote_task_rejects_unsupported_format(tmp_path):
     with pytest.raises(ValueError, match="Unsupported file format"):
         svc._handle_remote_task(
             {"file_id": "fid", "provider": "openai", "conn_id": 1,
-             "remote_model": "gpt-4o", "format": "md"},
+             "remote_model": "gpt-4o", "output_format": "md"},
             lambda p, m: None,
         )
 

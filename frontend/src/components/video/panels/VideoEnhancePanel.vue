@@ -148,7 +148,7 @@ defineExpose({ execute, isDisabled, isLoading })
 
     <template v-if="showAdvanced">
       <div class="form-group">
-        <label>{{ $t('video.enhance.output_format') }}</label>
+        <label>{{ $t('common.output_format') }}</label>
         <AppSelect v-model="outputFormat" :options="formatOptions" />
       </div>
 

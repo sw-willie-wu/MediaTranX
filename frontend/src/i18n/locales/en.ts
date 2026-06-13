@@ -118,8 +118,16 @@ export default {
     remove_not_supported: 'Object removal does not support animated images',
     model_not_ready: 'Model Not Downloaded',
     no_models_available: 'No models available',
-    model_not_downloaded_hint: 'The selected model has not been downloaded yet. Go to model manager to download it?',
-    go_to_model_manager: 'Go to Model Manager',
+    model_not_downloaded_hint: 'The selected model has not been downloaded yet. Go to Models & Resources to download it?',
+    go_to_model_manager: 'Go to Models & Resources',
+    width: 'Width',
+    height: 'Height',
+    output_format: 'Output Format',
+    source_language: 'Source Language',
+    target_language: 'Target Language',
+    translate_style_colloquial: 'Colloquial',
+    translate_style_formal: 'Formal',
+    translate_style_literal: 'Literal',
   },
 
   // ── Panel execute buttons ──────────────────────────────────────────────
@@ -141,6 +149,8 @@ export default {
     doc_ocr:         { execute: 'Run OCR' },             // Phase 2.E new
     doc_pdf_convert: { execute: 'Convert PDF' },         // Phase 2.E new
     doc_split:       { execute: 'Split Document' },      // Phase 2.E new
+    transcribe:      { execute: 'Transcribe' },          // Audio transcription button
+    subtitle:        { execute: 'Generate Subtitles' },  // Subtitle generation button
   },
 
   // ── Toast notifications ───────────────────────────────────────────────
@@ -258,6 +268,8 @@ export default {
       model_exists: 'Model already exists',
       downloading_checkpoint: 'Downloading {0} checkpoint...',
       downloading_rife: 'Downloading RIFE {0}...',
+      downloading_soundfont: 'Downloading soundfont... {0} / {1}',
+      downloading_soundfont_drums: 'Downloading drum kit...',
       extracting_model: 'Extracting model...',
       downloading_repo: 'Downloading {0}...',
       downloading_file: 'Downloading {0} ({1}/{2})...',
@@ -407,8 +419,8 @@ export default {
     },
 
     group: {
-      edit: 'Edit',
-      ai: 'AI Tools',
+      edit: 'Basic',
+      ai: 'Advanced',
     },
 
     multi_labels: {
@@ -423,7 +435,6 @@ export default {
     convert: {
       title: 'Convert Settings',
       description: 'Convert image format with adjustable output quality.',
-      output_format: 'Output Format',
       quality: 'Quality:',
       quality_hint: 'Higher values mean better quality and larger files',
       resize_mode: 'Resize',
@@ -431,8 +442,6 @@ export default {
       scale: 'Scale',
       custom_size: 'Custom Size',
       scale_label: 'Scale:',
-      width: 'Width',
-      height: 'Height',
       aspect_ratio_hint: 'Leave empty for proportional scaling',
       task_label: 'Image · Convert',
     },
@@ -530,15 +539,14 @@ export default {
       description: 'Use AI to recognize text in images, output as editable format.',
       server_not_found: 'llama-server not found. Please install AI core in Settings.',
       go_to_settings: 'Go to Settings',
-      model: 'Recognition Model',
-      output_format: 'Output Format',
+      model: 'Text Recognition Model',
       markdown: 'Markdown (.md)',
       text: 'Plain Text (.txt)',
       output_file: 'Output File',
       select_output: 'Select Output Location',
       task_label: 'Image · OCR',
       result_title: 'OCR Result',
-      no_model_downloaded: 'Selected model is not downloaded. Please download it in Settings → Models.',
+      no_model_downloaded: 'Selected model is not downloaded. Please download it in Settings → Models & Resources.',
     },
   },
 
@@ -560,14 +568,13 @@ export default {
     },
 
     group: {
-      edit: 'Edit',
-      ai: 'AI Tools',
+      edit: 'Basic',
+      ai: 'Advanced',
     },
 
     transcode: {
       title: 'Transcode Settings',
       description: 'Convert video format with adjustable resolution, quality, and audio settings.',
-      format: 'Output Format',
       mp3: 'MP3 (Audio Only)',
       aac: 'AAC (Audio Only)',
       wav: 'WAV (Audio Only)',
@@ -587,8 +594,6 @@ export default {
       crf_hint: 'Lower values mean higher quality and larger files (recommended 18-28)',
       bitrate: 'Bitrate',
       extract_audio: 'Extract Audio',
-      width: 'Width',
-      height: 'Height',
       task_label: 'Video · Transcode',
     },
 
@@ -616,9 +621,7 @@ export default {
 
     subtitle: {
       title: 'Subtitle Settings',
-      language: 'Language',
       model_settings: 'Model Settings',
-      output_format: 'Output Format',
       srt: 'SRT',
       vtt: 'VTT (WebVTT)',
       select_output: 'Select Output Location',
@@ -632,7 +635,6 @@ export default {
 
     translate: {
       enable: 'Translate Subtitles',
-      target_language: 'Target Language',
       model: 'Translation Model',
       style: 'Translation Style',
       keep_names: 'Keep names and proper nouns in original language',
@@ -647,10 +649,7 @@ export default {
       english: 'English',
       japanese: 'Japanese',
       korean: 'Korean',
-      style_colloquial: 'Colloquial',
-      style_formal: 'Formal',
-      style_literal: 'Literal',
-      no_model_downloaded: 'No translation model downloaded. Please download one in Settings → Models.',
+      no_model_downloaded: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
     },
 
     whisper_advanced: {
@@ -672,7 +671,7 @@ export default {
     interpolate: {
       title: 'Frame Interpolation Settings',
       description: 'Increase video frame rate using AI interpolation.',
-      model: 'Model',
+      model: 'Interpolation Model',
       model_recommended: '(Recommended)',
       model_fast: '(Fast)',
       mode: 'Interpolation Mode',
@@ -683,7 +682,6 @@ export default {
       current_fps: 'Current FPS',
       output_fps: 'Output FPS',
       fps_warning: 'Target FPS must be higher than source FPS',
-      output_format: 'Output Format',
       video_codec: 'Video Codec',
       task_label: 'Video · Frame Interpolation',
     },
@@ -691,9 +689,8 @@ export default {
     enhance: {
       title: 'Video Enhancement Settings',
       description: 'Upscale video resolution using AI super-resolution.',
-      model: 'Model',
+      model: 'Enhancement Model',
       output_resolution: 'Output Resolution',
-      output_format: 'Output Format',
       video_codec: 'Video Codec',
       task_label: 'Video · Enhancement',
     },
@@ -701,7 +698,7 @@ export default {
     summary: {
       title: 'Video Summary',
       description: 'LLM-organized markdown summary of video subtitles with key frames, packaged as a ZIP.',
-      whisper_model: 'Speech recognition model',
+      whisper_model: 'Speech Recognition Model',
       vocal_separation: 'Separate vocals (Demucs)',
       vocal_separation_hint: 'Enable if background music interferes with transcription; adds processing time.',
       llm_model: 'Summary Model (text)',
@@ -736,14 +733,13 @@ export default {
     },
 
     group: {
-      edit: 'Edit',
-      ai: 'AI Tools',
+      edit: 'Basic',
+      ai: 'Advanced',
     },
 
     transcode: {
       title: 'Transcode Settings',
       description: 'Convert audio format with adjustable bitrate and sample rate.',
-      format: 'Output Format',
       lossy: 'Lossy',
       lossless: 'Lossless',
       bitrate: 'Bitrate',
@@ -780,9 +776,7 @@ export default {
       title: 'Transcription Settings',
       description: 'Use Whisper to convert audio to text or SRT subtitle file.',
       not_installed: 'AI core environment not installed. Please install in Settings first.',
-      model: 'Recognition Model',
-      language: 'Language',
-      output_format: 'Output Format',
+      model: 'Speech Recognition Model',
       txt_format: 'TXT (Plain Text)',
       srt_format: 'SRT (With Timestamps)',
       srt_hint: 'Output SRT subtitle format with timestamps',
@@ -792,7 +786,6 @@ export default {
       align: 'Precise Alignment',
       align_hint: 'Use Wav2Vec2 for word-level timestamp alignment',
       translate: 'Translate',
-      target_language: 'Target Language',
       translate_model: 'Translation Model',
       summarize: 'Outline Summary',
       summarize_hint: 'Use LLM to generate a summary of the transcript',
@@ -802,32 +795,30 @@ export default {
       output_file: 'Output Path',
       select_output: 'Select output path',
       task_label: 'Audio · Transcribe',
-      no_translate_model: 'No translation model downloaded. Please download one in Settings → Models.',
+      no_translate_model: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
     },
 
     lyrics: {
       title: 'Lyrics Extraction Settings',
       description: 'Extract lyrics from music using AI vocal separation and speech recognition.',
-      model: 'Recognition Model',
+      model: 'Speech Recognition Model',
       align: 'Precise Alignment',
       align_hint: 'Use Wav2Vec2 for word-level timestamp alignment',
       translate: 'Translate Lyrics',
-      target_language: 'Target Language',
       translate_model: 'Translation Model',
-      output_format: 'Output Format',
       lrc: 'LRC (with timestamps)',
       txt: 'Plain Text',
       output_file: 'Output Path',
       select_output: 'Select output path',
       task_label: 'Audio · Lyrics',
       result_title: 'Lyrics',
-      no_translate_model: 'No translation model downloaded. Please download one in Settings → Models.',
+      no_translate_model: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
     },
 
     separate: {
       title: 'Source Separation Settings',
       description: 'Use HDemucs to separate audio into vocals, drums, bass, and other stems.',
-      model: 'Model',
+      model: 'Separation Model',
       stems: 'Output Stems',
       stem_vocals: 'Vocals',
       stem_drums: 'Drums',
@@ -836,8 +827,7 @@ export default {
       stem_piano: 'Piano',
       stem_other: 'Other',
       task_label: 'Audio · Separate',
-      model_not_downloaded: 'Separation model not downloaded. Please download it in Settings → AI Module Management.',
-      output_format: 'Output Format',
+      model_not_downloaded: 'Separation model not downloaded. Please download it in Settings → Models & Resources.',
       output_file: 'Output Path',
       select_output: 'Select output path',
       generate_midi: 'Generate MIDI',
@@ -851,6 +841,8 @@ export default {
       title: 'MIDI Edit Settings',
       description: 'Edit MIDI notes, adjust instruments, and export audio.',
       unsupported: 'This file format does not support MIDI editing. Please load a .mid file.',
+      soundfont_missing: 'Soundfont not installed — MIDI playback will be silent. Please install it first.',
+      soundfont_install: 'Install now',
       task_label: 'Audio · MIDI Export',
       tracks: 'Track Management',
       add_track: 'Add Track',
@@ -931,8 +923,8 @@ export default {
     },
 
     group: {
-      edit: 'Edit',
-      ai: 'AI Tools',
+      edit: 'Basic',
+      ai: 'Advanced',
     },
 
     ocr: {
@@ -941,21 +933,20 @@ export default {
       server_not_found: 'llama-server not found. Please install AI core in Settings.',
       go_to_settings: 'Go to Settings',
       format_not_supported: 'OCR only supports PDF and image formats',
-      model: 'Recognition Model',
-      output_format: 'Output Format',
+      model: 'Text Recognition Model',
       markdown: 'Markdown (.md)',
       text: 'Plain Text (.txt)',
       output_file: 'Output File',
       select_output: 'Select Output Location',
       task_label: 'Document · OCR',
-      no_model_downloaded: 'Selected model is not downloaded. Please download it in Settings → Models.',
+      no_model_downloaded: 'Selected model is not downloaded. Please download it in Settings → Models & Resources.',
     },
 
     pdf_convert: {
       title: 'PDF Convert Settings',
       description: 'Convert PDF to plain text, Markdown, or page images.',
-      output_format: 'Output Format',
       text_format: 'Plain Text (.txt)',
+      markdown_format: 'Markdown (.md)',
       images_format: 'Page Images (.zip)',
       output_file: 'Output File',
       select_output: 'Select Output Location',
@@ -981,8 +972,6 @@ export default {
       install_button: 'Install Translation',
       installing: 'Installing...',
       model: 'Translation Model',
-      source_language: 'Source Language',
-      target_language: 'Target Language',
       style: 'Translation Style',
       glossary: 'Glossary',
       optional: '(Optional)',
@@ -991,7 +980,7 @@ export default {
       installing_toast: 'Installing translation feature, please wait...',
       install_complete: 'Translation feature installed',
       install_error: 'Installation failed, check task list',
-      no_model_downloaded: 'No translation model downloaded. Please download one in Settings → Models.',
+      no_model_downloaded: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
     },
   },
 
@@ -1000,8 +989,8 @@ export default {
     tab: {
       general: 'General',
       system: 'System Info',
-      models: 'AI Models',
-      agent: 'Agent',
+      models: 'Models & Resources',
+      agent: 'Assistant',
       'video-download': 'Video Download',
       about: 'About',
     },
@@ -1021,7 +1010,7 @@ export default {
       reset_layout: 'Reset Panel Widths',
       file_paths: 'File Paths',
       temp_folder: 'Temp Folder',
-      models_dir: 'AI Models Directory',
+      models_dir: 'Models & Resources Directory',
       restart_required: 'Restart required to take effect',
       temp_usage: 'Current usage',
       clear_temp: 'Clear temp files',
@@ -1089,7 +1078,7 @@ export default {
     },
 
     models: {
-      title: 'Model List',
+      title: 'Models & Resources List',
       hint: 'Max 4 concurrent downloads, extras will be queued',
       loading: 'Loading...',
       refresh: 'Refresh',
@@ -1135,7 +1124,7 @@ export default {
     },
 
     agent: {
-      title: 'Agent settings',
+      title: 'Assistant settings',
       model: {
         label: 'Model',
         placeholder: 'Select a tool-capable model…',
@@ -1160,10 +1149,10 @@ export default {
     },
   },
 
-  // ── Agent ──────────────────────────────────────────────────────────────
+  // ── Assistant ──────────────────────────────────────────────────────────────
   agent: {
     banner: {
-      prefix: 'Agent: ',
+      prefix: 'Assistant: ',
       queued: 'Waiting…',
       cancelled: 'Cancelled',
       waiting_confirm: 'Waiting for confirmation…',
@@ -1181,14 +1170,15 @@ export default {
       },
     },
     bubble: {
-      title: 'Agent Chat',
-      placeholder: 'Ask agent to do something…',
+      title: 'Assistant Chat',
+      placeholder: 'Ask the assistant to do something…',
       empty: 'No messages yet',
       thinking: 'Thinking…',
       token_count: 'in: {prompt} / out: {completion}',
       clear: 'Clear chat history',
       show: 'Show chat bubble',
       hide: 'Hide chat bubble',
+      abort: 'Stop',
     },
     session: {
       new_chat: '+ New chat',
@@ -1212,7 +1202,7 @@ export default {
       with_values: 'Confirm action with the following values?',
     },
     error: {
-      no_model: 'No agent model configured',
+      no_model: 'No assistant model configured',
       model_unavailable: 'Selected model is unavailable',
       tools_not_supported: 'This model does not support tool use',
       provider_error: 'Provider returned an error',
@@ -1346,6 +1336,7 @@ export default {
     ],
     agree: 'I have read and agree to the above',
     enable: 'Enable video download',
+    usage_hint: 'Once enabled, paste a video link (Ctrl+V) directly on the Home page or a Video tool page to download it and load it into the Video tool.',
     quality_mode: 'Download quality',
     quality_auto: 'Best available (auto)',
     quality_cap: 'Cap resolution',
@@ -1401,6 +1392,7 @@ export default {
     // Interpolation
     rife: 'Video Frame Interpolation',
     basic_pitch: 'Audio to MIDI',
+    soundfont: 'MIDI Playback Soundfont (GM Instruments)',
     // LLM families (GGUF)
     qwen3: 'Qwen3 Translation Model',
     qwen3vl: 'Qwen3-VL Vision-Language Model (OCR)',

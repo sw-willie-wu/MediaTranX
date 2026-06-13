@@ -6,7 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const net = require('net');
-const { detectGPU, updatePyprojectSources, runUvSync, downloadFFmpeg, downloadYtDlp, downloadSoundfonts, downloadLlamaServer, downloadLlamaCudart } = require('./setup.js');
+const { detectGPU, updatePyprojectSources, runUvSync, downloadFFmpeg, downloadYtDlp, downloadLlamaServer, downloadLlamaCudart } = require('./setup.js');
 const { resolve } = require('path');
 
 // 載入 .env 檔（簡易 parser，不依賴 dotenv）
@@ -405,10 +405,9 @@ function createWindow() {
       // 3. Re-download binaries (force = true → overwrite existing)
       const noop = () => {};
       const downloads = [
-        { fn: downloadFFmpeg, args: [binDir, noop, true], label: 'FFmpeg', pct: 52 },
-        { fn: downloadYtDlp, args: [binDir, noop, true], label: 'yt-dlp', pct: 62 },
-        { fn: downloadSoundfonts, args: [binDir, noop, true], label: 'Soundfonts', pct: 72 },
-        { fn: downloadLlamaServer, args: [binDir, gpu, noop, true], label: 'llama-server', pct: 84 },
+        { fn: downloadFFmpeg, args: [binDir, noop, true], label: 'FFmpeg', pct: 58 },
+        { fn: downloadYtDlp, args: [binDir, noop, true], label: 'yt-dlp', pct: 70 },
+        { fn: downloadLlamaServer, args: [binDir, gpu, noop, true], label: 'llama-server', pct: 85 },
         { fn: downloadLlamaCudart, args: [binDir, gpu, noop, true], label: 'CUDA Runtime', pct: 95 },
       ];
       for (const dl of downloads) {
@@ -508,11 +507,10 @@ async function setupEnvironment(window) {
 
   // 4. Download binaries (non-fatal — dev mode may already have them in bin/)
   const downloads = [
-    { fn: downloadFFmpeg, args: [binDir], start: 50, weight: 10, label: 'FFmpeg' },
-    { fn: downloadYtDlp, args: [binDir], start: 60, weight: 8, label: 'yt-dlp' },
-    { fn: downloadSoundfonts, args: [binDir], start: 68, weight: 10, label: 'Soundfonts' },
-    { fn: downloadLlamaServer, args: [binDir, gpu], start: 78, weight: 12, label: 'llama-server' },
-    { fn: downloadLlamaCudart, args: [binDir, gpu], start: 90, weight: 8, label: 'CUDA Runtime' },
+    { fn: downloadFFmpeg, args: [binDir], start: 50, weight: 12, label: 'FFmpeg' },
+    { fn: downloadYtDlp, args: [binDir], start: 62, weight: 10, label: 'yt-dlp' },
+    { fn: downloadLlamaServer, args: [binDir, gpu], start: 72, weight: 18, label: 'llama-server' },
+    { fn: downloadLlamaCudart, args: [binDir, gpu], start: 90, weight: 9, label: 'CUDA Runtime' },
   ];
   let maxPercent = 50;
   for (const dl of downloads) {

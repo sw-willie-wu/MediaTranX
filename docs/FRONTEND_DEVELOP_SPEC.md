@@ -483,6 +483,8 @@ if (parsed.isRemote) {
 
 ## 17. Panel 結構範本
 
+> **版面組織（基本/進階分區、條件顯示、進階選項摺疊）請見 [`PANEL_LAYOUT_GUIDELINE.md`](./PANEL_LAYOUT_GUIDELINE.md)**——規範「產出 vs 調教」判準、共用子元件（`WhisperAdvancedSettings`/`TranslationOptionsPanel`）重用、逐面板符合度對照。新增或重構面板版面前必讀。
+
 ```vue
 <script setup lang="ts">
 import AppSelect from '@/components/common/AppSelect.vue'
@@ -867,6 +869,16 @@ frontend/src/
 ---
 
 ## 27. i18n 規範
+
+### i18n key 組織慣例（強制）
+
+> 2026-06 工具面板 label 正規化（稽核①）建立。目的：避免「同概念多名」與「跨網域借用」兩種壞味道。
+
+- **跨網域共用的通用 label 概念**統一放 `common.*`，各面板引用，**不在各工具 namespace 重複定義**。已收斂者：`common.width`、`common.height`、`common.output_format`、`common.source_language`、`common.target_language`、`common.translate_style_{colloquial,formal,literal}`、`common.advanced_options`。
+- **禁止跨網域借用別網域的 key**（例如 video 面板**不得**引用 `image.convert.width`、document 面板**不得**引用 `video.translate.style_*`）。通用概念一律走 `common.*`。
+- **同一概念在所有面板用同一 label**（例：Whisper STT 一律「語音辨識模型 / Speech Recognition Model」、OCR 一律「文字辨識模型 / Text Recognition Model」、輸出格式一律走 `common.output_format`）。本質不同者（如 Upscale Model vs Translation Model）才保留差異。
+- **純技術識別符不進 i18n**（codec `h264`、副檔名、格式 token 如 `WAV`/`Markdown`）——它們是選項 value、casing 依專有名詞慣例；只有描述性 label 才走 `$t()`。
+- **`en.ts` 與 `zh-TW.ts` 必須同步**，每個 key 兩檔都要有。
 
 ### 模型 Metadata 翻譯
 

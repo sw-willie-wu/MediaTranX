@@ -106,9 +106,9 @@ const translateStyle = ref('colloquial')
 const rawTranslateStyles = ref<{ value: string; label: string }[]>([])
 
 const styleI18nKey: Record<string, string> = {
-  colloquial: 'video.translate.style_colloquial',
-  formal: 'video.translate.style_formal',
-  literal: 'video.translate.style_literal',
+  colloquial: 'common.translate_style_colloquial',
+  formal: 'common.translate_style_formal',
+  literal: 'common.translate_style_literal',
 }
 
 const translateStyles = computed(() =>
@@ -275,13 +275,13 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
 
       <!-- 來源語言 -->
       <div class="form-group">
-        <label>{{ $t('document.translate.source_language') }}</label>
+        <label>{{ $t('common.source_language') }}</label>
         <AppSelect v-model="sourceLanguage" :options="languageOptions" />
       </div>
 
       <!-- 目標語言 -->
       <div class="form-group">
-        <label>{{ $t('document.translate.target_language') }}</label>
+        <label>{{ $t('common.target_language') }}</label>
         <AppSelect v-model="targetLanguage" :options="languageOptions" />
       </div>
 

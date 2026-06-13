@@ -17,7 +17,7 @@ def test_build_stage_list_whisper_only():
 
 
 def test_build_stage_list_with_demucs_and_align():
-    opts = TranscribeOptions(separate_vocals=True, align=True)
+    opts = TranscribeOptions(vocal_separation=True, align=True)
     assert _build_stage_list(opts) == ["demucs", "whisper", "align"]
 
 
@@ -88,7 +88,7 @@ def test_transcribe_audio_sync_with_demucs_writes_temp_and_cleans(monkeypatch, t
         Path(path).touch()
     monkeypatch.setattr("soundfile.write", fake_sf_write)
 
-    opts = TranscribeOptions(separate_vocals=True, model_size="tiny")
+    opts = TranscribeOptions(vocal_separation=True, model_size="tiny")
     transcribe_audio_sync(
         tmp_path / "x.wav", opts, _fake_manager(), "fake-ffmpeg",
         whisper=fake_whisper, demucs=fake_demucs,
@@ -109,7 +109,7 @@ def test_transcribe_audio_sync_raises_if_demucs_no_vocals(tmp_path):
     fake_demucs = MagicMock()
     fake_demucs.separate.return_value = ({"other": MagicMock()}, 44100)
 
-    opts = TranscribeOptions(separate_vocals=True)
+    opts = TranscribeOptions(vocal_separation=True)
     with pytest.raises(RuntimeError, match="vocals"):
         transcribe_audio_sync(
             tmp_path / "x.wav", opts, _fake_manager(), "fake-ffmpeg",
@@ -117,9 +117,9 @@ def test_transcribe_audio_sync_raises_if_demucs_no_vocals(tmp_path):
         )
 
 
-def test_transcribe_audio_sync_raises_if_separate_vocals_but_no_demucs(tmp_path):
+def test_transcribe_audio_sync_raises_if_vocal_separation_but_no_demucs(tmp_path):
     fake_whisper = MagicMock()
-    opts = TranscribeOptions(separate_vocals=True)
+    opts = TranscribeOptions(vocal_separation=True)
     with pytest.raises(ValueError, match="demucs"):
         transcribe_audio_sync(
             tmp_path / "x.wav", opts, _fake_manager(), "fake-ffmpeg",

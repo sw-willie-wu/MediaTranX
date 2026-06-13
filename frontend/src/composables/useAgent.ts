@@ -152,6 +152,28 @@ function toCloneable<T>(value: T): T {
   return JSON.parse(JSON.stringify(value))
 }
 
+/**
+ * Map a received tool call → the banner action label key + args, so the runLoop
+ * can announce "doing X" the moment the LLM's tool call arrives (before the tool
+ * actually runs). Mirrors the i18n keys each dispatcher uses (useAgentTools).
+ */
+function bannerActionFor(tc: ToolCall): { key: string; args: Record<string, unknown> } {
+  const name = tc.function.name
+  let a: Record<string, unknown> = {}
+  try { a = JSON.parse(tc.function.arguments || '{}') } catch { a = {} }
+  const key = `agent.banner.act.${name}`
+  switch (name) {
+    case 'navigate_to': return { key, args: { route: a.route } }
+    case 'select_subfunction': return { key, args: { name: a.name } }
+    case 'load_file': return { key, args: { file_id: a.file_id } }
+    case 'open_dropdown': return { key, args: { field: a.field } }
+    case 'set_field': return { key, args: { field: a.field, value: String(a.value) } }
+    case 'click_action': return { key, args: { name: a.name } }
+    case 'get_task_status': return { key, args: { task_id: a.task_id } }
+    default: return { key, args: {} } // click_execute, list_files
+  }
+}
+
 // ─── Module-level singleton ────────────────────────────────────────────────────
 
 let _instance: ReturnType<typeof _createAgent> | null = null
@@ -201,6 +223,10 @@ function _createAgent(deps: UseAgentDeps = {}) {
     await commitMessage({ role: 'user', content: text })
     invalidFieldStrikes = 0
     outerStop = false
+    // Reset the action label once per user turn (not per round): within a run
+    // the banner keeps showing the latest tool action, only falling back to the
+    // generic label at the very start before the first tool dispatches.
+    store.setCurrentAction('', {})
     await runLoop()
   }
 
@@ -401,6 +427,16 @@ function _createAgent(deps: UseAgentDeps = {}) {
         const assistant: SanitizedAssistant | null = sanitizeAssistantMessage(pickAssistant(result!.newMessages))
         store.addUsage(capturedUsage)
         store.clearTransient()
+
+        // Announce the first tool action the moment it's received — BEFORE the
+        // (networked) assistant-message persist below — so the banner reads
+        // "doing X" while that round-trip happens, ahead of the tool running.
+        const firstTc = assistant?.toolCalls?.[0]
+        if (firstTc) {
+          const ba = bannerActionFor(firstTc)
+          store.setCurrentAction(ba.key, ba.args)
+        }
+
         if (assistant) await commitMessage(assistant)
 
         unprocessedToolCalls = assistant ? [...assistant.toolCalls] : []
@@ -410,6 +446,10 @@ function _createAgent(deps: UseAgentDeps = {}) {
         while (unprocessedToolCalls.length > 0 && !outerStop) {
           const tc = unprocessedToolCalls[0]
           const ap = getActivePanel()
+          // Announce this tool at receive-time, before it runs (the first was
+          // announced above; this covers the 2nd+ tools in a multi-call round).
+          const ba = bannerActionFor(tc)
+          store.setCurrentAction(ba.key, ba.args)
 
           if (settings.shouldConfirm({ name: tc.function.name, arguments: undefined }, ap?.schema ?? undefined)) {
             const approved = await pushConfirmCard(tc)

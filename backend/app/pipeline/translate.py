@@ -61,6 +61,19 @@ def _calc_srt_batch_size(n_ctx: int, seg_dicts: list[dict], max_batch: int = 0) 
     return result
 
 
+def _srt_progress_msg(start: int, total: int, num_batches: int) -> str:
+    """Progress message shown *during* an SRT batch translation.
+
+    A single-batch translation has no meaningful running index — the index would
+    be frozen at 1 while the bar animates (fake_progress), looking stuck. In that
+    case show the segment count (`translating_total`) instead, mirroring
+    `translate_srt_cloud`'s `num_batches == 1` handling.
+    """
+    if num_batches <= 1:
+        return f"task.progress.translating_total|{total}"
+    return f"task.progress.translating_segment|{start + 1}|{total}"
+
+
 def get_cloud_ctx(prov, model: str = "") -> int:
     """Get context window size for a cloud provider."""
     provider_name = type(prov).__name__.lower().replace("provider", "")
@@ -240,7 +253,7 @@ def translate_srt_local(
         batch_end_pct = (batch_idx + 1) / num_batches
 
         with fake_progress(on_progress, batch_start_pct, batch_end_pct,
-                           f"task.progress.translating_segment|{start + 1}|{total}",
+                           _srt_progress_msg(start, total, num_batches),
                            cancellable=session):
             if result["mode"] == "chat":
                 translated_srt = session.chat(

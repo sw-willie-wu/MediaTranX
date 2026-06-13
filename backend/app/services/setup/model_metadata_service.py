@@ -80,6 +80,21 @@ _LANG_NAMES = {
 }
 
 
+def _soundfont_downloaded() -> bool:
+    """soundfont 已下載 = .version 存在且 tag 相符（比 info.exists 嚴謹）。"""
+    import json
+    from app.adapters.ai.registry import SOUNDFONT_VERSION_TAG
+    from app.init.configs import SETTINGS
+
+    vfile = SETTINGS.path.soundfonts / ".version"
+    if not vfile.exists():
+        return False
+    try:
+        return json.loads(vfile.read_text("utf-8")).get("tag") == SOUNDFONT_VERSION_TAG
+    except Exception:
+        return False
+
+
 class ModelMetadataService:
     """Model metadata enumeration and download status query service."""
 
@@ -334,7 +349,21 @@ class ModelMetadataService:
         return items
 
     def _enumerate_midi_models(self) -> list[dict]:
-        """Enumerate MIDI-related models.
-        FluidSynth + SoundFont are downloaded at Electron startup; not included in model management.
-        basic-pitch model is built into the package; no management needed."""
-        return []
+        """Enumerate the MusyngKite soundfont as a manageable audio model.
+
+        soundfont 從 Electron 啟動下載改為後端管理；basic-pitch 仍內建、不列舉。
+        """
+        from app.adapters.ai.registry import SOUNDFONT_ID, SOUNDFONT_LABEL, SOUNDFONT_SIZE_MB
+
+        return [{
+            "id": SOUNDFONT_ID,
+            "family": "soundfont",
+            "family_label": SOUNDFONT_LABEL,
+            "variant": "musyngkite",
+            "variant_label": "",
+            "category": "midi",
+            "description": "models.soundfont",
+            "downloaded": _soundfont_downloaded(),
+            "size_mb": SOUNDFONT_SIZE_MB,
+            "vram_mb": 0,
+        }]

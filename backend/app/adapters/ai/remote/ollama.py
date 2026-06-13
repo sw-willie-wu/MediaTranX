@@ -165,9 +165,13 @@ class OllamaProvider(RemoteProvider):
         if model_name in self._caps_cache:
             return self._caps_cache[model_name]
 
-        # Call /api/show to get official capabilities
+        # Call /api/show to get official capabilities.
+        # Body uses the canonical "model" field (NOT the deprecated "name"):
+        # stock Ollama accepts both, but stricter re-implementations like the
+        # self-hosted ollama-bridge-go reject "name" with HTTP 400, which would
+        # silently drop us into the keyword fallback and lose real capabilities.
         try:
-            payload = json.dumps({"name": model_name}).encode("utf-8")
+            payload = json.dumps({"model": model_name}).encode("utf-8")
             req = urllib.request.Request(
                 f"{self.endpoint}/api/show",
                 data=payload,
@@ -189,8 +193,12 @@ class OllamaProvider(RemoteProvider):
                         caps.append("tools")
                     self._caps_cache[model_name] = caps
                     return caps
-        except Exception:
-            pass
+        except Exception as e:
+            # Don't swallow silently — a 400 here (e.g. bridge rejecting the
+            # body, an unknown model) is exactly why capabilities would go
+            # missing, and a bare `pass` made that undiagnosable from logs.
+            logger.debug("Ollama /api/show capabilities probe failed for %s: %s",
+                         model_name, e)
 
         # Fallback: infer from name and families.
         #
@@ -241,7 +249,7 @@ class OllamaProvider(RemoteProvider):
         at all; the template is the authoritative source of truth in those cases.
         """
         try:
-            payload = json.dumps({"name": model_name}).encode("utf-8")
+            payload = json.dumps({"model": model_name}).encode("utf-8")
             req = urllib.request.Request(
                 f"{self.endpoint}/api/show",
                 data=payload,
@@ -354,7 +362,7 @@ class OllamaProvider(RemoteProvider):
 
     def _show(self, model_name: str) -> dict:
         """POST /api/show and return the parsed JSON response."""
-        payload = json.dumps({"name": model_name}).encode("utf-8")
+        payload = json.dumps({"model": model_name}).encode("utf-8")
         req = urllib.request.Request(
             f"{self.endpoint}/api/show", data=payload,
             headers={"Content-Type": "application/json"}, method="POST")

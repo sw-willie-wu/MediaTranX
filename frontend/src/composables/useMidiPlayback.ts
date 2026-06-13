@@ -2,6 +2,9 @@ import { ref, onUnmounted } from 'vue'
 import * as Tone from 'tone'
 import type { MidiTrack } from './useMidiEditor'
 import { useToneSynth } from './useToneSynth'
+import { useModelGuard } from '@/composables/useModelGuard'
+import { useModelStore } from '@/stores/models'
+import { SOUNDFONT_MODEL_ID } from '@/constants/gmSoundfontNames'
 
 // ---------------------------------------------------------------------------
 // Composable
@@ -22,6 +25,10 @@ export function useMidiPlayback() {
 
   // --- Tone.js synth ----------------------------------------------------------
   const synth = useToneSynth()
+
+  // --- Model guard (soundfont) ------------------------------------------------
+  const guard = useModelGuard()
+  const modelStore = useModelStore()
 
   // --- Internal helpers -------------------------------------------------------
 
@@ -157,6 +164,11 @@ export function useMidiPlayback() {
   }
 
   async function play() {
+    // soundfont 未下載 → 功能內提示導去模型管理 audio 分頁，中止播放
+    await modelStore.ensureLoaded()
+    const sf = modelStore.models.find(m => m.id === SOUNDFONT_MODEL_ID)
+    if (!await guard.guardModelReady(sf?.downloaded === true, 'audio')) return
+
     // Init Tone.js (requires user gesture; safe to call multiple times)
     await synth.init()
 

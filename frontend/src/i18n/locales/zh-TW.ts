@@ -118,8 +118,16 @@ export default {
     remove_not_supported: '物件移除不支援動態圖片',
     model_not_ready: '模型尚未下載',
     no_models_available: '無可用模型',
-    model_not_downloaded_hint: '選擇的模型尚未下載，是否前往模型管理頁面下載？',
-    go_to_model_manager: '前往模型管理',
+    model_not_downloaded_hint: '選擇的模型尚未下載，是否前往模型與資源頁面下載？',
+    go_to_model_manager: '前往模型與資源',
+    width: '寬度',
+    height: '高度',
+    output_format: '輸出格式',
+    source_language: '來源語言',
+    target_language: '目標語言',
+    translate_style_colloquial: '口語化',
+    translate_style_formal: '正式',
+    translate_style_literal: '直譯',
   },
 
   // ── 面板執行按鈕 ──────────────────────────────────────────────────────
@@ -141,6 +149,8 @@ export default {
     doc_ocr:         { execute: '執行 OCR' },            // Phase 2.E new
     doc_pdf_convert: { execute: '轉換 PDF' },            // Phase 2.E new
     doc_split:       { execute: '切割文件' },            // Phase 2.E new
+    transcribe:      { execute: '轉錄' },                // 音訊轉錄按鈕
+    subtitle:        { execute: '產生字幕' },            // 字幕生成按鈕
   },
 
   // ── Toast 通知 ─────────────────────────────────────────────────────────
@@ -258,6 +268,8 @@ export default {
       model_exists: '模型已存在',
       downloading_checkpoint: '下載 {0} checkpoint...',
       downloading_rife: '下載 RIFE {0}...',
+      downloading_soundfont: '下載音色庫... {0} / {1}',
+      downloading_soundfont_drums: '下載鼓組...',
       extracting_model: '解壓模型...',
       downloading_repo: '下載 {0}...',
       downloading_file: '下載 {0}（{1}/{2}）...',
@@ -407,8 +419,8 @@ export default {
     },
 
     group: {
-      edit: '編輯',
-      ai: 'AI 工具',
+      edit: '基本工具',
+      ai: '進階工具',
     },
 
     multi_labels: {
@@ -423,7 +435,6 @@ export default {
     convert: {
       title: '轉檔設定',
       description: '轉換圖片格式，可調整輸出品質。',
-      output_format: '輸出格式',
       quality: '品質:',
       quality_hint: '數值越高品質越好、檔案越大',
       resize_mode: '尺寸調整',
@@ -431,8 +442,6 @@ export default {
       scale: '縮放比例',
       custom_size: '自訂尺寸',
       scale_label: '縮放比例:',
-      width: '寬度',
-      height: '高度',
       aspect_ratio_hint: '留空則等比縮放',
       task_label: '圖片 · 轉檔',
     },
@@ -530,15 +539,14 @@ export default {
       description: '使用 AI 辨識圖片中的文字，輸出為可編輯格式。',
       server_not_found: 'llama-server 未找到，請前往設定頁面安裝 AI 核心',
       go_to_settings: '前往設定',
-      model: '辨識模型',
-      output_format: '輸出格式',
+      model: '文字辨識模型',
       markdown: 'Markdown (.md)',
       text: '純文字 (.txt)',
       output_file: '輸出檔案',
       select_output: '選擇輸出位置',
       task_label: '圖片 · 文字辨識',
       result_title: 'OCR 辨識結果',
-      no_model_downloaded: '所選模型尚未下載，請至設定 → 模型管理下載。',
+      no_model_downloaded: '所選模型尚未下載，請至設定 → 模型與資源下載。',
     },
   },
 
@@ -560,14 +568,13 @@ export default {
     },
 
     group: {
-      edit: '編輯',
-      ai: 'AI 工具',
+      edit: '基本工具',
+      ai: '進階工具',
     },
 
     transcode: {
       title: '轉檔設定',
       description: '轉換影片格式，可調整解析度、畫質與音訊設定。',
-      format: '輸出格式',
       mp3: 'MP3（純音訊）',
       aac: 'AAC（純音訊）',
       wav: 'WAV（純音訊）',
@@ -587,8 +594,6 @@ export default {
       crf_hint: '數值越小品質越高、檔案越大（建議 18-28）',
       bitrate: '位元率',
       extract_audio: '提取音訊',
-      width: '寬度',
-      height: '高度',
       task_label: '影片 · 轉檔',
     },
 
@@ -616,9 +621,7 @@ export default {
 
     subtitle: {
       title: '字幕設定',
-      language: '語言',
       model_settings: '模型設定',
-      output_format: '輸出格式',
       srt: 'SRT',
       vtt: 'VTT (WebVTT)',
       select_output: '選擇輸出位置',
@@ -632,7 +635,6 @@ export default {
 
     translate: {
       enable: '翻譯字幕',
-      target_language: '目標語言',
       model: '翻譯模型',
       style: '翻譯風格',
       keep_names: '保留人名和專有名詞原文',
@@ -647,10 +649,7 @@ export default {
       english: '英文',
       japanese: '日文',
       korean: '韓文',
-      style_colloquial: '口語化',
-      style_formal: '正式',
-      style_literal: '直譯',
-      no_model_downloaded: '尚未下載翻譯模型，請至設定 → 模型管理下載。',
+      no_model_downloaded: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
     },
 
     whisper_advanced: {
@@ -672,7 +671,7 @@ export default {
     interpolate: {
       title: '補幀設定',
       description: '使用 AI 插幀提升影片幀率。',
-      model: '模型',
+      model: '插補模型',
       model_recommended: '（推薦）',
       model_fast: '（快速）',
       mode: '補幀模式',
@@ -683,7 +682,6 @@ export default {
       current_fps: '目前 FPS',
       output_fps: '輸出 FPS',
       fps_warning: '目標 FPS 必須高於來源 FPS',
-      output_format: '輸出格式',
       video_codec: '影像編碼',
       task_label: '影片 · 補幀',
     },
@@ -691,9 +689,8 @@ export default {
     enhance: {
       title: '畫面強化設定',
       description: '使用 AI 超解析提升影片解析度。',
-      model: '模型',
+      model: '增強模型',
       output_resolution: '輸出解析度',
-      output_format: '輸出格式',
       video_codec: '影像編碼',
       task_label: '影片 · 畫面強化',
     },
@@ -736,14 +733,13 @@ export default {
     },
 
     group: {
-      edit: '編輯',
-      ai: 'AI 工具',
+      edit: '基本工具',
+      ai: '進階工具',
     },
 
     transcode: {
       title: '轉檔設定',
       description: '轉換音訊格式，可調整位元率與取樣率。',
-      format: '輸出格式',
       lossy: '有損',
       lossless: '無損',
       bitrate: '位元率',
@@ -780,9 +776,7 @@ export default {
       title: '逐字稿設定',
       description: '使用 Whisper 將音訊內容轉為文字或 SRT 字幕檔。',
       not_installed: 'AI 核心環境未安裝，請先至設定頁面安裝。',
-      model: '辨識模型',
-      language: '語言',
-      output_format: '輸出格式',
+      model: '語音辨識模型',
       txt_format: 'TXT（純文字）',
       srt_format: 'SRT（含時間碼）',
       srt_hint: '輸出含時間碼的 SRT 字幕格式',
@@ -792,7 +786,6 @@ export default {
       align: '精準對齊',
       align_hint: '使用 Wav2Vec2 進行逐詞時間軸對齊',
       translate: '翻譯',
-      target_language: '目標語言',
       translate_model: '翻譯模型',
       summarize: '大綱整理',
       summarize_hint: '使用 LLM 生成逐字稿摘要大綱',
@@ -802,32 +795,30 @@ export default {
       output_file: '輸出路徑',
       select_output: '選擇輸出路徑',
       task_label: '音訊 · 逐字稿',
-      no_translate_model: '尚未下載翻譯模型，請至設定 → 模型管理下載。',
+      no_translate_model: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
     },
 
     lyrics: {
       title: '歌詞提取設定',
       description: '使用 AI 人聲分離與語音辨識從音樂中提取歌詞。',
-      model: '辨識模型',
+      model: '語音辨識模型',
       align: '精準對齊',
       align_hint: '使用 Wav2Vec2 進行逐詞時間軸對齊',
       translate: '翻譯歌詞',
-      target_language: '目標語言',
       translate_model: '翻譯模型',
-      output_format: '輸出格式',
       lrc: 'LRC（含時間軸）',
       txt: '純文字',
       output_file: '輸出路徑',
       select_output: '選擇輸出路徑',
       task_label: '音訊 · 歌詞提取',
       result_title: '歌詞',
-      no_translate_model: '尚未下載翻譯模型，請至設定 → 模型管理下載。',
+      no_translate_model: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
     },
 
     separate: {
       title: '音源分離設定',
       description: '使用 HDemucs 將音訊分離為人聲、鼓、貝斯及其他音軌。',
-      model: '模型',
+      model: '分離模型',
       stems: '輸出音軌',
       stem_vocals: '人聲',
       stem_drums: '鼓',
@@ -836,8 +827,7 @@ export default {
       stem_piano: '鋼琴',
       stem_other: '其他',
       task_label: '音訊 · 音源分離',
-      model_not_downloaded: '分離模型尚未下載，請至設定 → AI 模組管理下載。',
-      output_format: '輸出格式',
+      model_not_downloaded: '分離模型尚未下載，請至設定 → 模型與資源下載。',
       output_file: '輸出路徑',
       select_output: '選擇輸出路徑',
       generate_midi: '產出 MIDI',
@@ -851,6 +841,8 @@ export default {
       title: 'MIDI 編輯設定',
       description: '編輯 MIDI 音符、調整音色、匯出音訊。',
       unsupported: '此檔案格式不支援 MIDI 編輯，請載入 .mid 檔案。',
+      soundfont_missing: '尚未安裝音色庫，MIDI 播放會無聲，請先安裝音色庫。',
+      soundfont_install: '前往安裝',
       task_label: '音訊 · MIDI 匯出',
       tracks: '音軌管理',
       add_track: '新增音軌',
@@ -931,8 +923,8 @@ export default {
     },
 
     group: {
-      edit: '編輯',
-      ai: 'AI 工具',
+      edit: '基本工具',
+      ai: '進階工具',
     },
 
     ocr: {
@@ -941,21 +933,20 @@ export default {
       server_not_found: 'llama-server 未找到，請前往設定頁面安裝 AI 核心',
       go_to_settings: '前往設定',
       format_not_supported: 'OCR 僅支援 PDF 及圖片格式',
-      model: '辨識模型',
-      output_format: '輸出格式',
+      model: '文字辨識模型',
       markdown: 'Markdown (.md)',
       text: '純文字 (.txt)',
       output_file: '輸出檔案',
       select_output: '選擇輸出位置',
       task_label: '文件 · 文字辨識',
-      no_model_downloaded: '所選模型尚未下載，請至設定 → 模型管理下載。',
+      no_model_downloaded: '所選模型尚未下載，請至設定 → 模型與資源下載。',
     },
 
     pdf_convert: {
       title: 'PDF 轉換設定',
       description: '將 PDF 轉換為純文字、Markdown 或頁面圖片。',
-      output_format: '輸出格式',
       text_format: '純文字 (.txt)',
+      markdown_format: 'Markdown (.md)',
       images_format: '頁面圖片 (.zip)',
       output_file: '輸出檔案',
       select_output: '選擇輸出位置',
@@ -981,8 +972,6 @@ export default {
       install_button: '安裝翻譯功能',
       installing: '安裝中...',
       model: '翻譯模型',
-      source_language: '來源語言',
-      target_language: '目標語言',
       style: '翻譯風格',
       glossary: '專有名詞字典',
       optional: '（選填）',
@@ -991,7 +980,7 @@ export default {
       installing_toast: '開始安裝翻譯功能，請稍候...',
       install_complete: '翻譯功能安裝完成',
       install_error: '安裝失敗，請查看任務列表',
-      no_model_downloaded: '尚未下載翻譯模型，請至設定 → 模型管理下載。',
+      no_model_downloaded: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
     },
   },
 
@@ -1000,8 +989,8 @@ export default {
     tab: {
       general: '一般',
       system: '系統資訊',
-      models: 'AI 模型管理',
-      agent: 'Agent',
+      models: '模型與資源',
+      agent: '智慧助手',
       'video-download': '影片下載',
       about: '關於',
     },
@@ -1021,7 +1010,7 @@ export default {
       reset_layout: '重設面板寬度',
       file_paths: '檔案路徑',
       temp_folder: '暫存資料夾',
-      models_dir: 'AI 模型存放目錄',
+      models_dir: '模型與資源存放目錄',
       restart_required: '重新啟動後生效',
       temp_usage: '目前占用',
       clear_temp: '清除暫存檔',
@@ -1089,7 +1078,7 @@ export default {
     },
 
     models: {
-      title: '模型列表',
+      title: '模型與資源列表',
       hint: '最多同時進行 4 個下載，超過將自動排隊',
       loading: '載入中...',
       refresh: '重新整理',
@@ -1135,7 +1124,7 @@ export default {
     },
 
     agent: {
-      title: 'Agent 設定',
+      title: '智慧助手 設定',
       model: {
         label: '模型',
         placeholder: '選擇支援 tools 的模型…',
@@ -1160,10 +1149,10 @@ export default {
     },
   },
 
-  // ── Agent ──────────────────────────────────────────────────────────────
+  // ── 智慧助手 ──────────────────────────────────────────────────────────────
   agent: {
     banner: {
-      prefix: 'Agent：',
+      prefix: '智慧助手：',
       queued: '等待中…',
       cancelled: '已中斷',
       waiting_confirm: '等待確認中…',
@@ -1181,14 +1170,15 @@ export default {
       },
     },
     bubble: {
-      title: 'Agent 對話',
-      placeholder: '請告訴 Agent 你想做什麼…',
+      title: '智慧助手 對話',
+      placeholder: '請告訴 智慧助手 你想做什麼…',
       empty: '尚無對話',
       thinking: '思考中…',
       token_count: '輸入: {prompt} / 輸出: {completion}',
       clear: '清除對話紀錄',
-      show: '顯示 Agent 對話泡泡',
-      hide: '隱藏 Agent 對話泡泡',
+      show: '顯示 智慧助手 對話泡泡',
+      hide: '隱藏 智慧助手 對話泡泡',
+      abort: '中止',
     },
     session: {
       new_chat: '+ 新對話',
@@ -1212,7 +1202,7 @@ export default {
       with_values: '確認以下數值執行此動作？',
     },
     error: {
-      no_model: '尚未設定 Agent 模型',
+      no_model: '尚未設定 智慧助手 模型',
       model_unavailable: '所選模型目前不可用',
       tools_not_supported: '此模型不支援工具呼叫',
       provider_error: '服務提供者回傳錯誤',
@@ -1346,6 +1336,7 @@ export default {
     ],
     agree: '我已閱讀並同意上述條款',
     enable: '啟用影片下載',
+    usage_hint: '啟用後,可在首頁或影片工具頁面直接貼上影片網址(Ctrl+V),即可下載並自動載入影片工具。',
     quality_mode: '下載畫質',
     quality_auto: '最佳畫質(自動)',
     quality_cap: '限制解析度',
@@ -1396,6 +1387,7 @@ export default {
     demucs: '音源分離（人聲/鼓/貝斯/吉他/鋼琴/其他）',
     rife: '影片補幀（Frame Interpolation）',
     basic_pitch: '音訊轉 MIDI',
+    soundfont: 'MIDI 播放音色庫（GM 樂器）',
     qwen3: 'Qwen3 翻譯模型',
     qwen3vl: 'Qwen3-VL 視覺語言模型（OCR）',
     internvl2_5: 'InternVL2.5 視覺語言模型（OCR）',

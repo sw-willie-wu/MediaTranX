@@ -56,9 +56,9 @@ class ImageOcrService:
         self,
         file_id: str,
         model_family: str = DEFAULT_VLM_MODEL,
-        size: str = "4b",
+        model_size: str = "4b",
         quantization: Optional[str] = None,
-        format: str = "md",
+        output_format: str = "md",
     ) -> str:
         """Submit an OCR task."""
         file_info = self._file_service.require_file(file_id)
@@ -66,9 +66,9 @@ class ImageOcrService:
         params = {
             "file_id": file_id,
             "model_family": model_family,
-            "size": size,
+            "model_size": model_size,
             "quantization": quantization,
-            "format": format,
+            "output_format": output_format,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_OCR, params)
         logger.info(f"Image OCR task submitted: {task_id}")
@@ -79,9 +79,9 @@ class ImageOcrService:
         file_info = self._file_service.require_file(file_id)
 
         model_family = params.get("model_family", DEFAULT_VLM_MODEL)
-        size = params.get("size", "4b")
+        model_size = params.get("model_size", "4b")
         quantization = params.get("quantization")
-        fmt = params.get("format", "md")
+        fmt = params.get("output_format", "md")
         ext = "md" if fmt == "md" else "txt"
 
         progress_callback(0.05, "task.progress.ocr_prepare")
@@ -92,14 +92,14 @@ class ImageOcrService:
         # === GPU queue pipeline ===
         with self._model_manager.gpu_session(), self._chat_service.session(
             model_family=model_family,
-            model_size=size,
+            model_size=model_size,
             quantization=quantization,
             on_load_progress=progress_callback,
             load_band=(0.10, 0.15),
         ) as session:
             from app.pipeline.ocr import recognize_image_local
 
-            variant = f"{size}:{quantization}" if quantization else size
+            variant = f"{model_size}:{quantization}" if quantization else model_size
             final_text = recognize_image_local(
                 str(file_info.file_path), model_family, variant, fmt, session,
                 on_progress=lambda p, m: progress_callback(0.15 + p * 0.80, m),
@@ -139,7 +139,7 @@ class ImageOcrService:
         provider: str,
         conn_id: Optional[int],
         remote_model: str,
-        format: str = "md",
+        output_format: str = "md",
     ) -> str:
         """Submit a remote OCR task."""
         file_info = self._file_service.require_file(file_id)
@@ -149,7 +149,7 @@ class ImageOcrService:
             "provider": provider,
             "conn_id": conn_id,
             "remote_model": remote_model,
-            "format": format,
+            "output_format": output_format,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_OCR_REMOTE, params)
         logger.info(f"Remote OCR task submitted: {task_id} (provider={provider}, model={remote_model})")
@@ -163,7 +163,7 @@ class ImageOcrService:
         provider = params["provider"]
         conn_id = params.get("conn_id")
         remote_model = params["remote_model"]
-        fmt = params.get("format", "md")
+        fmt = params.get("output_format", "md")
         ext = "md" if fmt == "md" else "txt"
 
         progress_callback(0.05, f"task.progress.connecting_provider|{provider}")

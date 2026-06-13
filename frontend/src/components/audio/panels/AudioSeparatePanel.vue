@@ -182,7 +182,7 @@ defineExpose({ execute, isDisabled, isLoading, getParams, onTaskComplete })
     </div>
 
     <div class="form-group">
-      <label>{{ $t('audio.separate.output_format') }}</label>
+      <label>{{ $t('common.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 

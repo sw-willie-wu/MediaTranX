@@ -68,3 +68,6 @@ export const GM_SOUNDFONT_NAMES: Record<number, string> = {
 /** Drum kit uses WebAudioFont GM percussion samples, stored in drums-mp3/ directory.
  *  Files are named by MIDI note number: 35.mp3, 36.mp3, ..., 81.mp3 */
 export const GM_DRUM_SOUNDFONT_NAME = 'drums'
+
+/** soundfont 在模型管理的 model id（對齊後端 SOUNDFONT_ID）。 */
+export const SOUNDFONT_MODEL_ID = 'soundfont-musyngkite'

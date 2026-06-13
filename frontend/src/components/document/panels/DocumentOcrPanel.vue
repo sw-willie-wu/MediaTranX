@@ -117,7 +117,7 @@ async function execute() {
 
   const body: Record<string, unknown> = {
     file_id: props.fileId,
-    format: outputFormat.value,
+    output_format: outputFormat.value,
   }
 
   if (parsed.isRemote) {
@@ -128,7 +128,7 @@ async function execute() {
   } else {
     const [family, size] = selectedModel.value.split(':')
     body.model_family = family
-    body.size = size
+    body.model_size = size
   }
 
   const taskId = await submitTask('/document/ocr', body, t('document.ocr.task_label'), 'document.ocr', props.currentFileName)
@@ -138,7 +138,7 @@ async function execute() {
 function getParams() {
   const parsed = parseModelValue(selectedModel.value)
   const body: Record<string, unknown> = {
-    format: outputFormat.value,
+    output_format: outputFormat.value,
   }
 
   if (parsed.isRemote) {
@@ -149,7 +149,7 @@ function getParams() {
   } else {
     const [family, size] = selectedModel.value.split(':')
     body.model_family = family
-    body.size = size
+    body.model_size = size
   }
 
   return body
@@ -217,7 +217,7 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, getParams })
     </div>
 
     <div class="form-group">
-      <label>{{ $t('document.ocr.output_format') }}</label>
+      <label>{{ $t('common.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
   </div>

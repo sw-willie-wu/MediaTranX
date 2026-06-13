@@ -124,7 +124,7 @@ def step1_merge():
 
 
 def step2_bump(semver: str, version: str):
-    """Bump version in backend/pyproject.toml (+uv.lock) and electron/package.json."""
+    """Bump version in backend/pyproject.toml (+uv.lock), electron/package.json, and frontend/package.json."""
     print(f"\n[2/6] Bump version to {semver}...")
     pyproject = ROOT / "backend" / "pyproject.toml"
     text = pyproject.read_text(encoding="utf-8")
@@ -133,9 +133,11 @@ def step2_bump(semver: str, version: str):
 
     run(["uv", "lock"], cwd=ROOT / "backend")
     run(["npm", "version", semver, "--no-git-tag-version"], cwd=ROOT / "electron")
+    run(["npm", "version", semver, "--no-git-tag-version"], cwd=ROOT / "frontend")
     run(["git", "add",
          "backend/pyproject.toml", "backend/uv.lock",
-         "electron/package.json", "electron/package-lock.json"])
+         "electron/package.json", "electron/package-lock.json",
+         "frontend/package.json", "frontend/package-lock.json"])
     run(["git", "commit", "-m", f"chore: bump version to {version}"])
     print("  [OK] Version bumped.")
 

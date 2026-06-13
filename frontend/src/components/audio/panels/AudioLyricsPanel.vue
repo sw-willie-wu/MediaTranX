@@ -107,7 +107,7 @@ async function loadTranslateLanguages() {
 watch(translateEnabled, (val) => { if (val) loadTranslateLanguages() })
 
 // ── Demucs / wav2vec2 readiness ─────────────────────────────────
-// Lyrics ALWAYS runs Demucs (backend hardcoded separate_vocals=True).
+// Lyrics ALWAYS runs Demucs (backend hardcoded vocal_separation=True).
 // Align is optional (controlled by alignEnabled toggle).
 const demucsReady = computed(() =>
   modelStore.byCategory('separate').some(
@@ -135,14 +135,14 @@ async function execute() {
 
   const body: Record<string, unknown> = {
     file_id: props.fileId,
-    whisper_size: modelSize.value,
+    model_size: modelSize.value,
     align: alignEnabled.value,
     output_format: outputFormat.value,
     translate: translateEnabled.value,
   }
 
   if (translateEnabled.value && targetLanguage.value) {
-    body.target_lang = targetLanguage.value
+    body.target_language = targetLanguage.value
     const parsed = parseModelValue(selectedTranslateModel.value)
     if (parsed.isRemote) {
       body.translate_remote = true
@@ -172,14 +172,14 @@ const isLoading  = computed(() => isProcessing.value)
 
 function getParams() {
   const body: Record<string, unknown> = {
-    whisper_size: modelSize.value,
+    model_size: modelSize.value,
     align: alignEnabled.value,
     output_format: outputFormat.value,
     translate: translateEnabled.value,
   }
 
   if (translateEnabled.value && targetLanguage.value) {
-    body.target_lang = targetLanguage.value
+    body.target_language = targetLanguage.value
     const parsed = parseModelValue(selectedTranslateModel.value)
     if (parsed.isRemote) {
       body.translate_remote = true
@@ -217,7 +217,7 @@ onMounted(() => {
     </div>
 
     <div class="form-group">
-      <label>{{ $t('audio.lyrics.output_format') }}</label>
+      <label>{{ $t('common.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 
@@ -238,7 +238,7 @@ onMounted(() => {
           <AppToggle v-model="translateEnabled">{{ $t('audio.lyrics.translate') }}</AppToggle>
           <div v-if="translateEnabled" class="sub-params">
             <div class="form-group">
-              <label class="sub-label">{{ $t('audio.lyrics.target_language') }}</label>
+              <label class="sub-label">{{ $t('common.target_language') }}</label>
               <AppSelect v-model="targetLanguage" :options="translateLanguages" />
             </div>
             <div class="form-group">
