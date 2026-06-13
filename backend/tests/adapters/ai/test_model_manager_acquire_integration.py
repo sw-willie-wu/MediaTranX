@@ -33,7 +33,8 @@ def _stub_real_loads():
     from app.adapters.ai.wrapper.base import PthWrapper, PackageWrapper
     from app.adapters.ai.wrapper.mobilesam import MobileSAMWrapper
     from app.adapters.ai.wrapper.whisper import WhisperWrapper
-    from app.adapters.ai.wrapper.ncnn_upscale import NcnnUpscaleWrapper
+    from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper
+    from app.adapters.ai.wrapper.waifu2x import Waifu2xWrapper
 
     fake_resolve = lambda *a, **k: ("/fake/path", {"_key": "fake"})
 
@@ -41,10 +42,13 @@ def _stub_real_loads():
          patch.object(PthWrapper, "_unload_impl"), \
          patch.object(PackageWrapper, "_load_impl", return_value=MagicMock()), \
          patch.object(PackageWrapper, "_unload_impl"), \
-         patch.object(NcnnUpscaleWrapper, "_load_impl", return_value=MagicMock()), \
-         patch.object(NcnnUpscaleWrapper, "_unload_impl"), \
+         patch.object(RealESRGANWrapper, "_load_impl", return_value=MagicMock()), \
+         patch.object(RealESRGANWrapper, "_unload_impl"), \
+         patch.object(Waifu2xWrapper, "_load_impl", return_value=MagicMock()), \
+         patch.object(Waifu2xWrapper, "_unload_impl"), \
          patch.object(PthWrapper, "_resolve_model_path", side_effect=fake_resolve), \
-         patch.object(NcnnUpscaleWrapper, "_resolve_model_path", side_effect=fake_resolve), \
+         patch.object(RealESRGANWrapper, "_resolve_model_path", side_effect=fake_resolve), \
+         patch.object(Waifu2xWrapper, "_resolve_model_path", side_effect=fake_resolve), \
          patch.object(MobileSAMWrapper, "_resolve_model_path", side_effect=fake_resolve), \
          patch.object(WhisperWrapper, "_resolve_model_path", side_effect=fake_resolve):
         yield
@@ -57,8 +61,8 @@ def test_upscale_dispatch_acquires_correct_wrapper(container, family):
     """mm.acquire('upscale', family) should return the family-specific wrapper."""
     mm = container.model_manager()
     with mm.acquire(slot="upscale", model_id=family, variant="default") as runtime:
-        # Torch wrappers encode the family in the class name; the shared
-        # NcnnUpscaleWrapper (realesrgan/waifu2x) encodes it in `.family` instead.
+        # Each wrapper class encodes its family in the class name
+        # (RealESRGANWrapper, Waifu2xWrapper, BSRGANWrapper, ...).
         cls_name = runtime.__class__.__name__.lower()
         token = family.replace("-", "").replace("_", "")
         assert token in cls_name or token[:6] in cls_name or getattr(runtime, "family", None) == family, (

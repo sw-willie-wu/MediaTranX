@@ -17,7 +17,7 @@ from app.adapters.ai.wrapper.real_cugan import RealCUGANWrapper
 from app.adapters.ai.wrapper.swinir import SwinIRWrapper
 
 
-# realesrgan + waifu2x migrated to NcnnUpscaleWrapper in Phase 1 (T10/T11) and
+# realesrgan + waifu2x migrated to ncnn-vulkan wrappers in Phase 1 (T10/T11) and
 # their torch wrappers were deleted; bsrgan/swinir/real-cugan stay on torch.
 UPSCALERS = [
     pytest.param(BSRGANWrapper,     "bsrgan",     "default",           4, id="bsrgan"),

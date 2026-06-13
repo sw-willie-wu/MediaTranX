@@ -100,9 +100,9 @@ class AppContainer(containers.DeclarativeContainer):
         _lazy("app.adapters.ai.wrapper.rife", "RIFEWrapper"),
     )
     # Phase-1 de-torch: realesrgan + waifu2x now run on the ncnn-vulkan CLI. One
-    # wrapper per model (RealESRGANWrapper / Waifu2xWrapper, both thin subclasses
-    # of NcnnUpscaleWrapper). swinir/bsrgan/real-cugan stay on the torch
-    # PthWrapper until their own phase (Gate B / Phase 7).
+    # wrapper per model (RealESRGANWrapper / Waifu2xWrapper, BaseWrapper subclasses
+    # that delegate execution to the binary adapter adapters/binary/ncnn.py).
+    # swinir/bsrgan/real-cugan stay on the torch PthWrapper until their own phase.
     realesrgan_wrapper = providers.Singleton(
         _lazy("app.adapters.ai.wrapper.realesrgan", "RealESRGANWrapper"),
     )

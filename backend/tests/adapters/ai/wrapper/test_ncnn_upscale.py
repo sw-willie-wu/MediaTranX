@@ -1,10 +1,10 @@
-"""NcnnUpscaleWrapper: slot/family, CLI assembly, CPU fallback, progress
-accumulation (count completions, not dips), output checks, NFR2 device lines.
+"""SR model wrappers (RealESRGANWrapper / Waifu2xWrapper): slot, per-model CLI
+knowledge (_model_flags / _progress), file validation, and the enhance path that
+delegates to the NcnnVulkan binary adapter.
 
-Seams: patch `ncnn_upscale.CliSidecar` (the binary); the wrapper's `_exe_path`
-(the installed exe), and the SOURCE `app.adapters.device.has_vulkan` (imported
-lazily inside `_build_args`). Acquire is faked the way test_pth_upscaler_wrappers
-fakes the manager.
+The execution mechanics (arg skeleton, output check, progress band) are tested in
+tests/adapters/test_ncnn_binary.py — here we only cover the model-specific bits.
+Seam: patch `app.adapters.binary.ncnn.CliSidecar` + each wrapper's `_ncnn.exe_path`.
 """
 from __future__ import annotations
 
@@ -15,32 +15,13 @@ from unittest.mock import patch
 import pytest
 from PIL import Image
 
-from app.adapters.ai.wrapper import ncnn_upscale
+from app.adapters.binary import ncnn as ncnn_mod
 from app.adapters.ai.wrapper.realesrgan import RealESRGANWrapper
 from app.adapters.ai.wrapper.waifu2x import Waifu2xWrapper
-from app.adapters.binary.sidecar_base import SidecarError
-
-
-def _model_dict(tmp_path, *, exe_tool, scale, cli_model_name=None, cli_noise=None):
-    """The dict _load_impl returns / _run_cli + _build_args read from self._model."""
-    cfg = {
-        "exe_tool": exe_tool, "scale": scale, "slot": exe_tool,
-        "model_id": exe_tool, "variant": "v",
-        "files": ["a.param", "a.bin"],
-    }
-    if cli_model_name is not None:
-        cfg["cli_model_name"] = cli_model_name
-    if cli_noise is not None:
-        cfg["cli_noise"] = cli_noise
-    md = tmp_path / exe_tool
-    md.mkdir(parents=True, exist_ok=True)
-    return {"exe": str(tmp_path / "exe"), "model_dir": md, "config": cfg}
+from app.adapters.binary.sidecar import SidecarError
 
 
 def _fake_sidecar(lines=(), out_files=1):
-    """Factory for a CliSidecar stand-in: emits `lines` then writes `out_files`
-    PNG(s) at the `-o` path (a file if out_files==1 and the path looks like a
-    file, else into the dir)."""
     class _FakeSC:
         def __init__(self, exe, on_line=None, cwd=None):
             self.on_line = on_line
@@ -61,68 +42,6 @@ def _fake_sidecar(lines=(), out_files=1):
     return _FakeSC
 
 
-# -- slot / family --------------------------------------------------------
-
-def test_slot_is_upscale_and_family_recorded():
-    w = Waifu2xWrapper()
-    assert w.slot == "upscale"
-    assert w.family == "waifu2x"
-
-
-# -- _load_impl -----------------------------------------------------------
-
-def test_load_fails_listing_missing_model_files(tmp_path):
-    w = RealESRGANWrapper()
-    param = tmp_path / "realesrgan" / "realesrgan-x4plus.param"
-    param.parent.mkdir(parents=True)
-    param.write_bytes(b"x")   # .param present, .bin absent
-    cfg = {"exe_tool": "realesrgan", "variant": "x4plus", "slot": "realesrgan",
-           "files": ["realesrgan-x4plus.param", "realesrgan-x4plus.bin"]}
-    with pytest.raises(FileNotFoundError, match="missing"):
-        w._load_impl(param, cfg)
-
-
-def test_load_impl_none_path_names_expected_location():
-    w = RealESRGANWrapper()
-    with pytest.raises(FileNotFoundError, match="(?i)realesrgan"):
-        w._load_impl(None, {"variant": "x4plus", "slot": "realesrgan"})
-
-
-# -- _build_args ----------------------------------------------------------
-
-def test_build_args_realesrgan_model_name_no_verbose(tmp_path, monkeypatch):
-    monkeypatch.setattr("app.adapters.device.has_vulkan", lambda: True)
-    w = RealESRGANWrapper()
-    w._model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
-                           cli_model_name="realesrgan-x4plus")
-    args = w._build_args(Path("in.png"), Path("out.png"))
-    assert args == ["-i", "in.png", "-o", "out.png",
-                    "-m", str(w._model["model_dir"]), "-s", "4", "-f", "png",
-                    "-n", "realesrgan-x4plus"]
-    assert "-v" not in args
-    assert "-g" not in args            # vulkan present → no CPU flag
-
-
-def test_build_args_waifu2x_noise_verbose(tmp_path, monkeypatch):
-    monkeypatch.setattr("app.adapters.device.has_vulkan", lambda: True)
-    w = Waifu2xWrapper()
-    w._model = _model_dict(tmp_path, exe_tool="waifu2x", scale=2, cli_noise=-1)
-    args = w._build_args(Path("in.png"), Path("out.png"))
-    assert args[-3:] == ["-n", "-1", "-v"]
-    assert "cli_model_name" not in w._model["config"]
-
-
-def test_build_args_appends_cpu_flag_without_vulkan(tmp_path, monkeypatch):
-    monkeypatch.setattr("app.adapters.device.has_vulkan", lambda: False)
-    w = RealESRGANWrapper()
-    w._model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
-                           cli_model_name="realesrgan-x4plus")
-    args = w._build_args(Path("in.png"), Path("out.png"))
-    assert args[-2:] == ["-g", "-1"]
-
-
-# -- enhance (single image) ----------------------------------------------
-
 def _fake_acquire(w, model):
     @contextmanager
     def _acq(model_id=None, variant=None, on_progress=None):
@@ -131,113 +50,88 @@ def _fake_acquire(w, model):
     return _acq
 
 
-def test_enhance_round_trips_and_checks_output(tmp_path, monkeypatch):
+def _model(tmp_path, files=("a.param", "a.bin"), **cfg_extra):
+    md = tmp_path; cfg = {"scale": 4, "variant": "v", "files": list(files), **cfg_extra}
+    return {"model_dir": md, "config": cfg}
+
+
+# -- slot -----------------------------------------------------------------
+
+@pytest.mark.parametrize("cls", [RealESRGANWrapper, Waifu2xWrapper])
+def test_slot_is_upscale(cls):
+    assert cls().slot == "upscale"
+
+
+# -- per-model CLI flags --------------------------------------------------
+
+def test_realesrgan_flags_use_model_name_no_verbose():
+    assert RealESRGANWrapper()._model_flags({"cli_model_name": "realesrgan-x4plus"}) \
+        == ["-n", "realesrgan-x4plus"]
+
+
+def test_waifu2x_flags_use_noise_and_verbose():
+    assert Waifu2xWrapper()._model_flags({"cli_noise": -1}) == ["-n", "-1", "-v"]
+
+
+# -- per-model progress parsing -------------------------------------------
+# Real CLI behaviour (T8, 2026-06-12): realesrgan prints one "0.00%" per frame
+# and climbs to "97.96%", NEVER "100.00%"; waifu2x prints a "done" line per file.
+
+def test_realesrgan_progress_advances_without_ever_seeing_100pct():
+    w = RealESRGANWrapper(); state = {}
+    fracs = [w._progress(l, state, 0, 2)[0]
+             for l in ("0.00%", "97.96%", "0.00%", "97.96%")]
+    assert fracs == sorted(fracs)          # monotonic
+    assert fracs[-1] > 0.9                 # 2nd frame counted, not frozen at ~0.49
+    assert w._progress("not a percent", state, 0, 2) is None
+
+
+def test_waifu2x_progress_counts_done_lines():
+    w = Waifu2xWrapper(); state = {}
+    f1, m1 = w._progress("a -> b done", state, 0, 2)
+    f2, _ = w._progress("c -> d done", state, 0, 2)
+    assert f1 == pytest.approx(0.5) and "upscale_frame|1|2" in m1
+    assert f2 == pytest.approx(1.0)
+    assert w._progress("no progress here", state, 0, 2) is None
+
+
+# -- _load_impl file validation -------------------------------------------
+
+def test_load_fails_listing_missing_model_files(tmp_path):
     w = RealESRGANWrapper()
-    model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
-                        cli_model_name="realesrgan-x4plus")
-    monkeypatch.setattr(ncnn_upscale, "CliSidecar", _fake_sidecar())
+    param = tmp_path / "realesrgan" / "realesrgan-x4plus.param"
+    param.parent.mkdir(parents=True)
+    param.write_bytes(b"x")   # .param present, .bin absent
+    cfg = {"variant": "x4plus", "slot": "realesrgan",
+           "files": ["realesrgan-x4plus.param", "realesrgan-x4plus.bin"]}
+    with pytest.raises(FileNotFoundError, match="missing"):
+        w._load_impl(param, cfg)
+
+
+def test_load_impl_none_path_names_expected_location():
+    with pytest.raises(FileNotFoundError, match="(?i)waifu2x"):
+        Waifu2xWrapper()._load_impl(None, {"variant": "cunet-art-2x", "slot": "waifu2x"})
+
+
+# -- enhance delegates to NcnnVulkan --------------------------------------
+
+def test_enhance_round_trips_through_binary_adapter(tmp_path, monkeypatch):
+    w = RealESRGANWrapper()
+    monkeypatch.setattr(w._ncnn, "exe_path", lambda: "exe")
+    monkeypatch.setattr(ncnn_mod, "CliSidecar", _fake_sidecar())
+    monkeypatch.setattr("app.adapters.device.has_vulkan", lambda: True)
+    model = _model(tmp_path, cli_model_name="realesrgan-x4plus")
     with patch.object(w, "acquire", _fake_acquire(w, model)):
-        result = w.enhance(Image.new("RGB", (64, 64)), model_id="x4plus")
-    assert isinstance(result, Image.Image)
-    assert result.size == (128, 128)
+        out = w.enhance(Image.new("RGB", (64, 64)), model_id="x4plus")
+    assert isinstance(out, Image.Image) and out.size == (128, 128)
 
 
-def test_enhance_raises_when_cli_silently_succeeds_without_output(tmp_path, monkeypatch):
-    w = RealESRGANWrapper()
-    model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
-                        cli_model_name="realesrgan-x4plus")
-
-    class _SilentSC:
-        def __init__(self, exe, on_line=None, cwd=None):
-            pass
-
-        def run(self, args, timeout=None):
-            return 0                    # exits 0 but writes nothing
-
-    monkeypatch.setattr(ncnn_upscale, "CliSidecar", _SilentSC)
-    with patch.object(w, "acquire", _fake_acquire(w, model)):
-        with pytest.raises(SidecarError):
-            w.enhance(Image.new("RGB", (64, 64)), model_id="x4plus")
-
-
-# -- progress accumulation (realesrgan % stream) -------------------------
-# Real realesrgan-ncnn-vulkan stderr (captured 2026-06-12, T8 dry-run):
-# each frame prints exactly ONE "0.00%" then climbs by ~2% per tile and STOPS
-# at "97.96%" — it NEVER prints "100.00%". Frame counting keys on the 0.00%
-# resets; the chunk's output-file count is the real completion gate.
-
-def test_progress_realesrgan_frame_starts_drive_monotonic(tmp_path, monkeypatch):
-    w = RealESRGANWrapper()
-    w._model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
-                           cli_model_name="realesrgan-x4plus")
-    # 3 frames, each "0.00%" then a mid tile — no 100.00% anywhere.
-    monkeypatch.setattr(ncnn_upscale, "CliSidecar", _fake_sidecar(
-        lines=["0.00%", "49.98%", "0.00%", "49.98%", "0.00%", "97.96%"]))
-    out_dir = tmp_path / "out"
-    progress = []
-    w._run_cli(tmp_path / "in", out_dir, lambda p, m: progress.append(p),
-               total_frames=3, base_done=0, timeout=10)
-    assert progress == sorted(progress)        # monotonic non-decreasing
-    assert all(p >= 1.0 for p in progress)     # inference band convention
-    assert progress[-1] > 1.6                  # ~3rd frame in flight, advanced
-
-
-def test_progress_realesrgan_advances_without_ever_seeing_100pct(tmp_path, monkeypatch):
-    # REGRESSION (T8): the old logic counted "100.00%" completions, which the
-    # real CLI never emits → the 2nd frame would freeze at the 1st frame's ~98%.
-    # Counting 0.00% frame-starts must advance past frame 1 with NO 100% line.
-    w = RealESRGANWrapper()
-    w._model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
-                           cli_model_name="realesrgan-x4plus")
-    monkeypatch.setattr(ncnn_upscale, "CliSidecar",
-                        _fake_sidecar(lines=["0.00%", "97.96%", "0.00%", "97.96%"]))
-    out_dir = tmp_path / "out"
-    progress = []
-    w._run_cli(tmp_path / "in", out_dir, lambda p, m: progress.append(p),
-               total_frames=2, base_done=0, timeout=10)
-    assert progress == sorted(progress)
-    assert progress[-1] > 1.9                  # 2nd frame counted, not frozen at ~1.49
-
-
-def test_progress_waifu2x_counts_done_lines(tmp_path, monkeypatch):
-    # waifu2x-ncnn-vulkan prints no percentages; with -v it emits one
-    # "<in> -> <out> done" line per file (on stdout, merged by CliSidecar).
+def test_last_run_lines_proxies_the_binary_adapter(tmp_path, monkeypatch):
     w = Waifu2xWrapper()
-    w._model = _model_dict(tmp_path, exe_tool="waifu2x", scale=2, cli_noise=-1)
-    monkeypatch.setattr(ncnn_upscale, "CliSidecar", _fake_sidecar(
-        lines=["f0.png -> o0.png done", "f1.png -> o1.png done"]))
-    out_dir = tmp_path / "out"
-    progress, msgs = [], []
-    w._run_cli(tmp_path / "in", out_dir,
-               lambda p, m: (progress.append(p), msgs.append(m)),
-               total_frames=2, base_done=0, timeout=10)
-    assert progress[0] == pytest.approx(1.5)   # 1 of 2 done
-    assert progress[1] > 1.99                  # 2nd done counted
-    assert all("upscale_frame" in m for m in msgs)
-
-
-# -- enhance_dir output count + NFR2 lines --------------------------------
-
-def test_enhance_dir_raises_on_short_output_count(tmp_path, monkeypatch):
-    w = RealESRGANWrapper()
-    model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
-                        cli_model_name="realesrgan-x4plus")
-    monkeypatch.setattr(ncnn_upscale, "CliSidecar", _fake_sidecar(out_files=1))
-    in_dir = tmp_path / "in"
-    in_dir.mkdir()
-    out_dir = tmp_path / "out"
+    monkeypatch.setattr(w._ncnn, "exe_path", lambda: "exe")
+    monkeypatch.setattr(ncnn_mod, "CliSidecar", _fake_sidecar(lines=["[0 FakeGPU]"]))
+    monkeypatch.setattr("app.adapters.device.has_vulkan", lambda: True)
+    model = _model(tmp_path, cli_noise=-1)
     with patch.object(w, "acquire", _fake_acquire(w, model)):
-        with pytest.raises(SidecarError, match="1/2"):
-            w.enhance_dir(in_dir, out_dir, total_frames=2, model_id="x4plus",
-                          chunk_total=2)
-
-
-def test_device_lines_retained_for_nfr2(tmp_path, monkeypatch):
-    w = RealESRGANWrapper()
-    w._model = _model_dict(tmp_path, exe_tool="realesrgan", scale=4,
-                           cli_model_name="realesrgan-x4plus")
-    monkeypatch.setattr(ncnn_upscale, "CliSidecar",
-                        _fake_sidecar(lines=["[0 FakeGPU]"]))
-    out_dir = tmp_path / "out"
-    w._run_cli(tmp_path / "in", out_dir, None, total_frames=1, base_done=0, timeout=10)
+        w.enhance(Image.new("RGB", (8, 8)), model_id="cunet-art-2x")
     assert any("[0 FakeGPU]" in line for line in w.last_run_lines)

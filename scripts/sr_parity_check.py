@@ -123,8 +123,7 @@ def _ncnn_out(family: str, variant: str) -> "callable":
     if not cfg or param is None:
         raise SystemExit(f"ncnn {family}/{variant} not installed under the smoke root")
     w = _NCNN_WRAPPER[family]()
-    model = {"exe": str(w._exe_path()), "model_dir": param.parent,
-             "config": {**cfg, "variant": variant}}
+    model = {"model_dir": param.parent, "config": {**cfg, "variant": variant}}
 
     @contextmanager
     def _acq(model_id=None, variant=None, on_progress=None):

@@ -1,7 +1,7 @@
 """Real-binary smoke test for the ncnn-vulkan SR wrappers (T8 / NFR2).
 
 Runs the ACTUAL realesrgan / waifu2x ncnn-vulkan CLIs on a tiny image through
-the production NcnnUpscaleWrapper, asserting the real CLI contracts the mocked
+the production model wrappers, asserting the real CLI contracts the mocked
 unit tests cannot (realesrgan never prints `100.00%`; waifu2x only loads when
 the `-m` dir basename is `models-cunet`) plus an NFR2 GPU-device-line check.
 
@@ -59,11 +59,10 @@ def _model_dict(family: str, variant: str):
     if not cfg or param is None:
         return None
     try:
-        exe = _WRAPPER[family]()._exe_path()   # per-model wrapper owns its binary
+        _WRAPPER[family]()._ncnn.exe_path()    # guard: the ncnn exe is installed
     except FileNotFoundError:
         return None
-    return {"exe": str(exe), "model_dir": param.parent,
-            "config": {**cfg, "variant": variant}}
+    return {"model_dir": param.parent, "config": {**cfg, "variant": variant}}
 
 
 def _fake_acquire(w, model):

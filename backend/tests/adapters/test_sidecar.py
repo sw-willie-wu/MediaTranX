@@ -1,10 +1,10 @@
-"""Tests for CliSidecar (adapters/binary/sidecar_base.py) — real subprocesses
+"""Tests for CliSidecar (adapters/binary/sidecar.py) — real subprocesses
 via sys.executable; no model binaries needed."""
 import sys
 
 import pytest
 
-from app.adapters.binary.sidecar_base import CliSidecar, SidecarError
+from app.adapters.binary.sidecar import CliSidecar, SidecarError
 
 
 def test_runs_and_returns_zero_exit():
