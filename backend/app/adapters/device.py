@@ -52,10 +52,23 @@ def is_cuda_runtime_available() -> bool:
     the CUDA Toolkit or corresponding DLLs must also be present.
     In PyInstaller-packaged builds the DLLs reside next to the exe
     and require additional search paths.
+
+    Imports torch first (best-effort) so torch's bundled torch/lib is on the
+    DLL search path regardless of caller order; this @lru_cache'd result is
+    then correct whether or not the caller imported torch beforehand.
     """
     import ctypes
     import sys
     from pathlib import Path
+
+    # Order-independence: torch bundles cublas in torch/lib and only registers it on
+    # the DLL search path (os.add_dll_directory) when imported. Prime that here so this
+    # @lru_cache'd probe is correct whether or not the caller imported torch first.
+    # (has_nvidia_gpu() remains the torch-free hardware-presence probe.)
+    try:
+        import torch  # noqa: F401  (side effect: registers torch/lib on the DLL search path)
+    except Exception:
+        pass
 
     # 1. Standard search (system PATH, current directory, etc.)
     try:
@@ -346,8 +359,8 @@ def get_device_info() -> dict:
 
     gpu_detected = has_nvidia_gpu()
 
-    # Must call get_device() first (its internal torch import loads CUDA DLLs),
-    # then call is_cuda_runtime_available(), otherwise @lru_cache caches wrong results
+    # is_cuda_runtime_available() is now self-priming (imports torch before probing),
+    # so call order no longer affects its cached result.
     device = get_device()
     compute_type = get_compute_type()
     cuda_runtime = is_cuda_runtime_available()
