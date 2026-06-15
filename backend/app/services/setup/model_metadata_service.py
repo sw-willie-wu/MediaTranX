@@ -80,6 +80,32 @@ _LANG_NAMES = {
 }
 
 
+def _make_model_item(
+    *, id: str, family: str, family_label: str, variant: str, variant_label: str,
+    category: str, description: str, downloaded: bool, size_mb: int, vram_mb: int,
+    **extra,
+) -> dict:
+    """Canonical model-status item shape consumed by the route/UI.
+
+    The 10 core keys live HERE so the per-format enumerators can't drift;
+    family-specific extras (max_scale, capabilities, n_ctx_*) are passed
+    via **extra.
+    """
+    return {
+        "id": id,
+        "family": family,
+        "family_label": family_label,
+        "variant": variant,
+        "variant_label": variant_label,
+        "category": category,
+        "description": description,
+        "downloaded": downloaded,
+        "size_mb": size_mb,
+        "vram_mb": vram_mb,
+        **extra,
+    }
+
+
 def _soundfont_downloaded() -> bool:
     """soundfont 已下載 = .version 存在且 tag 相符（比 info.exists 嚴謹）。"""
     import json
@@ -153,19 +179,19 @@ class ModelMetadataService:
 
                 variant_label = variant_spec.get("label", variant_name)
 
-                items.append({
-                    "id": f"{model_family}-{variant_name}",
-                    "family": model_family,
-                    "family_label": family_label,
-                    "variant": variant_name,
-                    "variant_label": variant_label,
-                    "category": variant_spec.get("subcategory", family_category),
-                    "description": family_desc,
-                    "downloaded": downloaded,
-                    "size_mb": variant_spec.get("size_mb", 0),
-                    "vram_mb": variant_spec.get("vram_mb", 0),
-                    "max_scale": variant_spec.get("scale", 4),
-                })
+                items.append(_make_model_item(
+                    id=f"{model_family}-{variant_name}",
+                    family=model_family,
+                    family_label=family_label,
+                    variant=variant_name,
+                    variant_label=variant_label,
+                    category=variant_spec.get("subcategory", family_category),
+                    description=family_desc,
+                    downloaded=downloaded,
+                    size_mb=variant_spec.get("size_mb", 0),
+                    vram_mb=variant_spec.get("vram_mb", 0),
+                    max_scale=variant_spec.get("scale", 4),
+                ))
         return items
 
     def _enumerate_whisper_models(self) -> list[dict]:
@@ -188,18 +214,18 @@ class ModelMetadataService:
 
             variant_label = spec.get("label", size)
 
-            items.append({
-                "id": f"whisper-{size}",
-                "family": "whisper",
-                "family_label": family_label,
-                "variant": size,
-                "variant_label": variant_label,
-                "category": family_category,
-                "description": spec.get("description", family_desc),
-                "downloaded": downloaded,
-                "size_mb": spec.get("size_mb", 0),
-                "vram_mb": spec.get("vram_mb", 0),
-            })
+            items.append(_make_model_item(
+                id=f"whisper-{size}",
+                family="whisper",
+                family_label=family_label,
+                variant=size,
+                variant_label=variant_label,
+                category=family_category,
+                description=spec.get("description", family_desc),
+                downloaded=downloaded,
+                size_mb=spec.get("size_mb", 0),
+                vram_mb=spec.get("vram_mb", 0),
+            ))
         return items
 
     def _enumerate_demucs_models(self) -> list[dict]:
@@ -223,18 +249,18 @@ class ModelMetadataService:
                 and any(f.suffix == ".th" for f in checkpoints_dir.iterdir())
             )
 
-            items.append({
-                "id": f"demucs-{variant_name}",
-                "family": "demucs",
-                "family_label": family_label,
-                "variant": variant_name,
-                "variant_label": variant_label,
-                "category": family_category,
-                "description": family_desc,
-                "downloaded": downloaded,
-                "size_mb": variant_spec.get("size_mb", 0),
-                "vram_mb": variant_spec.get("vram_mb", 0),
-            })
+            items.append(_make_model_item(
+                id=f"demucs-{variant_name}",
+                family="demucs",
+                family_label=family_label,
+                variant=variant_name,
+                variant_label=variant_label,
+                category=family_category,
+                description=family_desc,
+                downloaded=downloaded,
+                size_mb=variant_spec.get("size_mb", 0),
+                vram_mb=variant_spec.get("vram_mb", 0),
+            ))
         return items
 
     def _enumerate_gguf_models(self) -> list[dict]:
@@ -268,22 +294,22 @@ class ModelMetadataService:
                     quant_desc = _QUANT_DESC.get(quant, "")
                     description = f"{size_desc}||{quant_desc}" if size_desc and quant_desc else (size_desc or quant_desc)
 
-                    items.append({
-                        "id": f"{model_family}-{size}-{quant}",
-                        "family": model_family,
-                        "family_label": family_label,
-                        "variant": f"{size}:{quant}",
-                        "variant_label": f"{size.upper()} {quant}",
-                        "description": description,
-                        "category": "gguf",
-                        "capabilities": capabilities,
-                        "downloaded": downloaded,
-                        "size_mb": total_mb,
-                        "vram_mb": total_mb + size_spec.get("vram_overhead_mb", 0),
-                        "n_ctx_default": size_spec.get("n_ctx_default", 4096),
-                        "n_ctx_min": size_spec.get("n_ctx_min", 2048),
-                        "n_ctx_max": size_spec.get("n_ctx_max", 8192),
-                    })
+                    items.append(_make_model_item(
+                        id=f"{model_family}-{size}-{quant}",
+                        family=model_family,
+                        family_label=family_label,
+                        variant=f"{size}:{quant}",
+                        variant_label=f"{size.upper()} {quant}",
+                        category="gguf",
+                        description=description,
+                        downloaded=downloaded,
+                        size_mb=total_mb,
+                        vram_mb=total_mb + size_spec.get("vram_overhead_mb", 0),
+                        capabilities=capabilities,
+                        n_ctx_default=size_spec.get("n_ctx_default", 4096),
+                        n_ctx_min=size_spec.get("n_ctx_min", 2048),
+                        n_ctx_max=size_spec.get("n_ctx_max", 8192),
+                    ))
         return items
 
     def _enumerate_alignment_models(self) -> list[dict]:
@@ -300,18 +326,18 @@ class ModelMetadataService:
             downloaded = model_cache.exists() and (model_cache / "snapshots").exists()
 
             lang_name = _LANG_NAMES.get(lang_code, lang_code)
-            items.append({
-                "id": f"alignment-{lang_code}",
-                "family": "alignment",
-                "family_label": "Wav2Vec2",
-                "variant": lang_code,
-                "variant_label": lang_name,
-                "category": "alignment",
-                "description": f"models.alignment||{lang_code}",
-                "downloaded": downloaded,
-                "size_mb": 1200,
-                "vram_mb": 1000,
-            })
+            items.append(_make_model_item(
+                id=f"alignment-{lang_code}",
+                family="alignment",
+                family_label="Wav2Vec2",
+                variant=lang_code,
+                variant_label=lang_name,
+                category="alignment",
+                description=f"models.alignment||{lang_code}",
+                downloaded=downloaded,
+                size_mb=1200,
+                vram_mb=1000,
+            ))
         return items
 
 
@@ -334,18 +360,18 @@ class ModelMetadataService:
             filename = variant_spec.get("filename", "")
             downloaded = (model_dir / filename).exists()
 
-            items.append({
-                "id": f"rife-{variant_name}",
-                "family": "rife",
-                "family_label": family_label,
-                "variant": variant_name,
-                "variant_label": variant_label,
-                "category": family_category,
-                "description": family_desc,
-                "downloaded": downloaded,
-                "size_mb": variant_spec.get("size_mb", 0),
-                "vram_mb": variant_spec.get("vram_mb", 0),
-            })
+            items.append(_make_model_item(
+                id=f"rife-{variant_name}",
+                family="rife",
+                family_label=family_label,
+                variant=variant_name,
+                variant_label=variant_label,
+                category=family_category,
+                description=family_desc,
+                downloaded=downloaded,
+                size_mb=variant_spec.get("size_mb", 0),
+                vram_mb=variant_spec.get("vram_mb", 0),
+            ))
         return items
 
     def _enumerate_midi_models(self) -> list[dict]:
@@ -355,15 +381,15 @@ class ModelMetadataService:
         """
         from app.adapters.ai.registry import SOUNDFONT_ID, SOUNDFONT_LABEL, SOUNDFONT_SIZE_MB
 
-        return [{
-            "id": SOUNDFONT_ID,
-            "family": "soundfont",
-            "family_label": SOUNDFONT_LABEL,
-            "variant": "musyngkite",
-            "variant_label": "",
-            "category": "midi",
-            "description": "models.soundfont",
-            "downloaded": _soundfont_downloaded(),
-            "size_mb": SOUNDFONT_SIZE_MB,
-            "vram_mb": 0,
-        }]
+        return [_make_model_item(
+            id=SOUNDFONT_ID,
+            family="soundfont",
+            family_label=SOUNDFONT_LABEL,
+            variant="musyngkite",
+            variant_label="",
+            category="midi",
+            description="models.soundfont",
+            downloaded=_soundfont_downloaded(),
+            size_mb=SOUNDFONT_SIZE_MB,
+            vram_mb=0,
+        )]

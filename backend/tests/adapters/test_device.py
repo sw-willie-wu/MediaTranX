@@ -244,3 +244,40 @@ def test_get_device_on_kernel_incompat_downgrades_with_reason(monkeypatch):
     dev.set_allow_cpu_fallback(True)
     assert dev.get_device() == "cpu"
     assert dev.get_global_downgrade_reason() == "gpu_unsupported"
+
+
+# ── is_cuda_runtime_available: import-order-independence ─────────────────
+
+
+def test_is_cuda_runtime_available_primes_torch(monkeypatch):
+    import builtins
+    import ctypes
+    device.is_cuda_runtime_available.cache_clear()
+    seen = []
+    real_import = builtins.__import__
+    def spy(name, *a, **k):
+        seen.append(name)
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", spy)
+    monkeypatch.setattr(ctypes, "CDLL", lambda *a, **k: object())  # cublas "loads"
+    assert device.is_cuda_runtime_available() is True
+    assert "torch" in seen          # the probe attempted import torch before/around the cublas probe
+    device.is_cuda_runtime_available.cache_clear()
+
+
+def test_is_cuda_runtime_available_branches(monkeypatch, tmp_path):
+    import ctypes
+    import sys as _sys
+    device.is_cuda_runtime_available.cache_clear()
+    monkeypatch.setenv("APPDATA", str(tmp_path))      # no %APPDATA%/MediaTranX/cuda/cublas -> deterministic
+    monkeypatch.setattr(_sys, "frozen", False, raising=False)
+    # success: cublas loads -> True
+    monkeypatch.setattr(ctypes, "CDLL", lambda *a, **k: object())
+    assert device.is_cuda_runtime_available() is True
+    # failure: cublas raises everywhere, no frozen dir, no APPDATA cublas -> False
+    device.is_cuda_runtime_available.cache_clear()
+    def boom(*a, **k):
+        raise OSError("not found")
+    monkeypatch.setattr(ctypes, "CDLL", boom)
+    assert device.is_cuda_runtime_available() is False
+    device.is_cuda_runtime_available.cache_clear()
