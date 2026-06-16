@@ -289,7 +289,7 @@ function showErrorUI() {
   }).catch((e) => writeAppLog(`[${new Date().toISOString()}] [ERROR] [error-ui-load-failed] ${e.message}`));
 }
 
-const { creepPercent, formatElapsedSeconds, isLongWait } = require('./lib/splash-progress');
+const { creepPercent, isLongWait } = require('./lib/splash-progress');
 
 // Inject splash fields (reuses the same #percent/#stage/#detail contract as
 // setupEnvironment's sendProgress escaping).
@@ -309,8 +309,8 @@ function setSplash(window, { percent, stage, detail }) {
 function driveWaitFeedback(window, locale) {
   const zh = (locale || 'zh-TW').startsWith('zh');
   const t = zh
-    ? { starting: '啟動中...', longWait: '首次啟動較久，正在初始化 AI 服務…', sec: (n) => `已等待 ${n} 秒` }
-    : { starting: 'Starting...', longWait: 'First launch takes a little longer — starting AI services…', sec: (n) => `Waited ${n}s` };
+    ? { starting: '啟動中...', longWait: '首次啟動較久，正在初始化 AI 服務…' }
+    : { starting: 'Starting...', longWait: 'First launch takes a little longer — starting AI services…' };
   const start = Date.now();
   let finished = false;
   const timer = setInterval(() => {
@@ -319,11 +319,10 @@ function driveWaitFeedback(window, locale) {
     setSplash(window, {
       // Math.floor (not round): the displayed integer must stay < 99 per AC-B1
       // "never reaching 99" — round would show 99 from ~35s on, re-creating the
-      // "stuck at 99%" optics of Symptom B. Tops at 98; the elapsed-seconds
-      // counter + spinner provide liveness once the creep saturates.
+      // "stuck at 99%" optics of Symptom B. Tops at 98; the moving percent +
+      // spinner (and the ≥8s message) provide liveness once the creep saturates.
       percent: Math.floor(creepPercent(elapsed, 90, 99, 12000)),
       stage: isLongWait(elapsed, 8000) ? t.longWait : t.starting,
-      detail: t.sec(formatElapsedSeconds(elapsed)),
     });
   }, 1000);
   return function stop() { finished = true; clearInterval(timer); };
