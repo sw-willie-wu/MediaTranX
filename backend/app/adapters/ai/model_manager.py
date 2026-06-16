@@ -159,10 +159,10 @@ class ModelManager:
         Three cases:
         1. Slot has a dispatcher (e.g. `upscale`): instantiate via dispatcher,
            swap cached instance when model_id changes.
-        2. Slot has a runtime provider (e.g. `whisper`): one-shot init from the
-           provider (typically a DI singleton), cache for lifetime of the process.
-        3. Pre-registered runtime (e.g. `llm` — registered via `register_runtime`):
-           always return the cached instance.
+        2. Slot has a runtime provider (e.g. `whisper`, `llm`): one-shot init from
+           the provider (typically a DI singleton), cache for lifetime of the process.
+        3. Pre-registered runtime (registered directly via `register_runtime` —
+           tests only): always return the cached instance.
         """
         existing = self._runtimes.get(slot)
 
@@ -195,7 +195,7 @@ class ModelManager:
             return existing
 
         if existing is not None:
-            return existing  # pre-registered (LLM)
+            return existing  # pre-registered directly via register_runtime (tests only)
         raise KeyError(f"Unknown runtime slot: {slot!r}")
 
     def _acquire_lock(self, slot: str, required_vram_mb: int = 0) -> None:

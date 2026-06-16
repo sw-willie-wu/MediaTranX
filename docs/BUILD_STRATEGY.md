@@ -91,12 +91,12 @@ Nuitka 以 `nuitka==4.0.8` **pin**（避免版本漂移連帶要求更新的 Min
 
 ### 第三方套件相容性修補
 
-集中修補在 `backend/app/init/compat.py`（`apply_compat_patches()`）：
+相容性修補**延後 (lazy) 套用、不在 `bootstrap()`**——因為 import torchvision/scipy（~4s）必須移出 bind 阻塞啟動路徑（見 cold-start 優化）。
 
-| 修補 | 說明 |
-|------|------|
-| `_patch_torchvision_functional_tensor` | 補回 basicsr/gfpgan 仍引用、新版 torchvision 已移除的 `transforms.functional_tensor` |
-| `_patch_scipy_signal_gaussian` | 補回新版 scipy 移到 `signal.windows` 的 `signal.gaussian` |
+| 修補 | 位置 | 說明 |
+|------|------|------|
+| torchvision `functional_tensor` shim | `backend/app/init/compat.py` `ensure_torchvision_functional_tensor_compat()`，**在 `PthWrapper._load_with_spandrel` 載入模型前 lazy 套用**（idempotent） | 補回 basicsr 仍引用、新版 torchvision 已移除的 `transforms.functional_tensor`；現行無 app 路徑引用 basicsr，純防禦性保留 |
+| scipy `signal.gaussian` shim | `backend/app/adapters/ai/wrapper/basic_pitch.py`（唯一消費者，於使用點 self-patch；舊 `compat.py` 版本已移除） | 補回新版 scipy 移到 `signal.windows` 的 `signal.gaussian` |
 
 ---
 
