@@ -235,6 +235,100 @@ function stopPythonBackend() {
 
 let mainWindow = null;
 
+// Shared app-log writer — prod → logs/app.log, dev → dev_frontend.log.
+// Lazily opened once; reused by the UI-console forwarder and crash handlers.
+let _appLogStream = null;
+function writeAppLog(line) {
+  try {
+    if (!_appLogStream) {
+      let logPath;
+      if (app.isPackaged) {
+        const logsPath = join(getAppDataPath(), 'logs');
+        if (!fs.existsSync(logsPath)) fs.mkdirSync(logsPath, { recursive: true });
+        logPath = join(logsPath, 'app.log');
+      } else {
+        logPath = join(getAppDataPath(), 'dev_frontend.log');
+      }
+      _appLogStream = fs.createWriteStream(logPath, { flags: 'a' });
+      _appLogStream.write(`\n--- UI Log Start: ${new Date().toISOString()} ---\n`);
+    }
+    _appLogStream.write(line.endsWith('\n') ? line : line + '\n');
+  } catch (_) { /* never throw from the failure path */ }
+}
+
+let frontendLoaded = false;   // true once the REAL frontend (not splash) finished loading
+let isTearingDown = false;    // true during deliberate teardown → crash handlers no-op
+let errorUIShown = false;     // true once the recovery error UI is shown → suppress frontend (over)load
+
+// Last-resort recovery UI: load a themed error page and inject the saved
+// theme/locale + localized strings (mirrors the splash injection). Retry reuses
+// the existing `restart` IPC channel (full relaunch). Sets errorUIShown so the
+// startup orchestration does not overwrite it with the frontend.
+function showErrorUI() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  errorUIShown = true;
+  const prefsPath = join(getAppDataPath(), 'preferences.json');
+  let prefs = {};
+  try { prefs = JSON.parse(fs.readFileSync(prefsPath, 'utf-8')); } catch (_) {}
+  const theme = prefs.theme || 'dark';
+  const locale = prefs.locale || 'zh-TW';
+  const en = locale.startsWith('en');
+  const title = en ? 'Something went wrong' : '應用程式發生問題';
+  const message = en ? 'The view could not recover automatically. Click Retry to restart the app.'
+                     : '畫面無法自動恢復。請點擊重試以重新啟動應用程式。';
+  const retry = en ? 'Retry' : '重試';
+  const esc = (v) => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  mainWindow.loadFile(join(__dirname, 'error.html')).then(() => {
+    mainWindow.webContents.executeJavaScript(
+      `document.documentElement.setAttribute('data-theme','${theme}');`
+      + `document.documentElement.setAttribute('lang','${locale}');`
+      + `var t=document.getElementById('title');if(t)t.textContent='${esc(title)}';`
+      + `var m=document.getElementById('message');if(m)m.textContent='${esc(message)}';`
+      + `var r=document.getElementById('retry');if(r)r.textContent='${esc(retry)}';`
+    ).catch(() => {});
+  }).catch((e) => writeAppLog(`[${new Date().toISOString()}] [ERROR] [error-ui-load-failed] ${e.message}`));
+}
+
+const { creepPercent, formatElapsedSeconds, isLongWait } = require('./lib/splash-progress');
+
+// Inject splash fields (reuses the same #percent/#stage/#detail contract as
+// setupEnvironment's sendProgress escaping).
+function setSplash(window, { percent, stage, detail }) {
+  if (!window || window.isDestroyed()) return;
+  const esc = (v) => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+  const js = `(function(){`
+    + (percent != null ? `var p=document.getElementById('percent');if(p)p.textContent='${Math.round(percent)}%';` : '')
+    + (stage  != null ? `var s=document.getElementById('stage');if(s)s.textContent='${esc(stage)}';` : '')
+    + (detail != null ? `var d=document.getElementById('detail');if(d)d.textContent='${esc(detail)}';` : '')
+    + `})();`;
+  window.webContents.executeJavaScript(js).catch(() => {});
+}
+
+// Drives splash feedback during the backend wait. Returns stop() which clears
+// the timer and suppresses any late async creep updates (AC-B1a).
+function driveWaitFeedback(window, locale) {
+  const zh = (locale || 'zh-TW').startsWith('zh');
+  const t = zh
+    ? { starting: '啟動中...', longWait: '首次啟動較久，正在初始化 AI 服務…', sec: (n) => `已等待 ${n} 秒` }
+    : { starting: 'Starting...', longWait: 'First launch takes a little longer — starting AI services…', sec: (n) => `Waited ${n}s` };
+  const start = Date.now();
+  let finished = false;
+  const timer = setInterval(() => {
+    if (finished) return;
+    const elapsed = Date.now() - start;
+    setSplash(window, {
+      // Math.floor (not round): the displayed integer must stay < 99 per AC-B1
+      // "never reaching 99" — round would show 99 from ~35s on, re-creating the
+      // "stuck at 99%" optics of Symptom B. Tops at 98; the elapsed-seconds
+      // counter + spinner provide liveness once the creep saturates.
+      percent: Math.floor(creepPercent(elapsed, 90, 99, 12000)),
+      stage: isLongWait(elapsed, 8000) ? t.longWait : t.starting,
+      detail: t.sec(formatElapsedSeconds(elapsed)),
+    });
+  }, 1000);
+  return function stop() { finished = true; clearInterval(timer); };
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -256,26 +350,59 @@ function createWindow() {
   // 禁用頁面導航（上下頁、滑鼠側鍵）
   mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
 
+  // ── Renderer crash instrumentation + auto-recovery ──
+  const { isCrashReason, ReloadLoopGuard } = require('./lib/crash-recovery');
+  const reloadGuard = new ReloadLoopGuard(3, 30000);
+  let stableResetTimer = null;   // delayed reset cancelled by a crash (AC-A3 "stable load resets")
+
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    if (isTearingDown) return;
+    if (stableResetTimer) { clearTimeout(stableResetTimer); stableResetTimer = null; } // a crash ⇒ not stable
+    writeAppLog(`[${new Date().toISOString()}] [ERROR] [render-process-gone]`
+      + ` reason=${details.reason} exitCode=${details.exitCode}`);
+    if (!isCrashReason(details.reason)) return;             // clean-exit → ignore
+    if (!frontendLoaded) { showErrorUI(); return; }         // splash-phase crash → error UI (AC-A2)
+    if (reloadGuard.onCrash(Date.now()) === 'reload') {
+      try { mainWindow.webContents.reload(); } catch (_) {}
+    } else {
+      showErrorUI();                                        // loop-guard tripped (AC-A3/A6)
+    }
+  });
+
+  mainWindow.webContents.on('unresponsive', () => {
+    if (isTearingDown) return;
+    writeAppLog(`[${new Date().toISOString()}] [WARNING] [renderer-unresponsive]`);
+  });
+  mainWindow.webContents.on('responsive', () => {
+    writeAppLog(`[${new Date().toISOString()}] [INFO] [renderer-responsive]`);
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return;           // skip sub-frames + benign ERR_ABORTED
+    writeAppLog(`[${new Date().toISOString()}] [ERROR] [did-fail-load] code=${errorCode}`
+      + ` desc=${errorDescription} url=${validatedURL}`);
+  });
+
+  // Reset the loop-guard only after a load has been STABLE for the window
+  // duration (AC-A3). did-finish-load fires immediately on every load (incl.
+  // each reload of a crash-loop), so resetting on it directly would defeat the
+  // guard — instead arm a delayed reset that a subsequent crash cancels.
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (!frontendLoaded) return;                            // ignore splash + pre-frontend loads
+    if (stableResetTimer) clearTimeout(stableResetTimer);
+    stableResetTimer = setTimeout(() => { reloadGuard.reset(); stableResetTimer = null; }, 30000);
+  });
+
   mainWindow.on('maximize', () => mainWindow.webContents.send('window-maximized', true));
   mainWindow.on('unmaximize', () => mainWindow.webContents.send('window-maximized', false));
   if (!app.isPackaged) mainWindow.webContents.openDevTools();
 
-  // 捕捉前端 console，寫入 log 檔
-  // prod → logs/app.log，dev → data/dev_frontend.log
+  // 捕捉前端 console，寫入 log 檔（prod → logs/app.log，dev → dev_frontend.log，
+  // via the shared writeAppLog used by the crash handlers too）
   {
     const levels = ['VERBOSE', 'INFO', 'WARNING', 'ERROR'];
-    let uiLogPath;
-    if (app.isPackaged) {
-      const logsPath = join(getAppDataPath(), 'logs');
-      if (!fs.existsSync(logsPath)) fs.mkdirSync(logsPath, { recursive: true });
-      uiLogPath = join(logsPath, 'app.log');
-    } else {
-      uiLogPath = join(getAppDataPath(), 'dev_frontend.log');
-    }
-    const uiLogStream = fs.createWriteStream(uiLogPath, { flags: 'a' });
-    uiLogStream.write(`\n--- UI Log Start: ${new Date().toISOString()} ---\n`);
     mainWindow.webContents.on('console-message', (_, level, message) => {
-      uiLogStream.write(`[${new Date().toISOString()}] [${levels[level] ?? level}] [UI] ${message}\n`);
+      writeAppLog(`[${new Date().toISOString()}] [${levels[level] ?? level}] [UI] ${message}`);
     });
   }
 
@@ -287,6 +414,7 @@ function createWindow() {
   ipcMain.handle('check-maximized', () => mainWindow?.isMaximized());
   ipcMain.on('close-window', () => mainWindow?.close());
   ipcMain.on('restart-app', () => {
+    isTearingDown = true;   // app.exit(0) below does NOT emit before-quit → set guard here
     stopViteDevServer();
     stopPythonBackend();
     app.relaunch();
@@ -510,7 +638,9 @@ async function setupEnvironment(window) {
     { fn: downloadFFmpeg, args: [binDir], start: 50, weight: 12, label: 'FFmpeg' },
     { fn: downloadYtDlp, args: [binDir], start: 62, weight: 10, label: 'yt-dlp' },
     { fn: downloadLlamaServer, args: [binDir, gpu], start: 72, weight: 18, label: 'llama-server' },
-    { fn: downloadLlamaCudart, args: [binDir, gpu], start: 90, weight: 9, label: 'CUDA Runtime' },
+    // weight 0 → CUDA holds the bar at 90 while downloading, leaving 90→99
+    // headroom for the backend-wait creep (driveWaitFeedback). See AC-B3.
+    { fn: downloadLlamaCudart, args: [binDir, gpu], start: 90, weight: 0, label: 'CUDA Runtime' },
   ];
   let maxPercent = 50;
   for (const dl of downloads) {
@@ -540,13 +670,23 @@ async function setupEnvironment(window) {
       sendProgress(maxPercent, `${dl.label} ${t.downloadFailed}`, '');
     }
   }
-  sendProgress(99, t.starting, '');
+  sendProgress(90, t.starting, '');   // post-setup milestone (was 99) — creep 90→99 happens during the backend wait
 }
 
 app.whenReady().then(async () => {
   try {
     BACKEND_PORT = await findFreePort(8001);
     console.log(`Using port ${BACKEND_PORT} for backend.`);
+
+    // GPU / utility process crashes surface via app-level child-process-gone
+    // (render-process-gone is renderer-only). Log-only — Chromium respawns them.
+    app.on('child-process-gone', (_event, details) => {
+      if (isTearingDown) return;
+      writeAppLog(`[${new Date().toISOString()}] [ERROR] [child-process-gone] type=${details.type}`
+        + ` reason=${details.reason} exitCode=${details.exitCode}`
+        + (details.serviceName ? ` service=${details.serviceName}` : '')
+        + (details.name ? ` name=${details.name}` : ''));
+    });
 
     createWindow();
     await mainWindow.loadFile(join(__dirname, 'splash.html'));
@@ -582,16 +722,28 @@ app.whenReady().then(async () => {
     startPythonBackend();
 
     if (isDev) {
-      await Promise.all([
-        waitForServer(FRONTEND_DEV_PORT),
-        waitForServer(BACKEND_PORT),
-      ]);
+      const stop = driveWaitFeedback(mainWindow, locale);
+      try {
+        await Promise.all([
+          waitForServer(FRONTEND_DEV_PORT),
+          waitForServer(BACKEND_PORT),
+        ]);
+      } finally {
+        stop();   // clear timer before the 100% paint AND on reject (AC-B1a/B5)
+      }
+      if (errorUIShown) return;   // a splash-phase crash already showed recovery UI — don't overwrite it
       mainWindow.webContents.executeJavaScript(
         "var p=document.getElementById('percent'); if(p) p.textContent='100%';"
       ).catch(() => {});
-      mainWindow.loadURL(`http://localhost:${FRONTEND_DEV_PORT}/`);
+      mainWindow.loadURL(`http://localhost:${FRONTEND_DEV_PORT}/`).then(() => { frontendLoaded = true; }).catch(() => {});
     } else {
-      await waitForServer(BACKEND_PORT);
+      const stop = driveWaitFeedback(mainWindow, locale);
+      try {
+        await waitForServer(BACKEND_PORT);
+      } finally {
+        stop();
+      }
+      if (errorUIShown) return;
       mainWindow.webContents.executeJavaScript(
         "var p=document.getElementById('percent'); if(p) p.textContent='100%';"
       ).catch(() => {});
@@ -602,9 +754,9 @@ app.whenReady().then(async () => {
         if (fs.existsSync(fallbackPath)) frontendPath = fallbackPath;
       }
       if (fs.existsSync(frontendPath)) {
-        mainWindow.loadFile(frontendPath);
+        mainWindow.loadFile(frontendPath).then(() => { frontendLoaded = true; }).catch(() => {});
       } else {
-        mainWindow.loadURL(`http://localhost:${BACKEND_PORT}/`);
+        mainWindow.loadURL(`http://localhost:${BACKEND_PORT}/`).then(() => { frontendLoaded = true; }).catch(() => {});
       }
     }
   } catch (err) {
@@ -622,6 +774,7 @@ let isQuitting = false;
 app.on('before-quit', (event) => {
   if (isQuitting) return;
   isQuitting = true;
+  isTearingDown = true;   // crash handlers no-op during deliberate teardown (AC-A7)
   event.preventDefault();
 
   stopViteDevServer();
