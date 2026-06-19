@@ -5,6 +5,9 @@ import { useModelStore } from '@/stores/models'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
+import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
+import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
+import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
 import { apiFetch } from '@/composables/useApi'
@@ -27,6 +30,10 @@ const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
 const { guardModelReady } = useModelGuard()
+
+// ── Child component refs ────────────────────────────────────────
+const whisperAdvanced = ref<InstanceType<typeof WhisperAdvancedSettings> | null>(null)
+const translationOptions = ref<InstanceType<typeof TranslationOptionsPanel> | null>(null)
 
 // ── Whisper model status ────────────────────────────────────────
 const modelSizes = computed(() =>
@@ -51,13 +58,7 @@ watch(modelSizes, (sizes) => {
 const modelSize = usePersistedModel('transcribe_whisper_model', 'medium')
 const language = ref('')
 const outputFormat = ref('txt')
-const showAdvanced = ref(localStorage.getItem('transcribe_advanced') === 'true')
-watch(showAdvanced, (v) => localStorage.setItem('transcribe_advanced', String(v)))
 const vocalSeparation = ref(false)
-const alignEnabled = ref(false)
-const translateEnabled = ref(false)
-const targetLanguage = ref('zh-TW')
-const selectedTranslateModel = usePersistedModel('transcribe_translate_model')
 const summarizeEnabled = ref(false)
 const selectedSummarizeModel = usePersistedModel('transcribe_summarize_model')
 
@@ -81,8 +82,8 @@ const outputFormats = computed(() => [
   { value: 'srt', label: t('audio.transcribe.srt_format') },
 ])
 
-// ── Translation model options ───────────────────────────────────
-const localTranslateModelOptions = computed(() =>
+// ── Summarize model options ─────────────────────────────────────
+const localLlmModelOptions = computed(() =>
   modelStore.forPanel(modelStore.byCapability('text'))
     .slice()
     .sort((a, b) => a.size_mb - b.size_mb)
@@ -93,43 +94,14 @@ const localTranslateModelOptions = computed(() =>
     })
 )
 
-const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
-const { mergedOptions: summarizeModelOptions } = useModelOptions('text', localTranslateModelOptions)
+const { mergedOptions: summarizeModelOptions } = useModelOptions('text', localLlmModelOptions)
 
-watch(localTranslateModelOptions, (options) => {
-  if (!selectedTranslateModel.value || !options.some(m => m.value === selectedTranslateModel.value)) {
-    const first = options.find(m => m.badge === 'ok')
-    selectedTranslateModel.value = first?.value ?? ''
-  }
+watch(localLlmModelOptions, (options) => {
   if (!selectedSummarizeModel.value || !options.some(m => m.value === selectedSummarizeModel.value)) {
     const first = options.find(m => m.badge === 'ok')
     selectedSummarizeModel.value = first?.value ?? ''
   }
 }, { immediate: true })
-
-// ── Translation language options ────────────────────────────────
-const translateLanguages = ref([
-  { value: 'zh-TW', label: 'zh-TW' },
-  { value: 'zh-CN', label: 'zh-CN' },
-  { value: 'en',    label: 'en' },
-  { value: 'ja',    label: 'ja' },
-  { value: 'ko',    label: 'ko' },
-])
-
-async function loadTranslateLanguages() {
-  try {
-    const res = await apiFetch('/llm/translate/languages')
-    if (res.ok) {
-      const data = await res.json()
-      translateLanguages.value = data.map((l: { code: string; name: string }) => ({
-        value: l.code,
-        label: l.name,
-      }))
-    }
-  } catch {}
-}
-
-watch(translateEnabled, (val) => { if (val) loadTranslateLanguages() })
 
 // ── Demucs / wav2vec2 readiness ─────────────────────────────────
 const demucsReady = computed(() =>
@@ -148,17 +120,18 @@ async function execute() {
   if (vocalSeparation.value) {
     if (!await guardModelReady(demucsReady.value, 'audio')) return
   }
-  if (alignEnabled.value) {
+  if (whisperAdvanced.value?.align) {
     if (!await guardModelReady(alignReady.value, 'audio')) return
   }
-  if (translateEnabled.value) {
-    const tParsed = parseModelValue(selectedTranslateModel.value)
-    const translateReady = tParsed.isRemote || localTranslateModelOptions.value.find(m => m.value === selectedTranslateModel.value)?.badge === 'ok'
+  if (translationOptions.value?.enableTranslation) {
+    const tParsed = parseModelValue(translationOptions.value.selectedTranslateModel)
+    const tModel = translationOptions.value.selectedTranslateModel
+    const translateReady = tParsed.isRemote || localLlmModelOptions.value.find(m => m.value === tModel)?.badge === 'ok'
     if (!await guardModelReady(translateReady === true, 'llm')) return
   }
   if (summarizeEnabled.value) {
     const sParsed = parseModelValue(selectedSummarizeModel.value)
-    const summarizeReady = sParsed.isRemote || localTranslateModelOptions.value.find(m => m.value === selectedSummarizeModel.value)?.badge === 'ok'
+    const summarizeReady = sParsed.isRemote || localLlmModelOptions.value.find(m => m.value === selectedSummarizeModel.value)?.badge === 'ok'
     if (!await guardModelReady(summarizeReady === true, 'llm')) return
   }
   if (!props.fileId) return
@@ -169,25 +142,36 @@ async function execute() {
     model_size: modelSize.value,
     output_format: outputFormat.value,
     vocal_separation: vocalSeparation.value,
-    align: alignEnabled.value,
-    translate: translateEnabled.value,
+    translate: translationOptions.value?.enableTranslation ?? false,
     summarize: summarizeEnabled.value,
   }
 
-  if (translateEnabled.value && targetLanguage.value) {
-    body.target_language = targetLanguage.value
-    const parsed = parseModelValue(selectedTranslateModel.value)
+  if (translationOptions.value?.enableTranslation && translationOptions.value.targetLanguage) {
+    body.target_language = translationOptions.value.targetLanguage
+    const parsed = parseModelValue(translationOptions.value.selectedTranslateModel)
     if (parsed.isRemote) {
       body.translate_remote = true
       body.translate_provider = parsed.provider
       body.translate_conn_id = parsed.connId
       body.translate_remote_model = parsed.modelId
     } else {
-      const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
+      const [tmType, tmSize, tmQuant] = translationOptions.value.selectedTranslateModel.split(':')
       body.translate_model_family = tmType
       body.translate_model_size = tmSize
       body.translate_quantization = tmQuant
     }
+    body.keep_names = translationOptions.value.keepNames
+    body.translate_style = translationOptions.value.translateStyle
+    const glossary = translationOptions.value.parseGlossary()
+    if (glossary) body.glossary = glossary
+  }
+
+  if (whisperAdvanced.value) {
+    body.word_timestamps = whisperAdvanced.value.wordTimestamps
+    body.align = whisperAdvanced.value.align
+    body.condition_on_previous_text = whisperAdvanced.value.conditionOnPreviousText
+    body.min_silence_duration_ms = whisperAdvanced.value.minSilenceDurationMs
+    body.vad_threshold = whisperAdvanced.value.vadThreshold
   }
 
   if (summarizeEnabled.value) {
@@ -224,25 +208,36 @@ function getParams() {
     model_size: modelSize.value,
     output_format: outputFormat.value,
     vocal_separation: vocalSeparation.value,
-    align: alignEnabled.value,
-    translate: translateEnabled.value,
+    translate: translationOptions.value?.enableTranslation ?? false,
     summarize: summarizeEnabled.value,
   }
 
-  if (translateEnabled.value && targetLanguage.value) {
-    body.target_language = targetLanguage.value
-    const parsed = parseModelValue(selectedTranslateModel.value)
+  if (translationOptions.value?.enableTranslation && translationOptions.value.targetLanguage) {
+    body.target_language = translationOptions.value.targetLanguage
+    const parsed = parseModelValue(translationOptions.value.selectedTranslateModel)
     if (parsed.isRemote) {
       body.translate_remote = true
       body.translate_provider = parsed.provider
       body.translate_conn_id = parsed.connId
       body.translate_remote_model = parsed.modelId
     } else {
-      const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
+      const [tmType, tmSize, tmQuant] = translationOptions.value.selectedTranslateModel.split(':')
       body.translate_model_family = tmType
       body.translate_model_size = tmSize
       body.translate_quantization = tmQuant
     }
+    body.keep_names = translationOptions.value.keepNames
+    body.translate_style = translationOptions.value.translateStyle
+    const glossary = translationOptions.value.parseGlossary()
+    if (glossary) body.glossary = glossary
+  }
+
+  if (whisperAdvanced.value) {
+    body.word_timestamps = whisperAdvanced.value.wordTimestamps
+    body.align = whisperAdvanced.value.align
+    body.condition_on_previous_text = whisperAdvanced.value.conditionOnPreviousText
+    body.min_silence_duration_ms = whisperAdvanced.value.minSilenceDurationMs
+    body.vad_threshold = whisperAdvanced.value.vadThreshold
   }
 
   if (summarizeEnabled.value) {
@@ -277,8 +272,8 @@ const agentSchema = {
     { name: 'align', type: 'bool' as const },
     { name: 'translate', type: 'bool' as const },
     { name: 'target_language', type: 'enum' as const,
-      options: () => translateLanguages.value.map(l => l.value),
-      visibleWhen: () => translateEnabled.value },
+      options: () => translationOptions.value?.targetLanguageOptions?.map(o => o.value) ?? [],
+      visibleWhen: () => translationOptions.value?.enableTranslation ?? false },
     { name: 'summarize', type: 'bool' as const },
   ],
   actions: [],
@@ -293,9 +288,9 @@ useAgentPanelHost('audio.transcribe', {
     language: language.value,
     output_format: outputFormat.value,
     vocal_separation: vocalSeparation.value,
-    align: alignEnabled.value,
-    translate: translateEnabled.value,
-    target_language: targetLanguage.value,
+    align: whisperAdvanced.value?.align ?? false,
+    translate: translationOptions.value?.enableTranslation ?? false,
+    target_language: translationOptions.value?.targetLanguage ?? '',
     summarize: summarizeEnabled.value,
   }),
   setField: (field, value) => {
@@ -313,13 +308,13 @@ useAgentPanelHost('audio.transcribe', {
         vocalSeparation.value = !!value
         return vocalSeparation.value
       case 'align':
-        alignEnabled.value = !!value
-        return alignEnabled.value
+        if (whisperAdvanced.value) whisperAdvanced.value.align = !!value
+        return !!value
       case 'translate':
-        translateEnabled.value = !!value
-        return translateEnabled.value
+        if (translationOptions.value) translationOptions.value.enableTranslation = !!value
+        return !!value
       case 'target_language':
-        targetLanguage.value = value as string
+        if (translationOptions.value) translationOptions.value.targetLanguage = value as string
         return value
       case 'summarize':
         summarizeEnabled.value = !!value
@@ -351,7 +346,7 @@ onMounted(() => {
     <h6 class="settings-title"><i class="bi bi-mic-fill me-2"></i>{{ $t('audio.transcribe.title') }}</h6>
     <p class="form-hint">{{ $t('audio.transcribe.description') }}</p>
 
-    <!-- 基本設定 -->
+    <!-- Basic settings -->
     <div class="form-group">
       <label>{{ $t('audio.transcribe.model') }}</label>
       <AppSelect v-model="modelSize" :options="modelSizes" :placeholder="$t('common.no_models_available')" />
@@ -367,49 +362,30 @@ onMounted(() => {
       <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 
-    <!-- 進階選項（可收合） -->
-    <div class="settings-collapsible" :class="{ 'is-open': showAdvanced }">
-      <button class="settings-collapsible-header" @click="showAdvanced = !showAdvanced">
-        <i class="bi" :class="showAdvanced ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-        <span>{{ $t('common.advanced_options') }}</span>
-      </button>
+    <!-- Translation (shared component) -->
+    <TranslationOptionsPanel ref="translationOptions" :storageKey="'audio_transcribe_translate_model'" />
 
-      <div v-if="showAdvanced" class="settings-collapsible-body">
-        <div class="form-group">
-          <AppToggle v-model="vocalSeparation">{{ $t('audio.transcribe.vocal_separation') }}</AppToggle>
-          <small class="form-hint">{{ $t('audio.transcribe.vocal_separation_hint') }}</small>
-        </div>
-
-        <div class="form-group">
-          <AppToggle v-model="alignEnabled">{{ $t('audio.transcribe.align') }}</AppToggle>
-          <small class="form-hint">{{ $t('audio.transcribe.align_hint') }}</small>
-        </div>
-
-        <div class="form-group">
-          <AppToggle v-model="translateEnabled">{{ $t('audio.transcribe.translate') }}</AppToggle>
-          <div v-if="translateEnabled" class="sub-params">
-            <div class="form-group">
-              <label class="sub-label">{{ $t('common.target_language') }}</label>
-              <AppSelect v-model="targetLanguage" :options="translateLanguages" />
-            </div>
-            <div class="form-group">
-              <label class="sub-label">{{ $t('audio.transcribe.translate_model') }}</label>
-              <AppSelect v-model="selectedTranslateModel" :options="translateModelOptions" />
-            </div>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <AppToggle v-model="summarizeEnabled">{{ $t('audio.transcribe.generate_outline') }}</AppToggle>
-          <small class="form-hint">{{ $t('audio.transcribe.generate_outline_hint') }}</small>
-        </div>
-
-        <div v-if="summarizeEnabled" class="form-group">
-          <label>{{ $t('audio.transcribe.outline_model') }}</label>
-          <AppSelect v-model="selectedSummarizeModel" :options="summarizeModelOptions" />
-        </div>
-      </div>
+    <!-- Summarize -->
+    <div class="form-group">
+      <AppToggle v-model="summarizeEnabled">{{ $t('audio.transcribe.generate_outline') }}</AppToggle>
+      <small class="form-hint">{{ $t('audio.transcribe.generate_outline_hint') }}</small>
     </div>
+
+    <div v-if="summarizeEnabled" class="form-group">
+      <label>{{ $t('audio.transcribe.outline_model') }}</label>
+      <AppSelect v-model="selectedSummarizeModel" :options="summarizeModelOptions" />
+    </div>
+
+    <!-- Whisper advanced settings (self-collapsing) -->
+    <WhisperAdvancedSettings ref="whisperAdvanced" />
+
+    <!-- Advanced: vocal separation -->
+    <SettingsCollapsible storageKey="audio_transcribe_advanced">
+      <div class="form-group">
+        <AppToggle v-model="vocalSeparation">{{ $t('audio.transcribe.vocal_separation') }}</AppToggle>
+        <small class="form-hint">{{ $t('audio.transcribe.vocal_separation_hint') }}</small>
+      </div>
+    </SettingsCollapsible>
   </div>
 </template>
 
