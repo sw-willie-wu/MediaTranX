@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
+import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
@@ -43,6 +44,8 @@ const convertResizeMode = ref<ResizeMode>('original')
 const convertScale = ref(100)
 const convertWidth = ref<number | null>(null)
 const convertHeight = ref<number | null>(null)
+
+const isLossyFormat = computed(() => convertFormat.value === 'jpg' || convertFormat.value === 'webp')
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
@@ -160,12 +163,6 @@ defineExpose({ execute, isDisabled, isLoading, convertFormat, getParams })
       <AppSelect v-model="convertFormat" :options="convertFormats" />
     </div>
 
-    <div v-if="convertFormat === 'jpg' || convertFormat === 'webp'" class="form-group">
-      <label>{{ $t('image.convert.quality') }} {{ convertQuality }}%</label>
-      <AppRange v-model="convertQuality" :min="1" :max="100" />
-      <small class="form-hint">{{ $t('image.convert.quality_hint') }}</small>
-    </div>
-
     <div class="form-group">
       <label>{{ $t('image.convert.resize_mode') }}</label>
       <AppSelect
@@ -216,6 +213,13 @@ defineExpose({ execute, isDisabled, isLoading, convertFormat, getParams })
       </div>
     </div>
     <small v-if="convertResizeMode === 'custom'" class="form-hint">{{ $t('image.convert.aspect_ratio_hint') }}</small>
+    <SettingsCollapsible v-if="isLossyFormat" storage-key="image_convert_advanced">
+      <div class="form-group">
+        <label>{{ $t('image.convert.quality') }} {{ convertQuality }}%</label>
+        <AppRange v-model="convertQuality" :min="1" :max="100" />
+        <small class="form-hint">{{ $t('image.convert.quality_hint') }}</small>
+      </div>
+    </SettingsCollapsible>
   </div>
 </template>
 

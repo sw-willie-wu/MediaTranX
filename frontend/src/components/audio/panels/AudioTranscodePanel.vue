@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
+import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
@@ -148,15 +149,17 @@ useAgentPanelHost('audio.transcode', {
       <AppSelect v-model="outputFormat" :options="formats" />
     </div>
 
-    <div v-if="showBitrate" class="form-group">
-      <label>{{ $t('audio.transcode.bitrate') }}</label>
-      <AppSelect v-model="bitrate" :options="bitrates" />
-    </div>
+    <SettingsCollapsible storage-key="audio_transcode_advanced">
+      <div v-if="showBitrate" class="form-group">
+        <label>{{ $t('audio.transcode.bitrate') }}</label>
+        <AppSelect v-model="bitrate" :options="bitrates" />
+      </div>
 
-    <div class="form-group">
-      <label>{{ $t('audio.transcode.sample_rate') }}</label>
-      <AppSelect v-model="sampleRate" :options="sampleRates" />
-    </div>
+      <div class="form-group">
+        <label>{{ $t('audio.transcode.sample_rate') }}</label>
+        <AppSelect v-model="sampleRate" :options="sampleRates" />
+      </div>
+    </SettingsCollapsible>
   </div>
 </template>
 

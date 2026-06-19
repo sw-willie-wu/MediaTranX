@@ -6,6 +6,7 @@ import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
 import AppSelect from '@/components/common/AppSelect.vue'
+import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
 const { t } = useI18n()
@@ -28,7 +29,6 @@ const { submitTask, isProcessing } = useSubmitTask()
 const variant = usePersistedModel('enhance_model', 'x4plus')
 const outputFormat = ref('mp4')
 const videoCodec = ref('h264')
-const showAdvanced = ref(false)
 
 const variantOptions = computed(() => {
   const allModels = [...modelStore.forPanel(modelStore.byCategory('upscale')), ...modelStore.forPanel(modelStore.byCategory('video_enhance'))]
@@ -141,22 +141,17 @@ defineExpose({ execute, isDisabled, isLoading })
       <span class="resolution-text">{{ outputResolution }}</span>
     </div>
 
-    <div class="advanced-toggle" @click="showAdvanced = !showAdvanced">
-      <i class="bi" :class="showAdvanced ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-      <span>{{ $t('common.advanced_options') }}</span>
+    <div class="form-group">
+      <label>{{ $t('common.output_format') }}</label>
+      <AppSelect v-model="outputFormat" :options="formatOptions" />
     </div>
 
-    <template v-if="showAdvanced">
-      <div class="form-group">
-        <label>{{ $t('common.output_format') }}</label>
-        <AppSelect v-model="outputFormat" :options="formatOptions" />
-      </div>
-
+    <SettingsCollapsible storage-key="video_enhance_advanced">
       <div class="form-group">
         <label>{{ $t('video.enhance.video_codec') }}</label>
         <AppSelect v-model="videoCodec" :options="codecOptions" />
       </div>
-    </template>
+    </SettingsCollapsible>
   </div>
 </template>
 
@@ -170,15 +165,5 @@ defineExpose({ execute, isDisabled, isLoading })
   font-size: 0.875rem;
   color: var(--color-primary);
   font-weight: 500;
-}
-.advanced-toggle {
-  cursor: pointer;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin: 0.5rem 0;
-  user-select: none;
-}
-.advanced-toggle:hover {
-  color: var(--text-primary);
 }
 </style>

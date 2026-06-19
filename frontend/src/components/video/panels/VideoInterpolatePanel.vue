@@ -8,6 +8,7 @@ import { usePersistedModel } from '@/composables/usePersistedModel'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
+import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 
 const { t } = useI18n()
 const modelStore = useModelStore()
@@ -31,7 +32,6 @@ const mode = ref('2x')
 const targetFps = ref(60)
 const outputFormat = ref('mp4')
 const videoCodec = ref('h264')
-const showAdvanced = ref(false)
 
 const modelOptions = computed(() =>
   modelStore.forPanel(modelStore.byCategory('interpolate')).map(m => ({
@@ -169,22 +169,17 @@ defineExpose({ execute, isDisabled, isLoading })
       <span>{{ $t('video.interpolate.output_fps') }}: <strong>{{ outputFps.toFixed(1) }}</strong></span>
     </div>
 
-    <div class="advanced-toggle" @click="showAdvanced = !showAdvanced">
-      <i class="bi" :class="showAdvanced ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-      <span>{{ $t('common.advanced_options') }}</span>
+    <div class="form-group">
+      <label>{{ $t('common.output_format') }}</label>
+      <AppSelect v-model="outputFormat" :options="formatOptions" />
     </div>
 
-    <template v-if="showAdvanced">
-      <div class="form-group">
-        <label>{{ $t('common.output_format') }}</label>
-        <AppSelect v-model="outputFormat" :options="formatOptions" />
-      </div>
-
+    <SettingsCollapsible storage-key="video_interpolate_advanced">
       <div class="form-group">
         <label>{{ $t('video.interpolate.video_codec') }}</label>
         <AppSelect v-model="videoCodec" :options="codecOptions" />
       </div>
-    </template>
+    </SettingsCollapsible>
   </div>
 </template>
 
@@ -204,15 +199,5 @@ defineExpose({ execute, isDisabled, isLoading })
 }
 .text-danger {
   color: var(--color-danger);
-}
-.advanced-toggle {
-  cursor: pointer;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin: 0.5rem 0;
-  user-select: none;
-}
-.advanced-toggle:hover {
-  color: var(--text-primary);
 }
 </style>

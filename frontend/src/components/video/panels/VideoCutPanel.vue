@@ -5,6 +5,7 @@ import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useToast } from '@/composables/useToast'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 import AppToggle from '@/components/common/AppToggle.vue'
+import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 
 const { t } = useI18n()
 
@@ -129,13 +130,15 @@ useAgentPanelHost('video.cut', {
       />
     </div>
 
-    <div class="form-group">
-      <AppToggle
-        :modelValue="streamCopy"
-        @update:modelValue="emit('update:streamCopy', $event)"
-      >{{ $t('video.cut.fast_mode') }}</AppToggle>
-      <small class="form-hint">{{ $t('video.cut.fast_mode_hint') }}</small>
-    </div>
+    <SettingsCollapsible storage-key="video_cut_advanced">
+      <div class="form-group">
+        <AppToggle
+          :modelValue="streamCopy"
+          @update:modelValue="emit('update:streamCopy', $event)"
+        >{{ $t('video.cut.fast_mode') }}</AppToggle>
+        <small class="form-hint">{{ $t('video.cut.fast_mode_hint') }}</small>
+      </div>
+    </SettingsCollapsible>
   </div>
 </template>
 
