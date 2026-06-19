@@ -245,7 +245,7 @@ def translate_srt_local(
         batch = seg_dicts[start:end]
 
         srt_text = segments_to_srt(batch, start_index=start + 1)
-        result = builder(srt_text, source_lang, target_lang, "srt", style, glossary)
+        result = builder(srt_text, source_lang, target_lang, "srt", style, glossary, keep_names)
         input_tokens = estimate_tokens(srt_text)
         max_tokens = calc_max_tokens(config, n_ctx, input_tokens)
 
