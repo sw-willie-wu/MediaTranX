@@ -52,6 +52,9 @@
    - **是**（附屬於另一個主產出、只影響怎麼做）→ 進第 2 步。例：transcode 的 codec 附屬於「轉檔」、transcribe 的 VAD 附屬於「轉錄文字」。
 2. **它改變我會拿到的檔案/交付物（產出），還是只是調教既有輸出的品質/編碼/AI 行為（調教）？** 產出→**基本**、調教→**進階**。
 
+> **操作測試（界定標準，2026-06-19 codify）**：一欄進進階 ⟺ ①（產出 vs 調教，上面兩步）它只決定「現有交付物怎麼做」非「換哪個交付物」**且** ②（安全前提）有安全預設、不調也正確。
+> ⚠️ 「不調也正確」**不是判別線**——基本欄位也多半有預設（Output Format 預設 MP4、Model 有預設），不調也能出片。它是「預設摺疊安全」的**前提**：唯有調教欄位都有安全預設，才能安全地預設收起。**落地驗收：任何被搬進預設摺疊進階區的欄位，實作時必須逐一確認其 code 預設值能產出正確輸出；沒有安全預設的不准搬（或先補預設）。**
+
 > ⚠️ 第 1 步是 tie-breaker：避免把「調整類工具」（ImageAdjust/ImageFilter）的核心控制誤判成「調教→進階」。**真正的判別子＝「面板裡有沒有另一個主產出，而這個控制只是服務它」**——有才可能進進階。對不在下方範例清單的新面板，用這條判別子、別只憑「感覺是不是主目的」。
 
 > 範例對照：
@@ -73,7 +76,9 @@
 > (c) 子元件 `WhisperAdvancedSettings` 用 `AppToggle` 當摺疊、**無持久化**。
 > 本節 1.~2. 是收斂目標。
 
-1. **單一「進階選項」摺疊樣式**：panel-level 進階區一律用同一個可摺疊區塊（label＝`common.advanced_options`「進階選項」），**預設摺疊**、統一用 localStorage 記憶（key `<tool>_advanced`）。**取代** (b) 的自寫無記憶版。
+1. **單一「進階選項」摺疊樣式**：panel-level 進階區一律用同一個可摺疊區塊（label＝`common.advanced_options`「進階選項」），**預設摺疊**、統一用 localStorage 記憶。**標準容器＝`components/common/SettingsCollapsible.vue`**（Wave 1 新增；props `storageKey`/`title?`、自帶 localStorage + `aria-expanded`/`aria-controls`、預設 slot 放進階 body）。**取代** (b) 的自寫無記憶版。
+   > **localStorage key 規範**：`<domain>_<function>_advanced`（domain 前綴**必要**——`cut`/`transcode`/`convert` 等功能名跨 image/video/audio 會撞，如 AudioCut vs VideoCut）。Wave 1 採 `video_enhance_advanced` / `video_interpolate_advanced` / `image_convert_advanced` / `image_upscale_advanced` / `video_cut_advanced` / `audio_transcode_advanced`。既有 (a) 的 `transcribe_advanced`/`subtitle_advanced`/`lyrics_advanced` 因功能名唯一未撞、Wave 2 改用 wrapper 時順帶正規化。
+   > **Wave 1 已用 `SettingsCollapsible` 收斂的面板**：VideoEnhance / VideoInterpolate（同時把 (b) 自寫無記憶摺疊換掉）、ImageConvert / ImageUpscale / VideoCut / AudioTranscode。AudioTranscribe / Subtitle / Lyrics 的 (a) inline 版待 Wave 2 改用 wrapper。
 2. **重用共用子元件**，不要各面板散寫：
    - `WhisperAdvancedSettings.vue` — 模型推理參數。**凡有 Whisper STT 的面板**（Transcribe / Subtitle / Summary）都應嵌入它，不要各自重寫那 5 個欄位。
      > ⚠️ 它**本身自帶一層摺疊**（AppToggle）＝即為「模型推理參數」這組的進階容器。因此**直接放在基本區末尾當一個 sibling 即可、不要再外包一層 panel `進階選項` 摺疊**（否則變雙層摺疊、使用者要點兩次）。Subtitle 目前把它包進 panel 進階摺疊＝雙層、待修（§5）。
@@ -105,17 +110,17 @@
 | ImageRemoveBg | 平鋪 1 下拉 | ✅ | 極簡 |
 | ImageCrop | 平鋪（比例/位置/尺寸） | ✅ | 皆核心、含軸 A 聯動 |
 | ImageAiRemove | 工具選擇 + 條件顯示 | ✅ | 軸 A 正確 |
-| ImageConvert | 條件顯示（格式→品質/縮放） | 🔧 | 格式=基本✅；**Quality(JPEG/WebP) 屬編碼調教→可移進階**（仍條件於 lossy 格式） |
+| ImageConvert | 基本[格式/Resize] + lossy-gated 進階[Quality] | ✅ | **Wave 1 done**：Quality 移入 lossy 條件下的 `SettingsCollapsible`（`image_convert_advanced`）；PNG 等非 lossy 不渲染進階區（不留空展開器）；getParams 仍恆送 quality（未耦合 UI） |
 | ImageOcr | 平鋪（模型/格式） | ✅ | 皆基本 |
-| ImageUpscale | 模型/倍率/銳化 + Face Restore 條件展開 | 🔧 | Face Restore=品質預處理✅在進階；**銳化(sharpen) 屬調教→宜移進階**（次要） |
+| ImageUpscale | 基本[模型/倍率] + 進階[銳化/Face Restore+子參] | ✅ | **Wave 1 done**：Sharpen + Face Restore（含子參）移入 `SettingsCollapsible`（`image_upscale_advanced`）；wire key `face_fix` 不變 |
 
 ### Video（7）
 | 面板 | 現況 | 判定 | 待改 |
 |---|---|---|---|
 | VideoCrop | 平鋪 | ✅ | 同 ImageCrop |
-| VideoCut | 平鋪（起訖/串流複製） | 🔧 | 串流複製(stream copy)=編碼調教→宜移進階（次要、有預設） |
-| VideoEnhance | 自寫 `.advanced-toggle` 摺疊放 [格式+codec]、無 localStorage | 🔧 | **[歸位]** 格式上移基本（產出）、codec 留進階；**[機制]** 自寫無記憶摺疊→改用統一 `進階選項`+localStorage（§3.1） |
-| VideoInterpolate | 同 VideoEnhance（自寫摺疊無記憶） | 🔧 | **[歸位]** 格式上移基本、codec 留進階；**[機制]** 同上 |
+| VideoCut | 基本[起訖] + 進階[串流複製] | ✅ | **Wave 1 done**：Stream Copy 移入 `SettingsCollapsible`（`video_cut_advanced`）；保留與 VideoView 父層 prop/emit 綁定 |
+| VideoEnhance | 基本[模型/解析度/格式] + 進階[codec] | ✅ | **Wave 1 done**：格式上移基本、codec 進 `SettingsCollapsible`（`video_enhance_advanced`）；自寫無記憶摺疊已換掉 |
+| VideoInterpolate | 基本[模型/模式/fps/格式] + 進階[codec] | ✅ | **Wave 1 done**：同 VideoEnhance（`video_interpolate_advanced`） |
 | VideoTranscode | 複雜條件平鋪（格式/codec/解析度/CRF/縮放/bitrate） | 🔧 | **[歸位]** 格式/解析度=基本（產出維度）✅；**codec/CRF/縮放演算法/bitrate 屬編碼調教→收進「進階選項」摺疊**（目前無 panel 進階區，需新建） |
 | VideoSummary | **全平鋪**（模式/whisper/vocal-sep + WhisperAdvanced 子元件 + LLM/VLM，無 panel 進階區） | 🔧 | **[歸位]** vocal separation→屬調教，但本面板無 panel 進階區、WhisperAdvanced 也平鋪；**模式/模型=基本✅**；WhisperAdvanced 自帶摺疊＝其進階容器（§3.2，可平鋪當 sibling、勿外包） |
 | SubtitlePanel | 基本[來源語言/whisper/vocal-sep/格式] + panel 進階摺疊內含 [WhisperAdvanced + Translation] | 🔧 | **[歸位]** vocal-sep→屬調教（可移進 panel 進階或併入 WhisperAdvanced 群）；**翻譯→整個 TranslationOptionsPanel 移基本**（產出，§3.2）；**[機制]** WhisperAdvanced 自帶摺疊卻又被包進 panel 進階＝**雙層摺疊、待拆**（WhisperAdvanced 當 sibling 即可，§3.2） |
@@ -125,7 +130,7 @@
 |---|---|---|---|
 | AudioCut | 平鋪（起訖） | ✅ | |
 | AudioVolume | 模式按鈕 + 條件音量 | ✅ | 軸 A 正確 |
-| AudioTranscode | 格式 + 條件 bitrate + sample-rate | 🔧 | 格式=基本✅；**bitrate/sample-rate 屬編碼調教→移進階**（bitrate 仍條件於 lossy） |
+| AudioTranscode | 基本[格式] + 進階[bitrate/sample-rate] | ✅ | **Wave 1 done**：bitrate（仍條件 lossy）+ sample-rate 移入 `SettingsCollapsible`（`audio_transcode_advanced`） |
 | AudioSeparate | 平鋪（6 stem 開關/格式/生MIDI） | ✅ | stem=選**哪些音軌當產出**（≠Transcribe 的人聲分離預處理，故同樣是「人聲」卻歸基本——判準第 2 步：這裡人聲是交付物）、格式=產出、生MIDI=多產出 → **全屬基本、正確**（先前「複雜平鋪需修」判斷有誤） |
 | AudioLyrics | 基本[模型/格式] + panel 進階摺疊[align/translate→子欄位] | 🔧 | **[歸位]** align=品質預處理✅留進階；**翻譯→整個 TranslationOptionsPanel 移基本**（產出，§3.2），取代現有散寫 |
 | AudioTranscribe | 基本[whisper/來源語言/格式] + panel 進階摺疊[vocal-sep/align/translate/summarize 散寫] | 🔧 | **[歸位]** vocal-sep✅留進階；**翻譯、摘要→開關上移基本**（產出）；**[重構]** 翻譯改用 TranslationOptionsPanel（整個移基本）、**補嵌 WhisperAdvancedSettings**（目前缺）——⚠️ 但本面板已自帶獨立 `align` 開關，而 WhisperAdvancedSettings 內**也含 align**，補嵌時須**擇一去重**（移除散寫的 align、改用元件內的） |
