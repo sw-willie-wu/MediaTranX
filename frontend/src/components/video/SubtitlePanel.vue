@@ -8,6 +8,7 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
 import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
+import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { apiFetch } from '@/composables/useApi'
 import { parseModelValue } from '@/composables/useModelOptions'
 import { useModelStore } from '@/stores/models'
@@ -89,9 +90,6 @@ async function loadLanguages() {
     if (res.ok) rawLanguages.value = await res.json()
   } catch {}
 }
-
-const showAdvanced = ref(localStorage.getItem('subtitle_advanced') === 'true')
-watch(showAdvanced, (v) => localStorage.setItem('subtitle_advanced', String(v)))
 
 const outputFormats = computed(() => [
   { value: 'srt', label: t('video.subtitle.srt') },
@@ -286,27 +284,20 @@ onMounted(() => { loadLanguages(); modelStore.ensureLoaded() })
     </div>
 
     <div class="form-group">
-      <AppToggle v-model="vocalSeparation">{{ $t('video.subtitle.vocal_separation') }}</AppToggle>
-      <small class="form-hint">{{ $t('video.subtitle.vocal_separation_hint') }}</small>
-    </div>
-
-    <div class="form-group">
       <label>{{ $t('common.output_format') }}</label>
       <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 
-    <!-- Advanced options (collapsible) -->
-    <div class="settings-collapsible" :class="{ 'is-open': showAdvanced }">
-      <button class="settings-collapsible-header" @click="showAdvanced = !showAdvanced">
-        <i class="bi" :class="showAdvanced ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-        <span>{{ $t('common.advanced_options') }}</span>
-      </button>
+    <TranslationOptionsPanel ref="translationOptions" />
 
-      <div v-show="showAdvanced" class="settings-collapsible-body">
-        <WhisperAdvancedSettings ref="whisperAdvanced" />
-        <TranslationOptionsPanel ref="translationOptions" />
+    <WhisperAdvancedSettings ref="whisperAdvanced" />
+
+    <SettingsCollapsible storageKey="video_subtitle_advanced">
+      <div class="form-group">
+        <AppToggle v-model="vocalSeparation">{{ $t('video.subtitle.vocal_separation') }}</AppToggle>
+        <small class="form-hint">{{ $t('video.subtitle.vocal_separation_hint') }}</small>
       </div>
-    </div>
+    </SettingsCollapsible>
   </div>
 </template>
 
