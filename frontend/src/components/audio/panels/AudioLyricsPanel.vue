@@ -5,9 +5,10 @@ import { useModelStore } from '@/stores/models'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
+import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
+import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
-import { useModelOptions, parseModelValue } from '@/composables/useModelOptions'
-import { apiFetch } from '@/composables/useApi'
+import { parseModelValue } from '@/composables/useModelOptions'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
 
@@ -25,6 +26,9 @@ const { submitTask, isProcessing } = useSubmitTask()
 const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
 const { guardModelReady } = useModelGuard()
+
+// ── Child component refs ────────────────────────────────────────
+const translationOptions = ref<InstanceType<typeof TranslationOptionsPanel> | null>(null)
 
 // ── Whisper model status ────────────────────────────────────────
 const modelSizes = computed(() =>
@@ -46,65 +50,14 @@ watch(modelSizes, (sizes) => {
 })
 
 // ── Settings ────────────────────────────────────────────────────
-const showAdvanced = ref(localStorage.getItem('lyrics_advanced') === 'true')
-watch(showAdvanced, (v) => localStorage.setItem('lyrics_advanced', String(v)))
-
 const modelSize = usePersistedModel('lyrics_whisper_model', 'medium')
 const alignEnabled = ref(false)
 const outputFormat = ref('lrc')
-const translateEnabled = ref(false)
-const targetLanguage = ref('zh-TW')
-const selectedTranslateModel = usePersistedModel('lyrics_translate_model')
 
 const outputFormats = computed(() => [
   { value: 'lrc', label: t('audio.lyrics.lrc') },
   { value: 'txt', label: t('audio.lyrics.txt') },
 ])
-
-// ── Translation model options ───────────────────────────────────
-const localTranslateModelOptions = computed(() =>
-  modelStore.forPanel(modelStore.byCapability('text'))
-    .slice()
-    .sort((a, b) => a.size_mb - b.size_mb)
-    .map(m => {
-      const [size, quant] = m.variant.split(':')
-      const key = `${m.family}:${size}:${quant}`
-      return { value: key, label: m.label, sizeMb: m.size_mb, badge: m.downloaded ? 'ok' as const : 'err' as const }
-    })
-)
-
-const { mergedOptions: translateModelOptions } = useModelOptions('text', localTranslateModelOptions)
-
-watch(localTranslateModelOptions, (options) => {
-  if (!selectedTranslateModel.value || !options.some(m => m.value === selectedTranslateModel.value)) {
-    const first = options.find(m => m.badge === 'ok')
-    selectedTranslateModel.value = first?.value ?? ''
-  }
-}, { immediate: true })
-
-// ── Translation language options ────────────────────────────────
-const translateLanguages = ref([
-  { value: 'zh-TW', label: 'zh-TW' },
-  { value: 'zh-CN', label: 'zh-CN' },
-  { value: 'en',    label: 'en' },
-  { value: 'ja',    label: 'ja' },
-  { value: 'ko',    label: 'ko' },
-])
-
-async function loadTranslateLanguages() {
-  try {
-    const res = await apiFetch('/llm/translate/languages')
-    if (res.ok) {
-      const data = await res.json()
-      translateLanguages.value = data.map((l: { code: string; name: string }) => ({
-        value: l.code,
-        label: l.name,
-      }))
-    }
-  } catch {}
-}
-
-watch(translateEnabled, (val) => { if (val) loadTranslateLanguages() })
 
 // ── Demucs / wav2vec2 readiness ─────────────────────────────────
 // Lyrics ALWAYS runs Demucs (backend hardcoded vocal_separation=True).
@@ -126,9 +79,14 @@ async function execute() {
   if (alignEnabled.value) {
     if (!await guardModelReady(alignReady.value, 'audio')) return
   }
-  if (translateEnabled.value) {
-    const tParsed = parseModelValue(selectedTranslateModel.value)
-    const translateReady = tParsed.isRemote || localTranslateModelOptions.value.find(m => m.value === selectedTranslateModel.value)?.badge === 'ok'
+  if (translationOptions.value?.enableTranslation) {
+    const tModel = translationOptions.value.selectedTranslateModel
+    const tParsed = parseModelValue(tModel)
+    const translateReady = tParsed.isRemote || modelStore.forPanel(modelStore.byCapability('text'))
+      .some(m => {
+        const [sz, qt] = m.variant.split(':')
+        return `${m.family}:${sz}:${qt}` === tModel && m.downloaded
+      })
     if (!await guardModelReady(translateReady === true, 'llm')) return
   }
   if (!props.fileId) return
@@ -138,23 +96,27 @@ async function execute() {
     model_size: modelSize.value,
     align: alignEnabled.value,
     output_format: outputFormat.value,
-    translate: translateEnabled.value,
+    translate: translationOptions.value?.enableTranslation ?? false,
   }
 
-  if (translateEnabled.value && targetLanguage.value) {
-    body.target_language = targetLanguage.value
-    const parsed = parseModelValue(selectedTranslateModel.value)
+  if (translationOptions.value?.enableTranslation && translationOptions.value.targetLanguage) {
+    body.target_language = translationOptions.value.targetLanguage
+    const parsed = parseModelValue(translationOptions.value.selectedTranslateModel)
     if (parsed.isRemote) {
       body.translate_remote = true
       body.translate_provider = parsed.provider
       body.translate_conn_id = parsed.connId
       body.translate_remote_model = parsed.modelId
     } else {
-      const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
+      const [tmType, tmSize, tmQuant] = translationOptions.value.selectedTranslateModel.split(':')
       body.translate_model_family = tmType
       body.translate_model_size = tmSize
       body.translate_quantization = tmQuant
     }
+    body.keep_names = translationOptions.value.keepNames
+    body.translate_style = translationOptions.value.translateStyle
+    const glossary = translationOptions.value.parseGlossary()
+    if (glossary) body.glossary = glossary
   }
 
   const taskId = await submitTask(
@@ -175,23 +137,27 @@ function getParams() {
     model_size: modelSize.value,
     align: alignEnabled.value,
     output_format: outputFormat.value,
-    translate: translateEnabled.value,
+    translate: translationOptions.value?.enableTranslation ?? false,
   }
 
-  if (translateEnabled.value && targetLanguage.value) {
-    body.target_language = targetLanguage.value
-    const parsed = parseModelValue(selectedTranslateModel.value)
+  if (translationOptions.value?.enableTranslation && translationOptions.value.targetLanguage) {
+    body.target_language = translationOptions.value.targetLanguage
+    const parsed = parseModelValue(translationOptions.value.selectedTranslateModel)
     if (parsed.isRemote) {
       body.translate_remote = true
       body.translate_provider = parsed.provider
       body.translate_conn_id = parsed.connId
       body.translate_remote_model = parsed.modelId
     } else {
-      const [tmType, tmSize, tmQuant] = selectedTranslateModel.value.split(':')
+      const [tmType, tmSize, tmQuant] = translationOptions.value.selectedTranslateModel.split(':')
       body.translate_model_family = tmType
       body.translate_model_size = tmSize
       body.translate_quantization = tmQuant
     }
+    body.keep_names = translationOptions.value.keepNames
+    body.translate_style = translationOptions.value.translateStyle
+    const glossary = translationOptions.value.parseGlossary()
+    if (glossary) body.glossary = glossary
   }
 
   return body
@@ -221,34 +187,16 @@ onMounted(() => {
       <AppSelect v-model="outputFormat" :options="outputFormats" />
     </div>
 
-    <!-- 進階選項（可收合） -->
-    <div class="settings-collapsible" :class="{ 'is-open': showAdvanced }">
-      <button class="settings-collapsible-header" @click="showAdvanced = !showAdvanced">
-        <i class="bi" :class="showAdvanced ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-        <span>{{ $t('common.advanced_options') }}</span>
-      </button>
+    <!-- Translation (shared component) -->
+    <TranslationOptionsPanel ref="translationOptions" :storageKey="'audio_lyrics_translate_model'" />
 
-      <div v-if="showAdvanced" class="settings-collapsible-body">
-        <div class="form-group">
-          <AppToggle v-model="alignEnabled">{{ $t('audio.lyrics.align') }}</AppToggle>
-          <small class="form-hint">{{ $t('audio.lyrics.align_hint') }}</small>
-        </div>
-
-        <div class="form-group">
-          <AppToggle v-model="translateEnabled">{{ $t('audio.lyrics.translate') }}</AppToggle>
-          <div v-if="translateEnabled" class="sub-params">
-            <div class="form-group">
-              <label class="sub-label">{{ $t('common.target_language') }}</label>
-              <AppSelect v-model="targetLanguage" :options="translateLanguages" />
-            </div>
-            <div class="form-group">
-              <label class="sub-label">{{ $t('audio.lyrics.translate_model') }}</label>
-              <AppSelect v-model="selectedTranslateModel" :options="translateModelOptions" />
-            </div>
-          </div>
-        </div>
+    <!-- Advanced: align -->
+    <SettingsCollapsible storageKey="audio_lyrics_advanced">
+      <div class="form-group">
+        <AppToggle v-model="alignEnabled">{{ $t('audio.lyrics.align') }}</AppToggle>
+        <small class="form-hint">{{ $t('audio.lyrics.align_hint') }}</small>
       </div>
-    </div>
+    </SettingsCollapsible>
   </div>
 </template>
 
