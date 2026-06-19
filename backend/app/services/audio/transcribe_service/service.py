@@ -78,6 +78,13 @@ class AudioTranscribeService:
         summarize_provider: Optional[str] = None,
         summarize_conn_id: Optional[int] = None,
         summarize_remote_model: Optional[str] = None,
+        word_timestamps: bool = False,
+        condition_on_previous_text: bool = True,
+        min_silence_duration_ms: int = 200,
+        vad_threshold: float = 0.3,
+        keep_names: bool = True,
+        translate_style: str = "colloquial",
+        glossary: Optional[dict] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {
@@ -104,6 +111,13 @@ class AudioTranscribeService:
             "summarize_provider": summarize_provider,
             "summarize_conn_id": summarize_conn_id,
             "summarize_remote_model": summarize_remote_model,
+            "word_timestamps": word_timestamps,
+            "condition_on_previous_text": condition_on_previous_text,
+            "min_silence_duration_ms": min_silence_duration_ms,
+            "vad_threshold": vad_threshold,
+            "keep_names": keep_names,
+            "translate_style": translate_style,
+            "glossary": glossary,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_TRANSCRIBE, params)
         logger.info(f"Audio transcribe task submitted: {task_id}")
@@ -145,10 +159,13 @@ class AudioTranscribeService:
         stage_progress = sp.stage
 
         # === Transcribe (Demucs + Whisper + align) via shared primitive ===
+        # Wave 2: word_timestamps is UI/request-controlled and decoupled from align.
+        # Enabling align no longer implies word_timestamps (conscious decision); users
+        # who want word-level segmentation (_split_by_words) enable word_timestamps explicitly.
         opts = TranscribeOptions(
             language=params.get("source_language"),
             model_size=params.get("model_size", "medium"),
-            word_timestamps=params.get("word_timestamps", do_align),
+            word_timestamps=params.get("word_timestamps", False),
             condition_on_previous_text=params.get("condition_on_previous_text", True),
             min_silence_duration_ms=params.get("min_silence_duration_ms", 200),
             vad_threshold=params.get("vad_threshold", 0.3),
@@ -211,6 +228,9 @@ class AudioTranscribeService:
                     on_progress=lambda p, m: stage_progress("translate", p, m),
                     prov=prov,
                     remote_model=translate_remote_model,
+                    keep_names=params.get("keep_names", True),
+                    style=params.get("translate_style", "colloquial"),
+                    glossary=params.get("glossary"),
                 )
             else:
                 translate_model_family = params.get("translate_model_family", "gemma4")
@@ -229,6 +249,9 @@ class AudioTranscribeService:
                         session=session,
                         model_family=translate_model_family,
                         model_size=translate_model_size,
+                        keep_names=params.get("keep_names", True),
+                        style=params.get("translate_style", "colloquial"),
+                        glossary=params.get("glossary"),
                     )
 
             result.segments = [
