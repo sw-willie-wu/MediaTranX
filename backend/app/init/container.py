@@ -56,6 +56,25 @@ def _lazy(module_path: str, class_name: str):
     return factory
 
 
+def _lazy_wrapper(module_path: str, class_name: str):
+    """Like `_lazy`, but attaches `_model_manager` (passed as the first arg by
+    the DI provider) to the constructed wrapper. Replaces the former eager
+    attach loop in init_container: every AI wrapper now gets its ModelManager at
+    CONSTRUCTION time, wherever/whenever it is first built (warmup thread,
+    service injection, or mm._ensure_runtime) — so a service calling
+    wrapper.acquire() directly never hits the `_model_manager is None` guard
+    (base.py), and construction stays lazy / off the bind path.
+    """
+    base = _lazy(module_path, class_name)
+
+    def factory(model_manager, *args, **kwargs):
+        wrapper = base(*args, **kwargs)
+        wrapper._model_manager = model_manager
+        return wrapper
+
+    return factory
+
+
 class AppContainer(containers.DeclarativeContainer):
     """Application DI container. All singletons registered here."""
 
@@ -73,49 +92,64 @@ class AppContainer(containers.DeclarativeContainer):
     yt_dlp_wrapper = providers.Singleton(_lazy("app.adapters.binary.ytdlp", "YtDlpWrapper"))
     model_manager = providers.Singleton(ModelManager)
     llama_runtime = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.llm", "LlmWrapper"),
+        _lazy_wrapper("app.adapters.ai.wrapper.llm", "LlmWrapper"),
+        model_manager,
         slot="llm",
     )
 
-    # ── AI Wrappers (lazy singletons) ──
-    # Concrete wrapper classes live in `app.adapters.ai.wrapper.*`. These
-    # providers hand the same instance to services, pipelines, and
-    # ModelManager._ensure_runtime (registered in init_container below).
+    # ── AI Wrappers (lazy singletons, _model_manager attached at construction) ──
+    # Concrete wrapper classes live in `app.adapters.ai.wrapper.*`. The
+    # _lazy_wrapper factory attaches `_model_manager` (the model_manager
+    # singleton injected as the first arg) when the wrapper is first built, so
+    # services that call wrapper.acquire() directly never hit base.py's
+    # `_model_manager is None` guard — without an eager construction loop.
     whisper_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.whisper", "WhisperWrapper"),
+        _lazy_wrapper("app.adapters.ai.wrapper.whisper", "WhisperWrapper"),
+        model_manager,
     )
     demucs_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.demucs", "DemucsWrapper"),
+        _lazy_wrapper("app.adapters.ai.wrapper.demucs", "DemucsWrapper"),
+        model_manager,
     )
     alignment_engine = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.wav2vec2", "AlignmentEngine"),
+        _lazy_wrapper("app.adapters.ai.wrapper.wav2vec2", "AlignmentEngine"),
+        model_manager,
     )
     basic_pitch_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.basic_pitch", "BasicPitchWrapper"),
+        _lazy_wrapper("app.adapters.ai.wrapper.basic_pitch", "BasicPitchWrapper"),
+        model_manager,
     )
     mobilesam_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.mobilesam", "MobileSAMWrapper"),
+        _lazy_wrapper("app.adapters.ai.wrapper.mobilesam", "MobileSAMWrapper"),
+        model_manager,
     )
     rife_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.rife", "RIFEWrapper"),
+        _lazy_wrapper("app.adapters.ai.wrapper.rife", "RIFEWrapper"),
+        model_manager,
     )
     realesrgan_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.realesrgan", "RealESRGANWrapper"),
+        _lazy_wrapper("app.adapters.ai.wrapper.realesrgan", "RealESRGANWrapper"),
+        model_manager,
     )
     swinir_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.swinir", "SwinIRWrapper"),
+        _lazy_wrapper("app.adapters.ai.wrapper.swinir", "SwinIRWrapper"),
+        model_manager,
     )
     bsrgan_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.bsrgan", "BSRGANWrapper"),
+        _lazy_wrapper("app.adapters.ai.wrapper.bsrgan", "BSRGANWrapper"),
+        model_manager,
     )
     real_cugan_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.real_cugan", "RealCUGANWrapper"),
+        _lazy_wrapper("app.adapters.ai.wrapper.real_cugan", "RealCUGANWrapper"),
+        model_manager,
     )
     waifu2x_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.waifu2x", "Waifu2xWrapper"),
+        _lazy_wrapper("app.adapters.ai.wrapper.waifu2x", "Waifu2xWrapper"),
+        model_manager,
     )
     gfpgan_wrapper = providers.Singleton(
-        _lazy("app.adapters.ai.wrapper.gfpgan", "GFPGANWrapper"),
+        _lazy_wrapper("app.adapters.ai.wrapper.gfpgan", "GFPGANWrapper"),
+        model_manager,
     )
 
     # Family-keyed dicts for dispatcher slots (upscale / face_restore).
@@ -357,31 +391,24 @@ def init_container() -> AppContainer:
     mm.register_runtime_provider("mobilesam", c.mobilesam_wrapper)
     mm.register_runtime_provider("rife", c.rife_wrapper)
 
-    # Pre-register LlmWrapper (slot="llm") so ChatService.session() →
-    # llama_runtime.acquire() → mm.acquire("llm", ...) resolves. Without
-    # this every translate/summarize service crashes with KeyError on the
-    # first session() call.
-    mm.register_runtime(c.llama_runtime())
+    # LLM registered LAZILY (provider, not eager instance) so LlmWrapper — and
+    # the torch import it triggers via base.py — stays off the bind path. The
+    # _lazy_wrapper factory attaches _model_manager at construction, which is
+    # what satisfies ChatService.session() → llama_runtime.acquire()'s
+    # `_model_manager is None` guard (base.py) on the direct-acquire path.
+    # (register_runtime_provider only stores the callable; _ensure_runtime
+    # constructs + caches on first acquire — model_manager.py.)
+    mm.register_runtime_provider("llm", c.llama_runtime)
 
     # Dispatcher slots: container exposes family→wrapper dicts.
     mm.register_dispatcher("upscale", lambda family: c.upscalers()[family])
     mm.register_dispatcher("face_restore", lambda family: c.face_restorers()[family])
 
-    # Eagerly attach _model_manager to ALL wrappers (dispatcher + provider).
-    # ModelManager only attaches _model_manager when its dispatcher/provider
-    # actually fires inside _ensure_runtime (model_manager.py:181/191), but
-    # services call wrapper.enhance()/transcribe()/etc. directly — which
-    # then calls self.acquire() → checks _model_manager → None →
-    # RuntimeError("not registered"). Services bypass mm.acquire entirely,
-    # so we need to attach upfront. LlmWrapper is already attached via
-    # register_runtime above (model_manager.py:81).
-    for wrapper in (
-        list(c.upscalers().values())
-        + list(c.face_restorers().values())
-        + [c.whisper_wrapper(), c.demucs_wrapper(), c.alignment_engine(),
-           c.basic_pitch_wrapper(), c.mobilesam_wrapper(), c.rife_wrapper()]
-    ):
-        wrapper._model_manager = mm
+    # NOTE: the former eager attach loop (which constructed every wrapper just
+    # to set _model_manager) is REMOVED. _model_manager is now attached at
+    # wrapper CONSTRUCTION by the _lazy_wrapper factory, so construction stays
+    # lazy and lands off the bind path (background warmup thread / first use),
+    # while services that call wrapper.acquire() directly still find it set.
 
     c.wire(packages=["app.api.routes"])
     _container_instance = c

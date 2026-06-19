@@ -24,6 +24,8 @@
       "setup.js",
       "preload.cjs",
       "splash.html",
+      "error.html",
+      "lib/**/*",
       "icon.ico",
       "scripts/**/*"
     ],

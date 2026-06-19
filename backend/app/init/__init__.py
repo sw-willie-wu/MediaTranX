@@ -14,14 +14,17 @@ def bootstrap() -> None:
 
     1. inject_paths() — already done at module level above
     2. DLL registration (Windows frozen only)
-    3. Compat patches (third-party API fixes)
-    4. Logging config
+    3. Logging config
+
+    NOTE: third-party compat patches are NOT applied here — importing the
+    patched libs (torchvision, scipy) is ~4 s and must stay off the
+    bind-blocking startup path. The torchvision functional_tensor shim is now
+    applied lazily at its consumer chokepoint (PthWrapper._load_with_spandrel),
+    and the scipy.signal.gaussian patch lives in its sole consumer
+    (adapters/ai/wrapper/basic_pitch.py). See app/init/compat.py.
     """
     from app.init.setup import register_dlls
     register_dlls(SETTINGS)
-
-    from app.init.compat import apply_compat_patches
-    apply_compat_patches()
 
     from app.init.logging_config import configure_logging
     configure_logging(SETTINGS)

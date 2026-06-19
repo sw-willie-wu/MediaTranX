@@ -291,6 +291,12 @@ class PthWrapper(BaseWrapper):
     def _load_with_spandrel(self, model_path: Path, device: str, config: dict) -> Any:
         """Load using Spandrel universal loader (automatic architecture detection)."""
         try:
+            # basicsr (the sole consumer of torchvision's removed functional_tensor
+            # module) may be pulled by a spandrel arch load. Ensure the compat shim
+            # is in place BEFORE importing spandrel. Lazy + idempotent — keeps
+            # torchvision off the bind path (see app/init/compat.py).
+            from app.init.compat import ensure_torchvision_functional_tensor_compat
+            ensure_torchvision_functional_tensor_compat()
             import spandrel
             model = spandrel.ModelLoader().load_from_file(str(model_path))
             model = model.to(device)
