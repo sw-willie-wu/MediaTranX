@@ -311,13 +311,12 @@ defineExpose({ execute, isDisabled, isLoading })
       <small class="form-hint">{{ $t('video.summary.vlm_model_hint') }}</small>
     </div>
 
-    <WhisperAdvancedSettings ref="whisperAdvanced" />
-
     <SettingsCollapsible storageKey="video_summary_advanced">
       <div class="form-group">
         <AppToggle v-model="vocalSeparation">{{ $t('video.summary.vocal_separation') }}</AppToggle>
         <small class="form-hint">{{ $t('video.summary.vocal_separation_hint') }}</small>
       </div>
+      <WhisperAdvancedSettings ref="whisperAdvanced" :embedded="true" />
     </SettingsCollapsible>
   </div>
 </template>

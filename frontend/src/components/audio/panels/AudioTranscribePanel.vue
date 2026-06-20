@@ -376,15 +376,13 @@ onMounted(() => {
       <AppSelect v-model="selectedSummarizeModel" :options="summarizeModelOptions" />
     </div>
 
-    <!-- Whisper advanced settings (self-collapsing) -->
-    <WhisperAdvancedSettings ref="whisperAdvanced" />
-
-    <!-- Advanced: vocal separation -->
+    <!-- Advanced: vocal separation + whisper advanced settings -->
     <SettingsCollapsible storageKey="audio_transcribe_advanced">
       <div class="form-group">
         <AppToggle v-model="vocalSeparation">{{ $t('audio.transcribe.vocal_separation') }}</AppToggle>
         <small class="form-hint">{{ $t('audio.transcribe.vocal_separation_hint') }}</small>
       </div>
+      <WhisperAdvancedSettings ref="whisperAdvanced" :embedded="true" />
     </SettingsCollapsible>
   </div>
 </template>

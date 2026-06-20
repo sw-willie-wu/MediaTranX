@@ -290,13 +290,12 @@ onMounted(() => { loadLanguages(); modelStore.ensureLoaded() })
 
     <TranslationOptionsPanel ref="translationOptions" />
 
-    <WhisperAdvancedSettings ref="whisperAdvanced" />
-
     <SettingsCollapsible storageKey="video_subtitle_advanced">
       <div class="form-group">
         <AppToggle v-model="vocalSeparation">{{ $t('video.subtitle.vocal_separation') }}</AppToggle>
         <small class="form-hint">{{ $t('video.subtitle.vocal_separation_hint') }}</small>
       </div>
+      <WhisperAdvancedSettings ref="whisperAdvanced" :embedded="true" />
     </SettingsCollapsible>
   </div>
 </template>
