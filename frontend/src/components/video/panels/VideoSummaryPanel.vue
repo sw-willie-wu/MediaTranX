@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
+import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useModelStore } from '@/stores/models'
 import { useRemoteModelStore } from '@/stores/remoteModels'
@@ -292,13 +293,6 @@ defineExpose({ execute, isDisabled, isLoading })
     </div>
 
     <div class="form-group">
-      <AppToggle v-model="vocalSeparation">{{ $t('video.summary.vocal_separation') }}</AppToggle>
-      <small class="form-hint">{{ $t('video.summary.vocal_separation_hint') }}</small>
-    </div>
-
-    <WhisperAdvancedSettings ref="whisperAdvanced" />
-
-    <div class="form-group">
       <label>{{ $t('video.summary.llm_model') }}</label>
       <AppSelect
         v-model="llmModel"
@@ -316,6 +310,14 @@ defineExpose({ execute, isDisabled, isLoading })
       />
       <small class="form-hint">{{ $t('video.summary.vlm_model_hint') }}</small>
     </div>
+
+    <SettingsCollapsible storageKey="video_summary_advanced">
+      <div class="form-group">
+        <AppToggle v-model="vocalSeparation">{{ $t('video.summary.vocal_separation') }}</AppToggle>
+        <small class="form-hint">{{ $t('video.summary.vocal_separation_hint') }}</small>
+      </div>
+      <WhisperAdvancedSettings ref="whisperAdvanced" :embedded="true" />
+    </SettingsCollapsible>
   </div>
 </template>
 

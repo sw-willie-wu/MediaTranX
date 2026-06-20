@@ -161,17 +161,23 @@ _FORMAT_INSTRUCTIONS = {
 
 
 def _build_translate_user_prompt(text, source_lang, target_lang,
-                                  format="text", style="colloquial", glossary=None):
+                                  format="text", style="colloquial", glossary=None,
+                                  keep_names: bool = False):
     """Build the user-facing translation instruction (shared across builders)."""
     source_name = LANG_NAMES_EN.get(source_lang, source_lang)
     target_name = LANG_NAMES_EN.get(target_lang, target_lang)
     style_text = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS["colloquial"])
     format_inst = _FORMAT_INSTRUCTIONS.get(format, _FORMAT_INSTRUCTIONS["text"])
     glossary_text = format_glossary(glossary)
+    name_inst = (
+        "Keep all proper nouns and names (people, places, brands) in their original form — do not translate them.\n"
+        if keep_names else ""
+    )
 
     return (
         f"Translate the following {source_name} text to {target_name}.\n"
         f"Style: {style_text}\n"
+        f"{name_inst}"
         f"{format_inst}\n"
         f"{glossary_text}\n"
         f"{text}"
@@ -191,8 +197,8 @@ def _build_summarize_user_prompt(text, source_lang=None):
 
 # ── Builder: default (supports system role) ──
 
-def _translate_default(text, source_lang, target_lang, format, style, glossary):
-    prompt = _build_translate_user_prompt(text, source_lang, target_lang, format, style, glossary)
+def _translate_default(text, source_lang, target_lang, format, style, glossary, keep_names: bool = False):
+    prompt = _build_translate_user_prompt(text, source_lang, target_lang, format, style, glossary, keep_names)
     return {
         "mode": "chat",
         "messages": [
@@ -218,8 +224,8 @@ def _ocr_default(image_path, output_format="md", source_lang=None):
 
 # ── Builder: qwen3 (/no_think suffix) ──
 
-def _translate_qwen3(text, source_lang, target_lang, format, style, glossary):
-    prompt = _build_translate_user_prompt(text, source_lang, target_lang, format, style, glossary)
+def _translate_qwen3(text, source_lang, target_lang, format, style, glossary, keep_names: bool = False):
+    prompt = _build_translate_user_prompt(text, source_lang, target_lang, format, style, glossary, keep_names)
     return {
         "mode": "chat",
         "messages": [
@@ -251,8 +257,8 @@ def _ocr_qwen3(image_path, output_format="md", source_lang=None):
 
 # ── Builder: gemma (no system role) ──
 
-def _translate_gemma(text, source_lang, target_lang, format, style, glossary):
-    prompt = _build_translate_user_prompt(text, source_lang, target_lang, format, style, glossary)
+def _translate_gemma(text, source_lang, target_lang, format, style, glossary, keep_names: bool = False):
+    prompt = _build_translate_user_prompt(text, source_lang, target_lang, format, style, glossary, keep_names)
     return {
         "mode": "chat",
         "messages": [

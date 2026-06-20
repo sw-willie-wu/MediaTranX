@@ -40,6 +40,15 @@ class AudioTranscribeRequest(BaseModel):
     summarize_provider: Optional[str] = Field(default=None, description="Cloud service provider")
     summarize_conn_id: Optional[int] = Field(default=None, description="Cloud connection ID")
     summarize_remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
+    # whisper inference params (A1)
+    word_timestamps: bool = Field(default=False, description="Word-level timestamps")
+    condition_on_previous_text: bool = Field(default=True, description="Condition on previous text")
+    min_silence_duration_ms: int = Field(default=200, description="Minimum silence duration (ms)")
+    vad_threshold: float = Field(default=0.3, description="VAD probability threshold")
+    # translation sub-params (A2)
+    keep_names: bool = Field(default=True, description="Preserve proper names in translation")
+    translate_style: str = Field(default="colloquial", description="Translation style")
+    glossary: Optional[dict[str, str]] = Field(default=None, description="Term glossary for translation")
 
 class AudioTranscribeResponse(BaseModel):
     task_id: str
@@ -92,5 +101,12 @@ async def transcribe_audio(
         summarize_provider=request.summarize_provider,
         summarize_conn_id=request.summarize_conn_id,
         summarize_remote_model=request.summarize_remote_model,
+        word_timestamps=request.word_timestamps,
+        condition_on_previous_text=request.condition_on_previous_text,
+        min_silence_duration_ms=request.min_silence_duration_ms,
+        vad_threshold=request.vad_threshold,
+        keep_names=request.keep_names,
+        translate_style=request.translate_style,
+        glossary=request.glossary,
     )
     return AudioTranscribeResponse(task_id=task_id)

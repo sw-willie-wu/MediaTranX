@@ -85,3 +85,33 @@ def test_target_language_forwarded(client):
     assert kwargs["target_language"] == "zh-TW", (
         f"target_language not forwarded: {kwargs}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Whisper inference params + translate sub-params forwarded (Wave 2 Task 2)
+# ---------------------------------------------------------------------------
+
+def test_transcribe_route_forwards_whisper_and_translate_keys(client):
+    """All 7 new keys must survive the Pydantic model and reach submit_transcribe.
+
+    Guards against extra='ignore' silently dropping keys that are not yet
+    declared on AudioTranscribeRequest.
+    """
+    tc, fake = client
+    payload = {
+        "file_id": "f1", "model_size": "small", "output_format": "srt",
+        "word_timestamps": True, "condition_on_previous_text": False,
+        "min_silence_duration_ms": 500, "vad_threshold": 0.6,
+        "translate": True, "target_language": "en",
+        "translate_style": "formal", "keep_names": False, "glossary": {"A": "B"},
+    }
+    resp = tc.post("/audio/transcribe", json=payload)
+    assert resp.status_code == 200, resp.text
+    kwargs = fake.submit_transcribe.call_args.kwargs
+    assert kwargs["word_timestamps"] is True, f"word_timestamps not forwarded: {kwargs}"
+    assert kwargs["condition_on_previous_text"] is False, f"condition_on_previous_text not forwarded: {kwargs}"
+    assert kwargs["min_silence_duration_ms"] == 500, f"min_silence_duration_ms not forwarded: {kwargs}"
+    assert kwargs["vad_threshold"] == 0.6, f"vad_threshold not forwarded: {kwargs}"
+    assert kwargs["translate_style"] == "formal", f"translate_style not forwarded: {kwargs}"
+    assert kwargs["keep_names"] is False, f"keep_names not forwarded: {kwargs}"
+    assert kwargs["glossary"] == {"A": "B"}, f"glossary not forwarded: {kwargs}"

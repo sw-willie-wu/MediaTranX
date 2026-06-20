@@ -64,6 +64,9 @@ class AudioLyricsService:
         translate_conn_id: Optional[int] = None,
         translate_remote_model: Optional[str] = None,
         output_format: str = "lrc",
+        keep_names: bool = True,
+        translate_style: str = "colloquial",
+        glossary: Optional[dict[str, str]] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {
@@ -81,6 +84,9 @@ class AudioLyricsService:
             "translate_conn_id": translate_conn_id,
             "translate_remote_model": translate_remote_model,
             "output_format": output_format,
+            "keep_names": keep_names,
+            "translate_style": translate_style,
+            "glossary": glossary,
         }
         task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_LYRICS, params)
         logger.info(f"Audio lyrics task submitted: {task_id}")
@@ -174,6 +180,9 @@ class AudioLyricsService:
                     on_progress=lambda p, m: stage_progress("translate", p, m),
                     prov=prov,
                     remote_model=params.get("translate_remote_model", ""),
+                    keep_names=params.get("keep_names", True),
+                    style=params.get("translate_style", "colloquial"),
+                    glossary=params.get("glossary"),
                 )
             else:
                 translate_model_family = params.get("translate_model_family", "gemma4")
@@ -193,6 +202,9 @@ class AudioLyricsService:
                         model_family=translate_model_family,
                         model_size=translate_model_size,
                         start_msg="task.progress.lyrics_translating",
+                        keep_names=params.get("keep_names", True),
+                        style=params.get("translate_style", "colloquial"),
+                        glossary=params.get("glossary"),
                     )
 
             if not translate_remote:

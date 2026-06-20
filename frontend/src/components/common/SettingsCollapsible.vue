@@ -24,7 +24,7 @@ const bodyId = useId()
       <i class="bi" :class="open ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
       <span>{{ title || $t('common.advanced_options') }}</span>
     </button>
-    <div v-if="open" :id="bodyId" class="settings-collapsible-body">
+    <div v-show="open" :id="bodyId" class="settings-collapsible-body">
       <slot />
     </div>
   </div>

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
+import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
@@ -251,11 +252,6 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, isAudioFormat, getP
 
     <template v-if="!isAudioFormat">
       <div class="form-group">
-        <label>{{ $t('video.transcode.video_codec') }}</label>
-        <AppSelect v-model="videoCodec" :options="videoCodecs" />
-      </div>
-
-      <div class="form-group">
         <label>{{ $t('video.transcode.resolution') }}</label>
         <AppSelect v-model="resolution" :options="resolutions" />
       </div>
@@ -271,23 +267,34 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, isAudioFormat, getP
           <input v-model.number="customResHeight" type="number" class="form-input" min="1" />
         </div>
       </div>
-
-      <div v-if="resolution" class="form-group">
-        <label>{{ $t('video.transcode.scale_algorithm') }}</label>
-        <AppSelect v-model="scaleAlgorithm" :options="scaleAlgorithms" />
-      </div>
-
-      <div class="form-group">
-        <label>{{ $t('video.transcode.crf') }} {{ crf }}</label>
-        <AppRange v-model="crf" :min="0" :max="51" />
-        <small class="form-hint">{{ $t('video.transcode.crf_hint') }}</small>
-      </div>
     </template>
 
-    <div v-if="showBitrateOption" class="form-group">
-      <label>{{ $t('video.transcode.bitrate') }}</label>
-      <AppSelect v-model="audioBitrate" :options="audioBitrates" />
-    </div>
+    <SettingsCollapsible v-if="!isAudioFormat || showBitrateOption" storageKey="video_transcode_advanced">
+      <template v-if="!isAudioFormat">
+        <div class="form-group">
+          <label>{{ $t('video.transcode.video_codec') }}</label>
+          <AppSelect v-model="videoCodec" :options="videoCodecs" />
+        </div>
+
+        <div v-if="resolution" class="form-group">
+          <label>{{ $t('video.transcode.scale_algorithm') }}</label>
+          <AppSelect v-model="scaleAlgorithm" :options="scaleAlgorithms" />
+        </div>
+
+        <div class="form-group">
+          <label>{{ $t('video.transcode.crf') }} {{ crf }}</label>
+          <AppRange v-model="crf" :min="0" :max="51" />
+          <small class="form-hint">{{ $t('video.transcode.crf_hint') }}</small>
+        </div>
+      </template>
+
+      <template v-if="showBitrateOption">
+        <div class="form-group">
+          <label>{{ $t('video.transcode.bitrate') }}</label>
+          <AppSelect v-model="audioBitrate" :options="audioBitrates" />
+        </div>
+      </template>
+    </SettingsCollapsible>
   </div>
 </template>
 

@@ -655,6 +655,7 @@ export default {
     whisper_advanced: {
       title: '進階分句設定',
       title_hint: '（適合多人對話）',
+      section_title: '分句設定',
       independent_segments: '獨立辨識每段語音',
       independent_hint: '關閉上下文關聯，避免句子合併',
       word_timestamps: '詞級時間戳',
