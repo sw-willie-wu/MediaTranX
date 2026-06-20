@@ -7,11 +7,24 @@ const mountOpts = { global: { mocks: { $t: (k: string) => k } } }
 describe('SettingsCollapsible', () => {
   beforeEach(() => localStorage.clear())
 
-  it('is collapsed by default — no body, chevron-right, aria-expanded false', () => {
+  it('is collapsed by default — body hidden (v-show), chevron-right, aria-expanded false', () => {
     const w = mount(SettingsCollapsible, { ...mountOpts, props: { storageKey: 'test_advanced' } })
-    expect(w.find('.settings-collapsible-body').exists()).toBe(false)
+    expect(w.find('.settings-collapsible-body').exists()).toBe(true)
+    expect(w.find('.settings-collapsible-body').isVisible()).toBe(false)
     expect(w.find('.bi-chevron-right').exists()).toBe(true)
     expect(w.find('button').attributes('aria-expanded')).toBe('false')
+  })
+
+  it('keeps slot content mounted when collapsed (v-show, not v-if)', () => {
+    localStorage.clear()
+    const w = mount(SettingsCollapsible, {
+      props: { storageKey: 'test_w21_keep_mounted_advanced' },
+      slots: { default: '<div class="probe">hi</div>' },
+      global: { mocks: { $t: (k: string) => k } },
+    })
+    // default collapsed — slot still in DOM, but hidden via v-show
+    expect(w.find('.probe').exists()).toBe(true)
+    expect(w.find('.settings-collapsible-body').isVisible()).toBe(false)
   })
 
   it('expands on click — renders slot, persists true', async () => {
