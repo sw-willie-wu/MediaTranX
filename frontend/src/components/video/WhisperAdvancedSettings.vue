@@ -3,6 +3,8 @@ import { ref } from 'vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 import AppRange from '@/components/common/AppRange.vue'
 
+const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
+
 const showAdvanced = ref(false)
 const wordTimestamps = ref(false)
 const align = ref(false)
@@ -15,11 +17,14 @@ defineExpose({ wordTimestamps, align, conditionOnPreviousText, minSilenceDuratio
 
 <template>
   <div class="form-group">
-    <AppToggle v-model="showAdvanced">
+    <AppToggle v-if="!props.embedded" v-model="showAdvanced">
       {{ $t('video.whisper_advanced.title') }} <span class="label-hint">{{ $t('video.whisper_advanced.title_hint') }}</span>
     </AppToggle>
+    <label v-else class="sub-section-label">
+      {{ $t('video.whisper_advanced.section_title') }} <span class="label-hint">{{ $t('video.whisper_advanced.title_hint') }}</span>
+    </label>
 
-    <div v-if="showAdvanced" class="sub-params">
+    <div v-if="props.embedded || showAdvanced" class="sub-params">
       <div class="option-row">
         <AppToggle
           :modelValue="!conditionOnPreviousText"
@@ -74,5 +79,13 @@ defineExpose({ wordTimestamps, align, conditionOnPreviousText, minSilenceDuratio
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+.sub-section-label {
+  display: block;
+  margin: 0.5rem 0 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 600;
 }
 </style>

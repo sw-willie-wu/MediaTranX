@@ -655,6 +655,7 @@ export default {
     whisper_advanced: {
       title: 'Advanced Segmentation',
       title_hint: '(for multi-speaker)',
+      section_title: 'Segmentation Settings',
       independent_segments: 'Independent segment recognition',
       independent_hint: 'Disable context association to prevent sentence merging',
       word_timestamps: 'Word-level timestamps',
