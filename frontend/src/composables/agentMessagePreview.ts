@@ -28,6 +28,13 @@ export function toolResultPreview(content: string): ToolResultPreview {
     const parsed = JSON.parse(content)
     if (parsed && typeof parsed === 'object') {
       const p = parsed as Record<string, unknown>
+      // An in-flight tool that was refused because the user pressed stop returns
+      // the typed `agent.error.aborted`. It's an intentional user action, not a
+      // failure — render it like a confirm-reject (`✗ cancelled`) instead of the
+      // raw code, which is what the generic error branch below would show.
+      if (p.error === 'agent.error.aborted') {
+        return { status: 'error', icon: '✗', text: 'cancelled' }
+      }
       if (p.error) {
         return { status: 'error', icon: '✗', text: truncate(String(p.error)) }
       }
