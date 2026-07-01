@@ -74,7 +74,10 @@ export interface AgentLike {
 export interface ToolsApi {
   TOOLS: Array<{ name: string; description: string; parameters: object }>
   getTools: (activePanelSchema?: PanelAgentSchema | null, activeViewHandle?: ViewHandle | null) => Array<{ name: string; description: string; parameters: object }>
-  dispatch(toolCall: { id: string; function: { name: string; arguments: string } }): Promise<{ ok?: boolean; error?: string; [k: string]: unknown }>
+  dispatch(
+    toolCall: { id: string; function: { name: string; arguments: string } },
+    ctx?: { signal?: AbortSignal },
+  ): Promise<{ ok?: boolean; error?: string; [k: string]: unknown }>
 }
 
 export interface UseAgentDeps {
@@ -216,6 +219,11 @@ function _createAgent(deps: UseAgentDeps = {}) {
   let agent: AgentLike | null = null
   let invalidFieldStrikes = 0
   let outerStop = false
+  // Per-run abort handle. Created fresh at the top of each runLoop() (one per
+  // user turn), aborted by cancelRun(). Its signal is threaded into
+  // tools.dispatch so an already-started state-mutating tool can refuse to apply
+  // its change when the user presses stop mid-dispatch.
+  let runAbort: AbortController | null = null
 
   // ─── Public API ──────────────────────────────────────────────────
 
@@ -245,6 +253,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
 
   function cancelRun() {
     agent?.abortRun()                         // SDK surfaces abort as onRunErrorEvent{code:'abort'}
+    runAbort?.abort()                         // trip the in-flight dispatch guard
     store.resolveAllPendingConfirms(false)    // m4
     outerStop = true                          // spec §3.4: cancel → loop break
   }
@@ -311,6 +320,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
   // ─── Run loop ────────────────────────────────────────────────────
 
   async function runLoop() {
+    runAbort = new AbortController()   // fresh per user turn; cancelRun() aborts it
     while (!outerStop) {
       store.start()
       const transient: TransientBuffer = { messageId: '', text: '', toolCallsBuf: new Map() }
@@ -460,7 +470,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
             }
           }
 
-          const dispatchResult = await tools.dispatch(tc)
+          const dispatchResult = await tools.dispatch(tc, { signal: runAbort?.signal })
           await commitMessage({ role: 'tool', toolCallId: tc.id, content: JSON.stringify(dispatchResult) })
           unprocessedToolCalls.shift()
 
@@ -475,6 +485,20 @@ function _createAgent(deps: UseAgentDeps = {}) {
               break
             }
           }
+        }
+
+        // Cancel mid-round leaves the inner loop (outerStop) with tool calls that
+        // never got a tool row. Every assistant tool_call needs a matching tool
+        // response or the next same-session round unbalances the history and
+        // 400s (mapMessagesToAgUi doesn't sanitize; sanitizeHistory only runs on
+        // resume). Synth an aborted row for each remaining call. The strikes path
+        // above already empties the array, and a successful round drains it via
+        // shift(), so this only fires on cancel.
+        if (unprocessedToolCalls.length > 0) {
+          for (const rem of unprocessedToolCalls) {
+            await commitMessage({ role: 'tool', toolCallId: rem.id, content: JSON.stringify({ error: 'agent.error.aborted' }) })
+          }
+          unprocessedToolCalls = []
         }
       } catch (e: unknown) {
         // Reachable only from the tool-dispatch phase (runAgent errors captured

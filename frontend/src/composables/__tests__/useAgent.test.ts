@@ -613,4 +613,78 @@ describe('useAgent.runLoop', () => {
     expect(lastMsg.content).toContain('network failure')
     consoleErrorSpy.mockRestore()
   })
+
+  // ─── In-flight abort (fix/agent-abort-inflight) ──────────────────────────────
+
+  it('cancel during an in-flight dispatch → signal aborted + remaining tool calls balanced', async () => {
+    // One round emits TWO tool calls. We hold dispatch #1 open, press stop while
+    // it is in flight, then let it finish. The run must: (a) abort the signal the
+    // dispatcher received, (b) never dispatch tc2, (c) still leave a tool row for
+    // BOTH tc1 and tc2 so the history stays balanced (no dangling tool_call).
+    const fake = makeFakeAgent((round) => round === 0
+      ? { toolCalls: [
+          { id: 'tc1', name: 'navigate_to', args: '{"route":"/video"}' },
+          { id: 'tc2', name: 'navigate_to', args: '{"route":"/audio"}' },
+        ] }
+      : { textDeltas: ['done'] })
+
+    let markStarted!: () => void
+    const dispatchStarted = new Promise<void>((r) => { markStarted = r })
+    let openGate!: () => void
+    const gate = new Promise<void>((r) => { openGate = r })
+    let capturedSignal: AbortSignal | undefined
+
+    const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
+    const fakeTools = {
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
+      dispatch: vi.fn(async (_tc: any, ctx?: { signal?: AbortSignal }) => {
+        capturedSignal = ctx?.signal
+        markStarted()
+        await gate
+        // Mimic the real dispatcher: refuse to apply the mutation if aborted.
+        return ctx?.signal?.aborted ? { error: 'agent.error.aborted' } : { ok: true }
+      }),
+    }
+
+    const { sendUserText, cancelRun, messages } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
+    const run = sendUserText('go')
+    await dispatchStarted   // dispatch #1 is now in flight
+    cancelRun()             // user presses stop mid-dispatch
+    openGate()              // let dispatch #1 resolve
+    await run
+
+    expect(capturedSignal?.aborted).toBe(true)          // signal threaded + aborted at the right moment
+    expect(fakeTools.dispatch).toHaveBeenCalledOnce()   // tc2 never dispatched (loop broke)
+    const toolRows = messages.value.filter(m => m.role === 'tool') as any[]
+    expect(toolRows.map(m => m.toolCallId).sort()).toEqual(['tc1', 'tc2'])  // balanced
+  })
+
+  it('two tool calls without cancel → both dispatched with a non-aborted signal, both tool rows', async () => {
+    const fake = makeFakeAgent((round) => round === 0
+      ? { toolCalls: [
+          { id: 'tc1', name: 'navigate_to', args: '{"route":"/video"}' },
+          { id: 'tc2', name: 'navigate_to', args: '{"route":"/audio"}' },
+        ] }
+      : { textDeltas: ['done'] })
+
+    const seenAborted: boolean[] = []
+    const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
+    const fakeTools = {
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
+      dispatch: vi.fn(async (_tc: any, ctx?: { signal?: AbortSignal }) => {
+        seenAborted.push(!!ctx?.signal?.aborted)
+        return { ok: true }
+      }),
+    }
+
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
+    await sendUserText('go')
+
+    expect(fakeTools.dispatch).toHaveBeenCalledTimes(2)
+    expect(seenAborted).toEqual([false, false])   // signal is present but never aborted on the happy path
+    const toolRows = messages.value.filter(m => m.role === 'tool') as any[]
+    expect(toolRows.map(m => m.toolCallId).sort()).toEqual(['tc1', 'tc2'])   // exactly two, no double-synth
+  })
 })
