@@ -8,6 +8,8 @@
  *   - strength field is present
  *   - GIF advanced fields (gif_colors, gif_frame_drop, gif_optimize_transparency, gif_coalesce) are present
  *   - visibleWhen gates on gif input (false when non-GIF, true when GIF)
+ *   - PNG advanced field (png_mode) is present
+ *   - visibleWhen for png_mode gates on PNG input (true for PNG, false for GIF)
  *   - setField clamping works
  */
 
@@ -17,13 +19,15 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { panelRegistry, type PanelHandle } from '@/stores/panelRegistry'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
-function makeImageCompressPanelStub(gifInput = false) {
+function makeImageCompressPanelStub(gifInput = false, pngInput = false) {
   const strength = ref(75)
   const gifColors = ref(128)
   const gifFrameDrop = ref(0)
   const gifOptimizeTransparency = ref(true)
   const gifCoalesce = ref(false)
+  const pngMode = ref<'lossy' | 'lossless'>('lossy')
   const isGif = ref(gifInput)
+  const isPng = ref(pngInput)
 
   const agentSchema = {
     panelId: 'image.compress',
@@ -38,6 +42,9 @@ function makeImageCompressPanelStub(gifInput = false) {
         visibleWhen: () => isGif.value },
       { name: 'gif_coalesce', type: 'bool' as const,
         visibleWhen: () => isGif.value },
+      { name: 'png_mode', type: 'enum' as const,
+        options: () => ['lossy', 'lossless'],
+        visibleWhen: () => isPng.value },
     ],
     actions: [],
     execute: { requiresConfirm: true, label: 'panel.compress.execute' },
@@ -52,6 +59,7 @@ function makeImageCompressPanelStub(gifInput = false) {
       gif_frame_drop: gifFrameDrop.value,
       gif_optimize_transparency: gifOptimizeTransparency.value,
       gif_coalesce: gifCoalesce.value,
+      png_mode: pngMode.value,
     }),
     setField: (field, value) => {
       switch (field) {
@@ -74,6 +82,9 @@ function makeImageCompressPanelStub(gifInput = false) {
         case 'gif_coalesce':
           gifCoalesce.value = Boolean(value)
           return gifCoalesce.value
+        case 'png_mode':
+          pngMode.value = value === 'lossless' ? 'lossless' : 'lossy'
+          return pngMode.value
         default:
           throw new Error(`Unknown field: ${field}`)
       }
@@ -90,7 +101,7 @@ function makeImageCompressPanelStub(gifInput = false) {
     template: '<div></div>',
   })
 
-  return { component, isGif }
+  return { component, isGif, isPng }
 }
 
 beforeEach(() => { panelRegistry._clearAll() })
@@ -144,7 +155,7 @@ describe('ImageCompressPanel agent schema smoke', () => {
     const { component } = makeImageCompressPanelStub(false)
     mount(component)
     const handle = panelRegistry.get('image.compress')!
-    const gifFields = handle.agentSchema.fields.filter(f => f.name !== 'strength')
+    const gifFields = handle.agentSchema.fields.filter(f => f.name.startsWith('gif_'))
     for (const field of gifFields) {
       expect(field.visibleWhen?.(), `${field.name} visibleWhen should be false for non-GIF`).toBe(false)
     }
@@ -155,10 +166,36 @@ describe('ImageCompressPanel agent schema smoke', () => {
     mount(component)
     isGif.value = true
     const handle = panelRegistry.get('image.compress')!
-    const gifFields = handle.agentSchema.fields.filter(f => f.name !== 'strength')
+    const gifFields = handle.agentSchema.fields.filter(f => f.name.startsWith('gif_'))
     for (const field of gifFields) {
       expect(field.visibleWhen?.(), `${field.name} visibleWhen should be true for GIF`).toBe(true)
     }
+  })
+
+  it('png_mode field present in schema', () => {
+    const { component } = makeImageCompressPanelStub()
+    mount(component)
+    const handle = panelRegistry.get('image.compress')!
+    const pngField = handle.agentSchema.fields.find(f => f.name === 'png_mode')
+    expect(pngField).toBeDefined()
+    expect(pngField?.type).toBe('enum')
+  })
+
+  it('visibleWhen for png_mode returns true when input is PNG', () => {
+    const { component, isPng } = makeImageCompressPanelStub(false, false)
+    mount(component)
+    isPng.value = true
+    const handle = panelRegistry.get('image.compress')!
+    const pngField = handle.agentSchema.fields.find(f => f.name === 'png_mode')!
+    expect(pngField.visibleWhen?.()).toBe(true)
+  })
+
+  it('visibleWhen for png_mode returns false when input is GIF', () => {
+    const { component } = makeImageCompressPanelStub(true, false)
+    mount(component)
+    const handle = panelRegistry.get('image.compress')!
+    const pngField = handle.agentSchema.fields.find(f => f.name === 'png_mode')!
+    expect(pngField.visibleWhen?.()).toBe(false)
   })
 
   it('setField strength = 50 → returns 50', () => {

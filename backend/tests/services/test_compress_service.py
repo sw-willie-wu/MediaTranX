@@ -19,6 +19,32 @@ class _Files:
 class _TM:
     def register_handler(self, *a, **k): pass
 
+def test_png_lossy_compress_shrinks(tmp_path):
+    from PIL import Image
+    from app.adapters.binary.gifsicle import GifsicleWrapper
+    svc = ImageCompressService(_Files(FIX / "sample.png", tmp_path), _TM(), GifsicleWrapper())
+    res = svc._execute({"file_id": "x", "strength": 80, "png_lossy": True}, lambda p, m: None)
+    assert res["output_size"] < res["original_size"], (
+        f"lossy PNG should shrink: {res['output_size']} vs {res['original_size']}")
+    out = tmp_path / "out_compressed.png"
+    assert out.exists()
+    with Image.open(out) as im:
+        assert im.format == "PNG"
+
+
+def test_png_lossless_compress_shrinks_or_equal(tmp_path):
+    from PIL import Image
+    from app.adapters.binary.gifsicle import GifsicleWrapper
+    svc = ImageCompressService(_Files(FIX / "sample.png", tmp_path), _TM(), GifsicleWrapper())
+    res = svc._execute({"file_id": "x", "strength": 80, "png_lossy": False}, lambda p, m: None)
+    assert res["output_size"] <= res["original_size"], (
+        f"lossless PNG should not grow: {res['output_size']} vs {res['original_size']}")
+    out = tmp_path / "out_compressed.png"
+    assert out.exists()
+    with Image.open(out) as im:
+        assert im.format == "PNG"
+
+
 def test_gif_compress_shrinks_and_stays_animated(tmp_path):
     from PIL import Image
     from app.adapters.binary.gifsicle import GifsicleWrapper

@@ -35,8 +35,10 @@ const gifColors = ref(128)
 const gifFrameDrop = ref<number>(0)
 const gifOptimizeTransparency = ref(true)
 const gifCoalesce = ref(false)
+const pngMode = ref<'lossy' | 'lossless'>('lossy')
 
 const isGif = computed(() => props.imageInfo?.format?.toUpperCase() === 'GIF')
+const isPng = computed(() => props.imageInfo?.format?.toUpperCase() === 'PNG')
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
@@ -48,6 +50,11 @@ const gifFrameDropOptions = computed(() => [
   { value: 4, label: t('image.compress.gif_frame_drop_4') },
 ])
 
+const pngModeOptions = computed(() => [
+  { value: 'lossy', label: t('image.compress.png_mode_lossy') },
+  { value: 'lossless', label: t('image.compress.png_mode_lossless') },
+])
+
 function getParams(): Record<string, unknown> {
   return {
     strength: strength.value,
@@ -55,6 +62,7 @@ function getParams(): Record<string, unknown> {
     gif_frame_drop: gifFrameDrop.value,
     gif_optimize_transparency: gifOptimizeTransparency.value,
     gif_coalesce: gifCoalesce.value,
+    png_lossy: pngMode.value === 'lossy',
   }
 }
 
@@ -89,6 +97,9 @@ const agentSchema = {
       visibleWhen: () => isGif.value },
     { name: 'gif_coalesce', type: 'bool' as const,
       visibleWhen: () => isGif.value },
+    { name: 'png_mode', type: 'enum' as const,
+      options: () => ['lossy', 'lossless'],
+      visibleWhen: () => isPng.value },
   ],
   actions: [],
   execute: { requiresConfirm: true, label: 'panel.compress.execute' },
@@ -103,6 +114,7 @@ useAgentPanelHost('image.compress', {
     gif_frame_drop: gifFrameDrop.value,
     gif_optimize_transparency: gifOptimizeTransparency.value,
     gif_coalesce: gifCoalesce.value,
+    png_mode: pngMode.value,
   }),
   setField: (field, value) => {
     switch (field) {
@@ -125,6 +137,9 @@ useAgentPanelHost('image.compress', {
       case 'gif_coalesce':
         gifCoalesce.value = Boolean(value)
         return gifCoalesce.value
+      case 'png_mode':
+        pngMode.value = value === 'lossless' ? 'lossless' : 'lossy'
+        return pngMode.value
       default:
         throw new Error(`Unknown field: ${field}`)
     }
@@ -151,6 +166,13 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
       <AppRange v-model="strength" :min="1" :max="100" />
       <small class="form-hint">{{ $t('image.compress.strength_hint') }}</small>
     </div>
+
+    <SettingsCollapsible v-if="isPng" storage-key="image_compress_png_advanced">
+      <div class="form-group">
+        <label>{{ $t('image.compress.png_mode') }}</label>
+        <AppSelect v-model="pngMode" :options="pngModeOptions" />
+      </div>
+    </SettingsCollapsible>
 
     <SettingsCollapsible v-if="isGif" storage-key="image_compress_advanced">
       <div class="form-group">
