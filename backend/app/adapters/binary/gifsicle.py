@@ -105,18 +105,33 @@ class GifsicleWrapper:
             raise GifsicleNotFound(
                 "gifsicle binary could not be resolved (gifsicle-bin wheel installed?)"
             )
-        frame_select: list[str] = []
-        if frame_drop and frame_drop > 1 and not coalesce:
-            from PIL import Image
-            with Image.open(src) as im:
-                n = getattr(im, "n_frames", 1)
-            kept = [i for i in range(n) if (i + 1) % frame_drop != 0]
-            frame_select = [f"#{i}" for i in kept]
-        args = self.build_args(src, dst, lossy=lossy, colors=colors,
-                               frame_select=frame_select,
-                               optimize_transparency=optimize_transparency,
-                               coalesce=coalesce)
-        logger.info("gifsicle: %s", " ".join(args))
-        proc = subprocess.run(args, capture_output=True, text=True)
-        if proc.returncode != 0:
-            raise GifsicleError(f"gifsicle exit {proc.returncode}: {proc.stderr.strip()}")
+        src = Path(src)
+        dst = Path(dst)
+        # gifsicle is a native Windows exe that uses ANSI argv.  When the active
+        # code-page cannot represent a CJK (or other non-ASCII) character in the
+        # path, Windows mangles the argument to '?' and gifsicle exits with
+        # "Invalid argument".  The fix: copy src into an ASCII-only temp file,
+        # run gifsicle entirely inside a temp directory (all paths are ASCII),
+        # then move the result to the real dst via shutil which handles Unicode
+        # destinations without going through argv.
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="gifsicle_") as td:
+            tmp_in = Path(td) / "in.gif"
+            tmp_out = Path(td) / "out.gif"
+            shutil.copyfile(src, tmp_in)
+            frame_select: list[str] = []
+            if frame_drop and frame_drop > 1 and not coalesce:
+                from PIL import Image
+                with Image.open(tmp_in) as im:
+                    n = getattr(im, "n_frames", 1)
+                kept = [i for i in range(n) if (i + 1) % frame_drop != 0]
+                frame_select = [f"#{i}" for i in kept]
+            args = self.build_args(tmp_in, tmp_out, lossy=lossy, colors=colors,
+                                   frame_select=frame_select,
+                                   optimize_transparency=optimize_transparency,
+                                   coalesce=coalesce)
+            logger.info("gifsicle: %s", " ".join(args))
+            proc = subprocess.run(args, capture_output=True, text=True)
+            if proc.returncode != 0:
+                raise GifsicleError(f"gifsicle exit {proc.returncode}: {proc.stderr.strip()}")
+            shutil.copyfile(tmp_out, dst)
