@@ -45,6 +45,46 @@ def test_png_lossless_compress_shrinks_or_equal(tmp_path):
         assert im.format == "PNG"
 
 
+def test_jpeg_compress_shrinks(tmp_path):
+    from PIL import Image
+    from app.adapters.binary.gifsicle import GifsicleWrapper
+    svc = ImageCompressService(_Files(FIX / "sample.jpg", tmp_path), _TM(), GifsicleWrapper())
+    res = svc._execute({"file_id": "x", "strength": 80}, lambda p, m: None)
+    assert res["output_size"] < res["original_size"], (
+        f"JPEG should shrink at strength=80: {res['output_size']} vs {res['original_size']}")
+    out = tmp_path / "out_compressed.jpg"
+    assert out.exists()
+    with Image.open(out) as im:
+        assert im.format == "JPEG"
+
+
+def test_webp_lossy_shrinks(tmp_path):
+    from PIL import Image
+    from app.adapters.binary.gifsicle import GifsicleWrapper
+    svc = ImageCompressService(_Files(FIX / "sample.webp", tmp_path), _TM(), GifsicleWrapper())
+    res = svc._execute({"file_id": "x", "strength": 80}, lambda p, m: None)
+    assert res["output_size"] < res["original_size"], (
+        f"lossy WebP should shrink at strength=80: {res['output_size']} vs {res['original_size']}")
+    out = tmp_path / "out_compressed.webp"
+    assert out.exists()
+    with Image.open(out) as im:
+        assert im.format == "WEBP"
+
+
+def test_webp_lossless_valid(tmp_path):
+    from PIL import Image
+    from app.adapters.binary.gifsicle import GifsicleWrapper
+    svc = ImageCompressService(_Files(FIX / "sample.webp", tmp_path), _TM(), GifsicleWrapper())
+    res = svc._execute({"file_id": "x", "strength": 50, "webp_lossless": True}, lambda p, m: None)
+    # Re-encoding a lossy WebP as lossless grows the file (lossy pixel data → lossless encoding).
+    # Assert validity only: the output must open as a well-formed WEBP.
+    assert res["output_size"] > 0
+    out = tmp_path / "out_compressed.webp"
+    assert out.exists()
+    with Image.open(out) as im:
+        assert im.format == "WEBP"
+
+
 def test_gif_compress_shrinks_and_stays_animated(tmp_path):
     from PIL import Image
     from app.adapters.binary.gifsicle import GifsicleWrapper

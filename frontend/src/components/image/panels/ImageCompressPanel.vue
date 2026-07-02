@@ -36,9 +36,17 @@ const gifFrameDrop = ref<number>(0)
 const gifOptimizeTransparency = ref(true)
 const gifCoalesce = ref(false)
 const pngMode = ref<'lossy' | 'lossless'>('lossy')
+const jpegProgressive = ref(true)
+const jpegKeepMetadata = ref(false)
+const webpLossless = ref(false)
 
 const isGif = computed(() => props.imageInfo?.format?.toUpperCase() === 'GIF')
 const isPng = computed(() => props.imageInfo?.format?.toUpperCase() === 'PNG')
+const isJpeg = computed(() => {
+  const fmt = props.imageInfo?.format?.toUpperCase()
+  return fmt === 'JPEG' || fmt === 'JPG'
+})
+const isWebp = computed(() => props.imageInfo?.format?.toUpperCase() === 'WEBP')
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
@@ -63,6 +71,9 @@ function getParams(): Record<string, unknown> {
     gif_optimize_transparency: gifOptimizeTransparency.value,
     gif_coalesce: gifCoalesce.value,
     png_lossy: pngMode.value === 'lossy',
+    jpeg_progressive: jpegProgressive.value,
+    jpeg_keep_metadata: jpegKeepMetadata.value,
+    webp_lossless: webpLossless.value,
   }
 }
 
@@ -100,6 +111,12 @@ const agentSchema = {
     { name: 'png_mode', type: 'enum' as const,
       options: () => ['lossy', 'lossless'],
       visibleWhen: () => isPng.value },
+    { name: 'jpeg_progressive', type: 'bool' as const,
+      visibleWhen: () => isJpeg.value },
+    { name: 'jpeg_keep_metadata', type: 'bool' as const,
+      visibleWhen: () => isJpeg.value },
+    { name: 'webp_lossless', type: 'bool' as const,
+      visibleWhen: () => isWebp.value },
   ],
   actions: [],
   execute: { requiresConfirm: true, label: 'panel.compress.execute' },
@@ -115,6 +132,9 @@ useAgentPanelHost('image.compress', {
     gif_optimize_transparency: gifOptimizeTransparency.value,
     gif_coalesce: gifCoalesce.value,
     png_mode: pngMode.value,
+    jpeg_progressive: jpegProgressive.value,
+    jpeg_keep_metadata: jpegKeepMetadata.value,
+    webp_lossless: webpLossless.value,
   }),
   setField: (field, value) => {
     switch (field) {
@@ -140,6 +160,15 @@ useAgentPanelHost('image.compress', {
       case 'png_mode':
         pngMode.value = value === 'lossless' ? 'lossless' : 'lossy'
         return pngMode.value
+      case 'jpeg_progressive':
+        jpegProgressive.value = Boolean(value)
+        return jpegProgressive.value
+      case 'jpeg_keep_metadata':
+        jpegKeepMetadata.value = Boolean(value)
+        return jpegKeepMetadata.value
+      case 'webp_lossless':
+        webpLossless.value = Boolean(value)
+        return webpLossless.value
       default:
         throw new Error(`Unknown field: ${field}`)
     }
@@ -171,6 +200,21 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
       <div class="form-group">
         <label>{{ $t('image.compress.png_mode') }}</label>
         <AppSelect v-model="pngMode" :options="pngModeOptions" />
+      </div>
+    </SettingsCollapsible>
+
+    <SettingsCollapsible v-if="isJpeg" storage-key="image_compress_jpeg_advanced">
+      <div class="form-group">
+        <AppToggle v-model="jpegProgressive">{{ $t('image.compress.jpeg_progressive') }}</AppToggle>
+      </div>
+      <div class="form-group">
+        <AppToggle v-model="jpegKeepMetadata">{{ $t('image.compress.jpeg_keep_metadata') }}</AppToggle>
+      </div>
+    </SettingsCollapsible>
+
+    <SettingsCollapsible v-if="isWebp" storage-key="image_compress_webp_advanced">
+      <div class="form-group">
+        <AppToggle v-model="webpLossless">{{ $t('image.compress.webp_lossless') }}</AppToggle>
       </div>
     </SettingsCollapsible>
 

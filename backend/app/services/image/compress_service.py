@@ -76,8 +76,22 @@ class ImageCompressService:
             "saved_ratio": round(1 - out.file_size / orig, 4) if orig else 0.0,
         }
 
-    def _save_jpeg(self, src, dst, strength, params):  # filled in Wave 3
-        raise NotImplementedError
+    def _save_jpeg(self, src, dst, strength, params):
+        from PIL import Image
+        q = max(20, 95 - int(strength * 0.65))
+        with Image.open(src) as im:
+            im = im.convert("RGB")
+            save_kwargs = {"quality": q, "optimize": True,
+                           "progressive": bool(params.get("jpeg_progressive", True))}
+            if not params.get("jpeg_keep_metadata", False):
+                im.info.pop("exif", None)
+            im.save(dst, format="JPEG", **save_kwargs)
 
-    def _save_webp(self, src, dst, strength, params):  # filled in Wave 3
-        raise NotImplementedError
+    def _save_webp(self, src, dst, strength, params):
+        from PIL import Image
+        with Image.open(src) as im:
+            if params.get("webp_lossless", False):
+                im.save(dst, format="WEBP", lossless=True, method=6)
+            else:
+                q = max(20, 95 - int(strength * 0.65))
+                im.save(dst, format="WEBP", quality=q, method=6)

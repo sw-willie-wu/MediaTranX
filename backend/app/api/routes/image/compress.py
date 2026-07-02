@@ -27,6 +27,11 @@ class ImageCompressRequest(BaseModel):
     gif_coalesce: bool = Field(default=False, description="Coalesce (unoptimize) GIF before re-compression")
     # PNG-specific options
     png_lossy: bool = Field(default=True, description="Allow lossy PNG compression (pngquant)")
+    # JPEG-specific options
+    jpeg_progressive: bool = Field(default=True, description="Save as progressive JPEG")
+    jpeg_keep_metadata: bool = Field(default=False, description="Preserve EXIF/metadata")
+    # WebP-specific options
+    webp_lossless: bool = Field(default=False, description="Use lossless WebP encoding")
 
 
 class ImageCompressResponse(BaseModel):
@@ -50,5 +55,8 @@ async def compress_image(
         gif_optimize_transparency=request.gif_optimize_transparency,
         gif_coalesce=request.gif_coalesce,
         png_lossy=request.png_lossy,
+        jpeg_progressive=request.jpeg_progressive,
+        jpeg_keep_metadata=request.jpeg_keep_metadata,
+        webp_lossless=request.webp_lossless,
     )
     return ImageCompressResponse(task_id=task_id)

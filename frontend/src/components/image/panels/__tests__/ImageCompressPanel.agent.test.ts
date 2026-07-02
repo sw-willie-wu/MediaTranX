@@ -19,15 +19,20 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { panelRegistry, type PanelHandle } from '@/stores/panelRegistry'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
-function makeImageCompressPanelStub(gifInput = false, pngInput = false) {
+function makeImageCompressPanelStub(gifInput = false, pngInput = false, jpegInput = false, webpInput = false) {
   const strength = ref(75)
   const gifColors = ref(128)
   const gifFrameDrop = ref(0)
   const gifOptimizeTransparency = ref(true)
   const gifCoalesce = ref(false)
   const pngMode = ref<'lossy' | 'lossless'>('lossy')
+  const jpegProgressive = ref(true)
+  const jpegKeepMetadata = ref(false)
+  const webpLossless = ref(false)
   const isGif = ref(gifInput)
   const isPng = ref(pngInput)
+  const isJpeg = ref(jpegInput)
+  const isWebp = ref(webpInput)
 
   const agentSchema = {
     panelId: 'image.compress',
@@ -45,6 +50,12 @@ function makeImageCompressPanelStub(gifInput = false, pngInput = false) {
       { name: 'png_mode', type: 'enum' as const,
         options: () => ['lossy', 'lossless'],
         visibleWhen: () => isPng.value },
+      { name: 'jpeg_progressive', type: 'bool' as const,
+        visibleWhen: () => isJpeg.value },
+      { name: 'jpeg_keep_metadata', type: 'bool' as const,
+        visibleWhen: () => isJpeg.value },
+      { name: 'webp_lossless', type: 'bool' as const,
+        visibleWhen: () => isWebp.value },
     ],
     actions: [],
     execute: { requiresConfirm: true, label: 'panel.compress.execute' },
@@ -60,6 +71,9 @@ function makeImageCompressPanelStub(gifInput = false, pngInput = false) {
       gif_optimize_transparency: gifOptimizeTransparency.value,
       gif_coalesce: gifCoalesce.value,
       png_mode: pngMode.value,
+      jpeg_progressive: jpegProgressive.value,
+      jpeg_keep_metadata: jpegKeepMetadata.value,
+      webp_lossless: webpLossless.value,
     }),
     setField: (field, value) => {
       switch (field) {
@@ -85,6 +99,15 @@ function makeImageCompressPanelStub(gifInput = false, pngInput = false) {
         case 'png_mode':
           pngMode.value = value === 'lossless' ? 'lossless' : 'lossy'
           return pngMode.value
+        case 'jpeg_progressive':
+          jpegProgressive.value = Boolean(value)
+          return jpegProgressive.value
+        case 'jpeg_keep_metadata':
+          jpegKeepMetadata.value = Boolean(value)
+          return jpegKeepMetadata.value
+        case 'webp_lossless':
+          webpLossless.value = Boolean(value)
+          return webpLossless.value
         default:
           throw new Error(`Unknown field: ${field}`)
       }
@@ -101,7 +124,7 @@ function makeImageCompressPanelStub(gifInput = false, pngInput = false) {
     template: '<div></div>',
   })
 
-  return { component, isGif, isPng }
+  return { component, isGif, isPng, isJpeg, isWebp }
 }
 
 beforeEach(() => { panelRegistry._clearAll() })
@@ -218,5 +241,62 @@ describe('ImageCompressPanel agent schema smoke', () => {
     const handle = panelRegistry.get('image.compress')!
     expect(handle.setField('gif_colors', 300)).toBe(256)
     expect(handle.setField('gif_colors', 1)).toBe(2)
+  })
+
+  it('JPEG advanced fields present in schema', () => {
+    const { component } = makeImageCompressPanelStub()
+    mount(component)
+    const handle = panelRegistry.get('image.compress')!
+    const jpegFieldNames = ['jpeg_progressive', 'jpeg_keep_metadata']
+    for (const name of jpegFieldNames) {
+      expect(handle.agentSchema.fields.find(f => f.name === name), `${name} should be in schema`).toBeDefined()
+    }
+  })
+
+  it('visibleWhen for jpeg fields returns false when input is not JPEG', () => {
+    const { component } = makeImageCompressPanelStub(false, false, false)
+    mount(component)
+    const handle = panelRegistry.get('image.compress')!
+    const jpegFields = handle.agentSchema.fields.filter(f => f.name.startsWith('jpeg_'))
+    for (const field of jpegFields) {
+      expect(field.visibleWhen?.(), `${field.name} visibleWhen should be false for non-JPEG`).toBe(false)
+    }
+  })
+
+  it('visibleWhen for jpeg fields returns true when input is JPEG', () => {
+    const { component, isJpeg } = makeImageCompressPanelStub(false, false, false)
+    mount(component)
+    isJpeg.value = true
+    const handle = panelRegistry.get('image.compress')!
+    const jpegFields = handle.agentSchema.fields.filter(f => f.name.startsWith('jpeg_'))
+    for (const field of jpegFields) {
+      expect(field.visibleWhen?.(), `${field.name} visibleWhen should be true for JPEG`).toBe(true)
+    }
+  })
+
+  it('webp_lossless field present in schema', () => {
+    const { component } = makeImageCompressPanelStub()
+    mount(component)
+    const handle = panelRegistry.get('image.compress')!
+    const webpField = handle.agentSchema.fields.find(f => f.name === 'webp_lossless')
+    expect(webpField).toBeDefined()
+    expect(webpField?.type).toBe('bool')
+  })
+
+  it('visibleWhen for webp_lossless returns false when input is not WebP', () => {
+    const { component } = makeImageCompressPanelStub(false, false, false, false)
+    mount(component)
+    const handle = panelRegistry.get('image.compress')!
+    const webpField = handle.agentSchema.fields.find(f => f.name === 'webp_lossless')!
+    expect(webpField.visibleWhen?.()).toBe(false)
+  })
+
+  it('visibleWhen for webp_lossless returns true when input is WebP', () => {
+    const { component, isWebp } = makeImageCompressPanelStub(false, false, false, false)
+    mount(component)
+    isWebp.value = true
+    const handle = panelRegistry.get('image.compress')!
+    const webpField = handle.agentSchema.fields.find(f => f.name === 'webp_lossless')!
+    expect(webpField.visibleWhen?.()).toBe(true)
   })
 })
