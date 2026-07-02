@@ -31,6 +31,7 @@ class ImageConvertService:
     async def get_image_info(self, file_id: str) -> dict:
         """Get image information."""
         from app.utils.gif_utils import is_animated
+        from app.utils.gif_colors import count_gif_colors
 
         file_info = self._file_service.require_file(file_id)
 
@@ -40,14 +41,19 @@ class ImageConvertService:
             # PIL returns "PNG" for APNG; use multi-frame detection to distinguish
             if fmt == "PNG" and is_animated(img):
                 fmt = "APNG"
-
-            return {
+            mode = img.mode
+            result = {
                 "width": img.width,
                 "height": img.height,
                 "format": fmt,
-                "mode": img.mode,
+                "mode": mode,
                 "file_size": file_info.file_size,
             }
+
+        if fmt == "GIF" or mode == "P":
+            result["palette_size"] = count_gif_colors(file_info.file_path)
+
+        return result
 
     async def submit_convert(
         self,

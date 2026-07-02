@@ -50,10 +50,14 @@ class ImageCompressService:
         progress_callback(0.4, "task.progress.image_compress_processing")
 
         if fmt == "GIF":
+            from app.utils.gif_colors import count_gif_colors
+            actual = count_gif_colors(src)
+            gc = params.get("gif_colors")
+            colors = gc if (gc and gc < actual) else None  # avoid None<int TypeError + --colors=0
             lossy = int(strength * 2)
             self._gifsicle.compress(
                 src, out_path, lossy=lossy,
-                colors=params.get("gif_colors") or None,
+                colors=colors,
                 frame_drop=int(params.get("gif_frame_drop", 0)),
                 optimize_transparency=bool(params.get("gif_optimize_transparency", True)),
                 coalesce=bool(params.get("gif_coalesce", False)))
@@ -65,6 +69,14 @@ class ImageCompressService:
         elif fmt == "WEBP":
             self._save_webp(src, out_path, strength, params)
 
+        # P3 — never-grow guard (all formats): if output is not smaller, keep the original
+        import shutil
+        import os
+        already_optimal = False
+        if os.path.getsize(out_path) >= info.file_size:
+            shutil.copyfile(src, out_path)
+            already_optimal = True
+
         progress_callback(0.9, "task.progress.image_compress_saving")
         out = self._files.register_output(file_id=out_id, file_path=out_path,
                                           original_filename=info.original_filename)
@@ -74,6 +86,7 @@ class ImageCompressService:
             "output_file_id": out_id, "output_filename": out.filename,
             "output_size": out.file_size, "original_size": orig,
             "saved_ratio": round(1 - out.file_size / orig, 4) if orig else 0.0,
+            "already_optimal": already_optimal,
         }
 
     def _save_jpeg(self, src, dst, strength, params):

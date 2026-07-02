@@ -24,6 +24,7 @@ export interface ImageInfo {
   format: string
   mode: string
   file_size: number
+  palette_size?: number
 }
 
 /**

@@ -460,6 +460,7 @@ export default {
       gif_advanced: 'GIF 選項',
       gif_colors: '色彩數:',
       gif_colors_hint: '色彩數越少，檔案越小（2–256）',
+      gif_source_colors: '原圖 {n} 色',
       gif_frame_drop: '略幀',
       gif_frame_drop_none: '不略幀（保留所有幀）',
       gif_frame_drop_2: '每隔 1 幀略去',
