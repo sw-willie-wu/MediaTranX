@@ -1,7 +1,7 @@
 from pathlib import Path
 import pytest
 from PIL import Image
-from app.adapters.binary.gifsicle import GifsicleWrapper, GifsicleNotFound
+from app.adapters.binary.gifsicle import GifsicleWrapper, GifsicleNotFound, _resolve_gifsicle
 
 FIX = Path(__file__).parent.parent / "fixtures" / "compress"
 
@@ -48,6 +48,30 @@ def test_frame_drop_reduces_frame_count(tmp_path):
     with Image.open(dst) as out:
         assert out.n_frames < n_in
 
-def test_missing_binary_raises():
+def test_construction_never_raises_when_unresolvable():
+    """DI Singleton construction must succeed even when gifsicle is absent."""
+    w = GifsicleWrapper(_resolver=lambda: None)
+    assert w._path is None
+
+def test_compress_raises_when_unresolvable(tmp_path):
+    """GifsicleNotFound must only fire when GIF compress is actually attempted."""
+    w = GifsicleWrapper(_resolver=lambda: None)
     with pytest.raises(GifsicleNotFound):
-        GifsicleWrapper(gifsicle_path=None, _which=lambda _n: None)
+        w.compress(FIX / "anim.gif", tmp_path / "o.gif")
+
+def test_resolver_falls_back_to_gifsicle_bin_wheel(monkeypatch):
+    """Regression test for the packaged-build bug.
+
+    Simulate a PATH that doesn't include the venv Scripts dir
+    (as happens under the frozen core.exe) by making shutil.which return None.
+    The resolver must still find the binary via the gifsicle_bin wheel derivation.
+    """
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    result = _resolve_gifsicle()
+    assert result is not None, (
+        "_resolve_gifsicle() returned None even with gifsicle-bin installed; "
+        "packaged-build fallback is broken"
+    )
+    assert Path(result).is_file(), f"Resolved path does not exist: {result}"
+    assert "gifsicle" in Path(result).name.lower()
