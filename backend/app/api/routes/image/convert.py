@@ -39,6 +39,7 @@ class ImageInfoResponse(BaseModel):
     format: str
     mode: str
     file_size: int
+    palette_size: Optional[int] = None
 
 
 @router.get("/info/{file_id}", response_model=ImageInfoResponse)
