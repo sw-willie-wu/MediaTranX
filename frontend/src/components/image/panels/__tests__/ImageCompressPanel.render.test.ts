@@ -11,6 +11,7 @@ function mockT(k: string, params?: Record<string, unknown>): string {
   if (k === 'image.compress.saved' && params?.pct !== undefined) return `Saved ${params.pct}%`
   if (k === 'image.compress.larger' && params?.pct !== undefined) return `${params.pct}% larger`
   if (k === 'image.compress.no_change') return 'No size change'
+  if (k === 'image.compress.gif_source_colors' && params?.n !== undefined) return `Source: ${params.n} colors`
   return k
 }
 
@@ -101,5 +102,37 @@ describe('ImageCompressPanel resultMeta display', () => {
     // Must NOT apply success-green class
     const summary = w.find('.compress-result-summary')
     expect(summary.classes()).not.toContain('compress-result-saved')
+  })
+})
+
+describe('ImageCompressPanel GIF palette_size', () => {
+  it('shows source-colors hint containing palette_size when GIF with palette_size:64 is loaded', () => {
+    const w = mountPanel({
+      imageInfo: { width: 100, height: 100, format: 'GIF', mode: 'P', file_size: 1000, palette_size: 64 },
+    })
+    expect(w.text()).toContain('64')
+  })
+
+  it('gif_colors defaults to palette_size (64) not 128 when GIF with palette_size:64 is mounted', () => {
+    const w = mountPanel({
+      imageInfo: { width: 100, height: 100, format: 'GIF', mode: 'P', file_size: 1000, palette_size: 64 },
+    })
+    const params = (w.vm as { getParams: () => Record<string, unknown> }).getParams()
+    expect(params.gif_colors).toBe(64)
+  })
+
+  it('gif_colors falls back to 128 when palette_size is absent (no crash)', () => {
+    const w = mountPanel({
+      imageInfo: { width: 100, height: 100, format: 'GIF', mode: 'P', file_size: 1000 },
+    })
+    const params = (w.vm as { getParams: () => Record<string, unknown> }).getParams()
+    expect(params.gif_colors).toBe(128)
+  })
+
+  it('source-colors hint is absent for non-GIF images', () => {
+    const w = mountPanel({
+      imageInfo: { width: 100, height: 100, format: 'PNG', mode: 'RGBA', file_size: 1000 },
+    })
+    expect(w.find('.gif-source-colors-hint').exists()).toBe(false)
   })
 })

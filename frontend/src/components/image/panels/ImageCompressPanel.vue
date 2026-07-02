@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppRange from '@/components/common/AppRange.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
@@ -14,6 +14,7 @@ interface ImageInfo {
   format: string
   mode: string
   file_size: number
+  palette_size?: number
 }
 
 const props = defineProps<{
@@ -32,7 +33,25 @@ const { t } = useI18n()
 const { submitTask, isProcessing } = useSubmitTask()
 
 const strength = ref(75)
-const gifColors = ref(128)
+
+function gifColorsDefault(): number {
+  const info = props.imageInfo
+  if (info?.format?.toUpperCase() === 'GIF' && typeof info.palette_size === 'number') {
+    return Math.min(Math.max(info.palette_size, 2), 256)
+  }
+  return 128
+}
+
+const gifColors = ref(gifColorsDefault())
+
+watch(
+  () => props.imageInfo,
+  (info) => {
+    if (info?.format?.toUpperCase() === 'GIF' && typeof info.palette_size === 'number') {
+      gifColors.value = Math.min(Math.max(info.palette_size, 2), 256)
+    }
+  },
+)
 const gifFrameDrop = ref<number>(0)
 const gifOptimizeTransparency = ref(true)
 const gifCoalesce = ref(false)
@@ -259,6 +278,10 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
         <AppToggle v-model="webpLossless">{{ $t('image.compress.webp_lossless') }}</AppToggle>
       </div>
     </SettingsCollapsible>
+
+    <div v-if="isGif && typeof imageInfo?.palette_size === 'number'" class="form-hint gif-source-colors-hint">
+      {{ $t('image.compress.gif_source_colors', { n: imageInfo.palette_size }) }}
+    </div>
 
     <SettingsCollapsible v-if="isGif" storage-key="image_compress_advanced">
       <div class="form-group">

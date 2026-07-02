@@ -460,6 +460,7 @@ export default {
       gif_advanced: 'GIF Options',
       gif_colors: 'Color Count:',
       gif_colors_hint: 'Fewer colors reduce file size (2–256)',
+      gif_source_colors: 'Source: {n} colors',
       gif_frame_drop: 'Frame Drop',
       gif_frame_drop_none: 'None (keep all frames)',
       gif_frame_drop_2: 'Drop every 2nd frame',
