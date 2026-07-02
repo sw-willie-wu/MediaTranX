@@ -9,7 +9,7 @@ describe('agentNavCatalog', () => {
 
   it('exposes verbatim subfunctions per view (matches the *View.vue literals)', () => {
     expect(subfunctionsForView('image')).toEqual(
-      ['transcode','adjust','filter','crop','remove-bg','ai-remove','upscale','ocr'])
+      ['transcode','compress','adjust','filter','crop','remove-bg','ai-remove','upscale','ocr'])
     expect(subfunctionsForView('video')).toEqual(
       ['transcode','cut','crop','subtitle','summary','interpolate','enhance'])
     expect(subfunctionsForView('audio')).toEqual(

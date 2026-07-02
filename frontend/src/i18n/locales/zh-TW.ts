@@ -355,6 +355,11 @@ export default {
       resizing: '調整尺寸...',
       converting_format: '轉換格式...',
       convert_complete: '轉檔完成',
+      // image compress
+      image_compress_loading: '載入圖片...',
+      image_compress_processing: '壓縮中...',
+      image_compress_saving: '儲存結果...',
+      image_compress_complete: '壓縮完成',
       // image remove bg
       loading_rembg: '載入去背模型...',
       removing_bg: '去除背景中 ({0}/{1})...',
@@ -409,6 +414,7 @@ export default {
 
     functions: {
       transcode: '轉檔',
+      compress: '壓縮',
       remove_bg: '去背',
       ai_remove: '物件移除',
       upscale: '超解析',
@@ -444,6 +450,25 @@ export default {
       scale_label: '縮放比例:',
       aspect_ratio_hint: '留空則等比縮放',
       task_label: '圖片 · 轉檔',
+    },
+
+    compress: {
+      title: '壓縮設定',
+      description: '縮減圖片檔案大小，同時保留視覺品質。',
+      strength: '強度:',
+      strength_hint: '數值越高，壓縮越激進，檔案越小',
+      gif_advanced: 'GIF 選項',
+      gif_colors: '色彩數:',
+      gif_colors_hint: '色彩數越少，檔案越小（2–256）',
+      gif_frame_drop: '略幀',
+      gif_frame_drop_none: '不略幀（保留所有幀）',
+      gif_frame_drop_2: '每隔 1 幀略去',
+      gif_frame_drop_3: '每隔 2 幀略去',
+      gif_frame_drop_4: '每隔 3 幀略去',
+      gif_optimize_transparency: '優化透明度',
+      gif_coalesce: '合併幀',
+      task_label: '圖片 · 壓縮',
+      saved: '已節省 {pct}%',
     },
 
     remove_bg: {
