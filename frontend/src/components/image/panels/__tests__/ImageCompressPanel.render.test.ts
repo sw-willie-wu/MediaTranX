@@ -5,7 +5,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 
 function mockT(k: string, params?: Record<string, unknown>): string {
   if (k === 'image.compress.saved' && params?.pct !== undefined) return `Saved ${params.pct}%`
@@ -121,12 +121,41 @@ describe('ImageCompressPanel GIF palette_size', () => {
     expect(params.gif_colors).toBe(64)
   })
 
-  it('gif_colors falls back to 128 when palette_size is absent (no crash)', () => {
+  it('gif_colors falls back to 256 when palette_size is absent (no crash)', () => {
     const w = mountPanel({
       imageInfo: { width: 100, height: 100, format: 'GIF', mode: 'P', file_size: 1000 },
     })
     const params = (w.vm as { getParams: () => Record<string, unknown> }).getParams()
-    expect(params.gif_colors).toBe(128)
+    expect(params.gif_colors).toBe(256)
+  })
+
+  it('GIF without palette_size does not render source-colors hint', () => {
+    const w = mountPanel({
+      imageInfo: { width: 100, height: 100, format: 'GIF', mode: 'P', file_size: 1000 },
+    })
+    expect(w.find('.gif-source-colors-hint').exists()).toBe(false)
+  })
+
+  it('gif_colors identity guard: same-image imageInfo reload does not clobber user value; different image does reset', async () => {
+    const gifA = { width: 200, height: 100, format: 'GIF', mode: 'P', file_size: 5000, palette_size: 100 }
+    const w = mountPanel({ fileId: 'file-a', imageInfo: gifA })
+    const vm = w.vm as {
+      getParams: () => Record<string, unknown>
+      onGifColorsUpdate: (v: number) => void
+    }
+    // Defaults to palette_size on fresh load
+    expect(vm.getParams().gif_colors).toBe(100)
+    // Simulate user manually changing gif_colors to 30
+    vm.onGifColorsUpdate(30)
+    await nextTick()
+    expect(vm.getParams().gif_colors).toBe(30)
+    // Post-task reload: same fileId, new imageInfo object reference — must NOT clobber
+    await w.setProps({ fileId: 'file-a', imageInfo: { ...gifA } })
+    expect(vm.getParams().gif_colors).toBe(30)
+    // Switch to a different image — must reset to new palette_size
+    const gifB = { width: 150, height: 80, format: 'GIF', mode: 'P', file_size: 3000, palette_size: 40 }
+    await w.setProps({ fileId: 'file-b', imageInfo: gifB })
+    expect(vm.getParams().gif_colors).toBe(40)
   })
 
   it('source-colors hint is absent for non-GIF images', () => {

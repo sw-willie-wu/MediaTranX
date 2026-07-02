@@ -34,22 +34,40 @@ const { submitTask, isProcessing } = useSubmitTask()
 
 const strength = ref(75)
 
+// Identity key tracks the current image (using fileId prop as stable identity).
+// Initialized from props.fileId so the first post-mount imageInfo change is
+// correctly classified as same-image (not new-image) when fileId hasn't moved.
+const lastImageKey = ref<string | null>(props.fileId)
+const userTouchedColors = ref(false)
+
 function gifColorsDefault(): number {
   const info = props.imageInfo
-  if (info?.format?.toUpperCase() === 'GIF' && typeof info.palette_size === 'number') {
-    return Math.min(Math.max(info.palette_size, 2), 256)
+  if (info?.format?.toUpperCase() === 'GIF') {
+    return Math.min(Math.max(info.palette_size ?? 256, 2), 256)
   }
-  return 128
+  return 256
 }
 
 const gifColors = ref(gifColorsDefault())
 
+function onGifColorsUpdate(val: number) {
+  gifColors.value = val
+  userTouchedColors.value = true
+}
+
 watch(
   () => props.imageInfo,
   (info) => {
-    if (info?.format?.toUpperCase() === 'GIF' && typeof info.palette_size === 'number') {
-      gifColors.value = Math.min(Math.max(info.palette_size, 2), 256)
+    const currentKey = props.fileId ?? null
+    if (currentKey !== lastImageKey.value) {
+      // Genuinely different image — reset to palette default
+      lastImageKey.value = currentKey
+      userTouchedColors.value = false
+      if (info?.format?.toUpperCase() === 'GIF') {
+        gifColors.value = Math.min(Math.max(info?.palette_size ?? 256, 2), 256)
+      }
     }
+    // Same identity (post-task reload, goBack/goForward on same image) — do nothing
   },
 )
 const gifFrameDrop = ref<number>(0)
@@ -191,6 +209,7 @@ useAgentPanelHost('image.compress', {
       case 'gif_colors': {
         const clamped = Math.min(Math.max(Number(value), 2), 256)
         gifColors.value = clamped
+        userTouchedColors.value = true
         return clamped
       }
       case 'gif_frame_drop':
@@ -227,7 +246,7 @@ useAgentPanelHost('image.compress', {
   },
 })
 
-defineExpose({ execute, isDisabled, isLoading, getParams })
+defineExpose({ execute, isDisabled, isLoading, getParams, onGifColorsUpdate })
 </script>
 
 <template>
@@ -286,7 +305,7 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
     <SettingsCollapsible v-if="isGif" storage-key="image_compress_advanced">
       <div class="form-group">
         <label>{{ $t('image.compress.gif_colors') }} {{ gifColors }}</label>
-        <AppRange v-model="gifColors" :min="2" :max="256" />
+        <AppRange :model-value="gifColors" :min="2" :max="256" @update:model-value="onGifColorsUpdate" />
         <small class="form-hint">{{ $t('image.compress.gif_colors_hint') }}</small>
       </div>
 
