@@ -62,6 +62,7 @@ def _warmup_domain_services(container) -> None:
         container.image_ocr,
         container.image_remove_bg,
         container.image_remove_object,
+        container.image_compress,
         # Video
         container.video_transcode,
         container.video_cut,

@@ -284,6 +284,13 @@ class AppContainer(containers.DeclarativeContainer):
         model_manager=model_manager,
         mobilesam=mobilesam_wrapper,
     )
+    gifsicle_wrapper = providers.Singleton(
+        _lazy("app.adapters.binary.gifsicle", "GifsicleWrapper"))
+    image_compress = providers.Singleton(
+        _lazy("app.services.image.compress_service", "ImageCompressService"),
+        file_service=file_service, task_manager=task_manager,
+        gifsicle=gifsicle_wrapper,
+    )
 
     # ── Video Services (lazy) ──
     video_transcode = providers.Singleton(
