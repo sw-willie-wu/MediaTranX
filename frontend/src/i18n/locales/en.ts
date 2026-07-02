@@ -478,6 +478,8 @@ export default {
       webp_lossless: 'Lossless Encoding',
       task_label: 'Image · Compress',
       saved: 'Saved {pct}%',
+      larger: '{pct}% larger',
+      no_change: 'No size change',
     },
 
     remove_bg: {

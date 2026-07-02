@@ -52,13 +52,18 @@ const resultSummary = computed(() => {
   if (!meta) return null
   const ratio = meta.saved_ratio
   if (typeof ratio !== 'number') return null
-  const pct = Math.round(ratio * 100)
   const orig = typeof meta.original_size === 'number' ? meta.original_size : null
   const out  = typeof meta.output_size  === 'number' ? meta.output_size  : null
   const sizeInfo = orig !== null && out !== null
     ? `${formatBytes(orig)} → ${formatBytes(out)}`
     : null
-  return { pct, sizeInfo }
+  if (ratio > 0) {
+    return { kind: 'saved' as const, pct: Math.round(ratio * 100), sizeInfo }
+  } else if (ratio < 0) {
+    return { kind: 'larger' as const, pct: Math.round(-ratio * 100), sizeInfo }
+  } else {
+    return { kind: 'no_change' as const, pct: 0, sizeInfo }
+  }
 })
 
 const isGif = computed(() => props.imageInfo?.format?.toUpperCase() === 'GIF')
@@ -211,9 +216,19 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
     <h6 class="settings-title"><i class="bi bi-file-zip-fill me-2"></i>{{ $t('image.compress.title') }}</h6>
     <p class="form-hint">{{ $t('image.compress.description') }}</p>
 
-    <div v-if="resultSummary" class="compress-result-summary">
-      <i class="bi bi-check-circle-fill me-1"></i>
-      {{ $t('image.compress.saved', { pct: resultSummary.pct }) }}
+    <div v-if="resultSummary" class="compress-result-summary" :class="resultSummary.kind === 'saved' ? 'compress-result-saved' : 'compress-result-neutral'">
+      <template v-if="resultSummary.kind === 'saved'">
+        <i class="bi bi-check-circle-fill me-1"></i>
+        {{ $t('image.compress.saved', { pct: resultSummary.pct }) }}
+      </template>
+      <template v-else-if="resultSummary.kind === 'larger'">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        {{ $t('image.compress.larger', { pct: resultSummary.pct }) }}
+      </template>
+      <template v-else>
+        <i class="bi bi-dash-circle me-1"></i>
+        {{ $t('image.compress.no_change') }}
+      </template>
       <span v-if="resultSummary.sizeInfo" class="compress-result-sizes">{{ resultSummary.sizeInfo }}</span>
     </div>
 
@@ -276,8 +291,15 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
   align-items: center;
   gap: 0.25rem;
   font-size: 0.8rem;
-  color: var(--text-success, #4caf50);
   margin-bottom: 0.75rem;
+
+  &.compress-result-saved {
+    color: var(--text-success, #4caf50);
+  }
+
+  &.compress-result-neutral {
+    color: var(--text-muted);
+  }
 
   .compress-result-sizes {
     color: var(--text-muted);

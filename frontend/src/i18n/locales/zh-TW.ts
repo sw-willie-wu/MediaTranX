@@ -478,6 +478,8 @@ export default {
       webp_lossless: '無損編碼',
       task_label: '圖片 · 壓縮',
       saved: '已節省 {pct}%',
+      larger: '增大 {pct}%',
+      no_change: '大小未變',
     },
 
     remove_bg: {
