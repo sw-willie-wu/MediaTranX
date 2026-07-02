@@ -50,6 +50,12 @@ function gifColorsDefault(): number {
 
 const gifColors = ref(gifColorsDefault())
 
+const gifColorsMax = computed(() => Math.max(2, Math.min(256, props.imageInfo?.palette_size ?? 256)))
+
+watch(gifColorsMax, (newMax) => {
+  if (gifColors.value > newMax) gifColors.value = newMax
+})
+
 function onGifColorsUpdate(val: number) {
   gifColors.value = val
   userTouchedColors.value = true
@@ -246,7 +252,7 @@ useAgentPanelHost('image.compress', {
   },
 })
 
-defineExpose({ execute, isDisabled, isLoading, getParams, onGifColorsUpdate })
+defineExpose({ execute, isDisabled, isLoading, getParams, onGifColorsUpdate, gifColorsMax })
 </script>
 
 <template>
@@ -305,7 +311,7 @@ defineExpose({ execute, isDisabled, isLoading, getParams, onGifColorsUpdate })
     <SettingsCollapsible v-if="isGif" storage-key="image_compress_advanced">
       <div class="form-group">
         <label>{{ $t('image.compress.gif_colors') }} {{ gifColors }}</label>
-        <AppRange :model-value="gifColors" :min="2" :max="256" @update:model-value="onGifColorsUpdate" />
+        <AppRange :model-value="gifColors" :min="2" :max="gifColorsMax" @update:model-value="onGifColorsUpdate" />
         <small class="form-hint">{{ $t('image.compress.gif_colors_hint') }}</small>
       </div>
 
