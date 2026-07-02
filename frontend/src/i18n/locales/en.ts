@@ -355,6 +355,11 @@ export default {
       resizing: 'Resizing...',
       converting_format: 'Converting format...',
       convert_complete: 'Conversion complete',
+      // image compress
+      image_compress_loading: 'Loading image...',
+      image_compress_processing: 'Compressing...',
+      image_compress_saving: 'Saving result...',
+      image_compress_complete: 'Compression complete',
       // image remove bg
       loading_rembg: 'Loading background removal model...',
       removing_bg: 'Removing background ({0}/{1})...',
@@ -409,6 +414,7 @@ export default {
 
     functions: {
       transcode: 'Transcode',
+      compress: 'Compress',
       remove_bg: 'Remove BG',
       ai_remove: 'Object Remove',
       upscale: 'Upscale',
@@ -444,6 +450,36 @@ export default {
       scale_label: 'Scale:',
       aspect_ratio_hint: 'Leave empty for proportional scaling',
       task_label: 'Image · Convert',
+    },
+
+    compress: {
+      title: 'Compress Settings',
+      description: 'Reduce image file size while preserving visual quality.',
+      strength: 'Strength:',
+      strength_hint: 'Higher values reduce file size more aggressively',
+      gif_advanced: 'GIF Options',
+      gif_colors: 'Color Count:',
+      gif_colors_hint: 'Fewer colors reduce file size (2–256)',
+      gif_frame_drop: 'Frame Drop',
+      gif_frame_drop_none: 'None (keep all frames)',
+      gif_frame_drop_2: 'Drop every 2nd frame',
+      gif_frame_drop_3: 'Drop every 3rd frame',
+      gif_frame_drop_4: 'Drop every 4th frame',
+      gif_optimize_transparency: 'Optimize Transparency',
+      gif_coalesce: 'Coalesce Frames',
+      png_advanced: 'PNG Options',
+      png_mode: 'Compression Mode',
+      png_mode_lossy: 'Lossy (smaller file)',
+      png_mode_lossless: 'Lossless (preserve quality)',
+      jpeg_advanced: 'JPEG Options',
+      jpeg_progressive: 'Progressive Encoding',
+      jpeg_keep_metadata: 'Keep Metadata (EXIF)',
+      webp_advanced: 'WebP Options',
+      webp_lossless: 'Lossless Encoding',
+      task_label: 'Image · Compress',
+      saved: 'Saved {pct}%',
+      larger: '{pct}% larger',
+      no_change: 'No size change',
     },
 
     remove_bg: {
