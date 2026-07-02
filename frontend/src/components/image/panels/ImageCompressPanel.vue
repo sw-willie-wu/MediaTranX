@@ -21,6 +21,7 @@ const props = defineProps<{
   currentFileName: string
   imageInfo: ImageInfo | null
   isMultiSelect?: boolean
+  resultMeta?: Record<string, unknown> | null
 }>()
 
 const emit = defineEmits<{
@@ -39,6 +40,26 @@ const pngMode = ref<'lossy' | 'lossless'>('lossy')
 const jpegProgressive = ref(true)
 const jpegKeepMetadata = ref(false)
 const webpLossless = ref(false)
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const resultSummary = computed(() => {
+  const meta = props.resultMeta
+  if (!meta) return null
+  const ratio = meta.saved_ratio
+  if (typeof ratio !== 'number') return null
+  const pct = Math.round(ratio * 100)
+  const orig = typeof meta.original_size === 'number' ? meta.original_size : null
+  const out  = typeof meta.output_size  === 'number' ? meta.output_size  : null
+  const sizeInfo = orig !== null && out !== null
+    ? `${formatBytes(orig)} → ${formatBytes(out)}`
+    : null
+  return { pct, sizeInfo }
+})
 
 const isGif = computed(() => props.imageInfo?.format?.toUpperCase() === 'GIF')
 const isPng = computed(() => props.imageInfo?.format?.toUpperCase() === 'PNG')
@@ -190,6 +211,12 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
     <h6 class="settings-title"><i class="bi bi-file-zip-fill me-2"></i>{{ $t('image.compress.title') }}</h6>
     <p class="form-hint">{{ $t('image.compress.description') }}</p>
 
+    <div v-if="resultSummary" class="compress-result-summary">
+      <i class="bi bi-check-circle-fill me-1"></i>
+      {{ $t('image.compress.saved', { pct: resultSummary.pct }) }}
+      <span v-if="resultSummary.sizeInfo" class="compress-result-sizes">{{ resultSummary.sizeInfo }}</span>
+    </div>
+
     <div class="form-group">
       <label>{{ $t('image.compress.strength') }} {{ strength }}%</label>
       <AppRange v-model="strength" :min="1" :max="100" />
@@ -243,4 +270,18 @@ defineExpose({ execute, isDisabled, isLoading, getParams })
 
 <style lang="scss">
 @use '@/styles/tool-panels-shared';
+
+.compress-result-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--text-success, #4caf50);
+  margin-bottom: 0.75rem;
+
+  .compress-result-sizes {
+    color: var(--text-muted);
+    margin-left: 0.25rem;
+  }
+}
 </style>

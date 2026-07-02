@@ -466,6 +466,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           :current-file-name="currentFileName"
           :image-info="imageInfo"
           :is-multi-select="isMultiSelect"
+          :result-meta="activeResultMeta"
           @submit="onPanelSubmit"
         />
 
