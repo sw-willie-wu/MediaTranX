@@ -70,3 +70,6 @@ backend/models/
 .claude/
 CLAUDE.md
 .gemini/
+
+# SDD / superpowers scratch (never commit)
+.superpowers/
