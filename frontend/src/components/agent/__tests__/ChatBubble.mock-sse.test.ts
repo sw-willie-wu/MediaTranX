@@ -93,7 +93,7 @@ describe('ChatBubble mock-SSE smoke', () => {
     await agent.sendUserText('Hi there')
 
     const roles = agent.messages.value.map(m => m.role)
-    expect(roles).toEqual(['user', 'assistant', 'assistant'])
+    expect(roles).toEqual(['user', 'assistant'])
     expect((agent.messages.value[0] as any).content).toBe('Hi there')
     expect((agent.messages.value[1] as any).content).toBe('Hello world!')
     expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)

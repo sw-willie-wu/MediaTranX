@@ -92,7 +92,7 @@ describe('useAgent.runLoop', () => {
     const { sendUserText, messages } = useAgent({ agentFactory: fake.factory })
     await sendUserText('hello')
     expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)   // nudge safety net
-    expect(messages.value.map(m => m.role)).toEqual(['user', 'assistant', 'assistant'])
+    expect(messages.value.map(m => m.role)).toEqual(['user', 'assistant'])
   })
 
   // ─── Scenario 2 ────────────────────────────────────────────────────────────
@@ -112,7 +112,7 @@ describe('useAgent.runLoop', () => {
     await sendUserText('go to video')
     expect(fake.agent.runAgent).toHaveBeenCalledTimes(3)
     expect(fakeTools.dispatch).toHaveBeenCalledOnce()
-    expect(messages.value.map(m => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant', 'assistant'])
+    expect(messages.value.map(m => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
   })
 
   // ─── Scenario 3 ────────────────────────────────────────────────────────────
@@ -312,7 +312,7 @@ describe('useAgent.runLoop', () => {
       useAgent({ agentFactory: fake.factory })
 
     await sendUserText('hello')
-    expect(messages.value).toHaveLength(3)
+    expect(messages.value).toHaveLength(2)
 
     store.addUsage({ promptTokens: 100, completionTokens: 50 })
     expect(store.threadTokens.completion).toBe(50)
@@ -485,15 +485,16 @@ describe('useAgent.runLoop', () => {
 
     // Round 0 (text-only, not acted) → nudge → Round 1 (text-only, nudged) → break.
     expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
-    // The nudge is NOT rendered/persisted: messages.value holds only user + the two assistant texts.
-    expect(messages.value.map(m => m.role)).toEqual(['user', 'assistant', 'assistant'])
+    // The nudge is NOT rendered/persisted: messages.value holds only user + the first assistant text.
+    // (nudge round's text-only reply is suppressed — only user + 1 assistant committed)
+    expect(messages.value.map(m => m.role)).toEqual(['user', 'assistant'])
     // Round-2 wire payload ends with the injected user nudge, which MUST carry an id.
     const wire2 = fake.calls[1].messagesIn
     const last = wire2[wire2.length - 1]
     expect(last.role).toBe('user')
     expect(typeof last.id).toBe('string')
     expect(last.id.length).toBeGreaterThan(0)
-    expect(last.content).toMatch(/沒有呼叫任何工具|直接呼叫對應的 tool/)
+    expect(last.content).toMatch(/尚未執行的操作|直接呼叫對應的工具/)
   })
 
   // ─── Nudge B: already acted (execute dispatched) → no nudge ──────────────────
@@ -526,7 +527,7 @@ describe('useAgent.runLoop', () => {
     expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
     // No wire payload contains an injected nudge user message.
     const anyNudge = fake.calls.some(c =>
-      c.messagesIn.some((m: any) => m.role === 'user' && /直接呼叫對應的 tool/.test(m.content ?? '')))
+      c.messagesIn.some((m: any) => m.role === 'user' && /直接呼叫對應的工具/.test(m.content ?? '')))
     expect(anyNudge).toBe(false)
   })
 
@@ -560,8 +561,26 @@ describe('useAgent.runLoop', () => {
     expect(fakeTools.dispatch).not.toHaveBeenCalled()
     expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)   // NOT 3 (no nudge round)
     const anyNudge = fake.calls.some(c =>
-      c.messagesIn.some((m: any) => m.role === 'user' && /直接呼叫對應的 tool/.test(m.content ?? '')))
+      c.messagesIn.some((m: any) => m.role === 'user' && /直接呼叫對應的工具/.test(m.content ?? '')))
     expect(anyNudge).toBe(false)
+  })
+
+  // ─── Nudge D: nudge round emits a tool call → kept and dispatched ────────────
+
+  it('nudge round that emits a tool call → kept and dispatched (forgotten-action caught)', async () => {
+    const fake = makeFakeAgent((round) => round === 0
+      ? { textDeltas: ['好的，我現在切換'] }
+      : round === 1
+        ? { toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{"route":"/image"}' }] }
+        : { textDeltas: ['已切換'] })
+    const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
+    const fakeTools = { TOOLS: fakeToolsTOOLS, getTools: () => fakeToolsTOOLS, dispatch: vi.fn(async () => ({ ok: true })) }
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
+    await sendUserText('切換到圖片工具')
+    expect(fakeTools.dispatch).toHaveBeenCalledOnce()
+    const roles = messages.value.map(m => m.role)
+    expect(roles).toContain('tool')
+    expect(roles.filter(r => r === 'assistant').length).toBeGreaterThanOrEqual(1)
   })
 
   // ─── Persistence tests ──────────────────────────────────────────────────────
@@ -573,11 +592,11 @@ describe('useAgent.runLoop', () => {
 
     await sendUserText('hello')
 
-    // user message + two assistant replies (nudge adds a round) both persisted to the session endpoint
+    // user message + one assistant reply (nudge round suppressed) persisted to the session endpoint
     const calls = vi.mocked(apiFetch).mock.calls.filter(
       (c) => String(c[0]).includes(`/agent/sessions/${currentSessionId.value}/messages`),
     )
-    expect(calls.length).toBe(3)
+    expect(calls.length).toBe(2)
     for (const c of calls) {
       expect(c[1]?.method).toBe('POST')
     }
@@ -590,7 +609,7 @@ describe('useAgent.runLoop', () => {
 
     // must not throw even though the first persist returns !ok
     await expect(sendUserText('hello')).resolves.toBeUndefined()
-    expect(messages.value).toHaveLength(3)
+    expect(messages.value).toHaveLength(2)
   })
 
   // ─── loadSession / deleteSession ────────────────────────────────────────────

@@ -173,7 +173,7 @@ function bannerActionFor(tc: ToolCall): { key: string; args: Record<string, unkn
 // turn hasn't yet reached a terminal action, steer the model to actually emit the
 // tool call it just described. One nudge per user turn; not rendered, not persisted.
 const AGENT_NUDGE_TEXT =
-  '你剛剛只回了文字、沒有呼叫任何工具。如果你打算執行某個動作，現在請直接呼叫對應的 tool；如果你只是在回答或已經完成，直接回覆即可。'
+  '如果剛才的請求還有尚未執行的操作，請直接呼叫對應的工具完成它；若已完成或只是在回答，簡短回覆即可，不必道歉或重複說明。'
 
 // ─── Module-level singleton ────────────────────────────────────────────────────
 
@@ -227,6 +227,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
   let actedThisTurn = false    // set at dequeue of click_execute/click_action (approve OR cancel)
   let nudgedThisTurn = false   // cap: at most one nudge per user turn
   let pendingNudge: string | null = null  // consumed at the top of the next round's wire build
+  let thisRoundIsNudge = false
 
   // ─── Public API ──────────────────────────────────────────────────
 
@@ -359,11 +360,13 @@ function _createAgent(deps: UseAgentDeps = {}) {
         // Bug 1 nudge: append a one-shot steering user message to THIS round's wire
         // only. It never enters messages.value → not rendered, not persisted. `id` is
         // required by ag_ui BaseMessage (backend RunAgentInput pydantic-validates).
+        thisRoundIsNudge = false
         if (pendingNudge) {
           ;(agent.messages as AgUiMessage[]).push(
             { id: crypto.randomUUID(), role: 'user', content: pendingNudge } as unknown as AgUiMessage,
           )
           pendingNudge = null
+          thisRoundIsNudge = true
         }
         // Build the two-tier UI snapshot from live state, then launder the whole
         // `state` object through toCloneable — HttpAgent structuredClones state,
@@ -470,6 +473,14 @@ function _createAgent(deps: UseAgentDeps = {}) {
         if (firstTc) {
           const ba = bannerActionFor(firstTc)
           store.setCurrentAction(ba.key, ba.args)
+        }
+
+        // R2-D: a nudge round that produced only text (no tool call) is redundant —
+        // the real answer was the prior round. Suppress it (don't commit/render) so
+        // the weird "sorry, I already called the tool" message never appears.
+        // (transient already cleared by the store.clearTransient() just above — N2.)
+        if (thisRoundIsNudge && (!assistant || assistant.toolCalls.length === 0)) {
+          break
         }
 
         if (assistant) await commitMessage(assistant)
