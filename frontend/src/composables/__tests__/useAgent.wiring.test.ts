@@ -140,7 +140,8 @@ describe('useAgent production wiring (AC-12)', () => {
     await w.vm.agent.sendUserText('second')
 
     const capturedTools_round1 = fake.calls[0].params.tools
-    const capturedTools_round2 = fake.calls[1].params.tools
+    // calls[1] is the nudge round of 'first' (still home); /image round is calls[2]
+    const capturedTools_round2 = fake.calls[2].params.tools
     const sf1 = capturedTools_round1.find((t: any) => t.name === 'set_field')
     const sf2 = capturedTools_round2.find((t: any) => t.name === 'set_field')
     expect(sf1.parameters.properties.field.enum).toBeUndefined()  // round 1: home, no panel

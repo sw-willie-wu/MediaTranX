@@ -12,6 +12,7 @@ const props = defineProps<{
   messages: Message[]
   transient: TransientBuffer | null
   isRunning: boolean
+  runError: string | null
 }>()
 
 const listRef = ref<HTMLElement | null>(null)
@@ -114,6 +115,12 @@ function toolCallIdToName(toolCallId: string, messages: Message[]): string {
       <span class="thinking-dot"></span>
       <span class="thinking-dot"></span>
     </div>
+
+    <!-- Transient run-error label (below the last message; not a bubble, not persisted) -->
+    <div v-if="runError && !isRunning" class="run-error-row">
+      <span class="run-error-icon">⚠️</span>
+      <span class="run-error-text">{{ runError }}</span>
+    </div>
   </div>
 </template>
 
@@ -209,4 +216,15 @@ function toolCallIdToName(toolCallId: string, messages: Message[]): string {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
   30%            { transform: translateY(-5px); opacity: 1; }
 }
+
+.run-error-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-danger);
+  align-self: flex-start;
+}
+.run-error-icon { flex-shrink: 0; }
 </style>

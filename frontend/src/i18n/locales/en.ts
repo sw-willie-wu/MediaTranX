@@ -1262,6 +1262,7 @@ export default {
       no_execute_on_settings: 'Cannot submit tasks from the settings page',
       no_file_selected: 'No file is loaded — upload or load a file first before executing',
       invalid_subfunction: 'Subfunction "{name}" is not available in this view',
+      generic: 'The assistant hit an error, please try again later.',
     },
     tool: {
       navigate_to: 'Navigate',

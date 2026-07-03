@@ -11,13 +11,14 @@ export const LOCALE_OPTIONS = [
 const STORAGE_KEY = 'app-locale'
 
 function detectSystemLocale(): SupportedLocale {
-  const lang = navigator.language // e.g. "zh-TW", "en-US"
+  const lang = (typeof navigator !== 'undefined' && navigator.language) || 'en'
   if (lang.startsWith('zh')) return 'zh-TW'
   return 'en'
 }
 
 export function resolveLocale(): SupportedLocale {
-  const saved = localStorage.getItem(STORAGE_KEY)
+  let saved: string | null = null
+  try { saved = localStorage.getItem(STORAGE_KEY) } catch { /* no localStorage (node/SSR) */ }
   if (saved === 'zh-TW' || saved === 'en') return saved
   return detectSystemLocale()
 }

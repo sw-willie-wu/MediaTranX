@@ -5,6 +5,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { HttpAgent } from '@ag-ui/client'
 import { useAgent, _resetAgent } from '@/composables/useAgent'
 import { useAgentStore } from '@/stores/agent'
+import { useToast } from '@/composables/useToast'
+import i18n from '@/i18n'
 
 // Isolate session persistence: commitMessage() now POSTs to /agent/sessions via
 // apiFetch. Without this stub those POSTs would hit the global `fetch` mock these
@@ -69,12 +71,16 @@ const origFetch = globalThis.fetch
 const realAgentFactory = (cfg: any) => new HttpAgent(cfg) as any
 
 beforeEach(() => {
+  i18n.global.locale.value = 'en'
   for (const k in lsStore) delete lsStore[k]
   setActivePinia(createPinia())
   _resetAgent()
 })
 afterEach(() => {
   globalThis.fetch = origFetch
+})
+afterEach(() => {
+  useToast().toasts.splice(0)
 })
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -188,13 +194,16 @@ describe('useAgent × real HttpAgent (mock fetch)', () => {
       { type: 'RUN_ERROR', message: 'no model configured', code: 'agent.error.no_model' },
     ]) as any
 
+    const { toasts } = useToast()
+    toasts.splice(0)   // clear any prior toasts before the run
+
     const { sendUserText, messages } = useAgent({ agentFactory: realAgentFactory })
     await sendUserText('hi')
 
-    const asst = messages.value.filter(m => m.role === 'assistant')
-    expect(asst).toHaveLength(1)
-    // Should contain the backend message — lenient regex matches the raw message or i18n'd code
-    expect((asst[0] as any).content).toMatch(/no model configured|agent\.error\.no_model/)
+    expect(messages.value.filter(m => m.role === 'assistant')).toHaveLength(0)
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0].message).toBe('No assistant model configured')
+    expect(useAgentStore().runError).toBe('No assistant model configured')
   }, 10000)
 
   it('⑤b defensive: RUN_ERROR + trailing RUN_FINISHED → still recovers, no crash', async () => {

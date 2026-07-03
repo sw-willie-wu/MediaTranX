@@ -96,7 +96,7 @@ describe('ChatBubble mock-SSE smoke', () => {
     expect(roles).toEqual(['user', 'assistant'])
     expect((agent.messages.value[0] as any).content).toBe('Hi there')
     expect((agent.messages.value[1] as any).content).toBe('Hello world!')
-    expect(fake.agent.runAgent).toHaveBeenCalledTimes(1)
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
   })
 
   // ─── Scenario 3: isRunning via store — all consumers share state ──────────
@@ -196,7 +196,7 @@ describe('ChatBubble mock-SSE smoke', () => {
     const msgs: any[] = [confirmMsg]
 
     const wrapper = mount(ChatMessages, {
-      props: { messages: msgs, transient: null, isRunning: false },
+      props: { messages: msgs, transient: null, isRunning: false, runError: null },
       global: globalPlugins(),
     })
 
