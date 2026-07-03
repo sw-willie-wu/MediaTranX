@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
+import AppToggle from '@/components/common/AppToggle.vue'
 import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
@@ -45,6 +46,8 @@ const convertScale = ref(100)
 const convertWidth = ref<number | null>(null)
 const convertHeight = ref<number | null>(null)
 
+const convertCoalesce = ref(false)
+
 const isLossyFormat = computed(() => convertFormat.value === 'jpg' || convertFormat.value === 'webp')
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
@@ -54,6 +57,7 @@ function getParams(): Record<string, unknown> {
   return {
     output_format: convertFormat.value,
     quality: convertQuality.value,
+    coalesce: convertCoalesce.value,
     scale: convertResizeMode.value === 'scale' ? convertScale.value / 100 : undefined,
     width: convertResizeMode.value === 'custom' ? convertWidth.value ?? undefined : undefined,
     height: convertResizeMode.value === 'custom' ? convertHeight.value ?? undefined : undefined,
@@ -86,6 +90,8 @@ const agentSchema = {
     { name: 'quality', type: 'number' as const,
       min: 1, max: 100, step: 1,
       visibleWhen: () => convertFormat.value === 'jpg' || convertFormat.value === 'webp' },
+    { name: 'coalesce', type: 'bool' as const,
+      visibleWhen: () => convertFormat.value === 'gif' },
     { name: 'resize_mode', type: 'enum' as const,
       options: () => ['original', 'scale', 'custom'] },
     { name: 'scale', type: 'number' as const,
@@ -108,6 +114,7 @@ useAgentPanelHost('image.transcode', {
   getCurrentValues: () => ({
     output_format: convertFormat.value,
     quality: convertQuality.value,
+    coalesce: convertCoalesce.value,
     resize_mode: convertResizeMode.value,
     scale: convertScale.value,
     custom_width: convertWidth.value,
@@ -123,6 +130,9 @@ useAgentPanelHost('image.transcode', {
         convertQuality.value = clamped
         return clamped
       }
+      case 'coalesce':
+        convertCoalesce.value = Boolean(value)
+        return convertCoalesce.value
       case 'resize_mode':
         convertResizeMode.value = value as 'original' | 'scale' | 'custom'
         return value
@@ -220,6 +230,11 @@ defineExpose({ execute, isDisabled, isLoading, convertFormat, getParams })
         <small class="form-hint">{{ $t('image.convert.quality_hint') }}</small>
       </div>
     </SettingsCollapsible>
+
+    <div v-if="convertFormat === 'gif'" class="form-group">
+      <AppToggle v-model="convertCoalesce">{{ $t('image.convert.coalesce') }}</AppToggle>
+      <small class="form-hint">{{ $t('image.convert.coalesce_hint') }}</small>
+    </div>
   </div>
 </template>
 

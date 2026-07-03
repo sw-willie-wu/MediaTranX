@@ -259,9 +259,12 @@ class AppContainer(containers.DeclarativeContainer):
         _lazy("app.services.image.crop_service", "ImageCropService"),
         file_service=file_service, task_manager=task_manager,
     )
+    gifsicle_wrapper = providers.Singleton(
+        _lazy("app.adapters.binary.gifsicle", "GifsicleWrapper"))
     image_convert = providers.Singleton(
         _lazy("app.services.image.convert_service", "ImageConvertService"),
         file_service=file_service, task_manager=task_manager,
+        gifsicle=gifsicle_wrapper,
     )
     image_filter = providers.Singleton(
         _lazy("app.services.image.filter_service", "ImageFilterService"),
@@ -284,8 +287,6 @@ class AppContainer(containers.DeclarativeContainer):
         model_manager=model_manager,
         mobilesam=mobilesam_wrapper,
     )
-    gifsicle_wrapper = providers.Singleton(
-        _lazy("app.adapters.binary.gifsicle", "GifsicleWrapper"))
     image_compress = providers.Singleton(
         _lazy("app.services.image.compress_service", "ImageCompressService"),
         file_service=file_service, task_manager=task_manager,

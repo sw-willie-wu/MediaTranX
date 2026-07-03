@@ -60,7 +60,7 @@ class ImageCompressService:
                 colors=colors,
                 frame_drop=int(params.get("gif_frame_drop", 0)),
                 optimize_transparency=bool(params.get("gif_optimize_transparency", True)),
-                coalesce=bool(params.get("gif_coalesce", False)))
+                coalesce=False)
         elif fmt == "PNG":
             compress_png(src, out_path, lossy=bool(params.get("png_lossy", True)),
                          strength=strength)

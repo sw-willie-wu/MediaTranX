@@ -24,7 +24,6 @@ class ImageCompressRequest(BaseModel):
     gif_colors: Optional[int] = Field(default=None, ge=2, le=256, description="Reduce GIF palette to N colors")
     gif_frame_drop: int = Field(default=0, ge=0, description="Keep every Nth frame (0 = keep all)")
     gif_optimize_transparency: bool = Field(default=True, description="Apply transparency optimisation")
-    gif_coalesce: bool = Field(default=False, description="Coalesce (unoptimize) GIF before re-compression")
     # PNG-specific options
     png_lossy: bool = Field(default=True, description="Allow lossy PNG compression (pngquant)")
     # JPEG-specific options
@@ -53,7 +52,6 @@ async def compress_image(
         gif_colors=request.gif_colors,
         gif_frame_drop=request.gif_frame_drop,
         gif_optimize_transparency=request.gif_optimize_transparency,
-        gif_coalesce=request.gif_coalesce,
         png_lossy=request.png_lossy,
         jpeg_progressive=request.jpeg_progressive,
         jpeg_keep_metadata=request.jpeg_keep_metadata,

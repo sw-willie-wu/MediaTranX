@@ -158,6 +158,30 @@ describe('ImageCompressPanel GIF palette_size', () => {
     expect(vm.getParams().gif_colors).toBe(40)
   })
 
+  it('gif_colors slider max is capped at palette_size (40) when GIF has palette_size:40', () => {
+    const w = mountPanel({
+      imageInfo: { width: 100, height: 100, format: 'GIF', mode: 'P', file_size: 1000, palette_size: 40 },
+    })
+    const vm = w.vm as { gifColorsMax: number }
+    expect(vm.gifColorsMax).toBe(40)
+  })
+
+  it('gif_colors slider max falls back to 256 when GIF has no palette_size', () => {
+    const w = mountPanel({
+      imageInfo: { width: 100, height: 100, format: 'GIF', mode: 'P', file_size: 1000 },
+    })
+    const vm = w.vm as { gifColorsMax: number }
+    expect(vm.gifColorsMax).toBe(256)
+  })
+
+  it('gif_colors slider max is 3 for a tiny-palette GIF (palette_size:3), control still valid', () => {
+    const w = mountPanel({
+      imageInfo: { width: 100, height: 100, format: 'GIF', mode: 'P', file_size: 1000, palette_size: 3 },
+    })
+    const vm = w.vm as { gifColorsMax: number }
+    expect(vm.gifColorsMax).toBe(3)
+  })
+
   it('source-colors hint is absent for non-GIF images', () => {
     const w = mountPanel({
       imageInfo: { width: 100, height: 100, format: 'PNG', mode: 'RGBA', file_size: 1000 },
