@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   toolCall: { id: string; function: { name: string; arguments: string } }
@@ -7,6 +8,12 @@ const props = defineProps<{
 }>()
 
 const expanded = ref(false)
+const { t, te } = useI18n()
+
+function toolLabel(name: string): string {
+  const key = `agent.tool.${name}`
+  return te(key) ? t(key) : name
+}
 
 function prettyJson(raw: string): string {
   try {
@@ -25,7 +32,7 @@ function prettyJson(raw: string): string {
         <i v-else-if="status === 'error'" class="bi bi-x-circle-fill text-danger"></i>
         <i v-else class="bi bi-check-circle-fill text-success"></i>
       </span>
-      <span class="tool-name">{{ props.toolCall.function.name }}</span>
+      <span class="tool-name">{{ toolLabel(props.toolCall.function.name) }}</span>
       <i class="bi expand-icon" :class="expanded ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
     </button>
 
@@ -87,7 +94,6 @@ function prettyJson(raw: string): string {
 
 .tool-name {
   flex: 1;
-  font-family: monospace;
   font-weight: 500;
   color: var(--text-primary);
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { Message } from '@/composables/useAgent'
 import type { TransientBuffer } from '@/stores/agent'
 import { toolResultPreview } from '@/composables/agentMessagePreview'
@@ -14,6 +15,13 @@ const props = defineProps<{
   isRunning: boolean
   runError: string | null
 }>()
+
+const { t, te } = useI18n()
+
+function toolLabel(name: string): string {
+  const key = `agent.tool.${name}`
+  return te(key) ? t(key) : name
+}
 
 const listRef = ref<HTMLElement | null>(null)
 
@@ -71,7 +79,7 @@ function toolCallIdToName(toolCallId: string, messages: Message[]): string {
           :key="previewIdx"
           class="tool-result-row"
         >
-          <span class="tool-result-name">{{ toolCallIdToName((msg as any).toolCallId, messages) }}</span>
+          <span class="tool-result-name">{{ toolLabel(toolCallIdToName((msg as any).toolCallId, messages)) }}</span>
           <span
             v-if="preview.icon"
             class="tool-result-icon"
