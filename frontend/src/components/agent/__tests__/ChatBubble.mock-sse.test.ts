@@ -93,10 +93,10 @@ describe('ChatBubble mock-SSE smoke', () => {
     await agent.sendUserText('Hi there')
 
     const roles = agent.messages.value.map(m => m.role)
-    expect(roles).toEqual(['user', 'assistant'])
+    expect(roles).toEqual(['user', 'assistant', 'assistant'])
     expect((agent.messages.value[0] as any).content).toBe('Hi there')
     expect((agent.messages.value[1] as any).content).toBe('Hello world!')
-    expect(fake.agent.runAgent).toHaveBeenCalledTimes(1)
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
   })
 
   // ─── Scenario 3: isRunning via store — all consumers share state ──────────

@@ -21,7 +21,7 @@
  */
 
 import { setActivePinia, createPinia } from 'pinia'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useAgent, _resetAgent } from '@/composables/useAgent'
 import { useAgentStore } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
@@ -77,6 +77,9 @@ beforeEach(() => {
   _resetAgent()   // reset singleton so each test gets a fresh instance
   vi.mocked(apiFetch).mockReset()
   vi.mocked(apiFetch).mockResolvedValue({ ok: true, json: () => Promise.resolve({}) } as Response)
+})
+afterEach(() => {
+  useToast().toasts.splice(0)
 })
 
 // ─── Scenario 1 ───────────────────────────────────────────────────────────────
