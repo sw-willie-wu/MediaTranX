@@ -1220,7 +1220,7 @@ export default {
       abort: 'Stop',
     },
     session: {
-      new_chat: '+ New chat',
+      new_chat: 'New chat',
       empty: 'No conversations yet',
       delete: 'Delete conversation',
       delete_confirm: 'Delete this conversation? This cannot be undone.',

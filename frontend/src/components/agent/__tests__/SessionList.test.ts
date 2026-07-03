@@ -30,7 +30,7 @@ const i18n = createI18n({
       agent: {
         bubble: { empty: 'No messages yet' },
         session: {
-          new_chat: '+ New chat',
+          new_chat: 'New chat',
           empty: 'No conversations yet',
           delete: 'Delete conversation',
           delete_confirm: 'Delete this conversation?',
