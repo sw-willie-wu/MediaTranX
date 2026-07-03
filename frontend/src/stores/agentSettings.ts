@@ -3,10 +3,14 @@
  *
  * 使用者偏好，持久化至 localStorage。
  *
- * policy:
- *   'auto'     — 白名單內自動批准，否則自動拒絕（無彈窗）
- *   'ask_all'  — 每次都問
- *   'custom'   — autoWhitelist 自動批准，alwaysAsk 彈窗，其餘拒絕
+ * policy（四模式；standard/full_auto/ask 為固定策略，不讀任何可編輯 set，
+ *         只有 custom 才讀 autoWhitelist / alwaysAsk）：
+ *   'standard'  — 只有「執行」類（EXECUTE_TOOLS）需確認，其餘自動（預設）
+ *   'full_auto' — 全部自動，連「執行」都不確認
+ *   'ask'       — 每次都問
+ *   'custom'    — autoWhitelist 自動批准，alwaysAsk 彈窗，其餘 deny-by-default=ASK
+ *
+ * 舊值遷移（hydrate 時 migratePolicy）：'auto'→'standard'、'ask_all'→'ask'。
  *
  * m2 reassign-Set pattern:
  *   每個 Set mutator 一律 `xx.value = new Set(...)` 而非 `xx.value.add()`，
@@ -33,8 +37,19 @@ export const DEFAULT_AUTO_WHITELIST: ReadonlySet<string> = new Set([
   'get_task_status',
 ])
 
-/** 預設永遠詢問的 2 個工具（§6.7 / §7 Tool inventory） */
+/** 預設永遠詢問的 2 個工具（§6.7 / §7 Tool inventory；custom 模式的預設起點） */
 export const DEFAULT_ALWAYS_ASK: ReadonlySet<string> = new Set([
+  'click_execute',
+  'click_action',
+])
+
+/**
+ * 「執行」類動作 —— `standard` 模式據此判定是否需確認。
+ * 與 useAgent.ts 執行閘（tc.function.name === 'click_execute' | 'click_action'）同名單。
+ * 內容目前與 DEFAULT_ALWAYS_ASK 相同，但語意不同（前者是固定策略判準、
+ * 後者是 custom 模式的可編輯預設），故獨立定義、不共用。
+ */
+export const EXECUTE_TOOLS: ReadonlySet<string> = new Set([
   'click_execute',
   'click_action',
 ])
@@ -43,7 +58,28 @@ export const AGENT_SETTINGS_KEY = 'agent_settings'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type AgentPolicy = 'auto' | 'ask_all' | 'custom'
+export type AgentPolicy = 'standard' | 'full_auto' | 'ask' | 'custom'
+
+// ─── Legacy policy migration ──────────────────────────────────────────────────
+
+const VALID_POLICIES: ReadonlySet<string> = new Set([
+  'standard',
+  'full_auto',
+  'ask',
+  'custom',
+])
+
+/** 舊 policy 值 → 新值（行為等價：auto=只問 execute=standard；ask_all=全問=ask） */
+const LEGACY_POLICY_MAP: Record<string, AgentPolicy> = {
+  auto: 'standard',
+  ask_all: 'ask',
+}
+
+/** 把任意 stored policy 字串收斂成合法 AgentPolicy（未知值 fallback 'standard'） */
+function migratePolicy(raw: string): AgentPolicy {
+  if (VALID_POLICIES.has(raw)) return raw as AgentPolicy
+  return LEGACY_POLICY_MAP[raw] ?? 'standard'
+}
 
 export interface ToolCallLike {
   name: string
@@ -55,7 +91,7 @@ export interface PanelSchemaLike {
 }
 
 interface StoredSettings {
-  policy?: AgentPolicy
+  policy?: string  // 放寬以容納舊值（auto/ask_all）；讀入時經 migratePolicy 收斂
   autoWhitelist?: string[]
   alwaysAsk?: string[]
   userRemovedTools?: string[]
@@ -65,7 +101,7 @@ interface StoredSettings {
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useAgentSettingsStore = defineStore('agentSettings', () => {
-  const policy = ref<AgentPolicy>('auto')
+  const policy = ref<AgentPolicy>('standard')
   const autoWhitelist = ref<Set<string>>(new Set(DEFAULT_AUTO_WHITELIST))
   const alwaysAsk = ref<Set<string>>(new Set(DEFAULT_ALWAYS_ASK))
   // m3: tracks which default tools the user explicitly removed, so hydrate
@@ -106,7 +142,7 @@ export const useAgentSettingsStore = defineStore('agentSettings', () => {
       return  // malformed JSON → keep defaults
     }
 
-    if (stored.policy) policy.value = stored.policy
+    if (stored.policy) policy.value = migratePolicy(stored.policy)
     if (stored.modelChoice !== undefined) modelChoice.value = stored.modelChoice
 
     const storedRemoved = new Set<string>(stored.userRemovedTools ?? [])
@@ -177,25 +213,22 @@ export const useAgentSettingsStore = defineStore('agentSettings', () => {
   /**
    * Determines whether a tool call needs explicit user confirmation.
    *
-   * Decision matrix (§8.1):
-   *   policy === 'ask_all'  → always true
-   *   policy === 'auto'     → alwaysAsk.has(name) ? true : false
-   *   policy === 'custom'   → alwaysAsk.has(name)      → true
-   *                           autoWhitelist.has(name)  → false
-   *                           otherwise                → true  (deny-by-default = ASK)
-   *
-   * Note: 'custom' panels with `click_execute` tool use panelSchema.execute.requiresConfirm
-   * as an override when the tool name is 'click_execute'.
+   * Decision matrix (§8.1)：standard/full_auto/ask 為固定策略，不讀可編輯 set；
+   * 只有 custom 才讀 autoWhitelist / alwaysAsk。
+   *   policy === 'full_auto' → always false（全自動，連 execute 都不問）
+   *   policy === 'ask'       → always true（每次都問）
+   *   policy === 'standard'  → EXECUTE_TOOLS.has(name)（只有 execute 類要確認）
+   *   policy === 'custom'    → alwaysAsk.has(name)      → true
+   *                            autoWhitelist.has(name)  → false
+   *                            click_execute + panelSchema.execute → requiresConfirm
+   *                            otherwise                → true  (deny-by-default = ASK)
    */
   function shouldConfirm(toolCall: ToolCallLike, panelSchema?: PanelSchemaLike): boolean {
     const name = toolCall.name
 
-    if (policy.value === 'ask_all') return true
-
-    if (policy.value === 'auto') {
-      // Only alwaysAsk tools require confirmation; everything else is auto-approved
-      return alwaysAsk.value.has(name)
-    }
+    if (policy.value === 'full_auto') return false
+    if (policy.value === 'ask') return true
+    if (policy.value === 'standard') return EXECUTE_TOOLS.has(name)
 
     // policy === 'custom'
     if (alwaysAsk.value.has(name)) return true

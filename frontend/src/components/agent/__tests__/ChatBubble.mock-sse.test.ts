@@ -65,7 +65,7 @@ beforeEach(() => {
   // Provide a model so sendUserText doesn't immediately short-circuit
   lsStub.setItem('agent_settings', JSON.stringify({
     modelChoice: 'qwen3:8b',
-    policy: 'auto',
+    policy: 'standard',
   }))
 })
 

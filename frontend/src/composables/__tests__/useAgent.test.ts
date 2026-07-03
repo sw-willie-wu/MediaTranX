@@ -8,7 +8,7 @@
  *
  * Covers:
  *   1. no tool_calls → loop exits after one round
- *   2. 1 tool_call (auto policy) → dispatch + result + re-run + exit
+ *   2. 1 tool_call (standard policy) → dispatch + result + re-run + exit
  *   3. confirm-required tool → confirm card pushed; user approves → dispatch
  *   4. confirm-required tool → user cancels → user_cancelled tool result, no dispatch
  *   5. cancel mid-stream → silent cancel → transient cleared, only user message
@@ -97,7 +97,7 @@ describe('useAgent.runLoop', () => {
 
   // ─── Scenario 2 ────────────────────────────────────────────────────────────
 
-  it('1 tool_call (auto policy) → dispatch + result + re-run + exit', async () => {
+  it('1 tool_call (standard policy) → dispatch + result + re-run + exit', async () => {
     const fake = makeFakeAgent((round) => round === 0
       ? { toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{"route":"/video"}' }] }
       : { textDeltas: ['done'] })
@@ -107,7 +107,7 @@ describe('useAgent.runLoop', () => {
       getTools: () => fakeToolsTOOLS,
       dispatch: vi.fn(async () => ({ ok: true })),
     }
-    // Default policy is 'auto'; 'navigate_to' is in autoWhitelist (not in alwaysAsk)
+    // Default policy is 'standard'; 'navigate_to' is non-execute → auto-run (no confirm)
     const { sendUserText, messages } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
     await sendUserText('go to video')
     expect(fake.agent.runAgent).toHaveBeenCalledTimes(3)
@@ -118,10 +118,10 @@ describe('useAgent.runLoop', () => {
   // ─── Scenario 3 ────────────────────────────────────────────────────────────
 
   it('confirm-required tool → confirm card pushed; user approves → dispatch + result', async () => {
-    // Use policy='ask_all' so shouldConfirm always returns true regardless of tool name.
+    // Use policy='ask' so shouldConfirm always returns true regardless of tool name.
     // This ensures the confirm flow is triggered independently of alwaysAsk state.
     const settings = useAgentSettingsStore()
-    settings.setPolicy('ask_all')
+    settings.setPolicy('ask')
 
     // Round-aware: round 1 returns tool_call, round 2 returns empty (exits loop)
     const fake = makeFakeAgent((round) => round === 0
@@ -165,9 +165,9 @@ describe('useAgent.runLoop', () => {
   // ─── Scenario 4 ────────────────────────────────────────────────────────────
 
   it('confirm-required tool → user cancels → user_cancelled tool result + no dispatch', async () => {
-    // Use policy='ask_all' so shouldConfirm always returns true.
+    // Use policy='ask' so shouldConfirm always returns true.
     const settings = useAgentSettingsStore()
-    settings.setPolicy('ask_all')
+    settings.setPolicy('ask')
 
     // Round-aware: round 1 returns tool_call requiring confirm, round 2 returns empty (exits loop)
     const fake = makeFakeAgent((round) => round === 0
@@ -257,11 +257,11 @@ describe('useAgent.runLoop', () => {
   // ─── Scenario 7 ────────────────────────────────────────────────────────────
 
   it('cancelRun during confirm wait → resolveAllPendingConfirms(false) + loop breaks', async () => {
-    // Use policy='ask_all' so shouldConfirm always returns true.
+    // Use policy='ask' so shouldConfirm always returns true.
     // cancelRun() calls abortRun() AND resolves pending confirms with false +
     // sets outerStop, so the loop stops without a round 2.
     const settings = useAgentSettingsStore()
-    settings.setPolicy('ask_all')
+    settings.setPolicy('ask')
 
     const fake = makeFakeAgent(() => ({
       toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{}' }],
@@ -432,7 +432,7 @@ describe('useAgent.runLoop', () => {
 
   it('cancelRun during confirm wait sets outerStop → loop exits, no round 2 runAgent', async () => {
     const settings = useAgentSettingsStore()
-    settings.setPolicy('ask_all')
+    settings.setPolicy('ask')
 
     const fake = makeFakeAgent(() => ({
       toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{}' }],
@@ -501,7 +501,7 @@ describe('useAgent.runLoop', () => {
 
   it('text-only round AFTER a click_execute was dispatched → no nudge', async () => {
     const settings = useAgentSettingsStore()
-    settings.setPolicy('auto')   // still confirm-gated: click_execute is always-ask
+    settings.setPolicy('standard')   // still confirm-gated: click_execute is execute-class
     const fake = makeFakeAgent((round) => round === 0
       ? { toolCalls: [{ id: 'tc1', name: 'click_execute', args: '{}' }] }
       : { textDeltas: ['已送出，稍候'] })
@@ -535,7 +535,7 @@ describe('useAgent.runLoop', () => {
 
   it('user cancels the execute confirm, next text-only round → no nudge (acted set at dequeue)', async () => {
     const settings = useAgentSettingsStore()
-    settings.setPolicy('auto')
+    settings.setPolicy('standard')
     const fake = makeFakeAgent((round) => round === 0
       ? { toolCalls: [{ id: 'tc1', name: 'click_execute', args: '{}' }] }
       : { textDeltas: ['好，已取消'] })

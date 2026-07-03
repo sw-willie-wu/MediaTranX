@@ -1171,9 +1171,14 @@ export default {
       },
       policy: {
         label: 'Confirmation policy',
-        auto: 'Auto (recommended)',
-        ask_all: 'Ask for everything',
-        custom: 'Custom whitelist',
+        standard: 'Standard (recommended)',
+        standard_desc: 'Only “Execute” asks; everything else runs automatically',
+        full_auto: 'Automatic',
+        full_auto_desc: 'Everything runs automatically, including “Execute”',
+        ask: 'Ask',
+        ask_desc: 'Ask before every action',
+        custom: 'Custom',
+        custom_desc: 'Configure each tool individually',
       },
       whitelist: {
         label: 'Per-tool policy',

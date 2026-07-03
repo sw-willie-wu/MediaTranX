@@ -1138,14 +1138,14 @@ describe('settings.general panel registration smoke', () => {
       panelId: 'settings.agent',
       fields: [
         { name: 'model', type: 'enum', options: () => ['qwen3:8b'] },
-        { name: 'policy', type: 'enum', options: () => ['auto', 'ask_all', 'custom'] },
+        { name: 'policy', type: 'enum', options: () => ['standard', 'full_auto', 'ask', 'custom'] },
       ],
       actions: [{ name: 'clear_history' }],
       execute: null,
     }
     panelRegistry.register('settings.agent', {
       agentSchema: schema,
-      getCurrentValues: () => ({ model: 'qwen3:8b', policy: 'auto' }),
+      getCurrentValues: () => ({ model: 'qwen3:8b', policy: 'standard' }),
       setField: (_f, v) => v,
       openField: () => {},
       execute: () => { throw new Error('agent.error.no_execute_on_settings') },

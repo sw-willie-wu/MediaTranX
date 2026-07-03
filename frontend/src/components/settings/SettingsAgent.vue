@@ -45,9 +45,10 @@ const localToolModels = computed<SelectOption[]>(() =>
 const { mergedOptions } = useModelOptions('tools', localToolModels)
 
 const POLICY_OPTIONS = computed(() => [
-  { value: 'auto',     label: t('settings.agent.policy.auto') },
-  { value: 'ask_all',  label: t('settings.agent.policy.ask_all') },
-  { value: 'custom',   label: t('settings.agent.policy.custom') },
+  { value: 'standard',  label: t('settings.agent.policy.standard'),  desc: t('settings.agent.policy.standard_desc') },
+  { value: 'full_auto', label: t('settings.agent.policy.full_auto'), desc: t('settings.agent.policy.full_auto_desc') },
+  { value: 'ask',       label: t('settings.agent.policy.ask'),       desc: t('settings.agent.policy.ask_desc') },
+  { value: 'custom',    label: t('settings.agent.policy.custom'),    desc: t('settings.agent.policy.custom_desc') },
 ] as const)
 
 // All 9 tools for per-tool policy
@@ -100,7 +101,7 @@ function setModel(val: string) {
 
 // ── Agent panel host (settings.agent) ────────────────────────────────────────
 
-const POLICY_VALUES = ['auto', 'ask_all', 'custom'] as const
+const POLICY_VALUES = ['standard', 'full_auto', 'ask', 'custom'] as const
 
 useAgentPanelHost('settings.agent', {
   agentSchema: {
@@ -182,7 +183,10 @@ useAgentPanelHost('settings.agent', {
         :checked="settings.policy === opt.value"
         @change="setPolicy(opt.value as AgentPolicy)"
       />
-      <span>{{ opt.label }}</span>
+      <span class="policy-radio-text">
+        <span class="policy-radio-title">{{ opt.label }}</span>
+        <span class="policy-radio-desc">{{ opt.desc }}</span>
+      </span>
     </label>
   </div>
 
@@ -249,7 +253,7 @@ useAgentPanelHost('settings.agent', {
 
 .policy-radio-label {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   cursor: pointer;
   font-size: 0.85rem;
@@ -257,7 +261,26 @@ useAgentPanelHost('settings.agent', {
 
   input[type="radio"] {
     accent-color: var(--color-primary);
+    margin-top: 0.15rem;   // 對齊多行文字的第一行
+    flex-shrink: 0;
   }
+}
+
+.policy-radio-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.policy-radio-title {
+  color: var(--text-primary);
+}
+
+.policy-radio-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.3;
 }
 
 .tool-policy-table {

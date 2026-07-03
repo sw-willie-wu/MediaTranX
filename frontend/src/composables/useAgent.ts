@@ -23,7 +23,7 @@ import type { Message as AgUiMessage, RunAgentResult, AgentSubscriber } from '@a
 import { getApiBase, apiFetch } from '@/composables/useApi'
 import { sanitizeAssistantMessage, pickAssistant, type SanitizedAssistant, type ToolCall } from '@/composables/agentSanitize'
 import { useAgentStore, type TransientBuffer, type TokenUsage } from '@/stores/agent'
-import { useAgentSettingsStore } from '@/stores/agentSettings'
+import { useAgentSettingsStore, EXECUTE_TOOLS } from '@/stores/agentSettings'
 import { useAgentTools } from '@/composables/useAgentTools'
 import { useActivePanel, type ActivePanelEntry } from '@/composables/useActivePanel'
 import { useActiveView } from '@/composables/useActiveView'
@@ -505,7 +505,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
           // M1: mark the turn as having reached a terminal action the moment such a
           // tool is dequeued — BEFORE the confirm decision — so a user-cancelled
           // confirm still suppresses the next-round nudge (no spurious re-pop).
-          if (tc.function.name === 'click_execute' || tc.function.name === 'click_action') {
+          if (EXECUTE_TOOLS.has(tc.function.name)) {
             actedThisTurn = true
           }
           const ap = getActivePanel()
