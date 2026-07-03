@@ -33,21 +33,12 @@ import { buildAgentStateSnapshot } from '@/composables/useAgentState'
 import { routeForView } from '@/agent/agentNavCatalog'
 import { useFilesStore } from '@/stores/files'
 import { useToast } from '@/composables/useToast'
+import i18n from '@/i18n'
 
-// i18n.global.t lazy resolve (unchanged from original).
-let _t: ((k: string) => string) | null = null
+// i18n resolver — static ESM import (browser has no `require`; the old lazy
+// require() fell back to identity, so agent error codes rendered as raw keys).
 function translate(key: string): string {
-  if (_t === null) {
-    try {
-      // @ts-expect-error — require() available in Vitest (node) + Vite (cjs interop)
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const mod = require('@/i18n')
-      _t = (mod.default ?? mod).global.t
-    } catch {
-      _t = (k: string) => k
-    }
-  }
-  return _t!(key)
+  return i18n.global.t(key)
 }
 
 // ─── Public types ──────────────────────────────────────────────────────────────

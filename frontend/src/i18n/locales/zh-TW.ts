@@ -1262,6 +1262,7 @@ export default {
       no_execute_on_settings: '無法從設定頁面提交任務',
       no_file_selected: '尚未載入檔案 — 請先上傳或載入檔案再執行',
       invalid_subfunction: '此頁面沒有「{name}」子功能',
+      generic: '智慧助手發生錯誤，請稍後再試',
     },
     tool: {
       navigate_to: '切換頁面',
