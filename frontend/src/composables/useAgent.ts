@@ -178,6 +178,12 @@ function bannerActionFor(tc: ToolCall): { key: string; args: Record<string, unkn
   }
 }
 
+// Bounded-1 nudge (Bug 1): when a round returns text only (no tool call) and the
+// turn hasn't yet reached a terminal action, steer the model to actually emit the
+// tool call it just described. One nudge per user turn; not rendered, not persisted.
+const AGENT_NUDGE_TEXT =
+  '你剛剛只回了文字、沒有呼叫任何工具。如果你打算執行某個動作，現在請直接呼叫對應的 tool；如果你只是在回答或已經完成，直接回覆即可。'
+
 // ─── Module-level singleton ────────────────────────────────────────────────────
 
 let _instance: ReturnType<typeof _createAgent> | null = null
@@ -226,6 +232,10 @@ function _createAgent(deps: UseAgentDeps = {}) {
   // tools.dispatch so an already-started state-mutating tool can refuse to apply
   // its change when the user presses stop mid-dispatch.
   let runAbort: AbortController | null = null
+  // Bug 1 nudge state (per user turn; reset in sendUserText/startNewSession/loadSession).
+  let actedThisTurn = false    // set at dequeue of click_execute/click_action (approve OR cancel)
+  let nudgedThisTurn = false   // cap: at most one nudge per user turn
+  let pendingNudge: string | null = null  // consumed at the top of the next round's wire build
 
   // ─── Public API ──────────────────────────────────────────────────
 
@@ -233,6 +243,9 @@ function _createAgent(deps: UseAgentDeps = {}) {
     await commitMessage({ role: 'user', content: text })
     invalidFieldStrikes = 0
     outerStop = false
+    actedThisTurn = false
+    nudgedThisTurn = false
+    pendingNudge = null
     // Reset the action label once per user turn (not per round): within a run
     // the banner keeps showing the latest tool action, only falling back to the
     // generic label at the very start before the first tool dispatches.
@@ -251,6 +264,9 @@ function _createAgent(deps: UseAgentDeps = {}) {
     store.resetTokens()
     invalidFieldStrikes = 0
     outerStop = false
+    actedThisTurn = false
+    nudgedThisTurn = false
+    pendingNudge = null
   }
 
   function cancelRun() {
@@ -310,6 +326,9 @@ function _createAgent(deps: UseAgentDeps = {}) {
     store.resetTokens()        // token counts aren't persisted; clear the running total
     invalidFieldStrikes = 0
     outerStop = false
+    actedThisTurn = false
+    nudgedThisTurn = false
+    pendingNudge = null
   }
 
   /** Delete a persisted session. If it's the active one, start a fresh session. */
@@ -343,6 +362,15 @@ function _createAgent(deps: UseAgentDeps = {}) {
         }
         // toCloneable: HttpAgent structuredClones these inputs; strip Vue reactive proxies.
         agent.messages = toCloneable(mapMessagesToAgUi(messages.value))
+        // Bug 1 nudge: append a one-shot steering user message to THIS round's wire
+        // only. It never enters messages.value → not rendered, not persisted. `id` is
+        // required by ag_ui BaseMessage (backend RunAgentInput pydantic-validates).
+        if (pendingNudge) {
+          ;(agent.messages as AgUiMessage[]).push(
+            { id: crypto.randomUUID(), role: 'user', content: pendingNudge } as unknown as AgUiMessage,
+          )
+          pendingNudge = null
+        }
         // Build the two-tier UI snapshot from live state, then launder the whole
         // `state` object through toCloneable — HttpAgent structuredClones state,
         // and snapshot is derived from reactive stores/getters. _createAgent has
@@ -453,11 +481,28 @@ function _createAgent(deps: UseAgentDeps = {}) {
         if (assistant) await commitMessage(assistant)
 
         unprocessedToolCalls = assistant ? [...assistant.toolCalls] : []
-        if (unprocessedToolCalls.length === 0) break
+        if (unprocessedToolCalls.length === 0) {
+          // Bug 1: a text-only round is normally terminal (matches Claude Code's
+          // loop). Safety net for weak local models: if the turn hasn't reached a
+          // terminal action yet, nudge once and re-run — the model either emits the
+          // tool call it forgot, or replies again (then we terminate on the cap).
+          if (!actedThisTurn && !nudgedThisTurn) {
+            nudgedThisTurn = true
+            pendingNudge = AGENT_NUDGE_TEXT
+            continue
+          }
+          break
+        }
 
         // ── Dispatch tool_calls (logic unchanged from original) ──
         while (unprocessedToolCalls.length > 0 && !outerStop) {
           const tc = unprocessedToolCalls[0]
+          // M1: mark the turn as having reached a terminal action the moment such a
+          // tool is dequeued — BEFORE the confirm decision — so a user-cancelled
+          // confirm still suppresses the next-round nudge (no spurious re-pop).
+          if (tc.function.name === 'click_execute' || tc.function.name === 'click_action') {
+            actedThisTurn = true
+          }
           const ap = getActivePanel()
           // Announce this tool at receive-time, before it runs (the first was
           // announced above; this covers the 2nd+ tools in a multi-call round).
