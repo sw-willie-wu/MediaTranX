@@ -16,3 +16,11 @@ def test_prompt_requires_toolcall_in_same_message():
     assert "不要只用文字" in AGENT_SYSTEM_PROMPT
     # 舊的「先敘述後動作」誘導措辭移除
     assert "每個 step 之前一句話" not in AGENT_SYSTEM_PROMPT
+
+
+def test_prompt_settings_no_apply_step():
+    """設定頁規則：set_field 即生效、不問套用、不 click_execute。"""
+    from app.services.agent._system_prompt import AGENT_SYSTEM_PROMPT
+    assert "settings." in AGENT_SYSTEM_PROMPT
+    assert "已設定完成" in AGENT_SYSTEM_PROMPT
+    assert "設定頁沒有" in AGENT_SYSTEM_PROMPT

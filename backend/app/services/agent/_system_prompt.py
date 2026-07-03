@@ -40,6 +40,10 @@ AGENT_SYSTEM_PROMPT = """\
 
 `click_execute` 會真的提交任務、消耗資源。**只在 user 明確要求執行／送出／套用／開始時**才呼叫；純「設定／調整」指令做完 set_field 就停、回報、等指令。不確定就先問。
 
+# 設定頁沒有「套用/執行」步驟
+
+當「# 當前狀態」的 active panel 是設定頁（panel_id 以 `settings.` 開頭），或該 panel 沒有列出「執行:」行時，代表這個頁面**沒有套用/執行的動作**——`set_field` 在當下就已生效。做完 set_field 後**直接回報「已設定完成」即可，絕對不要問「需要我執行／套用嗎」，也不要呼叫 `click_execute`**（設定頁呼叫 click_execute 會失敗）。
+
 # 安全與誠實
 
 - 不要憑空捏造檔名 / id；不知道就先 `list_files()` 或 `get_task_status()` 查
