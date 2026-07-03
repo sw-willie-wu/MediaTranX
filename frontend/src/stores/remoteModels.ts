@@ -4,14 +4,14 @@
  * 管理遠端 API 連線 + 模型列表，是所有遠端模型狀態的 single source of truth。
  * - connections: 連線列表（取代 ModelDownloadManager 內部 ref）
  * - connModels: 每個連線的模型快取（設定頁展開用）
- * - allModels:  所有啟用連線的模型彙總
+ * - allModels:  所有啟用連線的模型彙總（computed，自動衍生自 connections + connModels）
  * - enabledModels / byCapability: 工具下拉用，加上 per-model opt-in 過濾
  *
  * 設計原則：
  * - 任何會改動 server 連線狀態的動作（add / update / delete / toggle）
  *   都走本 store 的 action method、結尾自動 fetchAll() 同步全域狀態
  * - 元件只 read + dispatch action、不再自己 keep 一份 connections ref
- * - fetchAll() 同時填 connections 跟 allModels，避免雙 fetch
+ * - fetchAll() 填 connections + connModels；allModels 為 computed 自動衍生（所以 refresh/展開/toggle 都會即時同步工具下拉，不需重啟）
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
@@ -64,8 +64,30 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
   // 每個連線的抓取失敗狀態(true = list-models 失敗;與「真的沒 model」區分)
   const connError = ref<Record<number, boolean>>({})
 
-  // 所有連線的模型彙總（啟用的連線）
-  const allModels = ref<RemoteModelOption[]>([])
+  // Derived from connections + connModels so ANY update to the model cache
+  // (refresh button, expand-load, toggle) re-syncs the tool/agent dropdowns —
+  // previously allModels was only (re)built inside fetchAll(), so a per-conn
+  // refresh updated connModels (settings display) but left allModels stale,
+  // and the agent model picker only recovered after an app restart.
+  const allModels = computed<RemoteModelOption[]>(() => {
+    const all: RemoteModelOption[] = []
+    for (const conn of connections.value) {
+      if (!conn.enabled) continue
+      for (const m of connModels.value[conn.id] || []) {
+        all.push({
+          provider: conn.provider,
+          connId: conn.id,
+          connName: conn.name || conn.provider,
+          endpoint: conn.endpoint,
+          modelId: m.id,
+          name: m.name,
+          parameterSize: m.parameter_size,
+          capabilities: m.capabilities || ['text'],
+        })
+      }
+    }
+    return all
+  })
   const loaded = ref(false)
 
   // 啟用的模型 ID set（per-model opt-in，存 localStorage）
@@ -145,24 +167,6 @@ export const useRemoteModelStore = defineStore('remoteModels', () => {
       const toFetch = conns.filter((c: RemoteConnection) => c.enabled && !connModels.value[c.id])
       await Promise.all(toFetch.map((c: RemoteConnection) => fetchConnModels(c)))
 
-      const all: RemoteModelOption[] = []
-      for (const conn of conns) {
-        if (!conn.enabled) continue
-        const models = connModels.value[conn.id] || []
-        for (const m of models) {
-          all.push({
-            provider: conn.provider,
-            connId: conn.id,
-            connName: conn.name || conn.provider,
-            endpoint: conn.endpoint,
-            modelId: m.id,
-            name: m.name,
-            parameterSize: m.parameter_size,
-            capabilities: m.capabilities || ['text'],
-          })
-        }
-      }
-      allModels.value = all
       loaded.value = true
 
       // 聚合失敗 toast — 只在 lazy/refresh 路徑(notifyOnError),mutation 不跳

@@ -234,15 +234,6 @@ useAgentPanelHost('settings.agent', {
     </div>
   </template>
 
-  <!-- New conversation -->
-  <h6 class="section-title mt">{{ $t('agent.session.new_chat') }}</h6>
-
-  <div class="setting-item">
-    <button class="btn-secondary" @click="agent.startNewSession()">
-      <i class="bi bi-plus-lg"></i>
-      {{ $t('agent.session.new_chat') }}
-    </button>
-  </div>
 </template>
 
 <style lang="scss">

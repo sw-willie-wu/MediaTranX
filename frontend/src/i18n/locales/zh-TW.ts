@@ -1220,7 +1220,7 @@ export default {
       abort: '中止',
     },
     session: {
-      new_chat: '+ 新對話',
+      new_chat: '新對話',
       empty: '尚無對話',
       delete: '刪除對話',
       delete_confirm: '確定刪除此對話？此操作無法復原。',
