@@ -5,6 +5,7 @@ from typing import Callable, Optional
 
 from PIL import Image
 
+from app.adapters.binary.gifsicle import GifsicleWrapper
 from app.services.files.file_service import FileService
 from app.workers.task_manager import TaskManager
 
@@ -16,9 +17,11 @@ TASK_TYPE_IMAGE_CONVERT = "image.convert"
 class ImageConvertService:
     """Image format conversion with resize and quality options."""
 
-    def __init__(self, file_service: FileService, task_manager: TaskManager):
+    def __init__(self, file_service: FileService, task_manager: TaskManager,
+                 gifsicle: GifsicleWrapper | None = None):
         self._file_service = file_service
         self._task_manager = task_manager
+        self._gifsicle = gifsicle
 
         self._task_manager.register_handler(
             TASK_TYPE_IMAGE_CONVERT,
@@ -63,6 +66,7 @@ class ImageConvertService:
         width: Optional[int] = None,
         height: Optional[int] = None,
         scale: Optional[float] = None,
+        coalesce: bool = False,
     ) -> str:
         """Submit an image conversion task."""
         file_info = self._file_service.require_file(file_id)
@@ -74,6 +78,7 @@ class ImageConvertService:
             "width": width,
             "height": height,
             "scale": scale,
+            "coalesce": coalesce,
         }
 
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_CONVERT, params)
@@ -187,6 +192,10 @@ class ImageConvertService:
 
             img.save(str(output_path), format=save_format, **save_kwargs)
             img.close()
+
+        # Coalesce post-processing: expand frame-diffs → full frames (GIF compatibility)
+        if output_format == "GIF" and params.get("coalesce") and self._gifsicle is not None:
+            self._gifsicle.compress(output_path, output_path, coalesce=True)
 
         # Register output file
         output_info = self._file_service.register_output(

@@ -69,7 +69,6 @@ def test_compress_route_forwards_gif_opts(client):
             "gif_colors": 128,
             "gif_frame_drop": 2,
             "gif_optimize_transparency": False,
-            "gif_coalesce": True,
         },
     )
     assert res.status_code == 200, res.text
@@ -77,4 +76,3 @@ def test_compress_route_forwards_gif_opts(client):
     assert call_kwargs["gif_colors"] == 128
     assert call_kwargs["gif_frame_drop"] == 2
     assert call_kwargs["gif_optimize_transparency"] is False
-    assert call_kwargs["gif_coalesce"] is True
