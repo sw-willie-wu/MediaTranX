@@ -449,6 +449,8 @@ export default {
       custom_size: '自訂尺寸',
       scale_label: '縮放比例:',
       aspect_ratio_hint: '留空則等比縮放',
+      coalesce: '合併幀（相容模式）',
+      coalesce_hint: '還原幀最佳化，檔案會變大；用於修復無法正常播放的 GIF。',
       task_label: '圖片 · 轉檔',
     },
 
@@ -467,7 +469,6 @@ export default {
       gif_frame_drop_3: '每隔 2 幀略去',
       gif_frame_drop_4: '每隔 3 幀略去',
       gif_optimize_transparency: '優化透明度',
-      gif_coalesce: '合併幀',
       png_advanced: 'PNG 選項',
       png_mode: '壓縮模式',
       png_mode_lossy: '有損（檔案更小）',

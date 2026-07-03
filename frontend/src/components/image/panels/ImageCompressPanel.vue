@@ -78,7 +78,6 @@ watch(
 )
 const gifFrameDrop = ref<number>(0)
 const gifOptimizeTransparency = ref(true)
-const gifCoalesce = ref(false)
 const pngMode = ref<'lossy' | 'lossless'>('lossy')
 const jpegProgressive = ref(true)
 const jpegKeepMetadata = ref(false)
@@ -138,7 +137,6 @@ function getParams(): Record<string, unknown> {
     gif_colors: gifColors.value,
     gif_frame_drop: gifFrameDrop.value,
     gif_optimize_transparency: gifOptimizeTransparency.value,
-    gif_coalesce: gifCoalesce.value,
     png_lossy: pngMode.value === 'lossy',
     jpeg_progressive: jpegProgressive.value,
     jpeg_keep_metadata: jpegKeepMetadata.value,
@@ -175,8 +173,6 @@ const agentSchema = {
       visibleWhen: () => isGif.value },
     { name: 'gif_optimize_transparency', type: 'bool' as const,
       visibleWhen: () => isGif.value },
-    { name: 'gif_coalesce', type: 'bool' as const,
-      visibleWhen: () => isGif.value },
     { name: 'png_mode', type: 'enum' as const,
       options: () => ['lossy', 'lossless'],
       visibleWhen: () => isPng.value },
@@ -199,7 +195,6 @@ useAgentPanelHost('image.compress', {
     gif_colors: gifColors.value,
     gif_frame_drop: gifFrameDrop.value,
     gif_optimize_transparency: gifOptimizeTransparency.value,
-    gif_coalesce: gifCoalesce.value,
     png_mode: pngMode.value,
     jpeg_progressive: jpegProgressive.value,
     jpeg_keep_metadata: jpegKeepMetadata.value,
@@ -224,9 +219,6 @@ useAgentPanelHost('image.compress', {
       case 'gif_optimize_transparency':
         gifOptimizeTransparency.value = Boolean(value)
         return gifOptimizeTransparency.value
-      case 'gif_coalesce':
-        gifCoalesce.value = Boolean(value)
-        return gifCoalesce.value
       case 'png_mode':
         pngMode.value = value === 'lossless' ? 'lossless' : 'lossy'
         return pngMode.value
@@ -322,10 +314,6 @@ defineExpose({ execute, isDisabled, isLoading, getParams, onGifColorsUpdate, gif
 
       <div class="form-group">
         <AppToggle v-model="gifOptimizeTransparency">{{ $t('image.compress.gif_optimize_transparency') }}</AppToggle>
-      </div>
-
-      <div class="form-group">
-        <AppToggle v-model="gifCoalesce">{{ $t('image.compress.gif_coalesce') }}</AppToggle>
       </div>
     </SettingsCollapsible>
   </div>

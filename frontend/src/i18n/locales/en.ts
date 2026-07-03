@@ -449,6 +449,8 @@ export default {
       custom_size: 'Custom Size',
       scale_label: 'Scale:',
       aspect_ratio_hint: 'Leave empty for proportional scaling',
+      coalesce: 'Coalesce frames (compatibility)',
+      coalesce_hint: 'Undoes frame optimization; file gets larger. Use to repair GIFs that don\'t play correctly.',
       task_label: 'Image · Convert',
     },
 
@@ -467,7 +469,6 @@ export default {
       gif_frame_drop_3: 'Drop every 3rd frame',
       gif_frame_drop_4: 'Drop every 4th frame',
       gif_optimize_transparency: 'Optimize Transparency',
-      gif_coalesce: 'Coalesce Frames',
       png_advanced: 'PNG Options',
       png_mode: 'Compression Mode',
       png_mode_lossy: 'Lossy (smaller file)',

@@ -6,7 +6,7 @@
  *   - agentSchema.panelId === 'image.compress'
  *   - getCurrentValues() returns all schema field names
  *   - strength field is present
- *   - GIF advanced fields (gif_colors, gif_frame_drop, gif_optimize_transparency, gif_coalesce) are present
+ *   - GIF advanced fields (gif_colors, gif_frame_drop, gif_optimize_transparency) are present
  *   - visibleWhen gates on gif input (false when non-GIF, true when GIF)
  *   - PNG advanced field (png_mode) is present
  *   - visibleWhen for png_mode gates on PNG input (true for PNG, false for GIF)
@@ -24,7 +24,6 @@ function makeImageCompressPanelStub(gifInput = false, pngInput = false, jpegInpu
   const gifColors = ref(128)
   const gifFrameDrop = ref(0)
   const gifOptimizeTransparency = ref(true)
-  const gifCoalesce = ref(false)
   const pngMode = ref<'lossy' | 'lossless'>('lossy')
   const jpegProgressive = ref(true)
   const jpegKeepMetadata = ref(false)
@@ -44,8 +43,6 @@ function makeImageCompressPanelStub(gifInput = false, pngInput = false, jpegInpu
         options: () => ['0', '2', '3', '4'],
         visibleWhen: () => isGif.value },
       { name: 'gif_optimize_transparency', type: 'bool' as const,
-        visibleWhen: () => isGif.value },
-      { name: 'gif_coalesce', type: 'bool' as const,
         visibleWhen: () => isGif.value },
       { name: 'png_mode', type: 'enum' as const,
         options: () => ['lossy', 'lossless'],
@@ -69,7 +66,6 @@ function makeImageCompressPanelStub(gifInput = false, pngInput = false, jpegInpu
       gif_colors: gifColors.value,
       gif_frame_drop: gifFrameDrop.value,
       gif_optimize_transparency: gifOptimizeTransparency.value,
-      gif_coalesce: gifCoalesce.value,
       png_mode: pngMode.value,
       jpeg_progressive: jpegProgressive.value,
       jpeg_keep_metadata: jpegKeepMetadata.value,
@@ -93,9 +89,6 @@ function makeImageCompressPanelStub(gifInput = false, pngInput = false, jpegInpu
         case 'gif_optimize_transparency':
           gifOptimizeTransparency.value = Boolean(value)
           return gifOptimizeTransparency.value
-        case 'gif_coalesce':
-          gifCoalesce.value = Boolean(value)
-          return gifCoalesce.value
         case 'png_mode':
           pngMode.value = value === 'lossless' ? 'lossless' : 'lossy'
           return pngMode.value
@@ -168,7 +161,7 @@ describe('ImageCompressPanel agent schema smoke', () => {
     const { component } = makeImageCompressPanelStub()
     mount(component)
     const handle = panelRegistry.get('image.compress')!
-    const gifFieldNames = ['gif_colors', 'gif_frame_drop', 'gif_optimize_transparency', 'gif_coalesce']
+    const gifFieldNames = ['gif_colors', 'gif_frame_drop', 'gif_optimize_transparency']
     for (const name of gifFieldNames) {
       expect(handle.agentSchema.fields.find(f => f.name === name), `${name} should be in schema`).toBeDefined()
     }
