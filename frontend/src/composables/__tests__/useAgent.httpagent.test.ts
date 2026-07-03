@@ -6,6 +6,7 @@ import { HttpAgent } from '@ag-ui/client'
 import { useAgent, _resetAgent } from '@/composables/useAgent'
 import { useAgentStore } from '@/stores/agent'
 import { useToast } from '@/composables/useToast'
+import i18n from '@/i18n'
 
 // Isolate session persistence: commitMessage() now POSTs to /agent/sessions via
 // apiFetch. Without this stub those POSTs would hit the global `fetch` mock these
@@ -70,6 +71,7 @@ const origFetch = globalThis.fetch
 const realAgentFactory = (cfg: any) => new HttpAgent(cfg) as any
 
 beforeEach(() => {
+  i18n.global.locale.value = 'en'
   for (const k in lsStore) delete lsStore[k]
   setActivePinia(createPinia())
   _resetAgent()
@@ -198,14 +200,10 @@ describe('useAgent × real HttpAgent (mock fetch)', () => {
     const { sendUserText, messages } = useAgent({ agentFactory: realAgentFactory })
     await sendUserText('hi')
 
-    // path 4b: no assistant message committed to chat history
     expect(messages.value.filter(m => m.role === 'assistant')).toHaveLength(0)
-    // user message is still present
-    expect(messages.value.filter(m => m.role === 'user')).toHaveLength(1)
-    // exactly one sticky (duration:0) error toast carrying the backend message
     expect(toasts).toHaveLength(1)
-    expect(toasts[0].type).toBe('error')
-    expect(toasts[0].message).toMatch(/no model configured|agent\.error\.no_model/)
+    expect(toasts[0].message).toBe('No assistant model configured')
+    expect(useAgentStore().runError).toBe('No assistant model configured')
   }, 10000)
 
   it('⑤b defensive: RUN_ERROR + trailing RUN_FINISHED → still recovers, no crash', async () => {

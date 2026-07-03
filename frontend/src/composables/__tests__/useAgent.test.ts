@@ -30,6 +30,7 @@ import { apiFetch } from '@/composables/useApi'
 import type { ActivePanelEntry } from '@/composables/useActivePanel'
 import type { PanelHandle } from '@/stores/panelRegistry'
 import { useToast } from '@/composables/useToast'
+import i18n from '@/i18n'
 
 vi.mock('@/composables/useApi', () => ({
   getApiBase: () => '/api',
@@ -72,6 +73,7 @@ if (typeof (globalThis as any).window === 'undefined') {
 }
 
 beforeEach(() => {
+  i18n.global.locale.value = 'en'
   localStorageStub.clear()
   setActivePinia(createPinia())
   _resetAgent()   // reset singleton so each test gets a fresh instance
@@ -393,19 +395,37 @@ describe('useAgent.runLoop', () => {
   // ─── Scenario 10: RUN_ERROR → transient sticky toast, NOT persisted ──────────
 
   it('RUN_ERROR → sticky error toast, not committed to chat history', async () => {
-    const { toasts } = useToast()
-    toasts.splice(0)   // module-level singleton — clear any prior toast
+    const { toasts } = useToast(); toasts.splice(0)
     const fake = makeFakeAgent(() => ({ error: { code: 'agent.error.no_model', message: 'no model configured' } }))
 
     const { sendUserText, messages } = useAgent({ agentFactory: fake.factory })
     await sendUserText('hello')
 
-    // Error is transient: NO assistant message committed to history
     expect(messages.value.map(m => m.role)).toEqual(['user'])
-    // Exactly one sticky (duration:0) error toast carrying friendly text + backend message
     expect(toasts).toHaveLength(1)
     expect(toasts[0].type).toBe('error')
-    expect(toasts[0].message).toMatch(/no model configured/)
+    expect(toasts[0].message).toBe('No assistant model configured')
+    expect(useAgentStore().runError).toBe('No assistant model configured')
+  })
+
+  it('RUN_ERROR with an unmapped code → generic friendly fallback (never raw key)', async () => {
+    const { toasts } = useToast(); toasts.splice(0)
+    const fake = makeFakeAgent(() => ({ error: { code: 'agent.error.some_unmapped', message: 'boom' } }))
+    const store = useAgentStore()
+    const { sendUserText } = useAgent({ agentFactory: fake.factory })
+    await sendUserText('hi')
+    expect(toasts[0].message).toBe('The assistant hit an error, please try again later.')
+    expect(store.runError).toBe('The assistant hit an error, please try again later.')
+    expect(toasts[0].message).not.toContain('agent.error')
+  })
+
+  it('sendUserText clears a prior runError label', async () => {
+    const store = useAgentStore()
+    store.setRunError('previous error')
+    const fake = makeFakeAgent(() => ({ textDeltas: ['hi'] }))
+    const { sendUserText } = useAgent({ agentFactory: fake.factory })
+    await sendUserText('again')
+    expect(store.runError).toBeNull()
   })
 
   // ─── Scenario 11: cancelRun during confirm → outerStop → no round 2 ──────────

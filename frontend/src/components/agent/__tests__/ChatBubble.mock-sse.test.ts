@@ -196,7 +196,7 @@ describe('ChatBubble mock-SSE smoke', () => {
     const msgs: any[] = [confirmMsg]
 
     const wrapper = mount(ChatMessages, {
-      props: { messages: msgs, transient: null, isRunning: false },
+      props: { messages: msgs, transient: null, isRunning: false, runError: null },
       global: globalPlugins(),
     })
 

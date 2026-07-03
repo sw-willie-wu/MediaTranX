@@ -210,6 +210,7 @@ onBeforeUnmount(() => {
           :messages="agent.messages.value"
           :transient="store.transient"
           :is-running="store.isRunning"
+          :run-error="store.runError"
         />
         <ChatInput
           :disabled="store.isRunning"

@@ -231,6 +231,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
   // ─── Public API ──────────────────────────────────────────────────
 
   async function sendUserText(text: string) {
+    store.clearRunError()
     await commitMessage({ role: 'user', content: text })
     invalidFieldStrikes = 0
     outerStop = false
@@ -253,6 +254,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
     messages.value = []
     agent = null              // recreate with fresh threadId next run
     store.resetTokens()
+    store.clearRunError()
     invalidFieldStrikes = 0
     outerStop = false
     actedThisTurn = false
@@ -315,6 +317,7 @@ function _createAgent(deps: UseAgentDeps = {}) {
     threadId.value = id
     agent = null               // recreate HttpAgent for this thread id
     store.resetTokens()        // token counts aren't persisted; clear the running total
+    store.clearRunError()
     invalidFieldStrikes = 0
     outerStop = false
     actedThisTurn = false
@@ -431,17 +434,17 @@ function _createAgent(deps: UseAgentDeps = {}) {
           outerStop = true
           break
         }
-        if (runError) {                        // 4b: backend RUN_ERROR → transient toast (not persisted)
+        if (runError) {                        // 4b: backend RUN_ERROR → friendly toast + transient in-conversation label
           store.clearTransient()
-          // Cast needed: TS can't narrow a closure-mutated `let` across the await.
           const re = runError as { code?: string; message?: string }
           const code = re.code ?? 'agent.error.internal'
           const translated = translate(code)
-          const friendly = translated === code ? code : translated
-          const suffix = re.message ? ` (${re.message})` : ''
-          // Infra hiccup — surface as a sticky (duration:0) error toast the user
-          // dismisses; do NOT commitMessage (would pollute chat history + DB).
-          toast.show(`${friendly}${suffix}`, { type: 'error', duration: 0 })
+          // Never surface a raw i18n key: fall back to the generic friendly message.
+          const friendly = translated === code ? translate('agent.error.generic') : translated
+          // Raw technical detail → log only (backend also logs server-side); never in the UI.
+          console.error('[agent] RUN_ERROR', code, re.message ?? '')
+          toast.show(friendly, { type: 'error', duration: 0 })
+          store.setRunError(friendly)          // transient label below the last message (not persisted)
           outerStop = true
           break
         }
