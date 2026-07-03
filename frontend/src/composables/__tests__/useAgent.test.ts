@@ -29,6 +29,7 @@ import { makeFakeAgent } from '@/composables/__tests__/_fakeAgent'
 import { apiFetch } from '@/composables/useApi'
 import type { ActivePanelEntry } from '@/composables/useActivePanel'
 import type { PanelHandle } from '@/stores/panelRegistry'
+import { useToast } from '@/composables/useToast'
 
 vi.mock('@/composables/useApi', () => ({
   getApiBase: () => '/api',
@@ -386,24 +387,22 @@ describe('useAgent.runLoop', () => {
     expect(wireAssistant.toolCalls[0].id).toBe('tc1')
   })
 
-  // ─── Scenario 10: RUN_ERROR produces exactly 1 assistant message ─────────────
+  // ─── Scenario 10: RUN_ERROR → transient sticky toast, NOT persisted ──────────
 
-  it('RUN_ERROR does not duplicate assistant message', async () => {
+  it('RUN_ERROR → sticky error toast, not committed to chat history', async () => {
+    const { toasts } = useToast()
+    toasts.splice(0)   // module-level singleton — clear any prior toast
     const fake = makeFakeAgent(() => ({ error: { code: 'agent.error.no_model', message: 'no model configured' } }))
 
     const { sendUserText, messages } = useAgent({ agentFactory: fake.factory })
     await sendUserText('hello')
 
-    const assistantMessages = messages.value.filter(m => m.role === 'assistant')
-    // Must be exactly 1 — the formatted error one, NOT an extra empty follow-up
-    expect(assistantMessages).toHaveLength(1)
-    const msg = assistantMessages[0] as any
-    // useAgent now formats RUN_ERROR via i18n: either translated text or raw
-    // code when no translation, followed by the backend message in parens.
-    // Both `agent.error.no_model` (raw code if i18n absent) and the en/zh-TW
-    // translations are acceptable; the backend message must always be there.
-    expect(msg.content).toMatch(/no model configured/)
-    expect(msg.content).toMatch(/agent\.error\.no_model|No agent model configured|尚未設定/)
+    // Error is transient: NO assistant message committed to history
+    expect(messages.value.map(m => m.role)).toEqual(['user'])
+    // Exactly one sticky (duration:0) error toast carrying friendly text + backend message
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0].type).toBe('error')
+    expect(toasts[0].message).toMatch(/no model configured/)
   })
 
   // ─── Scenario 11: cancelRun during confirm → outerStop → no round 2 ──────────

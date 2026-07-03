@@ -32,6 +32,7 @@ import type { ViewHandle } from '@/stores/viewRegistry'
 import { buildAgentStateSnapshot } from '@/composables/useAgentState'
 import { routeForView } from '@/agent/agentNavCatalog'
 import { useFilesStore } from '@/stores/files'
+import { useToast } from '@/composables/useToast'
 
 // i18n.global.t lazy resolve (unchanged from original).
 let _t: ((k: string) => string) | null = null
@@ -199,6 +200,7 @@ export function useAgent(deps: UseAgentDeps = {}): ReturnType<typeof _createAgen
 function _createAgent(deps: UseAgentDeps = {}) {
   const settings = useAgentSettingsStore()
   const store = useAgentStore()
+  const toast = useToast()
   const tools = deps.tools ?? useAgentTools()
   const makeAgent = deps.agentFactory ?? ((cfg: { url: string; threadId?: string }) => new HttpAgent(cfg) as unknown as AgentLike)
 
@@ -410,16 +412,17 @@ function _createAgent(deps: UseAgentDeps = {}) {
           outerStop = true
           break
         }
-        if (runError) {                        // 4b: backend RUN_ERROR
+        if (runError) {                        // 4b: backend RUN_ERROR → transient toast (not persisted)
           store.clearTransient()
-          // Cast needed: TS can't narrow a closure-mutated `let` across the
-          // await, collapsing it to `never` at this guard. Extract once.
+          // Cast needed: TS can't narrow a closure-mutated `let` across the await.
           const re = runError as { code?: string; message?: string }
           const code = re.code ?? 'agent.error.internal'
           const translated = translate(code)
           const friendly = translated === code ? code : translated
           const suffix = re.message ? ` (${re.message})` : ''
-          await commitMessage({ role: 'assistant', content: `${friendly}${suffix}` })
+          // Infra hiccup — surface as a sticky (duration:0) error toast the user
+          // dismisses; do NOT commitMessage (would pollute chat history + DB).
+          toast.show(`${friendly}${suffix}`, { type: 'error', duration: 0 })
           outerStop = true
           break
         }
