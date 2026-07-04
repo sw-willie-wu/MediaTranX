@@ -7,9 +7,11 @@ import AppToast from './components/AppToast.vue'
 import AppConfirmDialog from './components/common/AppConfirmDialog.vue'
 import ChatBubble from './components/agent/ChatBubble.vue'
 import UrlDownloadCard from './components/common/UrlDownloadCard.vue'
+import UpdateModal from './components/UpdateModal.vue'
 import { useTheme } from './composables/useTheme'
 import { useResultsStore } from './stores/results'
 import { useVideoDownloadStore } from './stores/videoDownload'
+import { useUpdateStore } from './stores/update'
 
 const router = useRouter()
 
@@ -22,6 +24,10 @@ const resultsStore = useResultsStore()
 // Video download store — boot fail-closed (enabled=false until load() resolves)
 const videoDownloadStore = useVideoDownloadStore()
 
+// Update store — subscribe to main's startup auto-check push as early as
+// possible so the update-available event is never missed.
+const updateStore = useUpdateStore()
+
 function removeSplash() {
   const overlay = document.getElementById('splash-overlay')
   if (overlay) {
@@ -32,6 +38,9 @@ function removeSplash() {
 
 // Vue 掛載後處理 splash
 onMounted(async () => {
+  // Subscribe FIRST (before any await) so the boot auto-check push isn't missed.
+  updateStore.init()
+
   await router.isReady()
 
   if (router.currentRoute.value.path === '/' && !window.location.hash) {
@@ -63,6 +72,7 @@ onMounted(async () => {
     <AppConfirmDialog />
     <ChatBubble />
     <UrlDownloadCard />
+    <UpdateModal />
   </div>
 </template>
 
