@@ -2,10 +2,13 @@
 Logging configuration.
 """
 import logging
+import os
 import re
 from pathlib import Path
 
 LOG_FORMAT = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+
+_VALID_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
 # Secret query-string params whose VALUE must never be written to a log.
 # uvicorn's access log records the full request line (incl. query string), so
@@ -85,7 +88,17 @@ def apply_runtime_levels(mode: str) -> None:
     reach the root StreamHandler (stderr, which Electron pipes into app.log).
     They are NOT written to core_error.log, whose FileHandler stays
     WARNING-level. dev: DEBUG everywhere.
+
+    MEDIATRANX_LOG_LEVEL (case-insensitive) overrides both if present and valid—
+    dev channel's packaged build injects debug via Electron to improve problem
+    report diagnostics.
     """
+    override = os.environ.get("MEDIATRANX_LOG_LEVEL", "").strip().upper()
+    if override in _VALID_LEVELS:
+        level = getattr(logging, override)
+        logging.getLogger().setLevel(level)
+        logging.getLogger("app").setLevel(level)
+        return
     is_dev = mode == "dev"
     logging.getLogger().setLevel(logging.DEBUG if is_dev else logging.WARNING)
     logging.getLogger("app").setLevel(logging.DEBUG if is_dev else logging.INFO)
