@@ -5,6 +5,8 @@ import {
   DEFAULT_AUTO_WHITELIST,
   DEFAULT_ALWAYS_ASK,
   AGENT_SETTINGS_KEY,
+  POLICY_ORDER,
+  nextPolicy,
 } from '../agentSettings'
 
 // Reset localStorage and Pinia between each test to avoid state bleed
@@ -239,6 +241,24 @@ describe('m3 migration: union(stored, DEFAULTS) - userRemovedTools', () => {
     for (const t of DEFAULT_AUTO_WHITELIST) {
       expect(store.autoWhitelist.has(t)).toBe(true)
     }
+  })
+})
+
+describe('POLICY_ORDER / nextPolicy — cycling order', () => {
+  it('POLICY_ORDER is the canonical 4-mode order', () => {
+    expect([...POLICY_ORDER]).toEqual(['standard', 'full_auto', 'ask', 'custom'])
+  })
+
+  it('nextPolicy advances through the order and wraps', () => {
+    expect(nextPolicy('standard')).toBe('full_auto')
+    expect(nextPolicy('full_auto')).toBe('ask')
+    expect(nextPolicy('ask')).toBe('custom')
+    expect(nextPolicy('custom')).toBe('standard')  // wrap
+  })
+
+  it('nextPolicy falls back to "standard" for an unknown value', () => {
+    // @ts-expect-error — deliberately passing an out-of-union value
+    expect(nextPolicy('bogus')).toBe('standard')
   })
 })
 

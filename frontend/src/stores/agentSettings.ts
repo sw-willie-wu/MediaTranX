@@ -60,14 +60,22 @@ export const AGENT_SETTINGS_KEY = 'agent_settings'
 
 export type AgentPolicy = 'standard' | 'full_auto' | 'ask' | 'custom'
 
+/**
+ * Policy 顯示/輪循順序 —— badge（點擊輪循）與設定頁 radio 共用的單一真實來源。
+ * 順序即為 UI 呈現與 nextPolicy() 的環狀順序。
+ */
+export const POLICY_ORDER: readonly AgentPolicy[] = ['standard', 'full_auto', 'ask', 'custom']
+
+/** 回傳輪循的下一個 policy；未知值（indexOf=-1）→ 'standard'。 */
+export function nextPolicy(current: AgentPolicy): AgentPolicy {
+  const i = POLICY_ORDER.indexOf(current)
+  return POLICY_ORDER[(i + 1) % POLICY_ORDER.length]
+}
+
 // ─── Legacy policy migration ──────────────────────────────────────────────────
 
-const VALID_POLICIES: ReadonlySet<string> = new Set([
-  'standard',
-  'full_auto',
-  'ask',
-  'custom',
-])
+// 由 POLICY_ORDER 衍生，避免兩份清單漂移（Set 只用 .has()，順序無關）。
+const VALID_POLICIES: ReadonlySet<string> = new Set<string>(POLICY_ORDER)
 
 /** 舊 policy 值 → 新值（行為等價：auto=只問 execute=standard；ask_all=全問=ask） */
 const LEGACY_POLICY_MAP: Record<string, AgentPolicy> = {

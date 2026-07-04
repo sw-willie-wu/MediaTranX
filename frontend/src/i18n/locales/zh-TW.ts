@@ -1223,6 +1223,13 @@ export default {
       show: '顯示 智慧助手 對話泡泡',
       hide: '隱藏 智慧助手 對話泡泡',
       abort: '中止',
+      policy_tooltip: '確認策略：{mode}（點擊切換）',
+      policy_short: {
+        standard: '標準',
+        full_auto: '自動',
+        ask: '詢問',
+        custom: '自訂',
+      },
     },
     session: {
       new_chat: '新對話',

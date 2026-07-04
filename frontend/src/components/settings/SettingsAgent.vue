@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useAgentSettingsStore } from '@/stores/agentSettings'
+import { useAgentSettingsStore, POLICY_ORDER } from '@/stores/agentSettings'
 import { useModelStore } from '@/stores/models'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelOptions } from '@/composables/useModelOptions'
@@ -44,12 +44,13 @@ const localToolModels = computed<SelectOption[]>(() =>
 
 const { mergedOptions } = useModelOptions('tools', localToolModels)
 
-const POLICY_OPTIONS = computed(() => [
-  { value: 'standard',  label: t('settings.agent.policy.standard'),  desc: t('settings.agent.policy.standard_desc') },
-  { value: 'full_auto', label: t('settings.agent.policy.full_auto'), desc: t('settings.agent.policy.full_auto_desc') },
-  { value: 'ask',       label: t('settings.agent.policy.ask'),       desc: t('settings.agent.policy.ask_desc') },
-  { value: 'custom',    label: t('settings.agent.policy.custom'),    desc: t('settings.agent.policy.custom_desc') },
-] as const)
+const POLICY_OPTIONS = computed(() =>
+  POLICY_ORDER.map(v => ({
+    value: v,
+    label: t(`settings.agent.policy.${v}`),
+    desc: t(`settings.agent.policy.${v}_desc`),
+  })),
+)
 
 // All 9 tools for per-tool policy
 interface ToolEntry {
@@ -101,7 +102,7 @@ function setModel(val: string) {
 
 // ── Agent panel host (settings.agent) ────────────────────────────────────────
 
-const POLICY_VALUES = ['standard', 'full_auto', 'ask', 'custom'] as const
+const POLICY_VALUES = POLICY_ORDER
 
 useAgentPanelHost('settings.agent', {
   agentSchema: {

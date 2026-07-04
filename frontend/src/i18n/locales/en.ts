@@ -1223,6 +1223,13 @@ export default {
       show: 'Show chat bubble',
       hide: 'Hide chat bubble',
       abort: 'Stop',
+      policy_tooltip: 'Confirmation policy: {mode} (click to cycle)',
+      policy_short: {
+        standard: 'Standard',
+        full_auto: 'Auto',
+        ask: 'Ask',
+        custom: 'Custom',
+      },
     },
     session: {
       new_chat: 'New chat',
