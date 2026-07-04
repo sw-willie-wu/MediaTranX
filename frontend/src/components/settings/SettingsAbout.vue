@@ -24,7 +24,6 @@ const updateStatusText = computed(() => {
   if (update.status === 'up-to-date') {
     return t('settings.about.update.up_to_date', { version: update.latest })
   }
-  if (update.status === 'dev') return t('settings.about.update.dev_build')
   if (update.status === 'error') {
     const key = CHECK_ERR_KEYS.includes(update.lastError ?? '') ? update.lastError : 'generic'
     return t(`settings.about.update.err.${key}`)
@@ -183,6 +182,7 @@ useAgentPanelHost('settings.about', {
       <span v-if="updateStatusText" class="update-status" :class="{ error: update.status === 'error' }">
         {{ updateStatusText }}
       </span>
+      <span v-if="update.channel === 'dev'" class="dev-channel-tag">{{ t('settings.about.update.channel_dev') }}</span>
     </div>
     <div v-if="update.downloading" class="reinstall-progress">
       <div class="reinstall-bar">
@@ -418,6 +418,15 @@ useAgentPanelHost('settings.about', {
   color: var(--text-muted);
 
   &.error { color: var(--color-danger); }
+}
+
+.dev-channel-tag {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-left: 8px;
 }
 
 .about-footer {

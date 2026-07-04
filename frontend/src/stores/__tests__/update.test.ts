@@ -152,4 +152,20 @@ describe('useUpdateStore', () => {
     // nothing threw; status untouched from idle
     expect(store.status).toBe('idle')
   })
+
+  it('applyResult via checkManually records channel and suffixed latest', async () => {
+    ;(window as any).electron = makeElectron({
+      checkForUpdates: vi.fn(async () => ({
+        status: 'update-available',
+        channel: 'dev',
+        current: '1.5.2',
+        latest: '1.6.0-dev.4',
+        asset: { name: 'x', size: 1, browser_download_url: 'u' },
+      })),
+    })
+    const s = await freshStore()
+    await s.checkManually()
+    expect(s.channel).toBe('dev')
+    expect(s.latest).toBe('1.6.0-dev.4') // 後綴保留（MAJOR-1 驗收）
+  })
 })

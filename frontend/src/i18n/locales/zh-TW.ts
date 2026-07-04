@@ -1078,7 +1078,7 @@ export default {
         check_btn: '檢查更新',
         checking: '檢查中…',
         up_to_date: '已是最新版本 v{version}',
-        dev_build: '開發版不檢查更新',
+        channel_dev: '開發版通道',
         found: '發現新版本 v{version}，是否更新？',
         cancel: '取消',
         download_only: '僅下載',

@@ -14,7 +14,6 @@ export type UpdateStatus =
   | 'checking'
   | 'update-available'
   | 'up-to-date'
-  | 'dev'
   | 'error'
 
 // Module-level so App.vue's init() subscribes exactly once even if called again.
@@ -22,6 +21,7 @@ let subscribed = false
 
 export const useUpdateStore = defineStore('update', () => {
   const status = ref<UpdateStatus>('idle')
+  const channel = ref<'dev' | 'stable' | null>(null)
   const current = ref('')
   const latest = ref('')
   const lastError = ref<string | null>(null)
@@ -38,6 +38,7 @@ export const useUpdateStore = defineStore('update', () => {
 
   function applyResult(r: UpdateCheckResult) {
     status.value = r.status as UpdateStatus
+    if (r.channel) channel.value = r.channel
     if (r.current) current.value = r.current
     if (r.latest) latest.value = r.latest
     lastError.value = r.status === 'error' ? (r.error ?? 'generic') : null
@@ -143,6 +144,7 @@ export const useUpdateStore = defineStore('update', () => {
 
   return {
     status,
+    channel,
     current,
     latest,
     lastError,

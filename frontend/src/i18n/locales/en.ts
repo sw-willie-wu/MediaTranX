@@ -1078,7 +1078,7 @@ export default {
         check_btn: 'Check for updates',
         checking: 'Checking…',
         up_to_date: 'Up to date (v{version})',
-        dev_build: 'Update check is disabled in dev builds',
+        channel_dev: 'Dev channel',
         found: 'New version v{version} available. Update?',
         cancel: 'Cancel',
         download_only: 'Download only',

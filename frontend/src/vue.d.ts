@@ -51,7 +51,8 @@ interface UpdateAsset {
 }
 
 interface UpdateCheckResult {
-  status: 'dev' | 'up-to-date' | 'update-available' | 'error'
+  status: 'up-to-date' | 'update-available' | 'error'
+  channel?: 'dev' | 'stable'
   current?: string
   latest?: string
   asset?: UpdateAsset | null
