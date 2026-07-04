@@ -12,7 +12,7 @@ const i18n = createI18n({
   messages: {
     en: {
       settings: {
-        about: {
+        general: {
           update: {
             found: 'New version v{version} available. Update?',
             cancel: 'Cancel',

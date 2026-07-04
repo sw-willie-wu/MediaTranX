@@ -1057,20 +1057,6 @@ export default {
       confirm_clear_temp: 'Clear all temp files (including unsaved results)?',
       restart_section: 'Restart',
       restart_app: 'Restart Application',
-    },
-
-    about: {
-      version: 'Version {version}',
-      description: 'Local AI-powered multimedia processing tool. Supports video subtitle extraction, translation, audio processing, image processing, and more. All AI models run locally — no data uploaded to the cloud, protecting your privacy.',
-      support: 'Support & Links',
-      github: 'GitHub',
-      feedback: 'Feedback',
-      website: 'Website',
-      components: 'Components',
-      credits: 'Credits',
-      credits_intro: 'MediaTranX is built on many excellent open-source technologies:',
-      credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, Llama-cpp-python, etc.',
-      copyright: '© 2026 MediaTranX Project. All rights reserved.',
       update: {
         title: 'Software update',
         auto_label: 'Auto-check for updates',
@@ -1095,6 +1081,20 @@ export default {
           generic: 'Update check failed',
         },
       },
+    },
+
+    about: {
+      version: 'Version {version}',
+      description: 'Local AI-powered multimedia processing tool. Supports video subtitle extraction, translation, audio processing, image processing, and more. All AI models run locally — no data uploaded to the cloud, protecting your privacy.',
+      support: 'Support & Links',
+      github: 'GitHub',
+      feedback: 'Feedback',
+      website: 'Website',
+      components: 'Components',
+      credits: 'Credits',
+      credits_intro: 'MediaTranX is built on many excellent open-source technologies:',
+      credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, Llama-cpp-python, etc.',
+      copyright: '© 2026 MediaTranX Project. All rights reserved.',
     },
 
     system: {

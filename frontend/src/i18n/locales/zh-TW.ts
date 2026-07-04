@@ -1057,20 +1057,6 @@ export default {
       confirm_clear_temp: '將清除所有暫存檔（包含尚未另存的產出），確定？',
       restart_section: '重新啟動',
       restart_app: '重新啟動應用程式',
-    },
-
-    about: {
-      version: '版本 {version}',
-      description: '本地 AI 驅動的多媒體處理工具，支援影片字幕提取、翻譯、音訊處理、圖片處理等功能。所有 AI 模型均在本機運行，無需上傳資料至雲端，保護您的隱私。',
-      support: '支援與連結',
-      github: 'GitHub',
-      feedback: '意見回饋',
-      website: '官方網站',
-      components: '元件資訊',
-      credits: '技術致謝',
-      credits_intro: 'MediaTranX 建立在眾多卓越的開源技術之上：',
-      credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, Llama-cpp-python 等。',
-      copyright: '© 2026 MediaTranX Project. All rights reserved.',
       update: {
         title: '程式更新',
         auto_label: '自動檢查更新',
@@ -1095,6 +1081,20 @@ export default {
           generic: '檢查更新失敗',
         },
       },
+    },
+
+    about: {
+      version: '版本 {version}',
+      description: '本地 AI 驅動的多媒體處理工具，支援影片字幕提取、翻譯、音訊處理、圖片處理等功能。所有 AI 模型均在本機運行，無需上傳資料至雲端，保護您的隱私。',
+      support: '支援與連結',
+      github: 'GitHub',
+      feedback: '意見回饋',
+      website: '官方網站',
+      components: '元件資訊',
+      credits: '技術致謝',
+      credits_intro: 'MediaTranX 建立在眾多卓越的開源技術之上：',
+      credits_list: 'Vue 3, Vite, Electron, FFmpeg, OpenAI Whisper, Real-ESRGAN, Llama-cpp-python 等。',
+      copyright: '© 2026 MediaTranX Project. All rights reserved.',
     },
 
     system: {

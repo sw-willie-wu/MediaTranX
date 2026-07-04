@@ -9,6 +9,7 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
+import { useUpdateStore } from '@/stores/update'
 
 const { locale, t } = useI18n()
 const { themeMode, setTheme } = useTheme()
@@ -100,6 +101,28 @@ async function selectTempDir() {
 
 function restartApp() {
   window.electron?.restart()
+}
+
+// ── Software update ──────────────────────────────────────────────────────────
+const update = useUpdateStore()
+const FREQ_OPTIONS: UpdateFrequency[] = ['startup', 'weekly', 'monthly', 'never']
+const CHECK_ERR_KEYS = ['network', 'rate_limit', 'no_asset', 'generic']
+
+// Status line under the check button. Empty while idle/checking (the button
+// itself shows the checking state).
+const updateStatusText = computed(() => {
+  if (update.status === 'up-to-date') {
+    return t('settings.general.update.up_to_date', { version: update.latest })
+  }
+  if (update.status === 'error') {
+    const key = CHECK_ERR_KEYS.includes(update.lastError ?? '') ? update.lastError : 'generic'
+    return t(`settings.general.update.err.${key}`)
+  }
+  return ''
+})
+
+function onFreqChange(e: Event) {
+  update.setFrequency((e.target as HTMLSelectElement).value as UpdateFrequency)
 }
 
 // ── 暫存狀態 ──────────────────────────────────────────────────
@@ -247,6 +270,46 @@ useAgentPanelHost('settings.general', {
     </button>
   </div>
 
+  <!-- Software update -->
+  <h6 class="section-title mt">{{ $t('settings.general.update.title') }}</h6>
+  <div class="update-section">
+    <div class="update-row">
+      <label class="update-auto-label">{{ $t('settings.general.update.auto_label') }}</label>
+      <select class="update-freq-select" :value="update.frequency" @change="onFreqChange">
+        <option v-for="f in FREQ_OPTIONS" :key="f" :value="f">
+          {{ $t(`settings.general.update.freq.${f}`) }}
+        </option>
+      </select>
+    </div>
+    <div class="update-row">
+      <button
+        class="btn-secondary"
+        :disabled="update.status === 'checking' || update.downloading"
+        @click="update.checkManually()"
+      >
+        <i class="bi bi-arrow-repeat"></i>
+        {{ update.status === 'checking' ? $t('settings.general.update.checking') : $t('settings.general.update.check_btn') }}
+      </button>
+      <span v-if="updateStatusText" class="update-status" :class="{ error: update.status === 'error' }">
+        {{ updateStatusText }}
+      </span>
+      <span v-if="update.channel === 'dev'" class="dev-channel-tag">{{ t('settings.general.update.channel_dev') }}</span>
+    </div>
+    <div v-if="update.downloading" class="update-progress">
+      <div class="update-bar">
+        <div class="update-fill" :style="{ width: update.downloadPercent + '%' }"></div>
+      </div>
+      <span class="update-detail">
+        {{ $t('settings.general.update.downloading', { percent: update.downloadPercent }) }}
+      </span>
+    </div>
+    <div v-else-if="update.pendingInstaller" class="update-row">
+      <button class="btn-primary" @click="update.installNow()">
+        <i class="bi bi-box-arrow-down"></i> {{ $t('settings.general.update.install_now') }}
+      </button>
+    </div>
+  </div>
+
   <h6 class="section-title mt">{{ $t('settings.general.restart_section') }}</h6>
 
   <div class="setting-item">
@@ -283,6 +346,76 @@ useAgentPanelHost('settings.general', {
   color: var(--text-muted);
   margin: 0.15rem 0 0 0;
   &.setting-hint-warn { color: var(--color-warning); }
+}
+
+.update-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.update-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.update-auto-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.update-freq-select {
+  background: var(--input-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.update-status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+
+  &.error { color: var(--color-danger); }
+}
+
+.dev-channel-tag {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-left: 8px;
+}
+
+.update-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.update-bar {
+  height: 4px;
+  background: var(--input-bg);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.update-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.3s ease;
+}
+
+.update-detail {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 .temp-stats-row {

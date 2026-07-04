@@ -102,7 +102,7 @@ export const useUpdateStore = defineStore('update', () => {
         lastError.value = r.error
         // While the modal is open the error is shown inline in it (toasts render
         // behind the modal backdrop); only toast when no modal is covering it.
-        if (!modalVisible.value) show(t('settings.about.update.download_failed'), { type: 'error' })
+        if (!modalVisible.value) show(t('settings.general.update.download_failed'), { type: 'error' })
         return
       }
       pendingInstaller.value = r.path ?? null
@@ -110,12 +110,12 @@ export const useUpdateStore = defineStore('update', () => {
         await installNow()
       } else {
         modalVisible.value = false
-        show(t('settings.about.update.download_done'), { type: 'success' })
+        show(t('settings.general.update.download_done'), { type: 'success' })
       }
     } catch {
       downloading.value = false
       lastError.value = 'network'
-      if (!modalVisible.value) show(t('settings.about.update.download_failed'), { type: 'error' })
+      if (!modalVisible.value) show(t('settings.general.update.download_failed'), { type: 'error' })
     }
   }
 
@@ -129,12 +129,12 @@ export const useUpdateStore = defineStore('update', () => {
       installing.value = false
       if (r?.error) {
         lastError.value = r.error
-        if (!modalVisible.value) show(t('settings.about.update.install_failed'), { type: 'error' })
+        if (!modalVisible.value) show(t('settings.general.update.install_failed'), { type: 'error' })
       }
     } catch {
       installing.value = false
       lastError.value = 'launch'
-      if (!modalVisible.value) show(t('settings.about.update.install_failed'), { type: 'error' })
+      if (!modalVisible.value) show(t('settings.general.update.install_failed'), { type: 'error' })
     }
   }
 
