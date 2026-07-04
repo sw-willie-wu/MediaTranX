@@ -13,14 +13,18 @@ const fs = require('fs');
 const path = require('path');
 const core = require('./updateCore.cjs');
 
-const GITHUB_API =
+const GITHUB_API_LATEST =
   'https://api.github.com/repos/sw-willie-wu/MediaTranX/releases/latest';
+const GITHUB_API_LIST =
+  'https://api.github.com/repos/sw-willie-wu/MediaTranX/releases?per_page=30';
 
 let appDataPath = null;
+let buildMode = 'prod';
 
-/** Inject the base data dir (main's getAppDataPath()). Call once at startup. */
+/** Inject base data dir + build-time channel stamp. Call once at startup. */
 function configure(opts) {
   appDataPath = opts.appDataPath;
+  buildMode = opts.buildMode || 'prod';
 }
 
 function prefsPath() {
@@ -63,37 +67,39 @@ function setPendingInstaller(p) {
 }
 
 /**
- * Check GitHub /releases/latest (full releases only). Returns:
- *   {status:'dev'|'up-to-date'|'update-available'|'error', current, latest?, asset?, error?}
- * dev is gated on !app.isPackaged (getVersion() returns the real version even
- * unpackaged, so it can't be used to detect dev).
+ * Check GitHub for updates on this build's channel:
+ *   stable → /releases/latest (GitHub already excludes prereleases)
+ *   dev    → /releases list, pick the highest version (incl. prereleases)
+ * Returns {status:'up-to-date'|'update-available'|'error', channel, current,
+ *          latest?, asset?, error?}. `latest` keeps the -dev.N suffix so a
+ *          dev.3→dev.4 bump is visible in the UI.
  */
 async function checkForUpdates() {
   const current = app.getVersion();
-  if (!app.isPackaged) return { status: 'dev', current };
-  // Split fetch (network errors) from parse (generic) so the error taxonomy
-  // matches spec §3.2/§6: fetch-throw → 'network', bad payload → 'generic'.
+  const channel = core.resolveChannel(app.isPackaged, buildMode);
   let res;
   try {
-    res = await net.fetch(GITHUB_API, {
+    res = await net.fetch(channel === 'dev' ? GITHUB_API_LIST : GITHUB_API_LATEST, {
       headers: { 'User-Agent': 'MediaTranX', Accept: 'application/vnd.github+json' },
     });
   } catch (_) {
-    return { status: 'error', current, error: 'network' };
+    return { status: 'error', channel, current, error: 'network' };
   }
   if (!res.ok) {
-    return { status: 'error', current, error: res.status === 403 ? 'rate_limit' : 'generic' };
+    return { status: 'error', channel, current, error: res.status === 403 ? 'rate_limit' : 'generic' };
   }
   try {
     const json = await res.json();
-    const { tag, version, asset } = core.parseLatestRelease(json);
+    const release = channel === 'dev' ? core.pickLatestFromList(json) : json;
+    if (!release) return { status: 'error', channel, current, error: 'generic' };
+    const { tag, displayVersion, asset } = core.parseLatestRelease(release);
     if (!core.isUpdateAvailable(current, tag)) {
-      return { status: 'up-to-date', current, latest: version };
+      return { status: 'up-to-date', channel, current, latest: displayVersion };
     }
-    if (!asset) return { status: 'error', current, latest: version, error: 'no_asset' };
-    return { status: 'update-available', current, latest: version, asset };
+    if (!asset) return { status: 'error', channel, current, latest: displayVersion, error: 'no_asset' };
+    return { status: 'update-available', channel, current, latest: displayVersion, asset };
   } catch (_) {
-    return { status: 'error', current, error: 'generic' };
+    return { status: 'error', channel, current, error: 'generic' };
   }
 }
 
