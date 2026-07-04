@@ -44,6 +44,62 @@ function compareVersions(a, b) {
 }
 
 /**
+ * Which update channel this build follows. Unpackaged (local dev) is always
+ * 'dev'; packaged builds follow the buildMode stamped into package.json at
+ * build time. Anything other than exactly 'dev' → 'stable' (fail-safe: a
+ * forgotten stamp must never feed prereleases to stable users).
+ */
+function resolveChannel(isPackaged, buildMode) {
+  if (!isPackaged) return 'dev';
+  return buildMode === 'dev' ? 'dev' : 'stable';
+}
+
+/**
+ * Split "v1.6.0-dev.4" into { main:'1.6.0', pre:4 }. pre is:
+ *   null     → stable (no suffix)
+ *   number   → dev.N prerelease
+ *   -1       → unparseable suffix (repo never emits these; ranked oldest)
+ */
+function parsePrerelease(v) {
+  let s = String(v).trim();
+  if (s[0] === 'v' || s[0] === 'V') s = s.slice(1);
+  const dash = s.indexOf('-');
+  if (dash === -1) return { main: s, pre: null };
+  const m = /^dev\.(\d+)$/i.exec(s.slice(dash + 1));
+  return { main: s.slice(0, dash), pre: m ? Number(m[1]) : -1 };
+}
+
+/**
+ * Prerelease-aware compare, supporting only this repo's tag shapes
+ * (vX.Y.Z / vX.Y.Z-dev.N). x.y.z decides first (suffix never crosses that);
+ * within the same x.y.z: stable > dev.N (numeric) > unknown suffix.
+ */
+function compareVersionsFull(a, b) {
+  const pa = parsePrerelease(a);
+  const pb = parsePrerelease(b);
+  const c = compareVersions(pa.main, pb.main);
+  if (c !== 0) return c;
+  const ra = pa.pre === null ? Infinity : pa.pre;
+  const rb = pb.pre === null ? Infinity : pb.pre;
+  return ra > rb ? 1 : ra < rb ? -1 : 0;
+}
+
+/**
+ * Pick the highest-version release from a GitHub /releases list (does not
+ * rely on API ordering). Entries without a usable tag_name are skipped.
+ * Returns the raw release object or null.
+ */
+function pickLatestFromList(releases) {
+  if (!Array.isArray(releases)) return null;
+  let best = null;
+  for (const r of releases) {
+    if (!r || typeof r.tag_name !== 'string' || !normalizeVersion(r.tag_name)) continue;
+    if (!best || compareVersionsFull(r.tag_name, best.tag_name) > 0) best = r;
+  }
+  return best;
+}
+
+/**
  * True iff `latestTag` is a strictly newer version than `current`.
  * Either side unparseable → false (never offer an update we can't reason about).
  */
@@ -51,7 +107,7 @@ function isUpdateAvailable(current, latestTag) {
   const c = normalizeVersion(current);
   const l = normalizeVersion(latestTag);
   if (!c || !l) return false;
-  return compareVersions(l, c) > 0;
+  return compareVersionsFull(latestTag, current) > 0;
 }
 
 /**
@@ -71,16 +127,19 @@ function pickInstallerAsset(assets) {
 }
 
 /**
- * Parse a GitHub /releases/latest JSON payload into { tag, version, asset }.
+ * Parse a GitHub /releases/latest JSON payload into { tag, version, displayVersion, asset }.
  * Throws if tag_name is missing (treated as a parse error upstream).
  */
 function parseLatestRelease(json) {
   if (!json || typeof json.tag_name !== 'string' || json.tag_name === '') {
     throw new Error('missing tag_name');
   }
+  let display = json.tag_name.trim();
+  if (display[0] === 'v' || display[0] === 'V') display = display.slice(1);
   return {
     tag: json.tag_name,
     version: normalizeVersion(json.tag_name),
+    displayVersion: display,
     asset: pickInstallerAsset(json.assets || []),
   };
 }
@@ -110,4 +169,7 @@ module.exports = {
   pickInstallerAsset,
   parseLatestRelease,
   isCheckDue,
+  resolveChannel,
+  compareVersionsFull,
+  pickLatestFromList,
 };
