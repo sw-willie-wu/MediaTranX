@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useAgentSettingsStore } from '@/stores/agentSettings'
+import { useI18n } from 'vue-i18n'
+import { useAgentSettingsStore, nextPolicy } from '@/stores/agentSettings'
 import { parseModelValue } from '@/composables/useModelOptions'
 
 const props = defineProps<{
@@ -11,7 +12,17 @@ const emit = defineEmits<{
   (e: 'back'): void
 }>()
 
+const { t } = useI18n()
 const settingsStore = useAgentSettingsStore()
+
+/** Short badge label for the current confirmation policy (distinct from the
+ * verbose settings-radio labels, which overflow this narrow header). */
+const policyShort = computed(() => t(`agent.bubble.policy_short.${settingsStore.policy}`))
+
+/** Cycle the confirmation policy to the next mode, applied immediately. */
+function cyclePolicy() {
+  settingsStore.setPolicy(nextPolicy(settingsStore.policy))
+}
 
 /**
  * Human-readable label for the badge.
@@ -46,6 +57,13 @@ const modelLabel = computed(() => {
       <span v-if="modelLabel" class="model-badge">
         {{ modelLabel }}
       </span>
+      <button
+        type="button"
+        class="policy-badge"
+        :title="$t('agent.bubble.policy_tooltip', { mode: policyShort })"
+        :aria-label="$t('agent.bubble.policy_tooltip', { mode: policyShort })"
+        @click="cyclePolicy"
+      >{{ policyShort }}</button>
     </div>
     <div class="chat-header-right">
       <span v-if="props.tokenUsage.prompt > 0 || props.tokenUsage.completion > 0" class="token-counter">
@@ -90,6 +108,28 @@ const modelLabel = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Confirmation-policy badge: same pill shape as the model badge, but a distinct
+   tint + interactive (click to cycle the policy). max-width/ellipsis is a
+   defensive guard — the short labels never trigger it. */
+.policy-badge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border: none;
+  border-radius: 4px;
+  background: rgba(124, 111, 173, 0.35);
+  color: var(--text-primary);
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: rgba(124, 111, 173, 0.55);
+  }
 }
 
 .chat-header-right {

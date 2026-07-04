@@ -1171,9 +1171,14 @@ export default {
       },
       policy: {
         label: '確認策略',
-        auto: '自動（建議）',
-        ask_all: '全部都問',
-        custom: '自訂白名單',
+        standard: '標準（建議）',
+        standard_desc: '只有「執行」需要確認，其餘自動進行',
+        full_auto: '自動',
+        full_auto_desc: '全部自動執行，連「執行」都不詢問',
+        ask: '詢問',
+        ask_desc: '每個動作都先詢問你',
+        custom: '自訂',
+        custom_desc: '為每個工具個別設定',
       },
       whitelist: {
         label: '個別工具策略',
@@ -1218,6 +1223,13 @@ export default {
       show: '顯示 智慧助手 對話泡泡',
       hide: '隱藏 智慧助手 對話泡泡',
       abort: '中止',
+      policy_tooltip: '確認策略：{mode}（點擊切換）',
+      policy_short: {
+        standard: '標準',
+        full_auto: '自動',
+        ask: '詢問',
+        custom: '自訂',
+      },
     },
     session: {
       new_chat: '新對話',

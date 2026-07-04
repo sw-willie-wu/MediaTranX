@@ -21,9 +21,21 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import TitlebarButton from './common/TitlebarButton.vue'
 import { bubbleVisible, toggleBubbleVisible } from '@/composables/useBubbleVisibility'
+import { useAssistantGate } from '@/composables/useAssistantGate'
 
 const { t } = useI18n()
 const icon = computed(() => (bubbleVisible.value ? 'bi-chat-dots-fill' : 'bi-chat-dots'))
+
+// Requires a router in the tree (app-global here). Only used on the "show" path.
+const { redirectIfNoModel } = useAssistantGate()
+
+function onClick() {
+  // Guard only when about to SHOW the bubble; hiding is always allowed.
+  // No model → route to assistant settings to pick one instead of opening an
+  // unusable empty chat.
+  if (!bubbleVisible.value && redirectIfNoModel()) return
+  toggleBubbleVisible()
+}
 </script>
 
 <template>
@@ -31,7 +43,7 @@ const icon = computed(() => (bubbleVisible.value ? 'bi-chat-dots-fill' : 'bi-cha
     class="chat-bubble-toggle"
     :icon="icon"
     :tooltip="bubbleVisible ? t('agent.bubble.hide') : t('agent.bubble.show')"
-    @click="toggleBubbleVisible"
+    @click="onClick"
   />
 </template>
 
