@@ -1463,7 +1463,6 @@ export default {
     preview_toggle: '預覽診斷內容',
     section: { app_version: 'App 版本', env_summary: '環境摘要', task_context: '任務脈絡', log_tail: 'Log 尾段' },
     diag_fetch_failed: '無法取得診斷資料',
-    diag_unchecked: '已取消附上診斷資料',
     submit: '送出',
     cancel: '取消',
     sending: '送出中…',

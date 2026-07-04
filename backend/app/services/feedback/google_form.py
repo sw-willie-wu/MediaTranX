@@ -1,5 +1,4 @@
 """Google 表單 transport：formResponse 直送 + 降級 viewform 預填連結。"""
-import logging
 import urllib.error
 import urllib.parse
 from urllib.request import Request, urlopen
@@ -15,7 +14,6 @@ from app.services.feedback.config import (
 )
 from app.services.feedback.transport import FeedbackReport, FeedbackTransport
 
-logger = logging.getLogger(__name__)
 
 
 class GoogleFormTransport(FeedbackTransport):

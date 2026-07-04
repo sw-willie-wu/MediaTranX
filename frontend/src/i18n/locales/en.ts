@@ -1463,7 +1463,6 @@ export default {
     preview_toggle: 'Preview diagnostics',
     section: { app_version: 'App version', env_summary: 'Environment summary', task_context: 'Task context', log_tail: 'Log tail' },
     diag_fetch_failed: 'Could not retrieve diagnostics',
-    diag_unchecked: 'Diagnostics attachment cancelled',
     submit: 'Submit',
     cancel: 'Cancel',
     sending: 'Sending…',
