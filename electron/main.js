@@ -498,6 +498,12 @@ function createWindow() {
     return await shell.openPath(filePath);
   });
 
+  ipcMain.handle('open-external', async (_event, url) => {
+    if (typeof url === 'string' && /^https:\/\//i.test(url)) {
+      await shell.openExternal(url);
+    }
+  });
+
   // Save theme/locale to preferences.json (for splash screen)
   ipcMain.on('save-preference', (_, key, value) => {
     const prefsPath = join(getAppDataPath(), 'preferences.json');

@@ -1451,6 +1451,30 @@ export default {
     },
   },
 
+  // ── 意見回報 ──────────────────────────────────────────────────────────
+  feedback: {
+    title: '意見回報',
+    type_label: '回報類型',
+    type: { bug: '問題回報', feature: '功能建議', other: '其他' },
+    description_label: '描述',
+    description_placeholder: '請描述問題或建議…',
+    email_label: '聯絡 Email（選填）',
+    include_diagnostics: '附上診斷資料',
+    preview_toggle: '預覽診斷內容',
+    section: { app_version: 'App 版本', env_summary: '環境摘要', task_context: '任務脈絡', log_tail: 'Log 尾段' },
+    diag_fetch_failed: '無法取得診斷資料',
+    diag_unchecked: '已取消附上診斷資料',
+    submit: '送出',
+    cancel: '取消',
+    sending: '送出中…',
+    success: '已收到你的回報，謝謝！',
+    failed: '回報送出失敗',
+    use_browser: '改用瀏覽器回報',
+    report_task: '回報此問題',
+    export_btn: '匯出診斷資料',
+    export_failed: '匯出診斷資料失敗',
+  },
+
   // ── 模型描述 ──────────────────────────────────────────────────────────
   models: {
     realesrgan: '通用超解析（寫實）',
