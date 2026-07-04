@@ -29,5 +29,43 @@ interface Window {
     fileExists: (filePath: string) => Promise<boolean>
     readLocalFile: (filePath: string) => Promise<Uint8Array>
     restart: () => void
+    appVersion?: string | null
+    savePreference?: (key: string, value: unknown) => void
+    // Software update
+    checkForUpdates: () => Promise<UpdateCheckResult>
+    downloadUpdate: () => Promise<{ path?: string; error?: string }>
+    runInstaller: () => Promise<{ ok?: boolean; error?: string }>
+    getUpdatePrefs: () => Promise<UpdatePrefs>
+    setUpdateFrequency: (freq: string) => void
+    onUpdateDownloadProgress: (cb: (p: UpdateDownloadProgress) => void) => void
+    onUpdateAvailable: (cb: (r: UpdateCheckResult) => void) => void
   }
+}
+
+type UpdateFrequency = 'startup' | 'weekly' | 'monthly' | 'never'
+
+interface UpdateAsset {
+  name: string
+  size: number
+  browser_download_url: string
+}
+
+interface UpdateCheckResult {
+  status: 'dev' | 'up-to-date' | 'update-available' | 'error'
+  current?: string
+  latest?: string
+  asset?: UpdateAsset | null
+  error?: string
+}
+
+interface UpdatePrefs {
+  frequency: UpdateFrequency
+  lastUpdateCheck?: number
+  pendingInstaller: string | null
+}
+
+interface UpdateDownloadProgress {
+  percent: number
+  received: number
+  total: number
 }

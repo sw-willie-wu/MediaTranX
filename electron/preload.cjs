@@ -71,4 +71,13 @@ contextBridge.exposeInMainWorld('electron', {
   savePreference: (key, value) => ipcRenderer.send('save-preference', key, value),
   reinstallAiEnv: () => ipcRenderer.send('reinstall-ai-env'),
   onReinstallProgress: (cb) => ipcRenderer.on('reinstall-progress', (_, data) => cb(data)),
+
+  // ── Software update ──────────────────────────────────────────────────────
+  checkForUpdates: async () => await ipcRenderer.invoke('update:check'),
+  downloadUpdate: async () => await ipcRenderer.invoke('update:download'),
+  runInstaller: async () => await ipcRenderer.invoke('update:run-installer'),
+  getUpdatePrefs: async () => await ipcRenderer.invoke('update:get-prefs'),
+  setUpdateFrequency: (freq) => ipcRenderer.send('update:set-frequency', freq),
+  onUpdateDownloadProgress: (cb) => ipcRenderer.on('update:download-progress', (_, p) => cb(p)),
+  onUpdateAvailable: (cb) => ipcRenderer.on('update:available', (_, r) => cb(r)),
 });

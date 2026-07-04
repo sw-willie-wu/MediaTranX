@@ -8,6 +8,16 @@ const os = require('os');
 const net = require('net');
 const { detectGPU, updatePyprojectSources, runUvSync, downloadFFmpeg, downloadYtDlp, downloadLlamaServer, downloadLlamaCudart } = require('./setup.js');
 const { resolve } = require('path');
+const updateService = require('./updateService.cjs');
+
+// Called from all three frontend-load callbacks (dev / prod-file / prod-fallback).
+// Marks the frontend as loaded AND kicks off the startup auto-update check (which
+// is silent unless a full release newer than us exists). Kept as one helper so no
+// load path is missed and the check never runs against splash/error pages.
+function markFrontendLoaded() {
+  frontendLoaded = true;
+  Promise.resolve(updateService.maybeAutoCheck(() => mainWindow)).catch(() => {});
+}
 
 // 載入 .env 檔（簡易 parser，不依賴 dotenv）
 function loadEnvFile(filePath, baseDir) {
@@ -498,6 +508,24 @@ function createWindow() {
     fs.writeFileSync(prefsPath, JSON.stringify(prefs, null, 2), 'utf-8');
   });
 
+  // ── Software update (GitHub full-release check → download → run installer) ──
+  // Service reads/writes the SAME preferences.json main uses (inject its path).
+  updateService.configure({ appDataPath: getAppDataPath() });
+  ipcMain.handle('update:check', () => updateService.checkForUpdates());
+  ipcMain.handle('update:download', (event) =>
+    updateService.downloadUpdate((p) => {
+      if (!event.sender.isDestroyed()) event.sender.send('update:download-progress', p);
+    }));
+  ipcMain.handle('update:run-installer', async () => {
+    const r = await updateService.prepareInstaller();
+    // On success the installer is launched (detached); quit so it can replace
+    // our files. before-quit handles the backend/vite teardown.
+    if (r.ok) app.quit();
+    return r;
+  });
+  ipcMain.handle('update:get-prefs', () => updateService.getUpdatePrefs());
+  ipcMain.on('update:set-frequency', (_, f) => updateService.setUpdateFrequency(f));
+
   // In-app reinstall: run uv sync + re-download binaries, report progress to renderer
   ipcMain.on('reinstall-ai-env', async (event) => {
     const isDev = !app.isPackaged;
@@ -734,7 +762,7 @@ app.whenReady().then(async () => {
       mainWindow.webContents.executeJavaScript(
         "var p=document.getElementById('percent'); if(p) p.textContent='100%';"
       ).catch(() => {});
-      mainWindow.loadURL(`http://localhost:${FRONTEND_DEV_PORT}/`).then(() => { frontendLoaded = true; }).catch(() => {});
+      mainWindow.loadURL(`http://localhost:${FRONTEND_DEV_PORT}/`).then(() => { markFrontendLoaded(); }).catch(() => {});
     } else {
       const stop = driveWaitFeedback(mainWindow, locale);
       try {
@@ -753,9 +781,9 @@ app.whenReady().then(async () => {
         if (fs.existsSync(fallbackPath)) frontendPath = fallbackPath;
       }
       if (fs.existsSync(frontendPath)) {
-        mainWindow.loadFile(frontendPath).then(() => { frontendLoaded = true; }).catch(() => {});
+        mainWindow.loadFile(frontendPath).then(() => { markFrontendLoaded(); }).catch(() => {});
       } else {
-        mainWindow.loadURL(`http://localhost:${BACKEND_PORT}/`).then(() => { frontendLoaded = true; }).catch(() => {});
+        mainWindow.loadURL(`http://localhost:${BACKEND_PORT}/`).then(() => { markFrontendLoaded(); }).catch(() => {});
       }
     }
   } catch (err) {
