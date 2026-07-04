@@ -1059,7 +1059,7 @@ export default {
       restart_app: 'Restart Application',
       update: {
         title: 'Software update',
-        auto_label: 'Auto-check for updates',
+        auto_label: 'Auto-check frequency',
         freq: { startup: 'On every launch', weekly: 'Weekly', monthly: 'Monthly', never: 'Never' },
         check_btn: 'Check for updates',
         checking: 'Checking…',

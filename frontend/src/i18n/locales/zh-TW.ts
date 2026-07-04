@@ -1059,7 +1059,7 @@ export default {
       restart_app: '重新啟動應用程式',
       update: {
         title: '程式更新',
-        auto_label: '自動檢查更新',
+        auto_label: '自動檢查頻率',
         freq: { startup: '每次啟動', weekly: '每週', monthly: '每月', never: '不檢查' },
         check_btn: '檢查更新',
         checking: '檢查中…',

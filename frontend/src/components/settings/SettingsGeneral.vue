@@ -121,9 +121,6 @@ const updateStatusText = computed(() => {
   return ''
 })
 
-function onFreqChange(e: Event) {
-  update.setFrequency((e.target as HTMLSelectElement).value as UpdateFrequency)
-}
 
 // ── 暫存狀態 ──────────────────────────────────────────────────
 
@@ -275,11 +272,18 @@ useAgentPanelHost('settings.general', {
   <div class="update-section">
     <div class="update-row">
       <label class="update-auto-label">{{ $t('settings.general.update.auto_label') }}</label>
-      <select class="update-freq-select" :value="update.frequency" @change="onFreqChange">
-        <option v-for="f in FREQ_OPTIONS" :key="f" :value="f">
+      <div class="update-freq-options">
+        <label v-for="f in FREQ_OPTIONS" :key="f" class="update-freq-option">
+          <input
+            type="radio"
+            name="update-freq"
+            :value="f"
+            :checked="update.frequency === f"
+            @change="update.setFrequency(f)"
+          />
           {{ $t(`settings.general.update.freq.${f}`) }}
-        </option>
-      </select>
+        </label>
+      </div>
     </div>
     <div class="update-row">
       <button
@@ -367,15 +371,25 @@ useAgentPanelHost('settings.general', {
   color: var(--text-secondary);
 }
 
-.update-freq-select {
-  background: var(--input-bg);
+.update-freq-options {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.update-freq-option {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
   color: var(--text-primary);
-  border: 1px solid var(--input-border);
-  border-radius: 6px;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.8rem;
-  font-family: inherit;
   cursor: pointer;
+
+  input[type='radio'] {
+    accent-color: var(--color-primary);
+    cursor: pointer;
+  }
 }
 
 .update-status {
