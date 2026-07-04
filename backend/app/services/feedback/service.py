@@ -90,4 +90,5 @@ class FeedbackService:
                             logger.warning("feedback export: skip unreadable %s", p)
             info = f"App 版本: {app_version()}\n{collect_env_summary(SETTINGS)}"
             zf.writestr("system_info.txt", info)
-        return str(zip_path)
+        # 絕對路徑：dev 模式 temp 是相對路徑，shell.showItemInFolder 需絕對路徑才能開資料夾
+        return str(zip_path.resolve())
