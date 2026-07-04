@@ -105,7 +105,14 @@ function restartApp() {
 
 // ── Software update ──────────────────────────────────────────────────────────
 const update = useUpdateStore()
-const FREQ_OPTIONS: UpdateFrequency[] = ['startup', 'weekly', 'monthly', 'never']
+const FREQ_ORDER: UpdateFrequency[] = ['startup', 'weekly', 'monthly', 'manual']
+const FREQ_OPTIONS = computed(() =>
+  FREQ_ORDER.map(v => ({
+    value: v,
+    label: t(`settings.general.update.freq.${v}`),
+    desc: t(`settings.general.update.freq.${v}_desc`),
+  })),
+)
 const CHECK_ERR_KEYS = ['network', 'rate_limit', 'no_asset', 'generic']
 
 // Status line under the check button. Empty while idle/checking (the button
@@ -270,22 +277,23 @@ useAgentPanelHost('settings.general', {
   <!-- Software update -->
   <h6 class="section-title mt">{{ $t('settings.general.update.title') }}</h6>
   <div class="update-section">
-    <div class="update-row">
-      <label class="update-auto-label">{{ $t('settings.general.update.auto_label') }}</label>
-      <div class="update-freq-options">
-        <label v-for="f in FREQ_OPTIONS" :key="f" class="update-freq-option">
-          <input
-            type="radio"
-            name="update-freq"
-            :value="f"
-            :checked="update.frequency === f"
-            @change="update.setFrequency(f)"
-          />
-          {{ $t(`settings.general.update.freq.${f}`) }}
-        </label>
-      </div>
+    <label class="update-auto-label">{{ $t('settings.general.update.auto_label') }}</label>
+    <div class="freq-radio-group">
+      <label v-for="opt in FREQ_OPTIONS" :key="opt.value" class="freq-radio-label">
+        <input
+          type="radio"
+          name="update-freq"
+          :value="opt.value"
+          :checked="update.frequency === opt.value"
+          @change="update.setFrequency(opt.value)"
+        />
+        <span class="freq-radio-text">
+          <span class="freq-radio-title">{{ opt.label }}</span>
+          <span class="freq-radio-desc">{{ opt.desc }}</span>
+        </span>
+      </label>
     </div>
-    <div class="update-row">
+    <div v-if="update.frequency === 'manual'" class="update-row">
       <button
         class="btn-secondary"
         :disabled="update.status === 'checking' || update.downloading"
@@ -371,25 +379,42 @@ useAgentPanelHost('settings.general', {
   color: var(--text-secondary);
 }
 
-.update-freq-options {
+/* 頻率選項：仿智慧助手確認策略的垂直 radio 列表（標題+說明） */
+.freq-radio-group {
   display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
-.update-freq-option {
+.freq-radio-label {
   display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-  color: var(--text-primary);
+  align-items: flex-start;
+  gap: 0.5rem;
   cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
 
   input[type='radio'] {
     accent-color: var(--color-primary);
-    cursor: pointer;
+    margin-top: 0.15rem; // 對齊多行文字的第一行
+    flex-shrink: 0;
   }
+}
+
+.freq-radio-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.freq-radio-title {
+  color: var(--text-primary);
+}
+
+.freq-radio-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 .update-status {

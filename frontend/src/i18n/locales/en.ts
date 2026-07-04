@@ -1060,7 +1060,16 @@ export default {
       update: {
         title: 'Software update',
         auto_label: 'Auto-check frequency',
-        freq: { startup: 'On every launch', weekly: 'Weekly', monthly: 'Monthly', never: 'Never' },
+        freq: {
+          startup: 'On every launch',
+          startup_desc: 'Check automatically each time the app starts',
+          weekly: 'Weekly',
+          weekly_desc: 'Check automatically once a week',
+          monthly: 'Monthly',
+          monthly_desc: 'Check automatically once a month',
+          manual: 'Manual',
+          manual_desc: 'No automatic checks; use the Check for updates button when needed',
+        },
         check_btn: 'Check for updates',
         checking: 'Checking…',
         up_to_date: 'Up to date (v{version})',

@@ -97,9 +97,9 @@ describe('useUpdateStore', () => {
     const e = makeElectron()
     ;(window as any).electron = e
     const store = await freshStore()
-    store.setFrequency('never')
-    expect(store.frequency).toBe('never')
-    expect(e.setUpdateFrequency).toHaveBeenCalledWith('never')
+    store.setFrequency('manual')
+    expect(store.frequency).toBe('manual')
+    expect(e.setUpdateFrequency).toHaveBeenCalledWith('manual')
   })
 
   it("download('only') sets pendingInstaller and closes the modal", async () => {

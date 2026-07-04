@@ -101,6 +101,10 @@ test('isCheckDue: never → false', () => {
   assert.strictEqual(isCheckDue('never', 0, 1000), false);
   assert.strictEqual(isCheckDue('never', 1, Number.MAX_SAFE_INTEGER), false);
 });
+test('isCheckDue: manual → false (user-triggered only)', () => {
+  assert.strictEqual(isCheckDue('manual', 0, 1000), false);
+  assert.strictEqual(isCheckDue('manual', 1, Number.MAX_SAFE_INTEGER), false);
+});
 test('isCheckDue: startup → always true', () => {
   assert.strictEqual(isCheckDue('startup', Date.now?.() ?? 1, 1), true);
 });

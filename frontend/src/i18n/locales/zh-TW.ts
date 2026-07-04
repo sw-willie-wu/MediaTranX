@@ -1060,7 +1060,16 @@ export default {
       update: {
         title: '程式更新',
         auto_label: '自動檢查頻率',
-        freq: { startup: '每次啟動', weekly: '每週', monthly: '每月', never: '不檢查' },
+        freq: {
+          startup: '每次啟動',
+          startup_desc: '每次開啟應用程式時自動檢查更新',
+          weekly: '每週',
+          weekly_desc: '每週自動檢查一次',
+          monthly: '每月',
+          monthly_desc: '每月自動檢查一次',
+          manual: '手動',
+          manual_desc: '不自動檢查，需要時自行按「檢查更新」',
+        },
         check_btn: '檢查更新',
         checking: '檢查中…',
         up_to_date: '已是最新版本 v{version}',

@@ -48,13 +48,15 @@ function getUpdatePrefs() {
   const p = readPrefs();
   let pending = p.pendingInstaller || null;
   if (pending && !fs.existsSync(pending)) pending = null; // stale → drop
+  let frequency = p.updateFrequency || 'weekly';
+  if (frequency === 'never') frequency = 'manual'; // legacy：舊「不檢查」併入「手動」
   return {
-    frequency: p.updateFrequency || 'weekly',
+    frequency,
     lastUpdateCheck: p.lastUpdateCheck || 0,
     pendingInstaller: pending,
   };
 }
-const VALID_FREQUENCIES = new Set(['startup', 'weekly', 'monthly', 'never']);
+const VALID_FREQUENCIES = new Set(['startup', 'weekly', 'monthly', 'manual']);
 function setUpdateFrequency(f) {
   if (!VALID_FREQUENCIES.has(f)) return; // ignore out-of-enum values
   writePrefs({ updateFrequency: f });

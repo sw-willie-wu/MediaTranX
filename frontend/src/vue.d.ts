@@ -42,7 +42,7 @@ interface Window {
   }
 }
 
-type UpdateFrequency = 'startup' | 'weekly' | 'monthly' | 'never'
+type UpdateFrequency = 'startup' | 'weekly' | 'monthly' | 'manual'
 
 interface UpdateAsset {
   name: string

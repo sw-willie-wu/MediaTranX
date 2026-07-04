@@ -150,7 +150,8 @@ function parseLatestRelease(json) {
  * state is treated as due, so a bad clock never permanently disables checks.
  */
 function isCheckDue(frequency, lastCheckMs, nowMs) {
-  if (frequency === 'never') return false;
+  if (frequency === 'manual') return false; // 手動：只靠使用者按檢查鈕
+  if (frequency === 'never') return false;  // legacy 值（prefs 讀取端已映射成 manual）
   if (frequency === 'startup') return true;
   if (!lastCheckMs) return true;
   const delta = nowMs - lastCheckMs;
