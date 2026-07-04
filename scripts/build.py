@@ -69,10 +69,17 @@ def find_next_dev_num(base: str) -> int:
     return dev_num
 
 
-def set_version(version: str, sync_lock: bool = True):
-    """Write version to package.json and pyproject.toml."""
+def set_version(version: str, sync_lock: bool = True, build_mode: str = "prod"):
+    """Write version to package.json and pyproject.toml; stamp buildMode."""
     # package.json (ignore error if version already matches)
     run(["npm", "version", version, "--no-git-tag-version"], cwd=ELECTRON_DIR, check=False)
+
+    # buildMode stamp (channel for the update checker; repo default is "prod").
+    # Must run AFTER npm version, which rewrites package.json.
+    pkg_path = ELECTRON_DIR / "package.json"
+    pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+    pkg["buildMode"] = build_mode
+    pkg_path.write_text(json.dumps(pkg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     # pyproject.toml (UTF-8 no BOM)
     text = PYPROJECT_TOML.read_text(encoding="utf-8")
@@ -82,7 +89,7 @@ def set_version(version: str, sync_lock: bool = True):
     if sync_lock:
         run(["uv", "lock"], cwd=BACKEND_DIR)
 
-    print(f"  Version set to {version}")
+    print(f"  Version set to {version} (buildMode={build_mode})")
 
 
 # ── Subprocess helper ────────────────────────────────────────────────────────
@@ -411,7 +418,7 @@ def main():
     needs_version = "nuitka" in steps or "electron" in steps
     if needs_version:
         print(f"\n[1] Setting version to {build_ver}...")
-        set_version(build_ver, sync_lock=not is_dev)
+        set_version(build_ver, sync_lock=not is_dev, build_mode="dev" if is_dev else "prod")
 
     # Run steps
     try:
