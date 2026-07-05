@@ -13,14 +13,18 @@ const fs = require('fs');
 const path = require('path');
 const core = require('./updateCore.cjs');
 
-const GITHUB_API =
+const GITHUB_API_LATEST =
   'https://api.github.com/repos/sw-willie-wu/MediaTranX/releases/latest';
+const GITHUB_API_LIST =
+  'https://api.github.com/repos/sw-willie-wu/MediaTranX/releases?per_page=30';
 
 let appDataPath = null;
+let buildMode = 'prod';
 
-/** Inject the base data dir (main's getAppDataPath()). Call once at startup. */
+/** Inject base data dir + build-time channel stamp. Call once at startup. */
 function configure(opts) {
   appDataPath = opts.appDataPath;
+  buildMode = opts.buildMode || 'prod';
 }
 
 function prefsPath() {
@@ -44,13 +48,15 @@ function getUpdatePrefs() {
   const p = readPrefs();
   let pending = p.pendingInstaller || null;
   if (pending && !fs.existsSync(pending)) pending = null; // stale → drop
+  let frequency = p.updateFrequency || 'weekly';
+  if (frequency === 'never') frequency = 'manual'; // legacy：舊「不檢查」併入「手動」
   return {
-    frequency: p.updateFrequency || 'weekly',
+    frequency,
     lastUpdateCheck: p.lastUpdateCheck || 0,
     pendingInstaller: pending,
   };
 }
-const VALID_FREQUENCIES = new Set(['startup', 'weekly', 'monthly', 'never']);
+const VALID_FREQUENCIES = new Set(['startup', 'weekly', 'monthly', 'manual']);
 function setUpdateFrequency(f) {
   if (!VALID_FREQUENCIES.has(f)) return; // ignore out-of-enum values
   writePrefs({ updateFrequency: f });
@@ -63,37 +69,39 @@ function setPendingInstaller(p) {
 }
 
 /**
- * Check GitHub /releases/latest (full releases only). Returns:
- *   {status:'dev'|'up-to-date'|'update-available'|'error', current, latest?, asset?, error?}
- * dev is gated on !app.isPackaged (getVersion() returns the real version even
- * unpackaged, so it can't be used to detect dev).
+ * Check GitHub for updates on this build's channel:
+ *   stable → /releases/latest (GitHub already excludes prereleases)
+ *   dev    → /releases list, pick the highest version (incl. prereleases)
+ * Returns {status:'up-to-date'|'update-available'|'error', channel, current,
+ *          latest?, asset?, error?}. `latest` keeps the -dev.N suffix so a
+ *          dev.3→dev.4 bump is visible in the UI.
  */
 async function checkForUpdates() {
   const current = app.getVersion();
-  if (!app.isPackaged) return { status: 'dev', current };
-  // Split fetch (network errors) from parse (generic) so the error taxonomy
-  // matches spec §3.2/§6: fetch-throw → 'network', bad payload → 'generic'.
+  const channel = core.resolveChannel(app.isPackaged, buildMode);
   let res;
   try {
-    res = await net.fetch(GITHUB_API, {
+    res = await net.fetch(channel === 'dev' ? GITHUB_API_LIST : GITHUB_API_LATEST, {
       headers: { 'User-Agent': 'MediaTranX', Accept: 'application/vnd.github+json' },
     });
   } catch (_) {
-    return { status: 'error', current, error: 'network' };
+    return { status: 'error', channel, current, error: 'network' };
   }
   if (!res.ok) {
-    return { status: 'error', current, error: res.status === 403 ? 'rate_limit' : 'generic' };
+    return { status: 'error', channel, current, error: res.status === 403 ? 'rate_limit' : 'generic' };
   }
   try {
     const json = await res.json();
-    const { tag, version, asset } = core.parseLatestRelease(json);
+    const release = channel === 'dev' ? core.pickLatestFromList(json) : json;
+    if (!release) return { status: 'error', channel, current, error: 'generic' };
+    const { tag, displayVersion, asset } = core.parseLatestRelease(release);
     if (!core.isUpdateAvailable(current, tag)) {
-      return { status: 'up-to-date', current, latest: version };
+      return { status: 'up-to-date', channel, current, latest: displayVersion };
     }
-    if (!asset) return { status: 'error', current, latest: version, error: 'no_asset' };
-    return { status: 'update-available', current, latest: version, asset };
+    if (!asset) return { status: 'error', channel, current, latest: displayVersion, error: 'no_asset' };
+    return { status: 'update-available', channel, current, latest: displayVersion, asset };
   } catch (_) {
-    return { status: 'error', current, error: 'generic' };
+    return { status: 'error', channel, current, error: 'generic' };
   }
 }
 
@@ -160,6 +168,37 @@ async function prepareInstaller() {
 }
 
 /**
+ * Startup cleanup: delete installers in <appData>/updates whose version is
+ * ≤ the running version (already installed or outdated). prepareInstaller
+ * can't delete the file itself (the installer is running from it), so the
+ * NEXT boot sweeps it here. A pending-installer pref pointing at a deleted
+ * file is cleared too. Best-effort: locked/undeletable files stay for the
+ * next sweep; a fresher pending installer (version > current) is untouched.
+ */
+function cleanupOldInstallers() {
+  try {
+    const current = app.getVersion();
+    const dir = path.join(appDataPath, 'updates');
+    if (!fs.existsSync(dir)) return;
+    const { pendingInstaller } = getUpdatePrefs();
+    for (const name of fs.readdirSync(dir)) {
+      const v = core.parseInstallerVersion(name);
+      if (!v) continue;
+      if (core.compareVersionsFull(v, current) > 0) continue; // 比現版新 → 留
+      const full = path.join(dir, name);
+      try {
+        fs.unlinkSync(full);
+      } catch (_) {
+        continue; // 被佔用就留著，下次開機再清
+      }
+      if (pendingInstaller === full) setPendingInstaller(null);
+    }
+  } catch (_) {
+    /* cleanup is best-effort, never blocks startup */
+  }
+}
+
+/**
  * Startup auto-check. Silent unless an update is found. Writes lastCheck only on
  * a successful (non-error) check so a failed check doesn't burn the interval.
  * @param getWindow () => BrowserWindow|null
@@ -187,4 +226,5 @@ module.exports = {
   setLastCheck,
   setPendingInstaller,
   maybeAutoCheck,
+  cleanupOldInstallers,
 };

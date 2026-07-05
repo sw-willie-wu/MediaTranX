@@ -14,7 +14,6 @@ export type UpdateStatus =
   | 'checking'
   | 'update-available'
   | 'up-to-date'
-  | 'dev'
   | 'error'
 
 // Module-level so App.vue's init() subscribes exactly once even if called again.
@@ -22,6 +21,7 @@ let subscribed = false
 
 export const useUpdateStore = defineStore('update', () => {
   const status = ref<UpdateStatus>('idle')
+  const channel = ref<'dev' | 'stable' | null>(null)
   const current = ref('')
   const latest = ref('')
   const lastError = ref<string | null>(null)
@@ -38,6 +38,7 @@ export const useUpdateStore = defineStore('update', () => {
 
   function applyResult(r: UpdateCheckResult) {
     status.value = r.status as UpdateStatus
+    if (r.channel) channel.value = r.channel
     if (r.current) current.value = r.current
     if (r.latest) latest.value = r.latest
     lastError.value = r.status === 'error' ? (r.error ?? 'generic') : null
@@ -101,7 +102,7 @@ export const useUpdateStore = defineStore('update', () => {
         lastError.value = r.error
         // While the modal is open the error is shown inline in it (toasts render
         // behind the modal backdrop); only toast when no modal is covering it.
-        if (!modalVisible.value) show(t('settings.about.update.download_failed'), { type: 'error' })
+        if (!modalVisible.value) show(t('settings.general.update.download_failed'), { type: 'error' })
         return
       }
       pendingInstaller.value = r.path ?? null
@@ -109,12 +110,12 @@ export const useUpdateStore = defineStore('update', () => {
         await installNow()
       } else {
         modalVisible.value = false
-        show(t('settings.about.update.download_done'), { type: 'success' })
+        show(t('settings.general.update.download_done'), { type: 'success' })
       }
     } catch {
       downloading.value = false
       lastError.value = 'network'
-      if (!modalVisible.value) show(t('settings.about.update.download_failed'), { type: 'error' })
+      if (!modalVisible.value) show(t('settings.general.update.download_failed'), { type: 'error' })
     }
   }
 
@@ -128,12 +129,12 @@ export const useUpdateStore = defineStore('update', () => {
       installing.value = false
       if (r?.error) {
         lastError.value = r.error
-        if (!modalVisible.value) show(t('settings.about.update.install_failed'), { type: 'error' })
+        if (!modalVisible.value) show(t('settings.general.update.install_failed'), { type: 'error' })
       }
     } catch {
       installing.value = false
       lastError.value = 'launch'
-      if (!modalVisible.value) show(t('settings.about.update.install_failed'), { type: 'error' })
+      if (!modalVisible.value) show(t('settings.general.update.install_failed'), { type: 'error' })
     }
   }
 
@@ -143,6 +144,7 @@ export const useUpdateStore = defineStore('update', () => {
 
   return {
     status,
+    channel,
     current,
     latest,
     lastError,

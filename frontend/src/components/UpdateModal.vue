@@ -10,8 +10,8 @@ const { t } = useI18n()
 const errorText = computed(() => {
   if (!update.lastError) return ''
   return update.lastError === 'launch'
-    ? t('settings.about.update.install_failed')
-    : t('settings.about.update.download_failed')
+    ? t('settings.general.update.install_failed')
+    : t('settings.general.update.download_failed')
 })
 
 function onOverlayClick(e: MouseEvent) {
@@ -34,7 +34,7 @@ function onOverlayClick(e: MouseEvent) {
             <i class="bi bi-arrow-up-circle-fill" />
           </div>
           <p class="update-message">
-            {{ t('settings.about.update.found', { version: update.latest }) }}
+            {{ t('settings.general.update.found', { version: update.latest }) }}
           </p>
 
           <!-- Downloading: progress bar replaces the buttons -->
@@ -43,7 +43,7 @@ function onOverlayClick(e: MouseEvent) {
               <div class="update-fill" :style="{ width: update.downloadPercent + '%' }"></div>
             </div>
             <span class="update-detail">
-              {{ t('settings.about.update.downloading', { percent: update.downloadPercent }) }}
+              {{ t('settings.general.update.downloading', { percent: update.downloadPercent }) }}
             </span>
           </div>
 
@@ -56,13 +56,13 @@ function onOverlayClick(e: MouseEvent) {
           <!-- Choice: cancel / download only / download & install (retry after error) -->
           <div v-if="!update.downloading" class="update-actions">
             <button class="update-btn cancel" @click="update.dismissModal()">
-              {{ t('settings.about.update.cancel') }}
+              {{ t('settings.general.update.cancel') }}
             </button>
             <button class="update-btn secondary" @click="update.download('only')">
-              {{ t('settings.about.update.download_only') }}
+              {{ t('settings.general.update.download_only') }}
             </button>
             <button class="update-btn primary" @click="update.download('install')">
-              {{ t('settings.about.update.download_install') }}
+              {{ t('settings.general.update.download_install') }}
             </button>
           </div>
         </div>

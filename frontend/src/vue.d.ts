@@ -43,7 +43,7 @@ interface Window {
   }
 }
 
-type UpdateFrequency = 'startup' | 'weekly' | 'monthly' | 'never'
+type UpdateFrequency = 'startup' | 'weekly' | 'monthly' | 'manual'
 
 interface UpdateAsset {
   name: string
@@ -52,7 +52,8 @@ interface UpdateAsset {
 }
 
 interface UpdateCheckResult {
-  status: 'dev' | 'up-to-date' | 'update-available' | 'error'
+  status: 'up-to-date' | 'update-available' | 'error'
+  channel?: 'dev' | 'stable'
   current?: string
   latest?: string
   asset?: UpdateAsset | null

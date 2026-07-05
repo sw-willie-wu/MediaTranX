@@ -7,7 +7,6 @@ import { useToast } from '@/composables/useToast'
 import AppIcon from '@/assets/icon.svg'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 import { useVideoDownloadStore } from '@/stores/videoDownload'
-import { useUpdateStore } from '@/stores/update'
 import { useFeedbackStore } from '@/stores/feedback'
 
 const { t } = useI18n()
@@ -16,29 +15,6 @@ const feedback = useFeedbackStore()
 const { confirm } = useConfirm()
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const electron = (window as any).electron
-
-// ── Software update ──────────────────────────────────────────────────────────
-const update = useUpdateStore()
-const FREQ_OPTIONS: UpdateFrequency[] = ['startup', 'weekly', 'monthly', 'never']
-const CHECK_ERR_KEYS = ['network', 'rate_limit', 'no_asset', 'generic']
-
-// Status line under the check button. Empty while idle/checking (the button
-// itself shows the checking state).
-const updateStatusText = computed(() => {
-  if (update.status === 'up-to-date') {
-    return t('settings.about.update.up_to_date', { version: update.latest })
-  }
-  if (update.status === 'dev') return t('settings.about.update.dev_build')
-  if (update.status === 'error') {
-    const key = CHECK_ERR_KEYS.includes(update.lastError ?? '') ? update.lastError : 'generic'
-    return t(`settings.about.update.err.${key}`)
-  }
-  return ''
-})
-
-function onFreqChange(e: Event) {
-  update.setFrequency((e.target as HTMLSelectElement).value as UpdateFrequency)
-}
 
 // yt-dlp 元件只在使用者同意影片下載條款後顯示（它是影片下載專用工具）
 const vdStore = useVideoDownloadStore()
@@ -179,45 +155,6 @@ useAgentPanelHost('settings.about', {
   <p class="about-desc">
     {{ $t('settings.about.description') }}
   </p>
-
-  <!-- Software update -->
-  <h6 class="section-title mt">{{ $t('settings.about.update.title') }}</h6>
-  <div class="update-section">
-    <div class="update-row">
-      <label class="update-auto-label">{{ $t('settings.about.update.auto_label') }}</label>
-      <select class="update-freq-select" :value="update.frequency" @change="onFreqChange">
-        <option v-for="f in FREQ_OPTIONS" :key="f" :value="f">
-          {{ $t(`settings.about.update.freq.${f}`) }}
-        </option>
-      </select>
-    </div>
-    <div class="update-row">
-      <button
-        class="btn-secondary"
-        :disabled="update.status === 'checking' || update.downloading"
-        @click="update.checkManually()"
-      >
-        <i class="bi bi-arrow-repeat"></i>
-        {{ update.status === 'checking' ? $t('settings.about.update.checking') : $t('settings.about.update.check_btn') }}
-      </button>
-      <span v-if="updateStatusText" class="update-status" :class="{ error: update.status === 'error' }">
-        {{ updateStatusText }}
-      </span>
-    </div>
-    <div v-if="update.downloading" class="reinstall-progress">
-      <div class="reinstall-bar">
-        <div class="reinstall-fill" :style="{ width: update.downloadPercent + '%' }"></div>
-      </div>
-      <span class="reinstall-detail">
-        {{ $t('settings.about.update.downloading', { percent: update.downloadPercent }) }}
-      </span>
-    </div>
-    <div v-else-if="update.pendingInstaller" class="update-row">
-      <button class="btn-primary" @click="update.installNow()">
-        <i class="bi bi-box-arrow-down"></i> {{ $t('settings.about.update.install_now') }}
-      </button>
-    </div>
-  </div>
 
   <h6 class="section-title mt">{{ $t('settings.about.support') }}</h6>
   <div class="about-links">
@@ -404,43 +341,6 @@ useAgentPanelHost('settings.about', {
   font-size: 0.8rem;
   color: var(--color-danger);
   margin-bottom: 0.5rem;
-}
-
-.update-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  margin-top: 0.5rem;
-}
-
-.update-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.update-auto-label {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-}
-
-.update-freq-select {
-  background: var(--input-bg);
-  color: var(--text-primary);
-  border: 1px solid var(--input-border);
-  border-radius: 6px;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.8rem;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.update-status {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-
-  &.error { color: var(--color-danger); }
 }
 
 .about-footer {

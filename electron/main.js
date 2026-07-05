@@ -10,6 +10,11 @@ const { detectGPU, updatePyprojectSources, runUvSync, downloadFFmpeg, downloadYt
 const { resolve } = require('path');
 const updateService = require('./updateService.cjs');
 
+// Build-time channel stamp (see scripts/build.py set_version). Missing → prod (fail-safe).
+const BUILD_MODE = (() => {
+  try { return require('./package.json').buildMode || 'prod'; } catch (_) { return 'prod'; }
+})();
+
 // Called from all three frontend-load callbacks (dev / prod-file / prod-fallback).
 // Marks the frontend as loaded AND kicks off the startup auto-update check (which
 // is silent unless a full release newer than us exists). Kept as one helper so no
@@ -215,6 +220,7 @@ function startPythonBackend() {
         MEDIATRANX_DB__DSN: `sqlite:///${join(appDataPath, 'mediatranx.db').replace(/\\/g, '/')}`,
         MEDIATRANX_SERVER__MODE: 'production',
         MEDIATRANX_APP_VERSION: app.getVersion(),
+        ...(BUILD_MODE === 'dev' ? { MEDIATRANX_LOG_LEVEL: 'debug' } : {}),
       },
       windowsHide: true
     });
@@ -516,7 +522,8 @@ function createWindow() {
 
   // ── Software update (GitHub full-release check → download → run installer) ──
   // Service reads/writes the SAME preferences.json main uses (inject its path).
-  updateService.configure({ appDataPath: getAppDataPath() });
+  updateService.configure({ appDataPath: getAppDataPath(), buildMode: BUILD_MODE });
+  updateService.cleanupOldInstallers(); // 清掉已裝完/過時的舊安裝包（best-effort）
   ipcMain.handle('update:check', () => updateService.checkForUpdates());
   ipcMain.handle('update:download', (event) =>
     updateService.downloadUpdate((p) => {
