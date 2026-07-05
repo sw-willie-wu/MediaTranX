@@ -168,6 +168,37 @@ async function prepareInstaller() {
 }
 
 /**
+ * Startup cleanup: delete installers in <appData>/updates whose version is
+ * ≤ the running version (already installed or outdated). prepareInstaller
+ * can't delete the file itself (the installer is running from it), so the
+ * NEXT boot sweeps it here. A pending-installer pref pointing at a deleted
+ * file is cleared too. Best-effort: locked/undeletable files stay for the
+ * next sweep; a fresher pending installer (version > current) is untouched.
+ */
+function cleanupOldInstallers() {
+  try {
+    const current = app.getVersion();
+    const dir = path.join(appDataPath, 'updates');
+    if (!fs.existsSync(dir)) return;
+    const { pendingInstaller } = getUpdatePrefs();
+    for (const name of fs.readdirSync(dir)) {
+      const v = core.parseInstallerVersion(name);
+      if (!v) continue;
+      if (core.compareVersionsFull(v, current) > 0) continue; // 比現版新 → 留
+      const full = path.join(dir, name);
+      try {
+        fs.unlinkSync(full);
+      } catch (_) {
+        continue; // 被佔用就留著，下次開機再清
+      }
+      if (pendingInstaller === full) setPendingInstaller(null);
+    }
+  } catch (_) {
+    /* cleanup is best-effort, never blocks startup */
+  }
+}
+
+/**
  * Startup auto-check. Silent unless an update is found. Writes lastCheck only on
  * a successful (non-error) check so a failed check doesn't burn the interval.
  * @param getWindow () => BrowserWindow|null
@@ -195,4 +226,5 @@ module.exports = {
   setLastCheck,
   setPendingInstaller,
   maybeAutoCheck,
+  cleanupOldInstallers,
 };

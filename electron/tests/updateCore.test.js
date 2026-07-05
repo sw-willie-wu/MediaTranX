@@ -12,6 +12,7 @@ const {
   resolveChannel,
   compareVersionsFull,
   pickLatestFromList,
+  parseInstallerVersion,
 } = require('../updateCore.cjs');
 
 // ── normalizeVersion ─────────────────────────────────────────────────────────
@@ -197,6 +198,20 @@ test('pickLatestFromList: skips invalid entries, null on empty/none-valid', () =
   assert.strictEqual(pickLatestFromList([{ no_tag: true }, { tag_name: '' }]), null);
   const list = [{ no_tag: true }, rel('v1.5.2')];
   assert.strictEqual(pickLatestFromList(list).tag_name, 'v1.5.2');
+});
+
+// ── parseInstallerVersion ────────────────────────────────────────────────────
+test('parseInstallerVersion: plain / full / prerelease variants', () => {
+  assert.strictEqual(parseInstallerVersion('MediaTranX-Setup-1.5.2-win.exe'), '1.5.2');
+  assert.strictEqual(parseInstallerVersion('MediaTranX-Setup-1.5.2-full-win.exe'), '1.5.2');
+  assert.strictEqual(parseInstallerVersion('MediaTranX-Setup-1.6.0-dev.4-win.exe'), '1.6.0-dev.4');
+  assert.strictEqual(parseInstallerVersion('MediaTranX-Setup-1.6.0-dev.4-full-win.exe'), '1.6.0-dev.4');
+});
+test('parseInstallerVersion: non-installer names → null', () => {
+  assert.strictEqual(parseInstallerVersion('random.exe'), null);
+  assert.strictEqual(parseInstallerVersion('MediaTranX-Setup-1.5.2-win.exe.part'), null);
+  assert.strictEqual(parseInstallerVersion(''), null);
+  assert.strictEqual(parseInstallerVersion(null), null);
 });
 
 // ── parseLatestRelease.displayVersion ────────────────────────────────────────

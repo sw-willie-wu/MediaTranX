@@ -517,6 +517,7 @@ function createWindow() {
   // ── Software update (GitHub full-release check → download → run installer) ──
   // Service reads/writes the SAME preferences.json main uses (inject its path).
   updateService.configure({ appDataPath: getAppDataPath(), buildMode: BUILD_MODE });
+  updateService.cleanupOldInstallers(); // 清掉已裝完/過時的舊安裝包（best-effort）
   ipcMain.handle('update:check', () => updateService.checkForUpdates());
   ipcMain.handle('update:download', (event) =>
     updateService.downloadUpdate((p) => {

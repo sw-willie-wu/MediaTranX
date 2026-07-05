@@ -85,6 +85,16 @@ function compareVersionsFull(a, b) {
 }
 
 /**
+ * Extract the version (incl. -dev.N suffix) from an installer filename
+ * ("MediaTranX-Setup-1.6.0-dev.4-full-win.exe" → "1.6.0-dev.4").
+ * Returns null for anything that isn't our installer naming shape.
+ */
+function parseInstallerVersion(name) {
+  const m = /^MediaTranX-Setup-(.+?)(?:-full)?-win\.exe$/i.exec(String(name));
+  return m ? m[1] : null;
+}
+
+/**
  * Pick the highest-version release from a GitHub /releases list (does not
  * rely on API ordering). Entries without a usable tag_name are skipped.
  * Returns the raw release object or null.
@@ -173,4 +183,5 @@ module.exports = {
   resolveChannel,
   compareVersionsFull,
   pickLatestFromList,
+  parseInstallerVersion,
 };
