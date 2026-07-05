@@ -1,18 +1,19 @@
 """問題回報（feedback）常數。
 
-FORM_ID / ENTRY_IDS 在 Google 表單建立後填入真值（見 plan Task 0）。
+FORM_ID / ENTRY_IDS 對應正式表單「MediaTranX 意見回報」（2026-07-06 建立，
+回應連結至 Google Sheet「MediaTranX 意見回報 (回覆)」）。
 """
 
-FORM_ID = "REPLACE_WITH_REAL_FORM_ID"
+FORM_ID = "1FAIpQLSfASO6Yhp87CBkVd9B2IJa_Eg72L12hsPPdyphmP89LPR66tw"
 
 ENTRY_IDS = {
-    "type": "entry.1000001",
-    "description": "entry.1000002",
-    "email": "entry.1000003",
-    "app_version": "entry.1000004",
-    "env_summary": "entry.1000005",
-    "task_context": "entry.1000006",
-    "log_tail": "entry.1000007",
+    "type": "entry.715300869",
+    "description": "entry.2006620054",
+    "email": "entry.1611767768",
+    "app_version": "entry.813553844",
+    "env_summary": "entry.275414751",
+    "task_context": "entry.653612363",
+    "log_tail": "entry.1672329663",
 }
 
 # 前端送 key，transport 送中文 label（與 Google 表單選項逐字一致、定死）
