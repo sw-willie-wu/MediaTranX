@@ -1451,6 +1451,29 @@ export default {
     },
   },
 
+  // ── Feedback ──────────────────────────────────────────────────────────
+  feedback: {
+    title: 'Feedback',
+    type_label: 'Report type',
+    type: { bug: 'Bug report', feature: 'Feature request', other: 'Other' },
+    description_label: 'Description',
+    description_placeholder: 'Describe your issue or suggestion…',
+    email_label: 'Contact email (optional)',
+    include_diagnostics: 'Attach diagnostics',
+    preview_toggle: 'Preview diagnostics',
+    section: { app_version: 'App version', env_summary: 'Environment summary', task_context: 'Task context', log_tail: 'Log tail' },
+    diag_fetch_failed: 'Could not retrieve diagnostics',
+    submit: 'Submit',
+    cancel: 'Cancel',
+    sending: 'Sending…',
+    success: 'Thanks for your feedback!',
+    failed: 'Failed to submit feedback',
+    use_browser: 'Report via browser',
+    report_task: 'Report this issue',
+    export_btn: 'Export diagnostics',
+    export_failed: 'Failed to export diagnostics',
+  },
+
   // ── Model descriptions ────────────────────────────────────────────────
   models: {
     // Image upscale

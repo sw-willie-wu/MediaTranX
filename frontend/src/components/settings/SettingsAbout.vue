@@ -3,12 +3,16 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConfirm } from '@/composables/useConfirm'
 import { apiFetch } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 import AppIcon from '@/assets/icon.svg'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 import { useVideoDownloadStore } from '@/stores/videoDownload'
 import { useUpdateStore } from '@/stores/update'
+import { useFeedbackStore } from '@/stores/feedback'
 
 const { t } = useI18n()
+const { show } = useToast()
+const feedback = useFeedbackStore()
 const { confirm } = useConfirm()
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const electron = (window as any).electron
@@ -53,6 +57,22 @@ const reinstallDone = ref(false)
 const reinstallError = ref('')
 const reinstallDetail = ref('')
 const reinstallPercent = ref(0)
+
+// Diagnostics export
+const exporting = ref(false)
+async function exportDiagnostics() {
+  exporting.value = true
+  try {
+    const res = await apiFetch('/feedback/diagnostics/export', { method: 'POST' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const { zip_path } = await res.json()
+    electron?.showItemInFolder(zip_path)
+  } catch {
+    show(t('feedback.export_failed'), { type: 'error' })
+  } finally {
+    exporting.value = false
+  }
+}
 
 const components = computed(() => envInfo.value.components || {})
 
@@ -202,8 +222,11 @@ useAgentPanelHost('settings.about', {
   <h6 class="section-title mt">{{ $t('settings.about.support') }}</h6>
   <div class="about-links">
     <a href="https://github.com/sw-willie-wu/MediaTranX" target="_blank" class="btn-secondary about-link-btn"><i class="bi bi-github"></i> {{ $t('settings.about.github') }}</a>
-    <button class="btn-secondary about-link-btn"><i class="bi bi-chat-dots"></i> {{ $t('settings.about.feedback') }}</button>
+    <button class="btn-secondary about-link-btn" @click="feedback.openFeedback()"><i class="bi bi-chat-dots"></i> {{ $t('settings.about.feedback') }}</button>
     <button class="btn-secondary about-link-btn"><i class="bi bi-globe"></i> {{ $t('settings.about.website') }}</button>
+    <button class="btn-secondary about-link-btn" :disabled="exporting" @click="exportDiagnostics">
+      <i class="bi bi-file-zip"></i> {{ $t('feedback.export_btn') }}
+    </button>
   </div>
 
   <h6 class="section-title mt">{{ $t('settings.about.components', '元件資訊') }}</h6>

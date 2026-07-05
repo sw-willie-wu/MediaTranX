@@ -43,7 +43,7 @@ const tabs = computed(() => [
 </script>
 
 <template>
-  <TabbedLayout v-model="activeTab" :tabs="tabs">
+  <TabbedLayout v-model="activeTab" :tabs="tabs" content-max-width="720px">
     <SettingsGeneral v-if="activeTab === 'general'" />
     <SettingsSystem  v-else-if="activeTab === 'system'" />
     <SettingsModels  v-else-if="activeTab === 'models'" />

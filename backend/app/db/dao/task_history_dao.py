@@ -97,6 +97,11 @@ class TaskHistoryDAO:
                 "page_size": page_size,
             }
 
+    def get(self, task_id: str) -> TaskHistory | None:
+        """依 task_id 取單筆歷史（找不到回 None）。"""
+        with Session(get_engine()) as session:
+            return session.get(TaskHistory, task_id)
+
     def delete(self, task_id: str) -> bool:
         """Delete a single history record."""
         with Session(get_engine()) as session:

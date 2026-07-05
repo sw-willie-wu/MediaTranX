@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('electron', {
   writeLocalFile: async (filePath, data) => await ipcRenderer.invoke('write-local-file', filePath, data),
   showItemInFolder: (filePath) => ipcRenderer.send('show-item-in-folder', filePath),
   openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
   savePreference: (key, value) => ipcRenderer.send('save-preference', key, value),
   reinstallAiEnv: () => ipcRenderer.send('reinstall-ai-env'),
   onReinstallProgress: (cb) => ipcRenderer.on('reinstall-progress', (_, data) => cb(data)),

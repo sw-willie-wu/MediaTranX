@@ -32,6 +32,10 @@ from app.services.tasks.history_service import TaskHistoryService
 # ── Agent Session Persistence (lightweight) ──
 from app.services.agent.agent_session_service import AgentSessionService
 
+# ── Feedback (lightweight — urllib/pydantic only, no torch/onnx) ──
+from app.services.feedback.service import FeedbackService
+from app.services.feedback.google_form import GoogleFormTransport
+
 
 # ── Lazy factory helper ─────────────────────────────────────────────────────
 # Defers `import module; cls(...)` until the Singleton is first accessed.
@@ -197,6 +201,13 @@ class AppContainer(containers.DeclarativeContainer):
 
     # ── Task History ──
     task_history = providers.Singleton(TaskHistoryService)
+
+    # ── Feedback ──
+    feedback = providers.Singleton(
+        FeedbackService,
+        task_manager=task_manager,
+        transport=providers.Factory(GoogleFormTransport),
+    )
 
     # ── Audio Services (lazy) ──
     audio_transcode = providers.Singleton(

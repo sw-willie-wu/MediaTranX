@@ -26,6 +26,7 @@ interface Window {
     downloadToPath: (url: string, destPath: string, srcPath?: string) => Promise<void>
     showItemInFolder: (filePath: string) => void
     openPath: (filePath: string) => Promise<string>
+    openExternal?: (url: string) => Promise<void>
     fileExists: (filePath: string) => Promise<boolean>
     readLocalFile: (filePath: string) => Promise<Uint8Array>
     restart: () => void

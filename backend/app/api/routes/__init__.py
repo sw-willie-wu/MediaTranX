@@ -10,6 +10,7 @@ from .document import router as document_router
 from .setup import router as setup_router
 from .llm import router as llm_router
 from .agent import router as agent_router
+from .feedback import router as feedback_router
 
 api_router = APIRouter()
 
@@ -23,3 +24,4 @@ api_router.include_router(video_router)
 api_router.include_router(audio_router)
 api_router.include_router(image_router)
 api_router.include_router(document_router)
+api_router.include_router(feedback_router)

@@ -8,6 +8,7 @@ import AppConfirmDialog from './components/common/AppConfirmDialog.vue'
 import ChatBubble from './components/agent/ChatBubble.vue'
 import UrlDownloadCard from './components/common/UrlDownloadCard.vue'
 import UpdateModal from './components/UpdateModal.vue'
+import FeedbackModal from './components/FeedbackModal.vue'
 import { useTheme } from './composables/useTheme'
 import { useResultsStore } from './stores/results'
 import { useVideoDownloadStore } from './stores/videoDownload'
@@ -73,6 +74,7 @@ onMounted(async () => {
     <ChatBubble />
     <UrlDownloadCard />
     <UpdateModal />
+    <FeedbackModal />
   </div>
 </template>
 
