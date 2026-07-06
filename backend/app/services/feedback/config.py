@@ -23,10 +23,18 @@ TYPE_LABELS = {
     "other": "其他",
 }
 
-LOG_TAIL_CAP_BYTES = 40_960          # Log 尾段合計 cap（bytes）
+LOG_TAIL_CAP_BYTES = 40_960          # Log 尾段原始 cap（bytes；encoded 預算後通常更小）
 CORE_ERROR_CAP_BYTES = 10_240        # core_error.log 優先預算（bytes）
 SECTION_ASSEMBLY_CHAR_CAP = 8_000    # env_summary / task_context 組裝 cap（字元）
 POST_SECTION_CHAR_LIMIT = 50_000     # POST 防禦性驗證：每節上限（字元，Sheet 單格上限）
+
+# Google formResponse 的 POST body 上限實測 ~31KB（超過回 413，2026-07-06 對真表單
+# 二分實測：30,720 OK / 32,768 413）。各自動節以 URL-encoded 後大小配預算，
+# 合計 26.6KB + description + 輔助欄位 overhead，離 31K 留安全 margin。
+# 截斷在「組裝端」做（維持所見即所送：預覽 = 送出）。
+LOG_TAIL_ENCODED_BUDGET = 16_384     # Log 尾段 encoded 預算（保尾端＝最新行）
+ENV_ENCODED_BUDGET = 4_096           # 環境摘要 encoded 預算（保頭端）
+TASK_ENCODED_BUDGET = 6_144          # 任務脈絡 encoded 預算（保頭端＝task_type/error_code）
 PREFILL_URL_CAP_BYTES = 6_144        # 降級預填連結總長 cap
 FORM_TIMEOUT_S = 15
 EMPTY_SECTION = "(無)"

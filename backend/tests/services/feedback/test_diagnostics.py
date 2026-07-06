@@ -3,17 +3,23 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from urllib.parse import quote_plus
+
 from app.services.feedback.config import (
     CORE_ERROR_CAP_BYTES,
     EMPTY_SECTION,
+    ENV_ENCODED_BUDGET,
     LOG_TAIL_CAP_BYTES,
+    LOG_TAIL_ENCODED_BUDGET,
     SECTION_ASSEMBLY_CHAR_CAP,
+    TASK_ENCODED_BUDGET,
 )
 from app.services.feedback.diagnostics import (
     DiagnosticsSections,
     build_diagnostics,
     read_tail_bytes,
     redact_usernames,
+    truncate_to_encoded_budget,
     truncate_utf8_tail,
 )
 
@@ -138,7 +144,9 @@ class TestBuildDiagnostics:
         raw = d.log_tail.encode("utf-8")
         assert len(raw) <= LOG_TAIL_CAP_BYTES                       # 不變量 (a)
         assert d.log_tail.count("E") <= CORE_ERROR_CAP_BYTES        # core 上限 10,240
-        assert d.log_tail.count("A") > 25_000                       # 剩餘預算給 app.log
+        assert d.log_tail.count("A") > 4_000                        # 剩餘 encoded 預算給 app.log
+        # 413 防線：encoded 後不得超過 form 預算
+        assert len(quote_plus(d.log_tail).encode()) <= LOG_TAIL_ENCODED_BUDGET
 
     def test_app_log_missing_budget_goes_to_core(self, tmp_path):
         logs = tmp_path / "logs"; logs.mkdir()
@@ -146,6 +154,7 @@ class TestBuildDiagnostics:
         d = build_diagnostics(settings=_mk_settings(tmp_path), task_manager=_mk_task_manager(), task_id=None)
         assert d.log_tail.count("E") > CORE_ERROR_CAP_BYTES         # 餘額歸 core
         assert len(d.log_tail.encode("utf-8")) <= LOG_TAIL_CAP_BYTES
+        assert len(quote_plus(d.log_tail).encode()) <= LOG_TAIL_ENCODED_BUDGET
 
     def test_mask_before_truncate_invariant(self, tmp_path):
         # 不變量 (a) 完整版：短 username 遮成 *** 變長，最壞輸入仍 ≤ 40,960 bytes
@@ -160,3 +169,47 @@ class TestBuildDiagnostics:
         monkeypatch.setenv("MEDIATRANX_APP_VERSION", "1.2.3")
         d = build_diagnostics(settings=_mk_settings(tmp_path), task_manager=_mk_task_manager(), task_id=None)
         assert d.app_version == "1.2.3"
+
+    def test_cjk_log_respects_encoded_budget(self, tmp_path):
+        # 413 根因回歸：CJK encoded ×9 膨脹——原始 bytes cap 擋不住，encoded 預算才擋得住
+        logs = tmp_path / "logs"; logs.mkdir()
+        (logs / "app.log").write_bytes(("錯誤訊息中文內容" * 5_000).encode("utf-8"))  # 120KB 原始
+        d = build_diagnostics(settings=_mk_settings(tmp_path), task_manager=_mk_task_manager(), task_id=None)
+        assert len(quote_plus(d.log_tail).encode()) <= LOG_TAIL_ENCODED_BUDGET
+        assert "中文內容" in d.log_tail                              # 尾端內容保留
+
+    def test_env_and_task_respect_encoded_budgets(self, tmp_path):
+        big_cjk = "環境" * 6_000  # 8,000 字 cap 內裁到 8,000 字，encoded 仍 72KB → 預算截
+        task = SimpleNamespace(task_type="x", error="錯" * 7_000, error_code=None,
+                               created_at=__import__("datetime").datetime(2026, 7, 6))
+        with patch("app.services.feedback.diagnostics.collect_env_summary", return_value=big_cjk):
+            d = build_diagnostics(settings=_mk_settings(tmp_path), task_manager=_mk_task_manager(task), task_id="t")
+        assert len(quote_plus(d.env_summary).encode()) <= ENV_ENCODED_BUDGET
+        assert len(quote_plus(d.task_context).encode()) <= TASK_ENCODED_BUDGET
+        assert d.task_context.startswith("task_type:")               # 保頭端（關鍵欄位）
+
+
+class TestTruncateToEncodedBudget:
+    def test_within_budget_untouched(self):
+        assert truncate_to_encoded_budget("hello", 100) == "hello"
+
+    def test_ascii_tail_kept(self):
+        out = truncate_to_encoded_budget("0123456789", 4, keep="tail")
+        assert out == "6789"
+
+    def test_head_kept(self):
+        out = truncate_to_encoded_budget("0123456789", 4, keep="head")
+        assert out == "0123"
+
+    def test_cjk_expansion_counted(self):
+        # 每個 CJK 字 quote_plus 後 9 bytes → 預算 27 只裝得下 3 個字
+        out = truncate_to_encoded_budget("中" * 10, 27)
+        assert out == "中中中"
+
+    def test_special_chars_expansion(self):
+        # 空白→'+'（1 byte）、反斜線→%5C（3 bytes）
+        out = truncate_to_encoded_budget("a\\b\\c", 7, keep="head")
+        assert len(quote_plus(out).encode()) <= 7
+
+    def test_tiny_budget_empty(self):
+        assert truncate_to_encoded_budget("中中", 2) == ""

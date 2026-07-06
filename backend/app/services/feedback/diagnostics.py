@@ -2,6 +2,7 @@
 import logging
 import re
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from pydantic import BaseModel
 
@@ -9,8 +10,11 @@ from app.init.system_info import app_version, collect_env_summary
 from app.services.feedback.config import (
     CORE_ERROR_CAP_BYTES,
     EMPTY_SECTION,
+    ENV_ENCODED_BUDGET,
     LOG_TAIL_CAP_BYTES,
+    LOG_TAIL_ENCODED_BUDGET,
     SECTION_ASSEMBLY_CHAR_CAP,
+    TASK_ENCODED_BUDGET,
 )
 
 logger = logging.getLogger(__name__)
@@ -104,6 +108,29 @@ def _decode(raw: bytes) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
+def truncate_to_encoded_budget(text: str, budget_bytes: int, *, keep: str = "tail") -> str:
+    """以 form-urlencoded（quote_plus）後的大小為預算截斷。
+
+    Google formResponse 的 body 上限 ~31KB 是以「編碼後」計的——CJK 每字元
+    編碼成 9 chars（×3 膨脹），原始 bytes cap 擋不住 413。字元級切片保證
+    不會切壞 UTF-8。keep='tail' 保尾端（log 最新行）、'head' 保頭端
+    （env/task 的關鍵欄位在前面）。
+    """
+    if len(quote_plus(text).encode()) <= budget_bytes:
+        return text
+    lo, hi = 0, len(text)  # 二分找最大可保留字元數
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        piece = text[-mid:] if keep == "tail" else text[:mid]
+        if len(quote_plus(piece).encode()) <= budget_bytes:
+            lo = mid
+        else:
+            hi = mid - 1
+    if lo == 0:
+        return ""
+    return text[-lo:] if keep == "tail" else text[:lo]
+
+
 def _build_log_tail(log_dir: Path) -> str:
     """兩檔 tail 合併：core_error.log 優先（上限 10,240 bytes）、餘額給 app.log。
 
@@ -133,14 +160,21 @@ def _build_log_tail(log_dir: Path) -> str:
         else truncate_utf8_tail(redact_usernames(_decode(app_raw)), max(0, remaining))
     )
     combined = header_core + core_text + header_app + app_text
-    # 最終保險截斷（不變量 (a)：整節 ≤ LOG_TAIL_CAP_BYTES）
-    return truncate_utf8_tail(combined, LOG_TAIL_CAP_BYTES)
+    # 保險截斷（原始 bytes 上限）後，再壓進 form-encoded 預算（413 防線，保尾端）
+    combined = truncate_utf8_tail(combined, LOG_TAIL_CAP_BYTES)
+    return truncate_to_encoded_budget(combined, LOG_TAIL_ENCODED_BUDGET, keep="tail")
 
 
 def build_diagnostics(*, settings, task_manager, task_id: str | None) -> DiagnosticsSections:
-    """組裝四節診斷。只在 GET /feedback/diagnostics 呼叫（所見即所送的快照來源）。"""
+    """組裝四節診斷。只在 GET /feedback/diagnostics 呼叫（所見即所送的快照來源）。
+
+    各節同時受字元 cap 與 form-encoded 預算限制——後者是 Google formResponse
+    body ~31KB 上限（413）的防線，在組裝端截以維持「預覽 = 送出」。
+    """
     env = redact_usernames(collect_env_summary(settings))[:SECTION_ASSEMBLY_CHAR_CAP]
+    env = truncate_to_encoded_budget(env, ENV_ENCODED_BUDGET, keep="head")
     ctx = redact_usernames(_build_task_context(task_id, task_manager))[:SECTION_ASSEMBLY_CHAR_CAP]
+    ctx = truncate_to_encoded_budget(ctx, TASK_ENCODED_BUDGET, keep="head")
     return DiagnosticsSections(
         app_version=app_version(),
         env_summary=env,
