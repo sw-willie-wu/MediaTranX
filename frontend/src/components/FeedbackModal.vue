@@ -47,7 +47,8 @@
               v-if="fb.includeDiagnostics" class="preview-toggle link-btn"
               type="button" @click="previewOpen = !previewOpen"
             >
-              {{ t('feedback.preview_toggle') }}
+              <i class="bi" :class="previewOpen ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+              {{ previewOpen ? t('feedback.preview_close') : t('feedback.preview_toggle') }}
             </button>
             <div v-if="fb.includeDiagnostics && previewOpen" class="preview">
               <div v-if="fb.snapshotError" class="preview-error">{{ t('feedback.diag_fetch_failed') }}</div>
@@ -114,6 +115,8 @@ const SECTION_KEYS = ['app_version', 'env_summary', 'task_context', 'log_tail'] 
   min-width: 380px;
   max-width: 520px;
   width: 100%;
+  max-height: 88vh;      // 保險：小螢幕上 modal 本身可捲動、動作列不會被推出畫面
+  overflow-y: auto;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
 
   .modal-title {
@@ -199,10 +202,11 @@ const SECTION_KEYS = ['app_version', 'env_summary', 'task_context', 'log_tail'] 
   border-radius: 6px;
   padding: 0.75rem;
   background: var(--input-bg);
+  // 單一捲動容器：四節共用高度上限，展開不再把 modal 撐成一長條
+  max-height: 260px;
+  overflow-y: auto;
 
   pre {
-    max-height: 240px;
-    overflow: auto;
     font-size: 0.75rem;
     color: var(--text-secondary);
     margin: 0;
