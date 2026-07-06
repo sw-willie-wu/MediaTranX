@@ -3,7 +3,6 @@ name: Release
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']   # formal releases only; -dev.N tags don't match
-    branches: ['ci/release-workflow']  # TEMPORARY dry-run trigger — remove before merging to dev
   workflow_dispatch: {}                # build-only dry run (needs workflow on default branch)
 
 permissions:
