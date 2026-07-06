@@ -123,7 +123,7 @@ function isUpdateAvailable(current, latestTag) {
 /**
  * Pick the Windows NSIS installer asset from a GitHub release's assets array.
  * Prefers the "-full-win.exe" build; falls back to a plain "...-win.exe"
- * (release.py only appends "-full" when built with --full). Returns
+ * (build.py only appends "-full" when built with --full; formal releases ship the plain installer). Returns
  * { name, size, browser_download_url } or null.
  */
 function pickInstallerAsset(assets) {

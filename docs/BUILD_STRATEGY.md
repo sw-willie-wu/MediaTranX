@@ -126,7 +126,7 @@ Nuitka 以 `nuitka==4.0.8` **pin**（避免版本漂移連帶要求更新的 Min
 ```
 scripts/
 ├── build.py     ← build（vite + Nuitka + electron-builder）；--mode dev|prod、--step、--full
-└── release.py   ← 正式發版（單 repo 6 步：merge + bump + build + tag + push + sync）
+└── release.py   ← 正式發版 git 編排（5 步：merge + bump + tag + push + sync；build/簽名/release 由 GitHub Actions 做）
 ```
 
 > **務必加 `uv run --project backend` 前綴**跑 build.py —— `step_nuitka()` 的排除清單是由「執行所在 venv 已安裝套件」算出，不在 backend venv 跑會壞。
@@ -159,7 +159,7 @@ backend/pyproject.toml: 1.5.0
   → dist/MediaTranX-Setup-1.5.1-dev.1-win.exe
 ```
 
-> 發版流程（release.py 6 步）細節見 [RELEASE.md](RELEASE.md)。
+> 發版流程（本機 5 步 + CI build/簽名/release）細節見 [RELEASE.md](RELEASE.md)。
 
 ---
 
