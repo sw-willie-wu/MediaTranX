@@ -118,15 +118,21 @@ jobs:
         shell: bash
         env:
           SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SELF_SIGN_PFX_B64: ${{ secrets.SELF_SIGN_PFX_B64 }}
         run: |
-          if [[ "${{ steps.version.outputs.is_release }}" == "true" && -n "$SIGNPATH_API_TOKEN" ]]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          # priority: SignPath (trusted CA) > self-signed fallback > none
+          if [[ "${{ steps.version.outputs.is_release }}" != "true" ]]; then
+            echo "mode=none" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$SIGNPATH_API_TOKEN" ]]; then
+            echo "mode=signpath" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$SELF_SIGN_PFX_B64" ]]; then
+            echo "mode=selfsign" >> "$GITHUB_OUTPUT"
           else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "mode=none" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Sign installer (SignPath)
-        if: steps.signing.outputs.enabled == 'true'
+        if: steps.signing.outputs.mode == 'signpath'
         uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -136,6 +142,30 @@ jobs:
           github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
           wait-for-completion: true
           output-artifact-directory: signed
+
+      - name: Sign installer (self-signed fallback)   # integrity signature only — self-signed cert is NOT OS-trusted; SignPath supersedes when its secrets exist
+        if: steps.signing.outputs.mode == 'selfsign'
+        shell: pwsh
+        env:
+          SELF_SIGN_PFX_B64: ${{ secrets.SELF_SIGN_PFX_B64 }}
+          SELF_SIGN_PFX_PASSWORD: ${{ secrets.SELF_SIGN_PFX_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'selfsign.pfx'
+          try {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SELF_SIGN_PFX_B64))
+            $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' |
+              Sort-Object FullName -Descending | Select-Object -First 1
+            if (-not $signtool) { throw 'signtool.exe not found under Windows Kits' }
+            $exe = "dist/MediaTranX-Setup-${{ steps.version.outputs.version }}-win.exe"
+            & $signtool.FullName sign /f $pfx /p $env:SELF_SIGN_PFX_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $exe
+            if ($LASTEXITCODE -ne 0) { throw "signtool sign failed: $LASTEXITCODE" }
+          } finally {
+            Remove-Item $pfx -ErrorAction SilentlyContinue
+          }
+          $sig = Get-AuthenticodeSignature $exe
+          if (-not $sig.SignerCertificate) { throw 'no signature applied' }
+          # UnknownError/NotTrusted status is EXPECTED for a self-signed cert; presence is what we assert
+          Write-Host "Signed in place: status=$($sig.Status) subject=$($sig.SignerCertificate.Subject) timestamp=$($sig.TimeStamperCertificate.Subject)"
 
       - name: Extract release notes from CHANGELOG
         if: steps.version.outputs.is_release == 'true'
@@ -150,10 +180,10 @@ jobs:
         run: |
           tag="$GITHUB_REF_NAME"
           name="MediaTranX-Setup-${{ steps.version.outputs.version }}-win.exe"
-          if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
+          if [[ "${{ steps.signing.outputs.mode }}" == "signpath" ]]; then
             asset="signed/$name"
           else
-            asset="dist/$name"
+            asset="dist/$name"   # selfsign mode signs the dist file in place; none mode ships it unsigned
           fi
           latest_flag=""
           if [[ "$tag" == "v0.0.0" ]]; then latest_flag="--latest=false"; fi  # throwaway test tag must not become releases/latest
