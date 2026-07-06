@@ -2,6 +2,10 @@
 
 本檔記錄 MediaTranX 每個正式版本的使用者可見變更。格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/)。
 
+## [0.0.0] - 2026-07-06
+
+- CI 自簽名路徑拋棄式驗證（測試用，會刪除）
+
 ## [1.6.0] - 2026-07-XX
 
 ### 新增
