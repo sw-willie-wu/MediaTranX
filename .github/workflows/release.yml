@@ -1,0 +1,162 @@
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']   # formal releases only; -dev.N tags don't match
+    branches: ['ci/release-workflow']  # TEMPORARY dry-run trigger — remove before merging to dev
+  workflow_dispatch: {}                # build-only dry run (needs workflow on default branch)
+
+permissions:
+  contents: write   # gh release create / upload
+  actions: read     # SignPath action downloads the build artifact via API
+
+env:
+  UV_CACHE_DIR: C:\uv-cache
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4   # shallow is fine: notes come from CHANGELOG.md, not git log
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            # branch push / dispatch: GITHUB_REF_NAME is a branch name — use the
+            # committed version instead (a non-semver string would corrupt pyproject)
+            v=$(node -p "require('./electron/package.json').version")
+            echo "version=$v" >> "$GITHUB_OUTPUT"
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            electron/package-lock.json
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false   # built-in cache keys on uv.lock hash, which the bump commit mutates every release — managed manually below
+
+      # Cache scope reality check: tag runs only see same-ref + default-branch
+      # caches, so real releases run cold; these caches serve same-tag re-runs
+      # and dry-run iteration on the feature branch.
+      - name: Cache Nuitka toolchain downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/Nuitka/Nuitka/Cache/downloads
+          key: nuitka-downloads-v1
+
+      - name: Cache Nuitka ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/Nuitka/Nuitka/Cache/ccache
+          key: nuitka-ccache-${{ github.run_id }}
+          restore-keys: nuitka-ccache-
+
+      - name: Cache uv packages
+        uses: actions/cache@v4
+        with:
+          path: C:\uv-cache
+          key: uv-${{ github.run_id }}
+          restore-keys: uv-
+
+      - name: Export VCToolsRedistDir
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+          if (-not $vs) { throw "vswhere found no Visual Studio installation" }
+          $redist = Get-ChildItem "$vs\VC\Redist\MSVC" -Directory |
+            Where-Object { $_.Name -match '^\d+\.' } |
+            Sort-Object { [version]$_.Name } -Descending |
+            Select-Object -First 1
+          if (-not $redist) { throw "No VC redist dir under $vs\VC\Redist\MSVC" }
+          $dll = Get-Item "$($redist.FullName)\x64\Microsoft.VC143.CRT\msvcp140.dll"
+          $ver = [version]$dll.VersionInfo.FileVersion
+          Write-Host "VCToolsRedistDir=$($redist.FullName)  msvcp140.dll=$ver"
+          if ($ver -lt [version]"14.40") { throw "msvcp140.dll $ver < 14.40 (onnxruntime 1.17+ floor)" }
+          "VCToolsRedistDir=$($redist.FullName)\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Sync backend deps (frozen)
+        run: uv sync --frozen --project backend
+
+      - name: Build installer
+        run: uv run --project backend --frozen python scripts/build.py --mode prod --version ${{ steps.version.outputs.version }} --no-lock
+
+      - name: Prune uv cache for CI storage
+        run: uv cache prune --ci
+
+      - name: Upload unsigned installer
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-unsigned
+          path: dist/MediaTranX-Setup-${{ steps.version.outputs.version }}-win.exe
+          if-no-files-found: error
+
+      - name: Decide signing            # if: can't read secrets directly — map to env, test non-empty
+        id: signing
+        shell: bash
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        run: |
+          if [[ "${{ steps.version.outputs.is_release }}" == "true" && -n "$SIGNPATH_API_TOKEN" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sign installer (SignPath)
+        if: steps.signing.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Extract release notes from CHANGELOG
+        if: steps.version.outputs.is_release == 'true'
+        shell: bash
+        run: uv run --project backend --frozen python scripts/extract_changelog.py "${{ steps.version.outputs.version }}" --out release_notes.md
+
+      - name: Create or update release
+        if: steps.version.outputs.is_release == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          name="MediaTranX-Setup-${{ steps.version.outputs.version }}-win.exe"
+          if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
+            asset="signed/$name"
+          else
+            asset="dist/$name"
+          fi
+          latest_flag=""
+          if [[ "$tag" == "v0.0.0" ]]; then latest_flag="--latest=false"; fi  # throwaway test tag must not become releases/latest
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # re-run after partial failure: release exists, just (re)upload the asset
+            gh release upload "$tag" "$asset" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" "$asset" --repo "$GITHUB_REPOSITORY" \
+              --title "MediaTranX $tag" --notes-file release_notes.md $latest_flag
+          fi
+
+      - name: Disk space report
+        if: always()
+        shell: pwsh
+        run: Get-PSDrive -PSProvider FileSystem | Format-Table Name, @{n='Used(GB)';e={[math]::Round($_.Used/1GB,1)}}, @{n='Free(GB)';e={[math]::Round($_.Free/1GB,1)}}
