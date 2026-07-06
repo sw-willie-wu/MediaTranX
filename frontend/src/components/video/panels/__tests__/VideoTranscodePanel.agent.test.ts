@@ -24,13 +24,18 @@ function makeVideoTranscodePanelStub() {
   const customResHeight = ref(1080)
   const scaleAlgorithm = ref('bicubic')
 
+  const fps = ref('12')
+
   const audioFormatValues = ['mp3', 'aac', 'wav', 'flac']
+  const animFormatValues = ['gif', 'apng']
   const isAudioFormat = () => audioFormatValues.includes(outputFormat.value)
+  const isAnimFormat = () => animFormatValues.includes(outputFormat.value)
   const showBitrateOption = () => isAudioFormat() && !['wav', 'flac'].includes(outputFormat.value)
 
   const formats = [
     { value: 'mp4' }, { value: 'mkv' }, { value: 'webm' }, { value: 'avi' },
-    { value: 'mov' }, { value: 'mp3' }, { value: 'aac' }, { value: 'wav' }, { value: 'flac' },
+    { value: 'mov' }, { value: 'gif' }, { value: 'apng' },
+    { value: 'mp3' }, { value: 'aac' }, { value: 'wav' }, { value: 'flac' },
   ]
   const videoCodecs = [
     { value: 'h264' }, { value: 'h265' }, { value: 'vp9' }, { value: 'copy' },
@@ -55,7 +60,7 @@ function makeVideoTranscodePanelStub() {
         options: () => formats.map(f => f.value) },
       { name: 'video_codec', type: 'enum' as const,
         options: () => videoCodecs.map(c => c.value),
-        visibleWhen: () => !isAudioFormat() },
+        visibleWhen: () => !isAudioFormat() && !isAnimFormat() },
       { name: 'resolution', type: 'enum' as const,
         options: () => resolutions.map(r => r.value),
         visibleWhen: () => !isAudioFormat() },
@@ -70,10 +75,13 @@ function makeVideoTranscodePanelStub() {
         visibleWhen: () => !isAudioFormat() && !!resolution.value },
       { name: 'crf', type: 'number' as const,
         min: 0, max: 51, step: 1,
-        visibleWhen: () => !isAudioFormat() },
+        visibleWhen: () => !isAudioFormat() && !isAnimFormat() },
       { name: 'audio_bitrate', type: 'enum' as const,
         options: () => audioBitrates.map(b => b.value),
         visibleWhen: () => showBitrateOption() },
+      { name: 'fps', type: 'enum' as const,
+        options: () => ['8', '10', '12', '15', '20', '24'],
+        visibleWhen: () => isAnimFormat() },
     ],
     actions: [],
     execute: { requiresConfirm: true, label: 'panel.transcode.execute' },
@@ -91,6 +99,7 @@ function makeVideoTranscodePanelStub() {
       scale_algorithm: scaleAlgorithm.value,
       crf: crf.value,
       audio_bitrate: audioBitrate.value,
+      fps: fps.value,
     }),
     setField: (field, value) => {
       switch (field) {
@@ -124,6 +133,9 @@ function makeVideoTranscodePanelStub() {
         case 'audio_bitrate':
           audioBitrate.value = value as string
           return value
+        case 'fps':
+          fps.value = String(value)
+          return fps.value
         default:
           throw new Error(`Unknown field: ${field}`)
       }
@@ -168,5 +180,24 @@ describe('VideoTranscodePanel agent schema smoke', () => {
     mount(makeVideoTranscodePanelStub())
     const handle = panelRegistry.get('video.transcode')!
     expect(handle.setField('crf', 100)).toBe(51)
+  })
+
+  it('gif format hides codec/crf and shows fps in agent schema', () => {
+    mount(makeVideoTranscodePanelStub())
+    const h = panelRegistry.get('video.transcode')!
+    h.setField('output_format', 'gif')
+    const field = (n: string) => h.agentSchema.fields.find(f => f.name === n)!
+    expect(field('video_codec').visibleWhen!()).toBe(false)
+    expect(field('crf').visibleWhen!()).toBe(false)
+    expect(field('fps').visibleWhen!()).toBe(true)
+    expect(field('resolution').visibleWhen!()).toBe(true)
+  })
+
+  it('fps is settable and reflected in current values', () => {
+    mount(makeVideoTranscodePanelStub())
+    const h = panelRegistry.get('video.transcode')!
+    h.setField('output_format', 'gif')
+    h.setField('fps', '15')
+    expect(h.getCurrentValues().fps).toBe('15')
   })
 })

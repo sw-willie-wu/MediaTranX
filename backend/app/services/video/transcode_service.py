@@ -87,7 +87,7 @@ class VideoTranscodeService:
 
         Args:
             file_id: Input file ID
-            output_format: Output format (mp4, mkv, webm, etc.)
+            output_format: Output format (mp4, mkv, webm, avi, mov; gif/apng for silent animations)
             video_codec: Video codec (h264, h265, vp9, av1, copy)
             audio_codec: Audio codec (aac, mp3, opus, flac, copy)
             preset: Encoding speed preset (ultrafast, fast, medium, slow, veryslow)

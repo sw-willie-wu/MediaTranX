@@ -22,6 +22,7 @@ const mimeTypeMap: Record<string, ToolType> = {
   'image/jpeg': 'image',
   'image/png': 'image',
   'image/gif': 'image',
+  'image/apng': 'image',
   'image/webp': 'image',
   'image/bmp': 'image',
   'image/tiff': 'image',
@@ -37,7 +38,7 @@ const extMap: Record<string, ToolType> = {
   // 音訊
   mp3: 'audio', wav: 'audio', flac: 'audio', aac: 'audio', ogg: 'audio', m4a: 'audio', wma: 'audio', mid: 'audio', midi: 'audio',
   // 圖片
-  jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', webp: 'image', bmp: 'image', tiff: 'image', ico: 'image',
+  jpg: 'image', jpeg: 'image', png: 'image', apng: 'image', gif: 'image', webp: 'image', bmp: 'image', tiff: 'image', ico: 'image',
   // 文件
   pdf: 'document', doc: 'document', docx: 'document', txt: 'document',
 }

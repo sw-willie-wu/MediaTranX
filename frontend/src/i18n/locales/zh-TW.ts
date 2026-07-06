@@ -630,6 +630,8 @@ export default {
       nearest: 'Nearest Neighbor（像素風格）',
       crf: '品質 (CRF):',
       crf_hint: '數值越小品質越高、檔案越大（建議 18-28）',
+      fps: '幀率',
+      fps_hint: '動圖幀率，越低檔案越小（預設 12）',
       bitrate: '位元率',
       extract_audio: '提取音訊',
       task_label: '影片 · 轉檔',

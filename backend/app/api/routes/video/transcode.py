@@ -21,14 +21,14 @@ router = APIRouter()
 class TranscodeRequest(BaseModel):
     """Transcode request."""
     file_id: str = Field(..., description="Input file ID")
-    output_format: str = Field(default="mp4", description="Output format (mp4, mkv, webm, avi)")
+    output_format: str = Field(default="mp4", description="Output format (mp4, mkv, webm, avi, mov, gif, apng)")
     video_codec: str = Field(default="h264", description="Video codec (h264, h265, vp9, av1, copy)")
     audio_codec: str = Field(default="aac", description="Audio codec (aac, mp3, opus, flac, copy)")
     preset: str = Field(default="medium", description="Encoding speed (ultrafast, fast, medium, slow, veryslow)")
     crf: int = Field(default=23, ge=0, le=51, description="Quality value (0-51, lower is better)")
     resolution: Optional[str] = Field(default=None, description="Resolution (e.g., 1920x1080)")
     scale_algorithm: Optional[str] = Field(default=None, description="Scaling algorithm (bicubic, lanczos, bilinear, spline, neighbor)")
-    fps: Optional[float] = Field(default=None, gt=0, description="Frame rate")
+    fps: Optional[float] = Field(default=None, gt=0, le=60, description="Frame rate (used as the animation frame rate for gif/apng)")
     audio_bitrate: Optional[str] = Field(default=None, description="Audio bitrate (e.g., 128k)")
 
 
@@ -120,7 +120,7 @@ async def transcode_video(
     Submit video transcode task.
 
     Supported formats:
-    - **output_format**: mp4, mkv, webm, avi, mov
+    - **output_format**: mp4, mkv, webm, avi, mov, gif, apng (no sound animations; video_codec/crf not applicable, fps is animation frame rate)
     - **video_codec**: h264, h265, vp9, av1, copy (no re-encoding)
     - **audio_codec**: aac, mp3, opus, flac, copy (no re-encoding)
     - **preset**: ultrafast (fastest), fast, medium (default), slow, veryslow (best quality)
