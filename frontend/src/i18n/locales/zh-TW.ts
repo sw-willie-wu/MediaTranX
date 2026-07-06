@@ -1470,6 +1470,7 @@ export default {
     email_label: '聯絡 Email（選填）',
     include_diagnostics: '附上診斷資料',
     preview_toggle: '預覽診斷內容',
+    preview_close: '收合診斷內容',
     section: { app_version: 'App 版本', env_summary: '環境摘要', task_context: '任務脈絡', log_tail: 'Log 尾段' },
     diag_fetch_failed: '無法取得診斷資料',
     submit: '送出',

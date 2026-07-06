@@ -1470,6 +1470,7 @@ export default {
     email_label: 'Contact email (optional)',
     include_diagnostics: 'Attach diagnostics',
     preview_toggle: 'Preview diagnostics',
+    preview_close: 'Hide diagnostics',
     section: { app_version: 'App version', env_summary: 'Environment summary', task_context: 'Task context', log_tail: 'Log tail' },
     diag_fetch_failed: 'Could not retrieve diagnostics',
     submit: 'Submit',
