@@ -6,6 +6,8 @@ from app.workers.media_kind import infer_kind, MediaKind
     ("photo.jpg", MediaKind.IMAGE),
     ("photo.PNG", MediaKind.IMAGE),
     ("photo.webp", MediaKind.IMAGE),
+    ("anim.gif", MediaKind.IMAGE),
+    ("anim.apng", MediaKind.IMAGE),
     ("song.mp3", MediaKind.AUDIO),
     ("song.wav", MediaKind.AUDIO),
     ("song.flac", MediaKind.AUDIO),
