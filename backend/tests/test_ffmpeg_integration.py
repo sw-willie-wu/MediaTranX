@@ -2,9 +2,13 @@
 
 Run: pytest -m ffmpeg
 """
+import subprocess
 import pytest
 import numpy as np
 from pathlib import Path
+from PIL import Image
+
+from app.adapters.binary.ffmpeg import TranscodeOptions
 
 pytestmark = pytest.mark.ffmpeg
 
@@ -172,3 +176,33 @@ class TestExtractFrameDownscaleDims:
         out = tmp_path / "o.jpg"
         await ffmpeg.extract_frame(src, out, 0.0)
         assert Image.open(out).size == (1280, 720)
+
+
+def _make_sample(ffmpeg, tmp_path):
+    """Generate a 2-second test video using lavfi testsrc."""
+    src = tmp_path / "src.mp4"
+    subprocess.run(
+        [ffmpeg.ffmpeg_path, "-y", "-f", "lavfi",
+         "-i", "testsrc=duration=2:size=320x240:rate=24", str(src)],
+        check=True, capture_output=True)
+    return src
+
+
+class TestFFmpegAnimationFormats:
+    def test_transcode_to_gif_real(self, ffmpeg, tmp_path):
+        src = _make_sample(ffmpeg, tmp_path)
+        out = tmp_path / "out.gif"
+        ffmpeg.transcode_sync(input_path=src, output_path=out,
+                              options=TranscodeOptions(output_format="gif", fps=10, resolution="160x120"))
+        assert out.stat().st_size > 0
+        im = Image.open(out)
+        assert im.format == "GIF" and getattr(im, "n_frames", 1) > 1
+
+    def test_transcode_to_apng_real(self, ffmpeg, tmp_path):
+        src = _make_sample(ffmpeg, tmp_path)
+        out = tmp_path / "out.apng"
+        ffmpeg.transcode_sync(input_path=src, output_path=out,
+                              options=TranscodeOptions(output_format="apng", fps=10, resolution="160x120"))
+        assert out.stat().st_size > 0
+        im = Image.open(out)
+        assert im.format == "PNG" and getattr(im, "n_frames", 1) > 1  # PIL reports APNG as PNG with n_frames
