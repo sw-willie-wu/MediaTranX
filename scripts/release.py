@@ -226,7 +226,7 @@ def main():
     print()
     print("========================================")
     print(f"  Release {version} tagged & pushed!")
-    print(f"  CI build (cold ~40-60 min):")
+    print(f"  CI build (cold ~15 min, measured 2026-07):")
     print(f"    https://github.com/sw-willie-wu/MediaTranX/actions")
     print(f"  Release will appear at:")
     print(f"    https://github.com/sw-willie-wu/MediaTranX/releases/tag/{version}")

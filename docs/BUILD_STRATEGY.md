@@ -125,7 +125,7 @@ Nuitka 以 `nuitka==4.0.8` **pin**（避免版本漂移連帶要求更新的 Min
 
 ```
 scripts/
-├── build.py     ← build（vite + Nuitka + electron-builder）；--mode dev|prod、--step、--full
+├── build.py     ← build（vite + Nuitka + electron-builder）；--mode dev|prod、--step、--full、--no-lock（CI 用）
 └── release.py   ← 正式發版 git 編排（5 步：merge + bump + tag + push + sync；build/簽名/release 由 GitHub Actions 做）
 ```
 

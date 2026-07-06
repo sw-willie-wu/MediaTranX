@@ -43,7 +43,7 @@ Step 5: sync main 回 dev
 
 runner（windows-latest）上：checkout → `uv sync --frozen`（嚴格照 committed `uv.lock`，不重 resolve）→ `build.py --mode prod --version X.Y.Z --no-lock`（vite + Nuitka + electron-builder）→ SignPath 簽名（secrets 未設定時跳過、出未簽名版）→ 抽 `CHANGELOG.md` 該版段落當 notes → 建 release 掛 installer。
 
-- **冷 build 約 40–60 分**（cache 對正式 release 無效：GitHub cache 按 ref 隔離 + 7 天清除）。要更快改 `runs-on` 為 8-core larger runner。
+- **冷 build 實測約 15 分**（2026-07 實測 13–14 分；cache 對正式 release 無效：GitHub cache 按 ref 隔離 + 7 天清除，每次正式版都當冷 build 估）。若未來變慢可改 `runs-on` 為 8-core larger runner。
 - **build 失敗不會出 release，但 tag 已存在**（與舊流程「build 失敗不建 tag」相反）。修好後直接 re-run workflow 即可（release step 是 create-or-upload，可安全 re-run）；需要改 code 就 bump patch 出新版。
 - 簽名 secrets：`SIGNPATH_API_TOKEN`（secret）+ `SIGNPATH_ORGANIZATION_ID` / `SIGNPATH_PROJECT_SLUG` / `SIGNPATH_POLICY_SLUG`（vars）。
 
