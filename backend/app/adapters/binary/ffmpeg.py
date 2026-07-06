@@ -117,6 +117,11 @@ class TranscodeOptions:
     extra_args: Optional[list[str]] = None
 
 
+# Formats produced as silent animations (palette/fps filtergraph path,
+# encoder picked by muxer; codec/crf/audio options do not apply).
+_ANIMATION_FORMATS = {"gif", "apng"}
+
+
 def _parse_time(t: float | str) -> float:
     """Convert time to seconds. Accepts float or 'HH:MM:SS' / 'MM:SS' string."""
     if isinstance(t, (int, float)):
@@ -271,6 +276,9 @@ class FFmpegWrapper:
         options: TranscodeOptions
     ) -> list[str]:
         """Build transcode command arguments."""
+        if options.output_format in _ANIMATION_FORMATS:
+            return self._build_animation_args(input_path, output_path, options)
+
         args = [
             self.ffmpeg_path,
             "-y",  # overwrite output file
@@ -309,6 +317,54 @@ class FFmpegWrapper:
         if options.extra_args:
             args.extend(options.extra_args)
 
+        args.append(str(output_path))
+        return args
+
+    def _build_animation_args(
+        self,
+        input_path: Path,
+        output_path: Path,
+        options: TranscodeOptions
+    ) -> list[str]:
+        """Build GIF/APNG (silent animation) command arguments.
+
+        GIF quality hinges on a palette pass: a single-command filter_complex
+        runs palettegen+paletteuse (split buffers frames in RAM until EOF —
+        acceptable for short clips; switch to a two-pass temp-palette flow if
+        long sources ever OOM). fps goes through the filtergraph, NOT -r, so
+        it composes with scale in one chain. Codec/preset/crf/audio flags are
+        intentionally absent: the muxer (-f gif/apng) picks the encoder and
+        animations are always silent (-an).
+        """
+        fps = options.fps or 12
+        chain_parts = [f"fps={fps}"]
+        if options.resolution:
+            w, h = options.resolution.split("x")
+            algo = options.scale_algorithm or "bicubic"
+            chain_parts.append(f"scale={w}:{h}:flags={algo}")
+        chain = ",".join(chain_parts)
+
+        args = [
+            self.ffmpeg_path,
+            "-y",
+            "-i", str(input_path),
+            "-progress", "pipe:1",
+            "-nostats",
+            "-an",
+        ]
+        if options.output_format == "gif":
+            args.extend([
+                "-filter_complex",
+                f"[0:v] {chain},split [a][b];[a] palettegen [p];[b][p] paletteuse",
+                "-f", "gif",
+                "-loop", "0",   # 0 = infinite (gif muxer default; explicit for clarity)
+            ])
+        else:  # apng
+            args.extend([
+                "-vf", chain,
+                "-f", "apng",
+                "-plays", "0",  # 0 = infinite (apng muxer does NOT default to it)
+            ])
         args.append(str(output_path))
         return args
 
