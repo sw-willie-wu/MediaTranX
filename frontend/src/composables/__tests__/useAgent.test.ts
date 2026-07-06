@@ -8,7 +8,7 @@
  *
  * Covers:
  *   1. no tool_calls → loop exits after one round
- *   2. 1 tool_call (auto policy) → dispatch + result + re-run + exit
+ *   2. 1 tool_call (standard policy) → dispatch + result + re-run + exit
  *   3. confirm-required tool → confirm card pushed; user approves → dispatch
  *   4. confirm-required tool → user cancels → user_cancelled tool result, no dispatch
  *   5. cancel mid-stream → silent cancel → transient cleared, only user message
@@ -21,7 +21,7 @@
  */
 
 import { setActivePinia, createPinia } from 'pinia'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useAgent, _resetAgent } from '@/composables/useAgent'
 import { useAgentStore } from '@/stores/agent'
 import { useAgentSettingsStore } from '@/stores/agentSettings'
@@ -29,6 +29,8 @@ import { makeFakeAgent } from '@/composables/__tests__/_fakeAgent'
 import { apiFetch } from '@/composables/useApi'
 import type { ActivePanelEntry } from '@/composables/useActivePanel'
 import type { PanelHandle } from '@/stores/panelRegistry'
+import { useToast } from '@/composables/useToast'
+import i18n from '@/i18n'
 
 vi.mock('@/composables/useApi', () => ({
   getApiBase: () => '/api',
@@ -71,27 +73,31 @@ if (typeof (globalThis as any).window === 'undefined') {
 }
 
 beforeEach(() => {
+  i18n.global.locale.value = 'en'
   localStorageStub.clear()
   setActivePinia(createPinia())
   _resetAgent()   // reset singleton so each test gets a fresh instance
   vi.mocked(apiFetch).mockReset()
   vi.mocked(apiFetch).mockResolvedValue({ ok: true, json: () => Promise.resolve({}) } as Response)
 })
+afterEach(() => {
+  useToast().toasts.splice(0)
+})
 
 // ─── Scenario 1 ───────────────────────────────────────────────────────────────
 
 describe('useAgent.runLoop', () => {
-  it('no tool_calls → loop exits after one round', async () => {
+  it('text-only reply with no action → nudged once, then exits (2 rounds)', async () => {
     const fake = makeFakeAgent(() => ({ textDeltas: ['hi'] }))
     const { sendUserText, messages } = useAgent({ agentFactory: fake.factory })
     await sendUserText('hello')
-    expect(fake.agent.runAgent).toHaveBeenCalledTimes(1)
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)   // nudge safety net
     expect(messages.value.map(m => m.role)).toEqual(['user', 'assistant'])
   })
 
   // ─── Scenario 2 ────────────────────────────────────────────────────────────
 
-  it('1 tool_call (auto policy) → dispatch + result + re-run + exit', async () => {
+  it('1 tool_call (standard policy) → dispatch + result + re-run + exit', async () => {
     const fake = makeFakeAgent((round) => round === 0
       ? { toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{"route":"/video"}' }] }
       : { textDeltas: ['done'] })
@@ -101,10 +107,10 @@ describe('useAgent.runLoop', () => {
       getTools: () => fakeToolsTOOLS,
       dispatch: vi.fn(async () => ({ ok: true })),
     }
-    // Default policy is 'auto'; 'navigate_to' is in autoWhitelist (not in alwaysAsk)
+    // Default policy is 'standard'; 'navigate_to' is non-execute → auto-run (no confirm)
     const { sendUserText, messages } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
     await sendUserText('go to video')
-    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(3)
     expect(fakeTools.dispatch).toHaveBeenCalledOnce()
     expect(messages.value.map(m => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
   })
@@ -112,10 +118,10 @@ describe('useAgent.runLoop', () => {
   // ─── Scenario 3 ────────────────────────────────────────────────────────────
 
   it('confirm-required tool → confirm card pushed; user approves → dispatch + result', async () => {
-    // Use policy='ask_all' so shouldConfirm always returns true regardless of tool name.
+    // Use policy='ask' so shouldConfirm always returns true regardless of tool name.
     // This ensures the confirm flow is triggered independently of alwaysAsk state.
     const settings = useAgentSettingsStore()
-    settings.setPolicy('ask_all')
+    settings.setPolicy('ask')
 
     // Round-aware: round 1 returns tool_call, round 2 returns empty (exits loop)
     const fake = makeFakeAgent((round) => round === 0
@@ -152,16 +158,16 @@ describe('useAgent.runLoop', () => {
     expect(roles).toContain('tool_confirm')
     expect(roles).toContain('tool')
     expect(fakeTools.dispatch).toHaveBeenCalledOnce()
-    // Second stream call happens after tool result
-    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
+    // Second stream call happens after tool result; third is the nudge round (navigate_to is non-terminal)
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(3)
   })
 
   // ─── Scenario 4 ────────────────────────────────────────────────────────────
 
   it('confirm-required tool → user cancels → user_cancelled tool result + no dispatch', async () => {
-    // Use policy='ask_all' so shouldConfirm always returns true.
+    // Use policy='ask' so shouldConfirm always returns true.
     const settings = useAgentSettingsStore()
-    settings.setPolicy('ask_all')
+    settings.setPolicy('ask')
 
     // Round-aware: round 1 returns tool_call requiring confirm, round 2 returns empty (exits loop)
     const fake = makeFakeAgent((round) => round === 0
@@ -251,11 +257,11 @@ describe('useAgent.runLoop', () => {
   // ─── Scenario 7 ────────────────────────────────────────────────────────────
 
   it('cancelRun during confirm wait → resolveAllPendingConfirms(false) + loop breaks', async () => {
-    // Use policy='ask_all' so shouldConfirm always returns true.
+    // Use policy='ask' so shouldConfirm always returns true.
     // cancelRun() calls abortRun() AND resolves pending confirms with false +
     // sets outerStop, so the loop stops without a round 2.
     const settings = useAgentSettingsStore()
-    settings.setPolicy('ask_all')
+    settings.setPolicy('ask')
 
     const fake = makeFakeAgent(() => ({
       toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{}' }],
@@ -372,8 +378,8 @@ describe('useAgent.runLoop', () => {
     const { sendUserText } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
     await sendUserText('go to video')
 
-    // Round 2 must have been called
-    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
+    // Round 2 must have been called (plus a nudge round 3 since navigate_to is non-terminal)
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(3)
     const capturedRound2Messages = fake.calls[1].messagesIn
     expect(capturedRound2Messages).not.toBeNull()
 
@@ -386,31 +392,47 @@ describe('useAgent.runLoop', () => {
     expect(wireAssistant.toolCalls[0].id).toBe('tc1')
   })
 
-  // ─── Scenario 10: RUN_ERROR produces exactly 1 assistant message ─────────────
+  // ─── Scenario 10: RUN_ERROR → transient sticky toast, NOT persisted ──────────
 
-  it('RUN_ERROR does not duplicate assistant message', async () => {
+  it('RUN_ERROR → sticky error toast, not committed to chat history', async () => {
+    const { toasts } = useToast(); toasts.splice(0)
     const fake = makeFakeAgent(() => ({ error: { code: 'agent.error.no_model', message: 'no model configured' } }))
 
     const { sendUserText, messages } = useAgent({ agentFactory: fake.factory })
     await sendUserText('hello')
 
-    const assistantMessages = messages.value.filter(m => m.role === 'assistant')
-    // Must be exactly 1 — the formatted error one, NOT an extra empty follow-up
-    expect(assistantMessages).toHaveLength(1)
-    const msg = assistantMessages[0] as any
-    // useAgent now formats RUN_ERROR via i18n: either translated text or raw
-    // code when no translation, followed by the backend message in parens.
-    // Both `agent.error.no_model` (raw code if i18n absent) and the en/zh-TW
-    // translations are acceptable; the backend message must always be there.
-    expect(msg.content).toMatch(/no model configured/)
-    expect(msg.content).toMatch(/agent\.error\.no_model|No agent model configured|尚未設定/)
+    expect(messages.value.map(m => m.role)).toEqual(['user'])
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0].type).toBe('error')
+    expect(toasts[0].message).toBe('No assistant model configured')
+    expect(useAgentStore().runError).toBe('No assistant model configured')
+  })
+
+  it('RUN_ERROR with an unmapped code → generic friendly fallback (never raw key)', async () => {
+    const { toasts } = useToast(); toasts.splice(0)
+    const fake = makeFakeAgent(() => ({ error: { code: 'agent.error.some_unmapped', message: 'boom' } }))
+    const store = useAgentStore()
+    const { sendUserText } = useAgent({ agentFactory: fake.factory })
+    await sendUserText('hi')
+    expect(toasts[0].message).toBe('The assistant hit an error, please try again later.')
+    expect(store.runError).toBe('The assistant hit an error, please try again later.')
+    expect(toasts[0].message).not.toContain('agent.error')
+  })
+
+  it('sendUserText clears a prior runError label', async () => {
+    const store = useAgentStore()
+    store.setRunError('previous error')
+    const fake = makeFakeAgent(() => ({ textDeltas: ['hi'] }))
+    const { sendUserText } = useAgent({ agentFactory: fake.factory })
+    await sendUserText('again')
+    expect(store.runError).toBeNull()
   })
 
   // ─── Scenario 11: cancelRun during confirm → outerStop → no round 2 ──────────
 
   it('cancelRun during confirm wait sets outerStop → loop exits, no round 2 runAgent', async () => {
     const settings = useAgentSettingsStore()
-    settings.setPolicy('ask_all')
+    settings.setPolicy('ask')
 
     const fake = makeFakeAgent(() => ({
       toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{}' }],
@@ -452,6 +474,115 @@ describe('useAgent.runLoop', () => {
     expect(content.user_cancelled).toBe(true)
   })
 
+  // ─── Nudge A: text-only round, not yet acted → inject 1 nudge, re-run ────────
+
+  it('text-only round with no prior action → injects one non-persisted user nudge and re-runs', async () => {
+    // Every round is text-only (no tool calls) and no execute/action ever dispatched.
+    const fake = makeFakeAgent(() => ({ textDeltas: ['我現在執行壓縮'] }))
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory })
+
+    await sendUserText('壓縮這張圖並執行')
+
+    // Round 0 (text-only, not acted) → nudge → Round 1 (text-only, nudged) → break.
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
+    // The nudge is NOT rendered/persisted: messages.value holds only user + the first assistant text.
+    // (nudge round's text-only reply is suppressed — only user + 1 assistant committed)
+    expect(messages.value.map(m => m.role)).toEqual(['user', 'assistant'])
+    // Round-2 wire payload ends with the injected user nudge, which MUST carry an id.
+    const wire2 = fake.calls[1].messagesIn
+    const last = wire2[wire2.length - 1]
+    expect(last.role).toBe('user')
+    expect(typeof last.id).toBe('string')
+    expect(last.id.length).toBeGreaterThan(0)
+    expect(last.content).toMatch(/尚未執行的操作|直接呼叫對應的工具/)
+  })
+
+  // ─── Nudge B: already acted (execute dispatched) → no nudge ──────────────────
+
+  it('text-only round AFTER a click_execute was dispatched → no nudge', async () => {
+    const settings = useAgentSettingsStore()
+    settings.setPolicy('standard')   // still confirm-gated: click_execute is execute-class
+    const fake = makeFakeAgent((round) => round === 0
+      ? { toolCalls: [{ id: 'tc1', name: 'click_execute', args: '{}' }] }
+      : { textDeltas: ['已送出，稍候'] })
+    const fakeToolsTOOLS = [{ name: 'click_execute', description: '', parameters: {} }]
+    const fakeTools = {
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
+      dispatch: vi.fn(async () => ({ ok: true, task_id: 't1' })),
+    }
+    const store = useAgentStore()
+    const { sendUserText } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
+
+    // Approve the confirm card when it appears.
+    const approver = async () => {
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 1))
+        if (store.pendingConfirms.size > 0) { store.resolveAllPendingConfirms(true); break }
+      }
+    }
+    await Promise.all([sendUserText('執行'), approver()])
+
+    // Round 0 execute + Round 1 text-only(acted→no nudge, break) = exactly 2, NOT 3.
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
+    // No wire payload contains an injected nudge user message.
+    const anyNudge = fake.calls.some(c =>
+      c.messagesIn.some((m: any) => m.role === 'user' && /直接呼叫對應的工具/.test(m.content ?? '')))
+    expect(anyNudge).toBe(false)
+  })
+
+  // ─── Nudge C: user CANCELS the execute confirm → still no nudge (M1) ──────────
+
+  it('user cancels the execute confirm, next text-only round → no nudge (acted set at dequeue)', async () => {
+    const settings = useAgentSettingsStore()
+    settings.setPolicy('standard')
+    const fake = makeFakeAgent((round) => round === 0
+      ? { toolCalls: [{ id: 'tc1', name: 'click_execute', args: '{}' }] }
+      : { textDeltas: ['好，已取消'] })
+    const fakeToolsTOOLS = [{ name: 'click_execute', description: '', parameters: {} }]
+    const fakeTools = {
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
+      dispatch: vi.fn(async () => ({ ok: true })),
+    }
+    const store = useAgentStore()
+    const { sendUserText } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
+
+    // Reject the confirm card when it appears.
+    const rejecter = async () => {
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 1))
+        if (store.pendingConfirms.size > 0) { store.resolveAllPendingConfirms(false); break }
+      }
+    }
+    await Promise.all([sendUserText('執行'), rejecter()])
+
+    // Cancel did NOT dispatch, but actedThisTurn was set at dequeue → round-1 text-only NOT nudged.
+    expect(fakeTools.dispatch).not.toHaveBeenCalled()
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)   // NOT 3 (no nudge round)
+    const anyNudge = fake.calls.some(c =>
+      c.messagesIn.some((m: any) => m.role === 'user' && /直接呼叫對應的工具/.test(m.content ?? '')))
+    expect(anyNudge).toBe(false)
+  })
+
+  // ─── Nudge D: nudge round emits a tool call → kept and dispatched ────────────
+
+  it('nudge round that emits a tool call → kept and dispatched (forgotten-action caught)', async () => {
+    const fake = makeFakeAgent((round) => round === 0
+      ? { textDeltas: ['好的，我現在切換'] }
+      : round === 1
+        ? { toolCalls: [{ id: 'tc1', name: 'navigate_to', args: '{"route":"/image"}' }] }
+        : { textDeltas: ['已切換'] })
+    const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
+    const fakeTools = { TOOLS: fakeToolsTOOLS, getTools: () => fakeToolsTOOLS, dispatch: vi.fn(async () => ({ ok: true })) }
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
+    await sendUserText('切換到圖片工具')
+    expect(fakeTools.dispatch).toHaveBeenCalledOnce()
+    const roles = messages.value.map(m => m.role)
+    expect(roles).toContain('tool')
+    expect(roles.filter(r => r === 'assistant').length).toBeGreaterThanOrEqual(1)
+  })
+
   // ─── Persistence tests ──────────────────────────────────────────────────────
 
   it('persists every committed message via apiFetch', async () => {
@@ -461,7 +592,7 @@ describe('useAgent.runLoop', () => {
 
     await sendUserText('hello')
 
-    // user message + assistant reply both persisted to the session endpoint
+    // user message + one assistant reply (nudge round suppressed) persisted to the session endpoint
     const calls = vi.mocked(apiFetch).mock.calls.filter(
       (c) => String(c[0]).includes(`/agent/sessions/${currentSessionId.value}/messages`),
     )
@@ -612,5 +743,79 @@ describe('useAgent.runLoop', () => {
     expect(lastMsg.content).toContain('agent.error.internal')
     expect(lastMsg.content).toContain('network failure')
     consoleErrorSpy.mockRestore()
+  })
+
+  // ─── In-flight abort (fix/agent-abort-inflight) ──────────────────────────────
+
+  it('cancel during an in-flight dispatch → signal aborted + remaining tool calls balanced', async () => {
+    // One round emits TWO tool calls. We hold dispatch #1 open, press stop while
+    // it is in flight, then let it finish. The run must: (a) abort the signal the
+    // dispatcher received, (b) never dispatch tc2, (c) still leave a tool row for
+    // BOTH tc1 and tc2 so the history stays balanced (no dangling tool_call).
+    const fake = makeFakeAgent((round) => round === 0
+      ? { toolCalls: [
+          { id: 'tc1', name: 'navigate_to', args: '{"route":"/video"}' },
+          { id: 'tc2', name: 'navigate_to', args: '{"route":"/audio"}' },
+        ] }
+      : { textDeltas: ['done'] })
+
+    let markStarted!: () => void
+    const dispatchStarted = new Promise<void>((r) => { markStarted = r })
+    let openGate!: () => void
+    const gate = new Promise<void>((r) => { openGate = r })
+    let capturedSignal: AbortSignal | undefined
+
+    const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
+    const fakeTools = {
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
+      dispatch: vi.fn(async (_tc: any, ctx?: { signal?: AbortSignal }) => {
+        capturedSignal = ctx?.signal
+        markStarted()
+        await gate
+        // Mimic the real dispatcher: refuse to apply the mutation if aborted.
+        return ctx?.signal?.aborted ? { error: 'agent.error.aborted' } : { ok: true }
+      }),
+    }
+
+    const { sendUserText, cancelRun, messages } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
+    const run = sendUserText('go')
+    await dispatchStarted   // dispatch #1 is now in flight
+    cancelRun()             // user presses stop mid-dispatch
+    openGate()              // let dispatch #1 resolve
+    await run
+
+    expect(capturedSignal?.aborted).toBe(true)          // signal threaded + aborted at the right moment
+    expect(fakeTools.dispatch).toHaveBeenCalledOnce()   // tc2 never dispatched (loop broke)
+    const toolRows = messages.value.filter(m => m.role === 'tool') as any[]
+    expect(toolRows.map(m => m.toolCallId).sort()).toEqual(['tc1', 'tc2'])  // balanced
+  })
+
+  it('two tool calls without cancel → both dispatched with a non-aborted signal, both tool rows', async () => {
+    const fake = makeFakeAgent((round) => round === 0
+      ? { toolCalls: [
+          { id: 'tc1', name: 'navigate_to', args: '{"route":"/video"}' },
+          { id: 'tc2', name: 'navigate_to', args: '{"route":"/audio"}' },
+        ] }
+      : { textDeltas: ['done'] })
+
+    const seenAborted: boolean[] = []
+    const fakeToolsTOOLS = [{ name: 'navigate_to', description: '', parameters: {} }]
+    const fakeTools = {
+      TOOLS: fakeToolsTOOLS,
+      getTools: () => fakeToolsTOOLS,
+      dispatch: vi.fn(async (_tc: any, ctx?: { signal?: AbortSignal }) => {
+        seenAborted.push(!!ctx?.signal?.aborted)
+        return { ok: true }
+      }),
+    }
+
+    const { sendUserText, messages } = useAgent({ agentFactory: fake.factory, tools: fakeTools })
+    await sendUserText('go')
+
+    expect(fakeTools.dispatch).toHaveBeenCalledTimes(2)
+    expect(seenAborted).toEqual([false, false])   // signal is present but never aborted on the happy path
+    const toolRows = messages.value.filter(m => m.role === 'tool') as any[]
+    expect(toolRows.map(m => m.toolCallId).sort()).toEqual(['tc1', 'tc2'])   // exactly two, no double-synth
   })
 })

@@ -18,6 +18,11 @@ __pycache__/
 !electron/scripts/
 !electron/scripts/**
 
+# electron/lib/ (our committed helper modules) is also caught by `Lib/` above on
+# case-insensitive filesystems — same trap as scripts/. Un-ignore it.
+!electron/lib/
+!electron/lib/**
+
 # Re-exclude bytecode that the scripts/ un-ignores above would re-include
 __pycache__/
 *.pyc
@@ -65,3 +70,7 @@ backend/models/
 .claude/
 CLAUDE.md
 .gemini/
+.playwright-mcp/
+
+# SDD / superpowers scratch (never commit)
+.superpowers/

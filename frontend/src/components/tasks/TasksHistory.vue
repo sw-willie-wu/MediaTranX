@@ -4,8 +4,10 @@ import { useI18n } from 'vue-i18n'
 import { apiFetch } from '@/composables/useApi'
 import { getTaskTypeLabel } from '@/utils/taskTypeLabel'
 import { formatTaskError } from '@/utils/taskError'
+import { useFeedbackStore } from '@/stores/feedback'
 
 const { t } = useI18n()
+const feedback = useFeedbackStore()
 
 interface HistoryItem {
   task_id: string
@@ -155,6 +157,10 @@ function formatDuration(start: string | null, end: string | null): string {
   return `${s}${sS}`
 }
 
+function reportTask(item: HistoryItem) {
+  feedback.openFeedback({ type: 'bug', taskId: item.task_id })
+}
+
 onMounted(() => fetchHistory())
 onActivated(() => fetchHistory())
 </script>
@@ -200,6 +206,9 @@ onActivated(() => fetchHistory())
           <i class="bi bi-exclamation-circle-fill"></i>
           <span>{{ friendlyError(item) }}</span>
         </div>
+        <button class="report-issue-btn" @click.stop="reportTask(item)">
+          {{ t('feedback.report_task') }}
+        </button>
       </div>
       <div class="task-footer">
         <div class="task-times">
@@ -385,6 +394,22 @@ onActivated(() => fetchHistory())
     i { flex-shrink: 0; font-size: 0.85rem; }
     span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   }
+}
+
+.report-issue-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s ease;
+
+  &:hover { color: var(--color-accent); }
 }
 
 .task-footer {

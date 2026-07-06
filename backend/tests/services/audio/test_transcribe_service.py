@@ -273,6 +273,49 @@ class TestProgress:
         assert progress[-1][0] == 1.0
 
 
+class TestWordTimestampsDecoupling:
+    """Regression: align=True must NOT force word_timestamps=True (Wave 2 deliberate decoupling)."""
+
+    def test_align_true_does_not_force_word_timestamps(self, tmp_path):
+        """When align=True but word_timestamps is absent (or False), TranscribeOptions.word_timestamps == False."""
+        svc, *_, _ = _build(tmp_path)
+        captured_opts = []
+
+        def _fake_transcribe(path, opts, *args, **kwargs):
+            captured_opts.append(opts)
+            return _make_transcribe_result()
+
+        with patch("app.services.audio.transcribe_service.service.transcribe_audio_sync",
+                   side_effect=_fake_transcribe), \
+             patch("app.services.audio.transcribe_service.service.write_bilingual_or_single",
+                   return_value=_bilingual_return(with_translation=False)):
+            svc._execute({**BASE_PARAMS, "align": True}, lambda p, m: None)
+
+        assert len(captured_opts) == 1, "transcribe_audio_sync should be called exactly once"
+        opts = captured_opts[0]
+        assert opts.word_timestamps is False, (
+            "align=True must NOT force word_timestamps=True; "
+            "word_timestamps is UI/request-controlled (Wave 2 decoupling)"
+        )
+
+    def test_word_timestamps_explicit_true_is_respected(self, tmp_path):
+        """When word_timestamps=True is sent explicitly, it IS forwarded regardless of align."""
+        svc, *_, _ = _build(tmp_path)
+        captured_opts = []
+
+        def _fake_transcribe(path, opts, *args, **kwargs):
+            captured_opts.append(opts)
+            return _make_transcribe_result()
+
+        with patch("app.services.audio.transcribe_service.service.transcribe_audio_sync",
+                   side_effect=_fake_transcribe), \
+             patch("app.services.audio.transcribe_service.service.write_bilingual_or_single",
+                   return_value=_bilingual_return(with_translation=False)):
+            svc._execute({**BASE_PARAMS, "align": False, "word_timestamps": True}, lambda p, m: None)
+
+        assert captured_opts[0].word_timestamps is True
+
+
 class TestQueryMethods:
     def test_get_model_status_delegates_to_whisper(self, tmp_path):
         fs = make_file_service_mock(tmp_path)

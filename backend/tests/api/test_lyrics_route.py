@@ -86,3 +86,28 @@ def test_target_language_forwarded(client):
     assert kwargs["target_language"] == "zh-TW", (
         f"target_language not forwarded: {kwargs}"
     )
+
+
+# ---------------------------------------------------------------------------
+# translate_style / keep_names / glossary are forwarded to service.submit_lyrics
+# ---------------------------------------------------------------------------
+
+def test_lyrics_route_forwards_translate_keys(client):
+    """POST body translate_style, keep_names, glossary must reach submit_lyrics kwargs.
+
+    Uses non-default values on purpose: extra='ignore' would silently drop unknown
+    keys and revert to defaults — this test catches that.
+    """
+    tc, fake = client
+    payload = {
+        "file_id": "f1", "model_size": "small", "output_format": "lrc",
+        "translate": True, "target_language": "en",
+        "translate_style": "literal", "keep_names": False, "glossary": {"X": "Y"},
+    }
+    resp = tc.post("/audio/lyrics", json=payload)
+    assert resp.status_code == 200, resp.text
+
+    kwargs = fake.submit_lyrics.call_args.kwargs
+    assert kwargs["translate_style"] == "literal", f"translate_style not forwarded: {kwargs}"
+    assert kwargs["keep_names"] is False, f"keep_names not forwarded: {kwargs}"
+    assert kwargs["glossary"] == {"X": "Y"}, f"glossary not forwarded: {kwargs}"

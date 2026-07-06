@@ -10,6 +10,10 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 import { usePersistedModel } from '@/composables/usePersistedModel'
 
+const props = withDefaults(defineProps<{ storageKey?: string }>(), {
+  storageKey: 'subtitle_translate_model',
+})
+
 const { t } = useI18n()
 
 const settings = useSettingsStore()
@@ -17,7 +21,7 @@ const modelStore = useModelStore()
 const remoteStore = useRemoteModelStore()
 
 const enableTranslation = ref(false)
-const selectedTranslateModel = usePersistedModel('subtitle_translate_model')
+const selectedTranslateModel = usePersistedModel(props.storageKey)
 
 const localTranslateModelOptions = computed(() =>
   modelStore.forPanel(modelStore.byCapability('text'))
@@ -82,7 +86,7 @@ const targetLanguageOptions = computed(() =>
   }))
 )
 
-const STORAGE_KEY = 'translate-preferences'
+const STORAGE_KEY = `translate-preferences-${props.storageKey}`
 
 function savePreferences() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ translateModel: selectedTranslateModel.value }))
@@ -171,6 +175,7 @@ defineExpose({
   keepNames,
   translateStyle,
   parseGlossary,
+  targetLanguageOptions,
 })
 </script>
 

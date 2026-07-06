@@ -366,10 +366,24 @@ function resolveNavRoute(input: string): string {
   return NAV_ROUTES[word] ?? '/' + word
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
+/**
+ * Per-dispatch context. Carries the run's AbortSignal so a state-mutating tool
+ * that is already in flight when the user presses stop can refuse to apply its
+ * change (checked right before the mutation). Optional so existing/direct
+ * callers and read-only tools are unaffected.
+ *
+ * The check is a point-check right before the mutation, so it fully closes the
+ * race for synchronous mutations (set_field — the reported bug). For tools whose
+ * mutation is itself awaited (navigate_to/click_execute/click_action), an abort
+ * arriving mid-await is best-effort — cooperative cancellation inside those
+ * calls would be needed to interrupt them, which is out of scope here.
+ */
+export type DispatchCtx = { signal?: AbortSignal }
 
-  navigate_to: async ({ route }: { route: string }): Promise<ToolResult> => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const dispatchers: Record<string, (args: any, ctx: DispatchCtx) => Promise<ToolResult>> = {
+
+  navigate_to: async ({ route }: { route: string }, ctx: DispatchCtx): Promise<ToolResult> => {
     try {
       const path = resolveNavRoute(route)
       const router = await resolveRouter()
@@ -383,6 +397,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
         return { error: 'agent.error.invalid_route', route, allowed: Object.keys(NAV_ROUTES) }
       }
       useAgentStore().setCurrentAction('agent.banner.act.navigate_to', { route })
+      if (ctx.signal?.aborted) return { error: 'agent.error.aborted' }
       await router.push(path)
       return { ok: true }
     } catch (e: unknown) {
@@ -390,7 +405,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
     }
   },
 
-  select_subfunction: async ({ name }: { name: string }): Promise<ToolResult> => {
+  select_subfunction: async ({ name }: { name: string }, ctx: DispatchCtx): Promise<ToolResult> => {
     try {
       useAgentStore().setCurrentAction('agent.banner.act.select_subfunction', { name })
       const view = await _getActiveView()
@@ -403,6 +418,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
       if (allowed.length > 0 && !allowed.includes(name)) {
         return { error: 'agent.error.invalid_subfunction', name, allowed }
       }
+      if (ctx.signal?.aborted) return { error: 'agent.error.aborted' }
       view.setCurrentFunction(name)
       return { ok: true }
     } catch (e: unknown) {
@@ -410,7 +426,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
     }
   },
 
-  load_file: async ({ file_id }: { file_id: string }): Promise<ToolResult> => {
+  load_file: async ({ file_id }: { file_id: string }, ctx: DispatchCtx): Promise<ToolResult> => {
     try {
       useAgentStore().setCurrentAction('agent.banner.act.load_file', { file_id })
       const filesStore = useFilesStore()
@@ -425,6 +441,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
         const fetched = await filesStore.getFileInfo(file_id)
         if (!fetched) return { error: 'agent.error.file_not_found', file_id }
       }
+      if (ctx.signal?.aborted) return { error: 'agent.error.aborted' }
       filesStore.setCurrentFile(file_id)
       return { ok: true }
     } catch (e: unknown) {
@@ -448,12 +465,13 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
     }
   },
 
-  open_dropdown: async ({ field }: { field: string }): Promise<ToolResult> => {
+  open_dropdown: async ({ field }: { field: string }, ctx: DispatchCtx): Promise<ToolResult> => {
     try {
       useAgentStore().setCurrentAction('agent.banner.act.open_dropdown', { field })
       const ap = await _getActivePanel()
       if (!ap) return { error: 'agent.error.panel_not_active' }
       if (!ap.isMounted) return { error: 'agent.error.panel_not_active' }
+      if (ctx.signal?.aborted) return { error: 'agent.error.aborted' }
       ap.instance.openField(field)
       return { ok: true }
     } catch (e: unknown) {
@@ -461,7 +479,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
     }
   },
 
-  set_field: async ({ field, value }: { field: string; value: unknown }): Promise<ToolResult> => {
+  set_field: async ({ field, value }: { field: string; value: unknown }, ctx: DispatchCtx): Promise<ToolResult> => {
     try {
       // Bug #21: unwrap single-key nested object emitted by local models without strict mode.
       // e.g. {value: {value: 50}} → {value: 50}  or  {value: {mode: 'anime'}} → {value: 'anime'}
@@ -498,6 +516,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
         coercedValue = matched
       }
 
+      if (ctx.signal?.aborted) return { error: 'agent.error.aborted' }
       const actual = ap.instance.setField(field, coercedValue)
       return { ok: true, requested: value, actual }
     } catch (e: unknown) {
@@ -505,7 +524,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
     }
   },
 
-  click_execute: async (): Promise<ToolResult> => {
+  click_execute: async (_args: unknown, ctx: DispatchCtx): Promise<ToolResult> => {
     try {
       useAgentStore().setCurrentAction('agent.banner.act.click_execute', {})
       const ap = await _getActivePanel()
@@ -529,6 +548,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
         return { error: 'agent.error.no_file_selected' }
       }
 
+      if (ctx.signal?.aborted) return { error: 'agent.error.aborted' }
       const result = await ap.instance.execute()
       return { ok: true, task_id: result?.task_id }
     } catch (e: unknown) {
@@ -540,7 +560,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
     }
   },
 
-  click_action: async ({ name }: { name: string }): Promise<ToolResult> => {
+  click_action: async ({ name }: { name: string }, ctx: DispatchCtx): Promise<ToolResult> => {
     try {
       useAgentStore().setCurrentAction('agent.banner.act.click_action', { name })
       const ap = await _getActivePanel()
@@ -561,6 +581,7 @@ const dispatchers: Record<string, (args: any) => Promise<ToolResult>> = {
         return { error: 'agent.error.invalid_action', name }
       }
 
+      if (ctx.signal?.aborted) return { error: 'agent.error.aborted' }
       const result = await ap.instance.invokeAction(name)
       return { ok: true, result }
     } catch (e: unknown) {
@@ -612,7 +633,7 @@ const REQUIRED_BY_TOOL: Record<string, readonly string[]> = Object.fromEntries(
  * execution context; all store / router access inside the dispatchers is
  * lazy (see header note).
  */
-export function dispatch(tc: ToolCall): Promise<ToolResult> {
+export function dispatch(tc: ToolCall, ctx: DispatchCtx = {}): Promise<ToolResult> {
   const fn = dispatchers[tc.function.name]
   if (!fn) {
     return Promise.resolve({ error: 'agent.error.unknown_tool', tool: tc.function.name })
@@ -648,7 +669,7 @@ export function dispatch(tc: ToolCall): Promise<ToolResult> {
     }
   }
 
-  return fn(args).catch((e: unknown) => ({
+  return fn(args, ctx).catch((e: unknown) => ({
     error: 'agent.error.tool_failed',
     detail: errMsg(e),
   }))

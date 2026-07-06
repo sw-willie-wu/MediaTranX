@@ -39,6 +39,9 @@ class BasicPitchWrapper(PackageWrapper):
         on_progress: Optional[Callable[[float, str], None]] = None,
     ) -> Any:
         """Load basic-pitch predict function and built-in ONNX model path."""
+        # CANONICAL location for the scipy.signal.gaussian compat shim. (The
+        # former app/init/compat.py copy was removed to keep scipy off the
+        # bind path; basic_pitch is the only consumer and self-patches here.)
         # basic-pitch 0.4.x calls scipy.signal.gaussian which was removed in
         # scipy >= 1.13 (moved to scipy.signal.windows.gaussian). Patch the
         # attribute back before basic_pitch.inference imports note_creation,

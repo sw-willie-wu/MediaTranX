@@ -96,6 +96,45 @@ class TestGgufEnumeration:
                 assert m["category"] == "llm"
 
 
+class TestContractShape:
+    """Guard: every item emits the 10 core keys + family-specific extras.
+
+    This is a characterization/contract guard — it PASSES against the current
+    code before the _make_model_item refactor.  Its real value is catching a
+    dropped extra during (or after) the rewrite.
+    """
+
+    _CORE_KEYS = {
+        "id", "family", "family_label", "variant", "variant_label",
+        "category", "description", "downloaded", "size_mb", "vram_mb",
+    }
+
+    def test_core_keys_present_in_all_items(self, svc):
+        models = svc.list_all()["models"]
+        assert models, "list_all returned no models"
+        for m in models:
+            missing = self._CORE_KEYS - m.keys()
+            assert not missing, f"model {m.get('id')!r} missing core keys {missing}"
+
+    def test_family_specific_extras(self, svc):
+        """PTH items must carry max_scale; GGUF items must carry the 4 ctx keys."""
+        from app.adapters.ai.registry import MODELS_REGISTRY, FORMAT_PTH, FORMAT_GGUF
+
+        pth_fams = set(MODELS_REGISTRY[FORMAT_PTH].keys())
+        gguf_fams = set(MODELS_REGISTRY[FORMAT_GGUF].keys())
+        models = svc.list_all()["models"]
+        pth_items = [m for m in models if m["family"] in pth_fams]
+        gguf_items = [m for m in models if m["family"] in gguf_fams]
+        assert pth_items and gguf_items  # non-empty guard (avoid vacuous pass)
+        for m in pth_items:
+            assert "max_scale" in m, f"PTH model {m.get('id')!r} missing 'max_scale'"
+        gguf_extras = {"capabilities", "n_ctx_default", "n_ctx_min", "n_ctx_max"}
+        for m in gguf_items:
+            assert gguf_extras <= m.keys(), (
+                f"GGUF model {m.get('id')!r} missing extras {gguf_extras - m.keys()}"
+            )
+
+
 class TestDownloadStatus:
     def test_not_downloaded_when_path_returns_none(self, svc):
         # Default fixture: get_model_path returns None

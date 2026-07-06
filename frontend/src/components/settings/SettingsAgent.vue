@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useAgentSettingsStore } from '@/stores/agentSettings'
+import { useAgentSettingsStore, POLICY_ORDER } from '@/stores/agentSettings'
 import { useModelStore } from '@/stores/models'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelOptions } from '@/composables/useModelOptions'
@@ -44,11 +44,13 @@ const localToolModels = computed<SelectOption[]>(() =>
 
 const { mergedOptions } = useModelOptions('tools', localToolModels)
 
-const POLICY_OPTIONS = computed(() => [
-  { value: 'auto',     label: t('settings.agent.policy.auto') },
-  { value: 'ask_all',  label: t('settings.agent.policy.ask_all') },
-  { value: 'custom',   label: t('settings.agent.policy.custom') },
-] as const)
+const POLICY_OPTIONS = computed(() =>
+  POLICY_ORDER.map(v => ({
+    value: v,
+    label: t(`settings.agent.policy.${v}`),
+    desc: t(`settings.agent.policy.${v}_desc`),
+  })),
+)
 
 // All 9 tools for per-tool policy
 interface ToolEntry {
@@ -100,7 +102,7 @@ function setModel(val: string) {
 
 // ── Agent panel host (settings.agent) ────────────────────────────────────────
 
-const POLICY_VALUES = ['auto', 'ask_all', 'custom'] as const
+const POLICY_VALUES = POLICY_ORDER
 
 useAgentPanelHost('settings.agent', {
   agentSchema: {
@@ -182,7 +184,10 @@ useAgentPanelHost('settings.agent', {
         :checked="settings.policy === opt.value"
         @change="setPolicy(opt.value as AgentPolicy)"
       />
-      <span>{{ opt.label }}</span>
+      <span class="policy-radio-text">
+        <span class="policy-radio-title">{{ opt.label }}</span>
+        <span class="policy-radio-desc">{{ opt.desc }}</span>
+      </span>
     </label>
   </div>
 
@@ -234,15 +239,6 @@ useAgentPanelHost('settings.agent', {
     </div>
   </template>
 
-  <!-- New conversation -->
-  <h6 class="section-title mt">{{ $t('agent.session.new_chat') }}</h6>
-
-  <div class="setting-item">
-    <button class="btn-secondary" @click="agent.startNewSession()">
-      <i class="bi bi-plus-lg"></i>
-      {{ $t('agent.session.new_chat') }}
-    </button>
-  </div>
 </template>
 
 <style lang="scss">
@@ -258,7 +254,7 @@ useAgentPanelHost('settings.agent', {
 
 .policy-radio-label {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   cursor: pointer;
   font-size: 0.85rem;
@@ -266,7 +262,26 @@ useAgentPanelHost('settings.agent', {
 
   input[type="radio"] {
     accent-color: var(--color-primary);
+    margin-top: 0.15rem;   // 對齊多行文字的第一行
+    flex-shrink: 0;
   }
+}
+
+.policy-radio-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.policy-radio-title {
+  color: var(--text-primary);
+}
+
+.policy-radio-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.3;
 }
 
 .tool-policy-table {

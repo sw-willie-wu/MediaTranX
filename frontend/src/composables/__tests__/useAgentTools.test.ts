@@ -669,6 +669,134 @@ describe('dispatch: get_task_status', () => {
   })
 })
 
+// ─── dispatch: in-flight abort (ctx.signal) ───────────────────────────────────
+// When the user presses stop, an already-started tool dispatch must NOT apply
+// its state mutation. cancelRun aborts a per-run AbortController whose signal is
+// threaded into dispatch(tc, { signal }); each state-mutating handler checks
+// signal.aborted right before its apply step and returns agent.error.aborted.
+
+describe('dispatch: in-flight abort', () => {
+  function aborted(): AbortSignal {
+    const c = new AbortController()
+    c.abort()
+    return c.signal
+  }
+
+  it('set_field: aborted signal → agent.error.aborted, setField NOT called', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    viewRegistry.register('image', makeViewHandle('upscale'))
+    const setFieldFn = vi.fn((_f: string, v: unknown) => v)
+    panelRegistry.register('image.upscale', makePanelHandle('image.upscale', { setFieldFn }))
+
+    const result = await withContext(router, d =>
+      d(tc('set_field', { field: 'model', value: 'quality' }), { signal: aborted() }))
+    expect(result.error).toBe('agent.error.aborted')
+    expect(setFieldFn).not.toHaveBeenCalled()
+  })
+
+  it('click_execute: aborted signal → agent.error.aborted, execute NOT called', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    viewRegistry.register('image', makeViewHandle('upscale'))
+    const executeFn = vi.fn(async () => ({ task_id: 'should-not-fire' }))
+    panelRegistry.register('image.upscale', makePanelHandle('image.upscale', { executeNull: false, executeFn }))
+    // Must satisfy the earlier guards (non-settings + file loaded) to reach the
+    // signal check that sits right before execute().
+    const filesStore = useFilesStore()
+    filesStore.files.set('file-go', {
+      id: 'file-go', name: 'x.jpg', originalName: 'x.jpg', path: '',
+      size: 100, mimeType: 'image/jpeg', type: 'image', createdAt: new Date(),
+    })
+    filesStore.setCurrentFile('file-go')
+
+    const result = await withContext(router, d => d(tc('click_execute'), { signal: aborted() }))
+    expect(result.error).toBe('agent.error.aborted')
+    expect(executeFn).not.toHaveBeenCalled()
+  })
+
+  it('click_action: aborted signal → agent.error.aborted, invokeAction NOT called', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    viewRegistry.register('image', makeViewHandle('upscale'))
+    const invokeFn = vi.fn((_name: string) => ({ ok: true }))
+    panelRegistry.register('image.upscale', makePanelHandle('image.upscale', { invokeFn }))
+
+    const result = await withContext(router, d => d(tc('click_action', { name: 'reset' }), { signal: aborted() }))
+    expect(result.error).toBe('agent.error.aborted')
+    expect(invokeFn).not.toHaveBeenCalled()
+  })
+
+  it('navigate_to: aborted signal → agent.error.aborted, router.push NOT called', async () => {
+    const router = makeRouter('/image')
+    const pushSpy = vi.spyOn(router, 'push')
+    const result = await withContext(router, d => d(tc('navigate_to', { route: '/video' }), { signal: aborted() }))
+    expect(result.error).toBe('agent.error.aborted')
+    expect(pushSpy).not.toHaveBeenCalled()
+  })
+
+  it('select_subfunction: aborted signal → agent.error.aborted, setCurrentFunction NOT called', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    const vh = makeViewHandle('transcode')
+    const spy = vi.spyOn(vh, 'setCurrentFunction')
+    viewRegistry.register('image', vh)
+    const result = await withContext(router, d => d(tc('select_subfunction', { name: 'upscale' }), { signal: aborted() }))
+    expect(result.error).toBe('agent.error.aborted')
+    expect(spy).not.toHaveBeenCalled()
+    expect(vh.currentFunction.value).toBe('transcode')
+  })
+
+  it('load_file: aborted signal → agent.error.aborted, setCurrentFile NOT called', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    const Comp = defineComponent({
+      async setup() {
+        const filesStore = useFilesStore()
+        filesStore.files.set('file-abc', {
+          id: 'file-abc', name: 't.jpg', originalName: 't.jpg', path: '',
+          size: 100, mimeType: 'image/jpeg', type: 'image', createdAt: new Date(),
+        })
+        const spy = vi.spyOn(filesStore, 'setCurrentFile')
+        const result = await dispatch(tc('load_file', { file_id: 'file-abc' }), { signal: aborted() })
+        expect(result.error).toBe('agent.error.aborted')
+        expect(spy).not.toHaveBeenCalled()
+        return {}
+      },
+      template: '<div/>',
+    })
+    mount(Comp, { global: { plugins: [router] } })
+    await new Promise(r => setTimeout(r, 0))
+  })
+
+  it('open_dropdown: aborted signal → agent.error.aborted, openField NOT called', async () => {
+    const router = makeRouter('/image')
+    await router.isReady()
+    viewRegistry.register('image', makeViewHandle('upscale'))
+    const openFieldFn = vi.fn()
+    const handle = makePanelHandle('image.upscale')
+    handle.openField = openFieldFn
+    panelRegistry.register('image.upscale', handle)
+    const result = await withContext(router, d => d(tc('open_dropdown', { field: 'model' }), { signal: aborted() }))
+    expect(result.error).toBe('agent.error.aborted')
+    expect(openFieldFn).not.toHaveBeenCalled()
+  })
+
+  it('read-only list_files ignores an aborted signal and still returns results', async () => {
+    const router = makeRouter('/image')
+    const result = await withContext(router, d => d(tc('list_files'), { signal: aborted() }))
+    expect(result.ok).toBe(true)
+    expect(result.files).toEqual([])
+  })
+
+  it('read-only get_task_status ignores an aborted signal and still returns', async () => {
+    const router = makeRouter('/tasks')
+    const result = await withContext(router, d => d(tc('get_task_status', { task_id: 'missing' }), { signal: aborted() }))
+    // reaches the handler (not short-circuited by abort); task missing → tool_failed
+    expect(result.error).toBe('agent.error.tool_failed')
+  })
+})
+
 // ─── dispatch: unknown tool ───────────────────────────────────────────────────
 
 describe('dispatch: unknown tool', () => {
@@ -1010,14 +1138,14 @@ describe('settings.general panel registration smoke', () => {
       panelId: 'settings.agent',
       fields: [
         { name: 'model', type: 'enum', options: () => ['qwen3:8b'] },
-        { name: 'policy', type: 'enum', options: () => ['auto', 'ask_all', 'custom'] },
+        { name: 'policy', type: 'enum', options: () => ['standard', 'full_auto', 'ask', 'custom'] },
       ],
       actions: [{ name: 'clear_history' }],
       execute: null,
     }
     panelRegistry.register('settings.agent', {
       agentSchema: schema,
-      getCurrentValues: () => ({ model: 'qwen3:8b', policy: 'auto' }),
+      getCurrentValues: () => ({ model: 'qwen3:8b', policy: 'standard' }),
       setField: (_f, v) => v,
       openField: () => {},
       execute: () => { throw new Error('agent.error.no_execute_on_settings') },

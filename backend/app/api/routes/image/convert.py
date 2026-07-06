@@ -24,6 +24,7 @@ class ImageConvertRequest(BaseModel):
     width: Optional[int] = Field(default=None, gt=0, description="Target width")
     height: Optional[int] = Field(default=None, gt=0, description="Target height")
     scale: Optional[float] = Field(default=None, gt=0, description="Scale ratio")
+    coalesce: bool = Field(default=False, description="Coalesce (unoptimize) GIF frames for compatibility")
 
 
 class ImageConvertResponse(BaseModel):
@@ -39,6 +40,7 @@ class ImageInfoResponse(BaseModel):
     format: str
     mode: str
     file_size: int
+    palette_size: Optional[int] = None
 
 
 @router.get("/info/{file_id}", response_model=ImageInfoResponse)
@@ -66,5 +68,6 @@ async def convert_image(
         width=request.width,
         height=request.height,
         scale=request.scale,
+        coalesce=request.coalesce,
     )
     return ImageConvertResponse(task_id=task_id)

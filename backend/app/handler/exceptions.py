@@ -70,3 +70,25 @@ class RemoteApiError(MediaTranXError):
 
     def to_dict(self) -> dict:
         return {"error_code": self.code, "detail": self.detail}
+
+
+class FeedbackTransportError(MediaTranXError):
+    """回報 transport 層失敗（網路/HTTP）。service 層會轉成 FeedbackSubmitError。"""
+
+    def __init__(self, code: str, detail: str):
+        self.code = code
+        self.detail = detail
+        super().__init__(f"{code}: {detail}")
+
+
+class FeedbackSubmitError(MediaTranXError):
+    """回報送出失敗（帶降級預填連結，由全域 handler 轉 502 回應）。"""
+
+    def __init__(self, code: str, detail: str, prefill_url: str):
+        self.code = code
+        self.detail = detail
+        self.prefill_url = prefill_url
+        super().__init__(f"{code}: {detail}")
+
+    def to_dict(self) -> dict:
+        return {"error_code": self.code, "detail": self.detail, "prefill_url": self.prefill_url}

@@ -6,6 +6,7 @@ import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import ImagePreview from '@/components/image/ImagePreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ImageConvertPanel  from '@/components/image/panels/ImageConvertPanel.vue'
+import ImageCompressPanel from '@/components/image/panels/ImageCompressPanel.vue'
 import ImageUpscalePanel  from '@/components/image/panels/ImageUpscalePanel.vue'
 import ImageRemoveBgPanel from '@/components/image/panels/ImageRemoveBgPanel.vue'
 import ImageAiRemovePanel from '@/components/image/panels/ImageAiRemovePanel.vue'
@@ -42,6 +43,7 @@ const maskToolMode = ref<'brush' | 'polygon' | 'bezier'>('brush')
 
 // Panel refs
 const convertPanelRef  = ref<InstanceType<typeof ImageConvertPanel>  | null>(null)
+const compressPanelRef = ref<InstanceType<typeof ImageCompressPanel> | null>(null)
 const upscalePanelRef  = ref<InstanceType<typeof ImageUpscalePanel>  | null>(null)
 const removeBgPanelRef = ref<InstanceType<typeof ImageRemoveBgPanel> | null>(null)
 const aiRemovePanelRef = ref<InstanceType<typeof ImageAiRemovePanel> | null>(null)
@@ -52,6 +54,7 @@ const ocrPanelRef      = ref<InstanceType<typeof ImageOcrPanel>      | null>(nul
 
 const subFunctions = computed(() => [
   { id: 'transcode', name: t('image.functions.transcode'), icon: 'bi-arrow-repeat',         group: t('image.group.edit') },
+  { id: 'compress',  name: t('image.functions.compress'),  icon: 'bi-file-zip-fill',        group: t('image.group.edit') },
   { id: 'adjust',    name: t('image.functions.adjust'),    icon: 'bi-sliders',              group: t('image.group.edit') },
   { id: 'filter',    name: t('image.functions.filter'),    icon: 'bi-palette-fill',         group: t('image.group.edit') },
   { id: 'crop',      name: t('image.functions.crop'),      icon: 'bi-crop',                 group: t('image.group.edit') },
@@ -203,6 +206,7 @@ const canvasCropRect = ref<{ x: number; y: number; w: number; h: number } | null
 const isAnyProcessing = computed(() =>
   collection.activeEntry.value?.status === 'processing'
   || (convertPanelRef.value?.isLoading ?? false)
+  || (compressPanelRef.value?.isLoading ?? false)
   || (upscalePanelRef.value?.isLoading ?? false)
   || (removeBgPanelRef.value?.isLoading ?? false)
   || (aiRemovePanelRef.value?.isLoading ?? false)
@@ -222,6 +226,7 @@ const executeDisabled = computed(() => {
 const executeLoading = computed(() => {
   if (collection.activeEntry.value?.status === 'processing') return true
   if (currentFunction.value === 'transcode') return convertPanelRef.value?.isLoading   ?? false
+  if (currentFunction.value === 'compress')  return compressPanelRef.value?.isLoading  ?? false
   if (currentFunction.value === 'upscale')   return upscalePanelRef.value?.isLoading   ?? false
   if (currentFunction.value === 'remove-bg') return removeBgPanelRef.value?.isLoading  ?? false
   if (currentFunction.value === 'ai-remove') return aiRemovePanelRef.value?.isLoading  ?? false
@@ -244,6 +249,7 @@ function handleExecute() {
 function handleSingleExecute() {
   switch (currentFunction.value) {
     case 'transcode': convertPanelRef.value?.execute();  break
+    case 'compress':  compressPanelRef.value?.execute(); break
     case 'upscale':   upscalePanelRef.value?.execute();  break
     case 'remove-bg': removeBgPanelRef.value?.execute(); break
     case 'ai-remove': aiRemovePanelRef.value?.execute(); break
@@ -259,6 +265,8 @@ function handleMultiExecute() {
   switch (currentFunction.value) {
     case 'transcode':
       submitToAll('/image/convert',   () => convertPanelRef.value!.getParams(),  t('image.convert.task_label'),    'image.convert',    noop); break
+    case 'compress':
+      submitToAll('/image/compress',  () => compressPanelRef.value!.getParams(), t('image.compress.task_label'),   'image.compress',   noop); break
     case 'upscale':
       submitToAll('/image/upscale',   () => upscalePanelRef.value!.getParams(),  t('image.upscale.task_label'),    'image.upscale',    noop); break
     case 'remove-bg':
@@ -448,6 +456,17 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           :current-file-name="currentFileName"
           :image-info="imageInfo"
           :is-multi-select="isMultiSelect"
+          @submit="onPanelSubmit"
+        />
+
+        <ImageCompressPanel
+          v-else-if="currentFunction === 'compress'"
+          ref="compressPanelRef"
+          :file-id="activeFileId"
+          :current-file-name="currentFileName"
+          :image-info="imageInfo"
+          :is-multi-select="isMultiSelect"
+          :result-meta="activeResultMeta"
           @submit="onPanelSubmit"
         />
 

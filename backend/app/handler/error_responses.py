@@ -11,6 +11,7 @@ from .exceptions import (
     MediaTranXError,
     FileNotFoundError_,
     FFmpegError,
+    FeedbackSubmitError,
     RemoteApiError,
     ModelNotFoundError,
     NotFoundError,
@@ -37,6 +38,11 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RemoteApiError)
     async def handle_remote_error(request: Request, exc: RemoteApiError):
         logger.warning(f"Remote API error: {exc}")
+        return JSONResponse(status_code=502, content=exc.to_dict())
+
+    @app.exception_handler(FeedbackSubmitError)
+    async def handle_feedback_submit_error(request: Request, exc: FeedbackSubmitError):
+        logger.warning(f"Feedback submit error: {exc}")
         return JSONResponse(status_code=502, content=exc.to_dict())
 
     @app.exception_handler(FFmpegError)

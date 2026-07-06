@@ -1,6 +1,7 @@
 {
   "name": "mediatranx-electron",
   "version": "1.5.2",
+  "buildMode": "prod",
   "private": true,
   "license": "MIT",
   "main": "main.js",
@@ -23,7 +24,11 @@
       "main.js",
       "setup.js",
       "preload.cjs",
+      "updateService.cjs",
+      "updateCore.cjs",
       "splash.html",
+      "error.html",
+      "lib/**/*",
       "icon.ico",
       "scripts/**/*"
     ],

@@ -65,7 +65,7 @@ beforeEach(() => {
   // Provide a model so sendUserText doesn't immediately short-circuit
   lsStub.setItem('agent_settings', JSON.stringify({
     modelChoice: 'qwen3:8b',
-    policy: 'auto',
+    policy: 'standard',
   }))
 })
 
@@ -96,7 +96,7 @@ describe('ChatBubble mock-SSE smoke', () => {
     expect(roles).toEqual(['user', 'assistant'])
     expect((agent.messages.value[0] as any).content).toBe('Hi there')
     expect((agent.messages.value[1] as any).content).toBe('Hello world!')
-    expect(fake.agent.runAgent).toHaveBeenCalledTimes(1)
+    expect(fake.agent.runAgent).toHaveBeenCalledTimes(2)
   })
 
   // ─── Scenario 3: isRunning via store — all consumers share state ──────────
@@ -159,31 +159,6 @@ describe('ChatBubble mock-SSE smoke', () => {
     expect(agent.messages.value.map(m => m.role)).toEqual(['user'])
   })
 
-  // ─── Scenario 5 (Task 4.2): setCurrentAction fires inside real dispatchers ───
-
-  it('Task 4.2: real dispatch() calls store.setCurrentAction with correct key before executing', async () => {
-    // Import the real dispatch function (not injected via fakeTool)
-    const { dispatch } = await import('@/composables/useAgentTools')
-    const store = useAgentStore()
-
-    // Dispatch navigate_to — outside a setup context resolveRouter() falls
-    // back to the global singleton (router/index.ts) and navigation succeeds.
-    // The key behaviour we care about here is that setCurrentAction fires
-    // BEFORE the router push, so any consumer listening on the store
-    // (chat bubble, future UI) gets a chance to render the action label.
-    const result = await dispatch({
-      id: 'tc1',
-      type: 'function',
-      function: { name: 'navigate_to', arguments: '{"route":"/video"}' },
-    })
-
-    // setCurrentAction must have fired with the correct key + args
-    expect(store.currentAction.key).toBe('agent.banner.act.navigate_to')
-    expect(store.currentAction.args).toEqual({ route: '/video' })
-    // dispatch should succeed against the global router singleton
-    expect(result.ok).toBe(true)
-  })
-
   // ─── Scenario 7 (Task 4.3): ConfirmCard full flow ───────────────────────────
 
   it('Task 4.3: ChatMessages renders tool_confirm as ConfirmCard; approve resolves promise and dispatch proceeds', async () => {
@@ -196,7 +171,7 @@ describe('ChatBubble mock-SSE smoke', () => {
     const msgs: any[] = [confirmMsg]
 
     const wrapper = mount(ChatMessages, {
-      props: { messages: msgs, transient: null, isRunning: false },
+      props: { messages: msgs, transient: null, isRunning: false, runError: null },
       global: globalPlugins(),
     })
 

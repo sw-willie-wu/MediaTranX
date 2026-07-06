@@ -23,7 +23,7 @@ dependencies = [
     "sqlmodel>=0.0.22",
     "mido>=1.3.0",
     # --- Inference Runtimes ---
-    # torch / torchvision 由 setup 依硬體偵測另外安裝（CPU / CUDA），不列入 lock
+    # torch / torchvision / torchaudio 鎖 cu124 index（[tool.uv.sources]），在 uv.lock 內、uv sync 會完整安裝（CI 冷 build ~2.5GB 的主要來源）
     "ctranslate2>=4.7.1",
     "onnxruntime>=1.17.0",
     # --- Media Processing Libraries ---
@@ -57,6 +57,9 @@ dependencies = [
     "opencv-python",
     "ag-ui-protocol==0.1.18",
     "cryptography>=43.0.0",
+    "gifsicle-bin>=1.96.4",
+    "imagequant>=1.1.5",
+    "pyoxipng>=9.1.1",
 ]
 
 [project.optional-dependencies]

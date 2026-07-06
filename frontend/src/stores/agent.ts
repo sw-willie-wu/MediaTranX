@@ -36,6 +36,7 @@ export const useAgentStore = defineStore('agent', () => {
   //   completion = ACCUMULATE (only the new completion is sent each round)
   const threadTokens = ref<{ prompt: number; completion: number }>({ prompt: 0, completion: 0 })
   const transient = ref<TransientBuffer | null>(null)
+  const runError = ref<string | null>(null)
 
   // ─── Lifecycle ────────────────────────────────────────────────
   function start() {
@@ -73,6 +74,15 @@ export const useAgentStore = defineStore('agent', () => {
     transient.value = null
   }
 
+  // ─── Transient run-error label ────────────────────────────────────
+  function setRunError(msg: string) {
+    runError.value = msg
+  }
+
+  function clearRunError() {
+    runError.value = null
+  }
+
   // ─── Pending confirms (tool-call approval cards) ──────────────
   function addPendingConfirm(r: ConfirmResolver) {
     // Reassign-Set pattern: always create new Set for Vue reactivity
@@ -99,6 +109,7 @@ export const useAgentStore = defineStore('agent', () => {
     pendingConfirms,
     threadTokens,
     transient,
+    runError,
     // lifecycle
     start,
     stop,
@@ -110,6 +121,9 @@ export const useAgentStore = defineStore('agent', () => {
     // transient
     setTransient,
     clearTransient,
+    // run-error label
+    setRunError,
+    clearRunError,
     // confirms
     addPendingConfirm,
     removePendingConfirm,

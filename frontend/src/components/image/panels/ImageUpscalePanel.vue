@@ -9,6 +9,7 @@ import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
 import { usePersistedModel } from '@/composables/usePersistedModel'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
+import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 
 
 const props = defineProps<{
@@ -225,37 +226,39 @@ defineExpose({ execute, isDisabled, isLoading, upscaleScale, getParams })
       </div>
     </div>
 
-    <!-- sharpen -->
-    <div class="form-group">
-      <AppToggle v-model="sharpen">{{ $t('image.upscale.sharpen') }}</AppToggle>
-      <small class="form-hint">{{ $t('image.upscale.sharpen_hint') }}</small>
-    </div>
-
-    <!-- face restore -->
-    <div class="form-group">
-      <AppToggle v-model="faceRestore">{{ $t('image.upscale.face_restore') }}</AppToggle>
-      <small class="form-hint">{{ $t('image.upscale.face_restore_hint') }}</small>
-
-      <div v-if="faceRestore" class="sub-params">
-        <AppSelect
-          :model-value="selectedFaceModelId"
-          :options="faceOptions"
-          size="sm"
-          :placeholder="$t('common.select_function')"
-          @update:model-value="selectFaceModel"
-        />
-
-        <!-- GFPGAN: upscale -->
-        <template v-if="selectedFaceFamily === 'gfpgan'">
-          <label class="sub-label">
-            {{ $t('image.upscale.face_scale') }}
-            <span class="param-value">{{ faceRestoreUpscale }}x</span>
-          </label>
-          <AppRange v-model="faceRestoreUpscale" :min="1" :max="4" :step="1" />
-          <div class="range-ticks"><span>1x</span><span>4x</span></div>
-        </template>
+    <SettingsCollapsible storage-key="image_upscale_advanced">
+      <!-- sharpen -->
+      <div class="form-group">
+        <AppToggle v-model="sharpen">{{ $t('image.upscale.sharpen') }}</AppToggle>
+        <small class="form-hint">{{ $t('image.upscale.sharpen_hint') }}</small>
       </div>
-    </div>
+
+      <!-- face restore -->
+      <div class="form-group">
+        <AppToggle v-model="faceRestore">{{ $t('image.upscale.face_restore') }}</AppToggle>
+        <small class="form-hint">{{ $t('image.upscale.face_restore_hint') }}</small>
+
+        <div v-if="faceRestore" class="sub-params">
+          <AppSelect
+            :model-value="selectedFaceModelId"
+            :options="faceOptions"
+            size="sm"
+            :placeholder="$t('common.select_function')"
+            @update:model-value="selectFaceModel"
+          />
+
+          <!-- GFPGAN: upscale -->
+          <template v-if="selectedFaceFamily === 'gfpgan'">
+            <label class="sub-label">
+              {{ $t('image.upscale.face_scale') }}
+              <span class="param-value">{{ faceRestoreUpscale }}x</span>
+            </label>
+            <AppRange v-model="faceRestoreUpscale" :min="1" :max="4" :step="1" />
+            <div class="range-ticks"><span>1x</span><span>4x</span></div>
+          </template>
+        </div>
+      </div>
+    </SettingsCollapsible>
   </div>
 </template>
 

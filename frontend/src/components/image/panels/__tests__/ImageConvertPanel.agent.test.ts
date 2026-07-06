@@ -14,9 +14,10 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { panelRegistry, type PanelHandle } from '@/stores/panelRegistry'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
 
-function makeImageConvertPanelStub() {
-  const convertFormat = ref('png')
+function makeImageConvertPanelStub(initialFormat = 'png') {
+  const convertFormat = ref(initialFormat)
   const convertQuality = ref(90)
+  const convertCoalesce = ref(false)
   const convertResizeMode = ref<'original' | 'scale' | 'custom'>('original')
   const convertScale = ref(100)
   const convertWidth = ref<number | null>(null)
@@ -34,6 +35,8 @@ function makeImageConvertPanelStub() {
       { name: 'quality', type: 'number' as const,
         min: 1, max: 100, step: 1,
         visibleWhen: () => convertFormat.value === 'jpg' || convertFormat.value === 'webp' },
+      { name: 'coalesce', type: 'bool' as const,
+        visibleWhen: () => convertFormat.value === 'gif' },
       { name: 'resize_mode', type: 'enum' as const,
         options: () => ['original', 'scale', 'custom'] },
       { name: 'scale', type: 'number' as const,
@@ -56,6 +59,7 @@ function makeImageConvertPanelStub() {
     getCurrentValues: () => ({
       output_format: convertFormat.value,
       quality: convertQuality.value,
+      coalesce: convertCoalesce.value,
       resize_mode: convertResizeMode.value,
       scale: convertScale.value,
       custom_width: convertWidth.value,
@@ -71,6 +75,9 @@ function makeImageConvertPanelStub() {
           convertQuality.value = clamped
           return clamped
         }
+        case 'coalesce':
+          convertCoalesce.value = Boolean(value)
+          return convertCoalesce.value
         case 'resize_mode':
           convertResizeMode.value = value as 'original' | 'scale' | 'custom'
           return value
@@ -93,25 +100,27 @@ function makeImageConvertPanelStub() {
     execute: async () => ({}),
   }
 
-  return defineComponent({
+  return { component: defineComponent({
     setup() {
       useAgentPanelHost('image.transcode', handleWithoutMounted)
       return {}
     },
     template: '<div></div>',
-  })
+  }), convertFormat }
 }
 
 beforeEach(() => { panelRegistry._clearAll() })
 
 describe('ImageConvertPanel agent schema smoke', () => {
   it('mount → panelRegistry.get returns a handle', () => {
-    mount(makeImageConvertPanelStub())
+    const { component } = makeImageConvertPanelStub()
+    mount(component)
     expect(panelRegistry.get('image.transcode')).toBeDefined()
   })
 
   it('getCurrentValues() returns all schema field names', () => {
-    mount(makeImageConvertPanelStub())
+    const { component } = makeImageConvertPanelStub()
+    mount(component)
     const handle = panelRegistry.get('image.transcode')!
     const values = handle.getCurrentValues()
     for (const field of handle.agentSchema.fields) {
@@ -120,14 +129,61 @@ describe('ImageConvertPanel agent schema smoke', () => {
   })
 
   it('setField quality = 75 → returns 75', () => {
-    mount(makeImageConvertPanelStub())
+    const { component } = makeImageConvertPanelStub()
+    mount(component)
     const handle = panelRegistry.get('image.transcode')!
     expect(handle.setField('quality', 75)).toBe(75)
   })
 
   it('setField quality > 100 → clamped to 100 (R-5)', () => {
-    mount(makeImageConvertPanelStub())
+    const { component } = makeImageConvertPanelStub()
+    mount(component)
     const handle = panelRegistry.get('image.transcode')!
     expect(handle.setField('quality', 200)).toBe(100)
+  })
+
+  it('coalesce field present in agentSchema', () => {
+    const { component } = makeImageConvertPanelStub()
+    mount(component)
+    const handle = panelRegistry.get('image.transcode')!
+    const field = handle.agentSchema.fields.find(f => f.name === 'coalesce')
+    expect(field).toBeDefined()
+    expect(field?.type).toBe('bool')
+  })
+
+  it('coalesce visibleWhen returns true when output is gif', () => {
+    const { component, convertFormat } = makeImageConvertPanelStub('gif')
+    mount(component)
+    const handle = panelRegistry.get('image.transcode')!
+    const field = handle.agentSchema.fields.find(f => f.name === 'coalesce')!
+    expect(field.visibleWhen?.()).toBe(true)
+    convertFormat.value = 'png'
+    expect(field.visibleWhen?.()).toBe(false)
+  })
+
+  it('coalesce visibleWhen returns false for png/jpg output', () => {
+    const { component, convertFormat } = makeImageConvertPanelStub('png')
+    mount(component)
+    const handle = panelRegistry.get('image.transcode')!
+    const field = handle.agentSchema.fields.find(f => f.name === 'coalesce')!
+    expect(field.visibleWhen?.()).toBe(false)
+    convertFormat.value = 'jpg'
+    expect(field.visibleWhen?.()).toBe(false)
+  })
+
+  it('getParams includes coalesce', () => {
+    const { component } = makeImageConvertPanelStub()
+    mount(component)
+    const handle = panelRegistry.get('image.transcode')!
+    const values = handle.getCurrentValues()
+    expect(values).toHaveProperty('coalesce')
+    expect(typeof values.coalesce).toBe('boolean')
+  })
+
+  it('setField coalesce = true → returns true', () => {
+    const { component } = makeImageConvertPanelStub()
+    mount(component)
+    const handle = panelRegistry.get('image.transcode')!
+    expect(handle.setField('coalesce', true)).toBe(true)
   })
 })

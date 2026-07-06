@@ -26,6 +26,13 @@ describe('toolResultPreview', () => {
     expect(r.text).toBe('cancelled')
   })
 
+  it('renders the aborted tool-result as a clean "cancelled" (not the raw code)', () => {
+    const r = toolResultPreview(JSON.stringify({ error: 'agent.error.aborted' }))
+    expect(r.status).toBe('error')
+    expect(r.icon).toBe('✗')
+    expect(r.text).toBe('cancelled')
+  })
+
   it('returns error status for {skipped: ...}', () => {
     const r = toolResultPreview(JSON.stringify({ skipped: 'duplicate' }))
     expect(r.status).toBe('error')

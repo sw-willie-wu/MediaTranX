@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import TabbedLayout from '@/components/common/TabbedLayout.vue'
@@ -16,6 +16,15 @@ const { t } = useI18n()
 const route = useRoute()
 
 const activeTab = ref((route.query.tab as string) || 'general')
+
+// Deep-link support when ALREADY on /settings: the initial ref only reads the
+// query once at mount, so a later push({ query: { tab } }) (e.g. the no-model
+// assistant redirect) wouldn't switch the tab without this. Guarded so an
+// undefined/removed tab query is a no-op (doesn't fight tab clicks, which don't
+// touch the route).
+watch(() => route.query.tab, (tab) => {
+  if (tab) activeTab.value = tab as string
+})
 
 useViewHost('settings', {
   currentFunction: activeTab,
@@ -34,7 +43,7 @@ const tabs = computed(() => [
 </script>
 
 <template>
-  <TabbedLayout v-model="activeTab" :tabs="tabs">
+  <TabbedLayout v-model="activeTab" :tabs="tabs" content-max-width="720px">
     <SettingsGeneral v-if="activeTab === 'general'" />
     <SettingsSystem  v-else-if="activeTab === 'system'" />
     <SettingsModels  v-else-if="activeTab === 'models'" />

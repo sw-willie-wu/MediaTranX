@@ -5,6 +5,7 @@ import { useAgentStore } from '@/stores/agent'
 import { useAgent } from '@/composables/useAgent'
 import { useBubbleDrag, BUBBLE_SIZE_PX, BUBBLE_EDGE_PX, BUBBLE_MARGIN_PX } from '@/composables/useBubbleDrag'
 import { bubbleVisible, bubbleExpanded } from '@/composables/useBubbleVisibility'
+import { useAssistantGate } from '@/composables/useAssistantGate'
 import { useToast } from '@/composables/useToast'
 import ChatHeader from './ChatHeader.vue'
 import ChatMessages from './ChatMessages.vue'
@@ -34,7 +35,13 @@ function onNewChat() {
 
 const { position, isDragging, bubbleStyle, onPointerDown } = useBubbleDrag()
 
+// Requires a router in the tree (app-global here). Only the expand path is guarded.
+const { redirectIfNoModel } = useAssistantGate()
+
 function toggle() {
+  // Guard only when about to EXPAND (safety net for the case where the bubble
+  // was persisted visible but the model was later cleared); collapsing is free.
+  if (!bubbleExpanded.value && redirectIfNoModel()) return
   bubbleExpanded.value = !bubbleExpanded.value
 }
 
@@ -210,6 +217,7 @@ onBeforeUnmount(() => {
           :messages="agent.messages.value"
           :transient="store.transient"
           :is-running="store.isRunning"
+          :run-error="store.runError"
         />
         <ChatInput
           :disabled="store.isRunning"
