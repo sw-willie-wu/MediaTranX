@@ -29,8 +29,10 @@ const audioBitrate = ref('192k')
 const customResWidth = ref(1920)
 const customResHeight = ref(1080)
 const scaleAlgorithm = ref('bicubic')
+const fps = ref('12')
 
 const audioFormatValues = ['mp3', 'aac', 'wav', 'flac']
+const animFormatValues = ['gif', 'apng']
 
 const formats = computed(() => [
   { value: 'mp4', label: 'MP4' },
@@ -38,6 +40,8 @@ const formats = computed(() => [
   { value: 'webm', label: 'WebM' },
   { value: 'avi', label: 'AVI' },
   { value: 'mov', label: 'MOV' },
+  { value: 'gif', label: 'GIF' },
+  { value: 'apng', label: 'APNG' },
   { value: 'mp3', label: t('video.transcode.mp3') },
   { value: 'aac', label: t('video.transcode.aac') },
   { value: 'wav', label: t('video.transcode.wav') },
@@ -77,7 +81,17 @@ const audioBitrates = [
   { value: '320k', label: '320 kbps' },
 ]
 
+const fpsOptions = [
+  { value: '8', label: '8 fps' },
+  { value: '10', label: '10 fps' },
+  { value: '12', label: '12 fps' },
+  { value: '15', label: '15 fps' },
+  { value: '20', label: '20 fps' },
+  { value: '24', label: '24 fps' },
+]
+
 const isAudioFormat = computed(() => audioFormatValues.includes(outputFormat.value))
+const isAnimFormat = computed(() => animFormatValues.includes(outputFormat.value))
 const showBitrateOption = computed(() => isAudioFormat.value && !['wav', 'flac'].includes(outputFormat.value))
 
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
@@ -106,17 +120,17 @@ async function execute() {
       finalResolution = `${customResWidth.value}x${customResHeight.value}`
     }
 
+    const common = {
+      file_id: props.fileId,
+      output_format: outputFormat.value,
+      resolution: finalResolution || undefined,
+      scale_algorithm: finalResolution ? scaleAlgorithm.value : undefined,
+    }
     taskId = await submitTask(
       '/video/transcode',
-      {
-        file_id: props.fileId,
-        output_format: outputFormat.value,
-        video_codec: videoCodec.value,
-        audio_codec: 'aac',
-        crf: crf.value,
-        resolution: finalResolution || undefined,
-        scale_algorithm: finalResolution ? scaleAlgorithm.value : undefined,
-      },
+      isAnimFormat.value
+        ? { ...common, fps: Number(fps.value) }
+        : { ...common, video_codec: videoCodec.value, audio_codec: 'aac', crf: crf.value },
       t('video.transcode.task_label'),
       'video.transcode',
       props.currentFileName,
@@ -137,14 +151,14 @@ function getParams() {
   if (resolution.value === 'custom') {
     finalResolution = `${customResWidth.value}x${customResHeight.value}`
   }
-  return {
+  const common = {
     output_format: outputFormat.value,
-    video_codec: videoCodec.value,
-    audio_codec: 'aac',
-    crf: crf.value,
     resolution: finalResolution || undefined,
     scale_algorithm: finalResolution ? scaleAlgorithm.value : undefined,
   }
+  return isAnimFormat.value
+    ? { ...common, fps: Number(fps.value) }
+    : { ...common, video_codec: videoCodec.value, audio_codec: 'aac', crf: crf.value }
 }
 
 // ── Agent panel registration ──────────────────────────────────────────────────
@@ -155,7 +169,7 @@ const agentSchema = {
       options: () => formats.value.map(f => f.value) },
     { name: 'video_codec', type: 'enum' as const,
       options: () => videoCodecs.value.map(c => c.value),
-      visibleWhen: () => !isAudioFormat.value },
+      visibleWhen: () => !isAudioFormat.value && !isAnimFormat.value },
     { name: 'resolution', type: 'enum' as const,
       options: () => resolutions.value.map(r => r.value),
       visibleWhen: () => !isAudioFormat.value },
@@ -170,10 +184,13 @@ const agentSchema = {
       visibleWhen: () => !isAudioFormat.value && !!resolution.value },
     { name: 'crf', type: 'number' as const,
       min: 0, max: 51, step: 1,
-      visibleWhen: () => !isAudioFormat.value },
+      visibleWhen: () => !isAudioFormat.value && !isAnimFormat.value },
     { name: 'audio_bitrate', type: 'enum' as const,
       options: () => audioBitrates.map(b => b.value),
       visibleWhen: () => showBitrateOption.value },
+    { name: 'fps', type: 'enum' as const,
+      options: () => fpsOptions.map(o => o.value),
+      visibleWhen: () => isAnimFormat.value },
   ],
   actions: [],
   execute: { requiresConfirm: true, label: 'panel.transcode.execute' },
@@ -191,6 +208,7 @@ useAgentPanelHost('video.transcode', {
     scale_algorithm: scaleAlgorithm.value,
     crf: crf.value,
     audio_bitrate: audioBitrate.value,
+    fps: fps.value,
   }),
   setField: (field, value) => {
     switch (field) {
@@ -224,6 +242,9 @@ useAgentPanelHost('video.transcode', {
       case 'audio_bitrate':
         audioBitrate.value = value as string
         return value
+      case 'fps':
+        fps.value = String(value)
+        return fps.value
       default:
         throw new Error(`Unknown field: ${field}`)
     }
@@ -270,7 +291,20 @@ defineExpose({ execute, isDisabled, isLoading, outputFormat, isAudioFormat, getP
     </template>
 
     <SettingsCollapsible v-if="!isAudioFormat || showBitrateOption" storageKey="video_transcode_advanced">
-      <template v-if="!isAudioFormat">
+      <template v-if="isAnimFormat">
+        <div class="form-group">
+          <label>{{ $t('video.transcode.fps') }}</label>
+          <AppSelect v-model="fps" :options="fpsOptions" />
+          <small class="form-hint">{{ $t('video.transcode.fps_hint') }}</small>
+        </div>
+
+        <div v-if="resolution" class="form-group">
+          <label>{{ $t('video.transcode.scale_algorithm') }}</label>
+          <AppSelect v-model="scaleAlgorithm" :options="scaleAlgorithms" />
+        </div>
+      </template>
+
+      <template v-else-if="!isAudioFormat">
         <div class="form-group">
           <label>{{ $t('video.transcode.video_codec') }}</label>
           <AppSelect v-model="videoCodec" :options="videoCodecs" />

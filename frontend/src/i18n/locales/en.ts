@@ -630,6 +630,8 @@ export default {
       nearest: 'Nearest Neighbor (Pixel Art)',
       crf: 'Quality (CRF):',
       crf_hint: 'Lower values mean higher quality and larger files (recommended 18-28)',
+      fps: 'Frame rate',
+      fps_hint: 'Animation frame rate; lower = smaller file (default 12)',
       bitrate: 'Bitrate',
       extract_audio: 'Extract Audio',
       task_label: 'Video · Transcode',
