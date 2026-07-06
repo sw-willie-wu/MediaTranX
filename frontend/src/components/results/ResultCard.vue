@@ -41,7 +41,7 @@ const sourceLabel = computed(() =>
 
 const icon = computed(() => {
   const e = props.entry.filename.toLowerCase()
-  if (/\.(jpg|jpeg|png|gif|webp|bmp|svg|avif|tiff|heic|heif|ico)$/.test(e)) return 'bi-image'
+  if (/\.(jpg|jpeg|png|apng|gif|webp|bmp|svg|avif|tiff|heic|heif|ico)$/.test(e)) return 'bi-image'
   if (/\.(mp3|wav|flac|ogg|aac|m4a|opus|mid|midi)$/.test(e)) return 'bi-music-note-beamed'
   if (/\.(mp4|mov|webm|avi|mkv|flv|wmv|m4v)$/.test(e)) return 'bi-camera-video'
   return 'bi-file-earmark-text'
