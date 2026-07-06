@@ -24,6 +24,8 @@
       "main.js",
       "setup.js",
       "preload.cjs",
+      "updateService.cjs",
+      "updateCore.cjs",
       "splash.html",
       "error.html",
       "lib/**/*",
