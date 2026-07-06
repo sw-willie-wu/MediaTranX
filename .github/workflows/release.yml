@@ -47,6 +47,10 @@ jobs:
         with:
           enable-cache: false   # built-in cache keys on uv.lock hash, which the bump commit mutates every release — managed manually below
 
+      - name: Pin UV_CACHE_DIR            # setup-uv writes its own UV_CACHE_DIR to GITHUB_ENV even with enable-cache:false, overriding workflow env — pin it back so the manual uv cache below caches the real dir
+        shell: pwsh
+        run: '"UV_CACHE_DIR=C:\uv-cache" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8'
+
       # Cache scope reality check: tag runs only see same-ref + default-branch
       # caches, so real releases run cold; these caches serve same-tag re-runs
       # and dry-run iteration on the feature branch.
@@ -76,16 +80,22 @@ jobs:
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vs = & $vswhere -latest -products * -property installationPath
           if (-not $vs) { throw "vswhere found no Visual Studio installation" }
-          $redist = Get-ChildItem "$vs\VC\Redist\MSVC" -Directory |
+          $candidates = Get-ChildItem "$vs\VC\Redist\MSVC" -Directory |
             Where-Object { $_.Name -match '^\d+\.' } |
-            Sort-Object { [version]$_.Name } -Descending |
-            Select-Object -First 1
-          if (-not $redist) { throw "No VC redist dir under $vs\VC\Redist\MSVC" }
-          $dll = Get-Item "$($redist.FullName)\x64\Microsoft.VC143.CRT\msvcp140.dll"
-          $ver = [version]$dll.VersionInfo.FileVersion
-          Write-Host "VCToolsRedistDir=$($redist.FullName)  msvcp140.dll=$ver"
-          if ($ver -lt [version]"14.40") { throw "msvcp140.dll $ver < 14.40 (onnxruntime 1.17+ floor)" }
-          "VCToolsRedistDir=$($redist.FullName)\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            Sort-Object { [version]$_.Name } -Descending
+          $picked = $null
+          foreach ($ver in $candidates) {
+            $dll = Get-ChildItem "$($ver.FullName)\x64\Microsoft.VC14*.CRT\msvcp140.dll" -ErrorAction SilentlyContinue |
+              Sort-Object FullName -Descending | Select-Object -First 1
+            if ($dll) {
+              $v = [version]$dll.VersionInfo.FileVersion
+              Write-Host "candidate: $($dll.FullName) ($v)"
+              if ($v -ge [version]"14.40") { $picked = $ver; $pickedDll = $dll; break }
+            }
+          }
+          if (-not $picked) { throw "No VC redist dir under $vs\VC\Redist\MSVC contains x64\Microsoft.VC14*.CRT\msvcp140.dll >= 14.40" }
+          Write-Host "VCToolsRedistDir=$($picked.FullName)  msvcp140.dll=$([version]$pickedDll.VersionInfo.FileVersion)"
+          "VCToolsRedistDir=$($picked.FullName)\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Sync backend deps (frozen)
         run: uv sync --frozen --project backend

@@ -133,7 +133,7 @@ def _copy_vc_runtime(dest_dir: Path, system_root: str | None = None) -> None:
     (permitted MS runtime redistribution) -- never committed.
 
     Source priority:
-    1. %VCToolsRedistDir%\\x64\\Microsoft.VC143.CRT\\ — set explicitly by CI
+    1. %VCToolsRedistDir%\\x64\\Microsoft.VC14*.CRT (newest) — set explicitly by CI
        (GitHub runner's System32 version is not guaranteed >= 14.40, the
        onnxruntime 1.17+ floor; the workflow locates VS via vswhere and
        exports this). Not set in normal local shells.
@@ -144,11 +144,12 @@ def _copy_vc_runtime(dest_dir: Path, system_root: str | None = None) -> None:
     src_dir = None
     redist = os.environ.get("VCToolsRedistDir")
     if redist:
-        candidate = Path(redist) / "x64" / "Microsoft.VC143.CRT"
-        if candidate.is_dir():
-            src_dir = candidate
+        crt_dirs = sorted(Path(redist).glob("x64/Microsoft.VC14*.CRT"), reverse=True)
+        crt_dirs = [d for d in crt_dirs if d.is_dir()]
+        if crt_dirs:
+            src_dir = crt_dirs[0]
         else:
-            print(f"  WARNING: VCToolsRedistDir set but {candidate} missing; "
+            print(f"  WARNING: VCToolsRedistDir set but no x64/Microsoft.VC14*.CRT under {redist}; "
                   f"falling back to System32")
     if src_dir is None:
         system_root = system_root or os.environ.get("SystemRoot", r"C:\Windows")

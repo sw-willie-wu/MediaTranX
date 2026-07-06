@@ -62,3 +62,16 @@ def test_copy_vc_runtime_bad_redist_falls_back(tmp_path, monkeypatch):
     dest.mkdir()
     build._copy_vc_runtime(dest, system_root=str(sysroot))
     assert (dest / "msvcp140.dll").read_bytes() == b"system32"
+
+
+def test_copy_vc_runtime_picks_newest_crt_dir(tmp_path, monkeypatch):
+    redist = tmp_path / "Redist" / "MSVC" / "14.44.35211"
+    _make_dlls(redist / "x64" / "Microsoft.VC143.CRT", b"old")
+    _make_dlls(redist / "x64" / "Microsoft.VC144.CRT", b"new")
+    sysroot = tmp_path / "winroot"
+    _make_dlls(sysroot / "System32", b"system32")
+    monkeypatch.setenv("VCToolsRedistDir", str(redist))
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    build._copy_vc_runtime(dest, system_root=str(sysroot))
+    assert (dest / "msvcp140.dll").read_bytes() == b"new"
