@@ -38,7 +38,8 @@ def _fake_system_root(tmp_path: Path, dll_names) -> Path:
     return tmp_path
 
 
-def test_copies_both_runtime_dlls(tmp_path):
+def test_copies_both_runtime_dlls(tmp_path, monkeypatch):
+    monkeypatch.delenv("VCToolsRedistDir", raising=False)  # redist takes priority over system_root
     build = _load_build_module()
     src_root = _fake_system_root(tmp_path / "win", build._VC_RUNTIME_DLLS)
     dest = tmp_path / "core_service"
@@ -51,7 +52,8 @@ def test_copies_both_runtime_dlls(tmp_path):
         assert (dest / name).read_bytes() == b"fake dll"
 
 
-def test_missing_source_warns_does_not_raise(tmp_path, capsys):
+def test_missing_source_warns_does_not_raise(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("VCToolsRedistDir", raising=False)  # redist takes priority over system_root
     build = _load_build_module()
     src_root = _fake_system_root(tmp_path / "win", [])  # empty System32
     dest = tmp_path / "core_service"

@@ -129,35 +129,58 @@ def _copy_vc_runtime(dest_dir: Path, system_root: str | None = None) -> None:
     directory is first on the frozen DLL search path (app/init/setup.py), so a
     copy here is found by onnxruntime at load time.
 
-    Sourced from the build machine's System32 (its version must be >= 14.40 /
-    VS2022 for onnxruntime 1.17+; this dev machine is 14.44). The DLLs land in
-    gitignored build/ and ship only inside the installer (permitted MS runtime
-    redistribution) -- never committed.
+    The DLLs land in gitignored build/ and ship only inside the installer
+    (permitted MS runtime redistribution) -- never committed.
 
-    CI NOTE: this relies on the *build machine's* System32 being new enough. A
-    GitHub Actions / CI runner's System32 version is not guaranteed >= 14.40;
-    when moving to CI, source these from a fixed location instead
-    (%VCToolsRedistDir%\\x64\\Microsoft.VC143.CRT\\ or by extracting
-    vc_redist.x64.exe). See spec 2026-06-02 follow-up.
+    Source priority:
+    1. %VCToolsRedistDir%\\x64\\Microsoft.VC143.CRT\\ — set explicitly by CI
+       (GitHub runner's System32 version is not guaranteed >= 14.40, the
+       onnxruntime 1.17+ floor; the workflow locates VS via vswhere and
+       exports this). Not set in normal local shells.
+    2. Build machine's System32 (local builds; this dev machine is 14.44).
     """
     if sys.platform != "win32":
         return
-    system_root = system_root or os.environ.get("SystemRoot", r"C:\Windows")
-    src_dir = Path(system_root) / "System32"
+    src_dir = None
+    redist = os.environ.get("VCToolsRedistDir")
+    if redist:
+        candidate = Path(redist) / "x64" / "Microsoft.VC143.CRT"
+        if candidate.is_dir():
+            src_dir = candidate
+        else:
+            print(f"  WARNING: VCToolsRedistDir set but {candidate} missing; "
+                  f"falling back to System32")
+    if src_dir is None:
+        system_root = system_root or os.environ.get("SystemRoot", r"C:\Windows")
+        src_dir = Path(system_root) / "System32"
+    print(f"  VC++ runtime source: {src_dir}")
     for name in _VC_RUNTIME_DLLS:
         src = src_dir / name
         if src.is_file():
             shutil.copy2(src, dest_dir / name)
             print(f"  Bundled VC++ runtime: {name}")
         else:
-            print(
-                f"  WARNING: {src} not found -- installer will ship without {name}. "
-                f"onnxruntime (background removal, audio->MIDI) will fail on "
-                f"machines lacking a recent VC++ redistributable."
-            )
+            print(f"  WARNING: {src} not found -- installer will ship without {name}. "
+                  f"onnxruntime (background removal, audio->MIDI) will fail on "
+                  f"machines lacking a recent VC++ redistributable.")
 
 
-def step_nuitka():
+def _uv_run_prefix(frozen: bool) -> list:
+    """uv-run prefix for the Nuitka invocation.
+
+    frozen=True (CI --no-lock): use the committed uv.lock as-is, never
+    re-resolve — the shipped uv.lock must equal the one that was tested.
+    Nuitka pinned: a newer Nuitka can demand a newer MinGW toolchain;
+    4.0.8 is the last version verified to build this project.
+    """
+    prefix = ["uv", "run"]
+    if frozen:
+        prefix.append("--frozen")
+    return prefix + ["--with", "nuitka==4.0.8", "--with", "ordered-set",
+                     "python", "-m", "nuitka"]
+
+
+def step_nuitka(frozen: bool = False):
     """Step 2: Compile backend with Nuitka."""
     import importlib.metadata
     import warnings
@@ -212,13 +235,7 @@ def step_nuitka():
 
     icon = str((ELECTRON_DIR / "icon.ico").resolve())
 
-    cmd = [
-        # Pin Nuitka — unpinned 'nuitka' drifts to whatever is latest, and a
-        # newer Nuitka can demand a newer MinGW toolchain (re-download, version
-        # churn). 4.0.8 is the last version verified to build this project; its
-        # MinGW (gcc 14.2.0) is already cached.
-        "uv", "run", "--with", "nuitka==4.0.8", "--with", "ordered-set",
-        "python", "-m", "nuitka",
+    cmd = _uv_run_prefix(frozen) + [
         "--standalone",
         # Auto-accept Nuitka's MinGW64 download — required for non-interactive
         # (CI / background) builds; otherwise the download prompt defaults to No.
@@ -366,12 +383,6 @@ def step_electron(full: bool = False):
 
 ALL_STEPS = ["vite", "nuitka", "electron"]
 
-STEP_FNS = {
-    "vite": step_vite,
-    "nuitka": step_nuitka,
-    # electron handled separately (needs `full` param)
-}
-
 
 def main():
     parser = argparse.ArgumentParser(description="MediaTranX Build System")
@@ -380,6 +391,10 @@ def main():
     parser.add_argument("--version", type=str, default=None, help="Direct version (e.g. 1.3.1)")
     parser.add_argument("--full", action="store_true", help="Include .venv + bin tools")
     parser.add_argument("--step", type=str, default=None, help="Comma-separated steps: vite,nuitka,electron")
+    parser.add_argument("--no-lock", action="store_true",
+                        help="CI: skip `uv lock` in set_version and run Nuitka "
+                             "with `uv run --frozen` (build strictly from the "
+                             "committed uv.lock)")
     args = parser.parse_args()
 
     # Determine steps
@@ -418,15 +433,17 @@ def main():
     needs_version = "nuitka" in steps or "electron" in steps
     if needs_version:
         print(f"\n[1] Setting version to {build_ver}...")
-        set_version(build_ver, sync_lock=not is_dev, build_mode="dev" if is_dev else "prod")
+        set_version(build_ver, sync_lock=(not is_dev) and (not args.no_lock), build_mode="dev" if is_dev else "prod")
 
     # Run steps
     try:
         for s in steps:
             if s == "electron":
                 step_electron(full=args.full)
+            elif s == "nuitka":
+                step_nuitka(frozen=args.no_lock)
             else:
-                STEP_FNS[s]()
+                step_vite()
     except subprocess.CalledProcessError as e:
         print(f"\n[ERROR] Step failed with exit code {e.returncode}")
         sys.exit(1)
