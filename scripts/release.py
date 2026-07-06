@@ -2,13 +2,16 @@
 MediaTranX Release Script
 
 Usage:
-  python scripts/release.py v1.3.1                   # direct version
-  python scripts/release.py --bump patch              # auto from latest tag
-  python scripts/release.py --bump minor --full       # with full installer
-  python scripts/release.py v1.3.1 --skip-build       # skip build step
+  python scripts/release.py v1.3.1           # direct version
+  python scripts/release.py --bump patch      # auto from latest tag
+  python scripts/release.py --bump minor      # bump minor version
 
 Must be run from the project root (MediaTranX/).
-Requires: gh CLI (authenticated), git.
+Requires: git.
+
+This script handles only git orchestration (merge → bump → tag → push → sync).
+Build, code-signing, and GitHub release creation are performed by GitHub Actions
+after the tag push (step 4/5).
 """
 import argparse
 import os
@@ -33,7 +36,6 @@ if not os.environ.get("_RELEASE_FROM_TEMP"):
     sys.exit(result.returncode)
 
 ROOT = Path(os.environ.get("_RELEASE_ROOT", Path(__file__).resolve().parent.parent))
-DIST_DIR = ROOT / "dist"
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -77,14 +79,8 @@ def bump_version(current: str, bump: str) -> str:
 
 def preflight(version: str):
     """Validate environment before release."""
-    print("\n[0/6] Pre-flight checks...")
+    print("\n[0/5] Pre-flight checks...")
     errors = []
-
-    # gh CLI
-    try:
-        run(["gh", "auth", "status"], capture=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        errors.append("gh CLI not found or not authenticated")
 
     # Branch check
     branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture=True)
@@ -104,6 +100,21 @@ def preflight(version: str):
     if existing:
         errors.append(f"Tag {version} already exists")
 
+    # CHANGELOG section must exist BEFORE merge/tag: step2 never touches
+    # CHANGELOG.md, so passing here guarantees the tagged commit carries the
+    # section CI extracts for release notes. Same anchor rule as CI
+    # (both call scripts/extract_changelog.py).
+    semver = version.lstrip("v")
+    chk = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "extract_changelog.py"),
+         semver, "--check"],
+        cwd=str(ROOT), shell=False,
+    )
+    if chk.returncode != 0:
+        errors.append(
+            f"CHANGELOG.md `## [{semver}]` section missing/empty/placeholder "
+            f"(see message above)")
+
     if errors:
         for e in errors:
             print(f"  [ERROR] {e}")
@@ -116,7 +127,7 @@ def preflight(version: str):
 
 def step1_merge():
     """Merge dev → main."""
-    print("\n[1/6] Merge dev to main...")
+    print("\n[1/5] Merge dev to main...")
     run(["git", "checkout", "main"])
     run(["git", "reset", "--hard", "origin/main"])
     run(["git", "merge", "dev", "--no-ff", "-m", "Merge branch 'dev' into main"])
@@ -125,7 +136,7 @@ def step1_merge():
 
 def step2_bump(semver: str, version: str):
     """Bump version in backend/pyproject.toml (+uv.lock), electron/package.json, and frontend/package.json."""
-    print(f"\n[2/6] Bump version to {semver}...")
+    print(f"\n[2/5] Bump version to {semver}...")
     pyproject = ROOT / "backend" / "pyproject.toml"
     text = pyproject.read_text(encoding="utf-8")
     text = re.sub(r'(?m)^version = ".*"', f'version = "{semver}"', text)
@@ -142,87 +153,24 @@ def step2_bump(semver: str, version: str):
     print("  [OK] Version bumped.")
 
 
-def step3_build(semver: str, skip: bool, full: bool):
-    """Build installer."""
-    if skip:
-        print("\n[3/6] Skipping build.")
-        return
-
-    print("\n[3/6] Building installer...")
-    # build.py's step_nuitka computes Nuitka's --nofollow-import-to exclusion
-    # list from the *running* interpreter's installed packages, so build.py
-    # MUST run inside the backend venv. `--project backend` makes uv use that
-    # project's venv; without it the exclusion list is wrong and the build
-    # breaks. (See docs/RELEASE.md.)
-    cmd = ["uv", "run", "--project", str(ROOT / "backend"), "python",
-           str(ROOT / "scripts" / "build.py"),
-           "--mode", "prod", "--version", semver]
-    if full:
-        cmd.append("--full")
-    run(cmd)
-
-
-def step4_tag(version: str):
+def step3_tag(version: str):
     """Tag the release."""
-    print(f"\n[4/6] Tagging {version}...")
+    print(f"\n[3/5] Tagging {version}...")
     run(["git", "tag", "-a", version, "-m", f"Release {version}"])
     print("  [OK] Tagged.")
 
 
-def step5_push_release(version: str, semver: str, full: bool):
-    """Push and create GitHub release."""
-    print("\n[5/6] Pushing and creating release...")
-
+def step4_push(version: str):
+    """Push main + tag; the tag push triggers the CI build & release."""
+    print("\n[4/5] Pushing main + tag...")
     run(["git", "push", "origin", "main"])
     run(["git", "push", "origin", version])
-
-    # Generate release notes
-    prev_tag = None
-    try:
-        prev_tag = run(
-            ["git", "describe", "--tags", "--abbrev=0", f"{version}^"],
-            capture=True
-        )
-    except subprocess.CalledProcessError:
-        pass
-
-    if prev_tag:
-        notes = run(
-            ["git", "log", f"{prev_tag}..{version}", "--pretty=format:- %s", "--no-merges"],
-            capture=True
-        )
-    else:
-        notes = run(
-            ["git", "log", "--pretty=format:- %s", "--no-merges", "-20"],
-            capture=True
-        )
-
-    suffix = "-full" if full else ""
-    installer = DIST_DIR / f"MediaTranX-Setup-{semver}{suffix}-win.exe"
-    if not installer.exists():
-        print(f"  [ERROR] Installer not found: {installer}")
-        if DIST_DIR.exists():
-            for f in DIST_DIR.glob("*.exe"):
-                print(f"    Found: {f.name}")
-        sys.exit(1)
-
-    notes_file = ROOT / "release_notes.tmp"
-    notes_file.write_text(notes, encoding="utf-8")
-
-    run([
-        "gh", "release", "create", version, str(installer),
-        "--repo", "sw-willie-wu/MediaTranX",
-        "--title", f"MediaTranX {version}",
-        "--notes-file", str(notes_file),
-    ])
-
-    notes_file.unlink(missing_ok=True)
-    print("  [OK] Release created.")
+    print("  [OK] Pushed. GitHub Actions builds, signs, and publishes the release.")
 
 
-def step6_sync(version: str):
+def step5_sync(version: str):
     """Sync main back to dev."""
-    print("\n[6/6] Syncing main back to dev...")
+    print("\n[5/5] Syncing main back to dev...")
     run(["git", "checkout", "dev"])
     run(["git", "merge", "main", "--no-edit"])
     print("  [OK] Synced.")
@@ -234,8 +182,6 @@ def main():
     parser = argparse.ArgumentParser(description="MediaTranX Release")
     parser.add_argument("version", nargs="?", default=None, help="Version (e.g. v1.3.1)")
     parser.add_argument("--bump", choices=["major", "minor", "patch"], default=None)
-    parser.add_argument("--skip-build", action="store_true", help="Skip build step")
-    parser.add_argument("--full", action="store_true", help="Build full installer")
     args = parser.parse_args()
 
     # Determine version
@@ -273,15 +219,17 @@ def main():
     preflight(version)
     step1_merge()
     step2_bump(semver, version)
-    step3_build(semver, args.skip_build, args.full)
-    step4_tag(version)
-    step5_push_release(version, semver, args.full)
-    step6_sync(version)
+    step3_tag(version)
+    step4_push(version)
+    step5_sync(version)
 
     print()
     print("========================================")
-    print(f"  Release {version} complete!")
-    print(f"  https://github.com/sw-willie-wu/MediaTranX/releases/tag/{version}")
+    print(f"  Release {version} tagged & pushed!")
+    print(f"  CI build (cold ~15 min, measured 2026-07):")
+    print(f"    https://github.com/sw-willie-wu/MediaTranX/actions")
+    print(f"  Release will appear at:")
+    print(f"    https://github.com/sw-willie-wu/MediaTranX/releases/tag/{version}")
     print("========================================")
 
 
