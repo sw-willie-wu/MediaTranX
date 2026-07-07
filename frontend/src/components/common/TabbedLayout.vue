@@ -9,7 +9,7 @@ export interface TabItem {
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useResizableLayout } from '@/composables/useResizableLayout'
+import { useResizableLayout, DEFAULTS } from '@/composables/useResizableLayout'
 
 const { sidebarWidth, startResize } = useResizableLayout()
 
@@ -49,7 +49,7 @@ const activeTab = computed({
       </div>
     </aside>
 
-    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = 220"></div>
+    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = DEFAULTS.sidebar"></div>
 
     <main class="tabbed-content">
       <div class="content-inner" :style="{ maxWidth: contentMaxWidth }">
