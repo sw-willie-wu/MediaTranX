@@ -30,6 +30,19 @@ const paletteGroups = computed(() => {
   return groups
 })
 
+// 節點盤各類別折疊狀態（預設全收合;展開/收合選擇記 localStorage、下次沿用）
+const PALETTE_OPEN_KEY = 'pipeline-palette-open'
+const openSections = ref<Record<string, boolean>>((() => {
+  try { return JSON.parse(localStorage.getItem(PALETTE_OPEN_KEY) || '{}') } catch { return {} }
+})())
+function isSectionOpen(id: string): boolean {
+  return openSections.value[id] === true
+}
+function toggleSection(id: string) {
+  openSections.value = { ...openSections.value, [id]: !openSections.value[id] }
+  localStorage.setItem(PALETTE_OPEN_KEY, JSON.stringify(openSections.value))
+}
+
 // ── recipe → Vue Flow 派生 ────────────────────────────────────────
 const flowNodes = computed(() =>
   store.recipe.nodes.map((n) => ({
@@ -183,30 +196,40 @@ async function onOpen(id: string) {
       <div class="palette" :class="{ locked: store.running }">
         <h6 class="palette-title">{{ t('pipeline.palette_title') }}</h6>
         <template v-for="(items, domain) in paletteGroups" :key="domain">
-          <div class="palette-group">{{ t(`nav.${domain}`) }}</div>
-          <button
-            v-for="item in items"
-            :key="item.key"
-            class="palette-item"
-            draggable="true"
-            @dragstart="onPaletteDragStart($event, item.key)"
-            @click="addByClick(item.key)"
-          >
-            <i class="bi bi-plus-square me-1"></i>{{ item.label }}
+          <button class="palette-group palette-group-toggle" @click="toggleSection(domain)">
+            <i class="bi" :class="isSectionOpen(domain) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+            {{ t(`nav.${domain}`) }}
           </button>
+          <template v-if="isSectionOpen(domain)">
+            <button
+              v-for="item in items"
+              :key="item.key"
+              class="palette-item"
+              draggable="true"
+              @dragstart="onPaletteDragStart($event, item.key)"
+              @click="addByClick(item.key)"
+            >
+              <i class="bi bi-plus-square me-1"></i>{{ item.label }}
+            </button>
+          </template>
         </template>
 
         <!-- 已存流程 -->
-        <div class="palette-group saved-group">{{ t('pipeline.saved_recipes') }}</div>
-        <button class="palette-item" @click="store.newRecipe(); recipeName = ''">
-          <i class="bi bi-file-earmark-plus me-1"></i>{{ t('pipeline.new_recipe') }}
+        <button class="palette-group saved-group palette-group-toggle" @click="toggleSection('__saved')">
+          <i class="bi" :class="isSectionOpen('__saved') ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+          {{ t('pipeline.saved_recipes') }}
         </button>
-        <div v-for="r in store.savedRecipes" :key="r.id" class="saved-row">
-          <button class="palette-item saved-item" :class="{ current: r.id === store.currentRecipeId }" @click="onOpen(r.id)">
-            <i class="bi bi-diagram-3 me-1"></i>{{ r.name || t('pipeline.unnamed') }}
+        <template v-if="isSectionOpen('__saved')">
+          <button class="palette-item" @click="store.newRecipe(); recipeName = ''">
+            <i class="bi bi-file-earmark-plus me-1"></i>{{ t('pipeline.new_recipe') }}
           </button>
-          <i class="bi bi-trash saved-del" @click="store.deleteRecipe(r.id)"></i>
-        </div>
+          <div v-for="r in store.savedRecipes" :key="r.id" class="saved-row">
+            <button class="palette-item saved-item" :class="{ current: r.id === store.currentRecipeId }" @click="onOpen(r.id)">
+              <i class="bi bi-diagram-3 me-1"></i>{{ r.name || t('pipeline.unnamed') }}
+            </button>
+            <i class="bi bi-trash saved-del" @click="store.deleteRecipe(r.id)"></i>
+          </div>
+        </template>
       </div>
     </template>
 
@@ -337,6 +360,14 @@ async function onOpen(id: string) {
   margin-top: 0.6rem; padding: 0.25rem 0.35rem 0.1rem;
   font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
   color: var(--text-muted); letter-spacing: 0.05em;
+}
+// 折疊頭:沿用 palette-group 的小標籤外觀,補上可點/chevron
+.palette-group-toggle {
+  display: flex; align-items: center; gap: 0.35rem;
+  width: 100%; background: transparent; border: none;
+  text-align: left; cursor: pointer; font-family: inherit;
+  &:hover { color: var(--text-primary); }
+  i { font-size: 0.65rem; }
 }
 .palette-item {
   display: block; width: 100%;
