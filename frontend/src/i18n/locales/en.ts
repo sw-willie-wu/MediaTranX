@@ -183,6 +183,7 @@ export default {
     drop_files: 'Drop or paste files here',
     drop_hint: 'or click to select',
     folder_truncated: 'Too many files in folder; only the first 500 were added',
+    pick_folder: 'or select a folder',
     loading_info: 'Loading info...',
     uploading: 'Uploading...',
     copy: 'Copy',

@@ -183,6 +183,7 @@ export default {
     drop_files: '拖曳或貼上檔案到這裡',
     drop_hint: '或點擊選擇檔案',
     folder_truncated: '資料夾檔案過多，僅加入前 500 個檔案',
+    pick_folder: '或選擇資料夾',
     loading_info: '讀取資訊...',
     uploading: '上傳中...',
     copy: '複製',

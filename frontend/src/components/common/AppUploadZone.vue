@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { expandDropItems, hasDirectoryItem } from '@/utils/dropEntries'
+import { expandDropItems, hasDirectoryItem, capFolderFiles } from '@/utils/dropEntries'
 
 const { t } = useI18n()
 
@@ -31,6 +31,17 @@ const isDragOver = ref(false)
 
 function handleClick() {
   fileInputRef.value?.click()
+}
+
+const folderInputRef = ref<HTMLInputElement | null>(null)
+
+function handleFolderInput(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (input.files && input.files.length > 0) {
+    const { files, truncated } = capFolderFiles(Array.from(input.files))
+    emit('folder-files', files, truncated)
+  }
+  input.value = '' // 放 if 外:同資料夾重選也要能再觸發 change
 }
 
 function extractSourceDir(file: File): string | undefined {
@@ -87,6 +98,10 @@ async function handleDrop(e: DragEvent) {
     <i :class="['bi', icon]"></i>
     <p>{{ effectiveLabel }}</p>
     <p class="hint">{{ effectiveHint }}</p>
+    <input ref="folderInputRef" type="file" webkitdirectory hidden @change="handleFolderInput" />
+    <p class="folder-link" @click.stop="folderInputRef?.click()">
+      <i class="bi bi-folder2-open"></i> {{ t('common.pick_folder') }}
+    </p>
   </div>
 </template>
 
@@ -139,5 +154,18 @@ async function handleDrop(e: DragEvent) {
 .upload-zone .hint {
   font-size: 0.85rem;
   margin-top: 0.5rem;
+}
+
+/* selector 必須帶 .upload-zone 前綴 — 裸 .folder-link (0,1,0) 會被
+   .upload-zone p (0,1,1) 蓋掉,margin/font-size 靜默失效 */
+.upload-zone .folder-link {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.upload-zone .folder-link:hover {
+  color: var(--text-primary);
 }
 </style>
