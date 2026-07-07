@@ -39,8 +39,10 @@ const extMap: Record<string, ToolType> = {
   mp3: 'audio', wav: 'audio', flac: 'audio', aac: 'audio', ogg: 'audio', m4a: 'audio', wma: 'audio', mid: 'audio', midi: 'audio',
   // 圖片
   jpg: 'image', jpeg: 'image', png: 'image', apng: 'image', gif: 'image', webp: 'image', bmp: 'image', tiff: 'image', ico: 'image',
-  // 文件
+  // 文件（srt/vtt/md/... 為字幕與文字產出的路由補項——只加映射、不動 ToolType 值）
   pdf: 'document', doc: 'document', docx: 'document', txt: 'document',
+  srt: 'document', vtt: 'document', md: 'document', csv: 'document',
+  json: 'document', html: 'document', odt: 'document', lrc: 'document',
 }
 
 export function detectMediaType(file: File): ToolType | null {
