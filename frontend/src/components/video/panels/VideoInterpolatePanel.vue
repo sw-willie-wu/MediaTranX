@@ -77,21 +77,29 @@ const fpsWarning = computed(() => {
 const isDisabled = computed(() => !props.fileId || isProcessing.value || fpsWarning.value)
 const isLoading = computed(() => isProcessing.value)
 
-async function execute() {
+function getParams(): Record<string, unknown> {
+  return {
+    model: model.value,
+    mode: mode.value,
+    target_fps: mode.value === 'custom' ? targetFps.value : undefined,
+    output_format: outputFormat.value,
+    video_codec: videoCodec.value,
+  }
+}
+
+async function preflight(): Promise<boolean> {
   const selected = modelOptions.value.find(v => v.value === model.value)
-  if (!await guardModelReady(selected?.badge === 'ok', 'video')) return
-  if (!props.fileId || fpsWarning.value) return
+  if (!await guardModelReady(selected?.badge === 'ok', 'video')) return false
+  return !fpsWarning.value
+}
+
+async function execute() {
+  if (!await preflight()) return
+  if (!props.fileId) return
 
   const taskId = await submitTask(
     '/video/interpolate',
-    {
-      file_id: props.fileId,
-      model: model.value,
-      mode: mode.value,
-      target_fps: mode.value === 'custom' ? targetFps.value : undefined,
-      output_format: outputFormat.value,
-      video_codec: videoCodec.value,
-    },
+    { file_id: props.fileId, ...getParams() },
     t('video.interpolate.task_label'),
     'video.interpolate',
     props.currentFileName,
@@ -139,7 +147,7 @@ useAgentPanelHost('video.interpolate', {
   execute: async () => { await execute(); return {} },
 })
 
-defineExpose({ execute, isDisabled, isLoading })
+defineExpose({ execute, isDisabled, isLoading, getParams, preflight })
 </script>
 
 <template>

@@ -67,20 +67,27 @@ const outputResolution = computed(() => {
 const isDisabled = computed(() => !props.fileId || isProcessing.value)
 const isLoading = computed(() => isProcessing.value)
 
-async function execute() {
+function getParams(): Record<string, unknown> {
+  return {
+    model: 'realesrgan',
+    variant: variant.value,
+    output_format: outputFormat.value,
+    video_codec: videoCodec.value,
+  }
+}
+
+async function preflight(): Promise<boolean> {
   const selected = variantOptions.value.find(v => v.value === variant.value)
-  if (!await guardModelReady(selected?.badge === 'ok', 'image')) return
+  return await guardModelReady(selected?.badge === 'ok', 'image')
+}
+
+async function execute() {
+  if (!await preflight()) return
   if (!props.fileId) return
 
   const taskId = await submitTask(
     '/video/enhance',
-    {
-      file_id: props.fileId,
-      model: 'realesrgan',
-      variant: variant.value,
-      output_format: outputFormat.value,
-      video_codec: videoCodec.value,
-    },
+    { file_id: props.fileId, ...getParams() },
     t('video.enhance.task_label'),
     'video.enhance',
     props.currentFileName,
@@ -123,7 +130,7 @@ useAgentPanelHost('video.enhance', {
   execute: async () => { await execute(); return {} },
 })
 
-defineExpose({ execute, isDisabled, isLoading })
+defineExpose({ execute, isDisabled, isLoading, getParams, preflight })
 </script>
 
 <template>
