@@ -116,6 +116,20 @@ function formatRam(bytes: number | null): string {
     <p class="setting-hint">{{ $t('settings.system.cpu_fallback_hint') }}</p>
   </div>
 
+  <div class="setting-item">
+    <label class="concurrency-row">
+      <span>{{ $t('settings.system.max_concurrent_tasks') }}</span>
+      <select
+        class="concurrency-select"
+        :value="computeStore.settings.max_concurrent_tasks"
+        @change="(e) => computeStore.update({ max_concurrent_tasks: Number((e.target as HTMLSelectElement).value) })"
+      >
+        <option v-for="n in 8" :key="n" :value="n">{{ n }}</option>
+      </select>
+    </label>
+    <p class="setting-hint">{{ $t('settings.system.max_concurrent_tasks_hint') }}</p>
+  </div>
+
   <p
     v-if="settingsStore.deviceInfo?.fallback_active"
     class="fallback-notice"
@@ -209,6 +223,25 @@ function formatRam(bytes: number | null): string {
   font-size: 0.8rem;
   margin-top: 0.375rem;
   line-height: 1.4;
+}
+
+.concurrency-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.concurrency-select {
+  padding: 0.25rem 0.5rem;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
 }
 
 .fallback-notice {

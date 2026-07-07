@@ -19,6 +19,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Sentinel returned by the executor fn when the task was cancelled while still
+# queued behind max_workers — the coroutine must not treat it as a result.
+_CANCELLED_BEFORE_START = object()
+
 
 def _collect_output_ids(result: dict) -> list[str]:
     """Collect all file_id strings from a handler result dict.
@@ -70,6 +74,15 @@ class TaskManager:
     @property
     def progress_tracker(self) -> ProgressTracker:
         return self._progress_tracker
+
+    def set_max_workers(self, n: int) -> None:
+        """Recreate the executor with a new worker cap (startup-time only;
+        callers must ensure no tasks are running)."""
+        n = max(1, min(8, int(n)))
+        old = self._executor
+        self._executor = ThreadPoolExecutor(max_workers=n)
+        old.shutdown(wait=False)
+        logger.info(f"TaskManager max_workers set to {n}")
 
     def on_terminal(self, callback: Callable[[TaskData], None]) -> None:
         """Register a callback for when a task enters a terminal state."""
@@ -162,9 +175,6 @@ class TaskManager:
             if handler is None:
                 raise ValueError(f"No handler registered for task type: {task_type}")
 
-            task.status = TaskStatus.PROCESSING
-            task.updated_at = datetime.now(timezone.utc)
-
             progress_callback = self._create_cancellable_callback(task_id)
 
             loop = asyncio.get_event_loop()
@@ -172,6 +182,17 @@ class TaskManager:
             from app.utils.task_notices import _current_task_notices
 
             def _run():
+                # 原子性:sentinel 檢查與 PROCESSING 轉移必須在鎖內與 cancel()
+                # 的 CANCELLED 寫入互斥,否則 GIL handoff 間 CANCELLED 會被蓋掉。
+                with self._lock:
+                    # Cancelled while queued: cancel() already finalized the task
+                    # (status/emit/notify) — skip the handler entirely.
+                    if task.status == TaskStatus.CANCELLED:
+                        return _CANCELLED_BEFORE_START
+                    # PROCESSING marks actual execution start — while queued behind
+                    # max_workers the task stays PENDING (visible queue semantics).
+                    task.status = TaskStatus.PROCESSING
+                    task.updated_at = datetime.now(timezone.utc)
                 token = _current_task_notices.set(task.notices)
                 try:
                     return handler(params, progress_callback)
@@ -179,6 +200,12 @@ class TaskManager:
                     _current_task_notices.reset(token)
 
             result = await loop.run_in_executor(self._executor, _run)
+
+            if result is _CANCELLED_BEFORE_START:
+                with self._lock:
+                    self._cancelled_ids.discard(task_id)
+                logger.info(f"Task skipped (cancelled while queued): {task_id}")
+                return
 
             task.status = TaskStatus.COMPLETED
             task.progress = 1.0
@@ -335,9 +362,16 @@ class TaskManager:
             from app.handler.exceptions import NotFoundError
             raise NotFoundError(f"Task not found: {task_id}")
 
-        if task.status == TaskStatus.PENDING:
-            task.status = TaskStatus.CANCELLED
-            task.updated_at = datetime.now(timezone.utc)
+        with self._lock:
+            # 與 _run() 的 sentinel+PROCESSING 轉移互斥:先搶到鎖者贏——
+            # cancel 先贏 → _run 見 CANCELLED 走 sentinel;_run 先贏 → 這裡
+            # 見 PROCESSING 走下方分支(_cancelled_ids 讓 progress callback 中止)。
+            is_pending = task.status == TaskStatus.PENDING
+            if is_pending:
+                self._cancelled_ids.add(task_id)
+                task.status = TaskStatus.CANCELLED
+                task.updated_at = datetime.now(timezone.utc)
+        if is_pending:
             await self._progress_tracker.emit(task_id, task.progress, "Task cancelled")
             logger.info(f"Task cancelled (pending): {task_id}")
             self._notify_terminal(task)

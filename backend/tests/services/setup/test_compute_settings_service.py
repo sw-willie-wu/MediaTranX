@@ -26,5 +26,7 @@ def test_update_persists_and_pushes_policy():
          patch("app.adapters.device.set_allow_cpu_fallback") as mock_policy:
         out = svc.update_settings({"allow_cpu_fallback": False})
     assert out.allow_cpu_fallback is False
-    mock_set.assert_called_once_with("compute", {"allow_cpu_fallback": False})
+    mock_set.assert_called_once_with(
+        "compute", {"allow_cpu_fallback": False, "max_concurrent_tasks": 4}
+    )
     mock_policy.assert_called_once_with(False)

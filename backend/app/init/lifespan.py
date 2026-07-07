@@ -150,6 +150,15 @@ def build_lifespan():
         except Exception:
             LOGGER.exception("Failed to apply CPU-fallback policy (using default ON)")
 
+        # Apply persisted task-concurrency cap before any task can run
+        # (restart-to-apply setting; executor swap is safe while idle).
+        try:
+            _cs2 = container.compute_settings_service().get_settings()
+            tm.set_max_workers(_cs2.max_concurrent_tasks)
+            LOGGER.info("Task concurrency applied: max_workers=%s", _cs2.max_concurrent_tasks)
+        except Exception as e:
+            LOGGER.warning("Failed to apply task concurrency setting: %s", e)
+
         # Import heavy domain services in the background so the server
         # starts accepting connections immediately (cold-start optimization).
         threading.Thread(
