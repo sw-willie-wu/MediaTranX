@@ -184,6 +184,7 @@ export default {
     drop_hint: 'or click to select',
     folder_truncated: 'Too many files in folder; only the first 500 were added',
     pick_folder: 'or select a folder',
+    folder_register_failed: '{count} file(s) could not be added',
     loading_info: 'Loading info...',
     uploading: 'Uploading...',
     copy: 'Copy',

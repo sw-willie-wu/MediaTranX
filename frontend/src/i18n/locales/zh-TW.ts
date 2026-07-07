@@ -184,6 +184,7 @@ export default {
     drop_hint: '或點擊選擇檔案',
     folder_truncated: '資料夾檔案過多，僅加入前 500 個檔案',
     pick_folder: '或選擇資料夾',
+    folder_register_failed: '有 {count} 個檔案無法加入',
     loading_info: '讀取資訊...',
     uploading: '上傳中...',
     copy: '複製',

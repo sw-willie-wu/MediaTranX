@@ -21,6 +21,7 @@ interface Window {
     isMaximized: () => Promise<boolean>
     onMaximizeChange: (callback: (value: boolean) => void) => void
     selectFolder: () => Promise<string | null>
+    pickFolderFiles: () => Promise<{ paths: string[]; truncated: boolean } | null>
     saveFileDialog: (options: SaveFileDialogOptions) => Promise<string | null>
     getFileSourceDir: (name: string, size: number, lastModified: number) => string | null
     downloadToPath: (url: string, destPath: string, srcPath?: string) => Promise<void>
