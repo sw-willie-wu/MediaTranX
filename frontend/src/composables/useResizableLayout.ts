@@ -9,7 +9,7 @@ import { ref, onBeforeUnmount } from 'vue'
 const STORAGE_KEY = 'tool-layout-widths'
 
 // MainSidebar = 52px, 讓 sidebar + MainSidebar ≈ settings 讓 preview 視覺置中
-const DEFAULTS = { sidebar: 220, settings: 272 }
+export const DEFAULTS = { sidebar: 220, settings: 272 }
 const LIMITS = {
   sidebar: { min: 120, max: 300 },
   settings: { min: 240, max: 500 },
