@@ -23,6 +23,7 @@ class ImageCropRequest(BaseModel):
     y: int = Field(default=0, description="Crop start Y coordinate")
     width: int = Field(..., gt=0, description="Crop width")
     height: int = Field(..., gt=0, description="Crop height")
+    suppress_results: Optional[bool] = None
 
 
 class ImageCropResponse(BaseModel):
@@ -44,5 +45,6 @@ async def crop_image(
         y=request.y,
         width=request.width,
         height=request.height,
+        suppress_results=request.suppress_results,
     )
     return ImageCropResponse(task_id=task_id)

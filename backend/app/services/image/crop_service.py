@@ -34,6 +34,7 @@ class ImageCropService:
         y: int = 0,
         width: int = 0,
         height: int = 0,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit an image crop task."""
         file_info = self._file_service.require_file(file_id)
@@ -46,7 +47,9 @@ class ImageCropService:
             "height": height,
         }
 
-        task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_CROP, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_IMAGE_CROP, params, suppress_results=suppress_results
+        )
         logger.info(f"Image crop task submitted: {task_id}")
 
         return task_id
