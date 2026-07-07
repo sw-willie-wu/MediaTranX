@@ -18,7 +18,7 @@ const { t } = useI18n()
 const store = usePipelineStore()
 const filesStore = useFilesStore()
 const toast = useToast()
-const { project, fitView } = useVueFlow()
+const { screenToFlowCoordinate, fitView } = useVueFlow()
 
 // ── 節點盤（依域分組）─────────────────────────────────────────────
 const paletteGroups = computed(() => {
@@ -98,7 +98,9 @@ function onPaletteDragStart(ev: DragEvent, toolKey: string) {
 function onCanvasDrop(ev: DragEvent) {
   const toolKey = ev.dataTransfer?.getData('application/mtx-tool')
   if (!toolKey) return
-  const pos = project({ x: ev.offsetX, y: ev.offsetY })
+  // screenToFlowCoordinate 吃 client 座標、自帶容器偏移與 pan/zoom 換算;
+  // 舊寫法 project({offsetX,offsetY}) 在 fitView 變換後落點會偏離游標
+  const pos = screenToFlowCoordinate({ x: ev.clientX, y: ev.clientY })
   store.addToolNode(toolKey, pos)
 }
 
