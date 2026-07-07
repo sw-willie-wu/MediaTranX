@@ -25,12 +25,16 @@ describe('AppUploadZone folder picker', () => {
     const w = mount(AppUploadZone, mountOpts)
     const inputs = w.findAll('input')
     expect(inputs).toHaveLength(2) // [0] 檔案 input、[1] 資料夾 input
-    // mockImplementation 消掉 jsdom 對 type=file click 的 "Not implemented" 噪音
+    // 只 mock 檔案 input 的 click;資料夾 input 的 click 保持真實 dispatch,
+    // 讓它的合成 click 事件真的冒泡——真機 bug:folderInput.click() 的事件
+    // 冒泡回 .upload-zone 的 handleClick → fileInput.click() → 連開兩個對話框。
+    // (mock 掉 folder click 會遮蔽這條路徑,之前就是這樣漏掉的)
     const fileClick = vi.spyOn(inputs[0].element, 'click').mockImplementation(() => {})
-    const folderClick = vi.spyOn(inputs[1].element, 'click').mockImplementation(() => {})
+    const folderClickSeen = vi.fn()
+    inputs[1].element.addEventListener('click', folderClickSeen)
     await w.find('.folder-link').trigger('click')
-    expect(folderClick).toHaveBeenCalledTimes(1)
-    expect(fileClick).not.toHaveBeenCalled() // @click.stop 擋掉冒泡到整區的 handleClick
+    expect(folderClickSeen).toHaveBeenCalledTimes(1)
+    expect(fileClick).not.toHaveBeenCalled() // 連結冒泡與 input 合成 click 冒泡都不得觸發選檔
   })
 
   it('folder input change emits folder-files with capped files', async () => {

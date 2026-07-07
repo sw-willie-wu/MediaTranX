@@ -98,7 +98,9 @@ async function handleDrop(e: DragEvent) {
     <i :class="['bi', icon]"></i>
     <p>{{ effectiveLabel }}</p>
     <p class="hint">{{ effectiveHint }}</p>
-    <input ref="folderInputRef" type="file" webkitdirectory hidden @change="handleFolderInput" />
+    <!-- @click.stop 必要:folderInputRef.click() 的合成 click 會從 input 冒泡回
+         .upload-zone 的 handleClick → 連檔案對話框一起開(真機實測) -->
+    <input ref="folderInputRef" type="file" webkitdirectory hidden @click.stop @change="handleFolderInput" />
     <p class="folder-link" @click.stop="folderInputRef?.click()">
       {{ t('common.pick_folder') }} <i class="bi bi-folder2-open"></i>
     </p>
