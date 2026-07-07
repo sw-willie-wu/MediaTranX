@@ -22,6 +22,10 @@ from .registry import (
 
 logger = logging.getLogger(__name__)
 
+# GPU inference gate 逾時（秒）：task 類等得起（聊天生成必然終止）、agent 類快回
+# 友善忙碌訊息。測試可 monkeypatch。
+GATE_TIMEOUTS: Dict[str, float] = {"task": 600.0, "agent": 30.0}
+
 
 class ModelManager:
     """
@@ -29,7 +33,12 @@ class ModelManager:
     """
     def __init__(self):
         self._lock = threading.RLock()
-        self._gpu_lock = threading.Lock()
+        # GPU inference gate（spec B2.5）:全域、每執行緒可重入。取得於 acquire()
+        # 開頭（evict 前）、釋放於 yield 結束——所有本地 AI 推論全域序列化。
+        # Condition 綁 _lock:wait() 原子釋放鎖,unpin 時 notify。
+        self._gate_cond = threading.Condition(self._lock)
+        self._gate_owner: Optional[int] = None   # thread ident
+        self._gate_depth = 0
         self._loaded_slots: Set[str] = set()
         self._unloaders: Dict[str, Callable[[], None]] = {}
         self._runtimes: Dict[str, Any] = {}
@@ -39,13 +48,47 @@ class ModelManager:
         self._dispatchers: Dict[str, Callable[[str], Any]] = {}
         logger.info("ModelManager (V6) initialized with Registry")
 
+    def _acquire_gate(self, gate_class: str) -> bool:
+        """Take the global GPU gate（每執行緒可重入）。回傳 False = 逾時。"""
+        import time
+        timeout = GATE_TIMEOUTS.get(gate_class, GATE_TIMEOUTS["task"])
+        me = threading.get_ident()
+        with self._gate_cond:
+            if self._gate_owner == me:
+                self._gate_depth += 1
+                return True
+            deadline = time.monotonic() + timeout
+            while self._gate_owner is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._gate_cond.wait(remaining)
+            self._gate_owner = me
+            self._gate_depth = 1
+            return True
+
+    def _release_gate(self) -> None:
+        with self._gate_cond:
+            if self._gate_owner != threading.get_ident():
+                logger.warning("GPU gate release by non-owner thread ignored")
+                return
+            self._gate_depth -= 1
+            if self._gate_depth == 0:
+                self._gate_owner = None
+                self._gate_cond.notify_all()
+
     @contextmanager
-    def gpu_session(self):
-        """VRAM lock: ensures image processing and language inference don't compete for VRAM simultaneously."""
-        with self._gpu_lock:
+    def gpu_session(self, gate_class: str = "task"):
+        """GPU 會話：取全域 inference gate（取代舊 _gpu_lock），結束時卸載所有模型。"""
+        from app.handler.exceptions import ModelBusyError
+        if not self._acquire_gate(gate_class):
+            raise ModelBusyError(
+                f"GPU busy: gpu_session wait exceeded {GATE_TIMEOUTS.get(gate_class)}s"
+            )
+        try:
+            yield
+        finally:
             try:
-                yield
-            finally:
                 # Unload all loaded models (including llama-server subprocesses)
                 for slot in list(self._loaded_slots):
                     unloader = self._unloaders.get(slot)
@@ -64,6 +107,8 @@ class ModelManager:
                         torch.cuda.empty_cache()
                 except Exception:
                     pass
+            finally:
+                self._release_gate()
 
     def register_unloader(self, slot: str, callback: Callable[[], None]):
         """Register a model unload callback."""
@@ -104,54 +149,65 @@ class ModelManager:
         model_id: str,
         variant: Optional[str] = None,
         on_progress: Optional[Callable[[float, str], None]] = None,
+        gate_class: str = "task",
     ):
         """Acquire a runtime loaded with the requested model/variant.
 
-        Lock held during evict/load; yield happens outside so inference
-        doesn't block other acquire calls. See spec §3.1.
+        GPU gate 取得於 evict 前（否則 direct-acquire 路徑會先殺掉別人推論中
+        的模型才排隊）、釋放於 yield 結束（try/finally，載入失敗不洩漏）。
+        _lock 只護 evict/load；yield（推論）在 _lock 外、gate 內。
         """
-        with self._lock:
-            runtime = self._ensure_runtime(slot, model_id)
-
-            config_key = f"{model_id}:{variant}"
-            needs_reload = (
-                not runtime.is_loaded()
-                or (runtime.get_current_config() or {}).get("_key") != config_key
+        from app.handler.exceptions import ModelBusyError
+        if not self._acquire_gate(gate_class):
+            raise ModelBusyError(
+                f"GPU busy: slot {slot!r} gate wait exceeded "
+                f"{GATE_TIMEOUTS.get(gate_class, GATE_TIMEOUTS['task'])}s"
             )
+        try:
+            with self._lock:
+                runtime = self._ensure_runtime(slot, model_id)
 
-            if needs_reload:
-                # Evict other slots
-                for other in list(self._loaded_slots):
-                    if other == slot:
-                        continue
-                    unloader = self._unloaders.get(other)
-                    if unloader:
-                        try:
-                            unloader()
-                            logger.info(f"Evicted slot: {other}")
-                        except Exception as e:
-                            logger.error(f"Failed to evict {other}: {e}")
-                self._loaded_slots.clear()
+                config_key = f"{model_id}:{variant}"
+                needs_reload = (
+                    not runtime.is_loaded()
+                    or (runtime.get_current_config() or {}).get("_key") != config_key
+                )
 
-                # CUDA cache clear
-                try:
-                    import torch
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                except Exception:
-                    pass
+                if needs_reload:
+                    # Evict other slots
+                    for other in list(self._loaded_slots):
+                        if other == slot:
+                            continue
+                        unloader = self._unloaders.get(other)
+                        if unloader:
+                            try:
+                                unloader()
+                                logger.info(f"Evicted slot: {other}")
+                            except Exception as e:
+                                logger.error(f"Failed to evict {other}: {e}")
+                    self._loaded_slots.clear()
 
-                # Load
-                if runtime.is_loaded():
-                    runtime.unload()
-                model_path, config = runtime._resolve_model_path(model_id, variant, self)
-                config["_key"] = config_key
-                runtime.load(model_path, config, on_progress)
+                    # CUDA cache clear
+                    try:
+                        import torch
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                    except Exception:
+                        pass
 
-                self._loaded_slots.add(slot)
+                    # Load
+                    if runtime.is_loaded():
+                        runtime.unload()
+                    model_path, config = runtime._resolve_model_path(model_id, variant, self)
+                    config["_key"] = config_key
+                    runtime.load(model_path, config, on_progress)
 
-        # Yield outside lock so inference doesn't block other slot state checks
-        yield runtime
+                    self._loaded_slots.add(slot)
+
+            # Yield outside _lock so slot state checks aren't blocked; gate held.
+            yield runtime
+        finally:
+            self._release_gate()
 
     def _ensure_runtime(self, slot: str, model_id: Optional[str] = None) -> Any:
         """Return the runtime instance for (slot, model_id).

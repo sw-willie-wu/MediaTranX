@@ -336,7 +336,9 @@ class TestRunHappyPath:
             state={"agent_model_choice": "qwen3:8b"},
         )
         _ = [e async for e in svc.run(inp)]
-        assert chat.session_kwargs == {"model_family": "qwen3", "model_size": "8b"}
+        assert chat.session_kwargs == {
+            "model_family": "qwen3", "model_size": "8b", "gate_class": "agent",
+        }
 
     async def test_session_kwargs_local_with_quant(self):
         chunks = [{"type": "done"}]
@@ -349,6 +351,7 @@ class TestRunHappyPath:
         _ = [e async for e in svc.run(inp)]
         assert chat.session_kwargs == {
             "model_family": "qwen3vl", "model_size": "8b", "quantization": "Q4_K_M",
+            "gate_class": "agent",
         }
 
     async def test_session_kwargs_remote(self):

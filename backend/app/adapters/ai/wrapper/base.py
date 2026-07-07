@@ -73,6 +73,7 @@ class BaseWrapper(ABC):
         model_id: str,
         variant: Optional[str] = None,
         on_progress: Optional[Callable[[float, str], None]] = None,
+        gate_class: str = "task",
     ):
         """Acquire this wrapper loaded with the requested model/variant.
 
@@ -90,6 +91,7 @@ class BaseWrapper(ABC):
             )
         with self._model_manager.acquire(
             slot=self.slot, model_id=model_id, variant=variant, on_progress=on_progress,
+            gate_class=gate_class,
         ) as runtime:
             yield runtime
 

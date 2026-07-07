@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from typing import AsyncIterator
 from uuid import uuid4
 
@@ -180,8 +181,9 @@ class AgentService:
                     ))
                     return  # finally emits RUN_FINISHED (errored stays False)
 
-            with self._chat.session(**session_kwargs) as session:
-                async for chunk in session.stream(
+            async def _consume(sess):
+                nonlocal usage
+                async for chunk in sess.stream(
                     messages=messages, tools=tools,
                     max_tokens=AGENT_DEFAULT_MAX_TOKENS,
                     temperature=AGENT_DEFAULT_TEMPERATURE,
@@ -202,6 +204,59 @@ class AgentService:
                     elif chunk["type"] == "done":
                         usage = chunk.get("usage")
                         break
+
+            if is_local:
+                # B2.5：本地 session 生命週期（enter→…→exit）釘在專屬 worker
+                # thread——GPU gate 的 Condition.wait 不得凍住 event loop，且
+                # gate 取放（thread-keyed 重入）必須發生在同一條執行緒。串流
+                # 本身沿用 LocalChatSession.stream() 的 producer-thread 橋接。
+                session_kwargs["gate_class"] = "agent"
+                loop = asyncio.get_running_loop()
+                ready: asyncio.Future = loop.create_future()
+                done = threading.Event()
+
+                def _set_ready(sess, exc):
+                    if ready.done():
+                        return
+                    if exc is not None:
+                        ready.set_exception(exc)
+                    else:
+                        ready.set_result(sess)
+
+                def _session_worker():
+                    try:
+                        with self._chat.session(**session_kwargs) as sess:
+                            loop.call_soon_threadsafe(_set_ready, sess, None)
+                            # 持有 gate 直到 loop 端收尾。done 由 run() 的
+                            # finally 設定——涵蓋 normal / CancelledError /
+                            # GeneratorExit 全部 teardown 路徑。
+                            done.wait()
+                    except Exception as exc:
+                        # enter 時期例外（gate 逾時 ModelBusyError、載入失敗）
+                        # 橋回 loop，讓既有 except 分類接手。
+                        loop.call_soon_threadsafe(_set_ready, None, exc)
+
+                threading.Thread(
+                    target=_session_worker, daemon=True, name="agent-session",
+                ).start()
+                try:
+                    session = await ready
+                    async for ev in _consume(session):
+                        yield ev
+                finally:
+                    done.set()
+            else:
+                with self._chat.session(**session_kwargs) as session:
+                    async for ev in _consume(session):
+                        yield ev
+        except GeneratorExit:
+            # aclose()（消費者棄流）：async-gen 協定禁止在 GeneratorExit 後再
+            # yield——標記 errored 讓 finally 跳過 RUN_FINISHED。worker 收尾由
+            # 內層 finally 的 done.set() 完成；in-flight 生成由 kill_process 斷。
+            errored = True
+            if session is not None:
+                session.kill_process()
+            raise
         except asyncio.CancelledError:
             if session is not None:
                 # Intentional belt-and-braces: LocalChatSession.stream()'s finally

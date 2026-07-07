@@ -27,11 +27,12 @@ def test_acquire_with_manager_delegates_to_manager():
     w = _FakeWrapper(slot="fake")
 
     @contextmanager
-    def fake_acquire(slot, model_id, variant=None, on_progress=None):
+    def fake_acquire(slot, model_id, variant=None, on_progress=None, gate_class="task"):
         # Verify call shape
         assert slot == "fake"
         assert model_id == "m"
         assert variant == "v"
+        assert gate_class == "task"   # 預設 gate 類別透傳
         yield w  # ModelManager.acquire yields the runtime
 
     mgr = MagicMock()
@@ -47,7 +48,7 @@ def test_acquire_passes_progress_callback():
     captured = {}
 
     @contextmanager
-    def fake_acquire(slot, model_id, variant=None, on_progress=None):
+    def fake_acquire(slot, model_id, variant=None, on_progress=None, gate_class="task"):
         captured["on_progress"] = on_progress
         yield w
 

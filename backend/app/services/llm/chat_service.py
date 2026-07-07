@@ -379,9 +379,13 @@ class ChatService:
         on_progress: Optional[Callable] = None,
         cancel_pct: float = 0.0,
         cancel_msg: str = "task.progress.generating",
+        gate_class: str = "task",
     ) -> Iterator:
         """Hold an LLM loaded (local) OR open a remote-provider session
         for the duration of the block.
+
+        `gate_class`: GPU gate 逾時類別（'task' 600s / 'agent' 30s）——agent
+        聊天路徑傳 'agent'，逾時快回 model_busy；任務語境維持預設。
 
         Dispatch is determined by `remote_provider`:
         - remote_provider is not None → yield RemoteChatSession (no local
@@ -434,6 +438,7 @@ class ChatService:
 
         with self._llama_runtime.acquire(
             model_family, variant, on_progress=effective_load_cb,
+            gate_class=gate_class,
         ):
             yield LocalChatSession(self._llama_runtime, on_progress=on_progress,
                                    cancel_pct=cancel_pct, cancel_msg=cancel_msg)
