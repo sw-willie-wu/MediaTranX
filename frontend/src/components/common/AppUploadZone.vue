@@ -100,7 +100,7 @@ async function handleDrop(e: DragEvent) {
     <p class="hint">{{ effectiveHint }}</p>
     <input ref="folderInputRef" type="file" webkitdirectory hidden @change="handleFolderInput" />
     <p class="folder-link" @click.stop="folderInputRef?.click()">
-      <i class="bi bi-folder2-open"></i> {{ t('common.pick_folder') }}
+      {{ t('common.pick_folder') }} <i class="bi bi-folder2-open"></i>
     </p>
   </div>
 </template>
@@ -167,5 +167,11 @@ async function handleDrop(e: DragEvent) {
 
 .upload-zone .folder-link:hover {
   color: var(--text-primary);
+}
+
+/* 蓋掉 .upload-zone i 的 3rem 大圖示樣式(它連 link 內的 i 一起掃到) */
+.upload-zone .folder-link i {
+  font-size: inherit;
+  margin-bottom: 0;
 }
 </style>
