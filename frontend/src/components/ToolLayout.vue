@@ -2,11 +2,11 @@
 import { ref, computed, watch, onActivated, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import AppThreePaneLayout from '@/components/common/AppThreePaneLayout.vue'
 import AppUploadZone from '@/components/common/AppUploadZone.vue'
 import ComparisonSlider from '@/components/ComparisonSlider.vue'
 import UnsupportedFileOverlay from '@/components/UnsupportedFileOverlay.vue'
 import { useFilesStore } from '@/stores/files'
-import { useResizableLayout } from '@/composables/useResizableLayout'
 import { useTitlebar } from '@/composables/useTitlebar'
 import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
 import { createLogger } from '@/utils/logger'
@@ -17,7 +17,6 @@ import { useToast } from '@/composables/useToast'
 
 const { t } = useI18n()
 const log = createLogger('ToolLayout')
-const { sidebarWidth, settingsWidth, startResize } = useResizableLayout()
 const { setFileName, clearFileName } = useTitlebar()
 
 interface SubFunction {
@@ -285,33 +284,32 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="tool-layout">
+  <AppThreePaneLayout :center-class="{ 'is-drag-over': isDragOver && hasFile }">
     <!-- 左側：子功能列表 -->
-    <aside class="function-sidebar" :style="{ width: sidebarWidth + 'px', minWidth: sidebarWidth + 'px' }" @click.self="emit('clear-selection')">
-      <div class="function-list">
-        <template v-for="(group, gi) in groupedFunctions" :key="gi">
-          <div v-if="group.label && hasGroups" class="function-group-label">{{ group.label }}</div>
-          <button
-            v-for="fn in group.items"
-            :key="fn.id"
-            class="function-item"
-            :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon, 'is-locked': functionsLocked && currentFunction !== fn.id }"
-            :disabled="functionsLocked && currentFunction !== fn.id"
-            @click="emit('select-function', fn.id)"
-          >
-            <i :class="['bi', fn.icon]"></i>
-            <span>{{ fn.name }}</span>
-            <span v-if="fn.comingSoon" class="coming-badge">{{ $t('common.coming_soon') }}</span>
-          </button>
-        </template>
+    <template #left>
+      <div class="function-pane" @click.self="emit('clear-selection')">
+        <div class="function-list">
+          <template v-for="(group, gi) in groupedFunctions" :key="gi">
+            <div v-if="group.label && hasGroups" class="function-group-label">{{ group.label }}</div>
+            <button
+              v-for="fn in group.items"
+              :key="fn.id"
+              class="function-item"
+              :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon, 'is-locked': functionsLocked && currentFunction !== fn.id }"
+              :disabled="functionsLocked && currentFunction !== fn.id"
+              @click="emit('select-function', fn.id)"
+            >
+              <i :class="['bi', fn.icon]"></i>
+              <span>{{ fn.name }}</span>
+              <span v-if="fn.comingSoon" class="coming-badge">{{ $t('common.coming_soon') }}</span>
+            </button>
+          </template>
+        </div>
       </div>
-    </aside>
+    </template>
 
-    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = 220"></div>
-
-    <!-- 中間：預覽區域 -->
-    <main class="preview-area" :class="{ 'is-drag-over': isDragOver && hasFile }">
-
+    <!-- 中間：預覽區域（內容直接為 #center 兄弟節點，不加 wrapper — spec §3.2） -->
+    <template #center>
       <!-- 預覽內容 -->
       <div
         class="preview-content"
@@ -365,12 +363,12 @@ onBeforeUnmount(() => {
 
       </div>
 
-      <!-- 資訊列：filmstrip 模式（preview-area flex child，在 filmstrip 上方） -->
+      <!-- 資訊列：filmstrip 模式（中欄 flex child，在 filmstrip 上方） -->
       <div v-if="showFilmstrip && hasFile" class="preview-info-bar preview-info-bar--overlay">
         <slot name="info-bar" />
       </div>
 
-      <!-- Filmstrip slot — 固定在 preview-area 底部，不參與 preview-content 的捲動 -->
+      <!-- Filmstrip slot — 固定在中欄底部，不參與 preview-content 的捲動 -->
       <div v-if="showFilmstrip && hasFile" class="filmstrip-slot">
         <slot name="filmstrip" />
       </div>
@@ -379,12 +377,10 @@ onBeforeUnmount(() => {
       <div v-if="!showFilmstrip && hasFile" class="preview-info-bar">
         <slot name="info-bar" />
       </div>
-    </main>
-
-    <div class="resize-handle" @mousedown="startResize('settings', $event)" @dblclick="settingsWidth = 272"></div>
+    </template>
 
     <!-- 右側：設定面板 -->
-    <aside class="settings-panel" :style="{ width: settingsWidth + 'px', minWidth: settingsWidth + 'px' }">
+    <template #right>
       <div class="settings-content">
         <slot name="settings">
           <p class="text-muted">{{ $t('common.select_function') }}</p>
@@ -405,34 +401,20 @@ onBeforeUnmount(() => {
           {{ executeLoading ? $t('common.processing') : executeSuccess ? $t('common.completed') : effectiveExecuteLabel }}
         </button>
       </div>
-    </aside>
-  </div>
+    </template>
+  </AppThreePaneLayout>
 </template>
 
-<style lang="scss">
-@use '@/styles/layout-shared';
-</style>
-
 <style lang="scss" scoped>
-.tool-layout {
-  display: flex;
-  height: calc(100vh - 40px);
-  gap: 0;
-  padding: 0.5rem 1rem 1rem 0;
-}
-
-// 左側子功能列表
-.function-sidebar {
-  position: relative;
+// 左側子功能列表（欄 chrome 由 AppThreePaneLayout 擁有；wrapper 撐滿欄高讓
+// @click.self 清選取在空白處仍可觸發）
+.function-pane {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 1rem;
   padding-top: 0.5rem;
-  background: var(--panel-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
 }
 
 .function-list {
@@ -507,20 +489,6 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-// 中間預覽區
-.preview-area {
-  position: relative;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: var(--panel-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
 .preview-content {
   position: relative;
   flex: 1;
@@ -543,28 +511,18 @@ onBeforeUnmount(() => {
   p { font-size: 1rem; }
 }
 
-// 拖曳 hover（有檔案時：整個 preview-area 變色，不顯示 icon/文字）
-.preview-area.is-drag-over {
+// 拖曳 hover（有檔案時：整個中欄變色，不顯示 icon/文字）
+// :deep + .tp-center 錨點：specificity (0,3,0) 必壓過殼 base chrome (0,2,0) — spec §3.2
+:deep(.tp-center.is-drag-over) {
   border-color: var(--drop-zone-border-hover);
   background: var(--input-bg);
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-// Filmstrip slot container — direct flex child of preview-area, fixed at bottom
+// Filmstrip slot container — direct flex child of the center pane, fixed at bottom
 .filmstrip-slot {
   flex-shrink: 0;
   border-top: 1px solid var(--panel-border);
-}
-
-// 右側設定面板
-.settings-panel {
-  display: flex;
-  flex-direction: column;
-  background: var(--panel-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
 }
 
 .settings-content {
