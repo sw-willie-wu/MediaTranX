@@ -24,6 +24,7 @@ const emit = defineEmits<{
   (e: 'file', file: File, sourceDir: string | undefined): void
   (e: 'files', files: File[]): void
   (e: 'folder-files', files: File[], truncated: boolean): void
+  (e: 'folder-paths', paths: string[], truncated: boolean): void
 }>()
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -42,6 +43,18 @@ function handleFolderInput(e: Event) {
     emit('folder-files', files, truncated)
   }
   input.value = '' // 放 if 外:同資料夾重選也要能再觸發 change
+}
+
+async function handleFolderLinkClick() {
+  const pick = window.electron?.pickFolderFiles
+  if (pick) {
+    // Electron:原生對話框(標題「選擇資料夾」,無 webkitdirectory 的「上傳」措辭)
+    const result = await pick()
+    if (result && result.paths.length > 0) emit('folder-paths', result.paths, result.truncated)
+    // 取消(null)/空資料夾 → 無聲 no-op
+  } else {
+    folderInputRef.value?.click() // 瀏覽器 fallback:webkitdirectory 現行流程
+  }
 }
 
 function extractSourceDir(file: File): string | undefined {
@@ -101,7 +114,7 @@ async function handleDrop(e: DragEvent) {
     <!-- @click.stop 必要:folderInputRef.click() 的合成 click 會從 input 冒泡回
          .upload-zone 的 handleClick → 連檔案對話框一起開(真機實測) -->
     <input ref="folderInputRef" type="file" webkitdirectory hidden @click.stop @change="handleFolderInput" />
-    <p class="folder-link" @click.stop="folderInputRef?.click()">
+    <p class="folder-link" @click.stop="handleFolderLinkClick">
       {{ t('common.pick_folder') }} <i class="bi bi-folder2-open"></i>
     </p>
   </div>

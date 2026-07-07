@@ -8,7 +8,8 @@ import ComparisonSlider from '@/components/ComparisonSlider.vue'
 import UnsupportedFileOverlay from '@/components/UnsupportedFileOverlay.vue'
 import { useFilesStore } from '@/stores/files'
 import { useTitlebar } from '@/composables/useTitlebar'
-import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
+import { detectMediaType, detectTypeByName, getToolPath, type ToolType } from '@/utils/mediaType'
+import type { PendingResultRef } from '@/stores/files'
 import { createLogger } from '@/utils/logger'
 import { usePasteUpload } from '@/composables/usePasteUpload'
 import { useUrlDownload } from '@/composables/useUrlDownload'
@@ -92,7 +93,7 @@ const emit = defineEmits<{
   (e: 'execute'): void
   (e: 'file', file: File, sourceDir?: string): void
   (e: 'files', files: File[]): void
-  (e: 'existing-files', refs: import('@/stores/files').PendingResultRef[]): void
+  (e: 'existing-files', refs: PendingResultRef[]): void
   (e: 'remove-file'): void
   (e: 'clear-selection'): void
 }>()
@@ -207,6 +208,56 @@ function handleFolderFiles(files: File[], truncated: boolean) {
     toast.show(t('common.folder_truncated'), { type: 'info', icon: 'bi-info-circle' })
   }
   ingestDroppedFiles(files)
+}
+
+const folderPathsBusy = ref(false)
+
+/**
+ * Electron 原生資料夾選取:路徑先依 acceptType 過濾(檔名判型),再逐檔
+ * /files/register 零搬運註冊,走 existing-files 引用流進 filmstrip。
+ * 首個註冊成功立即 emit — collectionSize > 0 讓 upload zone 馬上消失,
+ * 其餘批次補上;busy guard 防 zone 消失前的重入。末檔 active(沿用既有流)。
+ */
+async function handleFolderPaths(paths: string[], truncated: boolean) {
+  if (folderPathsBusy.value) return
+  if (truncated) {
+    toast.show(t('common.folder_truncated'), { type: 'info', icon: 'bi-info-circle' })
+  }
+  if (paths.length === 0) return
+  const basename = (p: string) => p.split(/[\\/]/).pop() ?? p
+  const valid = props.acceptType
+    ? paths.filter(p => detectTypeByName(basename(p)) === props.acceptType)
+    : paths
+  if (valid.length === 0) {
+    const detected = paths.length === 1 ? detectTypeByName(basename(paths[0])) : null
+    showUnsupportedOverlay(detected && detected !== props.acceptType ? detected : null)
+    return
+  }
+  folderPathsBusy.value = true
+  try {
+    const rest: PendingResultRef[] = []
+    let emittedFirst = false
+    let failed = 0
+    for (const p of valid) {
+      try {
+        const ref = await filesStore.registerLocalFile(p)
+        if (!emittedFirst) {
+          emit('existing-files', [ref]) // 首檔先進 → zone 立即隱藏
+          emittedFirst = true
+        } else {
+          rest.push(ref)
+        }
+      } catch {
+        failed++
+      }
+    }
+    if (rest.length > 0) emit('existing-files', rest)
+    if (failed > 0) {
+      toast.show(t('common.folder_register_failed', { count: failed }), { type: 'error', icon: 'bi-x-circle' })
+    }
+  } finally {
+    folderPathsBusy.value = false
+  }
 }
 
 /**
@@ -338,6 +389,7 @@ onBeforeUnmount(() => {
           @file="handleUploadFile"
           @files="handleUploadFiles"
           @folder-files="handleFolderFiles"
+          @folder-paths="handleFolderPaths"
         />
 
         <!-- 有檔案：比對模式 / 預覽 -->

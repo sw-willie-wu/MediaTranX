@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import AppUploadZone from '@/components/common/AppUploadZone.vue'
 import en from '@/i18n/locales/en'
@@ -58,5 +58,22 @@ describe('AppUploadZone folder picker', () => {
     Object.defineProperty(folderInput.element, 'files', { value: [] })
     await folderInput.trigger('change')
     expect(w.emitted('folder-files')).toBeUndefined()
+  })
+
+  it('uses the native picker (emits folder-paths) when window.electron.pickFolderFiles exists', async () => {
+    window.electron = {
+      pickFolderFiles: vi.fn().mockResolvedValue({ paths: ['C:/a/x.png'], truncated: false }),
+    } as unknown as Window['electron']
+    try {
+      const w = mount(AppUploadZone, mountOpts)
+      const folderInput = w.findAll('input')[1]
+      const folderClick = vi.spyOn(folderInput.element, 'click').mockImplementation(() => {})
+      await w.find('.folder-link').trigger('click')
+      await flushPromises()
+      expect(w.emitted('folder-paths')).toEqual([[['C:/a/x.png'], false]])
+      expect(folderClick).not.toHaveBeenCalled() // 原生路徑不碰 webkitdirectory input
+    } finally {
+      window.electron = undefined as unknown as Window['electron']
+    }
   })
 })
