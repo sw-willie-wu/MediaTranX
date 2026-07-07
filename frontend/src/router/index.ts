@@ -30,6 +30,11 @@ const router = createRouter({
       component: () => import('../views/DocumentView.vue'),
     },
     {
+      path: '/pipeline',
+      name: 'pipeline',
+      component: () => import('../views/PipelineView.vue'),
+    },
+    {
       path: '/tasks',
       name: 'tasks',
       component: () => import('../views/TasksView.vue'),

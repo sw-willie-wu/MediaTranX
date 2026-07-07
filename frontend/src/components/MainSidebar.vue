@@ -21,6 +21,7 @@ const topNavDef: NavItem[] = [
   { path: '/audio', icon: 'bi-music-note-beamed', labelKey: 'nav.audio' },
   { path: '/video', icon: 'bi-film', labelKey: 'nav.video' },
   { path: '/document', icon: 'bi-file-earmark-text-fill', labelKey: 'nav.document' },
+  { path: '/pipeline', icon: 'bi-diagram-3-fill', labelKey: 'nav.pipeline' },
 ]
 
 const bottomNavDef: NavItem[] = [

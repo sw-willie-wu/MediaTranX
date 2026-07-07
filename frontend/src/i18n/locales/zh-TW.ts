@@ -6,9 +6,34 @@ export default {
     audio: '音訊工具',
     video: '影片工具',
     document: '文件工具',
+    pipeline: '流程',
     tasks: '任務管理',
     settings: '設定',
     restart: '重新啟動',
+  },
+
+  // ── Pipeline 畫布 ─────────────────────────────────────────────────────
+  pipeline: {
+    palette_title: '工具節點',
+    input_node: '檔案輸入',
+    input_node_hint: '在下方「執行」區選擇要跑這條流程的檔案。',
+    select_node_hint: '點選畫布上的節點編輯參數；從左側拖入或點擊新增節點。',
+    connect_invalid: '這條連線不相容',
+    keep_output: '保留此節點產出',
+    keep_output_hint: '預設只有末端節點的產出會進產出抽屜；勾選讓中間產物也保留。',
+    remove_node: '移除節點',
+    pick_files: '選擇輸入檔案',
+    run: '執行流程',
+    run_progress: '{done}/{total} 完成',
+    param_default: '（預設）',
+    param_enabled: '啟用',
+    status: {
+      idle: '待命',
+      running: '執行中',
+      completed: '完成',
+      completed_with_errors: '完成（部分失敗）',
+      cancelled: '已取消',
+    },
   },
 
   // ── 標題列 ────────────────────────────────────────────────────────────

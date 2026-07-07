@@ -6,9 +6,34 @@ export default {
     audio: 'Audio Tools',
     video: 'Video Tools',
     document: 'Document Tools',
+    pipeline: 'Pipeline',
     tasks: 'Task Manager',
     settings: 'Settings',
     restart: 'Restart',
+  },
+
+  // ── Pipeline canvas ───────────────────────────────────────────────────
+  pipeline: {
+    palette_title: 'Tool nodes',
+    input_node: 'File input',
+    input_node_hint: 'Pick the files to run through this pipeline in the Run section below.',
+    select_node_hint: 'Click a node on the canvas to edit its parameters; drag or click on the left to add nodes.',
+    connect_invalid: 'This connection is not compatible',
+    keep_output: 'Keep this node output',
+    keep_output_hint: 'By default only terminal node outputs enter the Results drawer; check to keep intermediates too.',
+    remove_node: 'Remove node',
+    pick_files: 'Pick input files',
+    run: 'Run pipeline',
+    run_progress: '{done}/{total} done',
+    param_default: '(default)',
+    param_enabled: 'Enabled',
+    status: {
+      idle: 'Idle',
+      running: 'Running',
+      completed: 'Completed',
+      completed_with_errors: 'Completed (some failed)',
+      cancelled: 'Cancelled',
+    },
   },
 
   // ── Title bar ─────────────────────────────────────────────────────────
