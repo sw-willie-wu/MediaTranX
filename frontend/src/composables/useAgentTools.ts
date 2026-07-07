@@ -194,11 +194,62 @@ const _NON_SET_FIELD_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'get_task_status',
-    description: 'Get current status of a submitted task by id.',
+    description: 'Get current status of a submitted task by id, or of a pipeline run by run_id.',
     parameters: {
       type: 'object',
-      properties: { task_id: { type: 'string' } },
-      required: ['task_id'],
+      properties: { task_id: { type: 'string' }, run_id: { type: 'string' } },
+    },
+  },
+  {
+    name: 'create_pipeline',
+    description:
+      'Draft a multi-step pipeline on the Pipeline canvas from a complete graph. ' +
+      'nodes: [{id, kind: "input"|"source"|"tool", tool_key?, params?}] — exactly one root ' +
+      '(kind "input" for user files, or "source" with tool_key "video.download" + params.url). ' +
+      'Tool nodes need tool_key like "video.transcode", "image.compress". ' +
+      'edges: [{from, to}] connect node ids (no merging; one input per tool node). ' +
+      'This only DRAFTS the graph for the user to review — it does NOT run. ' +
+      'Call run_pipeline afterwards ONLY on explicit user command.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        nodes: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              kind: { type: 'string', enum: ['input', 'source', 'tool'] },
+              tool_key: { type: 'string' },
+              params: { type: 'object' },
+            },
+            required: ['id', 'kind'],
+          },
+        },
+        edges: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { from: { type: 'string' }, to: { type: 'string' } },
+            required: ['from', 'to'],
+          },
+        },
+      },
+      required: ['nodes', 'edges'],
+    },
+  },
+  {
+    name: 'run_pipeline',
+    description:
+      'Run the pipeline currently drafted on the canvas. input_file_ids is required when the ' +
+      'root is an "input" node (use list_files to discover ids); omit for a "source" root. ' +
+      'ONLY call on an explicit user execute/run command — same rule as click_execute.',
+    parameters: {
+      type: 'object',
+      properties: {
+        input_file_ids: { type: 'array', items: { type: 'string' } },
+      },
     },
   },
 ]
@@ -589,9 +640,35 @@ const dispatchers: Record<string, (args: any, ctx: DispatchCtx) => Promise<ToolR
     }
   },
 
-  get_task_status: async ({ task_id }: { task_id: string }): Promise<ToolResult> => {
+  get_task_status: async ({ task_id, run_id }: { task_id?: string; run_id?: string }): Promise<ToolResult> => {
     try {
-      useAgentStore().setCurrentAction('agent.banner.act.get_task_status', { task_id })
+      if (!task_id && !run_id) {
+        return { error: 'agent.error.missing_args', missing: ['task_id or run_id'] }
+      }
+      useAgentStore().setCurrentAction('agent.banner.act.get_task_status', { task_id: task_id ?? run_id ?? '' })
+      // pipeline run 聚合狀態
+      if (run_id) {
+        const { usePipelineStore } = await import('@/stores/pipeline')
+        const pipeline = usePipelineStore()
+        if (pipeline.currentRunId !== run_id || !pipeline.runSnapshot) {
+          return { error: 'agent.error.tool_failed', detail: `run ${run_id} not found` }
+        }
+        const snap = pipeline.runSnapshot
+        return {
+          ok: true,
+          run: {
+            run_id,
+            status: snap.status,
+            done: snap.executions.filter(x => x.status === 'completed').length,
+            failed: snap.executions.filter(x => x.status === 'failed').length,
+            skipped: snap.executions.filter(x => x.status === 'skipped').length,
+            total: snap.executions.length,
+          },
+        }
+      }
+      if (!task_id) {
+        return { error: 'agent.error.missing_args', missing: ['task_id or run_id'] }
+      }
       const tasksStore = useTaskStore()
       const task = tasksStore.tasks.get(task_id)
       if (!task) {
@@ -609,6 +686,107 @@ const dispatchers: Record<string, (args: any, ctx: DispatchCtx) => Promise<ToolR
           error: task.error,
         },
       }
+    } catch (e: unknown) {
+      return { error: 'agent.error.tool_failed', detail: errMsg(e) }
+    }
+  },
+
+  create_pipeline: async (
+    { name, nodes, edges }: {
+      name?: string
+      nodes: Array<{ id: string; kind: string; tool_key?: string; params?: Record<string, unknown> }>
+      edges: Array<{ from: string; to: string }>
+    },
+    ctx: DispatchCtx,
+  ): Promise<ToolResult> => {
+    try {
+      useAgentStore().setCurrentAction('agent.banner.act.create_pipeline', {})
+      if (ctx.signal?.aborted) return { error: 'agent.error.aborted' }
+      const [{ usePipelineStore }, { validateRecipe, normalizeParams }, { TOOL_REGISTRY }] = await Promise.all([
+        import('@/stores/pipeline'),
+        import('@/pipeline/recipe'),
+        import('@/pipeline/registry'),
+      ])
+      const recipe = {
+        version: 1 as const,
+        name: name ?? '',
+        nodes: (nodes ?? []).map((n, i) => ({
+          id: String(n.id),
+          kind: n.kind as 'input' | 'source' | 'tool',
+          toolKey: n.tool_key,
+          params: n.params ?? {},
+          position: { x: 80 + i * 190, y: 180 + (i % 2) * 90 },
+        })),
+        edges: (edges ?? []).map(e => ({ from: String(e.from), to: String(e.to) })),
+      }
+      // 與畫布同一套驗證;錯誤結構化回饋供模型自我修正
+      const errors = validateRecipe(recipe, TOOL_REGISTRY).filter(i => i.severity === 'error')
+      if (errors.length > 0) {
+        return {
+          error: 'agent.error.invalid_pipeline',
+          issues: errors.map(i => ({ code: i.code, node_id: i.nodeId, edge: i.edge, message: i.message })),
+        }
+      }
+      // 參數正規化（剝未知、補 default）
+      for (const n of recipe.nodes) {
+        if (n.kind !== 'input' && n.toolKey && TOOL_REGISTRY[n.toolKey]) {
+          n.params = normalizeParams(n.params, TOOL_REGISTRY[n.toolKey]).params
+        }
+      }
+      const pipeline = usePipelineStore()
+      if (pipeline.running) return { error: 'agent.error.pipeline_busy' }
+      pipeline.recipe = recipe
+      pipeline.currentRecipeId = null
+      pipeline.selectedNodeId = null
+      // 清掉舊 run 狀態,避免 get_task_status(舊 run_id) 讀到過期快照
+      pipeline.currentRunId = null
+      pipeline.runSnapshot = null
+      const router = await resolveRouter()
+      await router.push('/pipeline')
+      return { ok: true, node_count: recipe.nodes.length, edge_count: recipe.edges.length }
+    } catch (e: unknown) {
+      return { error: 'agent.error.tool_failed', detail: errMsg(e) }
+    }
+  },
+
+  run_pipeline: async (
+    { input_file_ids }: { input_file_ids?: string[] },
+    ctx: DispatchCtx,
+  ): Promise<ToolResult> => {
+    try {
+      useAgentStore().setCurrentAction('agent.banner.act.run_pipeline', {})
+      if (ctx.signal?.aborted) return { error: 'agent.error.aborted' }
+      const { usePipelineStore } = await import('@/stores/pipeline')
+      const pipeline = usePipelineStore()
+      if (pipeline.running) return { error: 'agent.error.pipeline_busy' }
+      if (input_file_ids && input_file_ids.length > 0) {
+        const { getApiBase } = await import('@/composables/useApi')
+        const resolved: Array<{ fileId: string; filename: string }> = []
+        for (const fid of input_file_ids) {
+          const res = await fetch(`${getApiBase()}/files/${fid}`)
+          if (!res.ok) return { error: 'agent.error.tool_failed', detail: `file ${fid} not found` }
+          const info = await res.json()
+          resolved.push({ fileId: fid, filename: info.filename ?? '' })
+        }
+        pipeline.inputFiles = resolved
+      }
+      const errors = pipeline.errors
+      if (errors.length > 0) {
+        return {
+          error: 'agent.error.invalid_pipeline',
+          issues: errors.map(i => ({ code: i.code, node_id: i.nodeId, message: i.message })),
+        }
+      }
+      if (!pipeline.canRun) {
+        return { error: 'agent.error.pipeline_not_ready', detail: 'input files missing or graph empty' }
+      }
+      const runId = `run-${Date.now().toString(36)}`
+      pipeline.currentRunId = runId
+      pipeline.startRun().catch((e: unknown) => {
+        // fire-and-forget:錯誤不回工具結果（已回 ok/run_id）,記 log 即可
+        console.error('[agent] pipeline run failed', e)
+      })
+      return { ok: true, run_id: runId }
     } catch (e: unknown) {
       return { error: 'agent.error.tool_failed', detail: errMsg(e) }
     }

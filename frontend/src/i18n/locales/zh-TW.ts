@@ -1281,6 +1281,8 @@ export default {
         click_action: '正在執行 {name}',
         list_files: '正在列出檔案…',
         get_task_status: '正在查詢任務 {task_id}',
+        create_pipeline: '正在畫布上起草流程',
+        run_pipeline: '正在啟動流程',
       },
     },
     bubble: {
@@ -1344,6 +1346,10 @@ export default {
       no_execute_on_settings: '無法從設定頁面提交任務',
       no_file_selected: '尚未載入檔案 — 請先上傳或載入檔案再執行',
       invalid_subfunction: '此頁面沒有「{name}」子功能',
+      invalid_pipeline: '流程圖驗證失敗',
+      pipeline_busy: '流程正在執行中，請等它完成',
+      pipeline_not_ready: '流程還不能執行（缺輸入檔或圖不完整）',
+      missing_args: '缺少必要參數',
       generic: '智慧助手發生錯誤，請稍後再試',
     },
     tool: {
@@ -1356,6 +1362,8 @@ export default {
       click_action: '點擊動作',
       list_files: '列出檔案',
       get_task_status: '查詢任務狀態',
+      create_pipeline: '起草流程',
+      run_pipeline: '執行流程',
     },
   },
 

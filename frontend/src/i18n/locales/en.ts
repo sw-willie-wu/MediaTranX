@@ -1281,6 +1281,8 @@ export default {
         click_action: 'Invoking {name}',
         list_files: 'Listing files...',
         get_task_status: 'Checking task {task_id}',
+        create_pipeline: 'Drafting pipeline on the canvas',
+        run_pipeline: 'Starting pipeline run',
       },
     },
     bubble: {
@@ -1344,6 +1346,10 @@ export default {
       no_execute_on_settings: 'Cannot submit tasks from the settings page',
       no_file_selected: 'No file is loaded — upload or load a file first before executing',
       invalid_subfunction: 'Subfunction "{name}" is not available in this view',
+      invalid_pipeline: 'Pipeline graph failed validation',
+      pipeline_busy: 'A pipeline run is in progress — wait for it to finish',
+      pipeline_not_ready: 'Pipeline cannot run yet (missing input files or incomplete graph)',
+      missing_args: 'Missing required arguments',
       generic: 'The assistant hit an error, please try again later.',
     },
     tool: {
@@ -1356,6 +1362,8 @@ export default {
       click_action: 'Click action',
       list_files: 'List files',
       get_task_status: 'Get task status',
+      create_pipeline: 'Draft pipeline',
+      run_pipeline: 'Run pipeline',
     },
   },
 

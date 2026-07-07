@@ -871,7 +871,7 @@ describe('getTools (Phase 2.A dynamic field enum)', () => {
       execute: null,
     }
     const names2 = getTools(panel).map(t => t.name)
-    expect(names1).toEqual(['navigate_to', 'select_subfunction', 'load_file', 'list_files', 'open_dropdown', 'set_field', 'click_execute', 'click_action', 'get_task_status'])
+    expect(names1).toEqual(['navigate_to', 'select_subfunction', 'load_file', 'list_files', 'open_dropdown', 'set_field', 'click_execute', 'click_action', 'get_task_status', 'create_pipeline', 'run_pipeline'])
     expect(names2).toEqual(names1)
   })
 
@@ -942,9 +942,9 @@ describe('getTools (Phase 2.A dynamic field enum)', () => {
       validSubfunctions: () => ['transcode', 'upscale'],
     }
     const tools = getTools(panel, fakeViewHandle)
-    expect(tools).toHaveLength(9)
+    expect(tools).toHaveLength(11)
     const names = tools.map(t => t.name)
-    expect(names).toEqual(['navigate_to', 'select_subfunction', 'load_file', 'list_files', 'open_dropdown', 'set_field', 'click_execute', 'click_action', 'get_task_status'])
+    expect(names).toEqual(['navigate_to', 'select_subfunction', 'load_file', 'list_files', 'open_dropdown', 'set_field', 'click_execute', 'click_action', 'get_task_status', 'create_pipeline', 'run_pipeline'])
   })
 })
 

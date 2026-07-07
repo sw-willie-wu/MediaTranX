@@ -78,13 +78,18 @@ def _tool_to_dict(t) -> dict:
 
 
 _TASK_SUBMITTED_TEXT = "✅ 已送出任務（task_id={task_id}）。可在工作列追蹤進度，完成後再問我。"
+_RUN_SUBMITTED_TEXT = "✅ 流程已開始執行（run_id={run_id}）。可在流程頁追蹤各節點進度，完成後再問我。"
+
+# 「執行類」工具:dispatch 成功後不再開 LLM 回合（會踢掉剛提交任務佔用的 GPU）。
+_EXECUTE_TOOL_NAMES = {"click_execute", "run_pipeline"}
 
 
-def _last_tool_result_is_execute_success(messages: list[dict]) -> str | None:
-    """If messages[-1] is a successful click_execute tool result, return its
-    task_id; else None. Matches the tool result's tool_call_id back to a
-    click_execute tool_call in a preceding assistant message, then parses the
-    result content for {ok: true, task_id}. Conservative: ambiguity → None."""
+def _last_tool_result_is_execute_success(messages: list[dict]) -> tuple[str, str] | None:
+    """If messages[-1] is a successful execute-class tool result, return
+    ("task", task_id) or ("run", run_id); else None. Matches the tool result's
+    tool_call_id back to an execute-class tool_call in a preceding assistant
+    message, then parses the result content for {ok: true, task_id|run_id}.
+    Conservative: ambiguity → None."""
     if not messages:
         return None
     last = messages[-1]
@@ -98,7 +103,7 @@ def _last_tool_result_is_execute_success(messages: list[dict]) -> str | None:
         if m.get("role") != "assistant":
             continue
         for tc in (m.get("tool_calls") or m.get("toolCalls") or []):
-            if tc.get("id") == tcid and (tc.get("function") or {}).get("name") == "click_execute":
+            if tc.get("id") == tcid and (tc.get("function") or {}).get("name") in _EXECUTE_TOOL_NAMES:
                 is_execute = True
                 break
         if is_execute:
@@ -110,8 +115,11 @@ def _last_tool_result_is_execute_success(messages: list[dict]) -> str | None:
         data = json.loads(content) if isinstance(content, str) else content
     except (json.JSONDecodeError, TypeError):
         return None
-    if isinstance(data, dict) and data.get("ok") is True and data.get("task_id"):
-        return str(data["task_id"])
+    if isinstance(data, dict) and data.get("ok") is True:
+        if data.get("task_id"):
+            return ("task", str(data["task_id"]))
+        if data.get("run_id"):
+            return ("run", str(data["run_id"]))
     return None
 
 
@@ -173,11 +181,14 @@ class AgentService:
             # the just-evicted llama-server (or re-load it and evict the running
             # task). Reply with a canned confirmation and skip the LLM entirely.
             if is_local:
-                task_id = _last_tool_result_is_execute_success(messages)
-                if task_id is not None:
+                submitted = _last_tool_result_is_execute_success(messages)
+                if submitted is not None:
+                    kind, ident = submitted
+                    text = (_TASK_SUBMITTED_TEXT.format(task_id=ident) if kind == "task"
+                            else _RUN_SUBMITTED_TEXT.format(run_id=ident))
                     yield encoder.encode(TextMessageChunkEvent(
                         message_id=uuid4().hex, role="assistant",
-                        delta=_TASK_SUBMITTED_TEXT.format(task_id=task_id),
+                        delta=text,
                     ))
                     return  # finally emits RUN_FINISHED (errored stays False)
 

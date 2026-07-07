@@ -26,7 +26,7 @@ import { ref, watch } from 'vue'
 
 // ─── Default whitelists ───────────────────────────────────────────────────────
 
-/** 預設自動批准的 7 個工具（§6.7 / §7 Tool inventory） */
+/** 預設自動批准的 8 個工具（§6.7 / §7 Tool inventory；create_pipeline 只畫草稿不執行） */
 export const DEFAULT_AUTO_WHITELIST: ReadonlySet<string> = new Set([
   'navigate_to',
   'select_subfunction',
@@ -35,12 +35,14 @@ export const DEFAULT_AUTO_WHITELIST: ReadonlySet<string> = new Set([
   'set_field',
   'list_files',
   'get_task_status',
+  'create_pipeline',
 ])
 
-/** 預設永遠詢問的 2 個工具（§6.7 / §7 Tool inventory；custom 模式的預設起點） */
+/** 預設永遠詢問的 3 個工具（§6.7 / §7 Tool inventory；custom 模式的預設起點） */
 export const DEFAULT_ALWAYS_ASK: ReadonlySet<string> = new Set([
   'click_execute',
   'click_action',
+  'run_pipeline',
 ])
 
 /**
@@ -52,6 +54,7 @@ export const DEFAULT_ALWAYS_ASK: ReadonlySet<string> = new Set([
 export const EXECUTE_TOOLS: ReadonlySet<string> = new Set([
   'click_execute',
   'click_action',
+  'run_pipeline',
 ])
 
 export const AGENT_SETTINGS_KEY = 'agent_settings'

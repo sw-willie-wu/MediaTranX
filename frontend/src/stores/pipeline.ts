@@ -42,6 +42,8 @@ export const usePipelineStore = defineStore('pipeline', () => {
   const runSnapshot = ref<RunSnapshot | null>(null)
   // 同步重入鎖:runSnapshot 由 400ms timer 更新,不能拿它擋 double-click
   const runActive = ref(false)
+  // agent run_pipeline 的 run 識別（get_task_status run 聚合查詢用）
+  const currentRunId = ref<string | null>(null)
   const running = computed(() => runActive.value || runSnapshot.value?.status === 'running')
   let runner: PipelineRunner | null = null
   let snapTimer: ReturnType<typeof setInterval> | null = null
@@ -328,7 +330,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     runSnapshot, running,
     addToolNode, removeNode, connect, disconnect, updateNodeParams,
     setKeepOutput, moveNode, reset, startRun, cancelRun,
-    savedRecipes, currentRecipeId, loadRecipeList, saveCurrent, openRecipe,
-    deleteRecipe, newRecipe,
+    savedRecipes, currentRecipeId, currentRunId, loadRecipeList, saveCurrent,
+    openRecipe, deleteRecipe, newRecipe,
   }
 })
