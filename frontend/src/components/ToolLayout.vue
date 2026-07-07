@@ -12,6 +12,8 @@ import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
 import { createLogger } from '@/utils/logger'
 import { usePasteUpload } from '@/composables/usePasteUpload'
 import { useUrlDownload } from '@/composables/useUrlDownload'
+import { expandDropItems, hasDirectoryItem } from '@/utils/dropEntries'
+import { useToast } from '@/composables/useToast'
 
 const { t } = useI18n()
 const log = createLogger('ToolLayout')
@@ -181,42 +183,58 @@ usePasteUpload((files) => {
   }
 }, props.acceptType === 'video' ? (url) => urlDownload.handlePastedUrl(url) : undefined)
 
-function handleDrop(e: DragEvent) {
+const toast = useToast()
+
+async function handleDrop(e: DragEvent) {
   e.preventDefault()
   isDragOver.value = false
-  const files = e.dataTransfer?.files
-  if (!files || files.length === 0) return
+  const items = e.dataTransfer?.items
 
-  // Multi-file drop in filmstrip mode: validate type then forward all files to parent.
-  // Set currentFile temporarily so the upload zone hides immediately while async addEntry runs.
-  if (props.showFilmstrip && files.length > 1) {
-    const validFiles = props.acceptType
-      ? Array.from(files).filter(f => {
-          const detected = detectMediaType(f)
-          return detected === props.acceptType
-        })
-      : Array.from(files)
-    if (validFiles.length === 0) { showUnsupportedOverlay(null); return }
-    currentFile.value = validFiles[0]
-    emit('files', validFiles)
+  // Folder-aware path: only when a directory item is present (plain file drops
+  // keep the synchronous path below). Entries are captured in this tick.
+  if (items && items.length > 0 && hasDirectoryItem(items)) {
+    const { files: expanded, truncated } = await expandDropItems(items)
+    handleFolderFiles(expanded, truncated)
     return
   }
 
-  const file = files[0]
-  const sourceDir = window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
+  const files = e.dataTransfer?.files
+  if (!files || files.length === 0) return
+  ingestDroppedFiles(Array.from(files), files[0])
+}
 
-  if (props.acceptType) {
-    const detected = detectMediaType(file)
-    if (detected && detected !== props.acceptType) {
-      showUnsupportedOverlay(detected)
-      return
-    }
-    if (!detected) {
-      showUnsupportedOverlay(null)
-      return
-    }
+function handleFolderFiles(files: File[], truncated: boolean) {
+  if (truncated) {
+    toast.show(t('common.folder_truncated'), { type: 'info', icon: 'bi-info-circle' })
   }
+  ingestDroppedFiles(files)
+}
 
+/**
+ * 拖曳/資料夾展開的共同入口:套 acceptType 過濾後分流。
+ * filmstrip 多檔 → emit('files');單檔 → setFile。sourceDir 只對原生拖曳的
+ * firstNative 有效——資料夾展開出的 File 走 HTTP upload、無 sourceDir。
+ */
+function ingestDroppedFiles(candidates: File[], firstNative?: File) {
+  if (candidates.length === 0) return
+  const valid = props.acceptType
+    ? candidates.filter(f => detectMediaType(f) === props.acceptType)
+    : candidates
+  if (valid.length === 0) {
+    const detected = candidates.length === 1 ? detectMediaType(candidates[0]) : null
+    showUnsupportedOverlay(detected && detected !== props.acceptType ? detected : null)
+    return
+  }
+  if (props.showFilmstrip && valid.length > 1) {
+    // Set currentFile temporarily so the upload zone hides immediately while async addEntry runs.
+    currentFile.value = valid[0]
+    emit('files', valid)
+    return
+  }
+  const file = valid[0]
+  const sourceDir = firstNative === file
+    ? window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
+    : undefined
   setFile(file, sourceDir)
 }
 
@@ -321,6 +339,7 @@ onBeforeUnmount(() => {
           :multiple="showFilmstrip"
           @file="handleUploadFile"
           @files="handleUploadFiles"
+          @folder-files="handleFolderFiles"
         />
 
         <!-- 有檔案：比對模式 / 預覽 -->

@@ -102,6 +102,7 @@ export default {
     select_function: 'Select a function',
     drop_files: 'Drop or paste files here',
     drop_hint: 'or click to select',
+    folder_truncated: 'Too many files in folder; only the first 500 were added',
     loading_info: 'Loading info...',
     uploading: 'Uploading...',
     copy: 'Copy',
@@ -408,7 +409,7 @@ export default {
   // ── Image tools ───────────────────────────────────────────────────────
   image: {
     title: 'Image Tools',
-    upload_label: 'Drop or paste images here',
+    upload_label: 'Drop files/folders or paste images here',
     upload_hint: 'Supports JPG, PNG, WebP, BMP and more',
     loading: 'Loading image info...',
 
@@ -591,9 +592,10 @@ export default {
   // ── Video tools ───────────────────────────────────────────────────────
   video: {
     title: 'Video Tools',
-    upload_label: 'Drop or paste videos here',
+    upload_label: 'Drop files/folders or paste videos here',
     upload_hint: 'Supports MP4, MKV, MOV, AVI and more',
     loading: 'Loading media info...',
+    multi_not_supported: 'This function does not support batch execution; only the active file will be processed',
 
     functions: {
       transcode: 'Transcode',
@@ -758,7 +760,7 @@ export default {
   // ── Audio tools ───────────────────────────────────────────────────────
   audio: {
     title: 'Audio Tools',
-    upload_label: 'Drop or paste audio here',
+    upload_label: 'Drop files/folders or paste audio here',
     upload_hint: 'Supports MP3, WAV, FLAC, AAC and more',
     loading: 'Loading audio info...',
     preview_unsupported: 'This format does not support preview, but can be processed normally',
@@ -952,7 +954,7 @@ export default {
   // ── Document tools ────────────────────────────────────────────────────
   document: {
     title: 'Document Tools',
-    upload_label: 'Drop or paste documents here',
+    upload_label: 'Drop files/folders or paste documents here',
     upload_hint: 'Supports PDF, DOCX, TXT, SRT and more',
     loading: 'Uploading...',
 
@@ -1124,6 +1126,8 @@ export default {
       compute_policy: 'Compute fallback',
       cpu_fallback: 'Auto fallback to CPU',
       cpu_fallback_hint: "When the GPU can't run (too old, unsupported driver, or insufficient memory), automatically run on CPU (slower). When off, tasks that can't run on the GPU will fail.",
+      max_concurrent_tasks: 'Max concurrent tasks',
+      max_concurrent_tasks_hint: 'Takes effect after restarting the backend service (use the restart button below).',
     },
 
     ai: {

@@ -102,6 +102,7 @@ export default {
     select_function: '請選擇功能',
     drop_files: '拖曳或貼上檔案到這裡',
     drop_hint: '或點擊選擇檔案',
+    folder_truncated: '資料夾檔案過多，僅加入前 500 個檔案',
     loading_info: '讀取資訊...',
     uploading: '上傳中...',
     copy: '複製',
@@ -408,7 +409,7 @@ export default {
   // ── 圖片工具 ───────────────────────────────────────────────────────────
   image: {
     title: '圖片工具',
-    upload_label: '拖曳或貼上圖片到這裡',
+    upload_label: '拖曳檔案/資料夾或貼上圖片到這裡',
     upload_hint: '支援 JPG、PNG、WebP、BMP 等格式',
     loading: '讀取圖片資訊...',
 
@@ -591,9 +592,10 @@ export default {
   // ── 影片工具 ───────────────────────────────────────────────────────────
   video: {
     title: '影片工具',
-    upload_label: '拖曳或貼上影片到這裡',
+    upload_label: '拖曳檔案/資料夾或貼上影片到這裡',
     upload_hint: '支援 MP4、MKV、MOV、AVI 等格式',
     loading: '讀取媒體資訊...',
+    multi_not_supported: '此功能不支援多選批次，僅處理目前選取的檔案',
 
     functions: {
       transcode: '轉檔',
@@ -758,7 +760,7 @@ export default {
   // ── 音訊工具 ───────────────────────────────────────────────────────────
   audio: {
     title: '音訊工具',
-    upload_label: '拖曳或貼上音訊到這裡',
+    upload_label: '拖曳檔案/資料夾或貼上音訊到這裡',
     upload_hint: '支援 MP3、WAV、FLAC、AAC 等格式',
     loading: '讀取音訊資訊...',
     preview_unsupported: '此格式不支援預覽，但可正常處理',
@@ -952,7 +954,7 @@ export default {
   // ── 文件工具 ───────────────────────────────────────────────────────────
   document: {
     title: '文件工具',
-    upload_label: '拖曳或貼上文件到這裡',
+    upload_label: '拖曳檔案/資料夾或貼上文件到這裡',
     upload_hint: '支援 PDF、DOCX、TXT、SRT 等格式',
     loading: '上傳中...',
 
@@ -1124,6 +1126,8 @@ export default {
       compute_policy: '運算降級',
       cpu_fallback: '自動降級為 CPU',
       cpu_fallback_hint: '當 GPU 無法執行（顯卡過舊、驅動不支援或記憶體不足）時，自動改用 CPU 執行（速度較慢）。關閉後 GPU 跑不動會直接讓任務失敗。',
+      max_concurrent_tasks: '任務同時執行上限',
+      max_concurrent_tasks_hint: '變更後需重啟後端服務生效（可用下方重啟按鈕）。',
     },
 
     ai: {

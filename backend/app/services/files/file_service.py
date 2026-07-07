@@ -109,7 +109,7 @@ class FileService:
         """
         from app.handler.exceptions import FileNotFoundError_
         path = Path(file_path)
-        if not path.exists():
+        if not path.is_file():
             raise FileNotFoundError_(f"File not found: {file_path}")
 
         file_id = str(uuid4())

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { expandDropItems, hasDirectoryItem } from '@/utils/dropEntries'
 
 const { t } = useI18n()
 
@@ -22,6 +23,7 @@ const effectiveHint = computed(() => props.hint ?? t('common.drop_hint'))
 const emit = defineEmits<{
   (e: 'file', file: File, sourceDir: string | undefined): void
   (e: 'files', files: File[]): void
+  (e: 'folder-files', files: File[], truncated: boolean): void
 }>()
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -48,10 +50,18 @@ function handleFileInput(e: Event) {
   }
 }
 
-function handleDrop(e: DragEvent) {
+async function handleDrop(e: DragEvent) {
   e.preventDefault()
   e.stopPropagation()
   isDragOver.value = false
+  // Folder-aware path: expand directory items here (this handler stops
+  // propagation, so ToolLayout's drop handler never sees empty-state drops).
+  const items = e.dataTransfer?.items
+  if (items && items.length > 0 && hasDirectoryItem(items)) {
+    const { files, truncated } = await expandDropItems(items)
+    emit('folder-files', files, truncated)
+    return
+  }
   const files = e.dataTransfer?.files
   if (files && files.length > 0) {
     if (props.multiple && files.length > 1) {
