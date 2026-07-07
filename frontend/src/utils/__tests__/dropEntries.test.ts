@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { expandDropItems, hasDirectoryItem } from '../dropEntries'
+import { expandDropItems, hasDirectoryItem, capFolderFiles } from '../dropEntries'
 
 function mockFileEntry(name: string): FileSystemFileEntry {
   return {
@@ -63,5 +63,35 @@ describe('expandDropItems', () => {
     expect(hasDirectoryItem(mockItems([mockDirEntry('d', [])]))).toBe(true)
     expect(hasDirectoryItem(mockItems([mockFileEntry('a.png')]))).toBe(false)
     expect(hasDirectoryItem(mockItems([null]))).toBe(false)
+  })
+})
+
+function fakeFolderFile(name: string, relPath: string): File {
+  const f = new File(['x'], name, { type: 'image/png' })
+  Object.defineProperty(f, 'webkitRelativePath', { value: relPath })
+  return f
+}
+
+describe('capFolderFiles', () => {
+  it('keeps depth-8 files and filters depth-9 (boundary mirrors expandDropItems)', () => {
+    // 'r/d1/../d7/a.png' → split('/').length - 1 = 8（收）；多一層 d8 = 9（濾）
+    const depth8 = fakeFolderFile('a.png', 'r/d1/d2/d3/d4/d5/d6/d7/a.png')
+    const depth9 = fakeFolderFile('b.png', 'r/d1/d2/d3/d4/d5/d6/d7/d8/b.png')
+    const { files, truncated } = capFolderFiles([depth8, depth9])
+    expect(files).toEqual([depth8])
+    expect(truncated).toBe(false) // 深度濾除不算 truncated（對齊拖曳的靜默略過）
+  })
+
+  it('caps at 500 keeping the first 500 and sets truncated', () => {
+    const many = Array.from({ length: 501 }, (_, i) => fakeFolderFile(`f${i}.png`, `r/f${i}.png`))
+    const { files, truncated } = capFolderFiles(many)
+    expect(files).toHaveLength(500)
+    expect(files[0]).toBe(many[0])
+    expect(files[499]).toBe(many[499])
+    expect(truncated).toBe(true)
+  })
+
+  it('returns empty non-truncated result for empty input', () => {
+    expect(capFolderFiles([])).toEqual({ files: [], truncated: false })
   })
 })
