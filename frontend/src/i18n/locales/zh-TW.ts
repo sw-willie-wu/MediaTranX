@@ -719,6 +719,10 @@ export default {
       task_label: '影片 · 轉檔',
     },
 
+    download: {
+      task_label: '影片 · 網址下載',
+    },
+
     cut: {
       title: '剪輯設定',
       description: '設定起始與結束時間點，擷取影片片段。',

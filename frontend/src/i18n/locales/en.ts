@@ -719,6 +719,10 @@ export default {
       task_label: 'Video · Transcode',
     },
 
+    download: {
+      task_label: 'Video · URL Download',
+    },
+
     cut: {
       title: 'Cut Settings',
       description: 'Set start and end time points to extract a video segment.',
