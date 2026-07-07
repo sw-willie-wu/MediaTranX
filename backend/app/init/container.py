@@ -32,6 +32,9 @@ from app.services.tasks.history_service import TaskHistoryService
 # ── Agent Session Persistence (lightweight) ──
 from app.services.agent.agent_session_service import AgentSessionService
 
+# ── Pipeline Recipes (lightweight — sqlmodel only) ──
+from app.services.pipeline.recipe_service import PipelineRecipeService
+
 # ── Feedback (lightweight — urllib/pydantic only, no torch/onnx) ──
 from app.services.feedback.service import FeedbackService
 from app.services.feedback.google_form import GoogleFormTransport
@@ -198,6 +201,9 @@ class AppContainer(containers.DeclarativeContainer):
 
     # ── Agent Session Persistence ──
     agent_session_service = providers.Singleton(AgentSessionService)
+
+    # ── Pipeline Recipes ──
+    pipeline_recipe_service = providers.Singleton(PipelineRecipeService)
 
     # ── Task History ──
     task_history = providers.Singleton(TaskHistoryService)

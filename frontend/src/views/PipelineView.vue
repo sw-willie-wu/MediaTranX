@@ -4,7 +4,7 @@
  * recipe（store）是唯一事實來源;Vue Flow nodes/edges 由 recipe 派生,
  * 拖曳/連線事件寫回 store。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Handle, Position, VueFlow, useVueFlow, type Connection, type NodeDragEvent } from '@vue-flow/core'
 import { usePipelineStore } from '@/stores/pipeline'
@@ -147,6 +147,30 @@ watch(() => store.recipe.nodes.length, () => {
     store.selectedNodeId = null
   }
 })
+
+// ── 持久化 UI ─────────────────────────────────────────────────────
+const recipeName = ref('')
+const saving = ref(false)
+
+onMounted(() => { void store.loadRecipeList() })
+
+watch(() => store.recipe.name, (n) => { recipeName.value = n }, { immediate: true })
+
+async function onSave() {
+  const name = recipeName.value.trim() || t('pipeline.unnamed')
+  saving.value = true
+  const ok = await store.saveCurrent(name)
+  saving.value = false
+  toast.show(ok ? t('pipeline.saved') : t('toast.save_failed'),
+    { type: ok ? 'success' : 'error', icon: ok ? 'bi-check-circle' : 'bi-x-circle' })
+}
+
+async function onOpen(id: string) {
+  if (store.running) return
+  const ok = await store.openRecipe(id)
+  if (!ok) toast.show(t('pipeline.open_failed'), { type: 'error', icon: 'bi-x-circle' })
+  setTimeout(() => fitView({ padding: 0.25 }), 80)
+}
 </script>
 
 <template>
@@ -167,6 +191,18 @@ watch(() => store.recipe.nodes.length, () => {
           <i class="bi bi-plus-square me-1"></i>{{ item.label }}
         </button>
       </template>
+
+      <!-- 已存流程 -->
+      <div class="palette-group saved-group">{{ t('pipeline.saved_recipes') }}</div>
+      <button class="palette-item" @click="store.newRecipe(); recipeName = ''">
+        <i class="bi bi-file-earmark-plus me-1"></i>{{ t('pipeline.new_recipe') }}
+      </button>
+      <div v-for="r in store.savedRecipes" :key="r.id" class="saved-row">
+        <button class="palette-item saved-item" :class="{ current: r.id === store.currentRecipeId }" @click="onOpen(r.id)">
+          <i class="bi bi-diagram-3 me-1"></i>{{ r.name || t('pipeline.unnamed') }}
+        </button>
+        <i class="bi bi-trash saved-del" @click="store.deleteRecipe(r.id)"></i>
+      </div>
     </aside>
 
     <!-- 中:畫布 -->
@@ -228,6 +264,17 @@ watch(() => store.recipe.nodes.length, () => {
 
       <!-- run 控制 -->
       <div class="run-bar">
+        <div class="save-row">
+          <input
+            v-model="recipeName"
+            class="save-name"
+            :placeholder="t('pipeline.recipe_name_placeholder')"
+            :disabled="store.running"
+          />
+          <button class="save-btn" :disabled="saving || store.running" @click="onSave">
+            <i class="bi bi-save"></i>
+          </button>
+        </div>
         <div v-if="rootIsInput" class="run-files">
           <button class="run-files-btn" :disabled="uploading || store.running" @click="fileInputRef?.click()">
             <i class="bi bi-file-earmark-plus me-1"></i>
@@ -350,6 +397,27 @@ watch(() => store.recipe.nodes.length, () => {
   i { cursor: pointer; &:hover { color: var(--color-danger, #dc3545); } }
 }
 .run-status { font-size: 0.78rem; color: var(--text-muted); }
+.save-row { display: flex; gap: 0.4rem; }
+.save-name {
+  flex: 1; padding: 0.35rem 0.5rem;
+  background: var(--input-bg); border: 1px solid var(--panel-border);
+  border-radius: 6px; color: var(--text-primary);
+  font-size: 0.82rem; font-family: inherit;
+}
+.save-btn {
+  padding: 0.35rem 0.6rem;
+  background: transparent; border: 1px solid var(--panel-border);
+  border-radius: 6px; color: var(--text-muted); cursor: pointer;
+  &:hover:not(:disabled) { color: var(--text-primary); }
+  &:disabled { opacity: 0.5; }
+}
+.saved-group { margin-top: 1rem; border-top: 1px solid var(--panel-border); padding-top: 0.6rem; }
+.saved-row { display: flex; align-items: center; gap: 2px; }
+.saved-item { flex: 1; &.current { color: var(--text-primary); background: var(--panel-bg-active); } }
+.saved-del {
+  padding: 0.3rem; color: var(--text-muted); cursor: pointer; font-size: 0.75rem;
+  &:hover { color: var(--color-danger, #dc3545); }
+}
 .run-btn {
   width: 100%; padding: 0.6rem;
   background: var(--color-primary); border: none; border-radius: 8px;

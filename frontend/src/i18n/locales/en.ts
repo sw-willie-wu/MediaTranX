@@ -27,6 +27,12 @@ export default {
     run_progress: '{done}/{total} done',
     param_default: '(default)',
     param_enabled: 'Enabled',
+    saved_recipes: 'Saved pipelines',
+    new_recipe: 'New pipeline',
+    unnamed: 'Untitled pipeline',
+    recipe_name_placeholder: 'Pipeline name',
+    saved: 'Pipeline saved',
+    open_failed: 'Failed to open pipeline',
     status: {
       idle: 'Idle',
       running: 'Running',

@@ -9,7 +9,7 @@ import { getApiBase } from '@/composables/useApi'
 import { useTaskStore } from '@/stores/tasks'
 import { useComputeSettingsStore } from '@/stores/computeSettings'
 import { TOOL_REGISTRY } from '@/pipeline/registry'
-import { validateRecipe } from '@/pipeline/recipe'
+import { normalizeParams, validateRecipe } from '@/pipeline/recipe'
 import { PipelineRunner, type EngineDeps, type RunSnapshot } from '@/pipeline/runner'
 import type { Recipe, RecipeNode } from '@/pipeline/types'
 import type { MediaKindT } from '@/utils/mediaKind'
@@ -235,10 +235,100 @@ export const usePipelineStore = defineStore('pipeline', () => {
     runSnapshot.value = runner?.snapshot() ?? null
   }
 
+  // ── 持久化（W3）────────────────────────────────────────────────────
+  interface SavedRecipeMeta { id: string; name: string; updated_at: string }
+  const savedRecipes = ref<SavedRecipeMeta[]>([])
+  const currentRecipeId = ref<string | null>(null)
+
+  async function loadRecipeList(): Promise<void> {
+    try {
+      const res = await fetch(`${getApiBase()}/pipeline/recipes`)
+      if (!res.ok) return
+      const data = await res.json() as Array<SavedRecipeMeta>
+      savedRecipes.value = data.map(({ id, name, updated_at }) => ({ id, name, updated_at }))
+    } catch (e) {
+      log.warn('loadRecipeList failed', e)
+    }
+  }
+
+  async function saveCurrent(name: string): Promise<boolean> {
+    const body = JSON.stringify({ name, graph: JSON.stringify(recipe.value) })
+    const url = currentRecipeId.value
+      ? `${getApiBase()}/pipeline/recipes/${currentRecipeId.value}`
+      : `${getApiBase()}/pipeline/recipes`
+    try {
+      const res = await fetch(url, {
+        method: currentRecipeId.value ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      })
+      if (!res.ok) return false
+      const data = await res.json()
+      currentRecipeId.value = data.id
+      recipe.value.name = name
+      await loadRecipeList()
+      return true
+    } catch (e) {
+      log.error('saveCurrent failed', e)
+      return false
+    }
+  }
+
+  /** 載入已存 recipe;revalidate-on-load:未知參數剝除、缺項補 default、缺座標補位。 */
+  async function openRecipe(id: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${getApiBase()}/pipeline/recipes/${id}`)
+      if (!res.ok) return false
+      const data = await res.json()
+      const parsed = JSON.parse(data.graph) as Recipe
+      let i = 0
+      for (const n of parsed.nodes) {
+        if (!n.position) n.position = { x: 80 + (i++) * 190, y: 200 }
+        if (n.kind !== 'input' && n.toolKey) {
+          const spec = TOOL_REGISTRY[n.toolKey]
+          if (spec) n.params = normalizeParams(n.params ?? {}, spec).params
+        }
+      }
+      recipe.value = parsed
+      recipe.value.name = data.name
+      currentRecipeId.value = id
+      selectedNodeId.value = null
+      runSnapshot.value = null
+      // nodeSeq 取既有 id 數字前綴最大值（刪除過節點時 length 會低估）
+      nodeSeq = parsed.nodes.reduce((mx, nd) => {
+        const m = /^n(\d+)-/.exec(nd.id)
+        return m ? Math.max(mx, Number(m[1])) : mx
+      }, 1)
+      return true
+    } catch (e) {
+      log.error('openRecipe failed', e)
+      return false
+    }
+  }
+
+  async function deleteRecipe(id: string): Promise<void> {
+    try {
+      await fetch(`${getApiBase()}/pipeline/recipes/${id}`, { method: 'DELETE' })
+    } catch (e) {
+      log.warn('deleteRecipe failed', e)
+    }
+    // 刪到當前開啟的 recipe:刻意保留畫布內容（不清使用者工作）,
+    // 只解除關聯——下次存檔會變成新 recipe（POST）。
+    if (currentRecipeId.value === id) currentRecipeId.value = null
+    await loadRecipeList()
+  }
+
+  function newRecipe(): void {
+    reset()
+    currentRecipeId.value = null
+  }
+
   return {
     recipe, selectedNodeId, selectedNode, inputFiles, issues, errors, canRun,
     runSnapshot, running,
     addToolNode, removeNode, connect, disconnect, updateNodeParams,
     setKeepOutput, moveNode, reset, startRun, cancelRun,
+    savedRecipes, currentRecipeId, loadRecipeList, saveCurrent, openRecipe,
+    deleteRecipe, newRecipe,
   }
 })

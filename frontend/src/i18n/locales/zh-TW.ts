@@ -27,6 +27,12 @@ export default {
     run_progress: '{done}/{total} 完成',
     param_default: '（預設）',
     param_enabled: '啟用',
+    saved_recipes: '已存流程',
+    new_recipe: '新流程',
+    unnamed: '未命名流程',
+    recipe_name_placeholder: '流程名稱',
+    saved: '流程已儲存',
+    open_failed: '流程載入失敗',
     status: {
       idle: '待命',
       running: '執行中',
