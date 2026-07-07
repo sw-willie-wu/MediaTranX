@@ -28,7 +28,7 @@ class ImageOcrRequest(BaseModel):
     provider: Optional[str] = Field(default=None, description="Cloud provider (ollama/openai/gemini)")
     conn_id: Optional[int] = Field(default=None, description="Connection ID")
     remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class ImageOcrResponse(BaseModel):

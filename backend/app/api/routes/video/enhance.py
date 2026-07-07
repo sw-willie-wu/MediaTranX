@@ -19,7 +19,7 @@ class EnhanceRequest(BaseModel):
     variant: str = Field(default="x4plus", description="Model variant")
     output_format: str = Field(default="mp4", description="Output container format")
     video_codec: str = Field(default="h264", description="Output video codec")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 class EnhanceResponse(BaseModel):
     task_id: str

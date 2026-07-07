@@ -54,7 +54,7 @@ class ImageUpscaleService:
         face_fix: bool = False,
         face_restore_model_id: Optional[str] = None,
         face_restore_upscale: int = 2,
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
 

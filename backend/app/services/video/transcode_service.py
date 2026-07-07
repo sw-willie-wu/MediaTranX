@@ -81,7 +81,7 @@ class VideoTranscodeService:
         scale_algorithm: Optional[str] = None,
         fps: Optional[float] = None,
         audio_bitrate: Optional[str] = None,
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """
         Submit a transcoding task.

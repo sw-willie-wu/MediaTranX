@@ -38,7 +38,7 @@ class EnhanceService:
 
     async def submit(self, file_id: str, model: str = "realesrgan", variant: str = "x4plus",
                      output_format: str = "mp4", video_codec: str = "h264",
-                     suppress_results: bool = False) -> str:
+                     suppress_results: Optional[bool] = None) -> str:
         task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_ENHANCE, {
             "file_id": file_id, "model": model, "variant": variant,
             "output_format": output_format, "video_codec": video_codec,

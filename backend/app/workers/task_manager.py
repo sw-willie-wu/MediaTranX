@@ -127,7 +127,7 @@ class TaskManager:
         task_type: str,
         params: dict,
         priority: int = 0,
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit a new task.
 
@@ -261,7 +261,7 @@ class TaskManager:
             logger.error(f"Task failed: {task_id} - {e}\n{traceback.format_exc()}")
             self._notify_terminal(task)
 
-    def _apply_output_metadata(self, task_type: str, params: dict, result: dict, suppress: bool = False) -> None:
+    def _apply_output_metadata(self, task_type: str, params: dict, result: dict, suppress: Optional[bool] = None) -> None:
         """Tag registered outputs with tool_id / source_file_id / show_in_results.
 
         Writes sidecar for results-policy outputs so they survive restart.
@@ -299,7 +299,15 @@ class TaskManager:
                 )
                 effective = "results"
 
-        show_in_results = (effective == "results") and not suppress
+        # 三態:True=隱藏(pipeline 中間產物)、False=強制顯示(pipeline 末端——
+        # history policy 工具的產出正常走 filmstrip,但 pipeline 無 filmstrip,
+        # 末端不強制顯示使用者就什麼都拿不到)、None=照 output_policy。
+        if suppress is True:
+            show_in_results = False
+        elif suppress is False:
+            show_in_results = True
+        else:
+            show_in_results = effective == "results"
         for fid in output_ids:
             fd = fs.get_file(fid)
             if fd is None:
@@ -310,7 +318,7 @@ class TaskManager:
                 "source_file_id": source_file_id,
                 "show_in_results": show_in_results,
             }
-            if show_in_results or suppress:
+            if show_in_results or suppress is not None:
                 fs.write_sidecar(fid)
 
     def get_task(self, task_id: str) -> Optional[TaskData]:

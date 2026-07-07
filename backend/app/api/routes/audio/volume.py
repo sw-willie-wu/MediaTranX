@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends
@@ -16,7 +16,7 @@ class AudioVolumeRequest(BaseModel):
     file_id: str = Field(..., description="Input file ID")
     volume_db: float = Field(default=0.0, ge=-30.0, le=30.0, description="Volume adjustment in dB")
     normalize: bool = Field(default=False, description="Loudness normalization")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 class AudioVolumeResponse(BaseModel):
     task_id: str

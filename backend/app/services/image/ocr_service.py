@@ -59,7 +59,7 @@ class ImageOcrService:
         model_size: str = "4b",
         quantization: Optional[str] = None,
         output_format: str = "md",
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit an OCR task."""
         file_info = self._file_service.require_file(file_id)
@@ -142,7 +142,7 @@ class ImageOcrService:
         conn_id: Optional[int],
         remote_model: str,
         output_format: str = "md",
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit a remote OCR task."""
         file_info = self._file_service.require_file(file_id)

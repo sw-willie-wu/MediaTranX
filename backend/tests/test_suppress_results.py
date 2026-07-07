@@ -59,7 +59,8 @@ def test_route_request_models_carry_suppress_results(module_name):
             f"{module_name}.{m.__name__} missing suppress_results — "
             f"Pydantic will silently drop the pipeline flag (M1 leak)"
         )
-        assert m.model_fields["suppress_results"].default is False
+        # 三態:None=照 output_policy、True=隱藏(中間產物)、False=強制顯示(pipeline 末端)
+        assert m.model_fields["suppress_results"].default is None
 
 
 class _FakeFd:
@@ -80,7 +81,7 @@ class _FakeFs:
         self.sidecars.append(fid)
 
 
-def _run_task(suppress: bool, policy: str = "results"):
+def _run_task(suppress, policy: str = "results"):
     fs = _FakeFs()
     fs.files["out1"] = _FakeFd("out.gif")
     tm = TaskManager(progress_tracker=ProgressTracker(), file_service=fs)
@@ -112,7 +113,21 @@ def test_suppressed_history_policy_also_writes_sidecar():
     assert "out1" in fs.sidecars  # history policy 本來不寫 sidecar，suppress 必須強制寫
 
 
-def test_unsuppressed_behavior_unchanged():
-    fs = _run_task(suppress=False, policy="results")
+def test_default_none_keeps_policy_behavior():
+    fs = _run_task(suppress=None, policy="results")
+    assert fs.files["out1"].metadata["show_in_results"] is True
+    assert "out1" in fs.sidecars
+
+
+def test_default_none_history_policy_stays_hidden():
+    fs = _run_task(suppress=None, policy="history")
+    assert fs.files["out1"].metadata["show_in_results"] is False
+    assert "out1" not in fs.sidecars   # 現狀:history 不寫 sidecar
+
+
+def test_explicit_false_forces_show_even_on_history_policy():
+    """pipeline 末端節點:即使工具是 history policy（如 image.compress——
+    正常 UI 走 filmstrip）,末端產出必須進 results drawer(W2 e2e 抓到的缺口)。"""
+    fs = _run_task(suppress=False, policy="history")
     assert fs.files["out1"].metadata["show_in_results"] is True
     assert "out1" in fs.sidecars

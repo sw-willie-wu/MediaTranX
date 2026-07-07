@@ -1,7 +1,7 @@
 """PDF split service: extract pages by range into a new PDF."""
 import logging
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 from uuid import uuid4
 
 from app.services.files.file_service import FileService
@@ -46,7 +46,7 @@ class DocumentSplitService:
         self,
         file_id: str,
         pages: str,
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {

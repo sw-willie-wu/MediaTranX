@@ -25,7 +25,7 @@ class ImageUpscaleRequest(BaseModel):
     face_fix: bool = Field(default=False, description="Face restoration post-processing")
     face_restore_model_id: Optional[str] = Field(default=None, description="Face restoration model ID (e.g. gfpgan-v1.4)")
     face_restore_upscale: int = Field(default=2, description="GFPGAN upscale factor (1/2/4)")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class ImageUpscaleResponse(BaseModel):

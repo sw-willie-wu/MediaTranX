@@ -7,7 +7,7 @@ import io
 import logging
 import zipfile
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 from uuid import uuid4
 
 from app.services.files.file_service import FileService
@@ -34,7 +34,7 @@ class DocumentPdfConvertService:
         self,
         file_id: str,
         output_format: str = "txt",
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {

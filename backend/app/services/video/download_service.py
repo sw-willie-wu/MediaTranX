@@ -1,5 +1,6 @@
 """Video URL download service: gate, settings persistence, probe, orchestration."""
 import logging
+from typing import Optional
 import re
 from pathlib import Path
 
@@ -89,7 +90,7 @@ class VideoDownloadService:
     # ── Task orchestration (download) ──
     async def submit_download(
         self, url: str, format_intent: FormatIntent, title: str = "video",
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         params = {
             "url": url,

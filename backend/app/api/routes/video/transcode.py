@@ -30,7 +30,7 @@ class TranscodeRequest(BaseModel):
     scale_algorithm: Optional[str] = Field(default=None, description="Scaling algorithm (bicubic, lanczos, bilinear, spline, neighbor)")
     fps: Optional[float] = Field(default=None, gt=0, le=60, description="Frame rate (used as the animation frame rate for gif/apng)")
     audio_bitrate: Optional[str] = Field(default=None, description="Audio bitrate (e.g., 128k)")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class CutRequest(BaseModel):
@@ -39,7 +39,7 @@ class CutRequest(BaseModel):
     start_time: float = Field(..., ge=0, description="Start time (seconds)")
     end_time: float = Field(..., gt=0, description="End time (seconds)")
     stream_copy: bool = Field(default=True, description="Use stream copy (fast but less precise)")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class ExtractAudioRequest(BaseModel):
@@ -47,7 +47,7 @@ class ExtractAudioRequest(BaseModel):
     file_id: str = Field(..., description="Input file ID")
     audio_format: str = Field(default="mp3", description="Audio format (mp3, wav, flac, aac)")
     audio_bitrate: Optional[str] = Field(default=None, description="Audio bitrate (e.g., 320k)")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class TranscodeResponse(BaseModel):

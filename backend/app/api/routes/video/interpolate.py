@@ -20,7 +20,7 @@ class InterpolateRequest(BaseModel):
     target_fps: Optional[float] = Field(default=None, description="Target FPS (custom mode)")
     output_format: str = Field(default="mp4", description="Output container format")
     video_codec: str = Field(default="h264", description="Output video codec")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 class InterpolateResponse(BaseModel):
     task_id: str

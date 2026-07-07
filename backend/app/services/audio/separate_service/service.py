@@ -50,7 +50,7 @@ class AudioSeparateService:
         stems: Optional[list[str]] = None,
         output_format: str = "wav",
         generate_midi: bool = False,
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {

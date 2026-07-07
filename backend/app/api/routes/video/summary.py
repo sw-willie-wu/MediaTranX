@@ -53,7 +53,7 @@ class VideoSummaryRequest(BaseModel):
         default="bullets",
         description='Output mode: "bullets" (key-points + per-bullet frame) or "narrative" (flat prose paragraphs + per-paragraph frame)',
     )
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class VideoSummaryResponse(BaseModel):

@@ -54,7 +54,7 @@ class DocumentOcrService:
         model_size: str = "4b",
         quantization: Optional[str] = None,
         output_format: str = "md",
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {
@@ -75,7 +75,7 @@ class DocumentOcrService:
         conn_id: Optional[int] = None,
         remote_model: str = "",
         output_format: str = "md",
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit a remote OCR task."""
         file_info = self._file_service.require_file(file_id)

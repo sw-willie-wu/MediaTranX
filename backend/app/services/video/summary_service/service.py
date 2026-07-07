@@ -131,7 +131,7 @@ class VideoSummaryService:
         min_silence_duration_ms: int = 200,
         vad_threshold: float = 0.3,
         summary_mode: str = "bullets",
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit a summary task.
 

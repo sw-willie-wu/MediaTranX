@@ -19,7 +19,7 @@ router = APIRouter()
 class ImageRemoveBgRequest(BaseModel):
     file_id: str = Field(..., description="Input file ID")
     mode: str = Field(default="auto", description="Removal mode (auto/person/product/animal/anime)")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class ImageRemoveBgResponse(BaseModel):

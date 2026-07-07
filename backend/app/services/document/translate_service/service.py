@@ -83,7 +83,7 @@ class TranslateService:
         provider: Optional[str] = None,
         conn_id: Optional[int] = None,
         remote_model: Optional[str] = None,
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """
         Submit a document translation task.

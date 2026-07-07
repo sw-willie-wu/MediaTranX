@@ -36,7 +36,7 @@ class LyricsRequest(BaseModel):
     keep_names: bool = True
     translate_style: str = "colloquial"
     glossary: Optional[dict[str, str]] = None
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class LyricsResponse(BaseModel):

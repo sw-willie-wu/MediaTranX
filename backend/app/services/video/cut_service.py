@@ -39,7 +39,7 @@ class VideoCutService:
         start_time: float,
         end_time: float,
         stream_copy: bool = True,
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit a video cut task."""
         file_info = self._file_service.require_file(file_id)

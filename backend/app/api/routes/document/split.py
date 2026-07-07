@@ -1,6 +1,6 @@
 """PDF split API routes."""
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends
@@ -17,7 +17,7 @@ router = APIRouter()
 class DocumentSplitRequest(BaseModel):
     file_id: str = Field(..., description="Input PDF file ID")
     pages: str = Field(default="", description="Page range, e.g. '1-3,5,7-9'; empty means all pages")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 @router.post("/split")

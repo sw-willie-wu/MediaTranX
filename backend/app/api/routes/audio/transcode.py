@@ -40,7 +40,7 @@ class AudioTranscodeRequest(BaseModel):
     audio_bitrate: str = Field(default="192k", description="Bitrate")
     sample_rate: Optional[int] = Field(default=None, description="Sample rate")
     channels: Optional[int] = Field(default=None, ge=1, le=2, description="Number of channels")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class AudioTranscodeResponse(BaseModel):

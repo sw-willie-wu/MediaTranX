@@ -39,7 +39,7 @@ class VideoExtractAudioService:
         file_id: str,
         audio_format: str = "mp3",
         audio_bitrate: Optional[str] = None,
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit an audio extraction task."""
         file_info = self._file_service.require_file(file_id)

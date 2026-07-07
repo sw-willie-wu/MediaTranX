@@ -50,7 +50,7 @@ class AudioTranscodeService:
         audio_bitrate: str = "192k",
         sample_rate: Optional[int] = None,
         channels: Optional[int] = None,
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit an audio transcoding task."""
         file_info = self._file_service.require_file(file_id)

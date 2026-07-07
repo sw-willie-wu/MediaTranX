@@ -67,7 +67,7 @@ class ImageConvertService:
         height: Optional[int] = None,
         scale: Optional[float] = None,
         coalesce: bool = False,
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit an image conversion task."""
         file_info = self._file_service.require_file(file_id)

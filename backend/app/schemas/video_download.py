@@ -9,7 +9,7 @@ class ProbeRequest(BaseModel):
     url: str
     # Probe is read-only (no task submit) and ignores this flag; present so the
     # suppress_results guard test (url-bearing request models) stays uniform.
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class FormatOption(BaseModel):
@@ -39,7 +39,7 @@ class DownloadRequest(BaseModel):
     url: str
     title: str = "video"  # from the probe card; sanitised server-side for the filename
     format_intent: FormatIntent = Field(default_factory=FormatIntent)
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class DownloadResponse(BaseModel):

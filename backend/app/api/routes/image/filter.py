@@ -3,7 +3,7 @@ Image filter/adjustment API routes.
 """
 from __future__ import annotations
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends
@@ -31,7 +31,7 @@ class ImageFilterRequest(BaseModel):
     invert:     float = Field(default=0.0, description="Invert intensity (0.0 ~ 1.0)")
     blur:       float = Field(default=0.0, description="Blur radius (px)")
     vignette:   float = Field(default=0.0, description="Vignette intensity (0.0 ~ 1.0)")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class ImageFilterResponse(BaseModel):
@@ -54,7 +54,7 @@ class ImageFilterPreviewRequest(BaseModel):
     invert:     float = Field(default=0.0)
     blur:       float = Field(default=0.0)
     vignette:   float = Field(default=0.0)
-    suppress_results: bool = False  # accepted for API uniformity; preview is synchronous (no task)
+    suppress_results: Optional[bool] = None  # accepted for API uniformity; preview is synchronous (no task)
 
 
 class ImageFilterPreviewResponse(BaseModel):

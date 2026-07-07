@@ -19,7 +19,7 @@ class AudioSeparateRequest(BaseModel):
     stems: Optional[List[str]] = Field(default=None, description="Stems to separate (None=all)")
     output_format: str = Field(default="wav", description="Output format (wav, flac, mp3)")
     generate_midi: bool = Field(default=False, description="Also generate multi-track MIDI file")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class AudioSeparateResponse(BaseModel):

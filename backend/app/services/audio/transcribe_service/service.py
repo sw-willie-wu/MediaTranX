@@ -85,7 +85,7 @@ class AudioTranscribeService:
         keep_names: bool = True,
         translate_style: str = "colloquial",
         glossary: Optional[dict] = None,
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {

@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from functools import lru_cache
-from typing import Callable
+from typing import Callable, Optional
 
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
@@ -46,7 +46,7 @@ class ImageFilterService:
         invert:     float = 0.0,
         blur:       float = 0.0,
         vignette:   float = 0.0,
-        suppress_results: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit an image adjustment task."""
         file_info = self._file_service.require_file(file_id)

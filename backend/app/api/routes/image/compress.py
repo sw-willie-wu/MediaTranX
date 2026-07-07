@@ -31,7 +31,7 @@ class ImageCompressRequest(BaseModel):
     jpeg_keep_metadata: bool = Field(default=False, description="Preserve EXIF/metadata")
     # WebP-specific options
     webp_lossless: bool = Field(default=False, description="Use lossless WebP encoding")
-    suppress_results: bool = False
+    suppress_results: Optional[bool] = None
 
 
 class ImageCompressResponse(BaseModel):
