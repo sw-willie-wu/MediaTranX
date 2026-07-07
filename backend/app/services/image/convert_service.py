@@ -67,6 +67,7 @@ class ImageConvertService:
         height: Optional[int] = None,
         scale: Optional[float] = None,
         coalesce: bool = False,
+        suppress_results: bool = False,
     ) -> str:
         """Submit an image conversion task."""
         file_info = self._file_service.require_file(file_id)
@@ -81,7 +82,8 @@ class ImageConvertService:
             "coalesce": coalesce,
         }
 
-        task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_CONVERT, params)
+        task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_CONVERT, params,
+                                                  suppress_results=suppress_results)
         logger.info(f"Image convert task submitted: {task_id}")
 
         return task_id

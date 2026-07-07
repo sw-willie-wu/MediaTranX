@@ -24,10 +24,12 @@ class ImageCompressService:
                                   output_policy="history")
         logger.info("ImageCompressService initialized")
 
-    async def submit_compress(self, file_id: str, strength: int = 60, **opts) -> str:
+    async def submit_compress(self, file_id: str, strength: int = 60,
+                              suppress_results: bool = False, **opts) -> str:
         self._files.require_file(file_id)
         params = {"file_id": file_id, "strength": strength, **opts}
-        return await self._tm.submit(TASK_TYPE_IMAGE_COMPRESS, params)
+        return await self._tm.submit(TASK_TYPE_IMAGE_COMPRESS, params,
+                                     suppress_results=suppress_results)
 
     def _handle_task(self, params, progress_callback):
         return self._execute(params, progress_callback)

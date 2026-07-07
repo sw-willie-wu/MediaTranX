@@ -46,12 +46,15 @@ class DocumentSplitService:
         self,
         file_id: str,
         pages: str,
+        suppress_results: bool = False,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {
             "file_id": file_id, "pages": pages,
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_SPLIT, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_DOCUMENT_SPLIT, params, suppress_results=suppress_results
+        )
         logger.info(f"Document split task submitted: {task_id}")
         return task_id
 

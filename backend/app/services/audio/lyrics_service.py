@@ -67,6 +67,7 @@ class AudioLyricsService:
         keep_names: bool = True,
         translate_style: str = "colloquial",
         glossary: Optional[dict[str, str]] = None,
+        suppress_results: bool = False,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {
@@ -88,7 +89,9 @@ class AudioLyricsService:
             "translate_style": translate_style,
             "glossary": glossary,
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_LYRICS, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_AUDIO_LYRICS, params, suppress_results=suppress_results
+        )
         logger.info(f"Audio lyrics task submitted: {task_id}")
         return task_id
 

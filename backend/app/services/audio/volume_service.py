@@ -30,10 +30,13 @@ class AudioVolumeService:
         file_id: str,
         volume_db: float = 0.0,
         normalize: bool = False,
+        suppress_results: bool = False,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {"file_id": file_id, "volume_db": volume_db, "normalize": normalize}
-        task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_VOLUME, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_AUDIO_VOLUME, params, suppress_results=suppress_results
+        )
         logger.info(f"Audio volume task submitted: {task_id}")
         return task_id
 

@@ -41,7 +41,8 @@ async def start_download(
 ):
     _ensure_enabled(service)
     task_id = await service.submit_download(
-        request.url, request.format_intent, request.title
+        request.url, request.format_intent, request.title,
+        suppress_results=request.suppress_results,
     )
     return DownloadResponse(task_id=task_id)
 

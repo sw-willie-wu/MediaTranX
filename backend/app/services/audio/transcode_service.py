@@ -50,6 +50,7 @@ class AudioTranscodeService:
         audio_bitrate: str = "192k",
         sample_rate: Optional[int] = None,
         channels: Optional[int] = None,
+        suppress_results: bool = False,
     ) -> str:
         """Submit an audio transcoding task."""
         file_info = self._file_service.require_file(file_id)
@@ -63,7 +64,9 @@ class AudioTranscodeService:
             "channels": channels,
         }
 
-        task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_TRANSCODE, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_AUDIO_TRANSCODE, params, suppress_results=suppress_results
+        )
         logger.info(f"Audio transcode task submitted: {task_id}")
 
         return task_id

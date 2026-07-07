@@ -128,7 +128,11 @@ export const useResultsStore = defineStore('results', () => {
       const res = await apiFetch('/files?kind=output')
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data: ApiFileInfo[] = await res.json()
-      results.value = data.map(fromApi)
+      // defense-in-depth:後端 get_output_files 已只回 show_in_results is True,
+      // 這裡再濾一次顯式 false(pipeline 中間產物),missing 視為顯示(legacy 相容)。
+      results.value = data
+        .filter((f) => f.metadata?.show_in_results !== false)
+        .map(fromApi)
       loaded.value = true
       log.info('initial load', { count: results.value.length })
     } catch (e) {

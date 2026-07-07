@@ -39,6 +39,7 @@ class VideoCutService:
         start_time: float,
         end_time: float,
         stream_copy: bool = True,
+        suppress_results: bool = False,
     ) -> str:
         """Submit a video cut task."""
         file_info = self._file_service.require_file(file_id)
@@ -50,7 +51,9 @@ class VideoCutService:
             "stream_copy": stream_copy,
         }
 
-        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_CUT, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_VIDEO_CUT, params, suppress_results=suppress_results
+        )
         logger.info(f"Cut task submitted: {task_id} for file {file_id}")
         return task_id
 

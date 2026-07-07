@@ -25,6 +25,7 @@ class ImageConvertRequest(BaseModel):
     height: Optional[int] = Field(default=None, gt=0, description="Target height")
     scale: Optional[float] = Field(default=None, gt=0, description="Scale ratio")
     coalesce: bool = Field(default=False, description="Coalesce (unoptimize) GIF frames for compatibility")
+    suppress_results: bool = False
 
 
 class ImageConvertResponse(BaseModel):
@@ -69,5 +70,6 @@ async def convert_image(
         height=request.height,
         scale=request.scale,
         coalesce=request.coalesce,
+        suppress_results=request.suppress_results,
     )
     return ImageConvertResponse(task_id=task_id)

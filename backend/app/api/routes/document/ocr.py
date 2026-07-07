@@ -26,6 +26,7 @@ class DocumentOcrRequest(BaseModel):
     provider: Optional[str] = Field(default=None, description="Cloud provider")
     conn_id: Optional[int] = Field(default=None, description="Connection ID")
     remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
+    suppress_results: bool = False
 
 
 @router.post("/ocr")
@@ -43,6 +44,7 @@ async def ocr_document(
             conn_id=request.conn_id,
             remote_model=request.remote_model,
             output_format=request.output_format,
+            suppress_results=request.suppress_results,
         )
     else:
         model_family = request.model_family or language_service.get_default_vlm_model()
@@ -52,6 +54,7 @@ async def ocr_document(
             model_size=request.model_size,
             quantization=request.quantization,
             output_format=request.output_format,
+            suppress_results=request.suppress_results,
         )
     return {"task_id": task_id, "message": "OCR task submitted"}
 

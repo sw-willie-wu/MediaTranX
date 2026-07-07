@@ -81,6 +81,7 @@ class VideoTranscodeService:
         scale_algorithm: Optional[str] = None,
         fps: Optional[float] = None,
         audio_bitrate: Optional[str] = None,
+        suppress_results: bool = False,
     ) -> str:
         """
         Submit a transcoding task.
@@ -117,7 +118,9 @@ class VideoTranscodeService:
         }
 
         # Submit task
-        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_TRANSCODE, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_VIDEO_TRANSCODE, params, suppress_results=suppress_results
+        )
         logger.info(f"Transcode task submitted: {task_id} for file {file_id}")
 
         return task_id

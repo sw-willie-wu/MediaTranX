@@ -55,6 +55,16 @@ class TaskCancelledError(MediaTranXError):
     pass
 
 
+class ModelBusyError(ConnectionError):
+    """GPU inference gate timeout — another model is busy on the GPU.
+
+    Subclasses ConnectionError so the agent path's existing
+    `except ConnectionError → agent.error.model_busy` mapping catches it;
+    the task path maps it to error_code 'model_busy' in TaskManager.
+    """
+    pass
+
+
 class RemoteApiError(MediaTranXError):
     """
     Remote API error with error code for frontend i18n.

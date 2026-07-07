@@ -131,6 +131,7 @@ class VideoSummaryService:
         min_silence_duration_ms: int = 200,
         vad_threshold: float = 0.3,
         summary_mode: str = "bullets",
+        suppress_results: bool = False,
     ) -> str:
         """Submit a summary task.
 
@@ -218,7 +219,9 @@ class VideoSummaryService:
             "vad_threshold": vad_threshold,
             "summary_mode": summary_mode,
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_SUMMARY, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_VIDEO_SUMMARY, params, suppress_results=suppress_results
+        )
         logger.info(f"Summary task submitted: {task_id} for file {file_id}")
         return task_id
 

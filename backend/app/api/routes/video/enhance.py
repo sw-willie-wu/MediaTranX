@@ -19,6 +19,7 @@ class EnhanceRequest(BaseModel):
     variant: str = Field(default="x4plus", description="Model variant")
     output_format: str = Field(default="mp4", description="Output container format")
     video_codec: str = Field(default="h264", description="Output video codec")
+    suppress_results: bool = False
 
 class EnhanceResponse(BaseModel):
     task_id: str
@@ -30,5 +31,5 @@ async def enhance_video(
     request: EnhanceRequest,
     service: EnhanceService = Depends(Provide[AppContainer.video_enhance]),
 ):
-    task_id = await service.submit(file_id=request.file_id, model=request.model, variant=request.variant, output_format=request.output_format, video_codec=request.video_codec)
+    task_id = await service.submit(file_id=request.file_id, model=request.model, variant=request.variant, output_format=request.output_format, video_codec=request.video_codec, suppress_results=request.suppress_results)
     return EnhanceResponse(task_id=task_id)

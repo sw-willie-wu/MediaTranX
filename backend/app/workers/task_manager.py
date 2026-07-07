@@ -126,9 +126,15 @@ class TaskManager:
         self,
         task_type: str,
         params: dict,
-        priority: int = 0
+        priority: int = 0,
+        suppress_results: bool = False,
     ) -> str:
-        """Submit a new task."""
+        """Submit a new task.
+
+        suppress_results: pipeline intermediates — outputs get an explicit
+        show_in_results=false sidecar so they never enter the Results drawer
+        (this session or after restart).
+        """
         task_id = str(uuid4())
 
         task = TaskData(
@@ -137,6 +143,7 @@ class TaskManager:
             status=TaskStatus.PENDING,
             progress=0.0,
             file_id=params.get("file_id"),
+            suppress_results=suppress_results,
         )
         with self._lock:
             self._tasks[task_id] = task
@@ -214,7 +221,7 @@ class TaskManager:
 
             # ── Metadata tagging for Results drawer ─────────────────
             if self._file_service is not None and isinstance(result, dict):
-                self._apply_output_metadata(task_type, params, result)
+                self._apply_output_metadata(task_type, params, result, suppress=task.suppress_results)
 
             await self._progress_tracker.emit(
                 task_id, 1.0, "Task completed",
@@ -237,10 +244,13 @@ class TaskManager:
         except Exception as e:
             import traceback
             task.status = TaskStatus.FAILED
-            from app.handler.exceptions import RemoteApiError
+            from app.handler.exceptions import ModelBusyError, RemoteApiError
             if isinstance(e, RemoteApiError):
                 task.error = f"[{e.code}] {e.detail}"
                 task.error_code = e.code
+            elif isinstance(e, ModelBusyError):
+                task.error = str(e)
+                task.error_code = "model_busy"
             else:
                 task.error = str(e)
                 from app.adapters.compute_policy import classify_gpu_error
@@ -251,10 +261,12 @@ class TaskManager:
             logger.error(f"Task failed: {task_id} - {e}\n{traceback.format_exc()}")
             self._notify_terminal(task)
 
-    def _apply_output_metadata(self, task_type: str, params: dict, result: dict) -> None:
+    def _apply_output_metadata(self, task_type: str, params: dict, result: dict, suppress: bool = False) -> None:
         """Tag registered outputs with tool_id / source_file_id / show_in_results.
 
         Writes sidecar for results-policy outputs so they survive restart.
+        suppress=True（pipeline 中間產物）：無論 output_policy 一律 show_in_results=False
+        且一律寫 sidecar——重啟路徑靠這個顯式 false 過濾，缺 sidecar 就會洩漏。
         """
         from app.workers.media_kind import infer_kind  # local: cold-start friendly
 
@@ -287,7 +299,7 @@ class TaskManager:
                 )
                 effective = "results"
 
-        show_in_results = effective == "results"
+        show_in_results = (effective == "results") and not suppress
         for fid in output_ids:
             fd = fs.get_file(fid)
             if fd is None:
@@ -298,7 +310,7 @@ class TaskManager:
                 "source_file_id": source_file_id,
                 "show_in_results": show_in_results,
             }
-            if show_in_results:
+            if show_in_results or suppress:
                 fs.write_sidecar(fid)
 
     def get_task(self, task_id: str) -> Optional[TaskData]:

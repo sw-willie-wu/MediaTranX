@@ -34,13 +34,16 @@ class DocumentPdfConvertService:
         self,
         file_id: str,
         output_format: str = "txt",
+        suppress_results: bool = False,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {
             "file_id": file_id,
             "output_format": output_format,
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_PDF_CONVERT, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_DOCUMENT_PDF_CONVERT, params, suppress_results=suppress_results
+        )
         logger.info(f"Document PDF convert task submitted: {task_id}")
         return task_id
 

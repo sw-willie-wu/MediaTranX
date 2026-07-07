@@ -36,6 +36,7 @@ class LyricsRequest(BaseModel):
     keep_names: bool = True
     translate_style: str = "colloquial"
     glossary: Optional[dict[str, str]] = None
+    suppress_results: bool = False
 
 
 class LyricsResponse(BaseModel):
@@ -66,5 +67,6 @@ async def extract_lyrics(
         keep_names=request.keep_names,
         translate_style=request.translate_style,
         glossary=request.glossary,
+        suppress_results=request.suppress_results,
     )
     return LyricsResponse(task_id=task_id)

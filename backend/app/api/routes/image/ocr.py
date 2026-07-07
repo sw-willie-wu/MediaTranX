@@ -28,6 +28,7 @@ class ImageOcrRequest(BaseModel):
     provider: Optional[str] = Field(default=None, description="Cloud provider (ollama/openai/gemini)")
     conn_id: Optional[int] = Field(default=None, description="Connection ID")
     remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
+    suppress_results: bool = False
 
 
 class ImageOcrResponse(BaseModel):
@@ -50,6 +51,7 @@ async def ocr_image(
             conn_id=request.conn_id,
             remote_model=request.remote_model,
             output_format=request.output_format,
+            suppress_results=request.suppress_results,
         )
     else:
         model_family = request.model_family or language_service.get_default_vlm_model()
@@ -59,6 +61,7 @@ async def ocr_image(
             model_size=request.model_size,
             quantization=request.quantization,
             output_format=request.output_format,
+            suppress_results=request.suppress_results,
         )
     return ImageOcrResponse(task_id=task_id)
 

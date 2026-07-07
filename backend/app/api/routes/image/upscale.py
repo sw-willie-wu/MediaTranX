@@ -25,6 +25,7 @@ class ImageUpscaleRequest(BaseModel):
     face_fix: bool = Field(default=False, description="Face restoration post-processing")
     face_restore_model_id: Optional[str] = Field(default=None, description="Face restoration model ID (e.g. gfpgan-v1.4)")
     face_restore_upscale: int = Field(default=2, description="GFPGAN upscale factor (1/2/4)")
+    suppress_results: bool = False
 
 
 class ImageUpscaleResponse(BaseModel):
@@ -48,5 +49,6 @@ async def upscale_image(
         face_fix=request.face_fix,
         face_restore_model_id=request.face_restore_model_id,
         face_restore_upscale=request.face_restore_upscale,
+        suppress_results=request.suppress_results,
     )
     return ImageUpscaleResponse(task_id=task_id)

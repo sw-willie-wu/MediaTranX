@@ -83,6 +83,7 @@ class TranslateService:
         provider: Optional[str] = None,
         conn_id: Optional[int] = None,
         remote_model: Optional[str] = None,
+        suppress_results: bool = False,
     ) -> str:
         """
         Submit a document translation task.
@@ -117,7 +118,9 @@ class TranslateService:
             "remote_model": remote_model,
         }
 
-        task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_TRANSLATE, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_DOCUMENT_TRANSLATE, params, suppress_results=suppress_results
+        )
         logger.info(f"Document translate task submitted: {task_id} for file {file_id}")
 
         return task_id
