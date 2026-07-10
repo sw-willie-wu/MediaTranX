@@ -1,4 +1,4 @@
-import { ref, computed, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
@@ -7,6 +7,7 @@ import { usePendingFileListener } from '@/composables/usePendingFileListener'
 import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
 import { apiFetch } from '@/composables/useApi'
 import { useMediaCollection } from '@/composables/useMediaCollection'
+import { useDomainInfoCache } from '@/composables/useDomainInfoCache'
 import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
 import type { HistoryEntry } from '@/composables/useMediaCollection'
@@ -89,11 +90,6 @@ export function useImageWorkspace() {
       return !TEXT_RE.test(filename ?? '')
     },
   })
-
-  // ── Image-specific state (not per-entry, lives here) ────────────────────────
-  const imageInfo = ref<ImageInfo | null>(null)
-  const isLoadingInfo = ref(false)
-
 
   // ── Derived from active entry ────────────────────────────────────────────────
 
@@ -219,22 +215,50 @@ export function useImageWorkspace() {
     () => collection.activeEntry.value?.currentTaskId ?? null,
   )
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
-
-
-  async function loadImageInfo() {
-    if (!activeFileId.value) return
-    isLoadingInfo.value = true
-    try {
-      const resp = await apiFetch(`/image/info/${activeFileId.value}`)
-      if (!resp.ok) throw new Error('無法取得圖片資訊')
-      imageInfo.value = await resp.json()
-    } catch (e) {
-      console.error('loadImageInfo error:', e)
-    } finally {
-      isLoadingInfo.value = false
-    }
+  // ── Info cache（per-fileId、race-guarded；spec bug4 §3）──────────────────────
+  async function fetchBasicInfo(fileId: string): Promise<ImageInfo> {
+    const resp = await apiFetch(`/image/info/${fileId}`)
+    if (!resp.ok) throw new Error('無法取得圖片資訊')
+    return resp.json()
   }
+
+  const infoCache = useDomainInfoCache<ImageInfo>({
+    activeFileId: () => activeFileId.value,
+    fetcher: fetchBasicInfo,
+  })
+  const imageInfo = infoCache.info
+  const isLoadingInfo = infoCache.isLoading
+
+  // 背景 palette：只對 GIF / mode-P 需要；never-abort、回應無條件寫快取（patch）、
+  // inFlightPalette 去重（每 fileId 至多一次在途）。無 cache-hit 重觸發——
+  // 條件在每次 info 可見值變化時自然評估（含 palette 失敗後 revisit 的自然重發）。
+  const inFlightPalette = new Set<string>()
+
+  function needsPalette(v: ImageInfo): boolean {
+    return (v.format?.toUpperCase() === 'GIF' || v.mode === 'P') && v.palette_size == null
+  }
+
+  function ensurePalette(fileId: string): void {
+    const cached = infoCache.peek(fileId)
+    if (!cached || !needsPalette(cached)) return
+    if (inFlightPalette.has(fileId)) return
+    inFlightPalette.add(fileId)
+    apiFetch(`/image/info/${fileId}?palette=1`)
+      .then((resp) => (resp.ok ? resp.json() : Promise.reject(new Error(String(resp.status)))))
+      .then((full: ImageInfo) => {
+        if (full.palette_size != null) {
+          infoCache.patch(fileId, { palette_size: full.palette_size })
+        }
+      })
+      .catch(() => { /* cache stays palette-less → next visit re-dispatches */ })
+      .finally(() => { inFlightPalette.delete(fileId) })
+  }
+
+  // info 可見值每次變化（含 cache-hit 回填與 basic fetch 完成）都評估是否補 palette。
+  watch(imageInfo, (v) => {
+    const id = activeFileId.value
+    if (v && id) ensurePalette(id)
+  })
 
   // ── Methods ──────────────────────────────────────────────────────────────────
 
@@ -250,7 +274,6 @@ export function useImageWorkspace() {
       return
     }
     log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
-    imageInfo.value = null
 
     // Add entry to collection (generates thumbnail, sets status = 'uploading')
     const entryId = await collection.addEntry(file, srcDir, generateImageThumbnail)
@@ -259,7 +282,6 @@ export function useImageWorkspace() {
       const uploadedFileId = await filesStore.uploadFile(file, srcDir)
       log.info('handleFile uploaded', { fileName: file.name, fileId: uploadedFileId })
       collection.updateEntry(entryId, { fileId: uploadedFileId, status: 'idle' })
-      await loadImageInfo()
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       log.error('handleFile upload failed', { fileName: file.name, error: msg })
@@ -277,17 +299,13 @@ export function useImageWorkspace() {
     }
   }
 
-  const { handleExistingFiles } = useExistingFileHandler(collection, loadImageInfo)
+  const { handleExistingFiles } = useExistingFileHandler(collection)
   usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
 
   function handleRemoveFile() {
     const id = collection.activeId.value
     if (id) {
       collection.removeEntry(id)
-    }
-    if (!collection.hasEntries.value) {
-      imageInfo.value = null
-      isLoadingInfo.value = false
     }
   }
 
@@ -317,7 +335,6 @@ export function useImageWorkspace() {
     const stack = historyStack.value.slice(0, -1)
     const redo = popped ? [...redoStack.value, popped] : redoStack.value
     collection.updateEntry(id, { historyStack: stack, redoStack: redo })
-    loadImageInfo()
   }
 
   function goForward() {
@@ -329,7 +346,6 @@ export function useImageWorkspace() {
     const stack = [...historyStack.value, restored]
     const redo = redoStack.value.slice(0, -1)
     collection.updateEntry(id, { historyStack: stack, redoStack: redo })
-    loadImageInfo()
   }
 
   /**
@@ -348,25 +364,6 @@ export function useImageWorkspace() {
   }
 
   // ── Watchers ─────────────────────────────────────────────────────────────────
-
-  // Reload imageInfo when active entry changes
-  watch(
-    () => collection.activeId.value,
-    () => {
-      imageInfo.value = null
-      if (collection.activeEntry.value?.fileId) {
-        loadImageInfo()
-      }
-    },
-  )
-
-  // Reload imageInfo whenever activeFileId changes (e.g. after any task completes
-  // and pushes a new history entry, or after goBack pops one).
-  watch(activeFileId, (newId, oldId) => {
-    if (newId && newId !== oldId) {
-      loadImageInfo()
-    }
-  })
 
   // Watch for task completion on the active entry to handle TEXT results.
   // Image results are already pushed into historyStack by useMediaCollection's watcher.
@@ -387,9 +384,9 @@ export function useImageWorkspace() {
             taskId: task.taskId, taskType: task.taskType,
             outputFileId: r.output_file_id,
           })
-          // Image output: historyStack already updated by useMediaCollection's watcher.
-          // Reload imageInfo and show toast here. Text outputs (OCR) land in Results drawer.
-          loadImageInfo()
+          // Image output: historyStack already updated by useMediaCollection's watcher,
+          // which changes activeFileId → the info-cache watcher reloads automatically.
+          // Show the toast here. Text outputs (OCR) land in Results drawer.
           toast.show(t('toast.task_completed', { label: task.label ?? '' }), {
             type: 'success',
             icon: 'bi-check-circle',
@@ -422,7 +419,6 @@ export function useImageWorkspace() {
     // Existing methods
     goBack,
     goForward,
-    loadImageInfo,
     handleFile,
     handleRemoveFile,
     handlePanelSubmit,
