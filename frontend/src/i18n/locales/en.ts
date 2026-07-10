@@ -171,6 +171,10 @@ export default {
     execute: 'Apply',
     processing: 'Processing...',
     completed: 'Completed!',
+    stop: 'Stop',
+    canceling: 'Canceling…',
+    stop_confirm_title: 'Stop Tasks',
+    stop_confirm_message: 'Stop {count} running task(s)? Processing progress will be lost.',
     save: 'Save Result',
     close: 'Close',
     cancel: 'Cancel',
@@ -266,6 +270,7 @@ export default {
     mark_area_first: 'Please mark the area to remove on the image first',
     open_folder: 'Open Folder',
     task_failed: '{label} failed: {error}',
+    cancel_failed: 'Failed to cancel task',
   },
 
   // ── Task progress ─────────────────────────────────────────────────────

@@ -171,6 +171,10 @@ export default {
     execute: '套用',
     processing: '處理中...',
     completed: '完成！',
+    stop: '停止',
+    canceling: '取消中…',
+    stop_confirm_title: '停止任務',
+    stop_confirm_message: '確定要停止目前進行中的 {count} 個任務嗎？已投入的處理進度將會遺失。',
     save: '儲存結果',
     close: '關閉',
     cancel: '取消',
@@ -266,6 +270,7 @@ export default {
     mark_area_first: '請先在圖片上標記要移除的區域',
     open_folder: '開啟資料夾',
     task_failed: '{label} 失敗：{error}',
+    cancel_failed: '取消任務失敗',
   },
 
   // ── 任務進度 ───────────────────────────────────────────────────────────
