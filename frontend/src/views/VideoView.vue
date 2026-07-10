@@ -14,6 +14,7 @@ import VideoEnhancePanel from '@/components/video/panels/VideoEnhancePanel.vue'
 import VideoSummaryPanel from '@/components/video/panels/VideoSummaryPanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
+import { useExecuteStop } from '@/composables/useExecuteStop'
 import { useToast } from '@/composables/useToast'
 import { useTitlebar } from '@/composables/useTitlebar'
 import { useViewHost } from '@/composables/useViewHost'
@@ -34,6 +35,7 @@ const {
 const selectedIds = computed(() => collection.selectedIds.value)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
 const { submitToAll } = useMultiSubmit(collection)
+const { isCanceling, requestStop } = useExecuteStop(collection)
 const toast = useToast()
 
 // Cut time points (shared between VideoPreview and VideoCutPanel)
@@ -239,8 +241,10 @@ onUnmounted(() => { clearActions() })
     :has-result="hasResult"
     :execute-disabled="executeDisabled"
     :execute-loading="executeLoading"
+    :execute-canceling="isCanceling"
     @select-function="currentFunction = $event"
     @execute="handleExecute"
+    @stop="requestStop"
     @file="handleFile"
     @files="handleFiles"
     @existing-files="handleExistingFiles"
