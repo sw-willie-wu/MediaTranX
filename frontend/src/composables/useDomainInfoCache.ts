@@ -49,7 +49,7 @@ export function useDomainInfoCache<T extends object>(opts: UseDomainInfoCacheOpt
           info.value = value
           isLoading.value = false
         }
-      }, (error) => {
+      }, () => {
         // Error handler: clear isLoading if still active
         if (opts.activeFileId() === fileId) {
           isLoading.value = false
