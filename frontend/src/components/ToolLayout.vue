@@ -43,6 +43,7 @@ const props = withDefaults(defineProps<{
   isComparing?: boolean
   executeDisabled?: boolean
   executeLoading?: boolean
+  executeCanceling?: boolean
   executeLabel?: string
   hideExecute?: boolean
   showFilmstrip?: boolean
@@ -80,8 +81,17 @@ const effectiveExecuteLabel = computed(() => props.executeLabel ?? t('common.exe
 const executeSuccess = ref(false)
 let successTimer: ReturnType<typeof setTimeout> | null = null
 
+// Cancel-flash latch（spec §4.1）：取消結束與 loading 同 tick 一起翻 false，
+// 邊緣當下讀 executeCanceling 必失效 → 用 latch。只在 execute 意圖路徑重置，
+// 禁用 executeLoading 上升緣（canceling 中切 active 也會觸發上升緣）。
+const wasCanceling = ref(false)
+
+watch(() => props.executeCanceling, (canceling) => {
+  if (canceling) wasCanceling.value = true
+})
+
 watch(() => props.executeLoading, (loading, wasLoading) => {
-  if (wasLoading && !loading && props.hasResult) {
+  if (wasLoading && !loading && props.hasResult && !wasCanceling.value) {
     executeSuccess.value = true
     if (successTimer) clearTimeout(successTimer)
     successTimer = setTimeout(() => { executeSuccess.value = false }, 1500)
@@ -91,6 +101,7 @@ watch(() => props.executeLoading, (loading, wasLoading) => {
 const emit = defineEmits<{
   (e: 'select-function', id: string): void
   (e: 'execute'): void
+  (e: 'stop'): void
   (e: 'file', file: File, sourceDir?: string): void
   (e: 'files', files: File[]): void
   (e: 'existing-files', refs: PendingResultRef[]): void
@@ -314,6 +325,17 @@ function goToTool() {
   dismissUnsupported()
 }
 
+// 執行按鈕點擊分流：idle → execute / executing → stop（canceling 態 disabled 不會進來）
+function handleExecuteClick() {
+  if (props.executeCanceling) return
+  if (props.executeLoading) {
+    emit('stop')
+  } else {
+    wasCanceling.value = false // 新一輪執行意圖 → 重置 latch
+    emit('execute')
+  }
+}
+
 // KeepAlive: 每次 activated 時檢查 pending file
 onActivated(() => {
   // Single pending file
@@ -439,18 +461,19 @@ onBeforeUnmount(() => {
         </slot>
       </div>
 
-      <!-- 執行按鈕 -->
+      <!-- 執行按鈕：idle → executing(紅色停止,可點) → canceling(取消中,禁點) -->
       <div v-if="!hideExecute && !isCurrentComingSoon" class="execute-section">
         <button
           class="execute-btn"
-          :class="{ 'is-success': executeSuccess }"
-          :disabled="executeDisabled || executeLoading"
-          @click="emit('execute')"
+          :class="{ 'is-success': executeSuccess, 'is-stop': executeLoading && !executeCanceling }"
+          :disabled="executeCanceling || (!executeLoading && executeDisabled)"
+          @click="handleExecuteClick"
         >
-          <span v-if="executeLoading" class="spinner-border spinner-border-sm me-2"></span>
+          <span v-if="executeCanceling" class="spinner-border spinner-border-sm me-2"></span>
+          <i v-else-if="executeLoading" class="bi bi-stop-fill me-2"></i>
           <i v-else-if="executeSuccess" class="bi bi-check-lg me-2"></i>
           <i v-else class="bi bi-play-fill me-2"></i>
-          {{ executeLoading ? $t('common.processing') : executeSuccess ? $t('common.completed') : effectiveExecuteLabel }}
+          {{ executeCanceling ? $t('common.canceling') : executeLoading ? $t('common.stop') : executeSuccess ? $t('common.completed') : effectiveExecuteLabel }}
         </button>
       </div>
     </template>
@@ -646,6 +669,14 @@ onBeforeUnmount(() => {
     &:hover:not(:disabled) {
       background: var(--color-success-hover);
       box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    }
+  }
+
+  &.is-stop {
+    background: var(--color-danger);
+    &:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--color-danger) 85%, black);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
     }
   }
 }
