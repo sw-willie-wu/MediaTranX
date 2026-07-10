@@ -17,6 +17,12 @@ TASK_TYPE_IMAGE_CONVERT = "image.convert"
 class ImageConvertService:
     """Image format conversion with resize and quality options."""
 
+    # info 路徑的 palette 抽樣預算。注意：Pillow 逐幀 decode 是預算無關的下限
+    # （17 幀 2560×2240 實測 ~0.8s），抽樣只省 set(getdata()) 數色成本 →
+    # 全掃 6.2s → 約 1.0s（~6×）。palette 已背景化（?palette=1），不在切換
+    # 關鍵路徑。compress 路徑不用此常數（保持精確全掃）。
+    _PALETTE_SAMPLE_BUDGET = 2_000_000
+
     def __init__(self, file_service: FileService, task_manager: TaskManager,
                  gifsicle: GifsicleWrapper | None = None):
         self._file_service = file_service
@@ -31,8 +37,8 @@ class ImageConvertService:
 
         logger.info("ImageConvertService initialized")
 
-    async def get_image_info(self, file_id: str) -> dict:
-        """Get image information."""
+    async def get_image_info(self, file_id: str, include_palette: bool = False) -> dict:
+        """Get image information. palette_size only when include_palette (approx, fast)."""
         from app.utils.gif_utils import is_animated
         from app.utils.gif_colors import count_gif_colors
 
@@ -53,8 +59,9 @@ class ImageConvertService:
                 "file_size": file_info.file_size,
             }
 
-        if fmt == "GIF" or mode == "P":
-            result["palette_size"] = count_gif_colors(file_info.file_path)
+        if include_palette and (fmt == "GIF" or mode == "P"):
+            result["palette_size"] = count_gif_colors(
+                file_info.file_path, max_sample_pixels=self._PALETTE_SAMPLE_BUDGET)
 
         return result
 

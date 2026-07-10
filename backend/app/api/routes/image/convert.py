@@ -48,10 +48,11 @@ class ImageInfoResponse(BaseModel):
 @inject
 async def get_image_info(
     file_id: str,
+    palette: bool = False,
     service: ImageConvertService = Depends(Provide[AppContainer.image_convert]),
 ):
-    """Get image file info."""
-    info = await service.get_image_info(file_id)
+    """Get image file info. palette=1 additionally returns (approximate) palette_size."""
+    info = await service.get_image_info(file_id, include_palette=palette)
     return ImageInfoResponse(**info)
 
 
