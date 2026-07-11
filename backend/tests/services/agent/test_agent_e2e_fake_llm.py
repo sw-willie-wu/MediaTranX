@@ -317,7 +317,8 @@ class TestAgentE2EFakeLLM:
         Verifies the real AgentService._msg_to_dict + system-prepend guard runs
         (not the unit test's direct svc.run() call — this time via HTTP route).
         """
-        from app.services.agent._system_prompt import AGENT_SYSTEM_PROMPT
+        # _body() 不宣告工具（tools: []）→ 動態組合選精簡版（pipeline-feature-gate §3.4）
+        from app.services.agent._system_prompt import AGENT_SYSTEM_PROMPT_NO_PIPELINE
 
         fake_chat = FakeChatService(MINIMAL_CHUNKS)
         with _build_app_with_fake_chat(fake_chat) as (app, container, fake_chat):
@@ -330,7 +331,7 @@ class TestAgentE2EFakeLLM:
             assert received is not None
             # First message must be system prompt
             assert received[0]["role"] == "system"
-            assert received[0]["content"] == AGENT_SYSTEM_PROMPT
+            assert received[0]["content"] == AGENT_SYSTEM_PROMPT_NO_PIPELINE
             # Second message is the user input
             assert received[1]["role"] == "user"
             assert received[1]["content"] == "do something"

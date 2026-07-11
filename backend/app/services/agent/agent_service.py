@@ -21,7 +21,7 @@ from app.services.agent._ag_ui_compat import (
     TextMessageChunkEvent, ToolCallChunkEvent,
     make_encoder, emit_run_finished_with_usage,
 )
-from app.services.agent._system_prompt import AGENT_SYSTEM_PROMPT
+from app.services.agent._system_prompt import pick_system_prompt
 from app.services.agent._render_state import render_state
 
 logger = logging.getLogger(__name__)
@@ -169,9 +169,17 @@ class AgentService:
             # history (it rides input.state, not input.messages).
             if not any(m.get("role") == "system" for m in messages):
                 snapshot = (input.state or {}).get("snapshot")
-                content = AGENT_SYSTEM_PROMPT
+                # 依當輪前端宣告的工具選提示版本（無 create_pipeline → 精簡版；
+                # spec: pipeline-feature-gate §3.4）。元素可能是 Pydantic model 或
+                # plain dict（比照 _tool_to_dict），取名須 dict-safe；正規化清單在
+                # 下方才建立，這裡直接讀原始 input.tools。
+                tool_names = {
+                    n for t in (input.tools or [])
+                    if (n := (getattr(t, "name", None) or (t.get("name") if isinstance(t, dict) else None)))
+                }
+                content = pick_system_prompt(tool_names)
                 if snapshot:
-                    content = AGENT_SYSTEM_PROMPT + "\n\n" + render_state(snapshot)
+                    content = content + "\n\n" + render_state(snapshot)
                 messages.insert(0, {"role": "system", "content": content})
 
             tools: list[dict] = [_tool_to_dict(t) for t in (input.tools or [])]
