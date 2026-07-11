@@ -5,6 +5,7 @@
  */
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
+import i18n from '@/i18n'
 import { getApiBase } from '@/composables/useApi'
 import { useTaskStore } from '@/stores/tasks'
 import { useComputeSettingsStore } from '@/stores/computeSettings'
@@ -178,7 +179,9 @@ export const usePipelineStore = defineStore('pipeline', () => {
           error: null,
           createdAt: new Date(),
           updatedAt: new Date(),
-          label: spec?.toolKey ?? apiPath,
+          // i18n 解析而非 raw toolKey — in-session 任務清單顯示與 reload
+          // (tasks.types)同字樣
+          label: spec ? i18n.global.t(spec.labelKey) : apiPath,
         })
         return taskId
       },

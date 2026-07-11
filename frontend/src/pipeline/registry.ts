@@ -1,8 +1,9 @@
 /**
- * Tool registry — pipeline 節點白名單（21 工具 + 1 source）。
+ * Tool registry — pipeline 節點白名單（25 工具 + 1 source）。
  * param_schema 以後端各 route 的 Pydantic request model 為準（欄位/預設值照抄;
- * file_id / suppress_results 不進 schema）。互動工具（crop/ai-remove/cut/
- * subtitle）與 multipart 的 audio.midi 不在白名單。
+ * file_id / suppress_results 不進 schema）。互動工具（ai-remove 畫遮罩／
+ * subtitle 編輯燒錄流）與 multipart 的 audio.midi 不在白名單;cut/crop（影音圖）
+ * 與字幕「提取」以面板數值入列（2026-07-07 User 決策,推翻 v1 傘型排除）。
  *
  * 建模限制（v1）:dict / list 型欄位（translate/lyrics 的 glossary、
  * separate 的 stems）不進 paramSchema——ParamField 四型別無法表達,列了反而
@@ -107,6 +108,74 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     paramSchema: [
       { name: 'audio_format', type: 'enum', options: ['mp3', 'wav', 'flac', 'aac'], default: 'mp3' },
       { name: 'audio_bitrate', type: 'enum', options: ['128k', '192k', '256k', '320k'], advanced: true, visibleWhen: (p) => !['wav', 'flac'].includes(String(p.audio_format)) },
+    ],
+  },
+
+  'video.cut': {
+    toolKey: 'video.cut',
+    apiPath: '/video/cut',
+    labelKey: 'video.cut.task_label',
+    kind: 'tool',
+    inputKinds: ['video'],
+    outputKind: VIDEO_OUT,
+    // start/end 為必填無 default（同 video.download 的 url 前例）:空值送後端
+    // 422 → execution failed;v1 驗證不擋 missing(_checkField undefined skip)
+    paramSchema: [
+      { name: 'start_time', type: 'number', min: 0, step: 0.1 },
+      { name: 'end_time', type: 'number', min: 0.1, step: 0.1 },
+      { name: 'stream_copy', type: 'boolean', default: true, advanced: true },
+    ],
+  },
+
+  'video.crop': {
+    toolKey: 'video.crop',
+    apiPath: '/video/crop',
+    labelKey: 'video.crop.task_label',
+    kind: 'tool',
+    inputKinds: ['video'],
+    outputKind: VIDEO_OUT,
+    // width/height 必填;後端向下取偶(yuv420p) — 1 會取到 0 直接 ValueError,
+    // 故 min 2;奇數 ≥3 合法(161→160)
+    paramSchema: [
+      { name: 'x', type: 'number', min: 0, step: 1, default: 0 },
+      { name: 'y', type: 'number', min: 0, step: 1, default: 0 },
+      { name: 'width', type: 'number', min: 2, step: 1 },
+      { name: 'height', type: 'number', min: 2, step: 1 },
+    ],
+  },
+
+  'video.subtitle': {
+    toolKey: 'video.subtitle',
+    apiPath: '/video/subtitle/generate',
+    labelKey: 'video.subtitle.task_label',
+    kind: 'tool',
+    inputKinds: ['video'],
+    outputKind: DOCUMENT_OUT,
+    // SubtitleGenerateRequest(subtitle.py)欄位照抄;glossary 為 dict — v1 建模
+    // 限制排除(檔頭規則)。翻譯子欄位 gate 是 target_language 非空(string、非
+    // boolean),v1 全標 advanced 不做 visibleWhen。
+    // 註:toolKey 'video.subtitle' ≠ 後端 task_type 'video.subtitle_generate' —
+    // 全 registry 唯一不同名;無害(label 兩路徑同字樣),別誤當 bug。
+    paramSchema: [
+      { name: 'source_language', type: 'string', advanced: true },
+      { name: 'model_size', type: 'enum', options: WHISPER_SIZES, default: 'medium' },
+      { name: 'output_format', type: 'enum', options: ['srt', 'vtt'], default: 'srt' },
+      { name: 'target_language', type: 'string', advanced: true },
+      { name: 'translate_model_family', type: 'string', default: 'gemma4', advanced: true },
+      { name: 'translate_model_size', type: 'string', default: '4b', advanced: true },
+      { name: 'translate_quantization', type: 'string', advanced: true },
+      { name: 'translate_remote', type: 'boolean', default: false, advanced: true },
+      { name: 'translate_provider', type: 'string', advanced: true },
+      { name: 'translate_conn_id', type: 'number', advanced: true },
+      { name: 'translate_remote_model', type: 'string', advanced: true },
+      { name: 'keep_names', type: 'boolean', default: true, advanced: true },
+      { name: 'translate_style', type: 'enum', options: TRANSLATE_STYLES, default: 'colloquial', advanced: true },
+      { name: 'word_timestamps', type: 'boolean', default: false, advanced: true },
+      { name: 'condition_on_previous_text', type: 'boolean', default: true, advanced: true },
+      { name: 'min_silence_duration_ms', type: 'number', min: 100, max: 2000, step: 50, default: 200, advanced: true },
+      { name: 'vad_threshold', type: 'number', min: 0.1, max: 0.9, step: 0.05, default: 0.3, advanced: true },
+      { name: 'align', type: 'boolean', default: false, advanced: true },
+      { name: 'vocal_separation', type: 'boolean', default: false, advanced: true },
     ],
   },
 
@@ -271,6 +340,21 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     ],
   },
 
+  'audio.cut': {
+    toolKey: 'audio.cut',
+    apiPath: '/audio/cut',
+    labelKey: 'audio.cut.task_label',
+    kind: 'tool',
+    inputKinds: ['audio'],
+    outputKind: AUDIO_OUT,
+    // 後端合約是 HH:MM:SS 字串(AudioCutRequest),與 video.cut 的秒數 float
+    // 不同 — string 欄位,default 照後端
+    paramSchema: [
+      { name: 'start_time', type: 'string', default: '00:00:00' },
+      { name: 'end_time', type: 'string' },
+    ],
+  },
+
   // ── image ─────────────────────────────────────────────────────────
   'image.compress': {
     toolKey: 'image.compress',
@@ -370,6 +454,22 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
       { name: 'face_fix', type: 'boolean', default: false },
       { name: 'face_restore_model_id', type: 'string', advanced: true, visibleWhen: (p) => p.face_fix === true },
       { name: 'face_restore_upscale', type: 'number', min: 1, max: 4, step: 1, default: 2, advanced: true, visibleWhen: (p) => p.face_fix === true },
+    ],
+  },
+
+  'image.crop': {
+    toolKey: 'image.crop',
+    apiPath: '/image/crop',
+    labelKey: 'image.crop.task_label',
+    kind: 'tool',
+    inputKinds: ['image'],
+    outputKind: IMAGE_OUT,
+    // PIL 裁切無取偶限制(ImageCropRequest) — min 1 即可
+    paramSchema: [
+      { name: 'x', type: 'number', min: 0, step: 1, default: 0 },
+      { name: 'y', type: 'number', min: 0, step: 1, default: 0 },
+      { name: 'width', type: 'number', min: 1, step: 1 },
+      { name: 'height', type: 'number', min: 1, step: 1 },
     ],
   },
 

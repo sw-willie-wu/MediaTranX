@@ -2,16 +2,17 @@ import { describe, it, expect } from 'vitest'
 import { TOOL_REGISTRY, getToolSpec, listToolSpecs } from '../registry'
 import { MEDIA_KIND_EXTS, type MediaKindT } from '@/utils/mediaKind'
 
-/** 白名單全集（1 source + 20 tool = 21） */
+/** 白名單全集（1 source + 25 tool = 26） */
 const EXPECTED_KEYS = [
   // source
   'video.download',
   // video
   'video.transcode', 'video.extract_audio', 'video.enhance', 'video.interpolate', 'video.summary',
+  'video.cut', 'video.crop', 'video.subtitle',
   // audio
-  'audio.transcode', 'audio.lyrics', 'audio.separate', 'audio.transcribe', 'audio.volume',
+  'audio.transcode', 'audio.lyrics', 'audio.separate', 'audio.transcribe', 'audio.volume', 'audio.cut',
   // image
-  'image.compress', 'image.convert', 'image.filter', 'image.ocr', 'image.remove_bg', 'image.upscale',
+  'image.compress', 'image.convert', 'image.filter', 'image.ocr', 'image.remove_bg', 'image.upscale', 'image.crop',
   // document
   'document.ocr', 'document.pdf_convert', 'document.split', 'document.translate',
 ]
@@ -19,7 +20,7 @@ const EXPECTED_KEYS = [
 const VALID_KINDS = Object.keys(MEDIA_KIND_EXTS) as MediaKindT[]
 
 describe('TOOL_REGISTRY completeness', () => {
-  it('contains exactly the 21 whitelisted tool keys', () => {
+  it('contains exactly the 26 whitelisted tool keys', () => {
     expect(Object.keys(TOOL_REGISTRY).sort()).toEqual([...EXPECTED_KEYS].sort())
   })
 
@@ -92,6 +93,11 @@ describe('outputKind branches', () => {
       'video.enhance': 'video',
       'video.interpolate': 'video',
       'video.summary': 'document',
+      'video.cut': 'video',
+      'video.crop': 'video',
+      'video.subtitle': 'document',
+      'audio.cut': 'audio',
+      'image.crop': 'image',
       'audio.transcode': 'audio',
       'audio.lyrics': 'document',
       'audio.separate': 'audio',

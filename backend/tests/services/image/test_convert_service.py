@@ -134,6 +134,45 @@ class TestExecute:
         assert progress[-1][0] == 1.0
 
 
+def _make_service_with_gif(tmp_path):
+    """Helper: Create service with a small multi-color GIF registered as 'f'."""
+    fs = make_file_service_mock(tmp_path)
+    gif_path = Path(fs.require_file("f").file_path)
+
+    # Create a small 32x32 GIF with multiple colors
+    frame1 = Image.new("P", (32, 32))
+    frame2 = Image.new("P", (32, 32))
+
+    # Create palette with 8 distinct colors
+    palette = [
+        255, 0, 0,      # 0: red
+        0, 255, 0,      # 1: green
+        0, 0, 255,      # 2: blue
+        255, 255, 0,    # 3: yellow
+        255, 0, 255,    # 4: magenta
+        0, 255, 255,    # 5: cyan
+        128, 128, 128,  # 6: gray
+        255, 255, 255,  # 7: white
+        *([0] * (256 * 3 - 24))  # pad rest with black
+    ]
+
+    frame1.putpalette(palette)
+    frame2.putpalette(palette)
+
+    # Fill frames with different color indices
+    # putdata fills all pixels with palette indices
+    frame1.putdata([0] * (32 * 32))  # all pixels = palette index 0 (red)
+    frame2.putdata([1] * (32 * 32))  # all pixels = palette index 1 (green)
+
+    frame1.save(
+        gif_path, save_all=True, append_images=[frame2],
+        loop=0, format="GIF", duration=100,
+    )
+
+    svc = ImageConvertService(file_service=fs, task_manager=MagicMock())
+    return svc
+
+
 class TestQueryMethods:
     async def test_get_image_info_returns_dict(self, tmp_path):
         fs = make_file_service_mock(tmp_path)
@@ -145,6 +184,19 @@ class TestQueryMethods:
         assert info["height"] == 50
         assert info["format"] in {"PNG", "APNG"}
         assert info["mode"] == "RGB"
+
+    async def test_get_image_info_default_omits_palette_for_gif(self, tmp_path):
+        """Default (basic) call must NOT compute palette_size even for GIF."""
+        svc = _make_service_with_gif(tmp_path)
+        info = await svc.get_image_info("f")
+        assert info.get("palette_size") is None
+
+    async def test_get_image_info_include_palette_returns_count(self, tmp_path):
+        """include_palette=True returns the (approx==exact on small files) count."""
+        svc = _make_service_with_gif(tmp_path)
+        info = await svc.get_image_info("f", include_palette=True)
+        assert isinstance(info["palette_size"], int)
+        assert 2 <= info["palette_size"] <= 256
 
 
 # ─── Coalesce tests ───

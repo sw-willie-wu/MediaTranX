@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { expandDropItems, hasDirectoryItem } from '@/utils/dropEntries'
+import { expandDropItems, hasDirectoryItem, capFolderFiles } from '@/utils/dropEntries'
 
 const { t } = useI18n()
 
@@ -24,6 +24,7 @@ const emit = defineEmits<{
   (e: 'file', file: File, sourceDir: string | undefined): void
   (e: 'files', files: File[]): void
   (e: 'folder-files', files: File[], truncated: boolean): void
+  (e: 'folder-paths', paths: string[], truncated: boolean): void
 }>()
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -31,6 +32,29 @@ const isDragOver = ref(false)
 
 function handleClick() {
   fileInputRef.value?.click()
+}
+
+const folderInputRef = ref<HTMLInputElement | null>(null)
+
+function handleFolderInput(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (input.files && input.files.length > 0) {
+    const { files, truncated } = capFolderFiles(Array.from(input.files))
+    emit('folder-files', files, truncated)
+  }
+  input.value = '' // 放 if 外:同資料夾重選也要能再觸發 change
+}
+
+async function handleFolderLinkClick() {
+  const pick = window.electron?.pickFolderFiles
+  if (pick) {
+    // Electron:原生對話框(標題「選擇資料夾」,無 webkitdirectory 的「上傳」措辭)
+    const result = await pick()
+    if (result && result.paths.length > 0) emit('folder-paths', result.paths, result.truncated)
+    // 取消(null)/空資料夾 → 無聲 no-op
+  } else {
+    folderInputRef.value?.click() // 瀏覽器 fallback:webkitdirectory 現行流程
+  }
 }
 
 function extractSourceDir(file: File): string | undefined {
@@ -87,6 +111,12 @@ async function handleDrop(e: DragEvent) {
     <i :class="['bi', icon]"></i>
     <p>{{ effectiveLabel }}</p>
     <p class="hint">{{ effectiveHint }}</p>
+    <!-- @click.stop 必要:folderInputRef.click() 的合成 click 會從 input 冒泡回
+         .upload-zone 的 handleClick → 連檔案對話框一起開(真機實測) -->
+    <input ref="folderInputRef" type="file" webkitdirectory hidden @click.stop @change="handleFolderInput" />
+    <p class="folder-link" @click.stop="handleFolderLinkClick">
+      {{ t('common.pick_folder') }} <i class="bi bi-folder2-open"></i>
+    </p>
   </div>
 </template>
 
@@ -139,5 +169,24 @@ async function handleDrop(e: DragEvent) {
 .upload-zone .hint {
   font-size: 0.85rem;
   margin-top: 0.5rem;
+}
+
+/* selector 必須帶 .upload-zone 前綴 — 裸 .folder-link (0,1,0) 會被
+   .upload-zone p (0,1,1) 蓋掉,margin/font-size 靜默失效 */
+.upload-zone .folder-link {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.upload-zone .folder-link:hover {
+  color: var(--text-primary);
+}
+
+/* 蓋掉 .upload-zone i 的 3rem 大圖示樣式(它連 link 內的 i 一起掃到) */
+.upload-zone .folder-link i {
+  font-size: inherit;
+  margin-bottom: 0;
 }
 </style>

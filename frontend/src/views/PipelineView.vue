@@ -7,6 +7,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Handle, Position, VueFlow, useVueFlow, type Connection, type NodeDragEvent } from '@vue-flow/core'
+import AppThreePaneLayout from '@/components/common/AppThreePaneLayout.vue'
 import { usePipelineStore } from '@/stores/pipeline'
 import { useFilesStore } from '@/stores/files'
 import { useToast } from '@/composables/useToast'
@@ -17,7 +18,7 @@ const { t } = useI18n()
 const store = usePipelineStore()
 const filesStore = useFilesStore()
 const toast = useToast()
-const { project, fitView } = useVueFlow()
+const { screenToFlowCoordinate, fitView } = useVueFlow()
 
 // ── 節點盤（依域分組）─────────────────────────────────────────────
 const paletteGroups = computed(() => {
@@ -28,6 +29,19 @@ const paletteGroups = computed(() => {
   }
   return groups
 })
+
+// 節點盤各類別折疊狀態（預設全收合;展開/收合選擇記 localStorage、下次沿用）
+const PALETTE_OPEN_KEY = 'pipeline-palette-open'
+const openSections = ref<Record<string, boolean>>((() => {
+  try { return JSON.parse(localStorage.getItem(PALETTE_OPEN_KEY) || '{}') } catch { return {} }
+})())
+function isSectionOpen(id: string): boolean {
+  return openSections.value[id] === true
+}
+function toggleSection(id: string) {
+  openSections.value = { ...openSections.value, [id]: !openSections.value[id] }
+  localStorage.setItem(PALETTE_OPEN_KEY, JSON.stringify(openSections.value))
+}
 
 // ── recipe → Vue Flow 派生 ────────────────────────────────────────
 const flowNodes = computed(() =>
@@ -97,7 +111,9 @@ function onPaletteDragStart(ev: DragEvent, toolKey: string) {
 function onCanvasDrop(ev: DragEvent) {
   const toolKey = ev.dataTransfer?.getData('application/mtx-tool')
   if (!toolKey) return
-  const pos = project({ x: ev.offsetX, y: ev.offsetY })
+  // screenToFlowCoordinate 吃 client 座標、自帶容器偏移與 pan/zoom 換算;
+  // 舊寫法 project({offsetX,offsetY}) 在 fitView 變換後落點會偏離游標
+  const pos = screenToFlowCoordinate({ x: ev.clientX, y: ev.clientY })
   store.addToolNode(toolKey, pos)
 }
 
@@ -174,83 +190,97 @@ async function onOpen(id: string) {
 </script>
 
 <template>
-  <div class="pipeline-view">
-    <!-- 左:節點盤（run 中鎖定） -->
-    <aside class="palette" :class="{ locked: store.running }">
-      <h6 class="palette-title">{{ t('pipeline.palette_title') }}</h6>
-      <template v-for="(items, domain) in paletteGroups" :key="domain">
-        <div class="palette-group">{{ t(`nav.${domain}`) }}</div>
-        <button
-          v-for="item in items"
-          :key="item.key"
-          class="palette-item"
-          draggable="true"
-          @dragstart="onPaletteDragStart($event, item.key)"
-          @click="addByClick(item.key)"
-        >
-          <i class="bi bi-plus-square me-1"></i>{{ item.label }}
-        </button>
-      </template>
+  <AppThreePaneLayout>
+    <!-- 左:節點盤（run 中鎖定；欄 chrome 由殼擁有） -->
+    <template #left>
+      <div class="palette" :class="{ locked: store.running }">
+        <h6 class="palette-title">{{ t('pipeline.palette_title') }}</h6>
+        <template v-for="(items, domain) in paletteGroups" :key="domain">
+          <button class="palette-group palette-group-toggle" @click="toggleSection(domain)">
+            <i class="bi" :class="isSectionOpen(domain) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+            {{ t(`nav.${domain}`) }}
+          </button>
+          <template v-if="isSectionOpen(domain)">
+            <button
+              v-for="item in items"
+              :key="item.key"
+              class="palette-item"
+              draggable="true"
+              @dragstart="onPaletteDragStart($event, item.key)"
+              @click="addByClick(item.key)"
+            >
+              <i class="bi bi-plus-square me-1"></i>{{ item.label }}
+            </button>
+          </template>
+        </template>
 
-      <!-- 已存流程 -->
-      <div class="palette-group saved-group">{{ t('pipeline.saved_recipes') }}</div>
-      <button class="palette-item" @click="store.newRecipe(); recipeName = ''">
-        <i class="bi bi-file-earmark-plus me-1"></i>{{ t('pipeline.new_recipe') }}
-      </button>
-      <div v-for="r in store.savedRecipes" :key="r.id" class="saved-row">
-        <button class="palette-item saved-item" :class="{ current: r.id === store.currentRecipeId }" @click="onOpen(r.id)">
-          <i class="bi bi-diagram-3 me-1"></i>{{ r.name || t('pipeline.unnamed') }}
+        <!-- 已存流程 -->
+        <button class="palette-group saved-group palette-group-toggle" @click="toggleSection('__saved')">
+          <i class="bi" :class="isSectionOpen('__saved') ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+          {{ t('pipeline.saved_recipes') }}
         </button>
-        <i class="bi bi-trash saved-del" @click="store.deleteRecipe(r.id)"></i>
-      </div>
-    </aside>
-
-    <!-- 中:畫布 -->
-    <main class="canvas-area" @drop.prevent="onCanvasDrop" @dragover.prevent>
-      <VueFlow
-        :nodes="flowNodes"
-        :edges="flowEdges"
-        :nodes-connectable="!store.running"
-        :nodes-draggable="!store.running"
-        fit-view-on-init
-        @connect="onConnect"
-        @node-drag-stop="onNodeDragStop"
-        @node-click="onNodeClick"
-        @edge-click="onEdgeClick"
-      >
-        <template #node-pipeline="{ data }">
-          <div
-            class="p-node"
-            :class="{
-              'is-input': data.kind === 'input',
-              'is-source': data.kind === 'source',
-              'has-error': data.hasError,
-              'is-selected': data.selected,
-            }"
-          >
-            <Handle v-if="data.kind === 'tool'" type="target" :position="Position.Left" />
-            <Handle type="source" :position="Position.Right" />
-            <div class="p-node-title">
-              <i :class="['bi', data.kind === 'input' ? 'bi-folder2-open' : data.kind === 'source' ? 'bi-cloud-download' : 'bi-gear']"></i>
-              {{ data.label }}
-            </div>
-            <div v-if="data.agg" class="p-node-status" :class="{ failed: data.agg.failed > 0, active: data.agg.active }">
-              {{ data.agg.done }}/{{ data.agg.total }}
-              <span v-if="data.agg.failed > 0">({{ data.agg.failed }}✗)</span>
-            </div>
+        <template v-if="isSectionOpen('__saved')">
+          <button class="palette-item" @click="store.newRecipe(); recipeName = ''">
+            <i class="bi bi-file-earmark-plus me-1"></i>{{ t('pipeline.new_recipe') }}
+          </button>
+          <div v-for="r in store.savedRecipes" :key="r.id" class="saved-row">
+            <button class="palette-item saved-item" :class="{ current: r.id === store.currentRecipeId }" @click="onOpen(r.id)">
+              <i class="bi bi-diagram-3 me-1"></i>{{ r.name || t('pipeline.unnamed') }}
+            </button>
+            <i class="bi bi-trash saved-del" @click="store.deleteRecipe(r.id)"></i>
           </div>
         </template>
-      </VueFlow>
-
-      <!-- 驗證訊息列 -->
-      <div v-if="store.errors.length > 0" class="issue-bar">
-        <i class="bi bi-exclamation-triangle me-1"></i>{{ store.errors[0].message }}
-        <span v-if="store.errors.length > 1" class="issue-more">+{{ store.errors.length - 1 }}</span>
       </div>
-    </main>
+    </template>
 
-    <!-- 右:參數面板 -->
-    <aside class="config-panel">
+    <!-- 中:畫布（wrapper 承接 drop handler + issue-bar 錨點 — spec §3.3） -->
+    <template #center>
+      <div class="canvas-wrap" @drop.prevent="onCanvasDrop" @dragover.prevent>
+        <VueFlow
+          :nodes="flowNodes"
+          :edges="flowEdges"
+          :nodes-connectable="!store.running"
+          :nodes-draggable="!store.running"
+          fit-view-on-init
+          @connect="onConnect"
+          @node-drag-stop="onNodeDragStop"
+          @node-click="onNodeClick"
+          @edge-click="onEdgeClick"
+        >
+          <template #node-pipeline="{ data }">
+            <div
+              class="p-node"
+              :class="{
+                'is-input': data.kind === 'input',
+                'is-source': data.kind === 'source',
+                'has-error': data.hasError,
+                'is-selected': data.selected,
+              }"
+            >
+              <Handle v-if="data.kind === 'tool'" type="target" :position="Position.Left" />
+              <Handle type="source" :position="Position.Right" />
+              <div class="p-node-title">
+                <i :class="['bi', data.kind === 'input' ? 'bi-folder2-open' : data.kind === 'source' ? 'bi-cloud-download' : 'bi-gear']"></i>
+                {{ data.label }}
+              </div>
+              <div v-if="data.agg" class="p-node-status" :class="{ failed: data.agg.failed > 0, active: data.agg.active }">
+                {{ data.agg.done }}/{{ data.agg.total }}
+                <span v-if="data.agg.failed > 0">({{ data.agg.failed }}✗)</span>
+              </div>
+            </div>
+          </template>
+        </VueFlow>
+
+        <!-- 驗證訊息列 -->
+        <div v-if="store.errors.length > 0" class="issue-bar">
+          <i class="bi bi-exclamation-triangle me-1"></i>{{ store.errors[0].message }}
+          <span v-if="store.errors.length > 1" class="issue-more">+{{ store.errors.length - 1 }}</span>
+        </div>
+      </div>
+    </template>
+
+    <!-- 右:參數面板 + run 控制 -->
+    <template #right>
       <div class="config-content" :class="{ locked: store.running }">
         <PipelineParamForm
           v-if="store.selectedNode"
@@ -305,8 +335,8 @@ async function onOpen(id: string) {
           <i class="bi bi-stop-fill me-1"></i>{{ t('common.cancel') }}
         </button>
       </div>
-    </aside>
-  </div>
+    </template>
+  </AppThreePaneLayout>
 </template>
 
 <style lang="scss">
@@ -315,21 +345,14 @@ async function onOpen(id: string) {
 </style>
 
 <style lang="scss" scoped>
-.pipeline-view {
-  display: flex;
-  height: calc(100vh - 40px);
-  gap: 0.5rem;
-  padding: 0.5rem 1rem 1rem 0;
-}
-
 .locked { pointer-events: none; opacity: 0.55; }
 
+// 節點盤（欄 chrome/寬度由 AppThreePaneLayout 擁有；wrapper 需 flex:1 + min-height:0
+// 才能在殼的 flex column 內捲動而非撐高欄）
 .palette {
-  width: 200px; min-width: 200px;
+  flex: 1;
+  min-height: 0;
   padding: 0.75rem;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
   overflow-y: auto;
 }
 .palette-title { font-size: 0.85rem; color: var(--text-primary); margin: 0 0 0.5rem; }
@@ -337,6 +360,14 @@ async function onOpen(id: string) {
   margin-top: 0.6rem; padding: 0.25rem 0.35rem 0.1rem;
   font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
   color: var(--text-muted); letter-spacing: 0.05em;
+}
+// 折疊頭:沿用 palette-group 的小標籤外觀,補上可點/chevron
+.palette-group-toggle {
+  display: flex; align-items: center; gap: 0.35rem;
+  width: 100%; background: transparent; border: none;
+  text-align: left; cursor: pointer; font-family: inherit;
+  &:hover { color: var(--text-primary); }
+  i { font-size: 0.65rem; }
 }
 .palette-item {
   display: block; width: 100%;
@@ -347,12 +378,11 @@ async function onOpen(id: string) {
   &:hover { color: var(--text-primary); background: var(--panel-bg-hover); }
 }
 
-.canvas-area {
-  position: relative; flex: 1;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
-  overflow: hidden;
+// 中欄 wrapper：撐滿（少 flex:1 → VueFlow height:100% 解析成 0）+ issue-bar 錨點
+.canvas-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
 }
 
 .issue-bar {
@@ -365,13 +395,6 @@ async function onOpen(id: string) {
 }
 .issue-more { margin-left: 0.5rem; opacity: 0.7; }
 
-.config-panel {
-  width: 280px; min-width: 280px;
-  display: flex; flex-direction: column;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
-}
 .config-content { flex: 1; padding: 1rem; overflow-y: auto; }
 .config-empty { color: var(--text-muted); font-size: 0.85rem; }
 

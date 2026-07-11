@@ -1,7 +1,7 @@
 """Video frame crop service."""
 import logging
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 from app.adapters.binary.ffmpeg import FFmpegWrapper, TranscodeProgress
 from app.services.files.file_service import FileService
@@ -35,6 +35,7 @@ class VideoCropService:
         y: int,
         width: int,
         height: int,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
 
@@ -45,7 +46,9 @@ class VideoCropService:
             "width": width,
             "height": height,
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_CROP, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_VIDEO_CROP, params, suppress_results=suppress_results
+        )
         logger.info(f"Crop task submitted: {task_id} for file {file_id}")
         return task_id
 

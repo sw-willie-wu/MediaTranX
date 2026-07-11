@@ -97,6 +97,7 @@ class SubtitleGenerateRequest(BaseModel):
     translate_provider: Optional[str] = Field(default=None, description="Cloud provider")
     translate_conn_id: Optional[int] = Field(default=None, description="Connection ID")
     translate_remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
+    suppress_results: Optional[bool] = None
 
 
 class SubtitleGenerateResponse(BaseModel):
@@ -173,5 +174,6 @@ async def generate_subtitle(
         translate_remote_model=request.translate_remote_model,
         vocal_separation=request.vocal_separation,
         align=request.align,
+        suppress_results=request.suppress_results,
     )
     return SubtitleGenerateResponse(task_id=task_id)

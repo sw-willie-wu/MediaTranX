@@ -61,3 +61,24 @@ export async function expandDropItems(items: DataTransferItemList): Promise<Drop
   }
   return { files, truncated }
 }
+
+/**
+ * 對齊 expandDropItems 的上限語意,套用在 webkitdirectory input 回傳的扁平清單:
+ * 深度 > MAX_DEPTH 靜默略過(同 walk 的 depth guard;邊界 depth 8 收、9 濾)、
+ * 過濾後超過 MAX_FILES 截斷並回報 truncated。
+ * 深度 = webkitRelativePath 的目錄層數('root/a.jpg' → 1,與 walk depth 一致);
+ * 空 webkitRelativePath 為防禦分支(webkitdirectory 來源必有值),視為深度 0 照收。
+ * 註:>MAX_FILES 時保留的檔案集合(FileList 順序)與拖曳(DFS 順序)不保證逐檔相同,
+ * 僅數量與 truncated 旗標一致。
+ */
+export function capFolderFiles(all: File[]): DropExpansion {
+  const files = all.filter((f) => {
+    const rel = f.webkitRelativePath
+    const depth = rel ? rel.split('/').length - 1 : 0
+    return depth <= MAX_DEPTH
+  })
+  if (files.length > MAX_FILES) {
+    return { files: files.slice(0, MAX_FILES), truncated: true }
+  }
+  return { files, truncated: false }
+}

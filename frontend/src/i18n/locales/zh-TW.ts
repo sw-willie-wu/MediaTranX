@@ -75,6 +75,18 @@ export default {
       width: '寬度',
       height: '高度',
       gif_colors: 'GIF 色數',
+      // cut/crop/subtitle 節點（start/end 顯示名刻意中性:video.cut 秒數 number、
+      // audio.cut HH:MM:SS string 共用同名參數,格式由輸入型別自明）
+      start_time: '開始時間',
+      end_time: '結束時間',
+      stream_copy: '快速模式（不重新編碼）',
+      x: 'X 座標',
+      y: 'Y 座標',
+      keep_names: '保留專有名詞',
+      word_timestamps: '字級時間戳',
+      condition_on_previous_text: '銜接前文',
+      min_silence_duration_ms: '最短靜音（毫秒）',
+      vad_threshold: 'VAD 閾值',
     },
     saved_recipes: '已存流程',
     new_recipe: '新流程',
@@ -159,6 +171,10 @@ export default {
     execute: '套用',
     processing: '處理中...',
     completed: '完成！',
+    stop: '停止',
+    canceling: '取消中…',
+    stop_confirm_title: '停止任務',
+    stop_confirm_message: '確定要停止目前進行中的 {count} 個任務嗎？已投入的處理進度將會遺失。',
     save: '儲存結果',
     close: '關閉',
     cancel: '取消',
@@ -183,6 +199,8 @@ export default {
     drop_files: '拖曳或貼上檔案到這裡',
     drop_hint: '或點擊選擇檔案',
     folder_truncated: '資料夾檔案過多，僅加入前 500 個檔案',
+    pick_folder: '或選擇資料夾',
+    folder_register_failed: '有 {count} 個檔案無法加入',
     loading_info: '讀取資訊...',
     uploading: '上傳中...',
     copy: '複製',
@@ -252,6 +270,7 @@ export default {
     mark_area_first: '請先在圖片上標記要移除的區域',
     open_folder: '開啟資料夾',
     task_failed: '{label} 失敗：{error}',
+    cancel_failed: '取消任務失敗',
   },
 
   // ── 任務進度 ───────────────────────────────────────────────────────────
@@ -715,8 +734,12 @@ export default {
       fps: '幀率',
       fps_hint: '動圖幀率，越低檔案越小（預設 12）',
       bitrate: '位元率',
-      extract_audio: '提取音訊',
+      extract_audio: '影片 · 提取音訊',
       task_label: '影片 · 轉檔',
+    },
+
+    download: {
+      task_label: '影片 · 網址下載',
     },
 
     cut: {
@@ -733,7 +756,7 @@ export default {
     crop: {
       title: '畫面裁切',
       description: '拖曳選取要保留的畫面區域',
-      task_label: '畫面裁切',
+      task_label: '影片 · 畫面裁切',
       aspect_ratio: '長寬比',
       start_position: '起始位置',
       crop_size: '裁切尺寸',
@@ -833,7 +856,7 @@ export default {
       mode_bullets: '重點條列',
       mode_narrative: '故事大綱',
       select_model: '請選擇模型',
-      task_label: '影片摘要',
+      task_label: '影片 · 摘要',
     },
   },
 
@@ -890,8 +913,8 @@ export default {
       volume: '音量',
       original: '±0 dB（原始）',
       normalize_hint: '使用 EBU R128 響度標準自動正規化，讓音量達到一致水準。',
-      normalize_label: '音量正規化',
-      adjust_label: '音量調整',
+      normalize_label: '音訊 · 音量正規化',
+      adjust_label: '音訊 · 音量調整',
       task_label: '音訊 · 音量調整',
     },
 
@@ -1456,7 +1479,8 @@ export default {
       'image.adjust': '圖片 · 調整',
       'video.transcode': '影片 · 轉檔',
       'video.cut': '影片 · 剪輯',
-      'video.extract_audio': '影片 · 音軌提取',
+      'video.crop': '影片 · 畫面裁切',
+      'video.extract_audio': '影片 · 提取音訊',
       'video.subtitle_generate': '影片 · 字幕提取',
       'video.summary': '影片 · 摘要',
       'video.download': '影片 · 下載',

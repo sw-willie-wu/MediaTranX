@@ -12,6 +12,7 @@ import DocumentSplitPanel       from '@/components/document/panels/DocumentSplit
 import TextPreviewModal          from '@/components/common/TextPreviewModal.vue'
 import { useDocumentWorkspace } from '@/composables/useDocumentWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
+import { useExecuteStop } from '@/composables/useExecuteStop'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 import { useViewHost } from '@/composables/useViewHost'
 import { subfunctionsForView } from '@/agent/agentNavCatalog'
@@ -29,6 +30,7 @@ const {
 const selectedIds = computed(() => collection.selectedIds.value)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
 const { submitToAll } = useMultiSubmit(collection)
+const { isCanceling, requestStop } = useExecuteStop(collection)
 
 // Panel refs
 const translatePanelRef  = ref<InstanceType<typeof DocumentTranslatePanel>  | null>(null)
@@ -203,8 +205,10 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     :has-result="hasResult"
     :execute-disabled="executeDisabled"
     :execute-loading="executeLoading"
+    :execute-canceling="isCanceling"
     @select-function="currentFunction = $event"
     @execute="handleExecute"
+    @stop="requestStop"
     @file="handleFile"
     @files="handleFiles"
     @existing-files="handleExistingFiles"

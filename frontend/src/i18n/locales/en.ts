@@ -75,6 +75,18 @@ export default {
       width: 'Width',
       height: 'Height',
       gif_colors: 'GIF colors',
+      // cut/crop/subtitle nodes (start/end deliberately unit-neutral: video.cut
+      // takes seconds (number), audio.cut takes HH:MM:SS (string) — same param name)
+      start_time: 'Start time',
+      end_time: 'End time',
+      stream_copy: 'Fast mode (stream copy)',
+      x: 'X offset',
+      y: 'Y offset',
+      keep_names: 'Keep proper nouns',
+      word_timestamps: 'Word timestamps',
+      condition_on_previous_text: 'Condition on previous text',
+      min_silence_duration_ms: 'Min silence (ms)',
+      vad_threshold: 'VAD threshold',
     },
     saved_recipes: 'Saved pipelines',
     new_recipe: 'New pipeline',
@@ -159,6 +171,10 @@ export default {
     execute: 'Apply',
     processing: 'Processing...',
     completed: 'Completed!',
+    stop: 'Stop',
+    canceling: 'Canceling…',
+    stop_confirm_title: 'Stop Tasks',
+    stop_confirm_message: 'Stop {count} running task(s)? Processing progress will be lost.',
     save: 'Save Result',
     close: 'Close',
     cancel: 'Cancel',
@@ -183,6 +199,8 @@ export default {
     drop_files: 'Drop or paste files here',
     drop_hint: 'or click to select',
     folder_truncated: 'Too many files in folder; only the first 500 were added',
+    pick_folder: 'or select a folder',
+    folder_register_failed: '{count} file(s) could not be added',
     loading_info: 'Loading info...',
     uploading: 'Uploading...',
     copy: 'Copy',
@@ -252,6 +270,7 @@ export default {
     mark_area_first: 'Please mark the area to remove on the image first',
     open_folder: 'Open Folder',
     task_failed: '{label} failed: {error}',
+    cancel_failed: 'Failed to cancel task',
   },
 
   // ── Task progress ─────────────────────────────────────────────────────
@@ -715,8 +734,12 @@ export default {
       fps: 'Frame rate',
       fps_hint: 'Animation frame rate; lower = smaller file (default 12)',
       bitrate: 'Bitrate',
-      extract_audio: 'Extract Audio',
+      extract_audio: 'Video · Extract Audio',
       task_label: 'Video · Transcode',
+    },
+
+    download: {
+      task_label: 'Video · URL Download',
     },
 
     cut: {
@@ -733,7 +756,7 @@ export default {
     crop: {
       title: 'Crop',
       description: 'Drag to select the region to keep',
-      task_label: 'Crop',
+      task_label: 'Video · Crop',
       aspect_ratio: 'Aspect ratio',
       start_position: 'Start position',
       crop_size: 'Crop size',
@@ -833,7 +856,7 @@ export default {
       mode_bullets: 'Key Points',
       mode_narrative: 'Story Outline',
       select_model: 'Select model',
-      task_label: 'Video summary',
+      task_label: 'Video · Summary',
     },
   },
 
@@ -890,8 +913,8 @@ export default {
       volume: 'Volume',
       original: '±0 dB (Original)',
       normalize_hint: 'Auto-normalize using EBU R128 loudness standard for consistent volume.',
-      normalize_label: 'Volume Normalization',
-      adjust_label: 'Volume Adjustment',
+      normalize_label: 'Audio · Volume Normalization',
+      adjust_label: 'Audio · Volume Adjustment',
       task_label: 'Audio · Volume',
     },
 
@@ -1456,6 +1479,7 @@ export default {
       'image.adjust': 'Image · Adjust',
       'video.transcode': 'Video · Transcode',
       'video.cut': 'Video · Cut',
+      'video.crop': 'Video · Crop',
       'video.extract_audio': 'Video · Extract Audio',
       'video.subtitle_generate': 'Video · Subtitles',
       'video.summary': 'Video · Summary',
