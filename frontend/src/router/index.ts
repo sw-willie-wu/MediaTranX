@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
+import { isPipelineEnabled } from '@/utils/featureGate'
 
 const router = createRouter({
   history: createWebHashHistory(import.meta.env.BASE_URL),
@@ -33,6 +34,8 @@ const router = createRouter({
       path: '/pipeline',
       name: 'pipeline',
       component: () => import('../views/PipelineView.vue'),
+      // stable channel 隱藏流程頁——側欄已過濾，此為防禦縱深（agent/深連結）
+      beforeEnter: () => (isPipelineEnabled() ? true : '/'),
     },
     {
       path: '/tasks',

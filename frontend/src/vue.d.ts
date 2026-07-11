@@ -32,6 +32,7 @@ interface Window {
     readLocalFile: (filePath: string) => Promise<Uint8Array>
     restart: () => void
     appVersion?: string | null
+    updateChannel?: string | null
     savePreference?: (key: string, value: unknown) => void
     // Software update
     checkForUpdates: () => Promise<UpdateCheckResult>
