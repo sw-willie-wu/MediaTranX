@@ -64,6 +64,10 @@ contextBridge.exposeInMainWorld('electron', {
     const portArg = process.argv.find(arg => arg.startsWith('--backend-port='));
     return portArg ? portArg.split('=')[1] : null;
   })(),
+  updateChannel: (() => {
+    const channelArg = process.argv.find(arg => arg.startsWith('--update-channel='));
+    return channelArg ? channelArg.split('=')[1] : null;
+  })(),
   getApiConfig: async () => await ipcRenderer.invoke('get-api-config'),
   readLocalFile: async (filePath) => await ipcRenderer.invoke('read-local-file', filePath),
   writeLocalFile: async (filePath, data) => await ipcRenderer.invoke('write-local-file', filePath, data),

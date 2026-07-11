@@ -9,6 +9,7 @@ const net = require('net');
 const { detectGPU, updatePyprojectSources, runUvSync, downloadFFmpeg, downloadYtDlp, downloadLlamaServer, downloadLlamaCudart } = require('./setup.js');
 const { resolve } = require('path');
 const updateService = require('./updateService.cjs');
+const { resolveChannel } = require('./updateCore.cjs');
 const { walkFolderFiles } = require('./folderWalk.cjs');
 
 // Build-time channel stamp (see scripts/build.py set_version). Missing → prod (fail-safe).
@@ -359,7 +360,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
       devTools: !app.isPackaged,
-      additionalArguments: [`--backend-port=${BACKEND_PORT}`, `--app-version=${app.getVersion()}`]
+      additionalArguments: [`--backend-port=${BACKEND_PORT}`, `--app-version=${app.getVersion()}`, `--update-channel=${resolveChannel(app.isPackaged, BUILD_MODE)}`]
     }
   });
 
