@@ -29,6 +29,7 @@ import { panelRegistry, type PanelAgentSchema } from '@/stores/panelRegistry'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useAgentStore } from '@/stores/agent'
+import { isPipelineEnabled } from '@/utils/featureGate'
 
 // ─── Bug #21: nested value unwrap helper ─────────────────────────────────────
 
@@ -255,7 +256,7 @@ const _NON_SET_FIELD_TOOLS: ToolDefinition[] = [
 ]
 
 /**
- * Build the 9-tool array with dynamic set_field and select_subfunction definitions.
+ * Build the tool array with dynamic set_field and select_subfunction definitions.
  *
  * When activePanelSchema is provided and has fields, set_field.field becomes
  * an enum of panel field names — enabling OpenAI strict-mode constrained
@@ -268,7 +269,8 @@ const _NON_SET_FIELD_TOOLS: ToolDefinition[] = [
  * for Image domain when it was "convert").
  *
  * Order: navigate, select, load, list, open_dropdown, set_field, click_exec,
- *        click_action, get_status.
+ *        click_action, get_status, create_pipeline, run_pipeline.
+ * stable channel 時最後兩個 pipeline 工具不對模型宣告（spec: pipeline-feature-gate §3.3）。
  */
 export function getTools(
   activePanelSchema?: PanelAgentSchema | null,
@@ -323,17 +325,21 @@ export function getTools(
 
   // Build tool list: replace the static select_subfunction + set_field placeholders
   // with their dynamic equivalents.
-  // Original _NON_SET_FIELD_TOOLS order: [navigate, select_subfunction, load, list, open_dropdown, click_exec, click_action, get_status]
-  // Index 0=navigate, 1=select_subfunction, 2=load, 3=list, 4=open_dropdown, 5=click_exec, 6=click_action, 7=get_status
-  return [
+  // _NON_SET_FIELD_TOOLS order: [navigate, select_subfunction, load, list, open_dropdown,
+  //   click_exec, click_action, get_status, create_pipeline, run_pipeline]
+  const all = [
     _NON_SET_FIELD_TOOLS[0],  // navigate_to
     selectSubfunctionDef,     // dynamic select_subfunction (Bug #22)
     _NON_SET_FIELD_TOOLS[2],  // load_file
     _NON_SET_FIELD_TOOLS[3],  // list_files
     _NON_SET_FIELD_TOOLS[4],  // open_dropdown
     setFieldDef,              // dynamic set_field
-    ..._NON_SET_FIELD_TOOLS.slice(5), // click_execute, click_action, get_task_status
+    ..._NON_SET_FIELD_TOOLS.slice(5), // click_execute, click_action, get_task_status, create_pipeline, run_pipeline
   ]
+  // stable channel：節點模式未開放，pipeline 工具不對模型宣告（spec: pipeline-feature-gate §3.3）
+  return isPipelineEnabled()
+    ? all
+    : all.filter(t => t.name !== 'create_pipeline' && t.name !== 'run_pipeline')
 }
 
 // Backward-compat: callers using the static TOOLS array continue to work
@@ -699,6 +705,8 @@ const dispatchers: Record<string, (args: any, ctx: DispatchCtx) => Promise<ToolR
     },
     ctx: DispatchCtx,
   ): Promise<ToolResult> => {
+    // 兜底：stable channel 下工具本不宣告，模型呼叫不到；此檢查擋幻覺呼叫（spec §3.3）
+    if (!isPipelineEnabled()) return { error: 'agent.error.tool_failed', detail: 'pipeline disabled in stable channel' }
     try {
       useAgentStore().setCurrentAction('agent.banner.act.create_pipeline', {})
       if (ctx.signal?.aborted) return { error: 'agent.error.aborted' }
@@ -753,6 +761,8 @@ const dispatchers: Record<string, (args: any, ctx: DispatchCtx) => Promise<ToolR
     { input_file_ids }: { input_file_ids?: string[] },
     ctx: DispatchCtx,
   ): Promise<ToolResult> => {
+    // 兜底：stable channel 下工具本不宣告，模型呼叫不到；此檢查擋幻覺呼叫（spec §3.3）
+    if (!isPipelineEnabled()) return { error: 'agent.error.tool_failed', detail: 'pipeline disabled in stable channel' }
     try {
       useAgentStore().setCurrentAction('agent.banner.act.run_pipeline', {})
       if (ctx.signal?.aborted) return { error: 'agent.error.aborted' }
