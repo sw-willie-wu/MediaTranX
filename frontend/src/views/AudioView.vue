@@ -26,6 +26,7 @@ import { useAudioWorkspace } from '@/composables/useAudioWorkspace'
 import { useToast } from '@/composables/useToast'
 import { useMidiPlayback } from '@/composables/useMidiPlayback'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
+import { useExecuteStop } from '@/composables/useExecuteStop'
 import { useTaskStore } from '@/stores/tasks'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 import { apiFetch } from '@/composables/useApi'
@@ -53,6 +54,7 @@ const {
 const selectedIds = computed(() => collection.selectedIds.value)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
 const { submitToAll } = useMultiSubmit(collection)
+const { isCanceling, requestStop } = useExecuteStop(collection)
 
 // Panel refs
 const transcodePanelRef  = ref<InstanceType<typeof AudioTranscodePanel>  | null>(null)
@@ -559,8 +561,10 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     :has-result="hasResult"
     :execute-disabled="executeDisabled"
     :execute-loading="executeLoading"
+    :execute-canceling="isCanceling"
     @select-function="currentFunction = $event"
     @execute="handleExecute"
+    @stop="requestStop"
     @file="handleFile"
     @files="handleFiles"
     @existing-files="handleExistingFiles"

@@ -87,6 +87,7 @@ class SubtitleService:
         vocal_separation: bool = False,
         # Alignment
         align: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """
         Submit a subtitle generation task.
@@ -137,7 +138,9 @@ class SubtitleService:
         }
 
         # Submit task
-        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_SUBTITLE_GENERATE, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_VIDEO_SUBTITLE_GENERATE, params, suppress_results=suppress_results
+        )
         logger.info(f"Subtitle generate task submitted: {task_id} for file {file_id}")
 
         return task_id

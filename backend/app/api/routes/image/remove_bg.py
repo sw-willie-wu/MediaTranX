@@ -19,6 +19,7 @@ router = APIRouter()
 class ImageRemoveBgRequest(BaseModel):
     file_id: str = Field(..., description="Input file ID")
     mode: str = Field(default="auto", description="Removal mode (auto/person/product/animal/anime)")
+    suppress_results: Optional[bool] = None
 
 
 class ImageRemoveBgResponse(BaseModel):
@@ -36,5 +37,6 @@ async def remove_bg(
     task_id = await service.submit_remove_bg(
         file_id=request.file_id,
         mode=request.mode,
+        suppress_results=request.suppress_results,
     )
     return ImageRemoveBgResponse(task_id=task_id)

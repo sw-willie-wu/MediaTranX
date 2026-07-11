@@ -39,6 +39,7 @@ class VideoExtractAudioService:
         file_id: str,
         audio_format: str = "mp3",
         audio_bitrate: Optional[str] = None,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit an audio extraction task."""
         file_info = self._file_service.require_file(file_id)
@@ -49,7 +50,9 @@ class VideoExtractAudioService:
             "audio_bitrate": audio_bitrate,
         }
 
-        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_EXTRACT_AUDIO, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_VIDEO_EXTRACT_AUDIO, params, suppress_results=suppress_results
+        )
         logger.info(f"Extract audio task submitted: {task_id} for file {file_id}")
         return task_id
 

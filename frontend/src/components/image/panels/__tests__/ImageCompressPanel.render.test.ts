@@ -188,4 +188,30 @@ describe('ImageCompressPanel GIF palette_size', () => {
     })
     expect(w.find('.gif-source-colors-hint').exists()).toBe(false)
   })
+
+  it('two-phase: palette_size undefined→number on SAME fileId updates default/max (not stuck at 256)', async () => {
+    const basic = { width: 200, height: 100, format: 'GIF', mode: 'P', file_size: 5000 }
+    const w = mountPanel({ fileId: 'file-a', imageInfo: basic })
+    const vm = w.vm as { getParams: () => Record<string, unknown>; gifColorsMax: number }
+    // Phase 1 — basic only: default/max fall back to 256
+    expect(vm.getParams().gif_colors).toBe(256)
+    expect(vm.gifColorsMax).toBe(256)
+    // Phase 2 — palette patches in as a NEW object, same fileId
+    await w.setProps({ fileId: 'file-a', imageInfo: { ...basic, palette_size: 102 } })
+    expect(vm.gifColorsMax).toBe(102)                 // computed re-ran on new object
+    expect(vm.getParams().gif_colors).toBe(102)       // clamped down by watch(gifColorsMax)
+  })
+
+  it('two-phase: user-touched value below incoming palette max survives phase 2', async () => {
+    const basic = { width: 200, height: 100, format: 'GIF', mode: 'P', file_size: 5000 }
+    const w = mountPanel({ fileId: 'file-a', imageInfo: basic })
+    const vm = w.vm as {
+      getParams: () => Record<string, unknown>
+      onGifColorsUpdate: (v: number) => void
+    }
+    vm.onGifColorsUpdate(30)
+    await nextTick()
+    await w.setProps({ fileId: 'file-a', imageInfo: { ...basic, palette_size: 102 } })
+    expect(vm.getParams().gif_colors).toBe(30)        // 30 < 102 → untouched
+  })
 })

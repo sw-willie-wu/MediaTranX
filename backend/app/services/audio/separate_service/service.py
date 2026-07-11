@@ -50,6 +50,7 @@ class AudioSeparateService:
         stems: Optional[list[str]] = None,
         output_format: str = "wav",
         generate_midi: bool = False,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {
@@ -59,7 +60,9 @@ class AudioSeparateService:
             "output_format": output_format,
             "generate_midi": generate_midi,
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_SEPARATE, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_AUDIO_SEPARATE, params, suppress_results=suppress_results
+        )
         logger.info(f"Audio separate task submitted: {task_id}")
         return task_id
 

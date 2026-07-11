@@ -1,6 +1,6 @@
 """PDF split API routes."""
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends
@@ -17,6 +17,7 @@ router = APIRouter()
 class DocumentSplitRequest(BaseModel):
     file_id: str = Field(..., description="Input PDF file ID")
     pages: str = Field(default="", description="Page range, e.g. '1-3,5,7-9'; empty means all pages")
+    suppress_results: Optional[bool] = None
 
 
 @router.post("/split")
@@ -29,5 +30,6 @@ async def split_document(
     task_id = await service.submit(
         file_id=request.file_id,
         pages=request.pages,
+        suppress_results=request.suppress_results,
     )
     return {"task_id": task_id, "message": "PDF split task submitted"}

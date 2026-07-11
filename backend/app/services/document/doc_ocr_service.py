@@ -54,6 +54,7 @@ class DocumentOcrService:
         model_size: str = "4b",
         quantization: Optional[str] = None,
         output_format: str = "md",
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {
@@ -61,7 +62,9 @@ class DocumentOcrService:
             "model_size": model_size, "quantization": quantization,
             "output_format": output_format,
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_OCR, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_DOCUMENT_OCR, params, suppress_results=suppress_results
+        )
         logger.info(f"Document OCR task submitted: {task_id}")
         return task_id
 
@@ -72,6 +75,7 @@ class DocumentOcrService:
         conn_id: Optional[int] = None,
         remote_model: str = "",
         output_format: str = "md",
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """Submit a remote OCR task."""
         file_info = self._file_service.require_file(file_id)
@@ -80,7 +84,9 @@ class DocumentOcrService:
             "conn_id": conn_id, "remote_model": remote_model,
             "output_format": output_format,
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_OCR_REMOTE, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_DOCUMENT_OCR_REMOTE, params, suppress_results=suppress_results
+        )
         logger.info(f"Remote OCR task submitted: {task_id} (provider={provider}, model={remote_model})")
         return task_id
 

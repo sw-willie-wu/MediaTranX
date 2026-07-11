@@ -1,6 +1,6 @@
 """PDF / document conversion API routes."""
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends
@@ -17,6 +17,7 @@ router = APIRouter()
 class PdfConvertRequest(BaseModel):
     file_id: str = Field(..., description="Input file ID")
     output_format: str = Field(default="txt", description="Output format: txt / md / images")
+    suppress_results: Optional[bool] = None
 
 
 @router.post("/pdf-convert")
@@ -29,5 +30,6 @@ async def convert_document(
     task_id = await service.submit(
         file_id=request.file_id,
         output_format=request.output_format,
+        suppress_results=request.suppress_results,
     )
     return {"task_id": task_id, "message": "Conversion task submitted"}

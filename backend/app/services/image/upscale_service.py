@@ -54,6 +54,7 @@ class ImageUpscaleService:
         face_fix: bool = False,
         face_restore_model_id: Optional[str] = None,
         face_restore_upscale: int = 2,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
 
@@ -65,7 +66,7 @@ class ImageUpscaleService:
             "face_fix": face_fix,
             "face_restore_model_id": face_restore_model_id,
             "face_restore_upscale": face_restore_upscale,
-        })
+        }, suppress_results=suppress_results)
         logger.info(f"Image upscale task submitted: {task_id}")
         return task_id
 

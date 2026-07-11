@@ -527,7 +527,10 @@ function _createAgent(deps: UseAgentDeps = {}) {
           await commitMessage({ role: 'tool', toolCallId: tc.id, content: JSON.stringify(dispatchResult) })
           unprocessedToolCalls.shift()
 
-          if (dispatchResult.error === 'agent.error.invalid_field') {
+          // 弱模型反覆吐壞參數的斷路器:invalid_field（原有）+ pipeline 圖驗證失敗類
+          if (dispatchResult.error === 'agent.error.invalid_field'
+              || dispatchResult.error === 'agent.error.invalid_pipeline'
+              || dispatchResult.error === 'agent.error.pipeline_not_ready') {
             invalidFieldStrikes++
             if (invalidFieldStrikes >= 3) {
               for (const remaining of unprocessedToolCalls) {

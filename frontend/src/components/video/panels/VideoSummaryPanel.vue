@@ -140,38 +140,44 @@ const alignReady = computed(() =>
   modelStore.byCategory('alignment').some(m => m.downloaded)
 )
 
-async function execute() {
-  if (!props.fileId || !llmModel.value) return
+async function preflight(): Promise<boolean> {
+  if (!llmModel.value) return false
 
   // Guard: Whisper model (upstream dependency)
   const whisperModel = modelStore.byCategory('stt').find(m => m.variant === whisperModelSize.value)
-  if (!await guardModelReady(whisperModel?.downloaded === true, 'audio')) return
+  if (!await guardModelReady(whisperModel?.downloaded === true, 'audio')) return false
 
   // Guard: Demucs (only when vocal separation is enabled)
   if (vocalSeparation.value) {
-    if (!await guardModelReady(demucsReady.value, 'audio')) return
+    if (!await guardModelReady(demucsReady.value, 'audio')) return false
   }
   // Guard: wav2vec2 alignment (only when align is enabled)
   if (whisperAdvanced.value?.align) {
-    if (!await guardModelReady(alignReady.value, 'audio')) return
+    if (!await guardModelReady(alignReady.value, 'audio')) return false
   }
 
   // Guard: check LLM is downloaded (skip for remote models)
   const llmParsed = parseModelValue(llmModel.value)
   if (!llmParsed.isRemote) {
     const llmLocal = localLlmOptions.value.find(m => m.value === llmModel.value)
-    if (!await guardModelReady(!!llmLocal?.downloaded, 'llm')) return
+    if (!await guardModelReady(!!llmLocal?.downloaded, 'llm')) return false
   }
 
   // Guard: check VLM is downloaded (skip for remote models)
   const vlmParsed = vlmModel.value ? parseModelValue(vlmModel.value) : null
   if (vlmParsed && !vlmParsed.isRemote) {
     const vlmLocal = localVlmOptions.value.find(m => m.value === vlmModel.value)
-    if (!await guardModelReady(!!vlmLocal?.downloaded, 'llm')) return
+    if (!await guardModelReady(!!vlmLocal?.downloaded, 'llm')) return false
   }
 
+  return true
+}
+
+function getParams(): Record<string, unknown> {
+  const llmParsed = parseModelValue(llmModel.value)
+  const vlmParsed = vlmModel.value ? parseModelValue(vlmModel.value) : null
+
   const params: Record<string, unknown> = {
-    file_id: props.fileId,
     language: props.language ?? 'zh-TW',
     whisper_model_size: whisperModelSize.value,
     vocal_separation: vocalSeparation.value,
@@ -212,9 +218,16 @@ async function execute() {
     params.vad_threshold = whisperAdvanced.value.vadThreshold
   }
 
+  return params
+}
+
+async function execute() {
+  if (!await preflight()) return
+  if (!props.fileId) return
+
   const taskId = await submitTask(
     '/video/summary',
-    params,
+    { file_id: props.fileId, ...getParams() },
     t('video.summary.task_label'),
     'video.summary',
     props.currentFileName,
@@ -265,7 +278,7 @@ useAgentPanelHost('video.summary', {
   execute: async () => { await execute(); return {} },
 })
 
-defineExpose({ execute, isDisabled, isLoading })
+defineExpose({ execute, isDisabled, isLoading, getParams, preflight })
 </script>
 
 <template>

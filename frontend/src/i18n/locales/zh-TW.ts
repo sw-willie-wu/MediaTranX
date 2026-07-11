@@ -6,9 +6,101 @@ export default {
     audio: '音訊工具',
     video: '影片工具',
     document: '文件工具',
+    pipeline: '流程',
     tasks: '任務管理',
     settings: '設定',
     restart: '重新啟動',
+  },
+
+  // ── Pipeline 畫布 ─────────────────────────────────────────────────────
+  pipeline: {
+    palette_title: '工具節點',
+    input_node: '檔案輸入',
+    input_node_hint: '在下方「執行」區選擇要跑這條流程的檔案。',
+    select_node_hint: '點選畫布上的節點編輯參數；從左側拖入或點擊新增節點。',
+    connect_invalid: '這條連線不相容',
+    keep_output: '保留此節點產出',
+    keep_output_hint: '預設只有末端節點的產出會進產出抽屜；勾選讓中間產物也保留。',
+    remove_node: '移除節點',
+    pick_files: '選擇輸入檔案',
+    run: '執行流程',
+    run_progress: '{done}/{total} 完成',
+    param_default: '（預設）',
+    param_enabled: '啟用',
+    // 節點參數顯示名（registry paramSchema 欄位;缺項 fallback 原始欄位名）
+    param: {
+      url: '網址',
+      output_format: '輸出格式',
+      video_codec: '視訊編碼',
+      resolution: '解析度',
+      audio_format: '音訊格式',
+      audio_bitrate: '音訊位元率',
+      mode: '模式',
+      target_fps: '目標 FPS',
+      variant: '模型變體',
+      model_size: '模型大小',
+      whisper_model_size: '語音辨識模型',
+      summary_mode: '摘要模式',
+      language: '語言',
+      source_language: '來源語言',
+      target_language: '目標語言',
+      translate: '翻譯',
+      translate_style: '翻譯風格',
+      summarize: '摘要',
+      align: '精準對齊',
+      vocal_separation: '人聲分離',
+      normalize: '響度正規化',
+      volume_db: '音量 (dB)',
+      generate_midi: '產生 MIDI',
+      pages: '頁碼範圍',
+      quality: '品質',
+      scale: '放大倍率',
+      sharpen: '銳化',
+      face_fix: '人臉修復',
+      strength: '壓縮強度',
+      brightness: '亮度',
+      contrast: '對比',
+      saturation: '飽和度',
+      hue: '色相',
+      sharpness: '銳利度',
+      warmth: '色溫',
+      grayscale: '灰階',
+      sepia: '懷舊',
+      blur: '模糊',
+      vignette: '暗角',
+      invert: '負片',
+      crf: 'CRF 品質',
+      preset: '編碼速度',
+      fps: 'FPS',
+      width: '寬度',
+      height: '高度',
+      gif_colors: 'GIF 色數',
+      // cut/crop/subtitle 節點（start/end 顯示名刻意中性:video.cut 秒數 number、
+      // audio.cut HH:MM:SS string 共用同名參數,格式由輸入型別自明）
+      start_time: '開始時間',
+      end_time: '結束時間',
+      stream_copy: '快速模式（不重新編碼）',
+      x: 'X 座標',
+      y: 'Y 座標',
+      keep_names: '保留專有名詞',
+      word_timestamps: '字級時間戳',
+      condition_on_previous_text: '銜接前文',
+      min_silence_duration_ms: '最短靜音（毫秒）',
+      vad_threshold: 'VAD 閾值',
+    },
+    saved_recipes: '已存流程',
+    new_recipe: '新流程',
+    unnamed: '未命名流程',
+    recipe_name_placeholder: '流程名稱',
+    saved: '流程已儲存',
+    open_failed: '流程載入失敗',
+    status: {
+      idle: '待命',
+      running: '執行中',
+      completed: '完成',
+      completed_with_errors: '完成（部分失敗）',
+      cancelled: '已取消',
+    },
   },
 
   // ── 標題列 ────────────────────────────────────────────────────────────
@@ -79,6 +171,10 @@ export default {
     execute: '套用',
     processing: '處理中...',
     completed: '完成！',
+    stop: '停止',
+    canceling: '取消中…',
+    stop_confirm_title: '停止任務',
+    stop_confirm_message: '確定要停止目前進行中的 {count} 個任務嗎？已投入的處理進度將會遺失。',
     save: '儲存結果',
     close: '關閉',
     cancel: '取消',
@@ -102,6 +198,9 @@ export default {
     select_function: '請選擇功能',
     drop_files: '拖曳或貼上檔案到這裡',
     drop_hint: '或點擊選擇檔案',
+    folder_truncated: '資料夾檔案過多，僅加入前 500 個檔案',
+    pick_folder: '或選擇資料夾',
+    folder_register_failed: '有 {count} 個檔案無法加入',
     loading_info: '讀取資訊...',
     uploading: '上傳中...',
     copy: '複製',
@@ -171,6 +270,7 @@ export default {
     mark_area_first: '請先在圖片上標記要移除的區域',
     open_folder: '開啟資料夾',
     task_failed: '{label} 失敗：{error}',
+    cancel_failed: '取消任務失敗',
   },
 
   // ── 任務進度 ───────────────────────────────────────────────────────────
@@ -408,7 +508,7 @@ export default {
   // ── 圖片工具 ───────────────────────────────────────────────────────────
   image: {
     title: '圖片工具',
-    upload_label: '拖曳或貼上圖片到這裡',
+    upload_label: '拖曳檔案/資料夾或貼上圖片到這裡',
     upload_hint: '支援 JPG、PNG、WebP、BMP 等格式',
     loading: '讀取圖片資訊...',
 
@@ -591,9 +691,10 @@ export default {
   // ── 影片工具 ───────────────────────────────────────────────────────────
   video: {
     title: '影片工具',
-    upload_label: '拖曳或貼上影片到這裡',
+    upload_label: '拖曳檔案/資料夾或貼上影片到這裡',
     upload_hint: '支援 MP4、MKV、MOV、AVI 等格式',
     loading: '讀取媒體資訊...',
+    multi_not_supported: '此功能不支援多選批次，僅處理目前選取的檔案',
 
     functions: {
       transcode: '轉檔',
@@ -630,9 +731,15 @@ export default {
       nearest: 'Nearest Neighbor（像素風格）',
       crf: '品質 (CRF):',
       crf_hint: '數值越小品質越高、檔案越大（建議 18-28）',
+      fps: '幀率',
+      fps_hint: '動圖幀率，越低檔案越小（預設 12）',
       bitrate: '位元率',
-      extract_audio: '提取音訊',
+      extract_audio: '影片 · 提取音訊',
       task_label: '影片 · 轉檔',
+    },
+
+    download: {
+      task_label: '影片 · 網址下載',
     },
 
     cut: {
@@ -649,7 +756,7 @@ export default {
     crop: {
       title: '畫面裁切',
       description: '拖曳選取要保留的畫面區域',
-      task_label: '畫面裁切',
+      task_label: '影片 · 畫面裁切',
       aspect_ratio: '長寬比',
       start_position: '起始位置',
       crop_size: '裁切尺寸',
@@ -749,14 +856,14 @@ export default {
       mode_bullets: '重點條列',
       mode_narrative: '故事大綱',
       select_model: '請選擇模型',
-      task_label: '影片摘要',
+      task_label: '影片 · 摘要',
     },
   },
 
   // ── 音訊工具 ───────────────────────────────────────────────────────────
   audio: {
     title: '音訊工具',
-    upload_label: '拖曳或貼上音訊到這裡',
+    upload_label: '拖曳檔案/資料夾或貼上音訊到這裡',
     upload_hint: '支援 MP3、WAV、FLAC、AAC 等格式',
     loading: '讀取音訊資訊...',
     preview_unsupported: '此格式不支援預覽，但可正常處理',
@@ -806,8 +913,8 @@ export default {
       volume: '音量',
       original: '±0 dB（原始）',
       normalize_hint: '使用 EBU R128 響度標準自動正規化，讓音量達到一致水準。',
-      normalize_label: '音量正規化',
-      adjust_label: '音量調整',
+      normalize_label: '音訊 · 音量正規化',
+      adjust_label: '音訊 · 音量調整',
       task_label: '音訊 · 音量調整',
     },
 
@@ -950,7 +1057,7 @@ export default {
   // ── 文件工具 ───────────────────────────────────────────────────────────
   document: {
     title: '文件工具',
-    upload_label: '拖曳或貼上文件到這裡',
+    upload_label: '拖曳檔案/資料夾或貼上文件到這裡',
     upload_hint: '支援 PDF、DOCX、TXT、SRT 等格式',
     loading: '上傳中...',
 
@@ -1122,6 +1229,8 @@ export default {
       compute_policy: '運算降級',
       cpu_fallback: '自動降級為 CPU',
       cpu_fallback_hint: '當 GPU 無法執行（顯卡過舊、驅動不支援或記憶體不足）時，自動改用 CPU 執行（速度較慢）。關閉後 GPU 跑不動會直接讓任務失敗。',
+      max_concurrent_tasks: '任務同時執行上限',
+      max_concurrent_tasks_hint: '變更後需重啟後端服務生效（可用下方重啟按鈕）。',
     },
 
     ai: {
@@ -1244,6 +1353,8 @@ export default {
         click_action: '正在執行 {name}',
         list_files: '正在列出檔案…',
         get_task_status: '正在查詢任務 {task_id}',
+        create_pipeline: '正在畫布上起草流程',
+        run_pipeline: '正在啟動流程',
       },
     },
     bubble: {
@@ -1307,6 +1418,10 @@ export default {
       no_execute_on_settings: '無法從設定頁面提交任務',
       no_file_selected: '尚未載入檔案 — 請先上傳或載入檔案再執行',
       invalid_subfunction: '此頁面沒有「{name}」子功能',
+      invalid_pipeline: '流程圖驗證失敗',
+      pipeline_busy: '流程正在執行中，請等它完成',
+      pipeline_not_ready: '流程還不能執行（缺輸入檔或圖不完整）',
+      missing_args: '缺少必要參數',
       generic: '智慧助手發生錯誤，請稍後再試',
     },
     tool: {
@@ -1319,6 +1434,8 @@ export default {
       click_action: '點擊動作',
       list_files: '列出檔案',
       get_task_status: '查詢任務狀態',
+      create_pipeline: '起草流程',
+      run_pipeline: '執行流程',
     },
   },
 
@@ -1362,7 +1479,8 @@ export default {
       'image.adjust': '圖片 · 調整',
       'video.transcode': '影片 · 轉檔',
       'video.cut': '影片 · 剪輯',
-      'video.extract_audio': '影片 · 音軌提取',
+      'video.crop': '影片 · 畫面裁切',
+      'video.extract_audio': '影片 · 提取音訊',
       'video.subtitle_generate': '影片 · 字幕提取',
       'video.summary': '影片 · 摘要',
       'video.download': '影片 · 下載',

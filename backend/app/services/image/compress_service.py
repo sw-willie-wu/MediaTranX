@@ -1,7 +1,7 @@
 """Image compression service (same-format size reduction)."""
 import logging
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 from app.adapters.binary.gifsicle import GifsicleWrapper
 from app.services.files.file_service import FileService
@@ -24,10 +24,12 @@ class ImageCompressService:
                                   output_policy="history")
         logger.info("ImageCompressService initialized")
 
-    async def submit_compress(self, file_id: str, strength: int = 60, **opts) -> str:
+    async def submit_compress(self, file_id: str, strength: int = 60,
+                              suppress_results: Optional[bool] = None, **opts) -> str:
         self._files.require_file(file_id)
         params = {"file_id": file_id, "strength": strength, **opts}
-        return await self._tm.submit(TASK_TYPE_IMAGE_COMPRESS, params)
+        return await self._tm.submit(TASK_TYPE_IMAGE_COMPRESS, params,
+                                     suppress_results=suppress_results)
 
     def _handle_task(self, params, progress_callback):
         return self._execute(params, progress_callback)

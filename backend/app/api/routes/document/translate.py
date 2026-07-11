@@ -31,6 +31,7 @@ class DocumentTranslateRequest(BaseModel):
     provider: Optional[str] = Field(default=None, description="Cloud provider")
     conn_id: Optional[int] = Field(default=None, description="Connection ID")
     remote_model: Optional[str] = Field(default=None, description="Cloud model ID")
+    suppress_results: Optional[bool] = None
 
 
 class DocumentTranslateResponse(BaseModel):
@@ -66,5 +67,6 @@ async def translate_document(
         provider=request.provider,
         conn_id=request.conn_id,
         remote_model=request.remote_model,
+        suppress_results=request.suppress_results,
     )
     return DocumentTranslateResponse(task_id=task_id)

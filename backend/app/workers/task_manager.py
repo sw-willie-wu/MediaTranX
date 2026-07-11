@@ -19,6 +19,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Sentinel returned by the executor fn when the task was cancelled while still
+# queued behind max_workers — the coroutine must not treat it as a result.
+_CANCELLED_BEFORE_START = object()
+
 
 def _collect_output_ids(result: dict) -> list[str]:
     """Collect all file_id strings from a handler result dict.
@@ -71,6 +75,15 @@ class TaskManager:
     def progress_tracker(self) -> ProgressTracker:
         return self._progress_tracker
 
+    def set_max_workers(self, n: int) -> None:
+        """Recreate the executor with a new worker cap (startup-time only;
+        callers must ensure no tasks are running)."""
+        n = max(1, min(8, int(n)))
+        old = self._executor
+        self._executor = ThreadPoolExecutor(max_workers=n)
+        old.shutdown(wait=False)
+        logger.info(f"TaskManager max_workers set to {n}")
+
     def on_terminal(self, callback: Callable[[TaskData], None]) -> None:
         """Register a callback for when a task enters a terminal state."""
         self._on_terminal_callbacks.append(callback)
@@ -113,9 +126,15 @@ class TaskManager:
         self,
         task_type: str,
         params: dict,
-        priority: int = 0
+        priority: int = 0,
+        suppress_results: Optional[bool] = None,
     ) -> str:
-        """Submit a new task."""
+        """Submit a new task.
+
+        suppress_results: pipeline intermediates — outputs get an explicit
+        show_in_results=false sidecar so they never enter the Results drawer
+        (this session or after restart).
+        """
         task_id = str(uuid4())
 
         task = TaskData(
@@ -124,6 +143,7 @@ class TaskManager:
             status=TaskStatus.PENDING,
             progress=0.0,
             file_id=params.get("file_id"),
+            suppress_results=suppress_results,
         )
         with self._lock:
             self._tasks[task_id] = task
@@ -162,9 +182,6 @@ class TaskManager:
             if handler is None:
                 raise ValueError(f"No handler registered for task type: {task_type}")
 
-            task.status = TaskStatus.PROCESSING
-            task.updated_at = datetime.now(timezone.utc)
-
             progress_callback = self._create_cancellable_callback(task_id)
 
             loop = asyncio.get_event_loop()
@@ -172,6 +189,17 @@ class TaskManager:
             from app.utils.task_notices import _current_task_notices
 
             def _run():
+                # 原子性:sentinel 檢查與 PROCESSING 轉移必須在鎖內與 cancel()
+                # 的 CANCELLED 寫入互斥,否則 GIL handoff 間 CANCELLED 會被蓋掉。
+                with self._lock:
+                    # Cancelled while queued: cancel() already finalized the task
+                    # (status/emit/notify) — skip the handler entirely.
+                    if task.status == TaskStatus.CANCELLED:
+                        return _CANCELLED_BEFORE_START
+                    # PROCESSING marks actual execution start — while queued behind
+                    # max_workers the task stays PENDING (visible queue semantics).
+                    task.status = TaskStatus.PROCESSING
+                    task.updated_at = datetime.now(timezone.utc)
                 token = _current_task_notices.set(task.notices)
                 try:
                     return handler(params, progress_callback)
@@ -180,6 +208,12 @@ class TaskManager:
 
             result = await loop.run_in_executor(self._executor, _run)
 
+            if result is _CANCELLED_BEFORE_START:
+                with self._lock:
+                    self._cancelled_ids.discard(task_id)
+                logger.info(f"Task skipped (cancelled while queued): {task_id}")
+                return
+
             task.status = TaskStatus.COMPLETED
             task.progress = 1.0
             task.result = result
@@ -187,7 +221,7 @@ class TaskManager:
 
             # ── Metadata tagging for Results drawer ─────────────────
             if self._file_service is not None and isinstance(result, dict):
-                self._apply_output_metadata(task_type, params, result)
+                self._apply_output_metadata(task_type, params, result, suppress=task.suppress_results)
 
             await self._progress_tracker.emit(
                 task_id, 1.0, "Task completed",
@@ -210,10 +244,13 @@ class TaskManager:
         except Exception as e:
             import traceback
             task.status = TaskStatus.FAILED
-            from app.handler.exceptions import RemoteApiError
+            from app.handler.exceptions import ModelBusyError, RemoteApiError
             if isinstance(e, RemoteApiError):
                 task.error = f"[{e.code}] {e.detail}"
                 task.error_code = e.code
+            elif isinstance(e, ModelBusyError):
+                task.error = str(e)
+                task.error_code = "model_busy"
             else:
                 task.error = str(e)
                 from app.adapters.compute_policy import classify_gpu_error
@@ -224,10 +261,12 @@ class TaskManager:
             logger.error(f"Task failed: {task_id} - {e}\n{traceback.format_exc()}")
             self._notify_terminal(task)
 
-    def _apply_output_metadata(self, task_type: str, params: dict, result: dict) -> None:
+    def _apply_output_metadata(self, task_type: str, params: dict, result: dict, suppress: Optional[bool] = None) -> None:
         """Tag registered outputs with tool_id / source_file_id / show_in_results.
 
         Writes sidecar for results-policy outputs so they survive restart.
+        suppress=True（pipeline 中間產物）：無論 output_policy 一律 show_in_results=False
+        且一律寫 sidecar——重啟路徑靠這個顯式 false 過濾，缺 sidecar 就會洩漏。
         """
         from app.workers.media_kind import infer_kind  # local: cold-start friendly
 
@@ -260,7 +299,15 @@ class TaskManager:
                 )
                 effective = "results"
 
-        show_in_results = effective == "results"
+        # 三態:True=隱藏(pipeline 中間產物)、False=強制顯示(pipeline 末端——
+        # history policy 工具的產出正常走 filmstrip,但 pipeline 無 filmstrip,
+        # 末端不強制顯示使用者就什麼都拿不到)、None=照 output_policy。
+        if suppress is True:
+            show_in_results = False
+        elif suppress is False:
+            show_in_results = True
+        else:
+            show_in_results = effective == "results"
         for fid in output_ids:
             fd = fs.get_file(fid)
             if fd is None:
@@ -271,7 +318,7 @@ class TaskManager:
                 "source_file_id": source_file_id,
                 "show_in_results": show_in_results,
             }
-            if show_in_results:
+            if show_in_results or suppress is not None:
                 fs.write_sidecar(fid)
 
     def get_task(self, task_id: str) -> Optional[TaskData]:
@@ -335,9 +382,16 @@ class TaskManager:
             from app.handler.exceptions import NotFoundError
             raise NotFoundError(f"Task not found: {task_id}")
 
-        if task.status == TaskStatus.PENDING:
-            task.status = TaskStatus.CANCELLED
-            task.updated_at = datetime.now(timezone.utc)
+        with self._lock:
+            # 與 _run() 的 sentinel+PROCESSING 轉移互斥:先搶到鎖者贏——
+            # cancel 先贏 → _run 見 CANCELLED 走 sentinel;_run 先贏 → 這裡
+            # 見 PROCESSING 走下方分支(_cancelled_ids 讓 progress callback 中止)。
+            is_pending = task.status == TaskStatus.PENDING
+            if is_pending:
+                self._cancelled_ids.add(task_id)
+                task.status = TaskStatus.CANCELLED
+                task.updated_at = datetime.now(timezone.utc)
+        if is_pending:
             await self._progress_tracker.emit(task_id, task.progress, "Task cancelled")
             logger.info(f"Task cancelled (pending): {task_id}")
             self._notify_terminal(task)

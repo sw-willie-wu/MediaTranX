@@ -7,9 +7,10 @@ import { apiFetch } from '@/composables/useApi'
 
 export interface ComputeSettings {
   allow_cpu_fallback: boolean
+  max_concurrent_tasks: number
 }
 
-const DEFAULTS: ComputeSettings = { allow_cpu_fallback: true }
+const DEFAULTS: ComputeSettings = { allow_cpu_fallback: true, max_concurrent_tasks: 4 }
 
 export const useComputeSettingsStore = defineStore('computeSettings', () => {
   const settings = ref<ComputeSettings>({ ...DEFAULTS })

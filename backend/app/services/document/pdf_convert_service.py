@@ -7,7 +7,7 @@ import io
 import logging
 import zipfile
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 from uuid import uuid4
 
 from app.services.files.file_service import FileService
@@ -34,13 +34,16 @@ class DocumentPdfConvertService:
         self,
         file_id: str,
         output_format: str = "txt",
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {
             "file_id": file_id,
             "output_format": output_format,
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_DOCUMENT_PDF_CONVERT, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_DOCUMENT_PDF_CONVERT, params, suppress_results=suppress_results
+        )
         logger.info(f"Document PDF convert task submitted: {task_id}")
         return task_id
 

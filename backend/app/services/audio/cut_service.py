@@ -1,7 +1,7 @@
 """Audio cut service."""
 import logging
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 from app.adapters.binary.ffmpeg import FFmpegWrapper
 from app.services.files.file_service import FileService
@@ -30,6 +30,7 @@ class AudioCutService:
         file_id: str,
         start_time: str,
         end_time: str,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {
@@ -37,7 +38,9 @@ class AudioCutService:
             "start_time": start_time,
             "end_time": end_time,
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_CUT, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_AUDIO_CUT, params, suppress_results=suppress_results
+        )
         logger.info(f"Audio cut task submitted: {task_id}")
         return task_id
 

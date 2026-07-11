@@ -114,6 +114,18 @@ export const useFilesStore = defineStore('files', () => {
     }
   }
 
+  /** Electron 原生資料夾選取:以路徑零搬運註冊本機檔,回 PendingResultRef。 */
+  async function registerLocalFile(filePath: string): Promise<PendingResultRef> {
+    const res = await fetch(`${getApiBase()}/files/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_path: filePath }),
+    })
+    if (!res.ok) throw new Error(`register failed: ${res.status}`)
+    const d = await res.json()
+    return { fileId: d.file_id, filename: d.filename, fileSize: d.file_size, mimeType: d.mime_type }
+  }
+
   // 取得媒體類型
   function getMediaType(mimeType: string): MediaType {
     if (mimeType.startsWith('image/')) return 'image'
@@ -318,6 +330,7 @@ export const useFilesStore = defineStore('files', () => {
     audioFiles,
     // 方法
     uploadFile,
+    registerLocalFile,
     getFileInfo,
     downloadFile,
     deleteFile,

@@ -24,6 +24,7 @@
       "main.js",
       "setup.js",
       "preload.cjs",
+      "folderWalk.cjs",
       "updateService.cjs",
       "updateCore.cjs",
       "splash.html",

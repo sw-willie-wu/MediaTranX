@@ -3,6 +3,7 @@ import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useTaskStore } from '@/stores/tasks'
+import { isPipelineEnabled } from '@/utils/featureGate'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,6 +22,7 @@ const topNavDef: NavItem[] = [
   { path: '/audio', icon: 'bi-music-note-beamed', labelKey: 'nav.audio' },
   { path: '/video', icon: 'bi-film', labelKey: 'nav.video' },
   { path: '/document', icon: 'bi-file-earmark-text-fill', labelKey: 'nav.document' },
+  { path: '/pipeline', icon: 'bi-diagram-3-fill', labelKey: 'nav.pipeline' },
 ]
 
 const bottomNavDef: NavItem[] = [
@@ -28,7 +30,10 @@ const bottomNavDef: NavItem[] = [
   { path: '/settings', icon: 'bi-gear-fill', labelKey: 'nav.settings' },
 ]
 
-const topNav = computed(() => topNavDef.map(item => ({ ...item, label: t(item.labelKey) })))
+// stable channel 隱藏流程入口（spec: pipeline-feature-gate §3.3）
+const visibleTopNavDef = topNavDef.filter(i => i.path !== '/pipeline' || isPipelineEnabled())
+
+const topNav = computed(() => visibleTopNavDef.map(item => ({ ...item, label: t(item.labelKey) })))
 const bottomNav = computed(() => bottomNavDef.map(item => ({ ...item, label: t(item.labelKey) })))
 
 // 指示條位置

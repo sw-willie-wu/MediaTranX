@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from typing import AsyncIterator
 from uuid import uuid4
 
@@ -20,7 +21,7 @@ from app.services.agent._ag_ui_compat import (
     TextMessageChunkEvent, ToolCallChunkEvent,
     make_encoder, emit_run_finished_with_usage,
 )
-from app.services.agent._system_prompt import AGENT_SYSTEM_PROMPT
+from app.services.agent._system_prompt import pick_system_prompt
 from app.services.agent._render_state import render_state
 
 logger = logging.getLogger(__name__)
@@ -77,13 +78,18 @@ def _tool_to_dict(t) -> dict:
 
 
 _TASK_SUBMITTED_TEXT = "✅ 已送出任務（task_id={task_id}）。可在工作列追蹤進度，完成後再問我。"
+_RUN_SUBMITTED_TEXT = "✅ 流程已開始執行（run_id={run_id}）。可在流程頁追蹤各節點進度，完成後再問我。"
+
+# 「執行類」工具:dispatch 成功後不再開 LLM 回合（會踢掉剛提交任務佔用的 GPU）。
+_EXECUTE_TOOL_NAMES = {"click_execute", "run_pipeline"}
 
 
-def _last_tool_result_is_execute_success(messages: list[dict]) -> str | None:
-    """If messages[-1] is a successful click_execute tool result, return its
-    task_id; else None. Matches the tool result's tool_call_id back to a
-    click_execute tool_call in a preceding assistant message, then parses the
-    result content for {ok: true, task_id}. Conservative: ambiguity → None."""
+def _last_tool_result_is_execute_success(messages: list[dict]) -> tuple[str, str] | None:
+    """If messages[-1] is a successful execute-class tool result, return
+    ("task", task_id) or ("run", run_id); else None. Matches the tool result's
+    tool_call_id back to an execute-class tool_call in a preceding assistant
+    message, then parses the result content for {ok: true, task_id|run_id}.
+    Conservative: ambiguity → None."""
     if not messages:
         return None
     last = messages[-1]
@@ -97,7 +103,7 @@ def _last_tool_result_is_execute_success(messages: list[dict]) -> str | None:
         if m.get("role") != "assistant":
             continue
         for tc in (m.get("tool_calls") or m.get("toolCalls") or []):
-            if tc.get("id") == tcid and (tc.get("function") or {}).get("name") == "click_execute":
+            if tc.get("id") == tcid and (tc.get("function") or {}).get("name") in _EXECUTE_TOOL_NAMES:
                 is_execute = True
                 break
         if is_execute:
@@ -109,8 +115,11 @@ def _last_tool_result_is_execute_success(messages: list[dict]) -> str | None:
         data = json.loads(content) if isinstance(content, str) else content
     except (json.JSONDecodeError, TypeError):
         return None
-    if isinstance(data, dict) and data.get("ok") is True and data.get("task_id"):
-        return str(data["task_id"])
+    if isinstance(data, dict) and data.get("ok") is True:
+        if data.get("task_id"):
+            return ("task", str(data["task_id"]))
+        if data.get("run_id"):
+            return ("run", str(data["run_id"]))
     return None
 
 
@@ -160,9 +169,17 @@ class AgentService:
             # history (it rides input.state, not input.messages).
             if not any(m.get("role") == "system" for m in messages):
                 snapshot = (input.state or {}).get("snapshot")
-                content = AGENT_SYSTEM_PROMPT
+                # 依當輪前端宣告的工具選提示版本（無 create_pipeline → 精簡版；
+                # spec: pipeline-feature-gate §3.4）。元素可能是 Pydantic model 或
+                # plain dict（比照 _tool_to_dict），取名須 dict-safe；正規化清單在
+                # 下方才建立，這裡直接讀原始 input.tools。
+                tool_names = {
+                    n for t in (input.tools or [])
+                    if (n := (getattr(t, "name", None) or (t.get("name") if isinstance(t, dict) else None)))
+                }
+                content = pick_system_prompt(tool_names)
                 if snapshot:
-                    content = AGENT_SYSTEM_PROMPT + "\n\n" + render_state(snapshot)
+                    content = content + "\n\n" + render_state(snapshot)
                 messages.insert(0, {"role": "system", "content": content})
 
             tools: list[dict] = [_tool_to_dict(t) for t in (input.tools or [])]
@@ -172,16 +189,20 @@ class AgentService:
             # the just-evicted llama-server (or re-load it and evict the running
             # task). Reply with a canned confirmation and skip the LLM entirely.
             if is_local:
-                task_id = _last_tool_result_is_execute_success(messages)
-                if task_id is not None:
+                submitted = _last_tool_result_is_execute_success(messages)
+                if submitted is not None:
+                    kind, ident = submitted
+                    text = (_TASK_SUBMITTED_TEXT.format(task_id=ident) if kind == "task"
+                            else _RUN_SUBMITTED_TEXT.format(run_id=ident))
                     yield encoder.encode(TextMessageChunkEvent(
                         message_id=uuid4().hex, role="assistant",
-                        delta=_TASK_SUBMITTED_TEXT.format(task_id=task_id),
+                        delta=text,
                     ))
                     return  # finally emits RUN_FINISHED (errored stays False)
 
-            with self._chat.session(**session_kwargs) as session:
-                async for chunk in session.stream(
+            async def _consume(sess):
+                nonlocal usage
+                async for chunk in sess.stream(
                     messages=messages, tools=tools,
                     max_tokens=AGENT_DEFAULT_MAX_TOKENS,
                     temperature=AGENT_DEFAULT_TEMPERATURE,
@@ -202,6 +223,59 @@ class AgentService:
                     elif chunk["type"] == "done":
                         usage = chunk.get("usage")
                         break
+
+            if is_local:
+                # B2.5：本地 session 生命週期（enter→…→exit）釘在專屬 worker
+                # thread——GPU gate 的 Condition.wait 不得凍住 event loop，且
+                # gate 取放（thread-keyed 重入）必須發生在同一條執行緒。串流
+                # 本身沿用 LocalChatSession.stream() 的 producer-thread 橋接。
+                session_kwargs["gate_class"] = "agent"
+                loop = asyncio.get_running_loop()
+                ready: asyncio.Future = loop.create_future()
+                done = threading.Event()
+
+                def _set_ready(sess, exc):
+                    if ready.done():
+                        return
+                    if exc is not None:
+                        ready.set_exception(exc)
+                    else:
+                        ready.set_result(sess)
+
+                def _session_worker():
+                    try:
+                        with self._chat.session(**session_kwargs) as sess:
+                            loop.call_soon_threadsafe(_set_ready, sess, None)
+                            # 持有 gate 直到 loop 端收尾。done 由 run() 的
+                            # finally 設定——涵蓋 normal / CancelledError /
+                            # GeneratorExit 全部 teardown 路徑。
+                            done.wait()
+                    except Exception as exc:
+                        # enter 時期例外（gate 逾時 ModelBusyError、載入失敗）
+                        # 橋回 loop，讓既有 except 分類接手。
+                        loop.call_soon_threadsafe(_set_ready, None, exc)
+
+                threading.Thread(
+                    target=_session_worker, daemon=True, name="agent-session",
+                ).start()
+                try:
+                    session = await ready
+                    async for ev in _consume(session):
+                        yield ev
+                finally:
+                    done.set()
+            else:
+                with self._chat.session(**session_kwargs) as session:
+                    async for ev in _consume(session):
+                        yield ev
+        except GeneratorExit:
+            # aclose()（消費者棄流）：async-gen 協定禁止在 GeneratorExit 後再
+            # yield——標記 errored 讓 finally 跳過 RUN_FINISHED。worker 收尾由
+            # 內層 finally 的 done.set() 完成；in-flight 生成由 kill_process 斷。
+            errored = True
+            if session is not None:
+                session.kill_process()
+            raise
         except asyncio.CancelledError:
             if session is not None:
                 # Intentional belt-and-braces: LocalChatSession.stream()'s finally

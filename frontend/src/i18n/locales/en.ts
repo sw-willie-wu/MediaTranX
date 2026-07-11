@@ -6,9 +6,101 @@ export default {
     audio: 'Audio Tools',
     video: 'Video Tools',
     document: 'Document Tools',
+    pipeline: 'Pipeline',
     tasks: 'Task Manager',
     settings: 'Settings',
     restart: 'Restart',
+  },
+
+  // ── Pipeline canvas ───────────────────────────────────────────────────
+  pipeline: {
+    palette_title: 'Tool nodes',
+    input_node: 'File input',
+    input_node_hint: 'Pick the files to run through this pipeline in the Run section below.',
+    select_node_hint: 'Click a node on the canvas to edit its parameters; drag or click on the left to add nodes.',
+    connect_invalid: 'This connection is not compatible',
+    keep_output: 'Keep this node output',
+    keep_output_hint: 'By default only terminal node outputs enter the Results drawer; check to keep intermediates too.',
+    remove_node: 'Remove node',
+    pick_files: 'Pick input files',
+    run: 'Run pipeline',
+    run_progress: '{done}/{total} done',
+    param_default: '(default)',
+    param_enabled: 'Enabled',
+    // Node param display names (registry paramSchema fields; missing keys fall back to raw names)
+    param: {
+      url: 'URL',
+      output_format: 'Output format',
+      video_codec: 'Video codec',
+      resolution: 'Resolution',
+      audio_format: 'Audio format',
+      audio_bitrate: 'Audio bitrate',
+      mode: 'Mode',
+      target_fps: 'Target FPS',
+      variant: 'Model variant',
+      model_size: 'Model size',
+      whisper_model_size: 'Speech model',
+      summary_mode: 'Summary mode',
+      language: 'Language',
+      source_language: 'Source language',
+      target_language: 'Target language',
+      translate: 'Translate',
+      translate_style: 'Translation style',
+      summarize: 'Summarize',
+      align: 'Word alignment',
+      vocal_separation: 'Vocal separation',
+      normalize: 'Loudness normalize',
+      volume_db: 'Volume (dB)',
+      generate_midi: 'Generate MIDI',
+      pages: 'Page range',
+      quality: 'Quality',
+      scale: 'Upscale factor',
+      sharpen: 'Sharpen',
+      face_fix: 'Face restore',
+      strength: 'Compression strength',
+      brightness: 'Brightness',
+      contrast: 'Contrast',
+      saturation: 'Saturation',
+      hue: 'Hue',
+      sharpness: 'Sharpness',
+      warmth: 'Warmth',
+      grayscale: 'Grayscale',
+      sepia: 'Sepia',
+      blur: 'Blur',
+      vignette: 'Vignette',
+      invert: 'Invert',
+      crf: 'CRF quality',
+      preset: 'Encode preset',
+      fps: 'FPS',
+      width: 'Width',
+      height: 'Height',
+      gif_colors: 'GIF colors',
+      // cut/crop/subtitle nodes (start/end deliberately unit-neutral: video.cut
+      // takes seconds (number), audio.cut takes HH:MM:SS (string) — same param name)
+      start_time: 'Start time',
+      end_time: 'End time',
+      stream_copy: 'Fast mode (stream copy)',
+      x: 'X offset',
+      y: 'Y offset',
+      keep_names: 'Keep proper nouns',
+      word_timestamps: 'Word timestamps',
+      condition_on_previous_text: 'Condition on previous text',
+      min_silence_duration_ms: 'Min silence (ms)',
+      vad_threshold: 'VAD threshold',
+    },
+    saved_recipes: 'Saved pipelines',
+    new_recipe: 'New pipeline',
+    unnamed: 'Untitled pipeline',
+    recipe_name_placeholder: 'Pipeline name',
+    saved: 'Pipeline saved',
+    open_failed: 'Failed to open pipeline',
+    status: {
+      idle: 'Idle',
+      running: 'Running',
+      completed: 'Completed',
+      completed_with_errors: 'Completed (some failed)',
+      cancelled: 'Cancelled',
+    },
   },
 
   // ── Title bar ─────────────────────────────────────────────────────────
@@ -79,6 +171,10 @@ export default {
     execute: 'Apply',
     processing: 'Processing...',
     completed: 'Completed!',
+    stop: 'Stop',
+    canceling: 'Canceling…',
+    stop_confirm_title: 'Stop Tasks',
+    stop_confirm_message: 'Stop {count} running task(s)? Processing progress will be lost.',
     save: 'Save Result',
     close: 'Close',
     cancel: 'Cancel',
@@ -102,6 +198,9 @@ export default {
     select_function: 'Select a function',
     drop_files: 'Drop or paste files here',
     drop_hint: 'or click to select',
+    folder_truncated: 'Too many files in folder; only the first 500 were added',
+    pick_folder: 'or select a folder',
+    folder_register_failed: '{count} file(s) could not be added',
     loading_info: 'Loading info...',
     uploading: 'Uploading...',
     copy: 'Copy',
@@ -171,6 +270,7 @@ export default {
     mark_area_first: 'Please mark the area to remove on the image first',
     open_folder: 'Open Folder',
     task_failed: '{label} failed: {error}',
+    cancel_failed: 'Failed to cancel task',
   },
 
   // ── Task progress ─────────────────────────────────────────────────────
@@ -408,7 +508,7 @@ export default {
   // ── Image tools ───────────────────────────────────────────────────────
   image: {
     title: 'Image Tools',
-    upload_label: 'Drop or paste images here',
+    upload_label: 'Drop files/folders or paste images here',
     upload_hint: 'Supports JPG, PNG, WebP, BMP and more',
     loading: 'Loading image info...',
 
@@ -591,9 +691,10 @@ export default {
   // ── Video tools ───────────────────────────────────────────────────────
   video: {
     title: 'Video Tools',
-    upload_label: 'Drop or paste videos here',
+    upload_label: 'Drop files/folders or paste videos here',
     upload_hint: 'Supports MP4, MKV, MOV, AVI and more',
     loading: 'Loading media info...',
+    multi_not_supported: 'This function does not support batch execution; only the active file will be processed',
 
     functions: {
       transcode: 'Transcode',
@@ -630,9 +731,15 @@ export default {
       nearest: 'Nearest Neighbor (Pixel Art)',
       crf: 'Quality (CRF):',
       crf_hint: 'Lower values mean higher quality and larger files (recommended 18-28)',
+      fps: 'Frame rate',
+      fps_hint: 'Animation frame rate; lower = smaller file (default 12)',
       bitrate: 'Bitrate',
-      extract_audio: 'Extract Audio',
+      extract_audio: 'Video · Extract Audio',
       task_label: 'Video · Transcode',
+    },
+
+    download: {
+      task_label: 'Video · URL Download',
     },
 
     cut: {
@@ -649,7 +756,7 @@ export default {
     crop: {
       title: 'Crop',
       description: 'Drag to select the region to keep',
-      task_label: 'Crop',
+      task_label: 'Video · Crop',
       aspect_ratio: 'Aspect ratio',
       start_position: 'Start position',
       crop_size: 'Crop size',
@@ -749,14 +856,14 @@ export default {
       mode_bullets: 'Key Points',
       mode_narrative: 'Story Outline',
       select_model: 'Select model',
-      task_label: 'Video summary',
+      task_label: 'Video · Summary',
     },
   },
 
   // ── Audio tools ───────────────────────────────────────────────────────
   audio: {
     title: 'Audio Tools',
-    upload_label: 'Drop or paste audio here',
+    upload_label: 'Drop files/folders or paste audio here',
     upload_hint: 'Supports MP3, WAV, FLAC, AAC and more',
     loading: 'Loading audio info...',
     preview_unsupported: 'This format does not support preview, but can be processed normally',
@@ -806,8 +913,8 @@ export default {
       volume: 'Volume',
       original: '±0 dB (Original)',
       normalize_hint: 'Auto-normalize using EBU R128 loudness standard for consistent volume.',
-      normalize_label: 'Volume Normalization',
-      adjust_label: 'Volume Adjustment',
+      normalize_label: 'Audio · Volume Normalization',
+      adjust_label: 'Audio · Volume Adjustment',
       task_label: 'Audio · Volume',
     },
 
@@ -950,7 +1057,7 @@ export default {
   // ── Document tools ────────────────────────────────────────────────────
   document: {
     title: 'Document Tools',
-    upload_label: 'Drop or paste documents here',
+    upload_label: 'Drop files/folders or paste documents here',
     upload_hint: 'Supports PDF, DOCX, TXT, SRT and more',
     loading: 'Uploading...',
 
@@ -1122,6 +1229,8 @@ export default {
       compute_policy: 'Compute fallback',
       cpu_fallback: 'Auto fallback to CPU',
       cpu_fallback_hint: "When the GPU can't run (too old, unsupported driver, or insufficient memory), automatically run on CPU (slower). When off, tasks that can't run on the GPU will fail.",
+      max_concurrent_tasks: 'Max concurrent tasks',
+      max_concurrent_tasks_hint: 'Takes effect after restarting the backend service (use the restart button below).',
     },
 
     ai: {
@@ -1244,6 +1353,8 @@ export default {
         click_action: 'Invoking {name}',
         list_files: 'Listing files...',
         get_task_status: 'Checking task {task_id}',
+        create_pipeline: 'Drafting pipeline on the canvas',
+        run_pipeline: 'Starting pipeline run',
       },
     },
     bubble: {
@@ -1307,6 +1418,10 @@ export default {
       no_execute_on_settings: 'Cannot submit tasks from the settings page',
       no_file_selected: 'No file is loaded — upload or load a file first before executing',
       invalid_subfunction: 'Subfunction "{name}" is not available in this view',
+      invalid_pipeline: 'Pipeline graph failed validation',
+      pipeline_busy: 'A pipeline run is in progress — wait for it to finish',
+      pipeline_not_ready: 'Pipeline cannot run yet (missing input files or incomplete graph)',
+      missing_args: 'Missing required arguments',
       generic: 'The assistant hit an error, please try again later.',
     },
     tool: {
@@ -1319,6 +1434,8 @@ export default {
       click_action: 'Click action',
       list_files: 'List files',
       get_task_status: 'Get task status',
+      create_pipeline: 'Draft pipeline',
+      run_pipeline: 'Run pipeline',
     },
   },
 
@@ -1362,6 +1479,7 @@ export default {
       'image.adjust': 'Image · Adjust',
       'video.transcode': 'Video · Transcode',
       'video.cut': 'Video · Cut',
+      'video.crop': 'Video · Crop',
       'video.extract_audio': 'Video · Extract Audio',
       'video.subtitle_generate': 'Video · Subtitles',
       'video.summary': 'Video · Summary',

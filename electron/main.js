@@ -9,6 +9,8 @@ const net = require('net');
 const { detectGPU, updatePyprojectSources, runUvSync, downloadFFmpeg, downloadYtDlp, downloadLlamaServer, downloadLlamaCudart } = require('./setup.js');
 const { resolve } = require('path');
 const updateService = require('./updateService.cjs');
+const { resolveChannel } = require('./updateCore.cjs');
+const { walkFolderFiles } = require('./folderWalk.cjs');
 
 // Build-time channel stamp (see scripts/build.py set_version). Missing → prod (fail-safe).
 const BUILD_MODE = (() => {
@@ -358,7 +360,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
       devTools: !app.isPackaged,
-      additionalArguments: [`--backend-port=${BACKEND_PORT}`, `--app-version=${app.getVersion()}`]
+      additionalArguments: [`--backend-port=${BACKEND_PORT}`, `--app-version=${app.getVersion()}`, `--update-channel=${resolveChannel(app.isPackaged, BUILD_MODE)}`]
     }
   });
 
@@ -442,6 +444,14 @@ function createWindow() {
       title: '選擇輸出資料夾'
     });
     return result.canceled ? null : result.filePaths[0];
+  });
+  ipcMain.handle('pick-folder-files', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+      title: '選擇資料夾',
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return walkFolderFiles(result.filePaths[0]);
   });
   ipcMain.handle('get-api-config', () => {
     return { port: BACKEND_PORT };

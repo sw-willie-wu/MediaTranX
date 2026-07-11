@@ -1,6 +1,6 @@
 """Background removal service (rembg)."""
 import logging
-from typing import Callable
+from typing import Callable, Optional
 
 from PIL import Image
 from rembg import remove, new_session
@@ -40,12 +40,13 @@ class ImageRemoveBgService:
         self,
         file_id: str,
         mode: str = "auto",
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         task_id = await self._task_manager.submit(TASK_TYPE_IMAGE_REMOVE_BG, {
             "file_id": file_id,
             "mode": mode,
-        })
+        }, suppress_results=suppress_results)
         logger.info(f"Image remove-bg task submitted: {task_id}")
         return task_id
 

@@ -21,15 +21,16 @@ router = APIRouter()
 class TranscodeRequest(BaseModel):
     """Transcode request."""
     file_id: str = Field(..., description="Input file ID")
-    output_format: str = Field(default="mp4", description="Output format (mp4, mkv, webm, avi)")
+    output_format: str = Field(default="mp4", description="Output format (mp4, mkv, webm, avi, mov, gif, apng)")
     video_codec: str = Field(default="h264", description="Video codec (h264, h265, vp9, av1, copy)")
     audio_codec: str = Field(default="aac", description="Audio codec (aac, mp3, opus, flac, copy)")
     preset: str = Field(default="medium", description="Encoding speed (ultrafast, fast, medium, slow, veryslow)")
     crf: int = Field(default=23, ge=0, le=51, description="Quality value (0-51, lower is better)")
     resolution: Optional[str] = Field(default=None, description="Resolution (e.g., 1920x1080)")
     scale_algorithm: Optional[str] = Field(default=None, description="Scaling algorithm (bicubic, lanczos, bilinear, spline, neighbor)")
-    fps: Optional[float] = Field(default=None, gt=0, description="Frame rate")
+    fps: Optional[float] = Field(default=None, gt=0, le=60, description="Frame rate (used as the animation frame rate for gif/apng)")
     audio_bitrate: Optional[str] = Field(default=None, description="Audio bitrate (e.g., 128k)")
+    suppress_results: Optional[bool] = None
 
 
 class CutRequest(BaseModel):
@@ -38,6 +39,7 @@ class CutRequest(BaseModel):
     start_time: float = Field(..., ge=0, description="Start time (seconds)")
     end_time: float = Field(..., gt=0, description="End time (seconds)")
     stream_copy: bool = Field(default=True, description="Use stream copy (fast but less precise)")
+    suppress_results: Optional[bool] = None
 
 
 class ExtractAudioRequest(BaseModel):
@@ -45,6 +47,7 @@ class ExtractAudioRequest(BaseModel):
     file_id: str = Field(..., description="Input file ID")
     audio_format: str = Field(default="mp3", description="Audio format (mp3, wav, flac, aac)")
     audio_bitrate: Optional[str] = Field(default=None, description="Audio bitrate (e.g., 320k)")
+    suppress_results: Optional[bool] = None
 
 
 class TranscodeResponse(BaseModel):
@@ -120,7 +123,7 @@ async def transcode_video(
     Submit video transcode task.
 
     Supported formats:
-    - **output_format**: mp4, mkv, webm, avi, mov
+    - **output_format**: mp4, mkv, webm, avi, mov, gif, apng (no sound animations; video_codec/crf not applicable, fps is animation frame rate)
     - **video_codec**: h264, h265, vp9, av1, copy (no re-encoding)
     - **audio_codec**: aac, mp3, opus, flac, copy (no re-encoding)
     - **preset**: ultrafast (fastest), fast, medium (default), slow, veryslow (best quality)
@@ -137,6 +140,7 @@ async def transcode_video(
         scale_algorithm=request.scale_algorithm,
         fps=request.fps,
         audio_bitrate=request.audio_bitrate,
+        suppress_results=request.suppress_results,
     )
     return TranscodeResponse(task_id=task_id)
 
@@ -159,6 +163,7 @@ async def cut_video(
         start_time=request.start_time,
         end_time=request.end_time,
         stream_copy=request.stream_copy,
+        suppress_results=request.suppress_results,
     )
     return CutResponse(task_id=task_id)
 
@@ -179,5 +184,6 @@ async def extract_audio(
         file_id=request.file_id,
         audio_format=request.audio_format,
         audio_bitrate=request.audio_bitrate,
+        suppress_results=request.suppress_results,
     )
     return ExtractAudioResponse(task_id=task_id)

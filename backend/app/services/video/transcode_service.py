@@ -81,13 +81,14 @@ class VideoTranscodeService:
         scale_algorithm: Optional[str] = None,
         fps: Optional[float] = None,
         audio_bitrate: Optional[str] = None,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         """
         Submit a transcoding task.
 
         Args:
             file_id: Input file ID
-            output_format: Output format (mp4, mkv, webm, etc.)
+            output_format: Output format (mp4, mkv, webm, avi, mov; gif/apng for silent animations)
             video_codec: Video codec (h264, h265, vp9, av1, copy)
             audio_codec: Audio codec (aac, mp3, opus, flac, copy)
             preset: Encoding speed preset (ultrafast, fast, medium, slow, veryslow)
@@ -117,7 +118,9 @@ class VideoTranscodeService:
         }
 
         # Submit task
-        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_TRANSCODE, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_VIDEO_TRANSCODE, params, suppress_results=suppress_results
+        )
         logger.info(f"Transcode task submitted: {task_id} for file {file_id}")
 
         return task_id

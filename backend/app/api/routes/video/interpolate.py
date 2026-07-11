@@ -20,6 +20,7 @@ class InterpolateRequest(BaseModel):
     target_fps: Optional[float] = Field(default=None, description="Target FPS (custom mode)")
     output_format: str = Field(default="mp4", description="Output container format")
     video_codec: str = Field(default="h264", description="Output video codec")
+    suppress_results: Optional[bool] = None
 
 class InterpolateResponse(BaseModel):
     task_id: str
@@ -38,5 +39,5 @@ async def interpolate_video(
     request: InterpolateRequest,
     service: InterpolateService = Depends(Provide[AppContainer.video_interpolate]),
 ):
-    task_id = await service.submit(file_id=request.file_id, model=request.model, mode=request.mode, target_fps=request.target_fps, output_format=request.output_format, video_codec=request.video_codec)
+    task_id = await service.submit(file_id=request.file_id, model=request.model, mode=request.mode, target_fps=request.target_fps, output_format=request.output_format, video_codec=request.video_codec, suppress_results=request.suppress_results)
     return InterpolateResponse(task_id=task_id)

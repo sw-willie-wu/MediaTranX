@@ -14,6 +14,8 @@ import VideoEnhancePanel from '@/components/video/panels/VideoEnhancePanel.vue'
 import VideoSummaryPanel from '@/components/video/panels/VideoSummaryPanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
+import { useExecuteStop } from '@/composables/useExecuteStop'
+import { useToast } from '@/composables/useToast'
 import { useTitlebar } from '@/composables/useTitlebar'
 import { useViewHost } from '@/composables/useViewHost'
 import { subfunctionsForView } from '@/agent/agentNavCatalog'
@@ -33,6 +35,8 @@ const {
 const selectedIds = computed(() => collection.selectedIds.value)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
 const { submitToAll } = useMultiSubmit(collection)
+const { isCanceling, requestStop } = useExecuteStop(collection)
+const toast = useToast()
 
 // Cut time points (shared between VideoPreview and VideoCutPanel)
 const cutStartTime = ref('00:00:00')
@@ -103,7 +107,7 @@ const executeLoading = computed(() => {
 
 function handleExecute() {
   if (isMultiSelect.value) {
-    handleMultiExecute()
+    void handleMultiExecute()
   } else {
     handleSingleExecute()
   }
@@ -121,17 +125,26 @@ function handleSingleExecute() {
   }
 }
 
-function handleMultiExecute() {
+async function handleMultiExecute() {
   const noop = () => {}
   switch (currentFunction.value) {
     case 'transcode':
-      submitToAll('/video/transcode', () => transcodePanelRef.value!.getParams(), t('video.transcode.task_label'), 'video.transcode', noop); break
+      await submitToAll('/video/transcode', () => transcodePanelRef.value!.getParams(), t('video.transcode.task_label'), 'video.transcode', noop); break
+    case 'summary':
+      if (await summaryPanelRef.value?.preflight() === false) break
+      await submitToAll('/video/summary', () => summaryPanelRef.value!.getParams(), t('video.summary.task_label'), 'video.summary', noop); break
+    case 'interpolate':
+      if (await interpolatePanelRef.value?.preflight() === false) break
+      await submitToAll('/video/interpolate', () => interpolatePanelRef.value!.getParams(), t('video.interpolate.task_label'), 'video.interpolate', noop); break
+    case 'enhance':
+      if (await enhancePanelRef.value?.preflight() === false) break
+      await submitToAll('/video/enhance', () => enhancePanelRef.value!.getParams(), t('video.enhance.task_label'), 'video.enhance', noop); break
     case 'cut':
-      // Cut uses per-file start/end times, not supported for batch
-      cutPanelRef.value?.execute(); break
+    case 'crop':
     case 'subtitle':
-      // Subtitle has complex per-file state, not supported for batch
-      subtitlePanelRef.value?.submitGenerate(); break
+      // 互動型工具不支援批次(座標/時間軸 per-file):明示並只跑目前檔案
+      toast.show(t('video.multi_not_supported'), { type: 'info', icon: 'bi-info-circle' })
+      handleSingleExecute(); break
   }
 }
 
@@ -228,8 +241,10 @@ onUnmounted(() => { clearActions() })
     :has-result="hasResult"
     :execute-disabled="executeDisabled"
     :execute-loading="executeLoading"
+    :execute-canceling="isCanceling"
     @select-function="currentFunction = $event"
     @execute="handleExecute"
+    @stop="requestStop"
     @file="handleFile"
     @files="handleFiles"
     @existing-files="handleExistingFiles"

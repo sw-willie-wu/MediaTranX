@@ -1,5 +1,6 @@
 """Video URL download service: gate, settings persistence, probe, orchestration."""
 import logging
+from typing import Optional
 import re
 from pathlib import Path
 
@@ -88,14 +89,17 @@ class VideoDownloadService:
 
     # ── Task orchestration (download) ──
     async def submit_download(
-        self, url: str, format_intent: FormatIntent, title: str = "video"
+        self, url: str, format_intent: FormatIntent, title: str = "video",
+        suppress_results: Optional[bool] = None,
     ) -> str:
         params = {
             "url": url,
             "title": title,
             "format_intent": format_intent.model_dump(),
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_VIDEO_DOWNLOAD, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_VIDEO_DOWNLOAD, params, suppress_results=suppress_results
+        )
         logger.info("Video download task submitted: %s", task_id)
         return task_id
 

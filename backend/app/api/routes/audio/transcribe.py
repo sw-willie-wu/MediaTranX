@@ -49,6 +49,7 @@ class AudioTranscribeRequest(BaseModel):
     keep_names: bool = Field(default=True, description="Preserve proper names in translation")
     translate_style: str = Field(default="colloquial", description="Translation style")
     glossary: Optional[dict[str, str]] = Field(default=None, description="Term glossary for translation")
+    suppress_results: Optional[bool] = None
 
 class AudioTranscribeResponse(BaseModel):
     task_id: str
@@ -108,5 +109,6 @@ async def transcribe_audio(
         keep_names=request.keep_names,
         translate_style=request.translate_style,
         glossary=request.glossary,
+        suppress_results=request.suppress_results,
     )
     return AudioTranscribeResponse(task_id=task_id)

@@ -85,6 +85,7 @@ class AudioTranscribeService:
         keep_names: bool = True,
         translate_style: str = "colloquial",
         glossary: Optional[dict] = None,
+        suppress_results: Optional[bool] = None,
     ) -> str:
         file_info = self._file_service.require_file(file_id)
         params = {
@@ -119,7 +120,9 @@ class AudioTranscribeService:
             "translate_style": translate_style,
             "glossary": glossary,
         }
-        task_id = await self._task_manager.submit(TASK_TYPE_AUDIO_TRANSCRIBE, params)
+        task_id = await self._task_manager.submit(
+            TASK_TYPE_AUDIO_TRANSCRIBE, params, suppress_results=suppress_results
+        )
         logger.info(f"Audio transcribe task submitted: {task_id}")
         return task_id
 

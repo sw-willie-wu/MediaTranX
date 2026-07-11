@@ -2,7 +2,7 @@
 
 Maps file extensions to the four UX categories used by Results drawer
 and cross-tool routing. Keep this aligned with
-`core/frontend/src/utils/mediaType.ts` (frontend mirror).
+`frontend/src/utils/mediaKind.ts` (frontend mirror; snapshot-tested there).
 """
 from __future__ import annotations
 
@@ -18,10 +18,10 @@ class MediaKind(str, Enum):
     DOCUMENT = "document"
 
 
-_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".tif", ".svg", ".ico", ".avif", ".heic", ".heif"}
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".apng", ".gif", ".webp", ".bmp", ".tiff", ".tif", ".svg", ".ico", ".avif", ".heic", ".heif"}
 _AUDIO_EXTS = {".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a", ".wma", ".opus", ".mid", ".midi"}
 _VIDEO_EXTS = {".mp4", ".mov", ".webm", ".avi", ".mkv", ".flv", ".wmv", ".m4v"}
-_DOCUMENT_EXTS = {".pdf", ".doc", ".docx", ".txt", ".srt", ".vtt", ".md", ".csv", ".json", ".html", ".odt"}
+_DOCUMENT_EXTS = {".pdf", ".doc", ".docx", ".txt", ".srt", ".vtt", ".md", ".csv", ".json", ".html", ".odt", ".lrc"}
 
 
 def infer_kind(filename: str) -> Optional[MediaKind]:

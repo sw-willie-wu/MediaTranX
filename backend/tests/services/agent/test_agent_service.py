@@ -336,7 +336,9 @@ class TestRunHappyPath:
             state={"agent_model_choice": "qwen3:8b"},
         )
         _ = [e async for e in svc.run(inp)]
-        assert chat.session_kwargs == {"model_family": "qwen3", "model_size": "8b"}
+        assert chat.session_kwargs == {
+            "model_family": "qwen3", "model_size": "8b", "gate_class": "agent",
+        }
 
     async def test_session_kwargs_local_with_quant(self):
         chunks = [{"type": "done"}]
@@ -349,6 +351,7 @@ class TestRunHappyPath:
         _ = [e async for e in svc.run(inp)]
         assert chat.session_kwargs == {
             "model_family": "qwen3vl", "model_size": "8b", "quantization": "Q4_K_M",
+            "gate_class": "agent",
         }
 
     async def test_session_kwargs_remote(self):
@@ -591,6 +594,23 @@ class TestModelBusyUx:
         assert chat.last_session is None
         assert any("TEXT_MESSAGE_CHUNK" in e for e in events)
         assert any("task-xyz" in e for e in events)
+        assert any("RUN_FINISHED" in e for e in events)
+        assert not any("RUN_ERROR" in e for e in events)
+
+    async def test_local_run_pipeline_success_short_circuits_with_run_text(self):
+        """run_pipeline {ok, run_id} 也走短路,罐頭文案是 run 形變體（W4）。"""
+        chat = FakeChatService([{"type": "done"}])
+        svc = AgentService(chat_service=chat, remote_service=FakeRemoteService())
+        assistant = AssistantMessage(id="a1", content="", tool_calls=[{
+            "id": "call_run", "type": "function",
+            "function": {"name": "run_pipeline", "arguments": "{}"}}])
+        tool = ToolMessage(id="t1", tool_call_id="call_run",
+                           content='{"ok": true, "run_id": "run-abc123"}')
+        inp = _make_input(messages=[UserMessage(id="m0", content="執行流程"), assistant, tool],
+                          state={"agent_model_choice": "qwen3:8b"})
+        events = [e async for e in svc.run(inp)]
+        assert chat.last_session is None          # 沒開 LLM 回合
+        assert any("run-abc123" in e for e in events)
         assert any("RUN_FINISHED" in e for e in events)
         assert not any("RUN_ERROR" in e for e in events)
 

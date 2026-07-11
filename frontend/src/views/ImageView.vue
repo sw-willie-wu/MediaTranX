@@ -17,6 +17,7 @@ import ImageOcrPanel      from '@/components/image/panels/ImageOcrPanel.vue'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
 import { useImageWorkspace } from '@/composables/useImageWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
+import { useExecuteStop } from '@/composables/useExecuteStop'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 import { useViewHost } from '@/composables/useViewHost'
 import { subfunctionsForView } from '@/agent/agentNavCatalog'
@@ -31,6 +32,7 @@ const {
 } = useImageWorkspace()
 
 const { submitToAll } = useMultiSubmit(collection)
+const { isCanceling, requestStop } = useExecuteStop(collection)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
 
 const { t } = useI18n()
@@ -397,9 +399,11 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     :original-preview-url="collection.activeEntry.value?.previewUrl ?? null"
     :execute-disabled="executeDisabled"
     :execute-loading="executeLoading"
+    :execute-canceling="isCanceling"
     :functions-locked="isAnyProcessing"
     @select-function="currentFunction = $event"
     @execute="handleExecute"
+    @stop="requestStop"
     @file="handleFile"
     @files="handleFiles"
     @existing-files="handleExistingFiles"

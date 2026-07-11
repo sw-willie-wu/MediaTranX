@@ -53,6 +53,7 @@ class VideoSummaryRequest(BaseModel):
         default="bullets",
         description='Output mode: "bullets" (key-points + per-bullet frame) or "narrative" (flat prose paragraphs + per-paragraph frame)',
     )
+    suppress_results: Optional[bool] = None
 
 
 class VideoSummaryResponse(BaseModel):
@@ -89,5 +90,6 @@ async def summarize_video(
         min_silence_duration_ms=request.min_silence_duration_ms,
         vad_threshold=request.vad_threshold,
         summary_mode=request.summary_mode,
+        suppress_results=request.suppress_results,
     )
     return VideoSummaryResponse(task_id=task_id)

@@ -2,20 +2,22 @@
 import { ref, computed, watch, onActivated, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import AppThreePaneLayout from '@/components/common/AppThreePaneLayout.vue'
 import AppUploadZone from '@/components/common/AppUploadZone.vue'
 import ComparisonSlider from '@/components/ComparisonSlider.vue'
 import UnsupportedFileOverlay from '@/components/UnsupportedFileOverlay.vue'
 import { useFilesStore } from '@/stores/files'
-import { useResizableLayout } from '@/composables/useResizableLayout'
 import { useTitlebar } from '@/composables/useTitlebar'
-import { detectMediaType, getToolPath, type ToolType } from '@/utils/mediaType'
+import { detectMediaType, detectTypeByName, getToolPath, type ToolType } from '@/utils/mediaType'
+import type { PendingResultRef } from '@/stores/files'
 import { createLogger } from '@/utils/logger'
 import { usePasteUpload } from '@/composables/usePasteUpload'
 import { useUrlDownload } from '@/composables/useUrlDownload'
+import { expandDropItems, hasDirectoryItem } from '@/utils/dropEntries'
+import { useToast } from '@/composables/useToast'
 
 const { t } = useI18n()
 const log = createLogger('ToolLayout')
-const { sidebarWidth, settingsWidth, startResize } = useResizableLayout()
 const { setFileName, clearFileName } = useTitlebar()
 
 interface SubFunction {
@@ -41,6 +43,7 @@ const props = withDefaults(defineProps<{
   isComparing?: boolean
   executeDisabled?: boolean
   executeLoading?: boolean
+  executeCanceling?: boolean
   executeLabel?: string
   hideExecute?: boolean
   showFilmstrip?: boolean
@@ -78,8 +81,17 @@ const effectiveExecuteLabel = computed(() => props.executeLabel ?? t('common.exe
 const executeSuccess = ref(false)
 let successTimer: ReturnType<typeof setTimeout> | null = null
 
+// Cancel-flash latch（spec §4.1）：取消結束與 loading 同 tick 一起翻 false，
+// 邊緣當下讀 executeCanceling 必失效 → 用 latch。只在 execute 意圖路徑重置，
+// 禁用 executeLoading 上升緣（canceling 中切 active 也會觸發上升緣）。
+const wasCanceling = ref(false)
+
+watch(() => props.executeCanceling, (canceling) => {
+  if (canceling) wasCanceling.value = true
+})
+
 watch(() => props.executeLoading, (loading, wasLoading) => {
-  if (wasLoading && !loading && props.hasResult) {
+  if (wasLoading && !loading && props.hasResult && !wasCanceling.value) {
     executeSuccess.value = true
     if (successTimer) clearTimeout(successTimer)
     successTimer = setTimeout(() => { executeSuccess.value = false }, 1500)
@@ -89,9 +101,10 @@ watch(() => props.executeLoading, (loading, wasLoading) => {
 const emit = defineEmits<{
   (e: 'select-function', id: string): void
   (e: 'execute'): void
+  (e: 'stop'): void
   (e: 'file', file: File, sourceDir?: string): void
   (e: 'files', files: File[]): void
-  (e: 'existing-files', refs: import('@/stores/files').PendingResultRef[]): void
+  (e: 'existing-files', refs: PendingResultRef[]): void
   (e: 'remove-file'): void
   (e: 'clear-selection'): void
 }>()
@@ -181,42 +194,108 @@ usePasteUpload((files) => {
   }
 }, props.acceptType === 'video' ? (url) => urlDownload.handlePastedUrl(url) : undefined)
 
-function handleDrop(e: DragEvent) {
+const toast = useToast()
+
+async function handleDrop(e: DragEvent) {
   e.preventDefault()
   isDragOver.value = false
-  const files = e.dataTransfer?.files
-  if (!files || files.length === 0) return
+  const items = e.dataTransfer?.items
 
-  // Multi-file drop in filmstrip mode: validate type then forward all files to parent.
-  // Set currentFile temporarily so the upload zone hides immediately while async addEntry runs.
-  if (props.showFilmstrip && files.length > 1) {
-    const validFiles = props.acceptType
-      ? Array.from(files).filter(f => {
-          const detected = detectMediaType(f)
-          return detected === props.acceptType
-        })
-      : Array.from(files)
-    if (validFiles.length === 0) { showUnsupportedOverlay(null); return }
-    currentFile.value = validFiles[0]
-    emit('files', validFiles)
+  // Folder-aware path: only when a directory item is present (plain file drops
+  // keep the synchronous path below). Entries are captured in this tick.
+  if (items && items.length > 0 && hasDirectoryItem(items)) {
+    const { files: expanded, truncated } = await expandDropItems(items)
+    handleFolderFiles(expanded, truncated)
     return
   }
 
-  const file = files[0]
-  const sourceDir = window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
+  const files = e.dataTransfer?.files
+  if (!files || files.length === 0) return
+  ingestDroppedFiles(Array.from(files), files[0])
+}
 
-  if (props.acceptType) {
-    const detected = detectMediaType(file)
-    if (detected && detected !== props.acceptType) {
-      showUnsupportedOverlay(detected)
-      return
-    }
-    if (!detected) {
-      showUnsupportedOverlay(null)
-      return
-    }
+function handleFolderFiles(files: File[], truncated: boolean) {
+  if (truncated) {
+    toast.show(t('common.folder_truncated'), { type: 'info', icon: 'bi-info-circle' })
   }
+  ingestDroppedFiles(files)
+}
 
+const folderPathsBusy = ref(false)
+
+/**
+ * Electron 原生資料夾選取:路徑先依 acceptType 過濾(檔名判型),再逐檔
+ * /files/register 零搬運註冊,走 existing-files 引用流進 filmstrip。
+ * 首個註冊成功立即 emit — collectionSize > 0 讓 upload zone 馬上消失,
+ * 其餘批次補上;busy guard 防 zone 消失前的重入。末檔 active(沿用既有流)。
+ */
+async function handleFolderPaths(paths: string[], truncated: boolean) {
+  if (folderPathsBusy.value) return
+  if (truncated) {
+    toast.show(t('common.folder_truncated'), { type: 'info', icon: 'bi-info-circle' })
+  }
+  if (paths.length === 0) return
+  const basename = (p: string) => p.split(/[\\/]/).pop() ?? p
+  const valid = props.acceptType
+    ? paths.filter(p => detectTypeByName(basename(p)) === props.acceptType)
+    : paths
+  if (valid.length === 0) {
+    const detected = paths.length === 1 ? detectTypeByName(basename(paths[0])) : null
+    showUnsupportedOverlay(detected && detected !== props.acceptType ? detected : null)
+    return
+  }
+  folderPathsBusy.value = true
+  try {
+    const rest: PendingResultRef[] = []
+    let emittedFirst = false
+    let failed = 0
+    for (const p of valid) {
+      try {
+        const ref = await filesStore.registerLocalFile(p)
+        if (!emittedFirst) {
+          emit('existing-files', [ref]) // 首檔先進 → zone 立即隱藏
+          emittedFirst = true
+        } else {
+          rest.push(ref)
+        }
+      } catch {
+        failed++
+      }
+    }
+    if (rest.length > 0) emit('existing-files', rest)
+    if (failed > 0) {
+      toast.show(t('common.folder_register_failed', { count: failed }), { type: 'error', icon: 'bi-x-circle' })
+    }
+  } finally {
+    folderPathsBusy.value = false
+  }
+}
+
+/**
+ * 拖曳/資料夾展開的共同入口:套 acceptType 過濾後分流。
+ * filmstrip 多檔 → emit('files');單檔 → setFile。sourceDir 只對原生拖曳的
+ * firstNative 有效——資料夾展開出的 File 走 HTTP upload、無 sourceDir。
+ */
+function ingestDroppedFiles(candidates: File[], firstNative?: File) {
+  if (candidates.length === 0) return
+  const valid = props.acceptType
+    ? candidates.filter(f => detectMediaType(f) === props.acceptType)
+    : candidates
+  if (valid.length === 0) {
+    const detected = candidates.length === 1 ? detectMediaType(candidates[0]) : null
+    showUnsupportedOverlay(detected && detected !== props.acceptType ? detected : null)
+    return
+  }
+  if (props.showFilmstrip && valid.length > 1) {
+    // Set currentFile temporarily so the upload zone hides immediately while async addEntry runs.
+    currentFile.value = valid[0]
+    emit('files', valid)
+    return
+  }
+  const file = valid[0]
+  const sourceDir = firstNative === file
+    ? window.electron?.getFileSourceDir?.(file.name, file.size, file.lastModified) ?? undefined
+    : undefined
   setFile(file, sourceDir)
 }
 
@@ -246,6 +325,17 @@ function goToTool() {
   dismissUnsupported()
 }
 
+// 執行按鈕點擊分流：idle → execute / executing → stop（canceling 態 disabled 不會進來）
+function handleExecuteClick() {
+  if (props.executeCanceling) return
+  if (props.executeLoading) {
+    emit('stop')
+  } else {
+    wasCanceling.value = false // 新一輪執行意圖 → 重置 latch
+    emit('execute')
+  }
+}
+
 // KeepAlive: 每次 activated 時檢查 pending file
 onActivated(() => {
   // Single pending file
@@ -267,33 +357,32 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="tool-layout">
+  <AppThreePaneLayout :center-class="{ 'is-drag-over': isDragOver && hasFile }">
     <!-- 左側：子功能列表 -->
-    <aside class="function-sidebar" :style="{ width: sidebarWidth + 'px', minWidth: sidebarWidth + 'px' }" @click.self="emit('clear-selection')">
-      <div class="function-list">
-        <template v-for="(group, gi) in groupedFunctions" :key="gi">
-          <div v-if="group.label && hasGroups" class="function-group-label">{{ group.label }}</div>
-          <button
-            v-for="fn in group.items"
-            :key="fn.id"
-            class="function-item"
-            :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon, 'is-locked': functionsLocked && currentFunction !== fn.id }"
-            :disabled="functionsLocked && currentFunction !== fn.id"
-            @click="emit('select-function', fn.id)"
-          >
-            <i :class="['bi', fn.icon]"></i>
-            <span>{{ fn.name }}</span>
-            <span v-if="fn.comingSoon" class="coming-badge">{{ $t('common.coming_soon') }}</span>
-          </button>
-        </template>
+    <template #left>
+      <div class="function-pane" @click.self="emit('clear-selection')">
+        <div class="function-list">
+          <template v-for="(group, gi) in groupedFunctions" :key="gi">
+            <div v-if="group.label && hasGroups" class="function-group-label">{{ group.label }}</div>
+            <button
+              v-for="fn in group.items"
+              :key="fn.id"
+              class="function-item"
+              :class="{ 'is-active': currentFunction === fn.id, 'coming-soon': fn.comingSoon, 'is-locked': functionsLocked && currentFunction !== fn.id }"
+              :disabled="functionsLocked && currentFunction !== fn.id"
+              @click="emit('select-function', fn.id)"
+            >
+              <i :class="['bi', fn.icon]"></i>
+              <span>{{ fn.name }}</span>
+              <span v-if="fn.comingSoon" class="coming-badge">{{ $t('common.coming_soon') }}</span>
+            </button>
+          </template>
+        </div>
       </div>
-    </aside>
+    </template>
 
-    <div class="resize-handle" @mousedown="startResize('sidebar', $event)" @dblclick="sidebarWidth = 220"></div>
-
-    <!-- 中間：預覽區域 -->
-    <main class="preview-area" :class="{ 'is-drag-over': isDragOver && hasFile }">
-
+    <!-- 中間：預覽區域（內容直接為 #center 兄弟節點，不加 wrapper — spec §3.2） -->
+    <template #center>
       <!-- 預覽內容 -->
       <div
         class="preview-content"
@@ -321,6 +410,8 @@ onBeforeUnmount(() => {
           :multiple="showFilmstrip"
           @file="handleUploadFile"
           @files="handleUploadFiles"
+          @folder-files="handleFolderFiles"
+          @folder-paths="handleFolderPaths"
         />
 
         <!-- 有檔案：比對模式 / 預覽 -->
@@ -346,12 +437,12 @@ onBeforeUnmount(() => {
 
       </div>
 
-      <!-- 資訊列：filmstrip 模式（preview-area flex child，在 filmstrip 上方） -->
+      <!-- 資訊列：filmstrip 模式（中欄 flex child，在 filmstrip 上方） -->
       <div v-if="showFilmstrip && hasFile" class="preview-info-bar preview-info-bar--overlay">
         <slot name="info-bar" />
       </div>
 
-      <!-- Filmstrip slot — 固定在 preview-area 底部，不參與 preview-content 的捲動 -->
+      <!-- Filmstrip slot — 固定在中欄底部，不參與 preview-content 的捲動 -->
       <div v-if="showFilmstrip && hasFile" class="filmstrip-slot">
         <slot name="filmstrip" />
       </div>
@@ -360,60 +451,45 @@ onBeforeUnmount(() => {
       <div v-if="!showFilmstrip && hasFile" class="preview-info-bar">
         <slot name="info-bar" />
       </div>
-    </main>
-
-    <div class="resize-handle" @mousedown="startResize('settings', $event)" @dblclick="settingsWidth = 272"></div>
+    </template>
 
     <!-- 右側：設定面板 -->
-    <aside class="settings-panel" :style="{ width: settingsWidth + 'px', minWidth: settingsWidth + 'px' }">
+    <template #right>
       <div class="settings-content">
         <slot name="settings">
           <p class="text-muted">{{ $t('common.select_function') }}</p>
         </slot>
       </div>
 
-      <!-- 執行按鈕 -->
+      <!-- 執行按鈕：idle → executing(紅色停止,可點) → canceling(取消中,禁點) -->
       <div v-if="!hideExecute && !isCurrentComingSoon" class="execute-section">
         <button
           class="execute-btn"
-          :class="{ 'is-success': executeSuccess }"
-          :disabled="executeDisabled || executeLoading"
-          @click="emit('execute')"
+          :class="{ 'is-success': executeSuccess, 'is-stop': executeLoading && !executeCanceling }"
+          :disabled="executeCanceling || (!executeLoading && executeDisabled)"
+          @click="handleExecuteClick"
         >
-          <span v-if="executeLoading" class="spinner-border spinner-border-sm me-2"></span>
+          <span v-if="executeCanceling" class="spinner-border spinner-border-sm me-2"></span>
+          <i v-else-if="executeLoading" class="bi bi-stop-fill me-2"></i>
           <i v-else-if="executeSuccess" class="bi bi-check-lg me-2"></i>
           <i v-else class="bi bi-play-fill me-2"></i>
-          {{ executeLoading ? $t('common.processing') : executeSuccess ? $t('common.completed') : effectiveExecuteLabel }}
+          {{ executeCanceling ? $t('common.canceling') : executeLoading ? $t('common.stop') : executeSuccess ? $t('common.completed') : effectiveExecuteLabel }}
         </button>
       </div>
-    </aside>
-  </div>
+    </template>
+  </AppThreePaneLayout>
 </template>
 
-<style lang="scss">
-@use '@/styles/layout-shared';
-</style>
-
 <style lang="scss" scoped>
-.tool-layout {
-  display: flex;
-  height: calc(100vh - 40px);
-  gap: 0;
-  padding: 0.5rem 1rem 1rem 0;
-}
-
-// 左側子功能列表
-.function-sidebar {
-  position: relative;
+// 左側子功能列表（欄 chrome 由 AppThreePaneLayout 擁有；wrapper 撐滿欄高讓
+// @click.self 清選取在空白處仍可觸發）
+.function-pane {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 1rem;
   padding-top: 0.5rem;
-  background: var(--panel-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
 }
 
 .function-list {
@@ -488,20 +564,6 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-// 中間預覽區
-.preview-area {
-  position: relative;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: var(--panel-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
 .preview-content {
   position: relative;
   flex: 1;
@@ -524,28 +586,18 @@ onBeforeUnmount(() => {
   p { font-size: 1rem; }
 }
 
-// 拖曳 hover（有檔案時：整個 preview-area 變色，不顯示 icon/文字）
-.preview-area.is-drag-over {
+// 拖曳 hover（有檔案時：整個中欄變色，不顯示 icon/文字）
+// :deep + .tp-center 錨點：specificity (0,3,0) 必壓過殼 base chrome (0,2,0) — spec §3.2
+:deep(.tp-center.is-drag-over) {
   border-color: var(--drop-zone-border-hover);
   background: var(--input-bg);
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-// Filmstrip slot container — direct flex child of preview-area, fixed at bottom
+// Filmstrip slot container — direct flex child of the center pane, fixed at bottom
 .filmstrip-slot {
   flex-shrink: 0;
   border-top: 1px solid var(--panel-border);
-}
-
-// 右側設定面板
-.settings-panel {
-  display: flex;
-  flex-direction: column;
-  background: var(--panel-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
 }
 
 .settings-content {
@@ -617,6 +669,14 @@ onBeforeUnmount(() => {
     &:hover:not(:disabled) {
       background: var(--color-success-hover);
       box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    }
+  }
+
+  &.is-stop {
+    background: var(--color-danger);
+    &:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--color-danger) 85%, black);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
     }
   }
 }

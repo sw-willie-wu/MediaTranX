@@ -1,6 +1,6 @@
 """Video crop API routes."""
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends
@@ -20,6 +20,7 @@ class VideoCropRequest(BaseModel):
     y: int = Field(default=0, ge=0)
     width: int = Field(..., gt=0)
     height: int = Field(..., gt=0)
+    suppress_results: Optional[bool] = None
 
 
 class VideoCropResponse(BaseModel):
@@ -37,5 +38,6 @@ async def crop_video(
         file_id=request.file_id,
         x=request.x, y=request.y,
         width=request.width, height=request.height,
+        suppress_results=request.suppress_results,
     )
     return VideoCropResponse(task_id=task_id)

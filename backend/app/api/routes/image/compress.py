@@ -31,6 +31,7 @@ class ImageCompressRequest(BaseModel):
     jpeg_keep_metadata: bool = Field(default=False, description="Preserve EXIF/metadata")
     # WebP-specific options
     webp_lossless: bool = Field(default=False, description="Use lossless WebP encoding")
+    suppress_results: Optional[bool] = None
 
 
 class ImageCompressResponse(BaseModel):
@@ -56,5 +57,6 @@ async def compress_image(
         jpeg_progressive=request.jpeg_progressive,
         jpeg_keep_metadata=request.jpeg_keep_metadata,
         webp_lossless=request.webp_lossless,
+        suppress_results=request.suppress_results,
     )
     return ImageCompressResponse(task_id=task_id)

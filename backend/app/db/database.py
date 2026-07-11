@@ -52,6 +52,7 @@ def init_db() -> None:
     import app.db.models.agent_session  # noqa: F401
     import app.db.models.agent_message  # noqa: F401
     import app.db.models.app_setting  # noqa: F401
+    import app.db.models.pipeline_recipe  # noqa: F401
 
     engine = get_engine()
 
