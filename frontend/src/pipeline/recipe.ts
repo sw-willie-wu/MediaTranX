@@ -196,5 +196,18 @@ function _checkField(field: ParamField, value: unknown): string | null {
       return typeof value === 'boolean' ? null : `'${value}' is not a boolean`
     case 'string':
       return typeof value === 'string' ? null : `'${value}' is not a string`
+    case 'dict':
+      return typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? null : `'${value}' is not an object`
+    case 'list': {
+      if (!Array.isArray(value)) return `'${value}' is not an array`
+      if (field.itemType) {
+        for (const item of value) {
+          if (field.itemType === 'string' && typeof item !== 'string') return `item '${item}' is not a string`
+          if (field.itemType === 'number' && !Number.isFinite(Number(item))) return `item '${item}' is not a number`
+        }
+      }
+      return null
+    }
   }
 }
