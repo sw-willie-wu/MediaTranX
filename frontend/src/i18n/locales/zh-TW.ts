@@ -765,6 +765,7 @@ export default {
       crop_size: '裁切尺寸',
       free: '自由',
       square: '正方形',
+      size_error: '裁切寬高必須為正數',
     },
 
     subtitle: {

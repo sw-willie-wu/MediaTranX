@@ -6,7 +6,6 @@ import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import VideoPreview from '@/components/video/VideoPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
-import VideoCropPanel from '@/components/video/panels/VideoCropPanel.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
 import VideoInterpolatePanel from '@/components/video/panels/VideoInterpolatePanel.vue'
 import VideoEnhancePanel from '@/components/video/panels/VideoEnhancePanel.vue'
@@ -42,13 +41,13 @@ const toast = useToast()
 // Panel refs
 const transcodePanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const cutPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
-const cropPanelRef = ref<InstanceType<typeof VideoCropPanel> | null>(null)
+const cropPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
 const interpolatePanelRef = ref<InstanceType<typeof VideoInterpolatePanel> | null>(null)
 const enhancePanelRef = ref<InstanceType<typeof VideoEnhancePanel> | null>(null)
 const summaryPanelRef = ref<InstanceType<typeof VideoSummaryPanel> | null>(null)
 
-// Crop state (shared between VideoPreview and VideoCropPanel)
+// Crop state (shared between VideoPreview and CropParams, bridged via ToolParamHost attrs fallthrough)
 const showCropOverlay = ref(false)
 const cropAspectRatio = ref('free')
 const canvasCropRect = ref<{ x: number; y: number; w: number; h: number } | null>(null)
@@ -319,12 +318,15 @@ onUnmounted(() => { clearActions() })
           @submit="handlePanelSubmit"
         />
 
-        <VideoCropPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'crop'"
           ref="cropPanelRef"
+          tool-key="video.crop"
+          :panel-id="panelIdFor('video', 'crop')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :video-size="mediaInfo ? { width: mediaInfo.width, height: mediaInfo.height } : null"
+          :is-multi-select="isMultiSelect"
+          :file-info="mediaInfo"
           :canvas-crop-rect="canvasCropRect"
           @submit="handlePanelSubmit"
           @update:show-crop-overlay="showCropOverlay = $event"

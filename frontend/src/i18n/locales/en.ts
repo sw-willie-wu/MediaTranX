@@ -765,6 +765,7 @@ export default {
       crop_size: 'Crop size',
       free: 'Free',
       square: 'Square',
+      size_error: 'Crop width and height must be positive numbers',
     },
 
     subtitle: {

@@ -17,6 +17,7 @@
  */
 import type { MediaKindT, ParamField, ToolSpec } from './types'
 import { META as CUT_META } from '@/components/params/video/cut.meta'
+import { META as CROP_META } from '@/components/params/video/crop.meta'
 import { META as TRANSCODE_META, AUDIO_FORMATS as TRANSCODE_AUDIO_FORMATS } from '@/components/params/video/transcode.meta'
 import { META as EXTRACT_AUDIO_META } from '@/components/params/video/extract_audio.meta'
 import { META as TRANSLATE_META } from '@/components/params/document/translate.meta'
@@ -121,20 +122,16 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
   },
 
   'video.crop': {
-    toolKey: 'video.crop',
-    apiPath: '/video/crop',
-    labelKey: 'video.crop.task_label',
+    toolKey: CROP_META.toolKey,
+    apiPath: CROP_META.apiPath,
+    labelKey: CROP_META.labelKey,
     kind: 'tool',
     inputKinds: ['video'],
     outputKind: VIDEO_OUT,
-    // width/height 必填;後端向下取偶(yuv420p) — 1 會取到 0 直接 ValueError,
-    // 故 min 2;奇數 ≥3 合法(161→160)
-    paramSchema: [
-      { name: 'x', type: 'number', min: 0, step: 1, default: 0 },
-      { name: 'y', type: 'number', min: 0, step: 1, default: 0 },
-      { name: 'width', type: 'number', min: 2, step: 1 },
-      { name: 'height', type: 'number', min: 2, step: 1 },
-    ],
+    // paramSchema 由 META 組裝（統一參數元件案,批 2 Task 2.1）:欄位定義唯一事實來源在
+    // crop.meta.ts（含 width/height min=2 的 UI 收斂約束 — 後端向下取偶(yuv420p),
+    // 1 會取到 0 直接 ValueError,故 min 2;奇數 ≥3 合法(161→160)）
+    paramSchema: CROP_META.schema,
   },
 
   'video.subtitle': {
