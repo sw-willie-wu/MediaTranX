@@ -12,6 +12,7 @@
  * provider/conn_id/remote_model/語言清單）標 advanced 且不給 options。
  */
 import type { MediaKindT, ParamField, ToolSpec } from './types'
+import { META as CUT_META } from '@/components/params/video/cut.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
@@ -112,19 +113,14 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
   },
 
   'video.cut': {
-    toolKey: 'video.cut',
-    apiPath: '/video/cut',
-    labelKey: 'video.cut.task_label',
+    toolKey: CUT_META.toolKey,
+    apiPath: CUT_META.apiPath,
+    labelKey: CUT_META.labelKey,
     kind: 'tool',
     inputKinds: ['video'],
     outputKind: VIDEO_OUT,
-    // start/end 為必填無 default（同 video.download 的 url 前例）:空值送後端
-    // 422 → execution failed;v1 驗證不擋 missing(_checkField undefined skip)
-    paramSchema: [
-      { name: 'start_time', type: 'number', min: 0, step: 0.1 },
-      { name: 'end_time', type: 'number', min: 0.1, step: 0.1 },
-      { name: 'stream_copy', type: 'boolean', default: true, advanced: true },
-    ],
+    // paramSchema 由 META 組裝（統一參數元件案）:欄位定義唯一事實來源在 cut.meta.ts
+    paramSchema: CUT_META.schema,
   },
 
   'video.crop': {

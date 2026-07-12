@@ -10,6 +10,8 @@ export const META: ToolParamMeta = {
   apiPath: '/video/cut',
   labelKey: 'video.cut.task_label',
   taskType: 'video.cut',
+  // start/end 為必填無 default（同 video.download 的 url 前例）:空值送後端
+  // 422 → execution failed;v1 驗證不擋 missing(_checkField undefined skip)
   schema: [
     { name: 'start_time', type: 'number', min: 0, step: 0.1, agentHint: 'seconds' },
     { name: 'end_time', type: 'number', min: 0.1, step: 0.1, agentHint: 'seconds' },
