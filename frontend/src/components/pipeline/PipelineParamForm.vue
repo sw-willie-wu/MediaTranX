@@ -10,6 +10,7 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import type { SelectItem } from '@/components/common/AppSelect.vue'
 import { TOOL_REGISTRY } from '@/pipeline/registry'
 import type { ParamField, RecipeNode } from '@/pipeline/types'
+import { PARAM_COMPONENTS, hasParamComponent } from '@/components/params'
 
 const { t } = useI18n()
 
@@ -29,6 +30,10 @@ const spec = computed(() => (props.node.toolKey ? TOOL_REGISTRY[props.node.toolK
 const basicFields = computed(() => spec.value?.paramSchema.filter(f => !f.advanced && visible(f)) ?? [])
 const advancedFields = computed(() => spec.value?.paramSchema.filter(f => f.advanced && visible(f)) ?? [])
 const isLeafCandidate = computed(() => props.node.kind === 'tool' || props.node.kind === 'source')
+// dispatcher：工具已有統一參數元件 → 掛元件，否則走下方 legacy schema 表單（過渡期漸次遷移）
+const useParamComponent = computed(
+  () => !!props.node.toolKey && hasParamComponent(props.node.toolKey!),
+)
 
 function visible(f: ParamField): boolean {
   return f.visibleWhen ? f.visibleWhen(props.node.params) : true
@@ -83,39 +88,16 @@ function fieldLabel(f: ParamField): string {
     <h6 class="settings-title">{{ t(spec.labelKey) }}</h6>
     <p v-if="preview" class="form-hint">{{ t('pipeline.preview_hint') }}</p>
 
-    <div v-for="f in basicFields" :key="f.name" class="form-group">
-      <label>{{ fieldLabel(f) }}</label>
-      <AppSelect
-        v-if="f.type === 'enum'"
-        :model-value="String(valueOf(f))"
-        :options="enumItems(f)"
-        @update:model-value="(v) => setValue(f, v)"
-      />
-      <input
-        v-else-if="f.type === 'number'"
-        type="number" class="form-input"
-        :min="f.min" :max="f.max" :step="f.step ?? 1"
-        :value="valueOf(f) as number"
-        @change="setValue(f, ($event.target as HTMLInputElement).value)"
-      />
-      <label v-else-if="f.type === 'boolean'" class="checkbox-label">
-        <input
-          type="checkbox"
-          :checked="Boolean(valueOf(f))"
-          @change="setValue(f, ($event.target as HTMLInputElement).checked)"
-        />
-        <span>{{ t('pipeline.param_enabled') }}</span>
-      </label>
-      <input
-        v-else
-        type="text" class="form-input"
-        :value="String(valueOf(f))"
-        @change="setValue(f, ($event.target as HTMLInputElement).value)"
-      />
-    </div>
-
-    <SettingsCollapsible v-if="advancedFields.length > 0" storage-key="pipeline_param_advanced">
-      <div v-for="f in advancedFields" :key="f.name" class="form-group">
+    <component
+      :is="PARAM_COMPONENTS[node.toolKey!]"
+      v-if="useParamComponent"
+      :params="node.params"
+      context="pipeline"
+      :file-info="null"
+      @update:params="(p: Record<string, unknown>) => emit('update-params', p)"
+    />
+    <template v-else>
+      <div v-for="f in basicFields" :key="f.name" class="form-group">
         <label>{{ fieldLabel(f) }}</label>
         <AppSelect
           v-if="f.type === 'enum'"
@@ -145,7 +127,40 @@ function fieldLabel(f: ParamField): string {
           @change="setValue(f, ($event.target as HTMLInputElement).value)"
         />
       </div>
-    </SettingsCollapsible>
+
+      <SettingsCollapsible v-if="advancedFields.length > 0" storage-key="pipeline_param_advanced">
+        <div v-for="f in advancedFields" :key="f.name" class="form-group">
+          <label>{{ fieldLabel(f) }}</label>
+          <AppSelect
+            v-if="f.type === 'enum'"
+            :model-value="String(valueOf(f))"
+            :options="enumItems(f)"
+            @update:model-value="(v) => setValue(f, v)"
+          />
+          <input
+            v-else-if="f.type === 'number'"
+            type="number" class="form-input"
+            :min="f.min" :max="f.max" :step="f.step ?? 1"
+            :value="valueOf(f) as number"
+            @change="setValue(f, ($event.target as HTMLInputElement).value)"
+          />
+          <label v-else-if="f.type === 'boolean'" class="checkbox-label">
+            <input
+              type="checkbox"
+              :checked="Boolean(valueOf(f))"
+              @change="setValue(f, ($event.target as HTMLInputElement).checked)"
+            />
+            <span>{{ t('pipeline.param_enabled') }}</span>
+          </label>
+          <input
+            v-else
+            type="text" class="form-input"
+            :value="String(valueOf(f))"
+            @change="setValue(f, ($event.target as HTMLInputElement).value)"
+          />
+        </div>
+      </SettingsCollapsible>
+    </template>
 
     <div v-if="isLeafCandidate && !preview" class="form-group keep-output">
       <label class="checkbox-label">
