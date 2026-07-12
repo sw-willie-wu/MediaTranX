@@ -997,6 +997,7 @@ export default {
       midi_jump_prompt: '音源分離完成，已產出 MIDI 檔案。是否跳轉至 MIDI 編輯器？',
       midi_jump: '跳轉',
       midi_stay: '留在此頁',
+      no_stems_selected: '請至少選擇一個要分離的音軌。',
     },
 
     midi: {

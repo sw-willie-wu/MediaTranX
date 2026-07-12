@@ -29,6 +29,7 @@ import { META as TRANSLATE_META } from '@/components/params/document/translate.m
 import { META as AUDIO_TRANSCODE_META } from '@/components/params/audio/transcode.meta'
 import { META as AUDIO_VOLUME_META } from '@/components/params/audio/volume.meta'
 import { META as AUDIO_CUT_META } from '@/components/params/audio/cut.meta'
+import { META as AUDIO_SEPARATE_META } from '@/components/params/audio/separate.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
@@ -222,19 +223,17 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     ],
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 3 Task 3.3）：欄位定義唯一事實來源在
+  // audio/separate.meta.ts。stems（List[str]，None=全部）已入 schema（type:'list'），但
+  // 不進 agent set_field 介面（見 ToolParamHost.vue agentFields 濾除 list/dict）。
   'audio.separate': {
-    toolKey: 'audio.separate',
-    apiPath: '/audio/separate',
-    labelKey: 'audio.separate.task_label',
+    toolKey: AUDIO_SEPARATE_META.toolKey,
+    apiPath: AUDIO_SEPARATE_META.apiPath,
+    labelKey: AUDIO_SEPARATE_META.labelKey,
     kind: 'tool',
     inputKinds: ['audio'],
     outputKind: AUDIO_OUT,
-    // stems（List[str]、None=全部）v1 不建模——見檔頭註記
-    paramSchema: [
-      { name: 'model_name', type: 'enum', options: ['htdemucs_6s'], default: 'htdemucs_6s', advanced: true },
-      { name: 'output_format', type: 'enum', options: ['wav', 'flac', 'mp3'], default: 'wav' },
-      { name: 'generate_midi', type: 'boolean', default: false },
-    ],
+    paramSchema: AUDIO_SEPARATE_META.schema,
   },
 
   'audio.transcribe': {

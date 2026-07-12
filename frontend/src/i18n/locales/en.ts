@@ -997,6 +997,7 @@ export default {
       midi_jump_prompt: 'Source separation complete. MIDI file generated. Jump to MIDI editor?',
       midi_jump: 'Jump',
       midi_stay: 'Stay',
+      no_stems_selected: 'Select at least one stem to separate.',
     },
 
     midi: {

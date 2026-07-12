@@ -8,7 +8,6 @@ import AudioMultiTrackPreview from '@/components/audio/AudioMultiTrackPreview.vu
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import AudioTranscribePanel from '@/components/audio/panels/AudioTranscribePanel.vue'
-import AudioSeparatePanel  from '@/components/audio/panels/AudioSeparatePanel.vue'
 import AudioLyricsPanel    from '@/components/audio/panels/AudioLyricsPanel.vue'
 const AudioMidiEditPanel = defineAsyncComponent(
   () => import('@/components/audio/panels/AudioMidiEditPanel.vue')
@@ -22,6 +21,7 @@ import TextPreviewModal from '@/components/common/TextPreviewModal.vue'
 import { GM_INSTRUMENT_OPTIONS } from '@/constants/midiInstruments'
 import { useAudioWorkspace } from '@/composables/useAudioWorkspace'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { useMidiPlayback } from '@/composables/useMidiPlayback'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useExecuteStop } from '@/composables/useExecuteStop'
@@ -37,6 +37,7 @@ import { SOUNDFONT_MODEL_ID } from '@/constants/gmSoundfontNames'
 
 const { t } = useI18n()
 const toast = useToast()
+const { confirm } = useConfirm()
 const router = useRouter()
 const modelStore = useModelStore()
 
@@ -60,7 +61,7 @@ const transcodePanelRef  = ref<InstanceType<typeof ToolParamHost>        | null>
 const cutPanelRef        = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const volumePanelRef     = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const transcribePanelRef = ref<InstanceType<typeof AudioTranscribePanel> | null>(null)
-const separatePanelRef   = ref<InstanceType<typeof AudioSeparatePanel>  | null>(null)
+const separatePanelRef   = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const lyricsPanelRef     = ref<InstanceType<typeof AudioLyricsPanel>    | null>(null)
 const midiEditPanelRef   = ref<InstanceType<typeof AudioMidiEditPanel>  | null>(null)
 const pianoRollRef       = ref<InstanceType<typeof MidiPianoRoll>       | null>(null)
@@ -261,8 +262,11 @@ function handleMultiExecute() {
     }
     case 'transcribe':
       submitToAll('/audio/transcribe',() => transcribePanelRef.value!.getParams(),t('audio.transcribe.task_label'),'audio.transcribe', noop); break
-    case 'separate':
-      submitToAll('/audio/separate',  () => separatePanelRef.value!.getParams(),  t('audio.separate.task_label'),  'audio.separate',  noop); break
+    case 'separate': {
+      const spec = separatePanelRef.value!.getSubmitSpec()
+      submitToAll(spec.apiPath, () => separatePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
+      break
+    }
     case 'lyrics':
       submitToAll('/audio/lyrics',    () => lyricsPanelRef.value!.getParams(),    t('audio.lyrics.task_label'),    'audio.lyrics',    noop); break
     case 'cut':
@@ -399,7 +403,7 @@ watch(
     // 只問一次 MIDI 跳轉
     if (meta.midi_file_id && !_midiJumpAskedIds.has(entry.id)) {
       _midiJumpAskedIds.add(entry.id)
-      separatePanelRef.value?.onTaskComplete({ midi_file_id: meta.midi_file_id })
+      void askJumpToMidi(meta.midi_file_id)
     }
   },
 )
@@ -417,6 +421,23 @@ watch(() => collection.activeId.value, () => {
 })
 
 const separateStems = computed(() => separateStemsData.value)
+
+// ── 跳 MIDI 詢問（批 3 Task 3.3 從 AudioSeparatePanel.onTaskComplete 上移）──
+// separate 完成且有 midi_file_id 時彈窗問是否跳轉；yes 才呼叫 handleJumpToMidi。
+// 舊 AudioSeparatePanel 版本此邏輯在 panel 內、由 AudioView 呼叫 panel.onTaskComplete()
+// 轉呼；遷移後 separate 走標準 ToolParamHost（無 onTaskComplete 掛勾點），故收訊/彈窗邏輯
+// 整段移進觸發源本來就在的 AudioView（historyStack watch）。
+async function askJumpToMidi(midiFileId: string) {
+  const yes = await confirm({
+    message: t('audio.separate.midi_jump_prompt'),
+    confirmLabel: t('audio.separate.midi_jump'),
+    cancelLabel: t('audio.separate.midi_stay'),
+    type: 'info',
+  })
+  if (yes) {
+    await handleJumpToMidi(midiFileId)
+  }
+}
 
 // ── MIDI 跳轉 ──
 async function handleJumpToMidi(midiFileId: string) {
@@ -836,14 +857,15 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @submit="handlePanelSubmit"
         />
 
-        <AudioSeparatePanel
+        <ToolParamHost
           v-else-if="currentFunction === 'separate'"
           ref="separatePanelRef"
+          tool-key="audio.separate"
+          :panel-id="panelIdFor('audio', 'separate')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
-          @jump-to-midi="handleJumpToMidi"
         />
 
         <AudioLyricsPanel
