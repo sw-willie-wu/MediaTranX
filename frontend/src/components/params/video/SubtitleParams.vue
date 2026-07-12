@@ -21,20 +21,18 @@
  * 是手寫模板直接掛載本元件（不經 ToolParamHost 的通用 dispatch），可以自由多傳；
  * PipelineParamForm 的通用 dispatch 不會傳這個 prop，元件需妥善處理其缺席。
  */
-import { computed, inject, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
-import type { SelectItem, SelectOption } from '@/components/common/AppSelect.vue'
+import type { SelectOption } from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import WhisperAdvancedSettings, { type WhisperAdvancedValue } from '@/components/video/WhisperAdvancedSettings.vue'
 import TranslationOptionsPanel, { type TranslationOptionsValue } from '@/components/video/TranslationOptionsPanel.vue'
 import { useModelStore } from '@/stores/models'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import type { AgentCompositeField } from '../types'
 import {
   META as SUBTITLE_META,
-  TRANSLATE_FIELDS,
   encodeTranslateToken,
   decodeTranslateToken,
 } from './subtitle.meta'
@@ -54,10 +52,6 @@ function commit(next: Record<string, unknown>) {
 }
 function commitPatch(patch: Record<string, unknown>) {
   commit({ ...props.params, ...patch })
-}
-
-function flattenTokens(items: SelectItem[]): string[] {
-  return items.flatMap((o) => ('options' in o ? o.options.map((x) => x.value) : [o.value]))
 }
 
 // ── model store（新元件掛載必呼 ensureLoaded——沿批 2 既有慣例） ─────────────────
@@ -188,10 +182,6 @@ function onTranslationChange(v: TranslationOptionsValue) {
   })
 }
 
-// ── translate model picker options（供 composite agent 欄位讀取；TranslationOptionsPanel
-// 額外 expose 的 translateModelOptions，經 template ref 讀取） ───────────────────────
-const translationPanelRef = ref<{ translateModelOptions?: SelectItem[] } | null>(null)
-
 // ══ vocal_separation / WhisperAdvancedSettings（v-model 化，advanced 區） ══════════════
 function onVocalSeparationChange(v: boolean) {
   commitPatch({ vocal_separation: v })
@@ -215,25 +205,13 @@ function onWhisperAdvancedChange(v: WhisperAdvancedValue) {
   })
 }
 
-// ── composite 註冊（whisper_model 單欄；translate_model 七欄——僅 gate 開啟才有意義，
-// closed 時 get 回空字串,沿 brief 設計定案）。兩 host（SubtitlePanel 殼 / PipelineParamForm）
-// 目前皆未 provide('registerComposite')（此 inject 僅 ToolParamHost.vue 提供），composite
-// 目前無人消費——保留是為與批 2 其餘工具的 pattern 一致、為未來擴充預留（見 task report）。
-const registerComposite = inject<(c: AgentCompositeField) => () => void>('registerComposite')
-registerComposite?.({
-  name: 'whisper_model',
-  covers: ['model_size'],
-  options: () => whisperModelOptions.value.map((o) => o.value),
-  get: (p) => String(p.model_size ?? ''),
-  set: (token) => ({ model_size: token }),
-})
-registerComposite?.({
-  name: 'translate_model',
-  covers: [...TRANSLATE_FIELDS],
-  options: () => flattenTokens(translationPanelRef.value?.translateModelOptions ?? []),
-  get: (p) => (p.target_language ? encodeTranslateToken(p) : ''),
-  set: (token) => decodeTranslateToken(token),
-})
+// composite 註冊：無（收尾批 W1-4 裁決刪除）——本元件是 SubtitlePanel.vue 例外殼的表單
+// 本體，殼保留自己的 agentSchema（4 欄：language/whisper_model/vocal_separation/
+// output_format，見 SubtitlePanel.vue），PipelineParamForm 也不 provide('registerComposite')
+// （此 inject 僅 ToolParamHost.vue 提供），故 whisper_model/translate_model 兩個 composite
+// 過去一直無消費者——比起接上（要嘛把 SubtitlePanel 改走 ToolParamHost、要嘛讓
+// PipelineParamForm provide 這個 inject）簡單得多，直接刪除死碼（見 subtitle.meta.ts 若有
+// 對應 covers 常數則一併確認未被其他地方依賴）。
 </script>
 
 <template>
@@ -280,7 +258,6 @@ registerComposite?.({
     </div>
 
     <TranslationOptionsPanel
-      ref="translationPanelRef"
       storage-key="subtitle_translate_model"
       :context="context"
       :model-value="translationValue"

@@ -676,8 +676,6 @@ export default {
     ocr: {
       title: 'OCR Settings',
       description: 'Use AI to recognize text in images, output as editable format.',
-      server_not_found: 'llama-server not found. Please install AI core in Settings.',
-      go_to_settings: 'Go to Settings',
       model: 'Text Recognition Model',
       markdown: 'Markdown (.md)',
       text: 'Plain Text (.txt)',
@@ -1095,8 +1093,6 @@ export default {
     ocr: {
       title: 'OCR Settings',
       description: 'Use AI to recognize text in PDF or images, output as editable format.',
-      server_not_found: 'llama-server not found. Please install AI core in Settings.',
-      go_to_settings: 'Go to Settings',
       format_not_supported: 'OCR only supports PDF and image formats',
       model: 'Text Recognition Model',
       markdown: 'Markdown (.md)',

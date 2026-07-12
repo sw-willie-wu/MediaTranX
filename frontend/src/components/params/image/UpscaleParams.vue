@@ -14,7 +14,7 @@
  * params.scale 夾回上限——schema 的 min/max(2-4) 是靜態上限，實際 UI 上限依模型而定
  * （x2plus 系列 max_scale=2，其餘家族多為 4）。
  */
-import { computed, inject, onMounted, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 import AppRange from '@/components/common/AppRange.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
@@ -22,7 +22,7 @@ import type { SelectOption } from '@/components/common/AppSelect.vue'
 import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { useModelStore } from '@/stores/models'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import type { AgentCompositeField } from '../types'
+import { useRegisterComposite } from '@/composables/useRegisterComposite'
 import { META as UPSCALE_META } from './upscale.meta'
 
 const props = defineProps<{
@@ -162,7 +162,7 @@ watch(
 )
 
 // ── composite 註冊（agent 欄位名沿舊 agentSchema：upscale_model/face_restore_model）───────
-const registerComposite = inject<(c: AgentCompositeField) => () => void>('registerComposite')
+const registerComposite = useRegisterComposite()
 registerComposite?.({
   name: 'upscale_model',
   covers: ['model_id'],

@@ -22,7 +22,7 @@
  *    SubtitleParams.vue 由外層殼（SubtitlePanel.vue 例外殼）傳 languageOptions prop 的作法不同；
  *    transcribe 走標準 ToolParamHost、無殼可傳 prop，見 task report 決策說明。
  */
-import { computed, inject, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import type { SelectItem, SelectOption } from '@/components/common/AppSelect.vue'
@@ -35,7 +35,7 @@ import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelOptions } from '@/composables/useModelOptions'
 import { usePersistedModel } from '@/composables/usePersistedModel'
 import { apiFetch } from '@/composables/useApi'
-import type { AgentCompositeField } from '../types'
+import { useRegisterComposite } from '@/composables/useRegisterComposite'
 import {
   META as TRANSCRIBE_META,
   TRANSLATE_FIELDS,
@@ -300,7 +300,7 @@ function onWhisperAdvancedChange(v: WhisperAdvancedValue) {
 }
 
 // ── composite 註冊（whisper_model 單欄；translate_model／summarize_model 各七欄） ────────
-const registerComposite = inject<(c: AgentCompositeField) => () => void>('registerComposite')
+const registerComposite = useRegisterComposite()
 registerComposite?.({
   name: 'whisper_model',
   covers: ['model_size'],

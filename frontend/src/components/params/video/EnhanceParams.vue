@@ -11,13 +11,13 @@
  * 本元件所有顯示值皆為 props.params 的直接響應式衍生（無本地編輯緩衝 ref），不需
  * one-shot lastEmitted 判別（沿 InterpolateParams.vue／ExtractAudioParams.vue 的簡化模式）。
  */
-import { computed, inject, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 import type { SelectOption } from '@/components/common/AppSelect.vue'
 import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { useModelStore } from '@/stores/models'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import type { AgentCompositeField } from '../types'
+import { useRegisterComposite } from '@/composables/useRegisterComposite'
 import { META as ENHANCE_META } from './enhance.meta'
 
 const props = defineProps<{
@@ -75,7 +75,7 @@ if (props.context === 'tool' && persistedToken.value && variantToken.value === d
 }
 
 // ── composite 註冊：agent 欄位名沿用舊 panel 的 'model'，實際覆蓋 model+variant 兩欄 ──────
-const registerComposite = inject<(c: AgentCompositeField) => () => void>('registerComposite')
+const registerComposite = useRegisterComposite()
 registerComposite?.({
   name: 'model',
   covers: ['model', 'variant'],

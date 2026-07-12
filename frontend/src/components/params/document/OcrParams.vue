@@ -25,7 +25,7 @@
  * params 做不到，副檔名判斷留在 View 層（DocumentView.vue 的 executeDisabled 計算式
  * 另外 `|| !isPdfOrImage`），見該檔與 batch4-recon.md §9 document.ocr 節。
  */
-import { computed, inject, onMounted, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import type { SelectItem } from '@/components/common/AppSelect.vue'
@@ -33,7 +33,7 @@ import { useModelStore } from '@/stores/models'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelOptions } from '@/composables/useModelOptions'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import type { AgentCompositeField } from '../types'
+import { useRegisterComposite } from '@/composables/useRegisterComposite'
 import { encodeModelToken, decodeModelToken, buildOcrMeta } from './ocr.meta'
 
 const { t } = useI18n()
@@ -145,7 +145,7 @@ function onOutputFormatChange(v: string) {
 }
 
 // ── composite 註冊（model picker 覆蓋七個後端欄位；agent 欄位名沿舊兩隻 panel 皆用 'model'）──
-const registerComposite = inject<(c: AgentCompositeField) => () => void>('registerComposite')
+const registerComposite = useRegisterComposite()
 registerComposite?.({
   name: 'model',
   covers: ['model_family', 'model_size', 'quantization', 'remote', 'provider', 'conn_id', 'remote_model'],

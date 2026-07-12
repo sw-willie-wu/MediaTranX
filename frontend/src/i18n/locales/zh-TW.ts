@@ -676,8 +676,6 @@ export default {
     ocr: {
       title: '文字辨識設定',
       description: '使用 AI 辨識圖片中的文字，輸出為可編輯格式。',
-      server_not_found: 'llama-server 未找到，請前往設定頁面安裝 AI 核心',
-      go_to_settings: '前往設定',
       model: '文字辨識模型',
       markdown: 'Markdown (.md)',
       text: '純文字 (.txt)',
@@ -1095,8 +1093,6 @@ export default {
     ocr: {
       title: '文字辨識設定',
       description: '使用 AI 辨識 PDF 或圖片中的文字，輸出為可編輯格式。',
-      server_not_found: 'llama-server 未找到，請前往設定頁面安裝 AI 核心',
-      go_to_settings: '前往設定',
       format_not_supported: 'OCR 僅支援 PDF 及圖片格式',
       model: '文字辨識模型',
       markdown: 'Markdown (.md)',

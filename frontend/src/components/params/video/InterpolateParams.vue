@@ -13,7 +13,7 @@
  * （該 pattern 是為了保護「使用者輸入中」的本地文字狀態不被外部寫入打斷；本元件無此狀態，
  * 沿 ExtractAudioParams.vue 的簡化模式）。
  */
-import { computed, inject, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import type { SelectOption } from '@/components/common/AppSelect.vue'
@@ -21,7 +21,7 @@ import AppRange from '@/components/common/AppRange.vue'
 import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { useModelStore } from '@/stores/models'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import type { AgentCompositeField } from '../types'
+import { useRegisterComposite } from '@/composables/useRegisterComposite'
 import { META as INTERPOLATE_META } from './interpolate.meta'
 
 const { t } = useI18n()
@@ -75,7 +75,7 @@ if (props.context === 'tool' && persistedToken.value && modelToken.value === def
 }
 
 // ── composite 註冊（單欄，為 model picker 提供即時 options；覆蓋 schema 的靜態 'model' enum）──
-const registerComposite = inject<(c: AgentCompositeField) => () => void>('registerComposite')
+const registerComposite = useRegisterComposite()
 registerComposite?.({
   name: 'model',
   covers: ['model'],

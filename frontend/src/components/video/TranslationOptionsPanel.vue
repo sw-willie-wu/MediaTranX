@@ -1,26 +1,21 @@
 <script setup lang="ts">
 /**
- * TranslationOptionsPanel — v-model 雙軌化（統一參數元件 spec §5；批 2 Task 2.5）。
+ * TranslationOptionsPanel — video.subtitle 翻譯區塊子元件（統一參數元件 spec §5；批 2 Task
+ * 2.5 v-model 化；收尾批 W1-2 移除雙軌相容——AudioTranscribePanel.vue／AudioLyricsPanel.vue
+ * 兩個舊 uncontrolled 呼叫端已在批 3 遷移時整檔刪除；現存三個消費者
+ * （SubtitleParams.vue／TranscribeParams.vue／LyricsParams.vue）**皆**以
+ * `:model-value="translationValue"` 受控掛載——`modelValue` 恆有值，
+ * 元件內部不再區分受控/非受控兩種模式。
  *
- * 本元件被三處使用：SubtitlePanel.vue（經 SubtitleParams.vue 內嵌,批 2 Task 2.5 起走
- * v-model:model-value 受控模式）、AudioTranscribePanel.vue／AudioLyricsPanel.vue（皆用舊的
- * template ref + defineExpose 讀寫模式，`ref.value.enableTranslation = x` 直接改寫曝露的 ref，
- * 非本次遷移範圍——不得動）。
+ * 內部狀態初值來自 modelValue，之後外部寫入（watch props.modelValue）與內部使用者操作
+ * （watch 6 個狀態 → emit update:modelValue）雙向同步；one-shot lastEmitted echo 判別沿
+ * CutParams.vue/WhisperAdvancedSettings.vue pattern。selectedTranslateModel 若 modelValue.
+ * translate_model_token 非空,以此為準覆蓋 usePersistedModel 的 localStorage 初值,並跳過
+ * onMounted 的 loadPreferences/autoRecommend 自動校正（避免父層已有明確初值時被 localStorage
+ * 殘值蓋掉——見 controlledSeeded 旗標）。
  *
- * 雙軌相容原則（同 WhisperAdvancedSettings.vue 既有 pattern）：`modelValue` prop 是否為
- * undefined 決定受控與否——
- * - 無 modelValue（AudioTranscribePanel/AudioLyricsPanel 現況）：內部 6 個狀態維持獨立,行為與
- *   v-model 化之前完全一致（無 emit，父層讀寫走 defineExpose 曝露的 ref/方法）。
- * - 有 modelValue（SubtitleParams）：內部狀態初值來自 modelValue,之後外部寫入（watch
- *   props.modelValue）與內部使用者操作（watch 6 個狀態 → emit update:modelValue）雙向同步；
- *   one-shot lastEmitted echo 判別沿 CutParams.vue/WhisperAdvancedSettings.vue pattern。
- *   selectedTranslateModel 若受控且 modelValue.translate_model_token 非空,以此為準覆蓋
- *   usePersistedModel 的 localStorage 初值,並跳過 onMounted 的 loadPreferences/autoRecommend
- *   自動校正（避免父層已有明確初值時被 localStorage 殘值蓋掉——見 controlledSeeded 旗標）。
- *
- * `context` prop（新增,預設 'tool'）：僅影響內部 usePersistedModel 的 enabled 開關——
- * pipeline 語境不讀寫 localStorage（沿統一參數元件案全域鐵則）。AudioTranscribePanel/
- * AudioLyricsPanel 未傳此 prop,預設 'tool',行為不變。
+ * `context` prop（預設 'tool'）：僅影響內部 usePersistedModel 的 enabled 開關——pipeline
+ * 語境不讀寫 localStorage（沿統一參數元件案全域鐵則）。
  *
  * 已知限制（out of scope,未修）：下方既有的 `watch(localTranslateModelOptions, ..., {immediate:
  * true})` fallback（雙軌化之前就有,非本次改動範圍）在 modelValue 提供的 translate_model_token
@@ -253,9 +248,6 @@ defineExpose({
   translateModelOptions,
 })
 
-// ── v-model 受控模式（僅在 props.modelValue !== undefined 時啟用）──────────────────
-const controlled = computed(() => props.modelValue !== undefined)
-
 function currentValue(): TranslationOptionsValue {
   return {
     enable_translation: enableTranslation.value,
@@ -280,9 +272,8 @@ function shallowEqualValue(a: TranslationOptionsValue, b: TranslationOptionsValu
 
 let lastEmitted: TranslationOptionsValue | null = null
 
-// 內部 6 個狀態任一變動 → 受控模式下 emit 完整 patch（非受控模式此 watch 空跑，無 emit）。
+// 內部 6 個狀態任一變動 → emit 完整 patch（單一受控消費者 SubtitleParams，恆有 modelValue）。
 watch([enableTranslation, targetLanguage, selectedTranslateModel, keepNames, translateStyle, glossaryText], () => {
-  if (!controlled.value) return
   const next = currentValue()
   lastEmitted = next
   emit('update:modelValue', next)

@@ -1,14 +1,14 @@
 /**
- * TranslationOptionsPanel — v-model 雙軌測（統一參數元件案批 2 Task 2.5）。
- * 覆蓋：
- *  - 無 modelValue（AudioTranscribePanel/AudioLyricsPanel 現況）→ 不 emit update:modelValue，
- *    行為與雙軌化之前完全一致（既有 Wave 2 TranslationOptionsPanel.test.ts 覆蓋 storageKey
- *    隔離／舊 expose，本檔不重複，只補雙軌新增行為）。
+ * TranslationOptionsPanel — 受控模式測（統一參數元件案批 2 Task 2.5 v-model 化；收尾批
+ * W1-2 移除雙軌相容後，本元件恆受控，檔名沿用舊名不改）。覆蓋：
  *  - 有 modelValue → 初值來自 modelValue、內部狀態變動 emit 完整 patch、外部 modelValue
  *    更新同步回內部狀態（one-shot echo 不重推）。
  *  - context prop 控制 usePersistedModel 的 enabled（pipeline 不寫 localStorage）。
  *  - controlledSeeded：modelValue.translate_model_token 非空時覆蓋 localStorage 初值，
  *    且跳過 onMounted 的 loadPreferences/autoRecommend 自動校正。
+ *  - 無 modelValue（mount 時未傳 prop）仍可掛載：onMounted 的 localStorage 還原/自動推薦
+ *    邏輯不受 controlledSeeded 保護，行為與過去 uncontrolled 呼叫端一致（見最後一組測試；
+ *    純粹是 mount 時序測試，非「不 emit」斷言——emit 一律發生，只是沒有父層在聽）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -106,12 +106,15 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('TranslationOptionsPanel — 無 modelValue（既有呼叫端不變）', () => {
-  it('不 emit update:modelValue（即使內部 ref 被外部直接改寫，同 AudioTranscribePanel 用法）', async () => {
+describe('TranslationOptionsPanel — 無 modelValue mount（收尾批 W1-2：雙軌相容已移除）', () => {
+  it('內部狀態變動仍 emit update:modelValue（不再區分受控/非受控，恆 emit）', async () => {
     const w = mountPanel()
     ;(w.vm as any).enableTranslation = true
     await w.vm.$nextTick()
-    expect(w.emitted('update:modelValue')).toBeUndefined()
+    const emitted = w.emitted('update:modelValue')!
+    expect(emitted).toBeDefined()
+    const last = emitted[emitted.length - 1][0] as Record<string, unknown>
+    expect(last.enable_translation).toBe(true)
   })
 })
 

@@ -14,7 +14,7 @@
  *   PipelineParamForm 未提供該 inject，register 為 undefined 時以 `register?.()` 跳過——
  *   picker 本身的 UI/emit 邏輯不依賴 composite 是否註冊成功，兩語境都能正常選模型）。
  */
-import { computed, inject, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import type { SelectItem, SelectOption } from '@/components/common/AppSelect.vue'
@@ -23,7 +23,7 @@ import { useModelStore } from '@/stores/models'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelOptions } from '@/composables/useModelOptions'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import type { AgentCompositeField } from '../types'
+import { useRegisterComposite } from '@/composables/useRegisterComposite'
 import { META as TRANSLATE_META, TRANSLATE_STYLES, encodeModelToken, decodeModelToken } from './translate.meta'
 
 const { t } = useI18n()
@@ -220,7 +220,7 @@ function onStyleChange(v: string) {
 }
 
 // ── composite 註冊（model picker 覆蓋七個後端欄位，曝給 agent 單一 'translate_model' 欄位）──
-const registerComposite = inject<(c: AgentCompositeField) => () => void>('registerComposite')
+const registerComposite = useRegisterComposite()
 registerComposite?.({
   name: 'translate_model',
   covers: ['model_family', 'model_size', 'quantization', 'remote', 'provider', 'conn_id', 'remote_model'],

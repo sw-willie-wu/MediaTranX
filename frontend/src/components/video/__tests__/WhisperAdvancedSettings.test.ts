@@ -89,7 +89,9 @@ describe('WhisperAdvancedSettings', () => {
     expect(w.text()).not.toContain('VAD Sensitivity')
   })
 
-  it('exposes the 5 refs', () => {
+  // defineExpose 已於收尾批 W1-3 移除（消費者全受控），此測試改驗內部 5 個狀態存在
+  // （vue-test-utils 對 script-setup 頂層綁定可達），非公開契約
+  it('internal 5 state refs exist (defineExpose removed in W1-3)', () => {
     const vm = mountIt({ embedded: true }).vm as any
     for (const k of [
       'wordTimestamps',
@@ -103,8 +105,8 @@ describe('WhisperAdvancedSettings', () => {
   })
 })
 
-// ── v-model 雙軌化（批 2 Task 2.4）─────────────────────────────────────────────
-describe('WhisperAdvancedSettings — v-model 雙軌相容', () => {
+// ── v-model 受控（批 2 Task 2.4 導入；收尾批 W1-3 移除雙軌相容，恆受控）───────────
+describe('WhisperAdvancedSettings — v-model 受控', () => {
   const fullValue = {
     word_timestamps: true,
     align: true,
@@ -113,7 +115,7 @@ describe('WhisperAdvancedSettings — v-model 雙軌相容', () => {
     vad_threshold: 0.5,
   }
 
-  it('無 modelValue prop（舊行為）：內部 ref 用固定預設值，不受 modelValue 影響', () => {
+  it('無 modelValue prop：內部 ref 用固定預設值', () => {
     const vm = mountIt({ embedded: true }).vm as any
     expect(vm.wordTimestamps).toBe(false)
     expect(vm.align).toBe(false)
@@ -122,13 +124,16 @@ describe('WhisperAdvancedSettings — v-model 雙軌相容', () => {
     expect(vm.vadThreshold).toBe(0.3)
   })
 
-  it('無 modelValue prop：舊 expose 讀寫模式仍可用（父層直接改寫曝露的 ref，不 emit）', async () => {
+  it('無 modelValue prop：內部 ref 變動仍 emit update:modelValue（不再區分受控/非受控，恆 emit）', async () => {
     const w = mountIt({ embedded: true })
     const vm = w.vm as any
     vm.align = true
     await w.vm.$nextTick()
     expect(vm.align).toBe(true)
-    expect(w.emitted('update:modelValue')).toBeUndefined()
+    const emitted = w.emitted('update:modelValue')
+    expect(emitted).toBeDefined()
+    const last = emitted![emitted!.length - 1][0] as Record<string, unknown>
+    expect(last.align).toBe(true)
   })
 
   it('有 modelValue prop：內部 ref 初值來自 modelValue（受控）', () => {

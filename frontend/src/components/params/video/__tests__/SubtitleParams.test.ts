@@ -3,8 +3,9 @@
  * 覆蓋：欄位佈局（source_language/model_size/output_format 頂層＋SettingsCollapsible 進階區含
  * vocal_separation/WhisperAdvancedSettings）、source_language 有無 languageOptions 兩種呈現、
  * whisper picker persisted seed（沿 SummaryParams pattern）、翻譯 gate 開關（seed 'zh-TW'／
- * 清空七欄+keep_names/translate_style/glossary）、glossary text↔dict round trip、
- * composite 註冊（whisper_model/translate_model covers/get/set）。
+ * 清空七欄+keep_names/translate_style/glossary）、glossary text↔dict round trip。
+ * （收尾批 W1-4：composite 註冊死碼已刪，本檔不再覆蓋 composite——SubtitlePanel 殼有自己的
+ * agentSchema，composite 過去始終無消費者。）
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -63,19 +64,16 @@ import AppToggle from '@/components/common/AppToggle.vue'
 import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
 import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
-import type { AgentCompositeField } from '../../types'
 
 function mountParams(
   params: Record<string, unknown>,
   context: 'tool' | 'pipeline' = 'tool',
   languageOptions?: Array<{ value: string; label: string }>,
-  registerComposite?: (c: AgentCompositeField) => () => void,
 ) {
   return mount(SubtitleParams, {
     props: { params, context, fileInfo: null, languageOptions },
     global: {
       mocks: { $t: (k: string) => k },
-      provide: registerComposite ? { registerComposite } : {},
     },
   })
 }
@@ -366,54 +364,5 @@ describe('SubtitleParams — glossary text ↔ dict round trip', () => {
     const emitted = w.emitted('update:params')!
     const last = emitted[emitted.length - 1][0] as Record<string, unknown>
     expect(last.glossary).toBeUndefined()
-  })
-})
-
-describe('SubtitleParams — composite 註冊（whisper_model／translate_model）', () => {
-  function captureComposites() {
-    const registered: AgentCompositeField[] = []
-    const registerComposite = (c: AgentCompositeField) => {
-      registered.push(c)
-      return () => {}
-    }
-    return { registered, registerComposite }
-  }
-
-  it('whisper_model composite：covers=[model_size]，get/set 正確', () => {
-    const { registered, registerComposite } = captureComposites()
-    mountParams({ model_size: 'small' }, 'tool', undefined, registerComposite)
-    const whisper = registered.find((c) => c.name === 'whisper_model')!
-    expect(whisper.covers).toEqual(['model_size'])
-    expect(whisper.get({ model_size: 'large-v3' })).toBe('large-v3')
-    expect(whisper.set('tiny')).toEqual({ model_size: 'tiny' })
-  })
-
-  it('translate_model composite：covers=七個 translate_* 欄位，gate 關閉時 get 回空字串', () => {
-    const { registered, registerComposite } = captureComposites()
-    mountParams({}, 'tool', undefined, registerComposite)
-    const translate = registered.find((c) => c.name === 'translate_model')!
-    expect(translate.covers).toEqual([
-      'translate_model_family', 'translate_model_size', 'translate_quantization',
-      'translate_remote', 'translate_provider', 'translate_conn_id', 'translate_remote_model',
-    ])
-    expect(translate.get({})).toBe('')
-    expect(translate.get({ target_language: '' })).toBe('')
-  })
-
-  it('translate_model composite：gate 開啟時 get 回 encode token；set 正確展開', () => {
-    const { registered, registerComposite } = captureComposites()
-    mountParams({}, 'tool', undefined, registerComposite)
-    const translate = registered.find((c) => c.name === 'translate_model')!
-    expect(translate.get({ target_language: 'en', translate_model_family: 'gemma4', translate_model_size: '4b' }))
-      .toBe('gemma4:4b:')
-    expect(translate.set('gemma4:4b:Q4_K_M')).toEqual({
-      translate_remote: false,
-      translate_provider: undefined,
-      translate_conn_id: undefined,
-      translate_remote_model: undefined,
-      translate_model_family: 'gemma4',
-      translate_model_size: '4b',
-      translate_quantization: 'Q4_K_M',
-    })
   })
 })

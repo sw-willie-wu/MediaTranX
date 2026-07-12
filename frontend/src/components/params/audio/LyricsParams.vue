@@ -8,7 +8,7 @@
  * 範圍僅此一欄）。**無 vocal_separation UI、無 WhisperAdvancedSettings、無 summarize**（皆
  * transcribe 獨有，見 meta 檔頭差異 2/3）；**無 source_language**（後端沒有這欄位）。
  */
-import { computed, inject, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import type { SelectItem, SelectOption } from '@/components/common/AppSelect.vue'
@@ -18,7 +18,7 @@ import TranslationOptionsPanel, { type TranslationOptionsValue } from '@/compone
 import { useModelStore } from '@/stores/models'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import type { AgentCompositeField } from '../types'
+import { useRegisterComposite } from '@/composables/useRegisterComposite'
 import {
   META as LYRICS_META,
   TRANSLATE_FIELDS,
@@ -180,7 +180,7 @@ function onAlignChange(v: boolean) {
 }
 
 // ── composite 註冊（whisper_model 單欄；translate_model 七欄） ────────────────────
-const registerComposite = inject<(c: AgentCompositeField) => () => void>('registerComposite')
+const registerComposite = useRegisterComposite()
 registerComposite?.({
   name: 'whisper_model',
   covers: ['model_size'],

@@ -20,7 +20,7 @@
  * 不做 localStorage seed，也不做「避免空白選擇」的自動校正——沿 spec seedOnFileChange/
  * usePersistedModel enabled 語意，pipeline 節點的初值僅來自 meta.defaults()/recipe）。
  */
-import { computed, inject, onMounted, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSelect from '@/components/common/AppSelect.vue'
 import type { SelectItem, SelectOption } from '@/components/common/AppSelect.vue'
@@ -31,7 +31,7 @@ import { useModelStore } from '@/stores/models'
 import { useRemoteModelStore } from '@/stores/remoteModels'
 import { useModelOptions } from '@/composables/useModelOptions'
 import { usePersistedModel } from '@/composables/usePersistedModel'
-import type { AgentCompositeField } from '../types'
+import { useRegisterComposite } from '@/composables/useRegisterComposite'
 import {
   META as SUMMARY_META,
   SUMMARY_MODES,
@@ -279,7 +279,7 @@ function onLanguageChange(v: string) {
 }
 
 // ── composite 註冊（whisper_model 單欄；llm_model/vlm_model 六欄，皆覆蓋後端欄位群） ────
-const registerComposite = inject<(c: AgentCompositeField) => () => void>('registerComposite')
+const registerComposite = useRegisterComposite()
 registerComposite?.({
   name: 'whisper_model',
   covers: ['whisper_model_size'],
