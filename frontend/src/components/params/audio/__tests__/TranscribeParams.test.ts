@@ -427,6 +427,26 @@ describe('TranscribeParams — summarize toggle + picker（第三 composite，su
   })
 })
 
+describe('TranscribeParams — whisper／summarize persisted seed 同時觸發（IMP-1 修復：合併單次 emit，不互踩）', () => {
+  it('兩把 persist key（whisper＋summarize）同時設值 → 掛載後 params 同時保留兩組 seed 欄位', () => {
+    localStorage.setItem('transcribe_whisper_model', 'large-v3')
+    localStorage.setItem('transcribe_summarize_model', 'gemma4:12b:Q4_K_M')
+    const w = mountParams({
+      model_size: 'medium',
+      summarize: true,
+      summarize_model_family: 'gemma4',
+      summarize_model_size: '4b',
+    })
+    const emitted = w.emitted('update:params')!
+    const last = emitted[emitted.length - 1][0] as Record<string, unknown>
+    // 修復前：summarize seed 是後執行的獨立 commitPatch，基於同一 tick 內尚未更新的
+    // stale props.params 合併，會把 whisper seed 剛寫入的 model_size 悄悄復原成 'medium'。
+    expect(last.model_size).toBe('large-v3')
+    expect(last.summarize_model_size).toBe('12b')
+    expect(last.summarize_quantization).toBe('Q4_K_M')
+  })
+})
+
 describe('TranscribeParams — composite 註冊（whisper_model／translate_model／summarize_model，covers 不重疊）', () => {
   function captureComposites() {
     const registered: AgentCompositeField[] = []

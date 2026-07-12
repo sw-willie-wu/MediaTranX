@@ -42,6 +42,7 @@ vi.mock('@/stores/remoteModels', () => ({
 }))
 
 import SummaryParams from '../SummaryParams.vue'
+import { META as SUMMARY_META } from '../summary.meta'
 import AppSelect from '@/components/common/AppSelect.vue'
 import AppToggle from '@/components/common/AppToggle.vue'
 import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
@@ -277,6 +278,37 @@ describe('SummaryParams — tool context：persisted seed（params 等於 defaul
     const w = mountParams({})
     const emitted = w.emitted('update:params')!
     const last = emitted[emitted.length - 1][0] as Record<string, unknown>
+    expect(last.llm_remote).toBe(true)
+    expect(last.llm_remote_model).toBe('gpt-4o')
+  })
+})
+
+describe('SummaryParams — whisper/llm/vlm persisted seed 同時觸發（IMP-1 修復：合併單次 emit，不互踩）', () => {
+  it('三把 persist key（whisper＋llm＋vlm）同時設值 → 掛載後 params 同時保留全部三組 seed 欄位', () => {
+    localStorage.setItem('video_summary_whisper_model', 'large-v3')
+    localStorage.setItem('video_summary_llm_model', 'remote:openai:1:gpt-4o')
+    localStorage.setItem('video_summary_vlm_model', 'qwen3vl:8b')
+    const w = mountParams(SUMMARY_META.defaults())
+    const emitted = w.emitted('update:params')!
+    const last = emitted[emitted.length - 1][0] as Record<string, unknown>
+    // 修復前：三段各自 commitPatch，各自基於同一 tick 內尚未更新的 stale props.params 合併，
+    // 後面的 seed 會把前面 seed 剛寫入的欄位悄悄復原（llm/vlm 皆會覆蓋 whisper，vlm 覆蓋 llm）。
+    expect(last.whisper_model_size).toBe('large-v3')
+    expect(last.llm_remote).toBe(true)
+    expect(last.llm_remote_model).toBe('gpt-4o')
+    expect(last.vlm_model_family).toBe('qwen3vl')
+    expect(last.vlm_model_size).toBe('8b')
+  })
+
+  it('額外發現：summary_mode 的 seed（fallback 與 default 皆為 "bullets"，tool context 掛載幾乎必觸發）'
+    + '若不併入同一顆 seed，會在其餘三組 model picker 之後把它們整批覆蓋——一併驗證已收斂', () => {
+    localStorage.setItem('video_summary_whisper_model', 'large-v3')
+    localStorage.setItem('video_summary_llm_model', 'remote:openai:1:gpt-4o')
+    const w = mountParams(SUMMARY_META.defaults())
+    const emitted = w.emitted('update:params')!
+    const last = emitted[emitted.length - 1][0] as Record<string, unknown>
+    expect(last.summary_mode).toBe('bullets')
+    expect(last.whisper_model_size).toBe('large-v3')
     expect(last.llm_remote).toBe(true)
     expect(last.llm_remote_model).toBe('gpt-4o')
   })

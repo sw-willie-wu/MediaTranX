@@ -95,8 +95,23 @@ const persistedWhisper = usePersistedModel('video_summary_whisper_model', '', { 
 const defaultWhisperToken = String(SUMMARY_META.defaults().whisper_model_size ?? '')
 let whisperSeeded = false
 
+// ══ 四個 setup 期同步 seed（whisper/llm/vlm/summary_mode）收斂成單次 commitPatch（IMP-1 修復）══
+// 問題：每個 commitPatch 都是 `{...props.params, ...patch}`，而 props.params 在同一個同步
+// tick 內不會因為前一個 emit 而更新（Vue prop 回流要等父層下一輪 render/flush，非同步）。
+// 若四段各自呼叫 commitPatch，後面的一定基於「還沒套用前面 patch」的 stale props.params，
+// 導致後 seed 覆蓋前 seed（例：使用者 localStorage 同時存有 whisper 與 llm 模型時，掛載後
+// llm 的 patch 會把 whisper 剛寫入的欄位悄悄復原）。summary_mode 的 seed 額外有「fallback
+// 與 default 皆為 'bullets'」的巧合——只要 tool context 掛載時 params.summary_mode 已是
+// 'bullets'（ToolParamHost 初始值即 meta.defaults()，天生如此），這段 IIFE 幾乎每次掛載都會
+// 觸發，若不併入同一顆 seed，會在其餘三個 model picker 之後把它們的 patch 整批覆蓋掉，
+// 使本次修復對 SummaryParams 名不副實——故一併收斂，不僅限 review 原列的三個 model picker。
+// 修法：四段各自只把要寫的欄位塞進共用 `seed` 物件，seeded flag 語意不變（仍只在
+// context==='tool' 且 persisted 有值時設 true，供各自 fallback watch 判斷是否跳過)，最後
+// 一次性 `if (Object.keys(seed).length) commitPatch(seed)`（見 summary_mode 段落後方）。
+const seed: Record<string, unknown> = {}
+
 if (props.context === 'tool' && persistedWhisper.value && whisperToken.value === defaultWhisperToken) {
-  commitPatch({ whisper_model_size: persistedWhisper.value })
+  seed.whisper_model_size = persistedWhisper.value
   whisperSeeded = true
 }
 
@@ -151,7 +166,7 @@ const defaultLlmToken = encodeModelToken(SUMMARY_META.defaults(), 'llm')
 let llmSeeded = false
 
 if (props.context === 'tool' && persistedLlm.value && llmToken.value === defaultLlmToken) {
-  commitPatch(decodeModelToken(persistedLlm.value, 'llm'))
+  Object.assign(seed, decodeModelToken(persistedLlm.value, 'llm'))
   llmSeeded = true
 }
 
@@ -191,7 +206,7 @@ const defaultVlmToken = encodeModelToken(SUMMARY_META.defaults(), 'vlm')
 let vlmSeeded = false
 
 if (props.context === 'tool' && persistedVlm.value && vlmToken.value === defaultVlmToken) {
-  commitPatch(decodeModelToken(persistedVlm.value, 'vlm'))
+  Object.assign(seed, decodeModelToken(persistedVlm.value, 'vlm'))
   vlmSeeded = true
 }
 
@@ -224,8 +239,11 @@ const persistedMode = usePersistedModel('video_summary_mode', 'bullets', { enabl
 const defaultMode = String(SUMMARY_META.defaults().summary_mode ?? 'bullets')
 
 if (props.context === 'tool' && persistedMode.value && String(props.params.summary_mode ?? '') === defaultMode) {
-  commitPatch({ summary_mode: persistedMode.value })
+  seed.summary_mode = persistedMode.value
 }
+
+// 四段 seed 蒐集完畢，單次提交（見上方 whisper 段落註解——IMP-1 修復核心）。
+if (Object.keys(seed).length) commitPatch(seed)
 
 function onModeChange(v: string) {
   commitPatch({ summary_mode: v })

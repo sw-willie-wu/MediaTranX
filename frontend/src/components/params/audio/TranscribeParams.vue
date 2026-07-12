@@ -92,8 +92,19 @@ const persistedWhisper = usePersistedModel('transcribe_whisper_model', '', { ena
 const defaultWhisperToken = String(TRANSCRIBE_META.defaults().model_size ?? '')
 let whisperSeeded = false
 
+// ══ whisper／summarize 兩個 setup 期同步 seed 收斂成單次 commitPatch（IMP-1 修復）══════════
+// 問題：commitPatch 是 `{...props.params, ...patch}`，而 props.params 在同一個同步 tick 內
+// 不會因為前一個 emit 而更新（Vue prop 回流要等父層下一輪 render/flush，非同步）。若 whisper
+// 與 summarize 各自呼叫 commitPatch，後者一定基於「還沒套用 whisper patch」的 stale
+// props.params，導致 summarize 的 patch 把 whisper 剛寫入的欄位悄悄復原——使用者 localStorage
+// 同時存有 transcribe_whisper_model 與 transcribe_summarize_model 時即會重現。修法：兩段各自
+// 只把要寫的欄位塞進共用 `seed` 物件，seeded flag 語意不變（仍只在 context==='tool' 且
+// persisted 有值時設 true，供各自 fallback watch 判斷是否跳過），最後在 summarize 段落後方
+// 一次性 `if (Object.keys(seed).length) commitPatch(seed)`。
+const seed: Record<string, unknown> = {}
+
 if (props.context === 'tool' && persistedWhisper.value && whisperToken.value === defaultWhisperToken) {
-  commitPatch({ model_size: persistedWhisper.value })
+  seed.model_size = persistedWhisper.value
   whisperSeeded = true
 }
 
@@ -242,9 +253,12 @@ const defaultSummarizeToken = encodeSubModelToken(TRANSCRIBE_META.defaults(), 's
 let summarizeSeeded = false
 
 if (props.context === 'tool' && persistedSummarize.value && summarizeToken.value === defaultSummarizeToken) {
-  commitPatch(decodeSubModelToken(persistedSummarize.value, 'summarize'))
+  Object.assign(seed, decodeSubModelToken(persistedSummarize.value, 'summarize'))
   summarizeSeeded = true
 }
+
+// 兩段 seed 蒐集完畢，單次提交（見上方 whisper 段落註解——IMP-1 修復核心）。
+if (Object.keys(seed).length) commitPatch(seed)
 
 watch(
   localSummarizeOptions,
