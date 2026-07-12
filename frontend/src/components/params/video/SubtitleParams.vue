@@ -154,23 +154,14 @@ function parseGlossaryText(text: string): Record<string, string> | undefined {
 
 function onTranslationChange(v: TranslationOptionsValue) {
   if (!v.enable_translation) {
-    // gate 關閉 → 清空全部 translate_* + keep_names/translate_style/glossary（undefined 覆蓋殘值,
-    // 語意同 translate.meta.ts decodeModelToken 檔頭註解）。translate_remote 也明確清成
-    // undefined（非 decodeTranslateToken('') 的 false）——gate 關閉時七欄應完全不殘留,
-    // 而非留下一個「非 remote」的假訊號。
-    commitPatch({
-      target_language: undefined,
-      keep_names: undefined,
-      translate_style: undefined,
-      glossary: undefined,
-      translate_model_family: undefined,
-      translate_model_size: undefined,
-      translate_quantization: undefined,
-      translate_remote: undefined,
-      translate_provider: undefined,
-      translate_conn_id: undefined,
-      translate_remote_model: undefined,
-    })
+    // gate 關閉 → 只清 target_language（gate 本身）；其餘 translate_*/keep_names/
+    // translate_style/glossary **保留**在 params，重開時原樣呈現（收尾批 W3 e2e 回歸修復——
+    // 舊寫法清空全七＋三欄會連動清掉 TranslationOptionsPanel 內部 ref：清空後的 params 經
+    // translationValue computed 算出空字串/undefined，回流覆蓋掉面板本地狀態（glossaryText
+    // 等 ref），導致「關閉開關→重開」使用者剛打的 glossary 就沒了。buildSubmit() 已在
+    // target_language 空時剔除全部 translate_* 欄位（見 subtitle.meta.ts buildSubmit gate),
+    // 保留不影響送出 payload；modelRequirements 同理只看 target_language 是否非空。
+    commitPatch({ target_language: undefined })
     return
   }
   commitPatch({

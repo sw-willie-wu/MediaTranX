@@ -192,22 +192,13 @@ function parseGlossaryText(text: string): Record<string, string> | undefined {
 
 function onTranslationChange(v: TranslationOptionsValue) {
   if (!v.enable_translation) {
-    // gate 關閉 → translate 明確寫 false + 清空全部 translate_* + keep_names/translate_style/
-    // glossary（undefined 覆蓋殘值，語意同 subtitle.meta.ts decodeTranslateToken 檔頭註解）。
-    commitPatch({
-      translate: false,
-      target_language: undefined,
-      keep_names: undefined,
-      translate_style: undefined,
-      glossary: undefined,
-      translate_model_family: undefined,
-      translate_model_size: undefined,
-      translate_quantization: undefined,
-      translate_remote: undefined,
-      translate_provider: undefined,
-      translate_conn_id: undefined,
-      translate_remote_model: undefined,
-    })
+    // gate 關閉 → 只切 translate:false（gate 本身）；其餘 target_language/keep_names/
+    // translate_style/glossary/translate_* **保留**在 params，重開時原樣呈現（收尾批 W3 e2e
+    // 回歸修復——舊寫法清空全部欄位會連動清掉 TranslationOptionsPanel 內部 ref，見
+    // SubtitleParams.vue 同款修復的檔頭註解）。buildSubmit() 已在 translate!==true 時剔除
+    // 全部 translate_* 欄位（見 transcribe.meta.ts buildSubmit gate),保留不影響送出 payload；
+    // modelRequirements 同理只看 translate===true，composite translate_model.get() 也是。
+    commitPatch({ translate: false })
     return
   }
   commitPatch({

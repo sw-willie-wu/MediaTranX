@@ -247,7 +247,7 @@ describe('LyricsParams — 翻譯 gate（獨立 translate bool，非 target_lang
     expect(last.translate_style).toBe('formal')
   })
 
-  it('gate 關閉 → translate:false + 清空 target_language/keep_names/translate_style/glossary/translate_* 七欄', async () => {
+  it('gate 關閉 → 只切 translate:false；target_language/keep_names/translate_style/glossary/translate_* 保留（收尾批 W3 回歸修復）', async () => {
     const w = mountParams({
       translate: true,
       target_language: 'ja',
@@ -269,13 +269,72 @@ describe('LyricsParams — 翻譯 gate（獨立 translate bool，非 target_lang
     const emitted = w.emitted('update:params')!
     const last = emitted[emitted.length - 1][0] as Record<string, unknown>
     expect(last.translate).toBe(false)
-    expect(last.target_language).toBeUndefined()
-    expect(last.keep_names).toBeUndefined()
-    expect(last.translate_style).toBeUndefined()
-    expect(last.glossary).toBeUndefined()
-    expect(last.translate_model_family).toBeUndefined()
-    expect(last.translate_model_size).toBeUndefined()
-    expect(last.translate_remote).toBeUndefined()
+    expect(last.target_language).toBe('ja')
+    expect(last.keep_names).toBe(false)
+    expect(last.translate_style).toBe('formal')
+    expect(last.glossary).toEqual({ A: 'B' })
+    expect(last.translate_model_family).toBe('gemma4')
+    expect(last.translate_model_size).toBe('4b')
+  })
+})
+
+describe('LyricsParams — gate 關→開 round-trip 保留 glossary/model/style（收尾批 W3 e2e item 5 回歸修復）', () => {
+  it('關閉 gate 後 params 只有 translate:false 變動、glossary/keep_names/translate_style/translate_model_* 原樣保留；重開 gate 時 TranslationOptionsPanel modelValue 反映保留值', async () => {
+    const w = mountParams({
+      translate: true,
+      target_language: 'ja',
+      translate_model_family: 'gemma4',
+      translate_model_size: '4b',
+      translate_quantization: 'Q4_K_M',
+      keep_names: false,
+      translate_style: 'formal',
+      glossary: { Claude: 'Claude', 台北: 'Taipei' },
+    })
+    const panel = w.findComponent(TranslationOptionsPanel)
+
+    await panel.vm.$emit('update:modelValue', {
+      enable_translation: false,
+      target_language: 'ja',
+      translate_model_token: 'gemma4:4b:Q4_K_M',
+      keep_names: false,
+      translate_style: 'formal',
+      glossary_text: 'Claude → Claude\n台北 → Taipei',
+    })
+
+    const afterClose = (w.emitted('update:params')!.at(-1)![0]) as Record<string, unknown>
+    expect(afterClose.translate).toBe(false)
+    expect(afterClose.glossary).toEqual({ Claude: 'Claude', 台北: 'Taipei' })
+    expect(afterClose.keep_names).toBe(false)
+    expect(afterClose.translate_style).toBe('formal')
+    expect(afterClose.translate_model_family).toBe('gemma4')
+    expect(afterClose.translate_model_size).toBe('4b')
+    expect(afterClose.translate_quantization).toBe('Q4_K_M')
+
+    const w2 = mountParams(afterClose)
+    const panel2 = w2.findComponent(TranslationOptionsPanel)
+    const mv2 = panel2.props('modelValue') as Record<string, unknown>
+    expect(mv2.enable_translation).toBe(false)
+    expect(mv2.glossary_text).toBe('Claude → Claude\n台北 → Taipei')
+    expect(mv2.keep_names).toBe(false)
+    expect(mv2.translate_style).toBe('formal')
+
+    await panel2.vm.$emit('update:modelValue', {
+      enable_translation: true,
+      target_language: '',
+      translate_model_token: 'gemma4:4b:Q4_K_M',
+      keep_names: false,
+      translate_style: 'formal',
+      glossary_text: 'Claude → Claude\n台北 → Taipei',
+    })
+    const afterReopen = (w2.emitted('update:params')!.at(-1)![0]) as Record<string, unknown>
+    expect(afterReopen.translate).toBe(true)
+    expect(afterReopen.target_language).toBe('zh-TW')
+    expect(afterReopen.glossary).toEqual({ Claude: 'Claude', 台北: 'Taipei' })
+    expect(afterReopen.keep_names).toBe(false)
+    expect(afterReopen.translate_style).toBe('formal')
+    expect(afterReopen.translate_model_family).toBe('gemma4')
+    expect(afterReopen.translate_model_size).toBe('4b')
+    expect(afterReopen.translate_quantization).toBe('Q4_K_M')
   })
 })
 
