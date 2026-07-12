@@ -6,6 +6,7 @@ import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import ImagePreview from '@/components/image/ImagePreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
+import { METAS } from '@/components/params'
 import ImageAiRemovePanel from '@/components/image/panels/ImageAiRemovePanel.vue'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
 import { useImageWorkspace } from '@/composables/useImageWorkspace'
@@ -56,6 +57,39 @@ const adjustPanelRef   = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const filterPanelRef   = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const cropPanelRef     = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const ocrPanelRef      = ref<InstanceType<typeof ToolParamHost>      | null>(null)
+
+// ── W2：host 泛型收斂 ──────────────────────────────────────────────────────
+// toolKey↔subFunction id 對映（transcode/compress/upscale/remove-bg/adjust/filter/crop/ocr
+// 皆走 ToolParamHost；ai-remove 是非 host 殼 ImageAiRemovePanel，不進此表）。注意 'transcode'
+// 對應 toolKey 'image.convert'（沿命名不一致舊帳，見 project_naming_inconsistency_debt）；
+// 'adjust'/'filter' 共用同一 toolKey 'image.filter'（兩掛載點各自 labelKey override）。
+const HOST_TOOL_KEYS: Record<string, string> = {
+  transcode: 'image.convert',
+  compress: 'image.compress',
+  upscale: 'image.upscale',
+  'remove-bg': 'image.remove_bg',
+  adjust: 'image.filter',
+  filter: 'image.filter',
+  crop: 'image.crop',
+  ocr: 'image.ocr',
+}
+const HOST_REFS: Record<string, typeof convertPanelRef> = {
+  transcode: convertPanelRef,
+  compress: compressPanelRef,
+  upscale: upscalePanelRef,
+  'remove-bg': removeBgPanelRef,
+  adjust: adjustPanelRef,
+  filter: filterPanelRef,
+  crop: cropPanelRef,
+  ocr: ocrPanelRef,
+}
+function hostFor(fn: string) {
+  return HOST_REFS[fn]?.value ?? null
+}
+// upscale/ocr 帶 modelRequirement(s) 但舊 handleMultiExecute 從未呼叫 preflight()（僅單筆
+// execute() 內部會 gate）——W2 是純重構，不新增批次模型就緒門檻，故這兩個工具在泛型批次
+// 路徑中跳過 preflight()、維持舊行為原樣。標記於 task report concerns。
+const MULTI_SKIP_PREFLIGHT = new Set(['upscale', 'ocr'])
 
 const subFunctions = computed(() => [
   { id: 'transcode', name: t('image.functions.transcode'), icon: 'bi-arrow-repeat',         group: t('image.group.edit') },
@@ -230,85 +264,59 @@ const isAnyProcessing = computed(() =>
 
 const executeDisabled = computed(() => {
   if (isAnyProcessing.value) return true
-  if (currentFunction.value === 'ocr') return ocrPanelRef.value?.isDisabled ?? !hasFile.value
+  if (currentFunction.value === 'ocr') return hostFor('ocr')?.isDisabled ?? !hasFile.value
   if (currentFunction.value === 'ai-remove' && isAnimated.value) return true
   // crop 寬高未填時執行鈕 disabled（host validate → isDisabled；與 VideoView crop 分支對齊）
-  if (currentFunction.value === 'crop') return cropPanelRef.value?.isDisabled ?? !hasFile.value
+  if (currentFunction.value === 'crop') return hostFor('crop')?.isDisabled ?? !hasFile.value
+  // 其餘工具(transcode/compress/upscale/remove-bg/ai-remove 非動圖/adjust/filter)沿舊行為
+  // 不查各自 host.isDisabled，只看通用檔案/上傳狀態——非遺漏，是本來就有的既有語意
+  // （這些 meta 皆無 validate()，host.isDisabled 實質上僅剩 !fileId/isProcessing，與此處
+  // fallback 條件不完全等價，貿然統一會改變 isUploading 期間的可觀察行為，故不收）。
   return !hasFile.value || !fileId.value || isUploading.value
 })
 
 const executeLoading = computed(() => {
   if (collection.activeEntry.value?.status === 'processing') return true
-  if (currentFunction.value === 'transcode') return convertPanelRef.value?.isLoading   ?? false
-  if (currentFunction.value === 'compress')  return compressPanelRef.value?.isLoading  ?? false
-  if (currentFunction.value === 'upscale')   return upscalePanelRef.value?.isLoading   ?? false
-  if (currentFunction.value === 'remove-bg') return removeBgPanelRef.value?.isLoading  ?? false
-  if (currentFunction.value === 'ai-remove') return aiRemovePanelRef.value?.isLoading  ?? false
-  if (currentFunction.value === 'adjust')    return adjustPanelRef.value?.isLoading    ?? false
-  if (currentFunction.value === 'filter')    return filterPanelRef.value?.isLoading    ?? false
-  if (currentFunction.value === 'crop')      return cropPanelRef.value?.isLoading      ?? false
-  if (currentFunction.value === 'ocr')       return ocrPanelRef.value?.isLoading       ?? false
-  return false
+  if (currentFunction.value === 'ai-remove') return aiRemovePanelRef.value?.isLoading ?? false
+  return hostFor(currentFunction.value)?.isLoading ?? false
 })
 
 function handleExecute() {
   if (isAnyProcessing.value) return
   if (isMultiSelect.value) {
-    handleMultiExecute()
+    void handleMultiExecute()
   } else {
     handleSingleExecute()
   }
 }
 
 function handleSingleExecute() {
-  switch (currentFunction.value) {
-    case 'transcode': convertPanelRef.value?.execute();  break
-    case 'compress':  compressPanelRef.value?.execute(); break
-    case 'upscale':   upscalePanelRef.value?.execute();  break
-    case 'remove-bg': removeBgPanelRef.value?.execute(); break
-    case 'ai-remove': aiRemovePanelRef.value?.execute(); break
-    case 'adjust':    adjustPanelRef.value?.execute();   break
-    case 'filter':    filterPanelRef.value?.execute();   break
-    case 'crop':      cropPanelRef.value?.execute();     break
-    case 'ocr':       ocrPanelRef.value?.execute();      break
+  if (currentFunction.value === 'ai-remove') {
+    aiRemovePanelRef.value?.execute()
+    return
   }
+  hostFor(currentFunction.value)?.execute()
 }
 
-function handleMultiExecute() {
+async function handleMultiExecute() {
   const noop = () => {}
-  switch (currentFunction.value) {
-    case 'transcode': {
-      // convert 有 buildSubmit（scale/width/height 互斥清理）——批次必須走 getSubmitSpec 而非 getParams（同 VideoView/AudioView 慣例）
-      const spec = convertPanelRef.value!.getSubmitSpec()
-      submitToAll(spec.apiPath, () => convertPanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop); break
-    }
-    case 'compress':
-      submitToAll('/image/compress',  () => compressPanelRef.value!.getParams(), t('image.compress.task_label'),   'image.compress',   noop); break
-    case 'upscale': {
-      // upscale 有 buildSubmit（face_fix=false 時 face_restore_model_id 明確送 null）——
-      // 批次必須走 getSubmitSpec 而非 getParams（同 VideoView/transcode/adjust/filter 慣例）。
-      const spec = upscalePanelRef.value!.getSubmitSpec()
-      submitToAll(spec.apiPath, () => upscalePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop); break
-    }
-    case 'remove-bg':
-      submitToAll('/image/remove-bg', () => removeBgPanelRef.value!.getParams(), t('image.remove_bg.task_label'), 'image.remove_bg',  noop); break
-    case 'adjust': {
-      // adjust host 帶 label-key='image.adjust.task_label' override（見 ImageView template
-      // 掛載點與 ToolParamHost.vue labelKey prop），走 getSubmitSpec() 讓批次任務名稱正確
-      // 顯示「圖片 · 調整」而非兩掛載點共用 META 的 'image.filter.task_label'（同 transcode 慣例）。
-      const spec = adjustPanelRef.value!.getSubmitSpec()
-      submitToAll(spec.apiPath, () => adjustPanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop); break
-    }
-    case 'filter': {
-      const spec = filterPanelRef.value!.getSubmitSpec()
-      submitToAll(spec.apiPath, () => filterPanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop); break
-    }
-    case 'ocr':
-      submitToAll('/image/ocr',       () => ocrPanelRef.value!.getParams(),      t('image.ocr.task_label'),       'image.ocr',        noop); break
-    // ai-remove、crop 不支援批次（需筆刷/裁切互動），退回單張
-    default:
-      handleSingleExecute()
+  const fn = currentFunction.value
+  const toolKey = HOST_TOOL_KEYS[fn]
+  // ai-remove(非 host 殼，需筆刷互動)/crop(META.multiSelect===false，需裁切互動)不支援批次，
+  // 退回單張（沿舊行為：無 toast，直接呼叫 handleSingleExecute）。
+  if (!toolKey || METAS[toolKey].multiSelect === false) {
+    handleSingleExecute()
+    return
   }
+  const host = hostFor(fn)
+  if (!host) return
+  // getSubmitSpec() 一律取代舊 compress/remove-bg/ocr 的 getParams()——三者皆無 buildSubmit，
+  // getSubmitSpec().payload === {...params} 與 getParams() 完全等價（僅 apiPath/labelKey/
+  // taskType 從硬編字面值改讀 meta，值相同）。upscale/ocr 帶 modelRequirement(s) 但舊
+  // handleMultiExecute 從未呼叫 preflight()——沿舊行為跳過，不新增批次模型就緒門檻。
+  if (!MULTI_SKIP_PREFLIGHT.has(fn) && (await host.preflight()) === false) return
+  const spec = host.getSubmitSpec()
+  await submitToAll(spec.apiPath, () => host.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
 }
 
 function onPanelSubmit(taskId: string) {

@@ -6,6 +6,7 @@ import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import VideoPreview from '@/components/video/VideoPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
+import { METAS } from '@/components/params'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
@@ -43,6 +44,30 @@ const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
 const interpolatePanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const enhancePanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const summaryPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
+
+// ── W2：host 泛型收斂 ──────────────────────────────────────────────────────
+// toolKey↔subFunction id 對映（transcode/cut/crop/interpolate/enhance/summary 皆走
+// ToolParamHost；subtitle 是非 host 殼 SubtitlePanel，不進此表）。hostFor() 供
+// execute/disabled/loading/multi 四組 switch 共用單一入口。
+const HOST_TOOL_KEYS: Record<string, string> = {
+  transcode: 'video.transcode',
+  cut: 'video.cut',
+  crop: 'video.crop',
+  interpolate: 'video.interpolate',
+  enhance: 'video.enhance',
+  summary: 'video.summary',
+}
+const HOST_REFS: Record<string, typeof transcodePanelRef> = {
+  transcode: transcodePanelRef,
+  cut: cutPanelRef,
+  crop: cropPanelRef,
+  interpolate: interpolatePanelRef,
+  enhance: enhancePanelRef,
+  summary: summaryPanelRef,
+}
+function hostFor(fn: string) {
+  return HOST_REFS[fn]?.value ?? null
+}
 
 // Crop state (shared between VideoPreview and CropParams, bridged via ToolParamHost attrs fallthrough)
 const showCropOverlay = ref(false)
@@ -82,26 +107,16 @@ useViewHost('video', {
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
 
 const executeDisabled = computed(() => {
-  if (currentFunction.value === 'subtitle')  return subtitlePanelRef.value?.isDisabled ?? true
-  if (currentFunction.value === 'transcode') return transcodePanelRef.value?.isDisabled ?? !hasFile.value
-  if (currentFunction.value === 'cut')       return cutPanelRef.value?.isDisabled ?? !hasFile.value
-  if (currentFunction.value === 'crop')      return cropPanelRef.value?.isDisabled ?? !hasFile.value
-  if (currentFunction.value === 'summary')   return summaryPanelRef.value?.isDisabled ?? true
-  if (currentFunction.value === 'interpolate') return interpolatePanelRef.value?.isDisabled ?? !hasFile.value
-  if (currentFunction.value === 'enhance')   return enhancePanelRef.value?.isDisabled ?? !hasFile.value
-  return !hasFile.value
+  if (currentFunction.value === 'subtitle') return subtitlePanelRef.value?.isDisabled ?? true
+  // summary 的無 host 時退回值是 true（非 !hasFile.value）——沿舊分支語意保留，非統一收斂遺漏。
+  const fallback = currentFunction.value === 'summary' ? true : !hasFile.value
+  return hostFor(currentFunction.value)?.isDisabled ?? fallback
 })
 
 const executeLoading = computed(() => {
   if (isEntryProcessing.value) return true
-  if (currentFunction.value === 'subtitle')  return subtitlePanelRef.value?.isLoading ?? false
-  if (currentFunction.value === 'transcode') return transcodePanelRef.value?.isLoading ?? false
-  if (currentFunction.value === 'cut')       return cutPanelRef.value?.isLoading ?? false
-  if (currentFunction.value === 'crop')      return cropPanelRef.value?.isLoading ?? false
-  if (currentFunction.value === 'summary')   return summaryPanelRef.value?.isLoading ?? false
-  if (currentFunction.value === 'interpolate') return interpolatePanelRef.value?.isLoading ?? false
-  if (currentFunction.value === 'enhance')   return enhancePanelRef.value?.isLoading ?? false
-  return false
+  if (currentFunction.value === 'subtitle') return subtitlePanelRef.value?.isLoading ?? false
+  return hostFor(currentFunction.value)?.isLoading ?? false
 })
 
 function handleExecute() {
@@ -113,54 +128,31 @@ function handleExecute() {
 }
 
 function handleSingleExecute() {
-  switch (currentFunction.value) {
-    case 'transcode':   transcodePanelRef.value?.execute(); break
-    case 'cut':         cutPanelRef.value?.execute(); break
-    case 'crop':        cropPanelRef.value?.execute(); break
-    case 'subtitle':    subtitlePanelRef.value?.submitGenerate(); break
-    case 'summary':     summaryPanelRef.value?.execute(); break
-    case 'interpolate': interpolatePanelRef.value?.execute(); break
-    case 'enhance':     enhancePanelRef.value?.execute(); break
+  if (currentFunction.value === 'subtitle') {
+    subtitlePanelRef.value?.submitGenerate()
+    return
   }
+  hostFor(currentFunction.value)?.execute()
 }
 
 async function handleMultiExecute() {
   const noop = () => {}
-  switch (currentFunction.value) {
-    case 'transcode': {
-      // getSubmitSpec() 分流(音訊格式→/video/extract-audio；視訊/動圖→/video/transcode)：
-      // 批次所有選取檔案共用同一參數組——apiPath/taskType 取一次；payload 由 submitToAll
-      // 快照一次(sharedParams)後逐檔注入 file_id。修復現況 bug——舊
-      // VideoTranscodePanel.getParams() 無分流、批次選音訊格式仍誤打 /video/transcode。
-      const spec = transcodePanelRef.value!.getSubmitSpec()
-      await submitToAll(spec.apiPath, () => transcodePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
-      break
-    }
-    case 'summary': {
-      if (await summaryPanelRef.value?.preflight() === false) break
-      const spec = summaryPanelRef.value!.getSubmitSpec()
-      await submitToAll(spec.apiPath, () => summaryPanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
-      break
-    }
-    case 'interpolate': {
-      if (await interpolatePanelRef.value?.preflight() === false) break
-      const spec = interpolatePanelRef.value!.getSubmitSpec()
-      await submitToAll(spec.apiPath, () => interpolatePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
-      break
-    }
-    case 'enhance': {
-      if (await enhancePanelRef.value?.preflight() === false) break
-      const spec = enhancePanelRef.value!.getSubmitSpec()
-      await submitToAll(spec.apiPath, () => enhancePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
-      break
-    }
-    case 'cut':
-    case 'crop':
-    case 'subtitle':
-      // 互動型工具不支援批次(座標/時間軸 per-file):明示並只跑目前檔案
-      toast.show(t('video.multi_not_supported'), { type: 'info', icon: 'bi-info-circle' })
-      handleSingleExecute(); break
+  const fn = currentFunction.value
+  const toolKey = HOST_TOOL_KEYS[fn]
+  // 互動型工具(座標/時間軸 per-file)或非 host 殼(subtitle)不支援批次：明示並只跑目前檔案。
+  // multiSelect gate 查 META（cut/crop 為 false）；subtitle 不在 HOST_TOOL_KEYS 表內同樣落此分支。
+  if (!toolKey || METAS[toolKey].multiSelect === false) {
+    toast.show(t('video.multi_not_supported'), { type: 'info', icon: 'bi-info-circle' })
+    handleSingleExecute()
+    return
   }
+  const host = hostFor(fn)
+  if (!host) return
+  // preflight 統一先行：video.transcode 無 modelRequirement 恆真、summary/interpolate/enhance
+  // 沿舊各自 preflight() 呼叫——語意等價（見 task report）。
+  if ((await host.preflight()) === false) return
+  const spec = host.getSubmitSpec()
+  await submitToAll(spec.apiPath, () => host.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
 }
 
 function onDownload() {

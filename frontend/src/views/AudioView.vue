@@ -64,6 +64,34 @@ const lyricsPanelRef     = ref<InstanceType<typeof ToolParamHost>       | null>(
 const midiEditPanelRef   = ref<InstanceType<typeof AudioMidiEditPanel>  | null>(null)
 const pianoRollRef       = ref<InstanceType<typeof MidiPianoRoll>       | null>(null)
 
+// ── W2：host 泛型收斂 ──────────────────────────────────────────────────────
+// toolKey↔subFunction id 對映（transcode/cut/volume/transcribe/separate/lyrics 皆走
+// ToolParamHost；midi-edit 是非 host 殼 AudioMidiEditPanel，不進此表）。
+const HOST_TOOL_KEYS: Record<string, string> = {
+  transcode: 'audio.transcode',
+  cut: 'audio.cut',
+  volume: 'audio.volume',
+  transcribe: 'audio.transcribe',
+  separate: 'audio.separate',
+  lyrics: 'audio.lyrics',
+}
+const HOST_REFS: Record<string, typeof transcodePanelRef> = {
+  transcode: transcodePanelRef,
+  cut: cutPanelRef,
+  volume: volumePanelRef,
+  transcribe: transcribePanelRef,
+  separate: separatePanelRef,
+  lyrics: lyricsPanelRef,
+}
+function hostFor(fn: string) {
+  return HOST_REFS[fn]?.value ?? null
+}
+// transcribe/separate/lyrics 帶 modelRequirement(s) 但舊 handleMultiExecute 從未呼叫
+// preflight()（僅單筆 execute() 內部會 gate）——W2 是純重構，不新增批次模型就緒門檻,
+// 故這三個工具在泛型批次路徑中跳過 preflight()、維持舊行為原樣（differs from VideoView,
+// 那邊 summary/interpolate/enhance 本來就有呼叫）。標記於 task report concerns。
+const MULTI_SKIP_PREFLIGHT = new Set(['transcribe', 'separate', 'lyrics'])
+
 // ── MIDI Playback ──
 const midiPlayback = useMidiPlayback()
 
@@ -198,87 +226,51 @@ async function warnIfSoundfontMissing() {
 }
 
 const executeDisabled = computed(() => {
-  if (currentFunction.value === 'transcode')  return transcodePanelRef.value?.isDisabled  ?? !hasFile.value
-  if (currentFunction.value === 'cut')        return cutPanelRef.value?.isDisabled        ?? !hasFile.value
-  if (currentFunction.value === 'volume')     return volumePanelRef.value?.isDisabled     ?? !hasFile.value
-  if (currentFunction.value === 'transcribe') return transcribePanelRef.value?.isDisabled ?? !hasFile.value
-  if (currentFunction.value === 'separate')  return separatePanelRef.value?.isDisabled  ?? !hasFile.value
-  if (currentFunction.value === 'lyrics')    return lyricsPanelRef.value?.isDisabled    ?? !hasFile.value
-  if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.isDisabled  ?? !hasFile.value
-  return !hasFile.value
+  if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.isDisabled ?? !hasFile.value
+  return hostFor(currentFunction.value)?.isDisabled ?? !hasFile.value
 })
 
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
 
 const executeLoading = computed(() => {
   if (isEntryProcessing.value) return true
-  if (currentFunction.value === 'transcode')  return transcodePanelRef.value?.isLoading  ?? false
-  if (currentFunction.value === 'cut')        return cutPanelRef.value?.isLoading        ?? false
-  if (currentFunction.value === 'volume')     return volumePanelRef.value?.isLoading     ?? false
-  if (currentFunction.value === 'transcribe') return transcribePanelRef.value?.isLoading ?? false
-  if (currentFunction.value === 'separate')  return separatePanelRef.value?.isLoading  ?? false
-  if (currentFunction.value === 'lyrics')    return lyricsPanelRef.value?.isLoading    ?? false
-  if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.isLoading  ?? false
-  return false
+  if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.isLoading ?? false
+  return hostFor(currentFunction.value)?.isLoading ?? false
 })
 
 function handleExecute() {
   if (isMultiSelect.value) {
-    handleMultiExecute()
+    void handleMultiExecute()
   } else {
     handleSingleExecute()
   }
 }
 
 function handleSingleExecute() {
-  switch (currentFunction.value) {
-    case 'transcode':  transcodePanelRef.value?.execute();  break
-    case 'cut':        cutPanelRef.value?.execute();        break
-    case 'volume':     volumePanelRef.value?.execute();     break
-    case 'transcribe': transcribePanelRef.value?.execute(); break
-    case 'separate':  separatePanelRef.value?.execute();  break
-    case 'lyrics':    lyricsPanelRef.value?.execute();    break
-    case 'midi-edit': midiEditPanelRef.value?.execute(); break
+  if (currentFunction.value === 'midi-edit') {
+    midiEditPanelRef.value?.execute()
+    return
   }
+  hostFor(currentFunction.value)?.execute()
 }
 
-function handleMultiExecute() {
+async function handleMultiExecute() {
   const noop = () => {}
-  switch (currentFunction.value) {
-    case 'transcode': {
-      // getSubmitSpec() 走 meta.buildSubmit（無損剔 audio_bitrate／sample_rate 正規化）——
-      // 批次所有選取檔案共用同一參數組，apiPath/taskType/labelKey 取一次，payload 由
-      // submitToAll 逐檔重新呼叫 getSubmitSpec().payload 快照（沿 VideoView video.transcode 模式）。
-      const spec = transcodePanelRef.value!.getSubmitSpec()
-      submitToAll(spec.apiPath, () => transcodePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
-      break
-    }
-    case 'volume': {
-      const spec = volumePanelRef.value!.getSubmitSpec()
-      submitToAll(spec.apiPath, () => volumePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
-      break
-    }
-    case 'transcribe': {
-      // getSubmitSpec() 走 meta.buildSubmit（雙 gate 剔欄）——沿 transcode/volume/separate 模式。
-      const spec = transcribePanelRef.value!.getSubmitSpec()
-      submitToAll(spec.apiPath, () => transcribePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
-      break
-    }
-    case 'separate': {
-      const spec = separatePanelRef.value!.getSubmitSpec()
-      submitToAll(spec.apiPath, () => separatePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
-      break
-    }
-    case 'lyrics': {
-      // getSubmitSpec() 走 meta.buildSubmit（雙重判準剔欄）——沿 transcode/volume/transcribe 模式。
-      const spec = lyricsPanelRef.value!.getSubmitSpec()
-      submitToAll(spec.apiPath, () => lyricsPanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
-      break
-    }
-    case 'cut':
-      // 剪輯每個檔案起止不同，不支援批次
-      cutPanelRef.value?.execute(); break
+  const fn = currentFunction.value
+  if (fn === 'cut') {
+    // 剪輯每個檔案起止不同，不支援批次（沿舊行為：無 toast，直接跑目前檔案）
+    cutPanelRef.value?.execute()
+    return
   }
+  if (fn === 'midi-edit') return // 非 host 殼、無批次支援（沿舊行為：switch 無此 case，no-op）
+  const toolKey = HOST_TOOL_KEYS[fn]
+  const host = hostFor(fn)
+  if (!toolKey || !host) return
+  // getSubmitSpec() 走各自 meta.buildSubmit（transcode 正規化／transcribe·lyrics 雙 gate 剔欄）
+  // ——批次所有選取檔案共用同一參數組，payload 由 submitToAll 逐檔重新呼叫快照。
+  if (!MULTI_SKIP_PREFLIGHT.has(fn) && (await host.preflight()) === false) return
+  const spec = host.getSubmitSpec()
+  await submitToAll(spec.apiPath, () => host.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
 }
 
 function formatDuration(s: number): string {

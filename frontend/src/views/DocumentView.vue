@@ -37,6 +37,28 @@ const ocrPanelRef        = ref<InstanceType<typeof ToolParamHost>        | null>
 const splitPanelRef      = ref<InstanceType<typeof ToolParamHost>      | null>(null)
 const showOcrModal       = ref(false)
 
+// ── W2：host 泛型收斂 ──────────────────────────────────────────────────────
+// toolKey↔subFunction id 對映——四工具皆走 ToolParamHost，無非 host 例外殼。
+const HOST_TOOL_KEYS: Record<string, string> = {
+  translate: 'document.translate',
+  'pdf-convert': 'document.pdf_convert',
+  ocr: 'document.ocr',
+  split: 'document.split',
+}
+const HOST_REFS: Record<string, typeof translatePanelRef> = {
+  translate: translatePanelRef,
+  'pdf-convert': pdfConvertPanelRef,
+  ocr: ocrPanelRef,
+  split: splitPanelRef,
+}
+function hostFor(fn: string) {
+  return HOST_REFS[fn]?.value ?? null
+}
+// translate/ocr 帶 modelRequirement 但舊 handleMultiExecute 從未呼叫 preflight()（僅單筆
+// execute() 內部會 gate）——W2 是純重構，不新增批次模型就緒門檻，故這兩個工具在泛型批次
+// 路徑中跳過 preflight()、維持舊行為原樣。標記於 task report concerns。
+const MULTI_SKIP_PREFLIGHT = new Set(['translate', 'ocr'])
+
 const subFunctions = computed(() => [
   { id: 'split',       name: t('document.functions.split'),        icon: 'bi-layout-split',            group: t('document.group.edit') },
   { id: 'pdf-convert', name: t('document.functions.pdf_convert'),  icon: 'bi-file-earmark-pdf-fill',   group: t('document.group.edit') },
@@ -76,51 +98,43 @@ const isPdfOrImage = computed(() => {
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
 
 const executeDisabled = computed(() => {
-  if (currentFunction.value === 'translate')   return translatePanelRef.value?.isDisabled   ?? !hasFile.value
-  if (currentFunction.value === 'pdf-convert') return pdfConvertPanelRef.value?.isDisabled  ?? !hasFile.value
-  if (currentFunction.value === 'ocr')         return (ocrPanelRef.value?.isDisabled ?? !hasFile.value) || !isPdfOrImage.value
-  if (currentFunction.value === 'split')       return splitPanelRef.value?.isDisabled       ?? !hasFile.value
-  return !hasFile.value
+  const disabled = hostFor(currentFunction.value)?.isDisabled ?? !hasFile.value
+  // ocr 副檔名限制（PDF/圖片）——host validate 判斷不到檔名副檔名，額外 || 合併（見上方
+  // isPdfOrImage 註解）。
+  if (currentFunction.value === 'ocr') return disabled || !isPdfOrImage.value
+  return disabled
 })
 
 const executeLoading = computed(() => {
   if (isEntryProcessing.value) return true
-  if (currentFunction.value === 'translate')   return translatePanelRef.value?.isLoading   ?? false
-  if (currentFunction.value === 'pdf-convert') return pdfConvertPanelRef.value?.isLoading  ?? false
-  if (currentFunction.value === 'ocr')         return ocrPanelRef.value?.isLoading         ?? false
-  if (currentFunction.value === 'split')       return splitPanelRef.value?.isLoading       ?? false
-  return false
+  return hostFor(currentFunction.value)?.isLoading ?? false
 })
 
 function handleExecute() {
   if (isMultiSelect.value) {
-    handleMultiExecute()
+    void handleMultiExecute()
   } else {
     handleSingleExecute()
   }
 }
 
 function handleSingleExecute() {
-  switch (currentFunction.value) {
-    case 'translate':   translatePanelRef.value?.execute();   break
-    case 'pdf-convert': pdfConvertPanelRef.value?.execute();  break
-    case 'ocr':         ocrPanelRef.value?.execute();         break
-    case 'split':       splitPanelRef.value?.execute();       break
-  }
+  hostFor(currentFunction.value)?.execute()
 }
 
-function handleMultiExecute() {
+async function handleMultiExecute() {
   const noop = () => {}
-  switch (currentFunction.value) {
-    case 'ocr':
-      submitToAll('/document/ocr',         () => ocrPanelRef.value!.getParams(),        t('document.ocr.task_label'),         'document.ocr',         noop); break
-    case 'translate':
-      submitToAll('/document/translate',   () => translatePanelRef.value!.getParams(),  t('document.translate.task_label'),   'document.translate',   noop); break
-    case 'split':
-      submitToAll('/document/split',       () => splitPanelRef.value!.getParams(),      t('document.split.task_label'),       'document.split',       noop); break
-    case 'pdf-convert':
-      submitToAll('/document/pdf-convert', () => pdfConvertPanelRef.value!.getParams(), t('document.pdf_convert.task_label'), 'document.pdf_convert', noop); break
-  }
+  const fn = currentFunction.value
+  const toolKey = HOST_TOOL_KEYS[fn]
+  const host = hostFor(fn)
+  if (!toolKey || !host) return
+  // getSubmitSpec() 取代舊四工具一律 getParams()——四者皆無 buildSubmit，getSubmitSpec().payload
+  // === {...params} 與 getParams() 完全等價（僅 apiPath/labelKey/taskType 從硬編字面值改讀
+  // meta，值相同）。translate/ocr 帶 modelRequirement 但舊 handleMultiExecute 從未呼叫
+  // preflight()——沿舊行為跳過，不新增批次模型就緒門檻。
+  if (!MULTI_SKIP_PREFLIGHT.has(fn) && (await host.preflight()) === false) return
+  const spec = host.getSubmitSpec()
+  await submitToAll(spec.apiPath, () => host.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
 }
 
 function onDownload() {
