@@ -54,7 +54,8 @@ class DocumentPdfConvertService:
         file_id = params["file_id"]
         file_info = self._file_service.require_file(file_id)
 
-        src_path = file_info.file_path
+        # file_info.file_path 是 str——純文字分支要 Path API（str 無 read_text，txt 輸入必炸）
+        src_path = Path(file_info.file_path)
         src_ext = Path(file_info.original_filename).suffix.lower()
         output_format = params.get("output_format", "txt")
         output_file_id = str(uuid4())
