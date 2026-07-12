@@ -9,6 +9,8 @@ import { useI18n } from 'vue-i18n'
 import { useSubmitTask } from '@/composables/useSubmitTask'
 import { useToast } from '@/composables/useToast'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
+import { useModelStore } from '@/stores/models'
+import { useModelGuard } from '@/composables/useModelGuard'
 import type { PanelFieldSchema, PanelAgentSchema } from '@/stores/panelRegistry'
 import { PARAM_COMPONENTS, METAS } from './index'
 import type { SubmitSpec, AgentCompositeField } from './types'
@@ -26,6 +28,8 @@ const emit = defineEmits<{ submit: [taskId: string] }>()
 const { t } = useI18n()
 const toast = useToast()
 const { submitTask, isProcessing } = useSubmitTask()
+const modelStore = useModelStore()
+const { guardModelReady } = useModelGuard()
 
 // META 不存在 → dev 階段直接 throw（訊息含 toolKey，方便定位掛載點打錯 toolKey）
 const meta = METAS[props.toolKey]
@@ -63,11 +67,13 @@ function getSubmitSpec(): SubmitSpec {
 }
 
 async function execute(): Promise<{ task_id?: string }> {
+  // 執行順序沿 spec §6：META.validate → modelRequirement × useModelGuard → buildSubmit → submitTask
   const errKey = meta.validate?.(params.value)
   if (errKey) {
     toast.show(t(errKey), { type: 'error', icon: 'bi-x-circle' })
     return {}
   }
+  if (!(await preflight())) return {}
   if (!props.fileId) return {}
 
   const spec = getSubmitSpec()
@@ -82,15 +88,24 @@ async function execute(): Promise<{ task_id?: string }> {
   return { task_id: taskId ?? undefined }
 }
 
-// ─── preflight：批 0 無 meta 宣告 modelRequirement，此路徑目前不會走到 ────────
+// ─── preflight：modelRequirement × useModelGuard（批 1 Task 1.5 接線）──────────
+// slot → 設定頁「模型與資源下載」分類 tab 對照（沿各舊 panel 硬編 category 字面值；
+// 例如舊 DocumentTranslatePanel 傳 'llm'）。slot 是 modelRequirement 的語意識別（未來
+// GPU VRAM 協調也用得到），與設定頁 tab 分類是兩件事，故此處另建對照表、非直接複用 slot。
+// 首用僅 translate→llm 一筆，之後 6 個模型系工具面板在各自 task 補上對應項。
+const SLOT_GUARD_CATEGORY: Record<string, string> = { translate: 'llm' }
+
 async function preflight(): Promise<boolean> {
   const req = meta.modelRequirement?.(params.value)
   if (!req) return true
-  // 批 1 Task 1.4/1.5 接 useModelGuard（現行下載引導）；本批先 warn 放行，不阻塞流程
-  console.warn(
-    `[ToolParamHost] toolKey="${props.toolKey}" 宣告了 modelRequirement，但 preflight 尚未接 useModelGuard（見批 1 Task 1.4/1.5）`,
-  )
-  return true
+  const ready = modelStore.models.some((m) => {
+    if (m.family !== req.family) return false
+    const [size, quant] = m.variant.split(':')
+    if (size !== req.size) return false
+    if (req.quantization && quant !== req.quantization) return false
+    return m.downloaded
+  })
+  return await guardModelReady(ready, SLOT_GUARD_CATEGORY[req.slot] ?? req.slot)
 }
 
 // ─── isDisabled / isLoading / outputFormat ─────────────────────────────────
@@ -170,9 +185,14 @@ const agentFields = computed<PanelFieldSchema[]>(() => {
   const covered = new Set(composites.value.flatMap((c) => c.covers))
   const base = meta.schema
     .filter((f) => !covered.has(f.name))
+    // dict/list 欄位不進 agent 面板欄位——scalar set_field 無法表達；agent 要用 dict 走
+    // create_pipeline（字串硬塞進 dict 欄位會讓後端 422）。這些欄位仍留在 meta.schema／
+    // params 全集裡，只是不曝光給 agent 的 set_field 介面；getCurrentValues／execute
+    // payload 不受影響，工具頁 UI（textarea 等）照常可編輯。
+    .filter((f) => f.type !== 'dict' && f.type !== 'list')
     .map((f) => ({
       name: f.name,
-      type: (f.type === 'boolean' ? 'bool' : f.type === 'dict' || f.type === 'list' ? 'string' : f.type) as PanelFieldSchema['type'],
+      type: (f.type === 'boolean' ? 'bool' : f.type) as PanelFieldSchema['type'],
       ...(f.options ? { options: () => f.options! } : {}),
       ...(f.min !== undefined ? { min: f.min } : {}),
       ...(f.max !== undefined ? { max: f.max } : {}),

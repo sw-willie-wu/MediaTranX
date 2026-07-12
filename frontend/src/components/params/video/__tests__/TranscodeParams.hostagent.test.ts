@@ -30,6 +30,15 @@ vi.mock('@/composables/useAgentPanelHost', () => ({
   },
 }))
 
+// video.transcode 無 modelRequirement，preflight 恆 true；掛 mock 只為滿足 ToolParamHost 現在
+// 無條件呼叫 useModelStore()/useModelGuard()（批 1 Task 1.5 host 接線）不炸 no-active-Pinia。
+vi.mock('@/composables/useModelGuard', () => ({
+  useModelGuard: () => ({ guardModelReady: vi.fn(async () => true) }),
+}))
+vi.mock('@/stores/models', () => ({
+  useModelStore: () => ({ models: [] }),
+}))
+
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import AppSelect from '@/components/common/AppSelect.vue'
 // 靜態 import 讓 TranscodeParams.vue 先進 vitest 模組快取（同一 resolved path）——

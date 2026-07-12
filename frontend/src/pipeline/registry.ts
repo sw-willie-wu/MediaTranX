@@ -5,16 +5,21 @@
  * subtitle 編輯燒錄流）與 multipart 的 audio.midi 不在白名單;cut/crop（影音圖）
  * 與字幕「提取」以面板數值入列（2026-07-07 User 決策,推翻 v1 傘型排除）。
  *
- * 建模限制（v1）:dict / list 型欄位（translate/lyrics 的 glossary、
- * separate 的 stems）不進 paramSchema——ParamField 四型別無法表達,列了反而
- * 讓合法值被 param_invalid 打死;runner 對 node.params 原樣透傳,後端 default
- * （stems=None=全部、glossary=None）補位。動態模型系欄位（model_id/
- * provider/conn_id/remote_model/語言清單）標 advanced 且不給 options。
+ * 建模限制（現況）:dict / list 型欄位（translate 的 glossary 等）批 0 已解禁,
+ * ParamField 六型別含 dict/list,已入 paramSchema（見 document.translate 的
+ * glossary）;runner 對 node.params 原樣透傳,後端 default（stems=None=全部、
+ * glossary=None）補位。唯一例外是 ToolParamHost 的 agent 兩層合成——dict/list
+ * 欄位不曝給 agent 的 set_field 介面（scalar 無法表達 dict,字串硬塞會 422）,
+ * 但仍留在 paramSchema／pipeline 節點表單裡,只是 agent 面板看不到、要用
+ * create_pipeline 走 dict 全量帶入（見 components/params/ToolParamHost.vue
+ * agentFields）。動態模型系欄位（model_id/provider/conn_id/remote_model/
+ * 語言清單）標 advanced 且不給 options。
  */
 import type { MediaKindT, ParamField, ToolSpec } from './types'
 import { META as CUT_META } from '@/components/params/video/cut.meta'
 import { META as TRANSCODE_META, AUDIO_FORMATS as TRANSCODE_AUDIO_FORMATS } from '@/components/params/video/transcode.meta'
 import { META as EXTRACT_AUDIO_META } from '@/components/params/video/extract_audio.meta'
+import { META as TRANSLATE_META } from '@/components/params/document/translate.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
@@ -503,26 +508,16 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     ],
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 1 Task 1.5）：欄位定義唯一事實來源在
+  // translate.meta.ts（含 glossary dict——批 0 已解禁 dict 型別，不再排除）。
   'document.translate': {
-    toolKey: 'document.translate',
-    apiPath: '/document/translate',
-    labelKey: 'document.translate.task_label',
+    toolKey: TRANSLATE_META.toolKey,
+    apiPath: TRANSLATE_META.apiPath,
+    labelKey: TRANSLATE_META.labelKey,
     kind: 'tool',
     inputKinds: ['document'],
     outputKind: DOCUMENT_OUT,
-    // glossary（dict）v1 不建模——見檔頭註記
-    paramSchema: [
-      { name: 'source_language', type: 'string' },   // 必填、BCP 47,語言清單動態
-      { name: 'target_language', type: 'string' },   // 必填、BCP 47
-      { name: 'translate_style', type: 'enum', options: TRANSLATE_STYLES, default: 'colloquial' },
-      { name: 'model_family', type: 'string', default: 'gemma4', advanced: true },
-      { name: 'model_size', type: 'string', default: '4b', advanced: true },
-      { name: 'quantization', type: 'string', advanced: true },
-      { name: 'remote', type: 'boolean', default: false, advanced: true },
-      { name: 'provider', type: 'string', advanced: true },
-      { name: 'conn_id', type: 'number', advanced: true },
-      { name: 'remote_model', type: 'string', advanced: true },
-    ],
+    paramSchema: TRANSLATE_META.schema,
   },
 }
 

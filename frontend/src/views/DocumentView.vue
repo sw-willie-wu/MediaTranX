@@ -5,7 +5,7 @@ import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import DocumentPreview from '@/components/document/DocumentPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
-import DocumentTranslatePanel   from '@/components/document/panels/DocumentTranslatePanel.vue'
+import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import DocumentPdfConvertPanel  from '@/components/document/panels/DocumentPdfConvertPanel.vue'
 import DocumentOcrPanel         from '@/components/document/panels/DocumentOcrPanel.vue'
 import DocumentSplitPanel       from '@/components/document/panels/DocumentSplitPanel.vue'
@@ -16,6 +16,7 @@ import { useExecuteStop } from '@/composables/useExecuteStop'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 import { useViewHost } from '@/composables/useViewHost'
 import { subfunctionsForView } from '@/agent/agentNavCatalog'
+import { panelIdFor } from '@/composables/useActiveView'
 
 const { t } = useI18n()
 
@@ -33,7 +34,7 @@ const { submitToAll } = useMultiSubmit(collection)
 const { isCanceling, requestStop } = useExecuteStop(collection)
 
 // Panel refs
-const translatePanelRef  = ref<InstanceType<typeof DocumentTranslatePanel>  | null>(null)
+const translatePanelRef  = ref<InstanceType<typeof ToolParamHost>  | null>(null)
 const pdfConvertPanelRef = ref<InstanceType<typeof DocumentPdfConvertPanel> | null>(null)
 const ocrPanelRef        = ref<InstanceType<typeof DocumentOcrPanel>        | null>(null)
 const splitPanelRef      = ref<InstanceType<typeof DocumentSplitPanel>      | null>(null)
@@ -248,9 +249,11 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
 
     <template #settings>
       <div class="settings-form">
-        <DocumentTranslatePanel
+        <ToolParamHost
           v-if="currentFunction === 'translate'"
           ref="translatePanelRef"
+          tool-key="document.translate"
+          :panel-id="panelIdFor('document', 'translate')"
           :file-id="fileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"

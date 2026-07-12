@@ -28,6 +28,16 @@ vi.mock('@/composables/useAgentPanelHost', () => ({
   },
 }))
 
+const guardModelReadyMock = vi.hoisted(() => vi.fn(async () => true))
+vi.mock('@/composables/useModelGuard', () => ({
+  useModelGuard: () => ({ guardModelReady: guardModelReadyMock }),
+}))
+
+const modelStoreState = vi.hoisted(() => ({ models: [] as Array<{ family: string; variant: string; downloaded: boolean }> }))
+vi.mock('@/stores/models', () => ({
+  useModelStore: () => modelStoreState,
+}))
+
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
 
 // ─── stub 參數元件 ───────────────────────────────────────────────────────────
@@ -131,6 +141,30 @@ PARAM_COMPONENTS[STUB_BUILD_SUBMIT_KEY] = StubParams
 METAS[STUB_COMPOSITE_KEY] = makeStubMeta({ toolKey: STUB_COMPOSITE_KEY })
 PARAM_COMPONENTS[STUB_COMPOSITE_KEY] = StubParamsWithComposite
 
+// modelRequirement 案（批 1 Task 1.5：preflight × useModelGuard 接線）——remote===true → null，
+// 否則回 { slot:'translate', family:'gemma4', size:'4b', quantization:'Q4_K_M' }（固定值，測試無需依賴 params）
+const STUB_MODEL_KEY = 'test.stub.model'
+METAS[STUB_MODEL_KEY] = makeStubMeta({
+  toolKey: STUB_MODEL_KEY,
+  modelRequirement(params) {
+    if (params.remote === true) return null
+    return { slot: 'translate', family: 'gemma4', size: '4b', quantization: 'Q4_K_M' }
+  },
+})
+PARAM_COMPONENTS[STUB_MODEL_KEY] = StubParams
+
+// dict/list 型欄位案（review finding #2：agentSchema.fields 不得含 dict/list 欄位）
+const STUB_DICT_KEY = 'test.stub.dict'
+METAS[STUB_DICT_KEY] = makeStubMeta({
+  toolKey: STUB_DICT_KEY,
+  schema: [
+    { name: 'a', type: 'number', min: 0, max: 100, default: 5 },
+    { name: 'glossary', type: 'dict' },
+    { name: 'items', type: 'list' },
+  ],
+})
+PARAM_COMPONENTS[STUB_DICT_KEY] = StubParams
+
 function mountHost(toolKey: string, props: Record<string, unknown> = {}) {
   return mount(ToolParamHost, {
     props: {
@@ -148,6 +182,9 @@ beforeEach(() => {
   submitTaskMock.mockReset()
   isProcessingState.value = false
   capturedHandle.current = null
+  guardModelReadyMock.mockReset()
+  guardModelReadyMock.mockResolvedValue(true)
+  modelStoreState.models = []
 })
 
 describe('ToolParamHost — params state', () => {
@@ -287,6 +324,66 @@ describe('ToolParamHost — composite 兩層合成', () => {
     const values = handle.getCurrentValues()
     expect(values.m).toBe('x')
     expect(values).not.toHaveProperty('a')
+  })
+})
+
+describe('ToolParamHost — agentSchema dict/list 排除（review finding #2）', () => {
+  it('8. dict/list 型欄位不進 agentSchema.fields；scalar 欄位不受影響', () => {
+    const w = mountHost(STUB_DICT_KEY)
+    const handle = capturedHandle.current
+    expect(handle).toBeTruthy()
+
+    const names = handle.agentSchema.fields.map((f: any) => f.name)
+    expect(names).not.toContain('glossary')
+    expect(names).not.toContain('items')
+    expect(names).toContain('a')
+
+    // dict/list 欄位仍留在 params 全集裡（getCurrentValues／execute payload 不受影響）
+    ;(w.vm as any).setParams({ a: 1, glossary: { foo: 'bar' }, items: [1, 2] })
+    const values = handle.getCurrentValues()
+    expect(values.glossary).toEqual({ foo: 'bar' })
+    expect(values.items).toEqual([1, 2])
+  })
+})
+
+describe('ToolParamHost — preflight × useModelGuard（批 1 Task 1.5 接線）', () => {
+  it('a. meta 無 modelRequirement → preflight 恆 true，不呼叫 guardModelReady', async () => {
+    const w = mountHost(STUB_TOOL_KEY)
+    await expect((w.vm as any).preflight()).resolves.toBe(true)
+    expect(guardModelReadyMock).not.toHaveBeenCalled()
+  })
+
+  it('b. modelRequirement 非 null，modelStore 有對應 family/variant 且已下載 → guardModelReady(true, 對照分類)', async () => {
+    modelStoreState.models = [{ family: 'gemma4', variant: '4b:Q4_K_M', downloaded: true }]
+    const w = mountHost(STUB_MODEL_KEY)
+    const ready = await (w.vm as any).preflight()
+    expect(guardModelReadyMock).toHaveBeenCalledWith(true, 'llm')
+    expect(ready).toBe(true)
+  })
+
+  it('c. modelRequirement 非 null，modelStore 無對應項（未下載）→ guardModelReady(false, ...)，preflight 回傳 guard 結果', async () => {
+    modelStoreState.models = []
+    guardModelReadyMock.mockResolvedValueOnce(false)
+    const w = mountHost(STUB_MODEL_KEY)
+    const ready = await (w.vm as any).preflight()
+    expect(guardModelReadyMock).toHaveBeenCalledWith(false, 'llm')
+    expect(ready).toBe(false)
+  })
+
+  it('d. execute()：preflight 回 false → submitTask 不被呼叫', async () => {
+    guardModelReadyMock.mockResolvedValueOnce(false)
+    const w = mountHost(STUB_MODEL_KEY)
+    const result = await (w.vm as any).execute()
+    expect(submitTaskMock).not.toHaveBeenCalled()
+    expect(result).toEqual({})
+  })
+
+  it('e. execute()：validate 失敗優先於 preflight（validate 先擋，guardModelReady 不被呼叫）', async () => {
+    const w = mountHost(STUB_MODEL_KEY)
+    ;(w.vm as any).setParams({ a: 5, b: false, c: 'x', fmt: 'mp4', forceInvalid: true })
+    await (w.vm as any).execute()
+    expect(guardModelReadyMock).not.toHaveBeenCalled()
+    expect(submitTaskMock).not.toHaveBeenCalled()
   })
 })
 
