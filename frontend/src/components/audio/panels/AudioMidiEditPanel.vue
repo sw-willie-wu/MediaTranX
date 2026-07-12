@@ -8,6 +8,7 @@ import { useMidiEditor } from '@/composables/useMidiEditor'
 import { apiFetch } from '@/composables/useApi'
 import { useToneSynth, effectsState } from '@/composables/useToneSynth'
 import { useMidiExport } from '@/composables/useMidiExport'
+import MidiExportParams from '@/components/params/audio/MidiExportParams.vue'
 
 const props = defineProps<{
   fileId: string | null
@@ -68,15 +69,16 @@ watch([() => props.fileId, () => props.currentFileName], async ([id]) => {
 }, { immediate: true })
 
 // ── Export state ──
+// exportFormat 是 getParams()/execute() 的唯一事實來源（不動——見檔頭邊界鐵則）；
+// exportFormatOptions 已搬進 MidiExportParams.vue（批 3 Task 3.5 Part B，最小侵入拆分），
+// exportParamsModel 是 Export tab 掛載 MidiExportParams 用的受控 v-model 轉接器。
 
 const exportFormat = ref('wav')
-const exportFormatOptions = [
-  { value: 'wav', label: 'WAV' },
-  { value: 'mp3', label: 'MP3' },
-  { value: 'flac', label: 'FLAC' },
-  { value: 'ogg', label: 'OGG' },
-  { value: 'aac', label: 'AAC' },
-]
+
+const exportParamsModel = computed({
+  get: () => ({ output_format: exportFormat.value }),
+  set: (v: Record<string, unknown>) => { exportFormat.value = String(v.output_format ?? 'wav') },
+})
 
 const defaultBaseName = computed(() => {
   return props.currentFileName?.replace(/\.[^.]+$/, '') || 'Untitled'
@@ -396,10 +398,7 @@ defineExpose({
 
       <!-- Export tab -->
       <div v-show="activeTab === 'export'" class="function-settings">
-        <div class="form-group">
-          <label>{{ t('audio.midi.export_format') }}</label>
-          <AppSelect v-model="exportFormat" :options="exportFormatOptions" />
-        </div>
+        <MidiExportParams v-model:params="exportParamsModel" context="tool" />
         <p class="form-hint">{{ t('audio.midi.export_to_results_hint') }}</p>
       </div>
   </div>

@@ -7,7 +7,6 @@ import AudioPreview from '@/components/audio/AudioPreview.vue'
 import AudioMultiTrackPreview from '@/components/audio/AudioMultiTrackPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
-import AudioLyricsPanel    from '@/components/audio/panels/AudioLyricsPanel.vue'
 const AudioMidiEditPanel = defineAsyncComponent(
   () => import('@/components/audio/panels/AudioMidiEditPanel.vue')
 )
@@ -61,7 +60,7 @@ const cutPanelRef        = ref<InstanceType<typeof ToolParamHost>        | null>
 const volumePanelRef     = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const transcribePanelRef = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const separatePanelRef   = ref<InstanceType<typeof ToolParamHost>        | null>(null)
-const lyricsPanelRef     = ref<InstanceType<typeof AudioLyricsPanel>    | null>(null)
+const lyricsPanelRef     = ref<InstanceType<typeof ToolParamHost>       | null>(null)
 const midiEditPanelRef   = ref<InstanceType<typeof AudioMidiEditPanel>  | null>(null)
 const pianoRollRef       = ref<InstanceType<typeof MidiPianoRoll>       | null>(null)
 
@@ -270,8 +269,12 @@ function handleMultiExecute() {
       submitToAll(spec.apiPath, () => separatePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
       break
     }
-    case 'lyrics':
-      submitToAll('/audio/lyrics',    () => lyricsPanelRef.value!.getParams(),    t('audio.lyrics.task_label'),    'audio.lyrics',    noop); break
+    case 'lyrics': {
+      // getSubmitSpec() 走 meta.buildSubmit（雙重判準剔欄）——沿 transcode/volume/transcribe 模式。
+      const spec = lyricsPanelRef.value!.getSubmitSpec()
+      submitToAll(spec.apiPath, () => lyricsPanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
+      break
+    }
     case 'cut':
       // 剪輯每個檔案起止不同，不支援批次
       cutPanelRef.value?.execute(); break
@@ -873,11 +876,14 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @submit="handlePanelSubmit"
         />
 
-        <AudioLyricsPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'lyrics'"
           ref="lyricsPanelRef"
+          tool-key="audio.lyrics"
+          :panel-id="panelIdFor('audio', 'lyrics')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 

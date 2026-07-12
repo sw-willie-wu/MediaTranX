@@ -19,6 +19,7 @@ import { META as AUDIO_VOLUME_META } from './audio/volume.meta'
 import { META as AUDIO_CUT_META } from './audio/cut.meta'
 import { META as AUDIO_SEPARATE_META } from './audio/separate.meta'
 import { META as AUDIO_TRANSCRIBE_META } from './audio/transcribe.meta'
+import { META as AUDIO_LYRICS_META } from './audio/lyrics.meta'
 
 export const PARAM_COMPONENTS: Record<string, Component> = {
   'video.cut': defineAsyncComponent(() => import('./video/CutParams.vue')),
@@ -39,6 +40,7 @@ export const PARAM_COMPONENTS: Record<string, Component> = {
   'audio.cut': defineAsyncComponent(() => import('./audio/AudioCutParams.vue')),
   'audio.separate': defineAsyncComponent(() => import('./audio/SeparateParams.vue')),
   'audio.transcribe': defineAsyncComponent(() => import('./audio/TranscribeParams.vue')),
+  'audio.lyrics': defineAsyncComponent(() => import('./audio/LyricsParams.vue')),
 }
 
 export const METAS: Record<string, ToolParamMeta> = {
@@ -57,6 +59,7 @@ export const METAS: Record<string, ToolParamMeta> = {
   'audio.cut': AUDIO_CUT_META,
   'audio.separate': AUDIO_SEPARATE_META,
   'audio.transcribe': AUDIO_TRANSCRIBE_META,
+  'audio.lyrics': AUDIO_LYRICS_META,
 }
 
 export function hasParamComponent(toolKey: string): boolean {

@@ -31,6 +31,7 @@ import { META as AUDIO_VOLUME_META } from '@/components/params/audio/volume.meta
 import { META as AUDIO_CUT_META } from '@/components/params/audio/cut.meta'
 import { META as AUDIO_SEPARATE_META } from '@/components/params/audio/separate.meta'
 import { META as AUDIO_TRANSCRIBE_META } from '@/components/params/audio/transcribe.meta'
+import { META as AUDIO_LYRICS_META } from '@/components/params/audio/lyrics.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
@@ -38,27 +39,6 @@ const IMAGE_OUT = (): MediaKindT => 'image'
 const DOCUMENT_OUT = (): MediaKindT => 'document'
 
 const VIDEO_IMAGE_FORMATS = new Set(['gif', 'apng'])
-
-// 後端 adapters/ai/registry.py whisper variants（stt 靜態清單）
-const WHISPER_SIZES = ['tiny', 'base', 'small', 'medium', 'large-v3']
-// 後端 translate 風格常數（document/translate.py 描述: colloquial, formal, literal）
-const TRANSLATE_STYLES = ['colloquial', 'formal', 'literal']
-
-/** transcribe/lyrics 共用的翻譯子欄位（translate=true 才顯示;glossary 見檔頭註記） */
-function translateSubFields(visible: (p: Record<string, unknown>) => boolean): ParamField[] {
-  return [
-    { name: 'target_language', type: 'string', advanced: true, visibleWhen: visible },
-    { name: 'translate_model_family', type: 'string', default: 'gemma4', advanced: true, visibleWhen: visible },
-    { name: 'translate_model_size', type: 'string', default: '4b', advanced: true, visibleWhen: visible },
-    { name: 'translate_quantization', type: 'string', advanced: true, visibleWhen: visible },
-    { name: 'translate_remote', type: 'boolean', default: false, advanced: true, visibleWhen: visible },
-    { name: 'translate_provider', type: 'string', advanced: true, visibleWhen: visible },
-    { name: 'translate_conn_id', type: 'number', advanced: true, visibleWhen: visible },
-    { name: 'translate_remote_model', type: 'string', advanced: true, visibleWhen: visible },
-    { name: 'keep_names', type: 'boolean', default: true, advanced: true, visibleWhen: visible },
-    { name: 'translate_style', type: 'enum', options: TRANSLATE_STYLES, default: 'colloquial', advanced: true, visibleWhen: visible },
-  ]
-}
 
 /** image.ocr / document.ocr 共用的 VLM 模型欄位（本地 family/size 或 remote 三元組） */
 function vlmModelFields(): ParamField[] {
@@ -208,20 +188,17 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     paramSchema: AUDIO_TRANSCODE_META.schema,
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 3 Task 3.5——批 3 收官）：欄位定義唯一事實
+  // 來源在 audio/lyrics.meta.ts（15 欄全集；無 vocal_separation/summarize，demucs 需求無條件，
+  // 見該檔檔頭「與 audio.transcribe 的關鍵差異」）。
   'audio.lyrics': {
-    toolKey: 'audio.lyrics',
-    apiPath: '/audio/lyrics',
-    labelKey: 'audio.lyrics.task_label',
+    toolKey: AUDIO_LYRICS_META.toolKey,
+    apiPath: AUDIO_LYRICS_META.apiPath,
+    labelKey: AUDIO_LYRICS_META.labelKey,
     kind: 'tool',
     inputKinds: ['audio'],
     outputKind: DOCUMENT_OUT,
-    paramSchema: [
-      { name: 'model_size', type: 'enum', options: WHISPER_SIZES, default: 'medium' },
-      { name: 'output_format', type: 'enum', options: ['lrc', 'txt'], default: 'lrc' },
-      { name: 'align', type: 'boolean', default: false },
-      { name: 'translate', type: 'boolean', default: false },
-      ...translateSubFields((p) => p.translate === true),
-    ],
+    paramSchema: AUDIO_LYRICS_META.schema,
   },
 
   // paramSchema 由 META 組裝（統一參數元件案，批 3 Task 3.3）：欄位定義唯一事實來源在
