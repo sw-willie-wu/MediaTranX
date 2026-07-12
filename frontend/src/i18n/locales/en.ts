@@ -785,6 +785,7 @@ export default {
       start: 'Start',
       vocal_separation: 'Separate vocals (Demucs)',
       vocal_separation_hint: 'Enable if background music interferes with transcription; adds processing time.',
+      source_language_placeholder: 'Language code, e.g. en/zh/ja (blank = auto-detect)',
     },
 
     translate: {

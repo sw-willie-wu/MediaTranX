@@ -785,6 +785,7 @@ export default {
       start: '開始',
       vocal_separation: '分離人聲',
       vocal_separation_hint: '若影片配樂干擾辨識可開啟；會增加處理時間。',
+      source_language_placeholder: '語言代碼，如 en/zh/ja（留空＝自動偵測）',
     },
 
     translate: {

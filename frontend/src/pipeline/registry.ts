@@ -24,6 +24,7 @@ import { META as DOWNLOAD_META } from '@/components/params/video/download.meta'
 import { META as INTERPOLATE_META } from '@/components/params/video/interpolate.meta'
 import { META as ENHANCE_META } from '@/components/params/video/enhance.meta'
 import { META as SUMMARY_META } from '@/components/params/video/summary.meta'
+import { META as SUBTITLE_META } from '@/components/params/video/subtitle.meta'
 import { META as TRANSLATE_META } from '@/components/params/document/translate.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
@@ -138,39 +139,19 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     paramSchema: CROP_META.schema,
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 2 Task 2.5——例外殼工具）:欄位定義唯一事實
+  // 來源在 subtitle.meta.ts（含 glossary(dict)——v1 排除已於本 task 解禁加回,20 欄全集）。
+  // 註:toolKey 'video.subtitle' ≠ 後端 task_type 'video.subtitle_generate' ≠ 前端
+  // taskStore.addTask 手寫 taskType 'subtitle/generate' — 全 registry 唯一三名不同者;
+  // 無害(label 各路徑同字樣),別誤當 bug（見 subtitle.meta.ts META.taskType 註解）。
   'video.subtitle': {
-    toolKey: 'video.subtitle',
-    apiPath: '/video/subtitle/generate',
-    labelKey: 'video.subtitle.task_label',
+    toolKey: SUBTITLE_META.toolKey,
+    apiPath: SUBTITLE_META.apiPath,
+    labelKey: SUBTITLE_META.labelKey,
     kind: 'tool',
     inputKinds: ['video'],
     outputKind: DOCUMENT_OUT,
-    // SubtitleGenerateRequest(subtitle.py)欄位照抄;glossary 為 dict — v1 建模
-    // 限制排除(檔頭規則)。翻譯子欄位 gate 是 target_language 非空(string、非
-    // boolean),v1 全標 advanced 不做 visibleWhen。
-    // 註:toolKey 'video.subtitle' ≠ 後端 task_type 'video.subtitle_generate' —
-    // 全 registry 唯一不同名;無害(label 兩路徑同字樣),別誤當 bug。
-    paramSchema: [
-      { name: 'source_language', type: 'string', advanced: true },
-      { name: 'model_size', type: 'enum', options: WHISPER_SIZES, default: 'medium' },
-      { name: 'output_format', type: 'enum', options: ['srt', 'vtt'], default: 'srt' },
-      { name: 'target_language', type: 'string', advanced: true },
-      { name: 'translate_model_family', type: 'string', default: 'gemma4', advanced: true },
-      { name: 'translate_model_size', type: 'string', default: '4b', advanced: true },
-      { name: 'translate_quantization', type: 'string', advanced: true },
-      { name: 'translate_remote', type: 'boolean', default: false, advanced: true },
-      { name: 'translate_provider', type: 'string', advanced: true },
-      { name: 'translate_conn_id', type: 'number', advanced: true },
-      { name: 'translate_remote_model', type: 'string', advanced: true },
-      { name: 'keep_names', type: 'boolean', default: true, advanced: true },
-      { name: 'translate_style', type: 'enum', options: TRANSLATE_STYLES, default: 'colloquial', advanced: true },
-      { name: 'word_timestamps', type: 'boolean', default: false, advanced: true },
-      { name: 'condition_on_previous_text', type: 'boolean', default: true, advanced: true },
-      { name: 'min_silence_duration_ms', type: 'number', min: 100, max: 2000, step: 50, default: 200, advanced: true },
-      { name: 'vad_threshold', type: 'number', min: 0.1, max: 0.9, step: 0.05, default: 0.3, advanced: true },
-      { name: 'align', type: 'boolean', default: false, advanced: true },
-      { name: 'vocal_separation', type: 'boolean', default: false, advanced: true },
-    ],
+    paramSchema: SUBTITLE_META.schema,
   },
 
   // paramSchema 由 META 組裝（統一參數元件案，批 2 Task 2.3）:欄位定義唯一事實來源在
