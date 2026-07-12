@@ -32,6 +32,8 @@ import { META as AUDIO_CUT_META } from '@/components/params/audio/cut.meta'
 import { META as AUDIO_SEPARATE_META } from '@/components/params/audio/separate.meta'
 import { META as AUDIO_TRANSCRIBE_META } from '@/components/params/audio/transcribe.meta'
 import { META as AUDIO_LYRICS_META } from '@/components/params/audio/lyrics.meta'
+import { META as IMAGE_COMPRESS_META } from '@/components/params/image/compress.meta'
+import { META as IMAGE_CONVERT_META } from '@/components/params/image/convert.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
@@ -253,40 +255,29 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
   },
 
   // ── image ─────────────────────────────────────────────────────────
+  // paramSchema 由 META 組裝（統一參數元件案，批 4 Task 4.1）：欄位定義唯一事實來源在
+  // compress.meta.ts（含 strength default 60→75 的刻意偏離決策，見該檔檔頭註記——pipeline
+  // 節點初值隨之改變，非疏漏）。
   'image.compress': {
-    toolKey: 'image.compress',
-    apiPath: '/image/compress',
-    labelKey: 'image.compress.task_label',
+    toolKey: IMAGE_COMPRESS_META.toolKey,
+    apiPath: IMAGE_COMPRESS_META.apiPath,
+    labelKey: IMAGE_COMPRESS_META.labelKey,
     kind: 'tool',
     inputKinds: ['image'],
     outputKind: IMAGE_OUT,
-    paramSchema: [
-      { name: 'strength', type: 'number', min: 1, max: 100, step: 1, default: 60 },
-      { name: 'gif_colors', type: 'number', min: 2, max: 256, step: 1, advanced: true },
-      { name: 'gif_frame_drop', type: 'number', min: 0, step: 1, default: 0, advanced: true },
-      { name: 'gif_optimize_transparency', type: 'boolean', default: true, advanced: true },
-      { name: 'png_lossy', type: 'boolean', default: true, advanced: true },
-      { name: 'jpeg_progressive', type: 'boolean', default: true, advanced: true },
-      { name: 'jpeg_keep_metadata', type: 'boolean', default: false, advanced: true },
-      { name: 'webp_lossless', type: 'boolean', default: false, advanced: true },
-    ],
+    paramSchema: IMAGE_COMPRESS_META.schema,
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 4 Task 4.1）：欄位定義唯一事實來源在
+  // convert.meta.ts（含 width/height/scale 三態互斥的 buildSubmit 清理，見該檔檔頭註記）。
   'image.convert': {
-    toolKey: 'image.convert',
-    apiPath: '/image/convert',
-    labelKey: 'image.convert.task_label',
+    toolKey: IMAGE_CONVERT_META.toolKey,
+    apiPath: IMAGE_CONVERT_META.apiPath,
+    labelKey: IMAGE_CONVERT_META.labelKey,
     kind: 'tool',
     inputKinds: ['image'],
     outputKind: IMAGE_OUT,
-    paramSchema: [
-      { name: 'output_format', type: 'enum', options: ['png', 'jpg', 'webp', 'gif', 'bmp'], default: 'png' },
-      { name: 'quality', type: 'number', min: 1, max: 100, step: 1, default: 85, visibleWhen: (p) => ['jpg', 'webp'].includes(String(p.output_format)) },
-      { name: 'width', type: 'number', min: 1, step: 1, advanced: true },
-      { name: 'height', type: 'number', min: 1, step: 1, advanced: true },
-      { name: 'scale', type: 'number', min: 0.1, max: 2, step: 0.1, advanced: true },
-      { name: 'coalesce', type: 'boolean', default: false, advanced: true, visibleWhen: (p) => p.output_format === 'gif' },
-    ],
+    paramSchema: IMAGE_CONVERT_META.schema,
   },
 
   'image.filter': {

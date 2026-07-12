@@ -5,9 +5,14 @@
  *
  * 覆蓋 PARAM_COMPONENTS['video.cut'] 為同步 stub 元件（避免真拉 defineAsyncComponent
  * 包的 CutParams.vue，測試才能同步斷言、不必 await 元件載入）；'video.subtitle' 已於
- * 批 2 Task 2.5 註冊（SubtitleParams.vue）。legacy fallback 反例原用 'audio.transcode'，
- * 批 3 Task 3.1 遷移後該斷言反轉（audio.transcode 現已有參數元件）——改用 'image.compress'
- * （批 4 才遷移；paramSchema 含 enum 選填欄位以維持 legacy 表單斷言有意義）。
+ * 批 2 Task 2.5 註冊（SubtitleParams.vue）。
+ *
+ * legacy fallback 反例（test 3）策略改造（批 4 Task 4.1，dispatch 反例斷崖 finding）：
+ * 批 4 遷完後 registry 每個 toolKey 都會有對應參數元件，天然找不到「已註冊但無元件」的
+ * 反例。改為 beforeEach 主動 `delete PARAM_COMPONENTS['image.remove_bg']`／afterEach 還原
+ * （存原值恢復——仿本檔既有 video.cut stub 手法），節點續用 image.remove_bg（registry 的
+ * mode 欄位是非 advanced 的 enum，legacy 表單一定渲染 .app-select-trigger，斷言不受影響）。
+ * 此後批 4 各工具遷移（含 image.remove_bg 自己日後遷移時）都不必再動這個測試檔。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
@@ -48,13 +53,23 @@ const StubParamComponent = defineComponent({
 // 保留原 PARAM_COMPONENTS['video.cut']（真 async 元件），測試結束後還原，
 // 避免污染同進程跑的其他測試檔（module-level singleton）。
 const ORIGINAL_VIDEO_CUT = PARAM_COMPONENTS['video.cut']
+// image.remove_bg 反例 fixture：存掛載時的原值（本測試檔執行當下可能已註冊、也可能尚未
+// 註冊——batch 4 尚未遷到它），beforeEach 主動刪除、afterEach 依存值精準還原（有則放回、
+// 無則保持刪除），確保本檔對其他測試檔的 PARAM_COMPONENTS 狀態零副作用。
+const ORIGINAL_IMAGE_REMOVE_BG = PARAM_COMPONENTS['image.remove_bg']
 
 beforeEach(() => {
   PARAM_COMPONENTS['video.cut'] = StubParamComponent
+  delete PARAM_COMPONENTS['image.remove_bg']
 })
 
 afterEach(() => {
   PARAM_COMPONENTS['video.cut'] = ORIGINAL_VIDEO_CUT
+  if (ORIGINAL_IMAGE_REMOVE_BG) {
+    PARAM_COMPONENTS['image.remove_bg'] = ORIGINAL_IMAGE_REMOVE_BG
+  } else {
+    delete PARAM_COMPONENTS['image.remove_bg']
+  }
 })
 
 function mountForm(node: RecipeNode, preview?: boolean) {
@@ -73,9 +88,10 @@ const cutNode: RecipeNode = {
   params: { start_time: 5 },
 }
 
-// image.remove_bg 尚未遷移（批 4 才輪到）；paramSchema 唯一欄位 mode 是非 advanced 的
-// enum，確保 legacy 表單一定渲染 .app-select-trigger（image.compress 全欄位皆
-// number/boolean，無 enum，不適合當這個斷言的反例）。
+// image.remove_bg：不論它是否已在 PARAM_COMPONENTS 註冊，beforeEach 都主動刪除該 entry
+// （見上方 fixture），確保這裡走 legacy 分支。paramSchema 唯一欄位 mode 是非 advanced 的
+// enum，確保 legacy 表單一定渲染 .app-select-trigger（image.compress/image.convert 等批 4
+// 已遷工具全欄位皆 number/boolean/enum-with-visibleWhen 組合複雜，不適合當這個斷言的反例）。
 const imageRemoveBgNode: RecipeNode = {
   id: 'n2',
   kind: 'tool',

@@ -5,8 +5,7 @@ import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import ImagePreview from '@/components/image/ImagePreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
-import ImageConvertPanel  from '@/components/image/panels/ImageConvertPanel.vue'
-import ImageCompressPanel from '@/components/image/panels/ImageCompressPanel.vue'
+import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import ImageUpscalePanel  from '@/components/image/panels/ImageUpscalePanel.vue'
 import ImageRemoveBgPanel from '@/components/image/panels/ImageRemoveBgPanel.vue'
 import ImageAiRemovePanel from '@/components/image/panels/ImageAiRemovePanel.vue'
@@ -21,6 +20,7 @@ import { useExecuteStop } from '@/composables/useExecuteStop'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 import { useViewHost } from '@/composables/useViewHost'
 import { subfunctionsForView } from '@/agent/agentNavCatalog'
+import { panelIdFor } from '@/composables/useActiveView'
 
 const {
   hasFile, fileId, isUploading, currentFileName, imageInfo, isLoadingInfo,
@@ -37,6 +37,15 @@ const isMultiSelect = computed(() => selectedIds.value.size > 1)
 
 const { t } = useI18n()
 
+// ToolParamHost.fileInfo 型別是 Record<string, unknown>|null；ImageInfo 因為有 palette_size?
+// 這個選填欄位，TS 不會幫它合成隱式 index signature（vue-tsc TS2322 "index signature is
+// missing"——VideoMediaInfo/AudioInfo 皆全欄必填故無此問題，是本案第一個帶選填欄位的
+// fileInfo 型別）。用一個 computed 轉型一次，供本檔所有 <ToolParamHost :file-info> 掛載點共用
+// （批 4 後續工具遷移 upscale/remove_bg/crop 等也會用到同一個 imageInfo，屆時直接複用）。
+const imageInfoForHost = computed<Record<string, unknown> | null>(
+  () => imageInfo.value as Record<string, unknown> | null,
+)
+
 
 // Preview ref (exposes clearMask, exportMask, hasMask, syncToImage)
 const previewRef = ref<InstanceType<typeof ImagePreview> | null>(null)
@@ -44,8 +53,8 @@ const brushSize = ref(10)
 const maskToolMode = ref<'brush' | 'polygon' | 'bezier'>('brush')
 
 // Panel refs
-const convertPanelRef  = ref<InstanceType<typeof ImageConvertPanel>  | null>(null)
-const compressPanelRef = ref<InstanceType<typeof ImageCompressPanel> | null>(null)
+const convertPanelRef  = ref<InstanceType<typeof ToolParamHost>  | null>(null)
+const compressPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const upscalePanelRef  = ref<InstanceType<typeof ImageUpscalePanel>  | null>(null)
 const removeBgPanelRef = ref<InstanceType<typeof ImageRemoveBgPanel> | null>(null)
 const aiRemovePanelRef = ref<InstanceType<typeof ImageAiRemovePanel> | null>(null)
@@ -265,8 +274,11 @@ function handleSingleExecute() {
 function handleMultiExecute() {
   const noop = () => {}
   switch (currentFunction.value) {
-    case 'transcode':
-      submitToAll('/image/convert',   () => convertPanelRef.value!.getParams(),  t('image.convert.task_label'),    'image.convert',    noop); break
+    case 'transcode': {
+      // convert 有 buildSubmit（scale/width/height 互斥清理）——批次必須走 getSubmitSpec 而非 getParams（同 VideoView/AudioView 慣例）
+      const spec = convertPanelRef.value!.getSubmitSpec()
+      submitToAll(spec.apiPath, () => convertPanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop); break
+    }
     case 'compress':
       submitToAll('/image/compress',  () => compressPanelRef.value!.getParams(), t('image.compress.task_label'),   'image.compress',   noop); break
     case 'upscale':
@@ -453,22 +465,26 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
 
     <template #settings>
       <div class="settings-form">
-        <ImageConvertPanel
+        <ToolParamHost
           v-if="currentFunction === 'transcode'"
           ref="convertPanelRef"
+          tool-key="image.convert"
+          :panel-id="panelIdFor('image', 'transcode')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :image-info="imageInfo"
+          :file-info="imageInfoForHost"
           :is-multi-select="isMultiSelect"
           @submit="onPanelSubmit"
         />
 
-        <ImageCompressPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'compress'"
           ref="compressPanelRef"
+          tool-key="image.compress"
+          :panel-id="panelIdFor('image', 'compress')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :image-info="imageInfo"
+          :file-info="imageInfoForHost"
           :is-multi-select="isMultiSelect"
           :result-meta="activeResultMeta"
           @submit="onPanelSubmit"
