@@ -736,6 +736,7 @@ export default {
       bitrate: '位元率',
       extract_audio: '影片 · 提取音訊',
       task_label: '影片 · 轉檔',
+      resolution_error: '解析度格式錯誤，請輸入「寬x高」（例如 1920x1080）',
     },
 
     download: {

@@ -736,6 +736,7 @@ export default {
       bitrate: 'Bitrate',
       extract_audio: 'Video · Extract Audio',
       task_label: 'Video · Transcode',
+      resolution_error: 'Invalid resolution format, expected "WIDTHxHEIGHT" (e.g. 1920x1080)',
     },
 
     download: {

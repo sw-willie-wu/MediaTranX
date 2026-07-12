@@ -13,14 +13,14 @@
  */
 import type { MediaKindT, ParamField, ToolSpec } from './types'
 import { META as CUT_META } from '@/components/params/video/cut.meta'
+import { META as TRANSCODE_META, AUDIO_FORMATS as TRANSCODE_AUDIO_FORMATS } from '@/components/params/video/transcode.meta'
+import { META as EXTRACT_AUDIO_META } from '@/components/params/video/extract_audio.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
 const IMAGE_OUT = (): MediaKindT => 'image'
 const DOCUMENT_OUT = (): MediaKindT => 'document'
 
-// video.transcode 的 audio-only 格式（對照 VideoTranscodePanel.isAudioFormat）
-const VIDEO_AUDIO_FORMATS = new Set(['mp3', 'aac'])
 const VIDEO_IMAGE_FORMATS = new Set(['gif', 'apng'])
 
 // 後端 adapters/ai/registry.py whisper variants（stt 靜態清單）
@@ -75,41 +75,33 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
   },
 
   // ── video ─────────────────────────────────────────────────────────
+  // paramSchema 由 META 組裝（統一參數元件案）:欄位定義唯一事實來源在 transcode.meta.ts /
+  // extract_audio.meta.ts;outputKind 是參數的函數,手寫保留在 registry。
   'video.transcode': {
-    toolKey: 'video.transcode',
-    apiPath: '/video/transcode',
-    labelKey: 'video.transcode.task_label',
+    toolKey: TRANSCODE_META.toolKey,
+    apiPath: TRANSCODE_META.apiPath,
+    labelKey: TRANSCODE_META.labelKey,
     kind: 'tool',
     inputKinds: ['video'],
+    // schema 的 output_format 是「視訊＋動圖＋音訊」超集（工具頁由 buildSubmit 分流,
+    // pipeline 節點沒有這層分流——見 transcode.meta.ts 檔頭註記）;outputKind 對超集要 robust。
     outputKind: (p) => {
       const fmt = String(p.output_format ?? 'mp4')
       if (VIDEO_IMAGE_FORMATS.has(fmt)) return 'image'
-      if (VIDEO_AUDIO_FORMATS.has(fmt)) return 'audio'
+      if (TRANSCODE_AUDIO_FORMATS.has(fmt)) return 'audio'
       return 'video'
     },
-    // mp3/aac 不在 options:後端 /video/transcode 不支援音訊容器（panel 是把
-    // 這兩格分流到 /video/extract-audio）——pipeline 用 video.extract_audio 節點。
-    paramSchema: [
-      { name: 'output_format', type: 'enum', options: ['mp4', 'mkv', 'webm', 'avi', 'mov', 'gif', 'apng'], default: 'mp4' },
-      { name: 'video_codec', type: 'enum', options: ['h264', 'h265', 'vp9', 'av1'], default: 'h264', visibleWhen: (p) => !VIDEO_IMAGE_FORMATS.has(String(p.output_format)) && !VIDEO_AUDIO_FORMATS.has(String(p.output_format)) },
-      { name: 'resolution', type: 'enum', options: ['', '3840x2160', '2560x1440', '1920x1080', '1280x720', '854x480', '640x360'], default: '' },
-      { name: 'crf', type: 'number', min: 0, max: 51, step: 1, default: 23, advanced: true },
-      { name: 'preset', type: 'enum', options: ['ultrafast', 'fast', 'medium', 'slow'], default: 'medium', advanced: true },
-      { name: 'fps', type: 'number', min: 1, max: 60, step: 1, advanced: true },
-    ],
+    paramSchema: TRANSCODE_META.schema,
   },
 
   'video.extract_audio': {
-    toolKey: 'video.extract_audio',
-    apiPath: '/video/extract-audio',
-    labelKey: 'video.transcode.extract_audio',
+    toolKey: EXTRACT_AUDIO_META.toolKey,
+    apiPath: EXTRACT_AUDIO_META.apiPath,
+    labelKey: EXTRACT_AUDIO_META.labelKey,
     kind: 'tool',
     inputKinds: ['video'],
     outputKind: AUDIO_OUT,
-    paramSchema: [
-      { name: 'audio_format', type: 'enum', options: ['mp3', 'wav', 'flac', 'aac'], default: 'mp3' },
-      { name: 'audio_bitrate', type: 'enum', options: ['128k', '192k', '256k', '320k'], advanced: true, visibleWhen: (p) => !['wav', 'flac'].includes(String(p.audio_format)) },
-    ],
+    paramSchema: EXTRACT_AUDIO_META.schema,
   },
 
   'video.cut': {
