@@ -743,6 +743,11 @@ export default {
 
     download: {
       task_label: 'Video · URL Download',
+      title: 'URL Download Settings',
+      description: 'Set the download URL and advanced quality options (used by pipeline nodes).',
+      url: 'URL',
+      url_error: 'Enter a valid URL (must start with http:// or https://)',
+      filename: 'Filename',
     },
 
     cut: {

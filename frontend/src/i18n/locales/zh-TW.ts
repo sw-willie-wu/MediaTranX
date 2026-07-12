@@ -743,6 +743,11 @@ export default {
 
     download: {
       task_label: '影片 · 網址下載',
+      title: '網址下載設定',
+      description: '設定下載網址與進階畫質選項（用於流程節點）。',
+      url: '網址',
+      url_error: '請輸入有效的網址（須以 http:// 或 https:// 開頭）',
+      filename: '檔名',
     },
 
     cut: {

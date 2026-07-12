@@ -20,6 +20,7 @@ import { META as CUT_META } from '@/components/params/video/cut.meta'
 import { META as CROP_META } from '@/components/params/video/crop.meta'
 import { META as TRANSCODE_META, AUDIO_FORMATS as TRANSCODE_AUDIO_FORMATS } from '@/components/params/video/transcode.meta'
 import { META as EXTRACT_AUDIO_META } from '@/components/params/video/extract_audio.meta'
+import { META as DOWNLOAD_META } from '@/components/params/video/download.meta'
 import { META as TRANSLATE_META } from '@/components/params/document/translate.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
@@ -67,17 +68,17 @@ function vlmModelFields(): ParamField[] {
 
 export const TOOL_REGISTRY: Record<string, ToolSpec> = {
   // ── source ────────────────────────────────────────────────────────
+  // paramSchema 由 META 組裝（統一參數元件案，批 2 Task 2.2）:欄位定義唯一事實來源在
+  // download.meta.ts。舊版此處把 format_intent 誤建成 scalar enum，與後端巢狀
+  // FormatIntent 物件不符（422 風險）——已修正為 dict 型別，見 download.meta.ts 檔頭註記。
   'video.download': {
-    toolKey: 'video.download',
-    apiPath: '/video/download',
-    labelKey: 'video.download.task_label',
+    toolKey: DOWNLOAD_META.toolKey,
+    apiPath: DOWNLOAD_META.apiPath,
+    labelKey: DOWNLOAD_META.labelKey,
     kind: 'source',
     inputKinds: [],
     outputKind: VIDEO_OUT,
-    paramSchema: [
-      { name: 'url', type: 'string' },
-      { name: 'format_intent', type: 'enum', options: ['auto', 'video', 'audio'], default: 'auto', advanced: true },
-    ],
+    paramSchema: DOWNLOAD_META.schema,
   },
 
   // ── video ─────────────────────────────────────────────────────────

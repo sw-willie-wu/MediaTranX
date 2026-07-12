@@ -8,6 +8,7 @@ import { META as CUT_META } from './video/cut.meta'
 import { META as CROP_META } from './video/crop.meta'
 import { META as TRANSCODE_META } from './video/transcode.meta'
 import { META as EXTRACT_AUDIO_META } from './video/extract_audio.meta'
+import { META as DOWNLOAD_META } from './video/download.meta'
 import { META as TRANSLATE_META } from './document/translate.meta'
 
 export const PARAM_COMPONENTS: Record<string, Component> = {
@@ -15,6 +16,7 @@ export const PARAM_COMPONENTS: Record<string, Component> = {
   'video.crop': defineAsyncComponent(() => import('./video/CropParams.vue')),
   'video.transcode': defineAsyncComponent(() => import('./video/TranscodeParams.vue')),
   'video.extract_audio': defineAsyncComponent(() => import('./video/ExtractAudioParams.vue')),
+  'video.download': defineAsyncComponent(() => import('./video/DownloadParams.vue')),
   'document.translate': defineAsyncComponent(() => import('./document/TranslateParams.vue')),
 }
 
@@ -23,6 +25,7 @@ export const METAS: Record<string, ToolParamMeta> = {
   'video.crop': CROP_META,
   'video.transcode': TRANSCODE_META,
   'video.extract_audio': EXTRACT_AUDIO_META,
+  'video.download': DOWNLOAD_META,
   'document.translate': TRANSLATE_META,
 }
 
