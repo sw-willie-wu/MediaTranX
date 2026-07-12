@@ -720,6 +720,8 @@ export default {
       flac: 'FLAC (Audio Only)',
       video_codec: 'Video Codec',
       copy_codec: 'Copy (No Re-encode)',
+      preset: 'Encoding Speed',
+      audio_codec: 'Audio Codec',
       resolution: 'Resolution',
       keep_original: 'Keep Original',
       custom: 'Custom Size',

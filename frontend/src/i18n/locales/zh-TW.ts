@@ -720,6 +720,8 @@ export default {
       flac: 'FLAC（純音訊）',
       video_codec: '影片編碼',
       copy_codec: '不重新編碼',
+      preset: '編碼速度',
+      audio_codec: '音訊編碼',
       resolution: '解析度',
       keep_original: '保持原始',
       custom: '自訂尺寸',

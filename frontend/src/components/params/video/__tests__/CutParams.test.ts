@@ -137,8 +137,8 @@ describe('params/index.ts 載入表', () => {
     expect(hasParamComponent('video.cut')).toBe(true)
   })
 
-  it('hasParamComponent("video.transcode") === false', () => {
-    expect(hasParamComponent('video.transcode')).toBe(false)
+  it('hasParamComponent("video.transcode") === true（批 1 Task 1.2 起已註冊）', () => {
+    expect(hasParamComponent('video.transcode')).toBe(true)
   })
 
   it('METAS["video.cut"].toolKey === "video.cut"', () => {
