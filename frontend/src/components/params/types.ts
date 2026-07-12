@@ -34,6 +34,14 @@ export interface ToolParamMeta {
    */
   modelRequirement?(params: Record<string, unknown>):
     { slot: string; family?: string; size?: string; quantization?: string; variant?: string; categories?: string[] } | null
+  /**
+   * 複數模型需求（批 2 Task 2.4 host 擴充——video.summary 三模型系 whisper/demucs/align/
+   * llm/vlm 逐一 guard）。與 modelRequirement（單數）並存,host 二擇一讀取(優先讀複數)；
+   * 回 null/空陣列＝無需求。第三種比對形狀(見 modelGuardUtils.ts)：無 variant 且無
+   * family/size、只有 categories——categories 內任一 downloaded 即視為就緒(align 用)。
+   */
+  modelRequirements?(params: Record<string, unknown>):
+    Array<{ slot: string; family?: string; size?: string; quantization?: string; variant?: string; categories?: string[] }> | null
   multiSelect: boolean
   /** 下載按鈕的輸出格式欄位名（host 據此 expose outputFormat） */
   downloadFormatField?: string

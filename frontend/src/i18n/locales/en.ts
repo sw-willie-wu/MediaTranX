@@ -853,6 +853,8 @@ export default {
     summary: {
       title: 'Video Summary',
       description: 'LLM-organized markdown summary of video subtitles with key frames, packaged as a ZIP.',
+      language: 'Content Language',
+      language_hint: 'Helps transcription and summarization better identify the language spoken in the video (default zh-TW).',
       whisper_model: 'Speech Recognition Model',
       vocal_separation: 'Separate vocals (Demucs)',
       vocal_separation_hint: 'Enable if background music interferes with transcription; adds processing time.',

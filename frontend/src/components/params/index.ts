@@ -11,6 +11,7 @@ import { META as EXTRACT_AUDIO_META } from './video/extract_audio.meta'
 import { META as DOWNLOAD_META } from './video/download.meta'
 import { META as INTERPOLATE_META } from './video/interpolate.meta'
 import { META as ENHANCE_META } from './video/enhance.meta'
+import { META as SUMMARY_META } from './video/summary.meta'
 import { META as TRANSLATE_META } from './document/translate.meta'
 
 export const PARAM_COMPONENTS: Record<string, Component> = {
@@ -21,6 +22,7 @@ export const PARAM_COMPONENTS: Record<string, Component> = {
   'video.download': defineAsyncComponent(() => import('./video/DownloadParams.vue')),
   'video.interpolate': defineAsyncComponent(() => import('./video/InterpolateParams.vue')),
   'video.enhance': defineAsyncComponent(() => import('./video/EnhanceParams.vue')),
+  'video.summary': defineAsyncComponent(() => import('./video/SummaryParams.vue')),
   'document.translate': defineAsyncComponent(() => import('./document/TranslateParams.vue')),
 }
 
@@ -32,6 +34,7 @@ export const METAS: Record<string, ToolParamMeta> = {
   'video.download': DOWNLOAD_META,
   'video.interpolate': INTERPOLATE_META,
   'video.enhance': ENHANCE_META,
+  'video.summary': SUMMARY_META,
   'document.translate': TRANSLATE_META,
 }
 

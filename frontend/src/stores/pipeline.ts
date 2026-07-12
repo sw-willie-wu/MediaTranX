@@ -226,16 +226,24 @@ export const usePipelineStore = defineStore('pipeline', () => {
       if (node.kind !== 'tool' && node.kind !== 'source') continue
       if (!node.toolKey) continue
       const meta = METAS[node.toolKey]
-      const req = meta?.modelRequirement?.(node.params)
-      if (!req) continue
-      if (isModelInstalled(modelStore.models, req)) continue
-      const label = [req.family, req.size, req.quantization].filter(Boolean).join(' ')
-      missing.push({
-        severity: 'error',
-        nodeId: node.id,
-        code: 'model_missing',
-        message: `node ${node.id} (${node.toolKey}) requires model ${label} (not installed)`,
-      })
+      // 複數優先於單數（與 ToolParamHost.preflight() 同構，見該檔 modelRequirements 註解——
+      // 兩者互斥，若都設以複數為準；單數存在時包成單元素陣列走同一迴圈）。
+      const plural = meta?.modelRequirements?.(node.params)
+      const singular = meta?.modelRequirement?.(node.params)
+      const reqs = plural ?? (singular ? [singular] : [])
+      for (const req of reqs) {
+        if (isModelInstalled(modelStore.models, req)) continue
+        const label =
+          [req.family, req.size, req.quantization].filter(Boolean).join(' ') ||
+          req.variant ||
+          (req.categories && req.categories.length > 0 ? req.categories.join('/') : '')
+        missing.push({
+          severity: 'error',
+          nodeId: node.id,
+          code: 'model_missing',
+          message: `node ${node.id} (${node.toolKey}) requires model ${label} (not installed)`,
+        })
+      }
     }
     modelIssues.value = missing
     return missing.length === 0

@@ -7,7 +7,6 @@ import VideoPreview from '@/components/video/VideoPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
-import VideoSummaryPanel from '@/components/video/panels/VideoSummaryPanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useExecuteStop } from '@/composables/useExecuteStop'
@@ -43,7 +42,7 @@ const cropPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
 const interpolatePanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const enhancePanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
-const summaryPanelRef = ref<InstanceType<typeof VideoSummaryPanel> | null>(null)
+const summaryPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 
 // Crop state (shared between VideoPreview and CropParams, bridged via ToolParamHost attrs fallthrough)
 const showCropOverlay = ref(false)
@@ -137,9 +136,12 @@ async function handleMultiExecute() {
       await submitToAll(spec.apiPath, () => transcodePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
       break
     }
-    case 'summary':
+    case 'summary': {
       if (await summaryPanelRef.value?.preflight() === false) break
-      await submitToAll('/video/summary', () => summaryPanelRef.value!.getParams(), t('video.summary.task_label'), 'video.summary', noop); break
+      const spec = summaryPanelRef.value!.getSubmitSpec()
+      await submitToAll(spec.apiPath, () => summaryPanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
+      break
+    }
     case 'interpolate': {
       if (await interpolatePanelRef.value?.preflight() === false) break
       const spec = interpolatePanelRef.value!.getSubmitSpec()
@@ -364,12 +366,15 @@ onUnmounted(() => { clearActions() })
           @submit="handlePanelSubmit"
         />
 
-        <VideoSummaryPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'summary'"
           ref="summaryPanelRef"
+          tool-key="video.summary"
+          :panel-id="panelIdFor('video', 'summary')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
+          :file-info="mediaInfo"
           @submit="handlePanelSubmit"
         />
 

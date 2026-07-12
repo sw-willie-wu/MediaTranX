@@ -23,6 +23,7 @@ import { META as EXTRACT_AUDIO_META } from '@/components/params/video/extract_au
 import { META as DOWNLOAD_META } from '@/components/params/video/download.meta'
 import { META as INTERPOLATE_META } from '@/components/params/video/interpolate.meta'
 import { META as ENHANCE_META } from '@/components/params/video/enhance.meta'
+import { META as SUMMARY_META } from '@/components/params/video/summary.meta'
 import { META as TRANSLATE_META } from '@/components/params/document/translate.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
@@ -196,39 +197,17 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     paramSchema: INTERPOLATE_META.schema,
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 2 Task 2.4）:欄位定義唯一事實來源在
+  // summary.meta.ts（含 min_silence_duration_ms/vad_threshold UI range 收斂為 100-2000/50
+  // 與 0.1-0.9/0.05 的設計定案註記——與此處舊字面值不同,以 META 為準）。
   'video.summary': {
-    toolKey: 'video.summary',
-    apiPath: '/video/summary',
-    labelKey: 'video.summary.task_label',
+    toolKey: SUMMARY_META.toolKey,
+    apiPath: SUMMARY_META.apiPath,
+    labelKey: SUMMARY_META.labelKey,
     kind: 'tool',
     inputKinds: ['video'],
     outputKind: DOCUMENT_OUT,
-    paramSchema: [
-      { name: 'summary_mode', type: 'enum', options: ['bullets', 'narrative'], default: 'bullets' },
-      { name: 'language', type: 'string', default: 'zh-TW' },
-      { name: 'whisper_model_size', type: 'enum', options: WHISPER_SIZES, default: 'medium' },
-      // LLM — 本地（family+size）或 remote 三元組,動態模型系
-      { name: 'llm_model_family', type: 'string', advanced: true },
-      { name: 'llm_model_size', type: 'string', advanced: true },
-      { name: 'llm_remote', type: 'boolean', default: false, advanced: true },
-      { name: 'llm_provider', type: 'string', advanced: true },
-      { name: 'llm_conn_id', type: 'number', advanced: true },
-      { name: 'llm_remote_model', type: 'string', advanced: true },
-      // VLM — 選配
-      { name: 'vlm_model_family', type: 'string', advanced: true },
-      { name: 'vlm_model_size', type: 'string', advanced: true },
-      { name: 'vlm_remote', type: 'boolean', default: false, advanced: true },
-      { name: 'vlm_provider', type: 'string', advanced: true },
-      { name: 'vlm_conn_id', type: 'number', advanced: true },
-      { name: 'vlm_remote_model', type: 'string', advanced: true },
-      // Whisper 進階
-      { name: 'vocal_separation', type: 'boolean', default: false, advanced: true },
-      { name: 'align', type: 'boolean', default: false, advanced: true },
-      { name: 'word_timestamps', type: 'boolean', default: false, advanced: true },
-      { name: 'condition_on_previous_text', type: 'boolean', default: true, advanced: true },
-      { name: 'min_silence_duration_ms', type: 'number', min: 0, step: 50, default: 200, advanced: true },
-      { name: 'vad_threshold', type: 'number', min: 0, max: 1, step: 0.05, default: 0.3, advanced: true },
-    ],
+    paramSchema: SUMMARY_META.schema,
   },
 
   // ── audio ─────────────────────────────────────────────────────────

@@ -853,6 +853,8 @@ export default {
     summary: {
       title: '影片摘要',
       description: '使用 LLM 整理字幕為 Markdown 摘要，附關鍵影格；輸出為 ZIP 壓縮檔。',
+      language: '內容語言',
+      language_hint: '協助語音辨識與摘要更準確判斷影片內容的語言（預設 zh-TW）。',
       whisper_model: '語音辨識模型',
       vocal_separation: '分離人聲',
       vocal_separation_hint: '若影片配樂干擾辨識可開啟；會增加處理時間。',

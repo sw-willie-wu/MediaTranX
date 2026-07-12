@@ -153,6 +153,22 @@ METAS[STUB_MODEL_KEY] = makeStubMeta({
 })
 PARAM_COMPONENTS[STUB_MODEL_KEY] = StubParams
 
+// 複數 modelRequirements 案（批 2 Task 2.4 host 擴充）：三道 guard，slot 各異；
+// forceMissingSlot 指定哪個 slot 回「未安裝」（其餘一律視為已安裝），用來驗證逐一檢查順序。
+const STUB_MULTI_MODEL_KEY = 'test.stub.multimodel'
+METAS[STUB_MULTI_MODEL_KEY] = makeStubMeta({
+  toolKey: STUB_MULTI_MODEL_KEY,
+  modelRequirements(params) {
+    if (params.emptyReqs === true) return []
+    return [
+      { slot: 'whisper', variant: 'medium', categories: ['stt'] },
+      { slot: 'align', categories: ['alignment'] },
+      { slot: 'llm', family: 'gemma4', size: '4b' },
+    ].filter((r) => r.slot !== (params.skipSlot as string | undefined))
+  },
+})
+PARAM_COMPONENTS[STUB_MULTI_MODEL_KEY] = StubParams
+
 // dict/list 型欄位案（review finding #2：agentSchema.fields 不得含 dict/list 欄位）
 const STUB_DICT_KEY = 'test.stub.dict'
 METAS[STUB_DICT_KEY] = makeStubMeta({
@@ -384,6 +400,64 @@ describe('ToolParamHost — preflight × useModelGuard（批 1 Task 1.5 接線�
     await (w.vm as any).execute()
     expect(guardModelReadyMock).not.toHaveBeenCalled()
     expect(submitTaskMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('ToolParamHost — preflight × 複數 modelRequirements（批 2 Task 2.4 host 擴充）', () => {
+  it('a. 三道 guard 全數已安裝 → preflight true，guardModelReady 依序被呼叫三次（含各自 category）', async () => {
+    modelStoreState.models = [
+      { family: 'whisper', variant: 'medium', downloaded: true } as any,
+      { family: 'wav2vec2', variant: 'base', downloaded: true } as any,
+      { family: 'gemma4', variant: '4b:Q4_K_M', downloaded: true } as any,
+    ]
+    // whisper/align 需 category 欄位——補上（modelStoreState 的型別未宣告 category，用 any 繞過）
+    ;(modelStoreState.models[0] as any).category = 'stt'
+    ;(modelStoreState.models[1] as any).category = 'alignment'
+    const w = mountHost(STUB_MULTI_MODEL_KEY)
+    const ready = await (w.vm as any).preflight()
+    expect(ready).toBe(true)
+    expect(guardModelReadyMock).toHaveBeenCalledTimes(3)
+    expect(guardModelReadyMock).toHaveBeenNthCalledWith(1, true, 'audio') // whisper→audio
+    expect(guardModelReadyMock).toHaveBeenNthCalledWith(2, true, 'audio') // align→audio
+    expect(guardModelReadyMock).toHaveBeenNthCalledWith(3, true, 'llm')   // llm→llm
+  })
+
+  it('b. 第一道（whisper）未安裝 → 只呼叫一次 guardModelReady 即中止，後續兩道不檢查', async () => {
+    modelStoreState.models = []
+    guardModelReadyMock.mockResolvedValueOnce(false)
+    const w = mountHost(STUB_MULTI_MODEL_KEY)
+    const ready = await (w.vm as any).preflight()
+    expect(ready).toBe(false)
+    expect(guardModelReadyMock).toHaveBeenCalledTimes(1)
+    expect(guardModelReadyMock).toHaveBeenCalledWith(false, 'audio')
+  })
+
+  it('c. 第二道（align）未安裝，第一道（whisper）已安裝 → 恰呼叫兩次，第三道不檢查', async () => {
+    modelStoreState.models = [{ family: 'whisper', variant: 'medium', downloaded: true, category: 'stt' } as any]
+    guardModelReadyMock.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    const w = mountHost(STUB_MULTI_MODEL_KEY)
+    const ready = await (w.vm as any).preflight()
+    expect(ready).toBe(false)
+    expect(guardModelReadyMock).toHaveBeenCalledTimes(2)
+    expect(guardModelReadyMock).toHaveBeenNthCalledWith(1, true, 'audio')
+    expect(guardModelReadyMock).toHaveBeenNthCalledWith(2, false, 'audio')
+  })
+
+  it('d. modelRequirements 回空陣列 → preflight true，guardModelReady 不被呼叫', async () => {
+    const w = mountHost(STUB_MULTI_MODEL_KEY)
+    ;(w.vm as any).setParams({ a: 5, b: false, c: 'x', fmt: 'mp4', emptyReqs: true })
+    const ready = await (w.vm as any).preflight()
+    expect(ready).toBe(true)
+    expect(guardModelReadyMock).not.toHaveBeenCalled()
+  })
+
+  it('e. 單數 modelRequirement 相容不回歸（既有 STUB_MODEL_KEY 案，複數未定義時走單元素陣列邏輯）', async () => {
+    modelStoreState.models = [{ family: 'gemma4', variant: '4b:Q4_K_M', downloaded: true }]
+    const w = mountHost(STUB_MODEL_KEY)
+    const ready = await (w.vm as any).preflight()
+    expect(guardModelReadyMock).toHaveBeenCalledTimes(1)
+    expect(guardModelReadyMock).toHaveBeenCalledWith(true, 'llm')
+    expect(ready).toBe(true)
   })
 })
 

@@ -94,14 +94,34 @@ async function execute(): Promise<{ task_id?: string }> {
 // 例如舊 DocumentTranslatePanel 傳 'llm'）。slot 是 modelRequirement 的語意識別（未來
 // GPU VRAM 協調也用得到），與設定頁 tab 分類是兩件事，故此處另建對照表、非直接複用 slot。
 // 首用 translate→llm；批 2 Task 2.3 補 interpolate→video（舊 VideoInterpolatePanel.preflight
-// 傳 'video'）、enhance→image（舊 VideoEnhancePanel.preflight 傳 'image'，realesrgan 屬影像 tab）。
-const SLOT_GUARD_CATEGORY: Record<string, string> = { translate: 'llm', interpolate: 'video', enhance: 'image' }
+// 傳 'video'）、enhance→image（舊 VideoEnhancePanel.preflight 傳 'image'，realesrgan 屬影像 tab）；
+// 批 2 Task 2.4 補 whisper/separate/align→audio、llm/vlm→llm（舊 VideoSummaryPanel.preflight
+// 五道 guard 依序皆傳 'audio'/'llm'，見該檔 preflight()）。
+const SLOT_GUARD_CATEGORY: Record<string, string> = {
+  translate: 'llm',
+  interpolate: 'video',
+  enhance: 'image',
+  whisper: 'audio',
+  separate: 'audio',
+  align: 'audio',
+  llm: 'llm',
+  vlm: 'llm',
+}
 
+// 複數模型需求逐一過 guard（批 2 Task 2.4 host 擴充）：meta.modelRequirements 優先於單數
+// meta.modelRequirement（兩者互斥——同一 META 不應兩者並設，若都設則以複數為準）；單數
+// 存在時包成單元素陣列走同一迴圈，行為與批 1 完全相容。逐一檢查、第一個未就緒即回傳
+// false（導航到該 slot 對應分類 tab）並中止後續檢查——沿舊 VideoSummaryPanel.preflight
+// 的「依序 guard、第一個卡住就 return」語意。
 async function preflight(): Promise<boolean> {
-  const req = meta.modelRequirement?.(params.value)
-  if (!req) return true
-  const ready = isModelInstalled(modelStore.models, req)
-  return await guardModelReady(ready, SLOT_GUARD_CATEGORY[req.slot] ?? req.slot)
+  const plural = meta.modelRequirements?.(params.value)
+  const singular = meta.modelRequirement?.(params.value)
+  const reqs = plural ?? (singular ? [singular] : [])
+  for (const req of reqs) {
+    const ready = isModelInstalled(modelStore.models, req)
+    if (!(await guardModelReady(ready, SLOT_GUARD_CATEGORY[req.slot] ?? req.slot))) return false
+  }
+  return true
 }
 
 // ─── isDisabled / isLoading / outputFormat ─────────────────────────────────

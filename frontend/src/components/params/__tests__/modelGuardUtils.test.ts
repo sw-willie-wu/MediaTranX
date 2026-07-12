@@ -83,3 +83,42 @@ describe('isModelInstalled — variant 型比對（批 2 Task 2.3 擴充）', ()
     expect(isModelInstalled(legacyModels, { slot: 'translate', family: 'gemma4', size: '9b' })).toBe(false)
   })
 })
+
+describe('isModelInstalled — categories-only 比對（批 2 Task 2.4 擴充，align 用）', () => {
+  const models: ModelGuardEntry[] = [
+    { family: 'wav2vec2', variant: 'base', downloaded: true, category: 'alignment' },
+    { family: 'wav2vec2', variant: 'large', downloaded: false, category: 'alignment' },
+    { family: 'demucs', variant: 'htdemucs_6s', downloaded: true, category: 'separate' },
+  ]
+
+  it('無 variant 無 family/size，categories 內任一 downloaded → true', () => {
+    expect(isModelInstalled(models, { slot: 'align', categories: ['alignment'] })).toBe(true)
+  })
+
+  it('categories 內全數未下載 → false', () => {
+    const noneDownloaded: ModelGuardEntry[] = [
+      { family: 'wav2vec2', variant: 'base', downloaded: false, category: 'alignment' },
+    ]
+    expect(isModelInstalled(noneDownloaded, { slot: 'align', categories: ['alignment'] })).toBe(false)
+  })
+
+  it('categories 未命中任何模型 → false', () => {
+    expect(isModelInstalled(models, { slot: 'align', categories: ['nonexistent'] })).toBe(false)
+  })
+
+  it('categories 命中 subcategory 亦可（沿既有 variant 分支的 category||subcategory 語意）', () => {
+    const subcatModels: ModelGuardEntry[] = [
+      { family: 'wav2vec2', variant: 'base', downloaded: true, subcategory: 'alignment' },
+    ]
+    expect(isModelInstalled(subcatModels, { slot: 'align', categories: ['alignment'] })).toBe(true)
+  })
+
+  it('空 categories 陣列時不誤入此分支（family/size 皆 undefined 但 categories 為空 → 落回 family/size 分支，回 false）', () => {
+    expect(isModelInstalled(models, { slot: 'align', categories: [] })).toBe(false)
+  })
+
+  it('quantization 未指定為萬用（既有事實補測試）：family/size 相符、忽略 variant 量化段', () => {
+    const withQuant: ModelGuardEntry[] = [{ family: 'gemma4', variant: '4b:Q4_K_M', downloaded: true }]
+    expect(isModelInstalled(withQuant, { slot: 'llm', family: 'gemma4', size: '4b' })).toBe(true)
+  })
+})

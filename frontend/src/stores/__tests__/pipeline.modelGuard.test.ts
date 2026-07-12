@@ -65,6 +65,32 @@ function cutRecipe(): Recipe {
   }
 }
 
+// video.summary 只定義複數 modelRequirements（無單數 modelRequirement）——
+// I1 修復標的：checkModelsReady 曾只讀單數,summary 節點完全不受模型閘攔截。
+function summaryRecipe(params: Record<string, unknown> = {}): Recipe {
+  return {
+    version: 1,
+    name: 'r',
+    nodes: [
+      { id: 'input-1', kind: 'input', params: {}, position: { x: 0, y: 0 } },
+      {
+        id: 'n2',
+        kind: 'tool',
+        toolKey: 'video.summary',
+        params: {
+          summary_mode: 'bullets',
+          language: 'zh-TW',
+          whisper_model_size: 'medium',
+          llm_remote: false,
+          ...params,
+        },
+        position: { x: 100, y: 0 },
+      },
+    ],
+    edges: [{ from: 'input-1', to: 'n2' }],
+  }
+}
+
 describe('pipeline store — startRun 前模型驗證', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -153,6 +179,54 @@ describe('pipeline store — startRun 前模型驗證', () => {
     await store.startRun()
     expect(store.issues.some(i => i.code === 'model_missing')).toBe(false)
     expect(runnerCtor).toHaveBeenCalledTimes(1)
+  })
+
+  it('6. video.summary（只定義複數 modelRequirements，無單數 modelRequirement）：其中一道 ' +
+    '（whisper，variant 型）未就緒 → startRun 不啟動、model_missing 含 label（variant 後援非空，I1 修復）', async () => {
+    // llm_remote:true 排除 llm req、align/vocal_separation 預設 false、vlm 未給值 → reqs 只剩 whisper 一道
+    seedModels([]) // 空清單 → whisper（variant 'medium'）必然未就緒
+    const store = usePipelineStore()
+    store.recipe = summaryRecipe({ llm_remote: true })
+    store.inputFiles = [{ fileId: 'f1', filename: 'a.mp4' }]
+
+    await store.startRun()
+
+    expect(runnerCtor).not.toHaveBeenCalled()
+    const missing = store.issues.filter(i => i.code === 'model_missing')
+    expect(missing).toHaveLength(1)
+    expect(missing[0].nodeId).toBe('n2')
+    // label 用 req.variant 後援（family/size/quantization 皆空）,不得是空字串
+    expect(missing[0].message).toContain('medium')
+    expect(missing[0].message).not.toMatch(/model\s*\(not installed\)/) // 排除「label 為空」退化情形
+  })
+
+  it('7. video.summary categories-only 型需求（align）未就緒 → model_missing label 用 categories 後援（非空）', async () => {
+    // whisper 已裝妥（variant 命中）、align 未裝（無 alignment 分類模型）→ 僅 align 一道 missing
+    seedModels([{ family: 'x', variant: 'medium', downloaded: true, category: 'stt' } as never])
+    const store = usePipelineStore()
+    store.recipe = summaryRecipe({ llm_remote: true, align: true })
+    store.inputFiles = [{ fileId: 'f1', filename: 'a.mp4' }]
+
+    await store.startRun()
+
+    expect(runnerCtor).not.toHaveBeenCalled()
+    const missing = store.issues.filter(i => i.code === 'model_missing')
+    expect(missing).toHaveLength(1)
+    expect(missing[0].nodeId).toBe('n2')
+    expect(missing[0].message).toContain('alignment')
+  })
+
+  it('8. video.summary 複數需求全部已就緒 → 照常啟動', async () => {
+    seedModels([{ family: 'x', variant: 'medium', downloaded: true, category: 'stt' } as never])
+    const store = usePipelineStore()
+    store.recipe = summaryRecipe({ llm_remote: true })
+    store.inputFiles = [{ fileId: 'f1', filename: 'a.mp4' }]
+
+    await store.startRun()
+
+    expect(runnerCtor).toHaveBeenCalledTimes(1)
+    expect(runnerStart).toHaveBeenCalledTimes(1)
+    expect(store.issues.some(i => i.code === 'model_missing')).toBe(false)
   })
 
   it('canRun 不因 model_missing 被永久鎖死（結構合法時恆 true，供重按執行）', async () => {
