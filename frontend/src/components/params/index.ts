@@ -22,6 +22,7 @@ import { META as AUDIO_TRANSCRIBE_META } from './audio/transcribe.meta'
 import { META as AUDIO_LYRICS_META } from './audio/lyrics.meta'
 import { META as IMAGE_COMPRESS_META } from './image/compress.meta'
 import { META as IMAGE_CONVERT_META } from './image/convert.meta'
+import { META as IMAGE_FILTER_META } from './image/filter.meta'
 
 export const PARAM_COMPONENTS: Record<string, Component> = {
   'video.cut': defineAsyncComponent(() => import('./video/CutParams.vue')),
@@ -45,6 +46,10 @@ export const PARAM_COMPONENTS: Record<string, Component> = {
   'audio.lyrics': defineAsyncComponent(() => import('./audio/LyricsParams.vue')),
   'image.compress': defineAsyncComponent(() => import('./image/CompressParams.vue')),
   'image.convert': defineAsyncComponent(() => import('./image/ConvertParams.vue')),
+  // 批 4 Task 4.2 ⭐合併：舊 image.adjust/image.filter 兩 panel 打同一後端 /image/filter，
+  // 單一 toolKey image.filter 對應單一組件（FilterParams.vue 依 fieldGroup attr 分組渲染）；
+  // ImageView 同 tool-key 掛兩次 ToolParamHost（不同 panel-id）——見該檔＋filter.meta.ts。
+  'image.filter': defineAsyncComponent(() => import('./image/FilterParams.vue')),
 }
 
 export const METAS: Record<string, ToolParamMeta> = {
@@ -66,6 +71,7 @@ export const METAS: Record<string, ToolParamMeta> = {
   'audio.lyrics': AUDIO_LYRICS_META,
   'image.compress': IMAGE_COMPRESS_META,
   'image.convert': IMAGE_CONVERT_META,
+  'image.filter': IMAGE_FILTER_META,
 }
 
 export function hasParamComponent(toolKey: string): boolean {

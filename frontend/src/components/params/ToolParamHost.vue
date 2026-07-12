@@ -23,6 +23,23 @@ const props = defineProps<{
   currentFileName: string
   isMultiSelect?: boolean
   fileInfo?: Record<string, unknown> | null
+  /**
+   * 選配：覆蓋 getSubmitSpec().labelKey（連帶覆蓋 execute() 送出任務的顯示名稱）。
+   * 首用場景（批 4 Task 4.2）：image.filter 同 tool-key 掛兩次（adjust/filter 兩個 panelId），
+   * 共用一份 META（meta.labelKey 固定 'image.filter.task_label'）——adjust 掛載點傳
+   * label-key='image.adjust.task_label' 才能讓工具頁單筆執行/批次 submitToAll 的任務名稱
+   * 正確顯示「圖片 · 調整」而非「圖片 · 濾鏡」；filter 掛載點不傳，沿 meta.labelKey 原值。
+   */
+  labelKey?: string
+  /**
+   * 選配：覆蓋 agentSchema.execute.label（agent 執行時顯示的動作標籤，經 useAgentState.ts:90
+   * 真實轉發給 agent）。鏡射上面 labelKey prop 的分流模式——首用場景（批 4 Task 4.2 修復）：
+   * image.filter 同 tool-key 掛兩次（adjust/filter 兩個 panelId），META 只有單一
+   * meta.agentExecuteLabel（未設，退回 meta.labelKey 'image.filter.task_label'），兩掛載點的
+   * agent 執行標籤因此塌成同一個「圖片 · 濾鏡」；舊 per-panel 標籤 'panel.adjust.execute'
+   * （套用調整）/'panel.filter.execute'（套用濾鏡）改由掛載點各自傳這個 prop 復原。
+   */
+  agentExecuteLabel?: string
 }>()
 const emit = defineEmits<{ submit: [taskId: string] }>()
 
@@ -57,14 +74,15 @@ watch(
 
 // ─── submit spec / execute ──────────────────────────────────────────────────
 function getSubmitSpec(): SubmitSpec {
-  return (
-    meta.buildSubmit?.(params.value) ?? {
-      apiPath: meta.apiPath,
-      payload: { ...params.value },
-      taskType: meta.taskType,
-      labelKey: meta.labelKey,
-    }
-  )
+  const spec = meta.buildSubmit?.(params.value) ?? {
+    apiPath: meta.apiPath,
+    payload: { ...params.value },
+    taskType: meta.taskType,
+    labelKey: meta.labelKey,
+  }
+  // props.labelKey 選配覆蓋（見 props 型別註解）；execute() 內部也讀 spec.labelKey，故此處
+  // 覆蓋同時涵蓋「批次 getSubmitSpec() 呼叫端」與「單筆 execute() 送出的任務顯示名稱」兩處。
+  return props.labelKey ? { ...spec, labelKey: props.labelKey } : spec
 }
 
 async function execute(): Promise<{ task_id?: string }> {
@@ -259,7 +277,8 @@ const agentSchema: PanelAgentSchema = {
   // meta.agentRequiresConfirm 選配欄位承接，未設時退回 true（既有工具不變）。
   execute: {
     requiresConfirm: meta.agentRequiresConfirm ?? true,
-    label: meta.agentExecuteLabel ?? meta.labelKey,
+    // props.agentExecuteLabel 選配覆蓋（見 props 型別註解）優先於 meta 兩層 fallback。
+    label: props.agentExecuteLabel ?? meta.agentExecuteLabel ?? meta.labelKey,
   },
 }
 

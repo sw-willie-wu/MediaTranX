@@ -34,6 +34,7 @@ import { META as AUDIO_TRANSCRIBE_META } from '@/components/params/audio/transcr
 import { META as AUDIO_LYRICS_META } from '@/components/params/audio/lyrics.meta'
 import { META as IMAGE_COMPRESS_META } from '@/components/params/image/compress.meta'
 import { META as IMAGE_CONVERT_META } from '@/components/params/image/convert.meta'
+import { META as IMAGE_FILTER_META } from '@/components/params/image/filter.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
@@ -280,26 +281,18 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     paramSchema: IMAGE_CONVERT_META.schema,
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 4 Task 4.2）：filter.meta.ts 是舊
+  // image.adjust/image.filter 合併後的單一事實來源（11 欄全集，adjust 6 欄 + filter 5 欄）。
+  // 無獨立 image.adjust registry entry——ImageView 用同一 toolKey 掛兩個 ToolParamHost
+  // （panelId 各自 'image.adjust'/'image.filter'），見 filter.meta.ts 檔頭與 FilterParams.vue。
   'image.filter': {
-    toolKey: 'image.filter',
-    apiPath: '/image/filter',
-    labelKey: 'image.filter.task_label',
+    toolKey: IMAGE_FILTER_META.toolKey,
+    apiPath: IMAGE_FILTER_META.apiPath,
+    labelKey: IMAGE_FILTER_META.labelKey,
     kind: 'tool',
     inputKinds: ['image'],
     outputKind: IMAGE_OUT,
-    paramSchema: [
-      { name: 'brightness', type: 'number', min: 0, max: 3, step: 0.05, default: 1.0 },
-      { name: 'contrast', type: 'number', min: 0, max: 3, step: 0.05, default: 1.0 },
-      { name: 'saturation', type: 'number', min: 0, max: 3, step: 0.05, default: 1.0 },
-      { name: 'hue', type: 'number', min: -180, max: 180, step: 1, default: 0 },
-      { name: 'sharpness', type: 'number', min: 0, max: 3, step: 0.05, default: 1.0 },
-      { name: 'warmth', type: 'number', min: -1, max: 1, step: 0.05, default: 0 },
-      { name: 'grayscale', type: 'number', min: 0, max: 1, step: 0.05, default: 0 },
-      { name: 'sepia', type: 'number', min: 0, max: 1, step: 0.05, default: 0 },
-      { name: 'invert', type: 'number', min: 0, max: 1, step: 0.05, default: 0 },
-      { name: 'blur', type: 'number', min: 0, max: 100, step: 0.5, default: 0 },
-      { name: 'vignette', type: 'number', min: 0, max: 1, step: 0.05, default: 0 },
-    ],
+    paramSchema: IMAGE_FILTER_META.schema,
   },
 
   'image.ocr': {

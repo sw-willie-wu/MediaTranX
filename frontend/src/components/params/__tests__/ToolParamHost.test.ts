@@ -511,6 +511,58 @@ describe('ToolParamHost — agentSchema.execute.requiresConfirm（批 3 Task 3.1
   })
 })
 
+describe('ToolParamHost — labelKey 選配覆蓋（批 4 Task 4.2 host 擴充）', () => {
+  it('a. 未傳 labelKey → getSubmitSpec().labelKey 沿 meta.labelKey 原值', () => {
+    const w = mountHost(STUB_TOOL_KEY)
+    const spec = (w.vm as any).getSubmitSpec()
+    expect(spec.labelKey).toBe('test.stub.label')
+  })
+
+  it('b. 傳 labelKey → getSubmitSpec().labelKey 被覆蓋，其餘欄位不變', () => {
+    const w = mountHost(STUB_TOOL_KEY, { labelKey: 'test.stub.override.label' })
+    const spec = (w.vm as any).getSubmitSpec()
+    expect(spec.labelKey).toBe('test.stub.override.label')
+    expect(spec.apiPath).toBe('/test/stub')
+    expect(spec.taskType).toBe('test.stub')
+  })
+
+  it('c. execute()：submitTask 收到覆蓋後的 labelKey（t() 轉換後的字串）', async () => {
+    submitTaskMock.mockResolvedValue('task-override')
+    const w = mountHost(STUB_TOOL_KEY, { labelKey: 'test.stub.override.label' })
+    await (w.vm as any).execute()
+    expect(submitTaskMock).toHaveBeenCalledWith(
+      '/test/stub',
+      { file_id: 'f1', a: 5, b: false, c: 'x', fmt: 'mp4' },
+      'test.stub.override.label',
+      'test.stub',
+      'test.mp4',
+    )
+  })
+
+  it('d. 有 buildSubmit 的 META 也能被 labelKey 覆蓋（override 在 buildSubmit 之後套用）', () => {
+    const w = mountHost(STUB_BUILD_SUBMIT_KEY, { labelKey: 'test.stub.override.label' })
+    const spec = (w.vm as any).getSubmitSpec()
+    expect(spec.labelKey).toBe('test.stub.override.label')
+    expect(spec.apiPath).toBe('/test/stub/alt') // buildSubmit 的其餘欄位不受影響
+  })
+})
+
+describe('ToolParamHost — agentExecuteLabel 選配覆蓋（批 4 Task 4.2 host 擴充修復）', () => {
+  it('a. 未傳 agentExecuteLabel → agentSchema.execute.label 沿 meta 鏈（無 meta.agentExecuteLabel 時退回 labelKey）', () => {
+    const w = mountHost(STUB_TOOL_KEY)
+    const handle = capturedHandle.current
+    expect(handle.agentSchema.execute.label).toBe('test.stub.label')
+    w.unmount()
+  })
+
+  it('b. 傳 agentExecuteLabel → agentSchema.execute.label 被覆蓋，優先於 meta.agentExecuteLabel/meta.labelKey', () => {
+    const w = mountHost(STUB_TOOL_KEY, { agentExecuteLabel: 'test.stub.override.execute' })
+    const handle = capturedHandle.current
+    expect(handle.agentSchema.execute.label).toBe('test.stub.override.execute')
+    w.unmount()
+  })
+})
+
 describe('ToolParamHost — notify（機制驗證，非 brief 列舉案例）', () => {
   it('轉呼參數元件 defineExpose 的 notify()', () => {
     const w = mountHost(STUB_TOOL_KEY)

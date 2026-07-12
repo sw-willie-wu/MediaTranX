@@ -9,8 +9,6 @@ import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import ImageUpscalePanel  from '@/components/image/panels/ImageUpscalePanel.vue'
 import ImageRemoveBgPanel from '@/components/image/panels/ImageRemoveBgPanel.vue'
 import ImageAiRemovePanel from '@/components/image/panels/ImageAiRemovePanel.vue'
-import ImageAdjustPanel, { type AdjustState } from '@/components/image/panels/ImageAdjustPanel.vue'
-import ImageFilterPanel, { type FilterState } from '@/components/image/panels/ImageFilterPanel.vue'
 import ImageCropPanel     from '@/components/image/panels/ImageCropPanel.vue'
 import ImageOcrPanel      from '@/components/image/panels/ImageOcrPanel.vue'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
@@ -58,8 +56,8 @@ const compressPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const upscalePanelRef  = ref<InstanceType<typeof ImageUpscalePanel>  | null>(null)
 const removeBgPanelRef = ref<InstanceType<typeof ImageRemoveBgPanel> | null>(null)
 const aiRemovePanelRef = ref<InstanceType<typeof ImageAiRemovePanel> | null>(null)
-const adjustPanelRef   = ref<InstanceType<typeof ImageAdjustPanel>   | null>(null)
-const filterPanelRef   = ref<InstanceType<typeof ImageFilterPanel>   | null>(null)
+const adjustPanelRef   = ref<InstanceType<typeof ToolParamHost> | null>(null)
+const filterPanelRef   = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const cropPanelRef     = ref<InstanceType<typeof ImageCropPanel>     | null>(null)
 const ocrPanelRef      = ref<InstanceType<typeof ImageOcrPanel>      | null>(null)
 
@@ -85,9 +83,12 @@ useViewHost('image', {
 })
 
 // ── Per-entry panel settings cache ───────────────────────────────────────────
+// 統一參數元件案批 4 Task 4.2 前：存 UI 尺度 AdjustState/FilterState（panel.getState()）。
+// 遷移後：改存 host 的後端尺度 params 快照（host.getParams()）——見 savePanelSettings/
+// restorePanelSettings 下方註解，語意上等價（save/restore 皆走同一顆 host，尺度一致自洽）。
 interface EntryPanelSettings {
-  adjust?: AdjustState
-  filter?: FilterState
+  adjust?: Record<string, unknown>
+  filter?: Record<string, unknown>
 }
 const entrySettingsCache = new Map<string, EntryPanelSettings>()
 
@@ -100,20 +101,24 @@ function onPreviewChange(p: FilterPreview) {
   filterPreviewParams.value = { ...p }
 }
 
+// host.getParams()/setParams()/resetToDefaults() 取代舊 panel.getState()/setState()/reset()
+// （統一參數元件案批 4 Task 4.2）——host params 是後端尺度快照（brightness=1.0 而非 UI 的
+// 100），與舊 UI 尺度 AdjustState/FilterState 不同，但 save/restore 都經同一顆 host 讀寫，
+// 尺度自洽，不影響「離開功能保留設定、切回還原」的使用者可觀察行為。
 function savePanelSettings(entryId: string) {
   const s = entrySettingsCache.get(entryId) ?? {}
-  if (adjustPanelRef.value) s.adjust = adjustPanelRef.value.getState()
-  if (filterPanelRef.value) s.filter = filterPanelRef.value.getState()
+  if (adjustPanelRef.value) s.adjust = adjustPanelRef.value.getParams()
+  if (filterPanelRef.value) s.filter = filterPanelRef.value.getParams()
   entrySettingsCache.set(entryId, s)
 }
 
 function restorePanelSettings(entryId: string) {
   const s = entrySettingsCache.get(entryId)
   nextTick(() => {
-    if (s?.adjust && adjustPanelRef.value) adjustPanelRef.value.setState(s.adjust)
-    else if (adjustPanelRef.value) adjustPanelRef.value.reset?.()
-    if (s?.filter && filterPanelRef.value) filterPanelRef.value.setState(s.filter)
-    else if (filterPanelRef.value) filterPanelRef.value.reset?.()
+    if (s?.adjust && adjustPanelRef.value) adjustPanelRef.value.setParams(s.adjust)
+    else if (adjustPanelRef.value) adjustPanelRef.value.resetToDefaults()
+    if (s?.filter && filterPanelRef.value) filterPanelRef.value.setParams(s.filter)
+    else if (filterPanelRef.value) filterPanelRef.value.resetToDefaults()
   })
 }
 
@@ -196,8 +201,8 @@ watch(activePreviewUrl, (newUrl, oldUrl) => {
   if (newUrl !== oldUrl) {
     filterPreviewParams.value = null
     // 新圖已套用調整/濾鏡，slider 歸回預設值
-    if (adjustPanelRef.value) adjustPanelRef.value.reset?.()
-    if (filterPanelRef.value) filterPanelRef.value.reset?.()
+    if (adjustPanelRef.value) adjustPanelRef.value.resetToDefaults()
+    if (filterPanelRef.value) filterPanelRef.value.resetToDefaults()
   }
 })
 
@@ -285,10 +290,17 @@ function handleMultiExecute() {
       submitToAll('/image/upscale',   () => upscalePanelRef.value!.getParams(),  t('image.upscale.task_label'),    'image.upscale',    noop); break
     case 'remove-bg':
       submitToAll('/image/remove-bg', () => removeBgPanelRef.value!.getParams(), t('image.remove_bg.task_label'), 'image.remove_bg',  noop); break
-    case 'adjust':
-      submitToAll('/image/filter',    () => adjustPanelRef.value!.getParams(),   t('image.adjust.task_label'),    'image.filter',     noop); break
-    case 'filter':
-      submitToAll('/image/filter',    () => filterPanelRef.value!.getParams(),   t('image.filter.task_label'),    'image.filter',     noop); break
+    case 'adjust': {
+      // adjust host 帶 label-key='image.adjust.task_label' override（見 ImageView template
+      // 掛載點與 ToolParamHost.vue labelKey prop），走 getSubmitSpec() 讓批次任務名稱正確
+      // 顯示「圖片 · 調整」而非兩掛載點共用 META 的 'image.filter.task_label'（同 transcode 慣例）。
+      const spec = adjustPanelRef.value!.getSubmitSpec()
+      submitToAll(spec.apiPath, () => adjustPanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop); break
+    }
+    case 'filter': {
+      const spec = filterPanelRef.value!.getSubmitSpec()
+      submitToAll(spec.apiPath, () => filterPanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop); break
+    }
     case 'ocr':
       submitToAll('/image/ocr',       () => ocrPanelRef.value!.getParams(),      t('image.ocr.task_label'),       'image.ocr',        noop); break
     // ai-remove、crop 不支援批次（需筆刷/裁切互動），退回單張
@@ -522,21 +534,32 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @submit="onPanelSubmit"
         />
 
-        <ImageAdjustPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'adjust'"
           ref="adjustPanelRef"
+          tool-key="image.filter"
+          :panel-id="panelIdFor('image', 'adjust')"
+          label-key="image.adjust.task_label"
+          agent-execute-label="panel.adjust.execute"
+          field-group="adjust"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :file-info="imageInfoForHost"
           :is-multi-select="isMultiSelect"
           @submit="onPanelSubmit"
           @preview-change="onPreviewChange"
         />
 
-        <ImageFilterPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'filter'"
           ref="filterPanelRef"
+          tool-key="image.filter"
+          :panel-id="panelIdFor('image', 'filter')"
+          agent-execute-label="panel.filter.execute"
+          field-group="filter"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :file-info="imageInfoForHost"
           :is-multi-select="isMultiSelect"
           @submit="onPanelSubmit"
           @preview-change="onPreviewChange"
