@@ -6,8 +6,6 @@ import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import DocumentPreview from '@/components/document/DocumentPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
-import DocumentPdfConvertPanel  from '@/components/document/panels/DocumentPdfConvertPanel.vue'
-import DocumentSplitPanel       from '@/components/document/panels/DocumentSplitPanel.vue'
 import TextPreviewModal          from '@/components/common/TextPreviewModal.vue'
 import { useDocumentWorkspace } from '@/composables/useDocumentWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
@@ -34,9 +32,9 @@ const { isCanceling, requestStop } = useExecuteStop(collection)
 
 // Panel refs
 const translatePanelRef  = ref<InstanceType<typeof ToolParamHost>  | null>(null)
-const pdfConvertPanelRef = ref<InstanceType<typeof DocumentPdfConvertPanel> | null>(null)
+const pdfConvertPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const ocrPanelRef        = ref<InstanceType<typeof ToolParamHost>        | null>(null)
-const splitPanelRef      = ref<InstanceType<typeof DocumentSplitPanel>      | null>(null)
+const splitPanelRef      = ref<InstanceType<typeof ToolParamHost>      | null>(null)
 const showOcrModal       = ref(false)
 
 const subFunctions = computed(() => [
@@ -58,6 +56,13 @@ const currentFileExt = computed(() => {
   const parts = currentFileName.value.split('.')
   return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : ''
 })
+
+// document.split 換檔清空 pages 的合成觸發源（見 split.meta.ts 檔頭「seedOnFileChange 觸發
+// 源特例」註解）：document 領域無 /document/info 這類 fetch，沒有真正的 fileInfo 物件可餵。
+// ToolParamHost 的 seed 唯一觸發源是 fileInfo prop 的 immediate watch，這裡用 fileId 包一個
+// 最小合成物件——只借「fileId 變了→物件參考變了→watch 觸發」這件事，seedOnFileChange 本身
+// 不讀取內容，只要被呼叫就無條件清空 pages（語意與舊 watch(fileId) 完全等價）。
+const splitFileInfo = computed(() => (fileId.value ? { fileId: fileId.value } : null))
 
 // document.ocr 副檔名限制（PDF 或圖片）——沿舊 DocumentOcrPanel.isPdfOrImage。ToolParamHost
 // 的 validate 只吃 params 做不到這個判斷（需要檔名副檔名），故留在 View 層算，與 host 的
@@ -268,12 +273,14 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @submit="handlePanelSubmit"
         />
 
-        <DocumentPdfConvertPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'pdf-convert'"
           ref="pdfConvertPanelRef"
+          tool-key="document.pdf_convert"
+          :panel-id="panelIdFor('document', 'pdf-convert')"
+          :current-file-ext="currentFileExt"
           :file-id="fileId"
           :current-file-name="currentFileName"
-          :current-file-ext="currentFileExt"
           :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
@@ -296,10 +303,13 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           />
         </template>
 
-        <DocumentSplitPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'split'"
           ref="splitPanelRef"
+          tool-key="document.split"
+          :panel-id="panelIdFor('document', 'split')"
           :file-id="fileId"
+          :file-info="splitFileInfo"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"

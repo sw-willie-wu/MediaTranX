@@ -15,6 +15,8 @@ import { META as SUMMARY_META } from './video/summary.meta'
 import { META as SUBTITLE_META } from './video/subtitle.meta'
 import { META as TRANSLATE_META } from './document/translate.meta'
 import { META as DOCUMENT_OCR_META } from './document/ocr.meta'
+import { META as DOCUMENT_SPLIT_META } from './document/split.meta'
+import { META as DOCUMENT_PDF_CONVERT_META } from './document/pdf_convert.meta'
 import { META as AUDIO_TRANSCODE_META } from './audio/transcode.meta'
 import { META as AUDIO_VOLUME_META } from './audio/volume.meta'
 import { META as AUDIO_CUT_META } from './audio/cut.meta'
@@ -47,6 +49,8 @@ export const PARAM_COMPONENTS: Record<string, Component> = {
   // ——兩後端 route 欄位逐一相同，見該檔／document/ocr.meta.ts 檔頭比對記錄。domain 差異
   // （persistKey/i18nPrefix）由掛載點以 fallthrough attrs 傳入。
   'document.ocr': defineAsyncComponent(() => import('./document/OcrParams.vue')),
+  'document.split': defineAsyncComponent(() => import('./document/SplitParams.vue')),
+  'document.pdf_convert': defineAsyncComponent(() => import('./document/PdfConvertParams.vue')),
   'audio.transcode': defineAsyncComponent(() => import('./audio/AudioTranscodeParams.vue')),
   'audio.volume': defineAsyncComponent(() => import('./audio/VolumeParams.vue')),
   'audio.cut': defineAsyncComponent(() => import('./audio/AudioCutParams.vue')),
@@ -78,6 +82,8 @@ export const METAS: Record<string, ToolParamMeta> = {
   'video.subtitle': SUBTITLE_META,
   'document.translate': TRANSLATE_META,
   'document.ocr': DOCUMENT_OCR_META,
+  'document.split': DOCUMENT_SPLIT_META,
+  'document.pdf_convert': DOCUMENT_PDF_CONVERT_META,
   'audio.transcode': AUDIO_TRANSCODE_META,
   'audio.volume': AUDIO_VOLUME_META,
   'audio.cut': AUDIO_CUT_META,

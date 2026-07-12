@@ -40,6 +40,8 @@ import { META as IMAGE_REMOVE_BG_META } from '@/components/params/image/remove_b
 import { META as IMAGE_UPSCALE_META } from '@/components/params/image/upscale.meta'
 import { META as IMAGE_OCR_META } from '@/components/params/image/ocr.meta'
 import { META as DOCUMENT_OCR_META } from '@/components/params/document/ocr.meta'
+import { META as DOCUMENT_SPLIT_META } from '@/components/params/document/split.meta'
+import { META as DOCUMENT_PDF_CONVERT_META } from '@/components/params/document/pdf_convert.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
@@ -351,32 +353,33 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     paramSchema: DOCUMENT_OCR_META.schema,
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 4 Task 4.5 Part B）：欄位定義唯一事實來源在
+  // pdf_convert.meta.ts。outputKind 的 images→image 判斷函式維持手寫不動（見該檔檔頭
+  // 「outputKind 依 images→image 的函數留 registry 手寫不動」決策）。
   'document.pdf_convert': {
-    toolKey: 'document.pdf_convert',
-    apiPath: '/document/pdf-convert',
-    labelKey: 'document.pdf_convert.task_label',
+    toolKey: DOCUMENT_PDF_CONVERT_META.toolKey,
+    apiPath: DOCUMENT_PDF_CONVERT_META.apiPath,
+    labelKey: DOCUMENT_PDF_CONVERT_META.labelKey,
     kind: 'tool',
     // 後端吃 pdf/docx/doc/txt;僅 'images' 限 pdf（後端 ValueError 把關）
     inputKinds: ['document'],
     // 'images' 實際產出是 zip（多頁打包）——歸 image 類供下游判斷,
     // 但 zip 不在 MEDIA_KIND_EXTS,下游 image 工具實際吃不動（v1 已知限制）
     outputKind: (p) => (p.output_format === 'images' ? 'image' : 'document'),
-    paramSchema: [
-      { name: 'output_format', type: 'enum', options: ['txt', 'md', 'images'], default: 'txt' },
-    ],
+    paramSchema: DOCUMENT_PDF_CONVERT_META.schema,
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 4 Task 4.5 Part A）：欄位定義唯一事實來源在
+  // split.meta.ts。
   'document.split': {
-    toolKey: 'document.split',
-    apiPath: '/document/split',
-    labelKey: 'document.split.task_label',
+    toolKey: DOCUMENT_SPLIT_META.toolKey,
+    apiPath: DOCUMENT_SPLIT_META.apiPath,
+    labelKey: DOCUMENT_SPLIT_META.labelKey,
     kind: 'tool',
     inputKinds: ['document'],
     inputExts: ['pdf'],   // 後端 pypdf 直讀,僅支援 PDF
     outputKind: DOCUMENT_OUT,
-    paramSchema: [
-      { name: 'pages', type: 'string', default: '' },
-    ],
+    paramSchema: DOCUMENT_SPLIT_META.schema,
   },
 
   // paramSchema 由 META 組裝（統一參數元件案，批 1 Task 1.5）：欄位定義唯一事實來源在
