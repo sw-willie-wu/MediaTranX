@@ -23,6 +23,8 @@ import { META as AUDIO_LYRICS_META } from './audio/lyrics.meta'
 import { META as IMAGE_COMPRESS_META } from './image/compress.meta'
 import { META as IMAGE_CONVERT_META } from './image/convert.meta'
 import { META as IMAGE_FILTER_META } from './image/filter.meta'
+import { META as IMAGE_CROP_META } from './image/crop.meta'
+import { META as IMAGE_REMOVE_BG_META } from './image/remove_bg.meta'
 
 export const PARAM_COMPONENTS: Record<string, Component> = {
   'video.cut': defineAsyncComponent(() => import('./video/CutParams.vue')),
@@ -50,6 +52,8 @@ export const PARAM_COMPONENTS: Record<string, Component> = {
   // 單一 toolKey image.filter 對應單一組件（FilterParams.vue 依 fieldGroup attr 分組渲染）；
   // ImageView 同 tool-key 掛兩次 ToolParamHost（不同 panel-id）——見該檔＋filter.meta.ts。
   'image.filter': defineAsyncComponent(() => import('./image/FilterParams.vue')),
+  'image.crop': defineAsyncComponent(() => import('./image/CropParams.vue')),
+  'image.remove_bg': defineAsyncComponent(() => import('./image/RemoveBgParams.vue')),
 }
 
 export const METAS: Record<string, ToolParamMeta> = {
@@ -72,6 +76,8 @@ export const METAS: Record<string, ToolParamMeta> = {
   'image.compress': IMAGE_COMPRESS_META,
   'image.convert': IMAGE_CONVERT_META,
   'image.filter': IMAGE_FILTER_META,
+  'image.crop': IMAGE_CROP_META,
+  'image.remove_bg': IMAGE_REMOVE_BG_META,
 }
 
 export function hasParamComponent(toolKey: string): boolean {

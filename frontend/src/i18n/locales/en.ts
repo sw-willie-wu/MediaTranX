@@ -670,6 +670,7 @@ export default {
       crop_size: 'Crop Size',
       original_image: 'Original:',
       task_label: 'Image · Crop',
+      size_error: 'Crop width/height must be positive numbers',
     },
 
     ocr: {

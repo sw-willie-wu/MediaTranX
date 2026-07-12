@@ -35,6 +35,8 @@ import { META as AUDIO_LYRICS_META } from '@/components/params/audio/lyrics.meta
 import { META as IMAGE_COMPRESS_META } from '@/components/params/image/compress.meta'
 import { META as IMAGE_CONVERT_META } from '@/components/params/image/convert.meta'
 import { META as IMAGE_FILTER_META } from '@/components/params/image/filter.meta'
+import { META as IMAGE_CROP_META } from '@/components/params/image/crop.meta'
+import { META as IMAGE_REMOVE_BG_META } from '@/components/params/image/remove_bg.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
@@ -308,16 +310,16 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     ],
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 4 Task 4.3）：欄位定義唯一事實來源在
+  // remove_bg.meta.ts（無 modelRequirement——rembg 自備模型，preflight 恆真，見該檔檔頭註記）。
   'image.remove_bg': {
-    toolKey: 'image.remove_bg',
-    apiPath: '/image/remove-bg',
-    labelKey: 'image.remove_bg.task_label',
+    toolKey: IMAGE_REMOVE_BG_META.toolKey,
+    apiPath: IMAGE_REMOVE_BG_META.apiPath,
+    labelKey: IMAGE_REMOVE_BG_META.labelKey,
     kind: 'tool',
     inputKinds: ['image'],
     outputKind: IMAGE_OUT,
-    paramSchema: [
-      { name: 'mode', type: 'enum', options: ['auto', 'person', 'product', 'animal', 'anime'], default: 'auto' },
-    ],
+    paramSchema: IMAGE_REMOVE_BG_META.schema,
   },
 
   'image.upscale': {
@@ -338,20 +340,17 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     ],
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 4 Task 4.3）：欄位定義唯一事實來源在
+  // crop.meta.ts（width/height min=1——PIL 裁切無 ffmpeg yuv420p 向下取偶約束，異於
+  // video.crop 的 min=2；見該檔檔頭註記）。
   'image.crop': {
-    toolKey: 'image.crop',
-    apiPath: '/image/crop',
-    labelKey: 'image.crop.task_label',
+    toolKey: IMAGE_CROP_META.toolKey,
+    apiPath: IMAGE_CROP_META.apiPath,
+    labelKey: IMAGE_CROP_META.labelKey,
     kind: 'tool',
     inputKinds: ['image'],
     outputKind: IMAGE_OUT,
-    // PIL 裁切無取偶限制(ImageCropRequest) — min 1 即可
-    paramSchema: [
-      { name: 'x', type: 'number', min: 0, step: 1, default: 0 },
-      { name: 'y', type: 'number', min: 0, step: 1, default: 0 },
-      { name: 'width', type: 'number', min: 1, step: 1 },
-      { name: 'height', type: 'number', min: 1, step: 1 },
-    ],
+    paramSchema: IMAGE_CROP_META.schema,
   },
 
   // ── document ──────────────────────────────────────────────────────

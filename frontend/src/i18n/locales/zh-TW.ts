@@ -670,6 +670,7 @@ export default {
       crop_size: '裁切尺寸',
       original_image: '原圖：',
       task_label: '圖片 · 裁切',
+      size_error: '裁切寬高必須為正數',
     },
 
     ocr: {

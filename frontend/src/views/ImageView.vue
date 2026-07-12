@@ -7,9 +7,7 @@ import ImagePreview from '@/components/image/ImagePreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import ImageUpscalePanel  from '@/components/image/panels/ImageUpscalePanel.vue'
-import ImageRemoveBgPanel from '@/components/image/panels/ImageRemoveBgPanel.vue'
 import ImageAiRemovePanel from '@/components/image/panels/ImageAiRemovePanel.vue'
-import ImageCropPanel     from '@/components/image/panels/ImageCropPanel.vue'
 import ImageOcrPanel      from '@/components/image/panels/ImageOcrPanel.vue'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
 import { useImageWorkspace } from '@/composables/useImageWorkspace'
@@ -54,11 +52,11 @@ const maskToolMode = ref<'brush' | 'polygon' | 'bezier'>('brush')
 const convertPanelRef  = ref<InstanceType<typeof ToolParamHost>  | null>(null)
 const compressPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const upscalePanelRef  = ref<InstanceType<typeof ImageUpscalePanel>  | null>(null)
-const removeBgPanelRef = ref<InstanceType<typeof ImageRemoveBgPanel> | null>(null)
+const removeBgPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const aiRemovePanelRef = ref<InstanceType<typeof ImageAiRemovePanel> | null>(null)
 const adjustPanelRef   = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const filterPanelRef   = ref<InstanceType<typeof ToolParamHost> | null>(null)
-const cropPanelRef     = ref<InstanceType<typeof ImageCropPanel>     | null>(null)
+const cropPanelRef     = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const ocrPanelRef      = ref<InstanceType<typeof ImageOcrPanel>      | null>(null)
 
 const subFunctions = computed(() => [
@@ -236,6 +234,8 @@ const executeDisabled = computed(() => {
   if (isAnyProcessing.value) return true
   if (currentFunction.value === 'ocr') return ocrPanelRef.value?.isDisabled ?? !hasFile.value
   if (currentFunction.value === 'ai-remove' && isAnimated.value) return true
+  // crop 寬高未填時執行鈕 disabled（host validate → isDisabled；與 VideoView crop 分支對齊）
+  if (currentFunction.value === 'crop') return cropPanelRef.value?.isDisabled ?? !hasFile.value
   return !hasFile.value || !fileId.value || isUploading.value
 })
 
@@ -511,9 +511,11 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @submit="onPanelSubmit"
         />
 
-        <ImageRemoveBgPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'remove-bg'"
           ref="removeBgPanelRef"
+          tool-key="image.remove_bg"
+          :panel-id="panelIdFor('image', 'remove-bg')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
@@ -565,12 +567,14 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @preview-change="onPreviewChange"
         />
 
-        <ImageCropPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'crop'"
           ref="cropPanelRef"
+          tool-key="image.crop"
+          :panel-id="panelIdFor('image', 'crop')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :image-info="imageInfo"
+          :file-info="imageInfoForHost"
           :canvas-crop-rect="canvasCropRect"
           @submit="onPanelSubmit"
           @update:show-crop-overlay="cropOverlayVisible = $event"
