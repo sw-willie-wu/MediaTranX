@@ -7,8 +7,6 @@ import VideoPreview from '@/components/video/VideoPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
-import VideoInterpolatePanel from '@/components/video/panels/VideoInterpolatePanel.vue'
-import VideoEnhancePanel from '@/components/video/panels/VideoEnhancePanel.vue'
 import VideoSummaryPanel from '@/components/video/panels/VideoSummaryPanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
@@ -43,8 +41,8 @@ const transcodePanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const cutPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const cropPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
-const interpolatePanelRef = ref<InstanceType<typeof VideoInterpolatePanel> | null>(null)
-const enhancePanelRef = ref<InstanceType<typeof VideoEnhancePanel> | null>(null)
+const interpolatePanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
+const enhancePanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const summaryPanelRef = ref<InstanceType<typeof VideoSummaryPanel> | null>(null)
 
 // Crop state (shared between VideoPreview and CropParams, bridged via ToolParamHost attrs fallthrough)
@@ -90,6 +88,8 @@ const executeDisabled = computed(() => {
   if (currentFunction.value === 'cut')       return cutPanelRef.value?.isDisabled ?? !hasFile.value
   if (currentFunction.value === 'crop')      return cropPanelRef.value?.isDisabled ?? !hasFile.value
   if (currentFunction.value === 'summary')   return summaryPanelRef.value?.isDisabled ?? true
+  if (currentFunction.value === 'interpolate') return interpolatePanelRef.value?.isDisabled ?? !hasFile.value
+  if (currentFunction.value === 'enhance')   return enhancePanelRef.value?.isDisabled ?? !hasFile.value
   return !hasFile.value
 })
 
@@ -100,6 +100,8 @@ const executeLoading = computed(() => {
   if (currentFunction.value === 'cut')       return cutPanelRef.value?.isLoading ?? false
   if (currentFunction.value === 'crop')      return cropPanelRef.value?.isLoading ?? false
   if (currentFunction.value === 'summary')   return summaryPanelRef.value?.isLoading ?? false
+  if (currentFunction.value === 'interpolate') return interpolatePanelRef.value?.isLoading ?? false
+  if (currentFunction.value === 'enhance')   return enhancePanelRef.value?.isLoading ?? false
   return false
 })
 
@@ -138,12 +140,18 @@ async function handleMultiExecute() {
     case 'summary':
       if (await summaryPanelRef.value?.preflight() === false) break
       await submitToAll('/video/summary', () => summaryPanelRef.value!.getParams(), t('video.summary.task_label'), 'video.summary', noop); break
-    case 'interpolate':
+    case 'interpolate': {
       if (await interpolatePanelRef.value?.preflight() === false) break
-      await submitToAll('/video/interpolate', () => interpolatePanelRef.value!.getParams(), t('video.interpolate.task_label'), 'video.interpolate', noop); break
-    case 'enhance':
+      const spec = interpolatePanelRef.value!.getSubmitSpec()
+      await submitToAll(spec.apiPath, () => interpolatePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
+      break
+    }
+    case 'enhance': {
       if (await enhancePanelRef.value?.preflight() === false) break
-      await submitToAll('/video/enhance', () => enhancePanelRef.value!.getParams(), t('video.enhance.task_label'), 'video.enhance', noop); break
+      const spec = enhancePanelRef.value!.getSubmitSpec()
+      await submitToAll(spec.apiPath, () => enhancePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
+      break
+    }
     case 'cut':
     case 'crop':
     case 'subtitle':
@@ -344,13 +352,15 @@ onUnmounted(() => { clearActions() })
         </div>
         <!-- Note: SubtitlePanel does not accept :isMultiSelect (m16 — subtitle panel hardcodes false internally) -->
 
-        <VideoInterpolatePanel
+        <ToolParamHost
           v-else-if="currentFunction === 'interpolate'"
           ref="interpolatePanelRef"
+          tool-key="video.interpolate"
+          :panel-id="panelIdFor('video', 'interpolate')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :media-info="mediaInfo"
           :is-multi-select="isMultiSelect"
+          :file-info="mediaInfo"
           @submit="handlePanelSubmit"
         />
 
@@ -363,13 +373,15 @@ onUnmounted(() => { clearActions() })
           @submit="handlePanelSubmit"
         />
 
-        <VideoEnhancePanel
+        <ToolParamHost
           v-else-if="currentFunction === 'enhance'"
           ref="enhancePanelRef"
+          tool-key="video.enhance"
+          :panel-id="panelIdFor('video', 'enhance')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :media-info="mediaInfo"
           :is-multi-select="isMultiSelect"
+          :file-info="mediaInfo"
           @submit="handlePanelSubmit"
         />
       </div>

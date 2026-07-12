@@ -24,12 +24,22 @@ export interface ToolParamMeta {
   validate?(params: Record<string, unknown>): string | null
   /** 工具頁 endpoint 分流（僅 video 轉檔）；payload 不含 file_id */
   buildSubmit?(params: Record<string, unknown>): SubmitSpec
-  /** 模型需求：remote/無需求回 null */
+  /**
+   * 模型需求：remote/無需求回 null。兩種比對形狀（isModelInstalled 依 req.variant 是否存在
+   * 分流，見 modelGuardUtils.ts）：
+   * - family/size/quantization：既有路徑（translate 等 size:quantization 組合 variant 系）
+   * - variant/categories：批 2 Task 2.3 擴充（interpolate/enhance 等單一 variant token 系，
+   *   如 RIFE/Real-ESRGAN；categories 是 modelStore category/subcategory 的查找範圍，family
+   *   選配（enhance 用以縮限 realesrgan 家族，interpolate 不需要因單一家族))
+   */
   modelRequirement?(params: Record<string, unknown>):
-    { slot: string; family?: string; size?: string; quantization?: string } | null
+    { slot: string; family?: string; size?: string; quantization?: string; variant?: string; categories?: string[] } | null
   multiSelect: boolean
   /** 下載按鈕的輸出格式欄位名（host 據此 expose outputFormat） */
   downloadFormatField?: string
+  /** agent 面板 execute 動作的 label i18n key；未設時 host 用 meta.labelKey（批 2 Task 2.3
+   *  新增——interpolate/enhance 舊 agentSchema.execute.label 與 labelKey 不同,見兩檔 meta 註解） */
+  agentExecuteLabel?: string
   /** persisted-model seeding 受控欄位 */
   persistedModelFields?: string[]
   /** 檔案載入/切換時 seeding：工具頁 host 對 fileInfo 做 immediate watch 呼叫並 merge patch；

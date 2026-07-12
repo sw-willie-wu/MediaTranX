@@ -21,6 +21,8 @@ import { META as CROP_META } from '@/components/params/video/crop.meta'
 import { META as TRANSCODE_META, AUDIO_FORMATS as TRANSCODE_AUDIO_FORMATS } from '@/components/params/video/transcode.meta'
 import { META as EXTRACT_AUDIO_META } from '@/components/params/video/extract_audio.meta'
 import { META as DOWNLOAD_META } from '@/components/params/video/download.meta'
+import { META as INTERPOLATE_META } from '@/components/params/video/interpolate.meta'
+import { META as ENHANCE_META } from '@/components/params/video/enhance.meta'
 import { META as TRANSLATE_META } from '@/components/params/document/translate.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
@@ -170,37 +172,28 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     ],
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 2 Task 2.3）:欄位定義唯一事實來源在
+  // enhance.meta.ts。
   'video.enhance': {
-    toolKey: 'video.enhance',
-    apiPath: '/video/enhance',
-    labelKey: 'video.enhance.task_label',
+    toolKey: ENHANCE_META.toolKey,
+    apiPath: ENHANCE_META.apiPath,
+    labelKey: ENHANCE_META.labelKey,
     kind: 'tool',
     inputKinds: ['video'],
     outputKind: VIDEO_OUT,
-    paramSchema: [
-      { name: 'model', type: 'string', default: 'realesrgan', advanced: true },
-      { name: 'variant', type: 'enum', options: ['x2plus', 'x4plus', 'x4plus-anime', 'animevideov3'], default: 'x4plus' },
-      { name: 'output_format', type: 'enum', options: ['mp4', 'mkv', 'webm', 'mov'], default: 'mp4' },
-      { name: 'video_codec', type: 'enum', options: ['h264', 'h265', 'vp9', 'av1'], default: 'h264' },
-    ],
+    paramSchema: ENHANCE_META.schema,
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 2 Task 2.3）:欄位定義唯一事實來源在
+  // interpolate.meta.ts（含後端 InterpolateRequest default 'v4.22' 過時的收斂註記）。
   'video.interpolate': {
-    toolKey: 'video.interpolate',
-    apiPath: '/video/interpolate',
-    labelKey: 'video.interpolate.task_label',
+    toolKey: INTERPOLATE_META.toolKey,
+    apiPath: INTERPOLATE_META.apiPath,
+    labelKey: INTERPOLATE_META.labelKey,
     kind: 'tool',
     inputKinds: ['video'],
     outputKind: VIDEO_OUT,
-    // 後端 InterpolateRequest default 'v4.22' 已過時（registry 只有 v4.26,
-    // panel default 也是 v4.26）——這裡壓 v4.26 避免 default 即失敗。
-    paramSchema: [
-      { name: 'model', type: 'enum', options: ['v4.26'], default: 'v4.26', advanced: true },
-      { name: 'mode', type: 'enum', options: ['2x', '4x', 'custom'], default: '2x' },
-      { name: 'target_fps', type: 'number', min: 2, max: 240, step: 1, visibleWhen: (p) => p.mode === 'custom' },
-      { name: 'output_format', type: 'enum', options: ['mp4', 'mkv', 'webm', 'mov'], default: 'mp4' },
-      { name: 'video_codec', type: 'enum', options: ['h264', 'h265', 'vp9', 'av1'], default: 'h264' },
-    ],
+    paramSchema: INTERPOLATE_META.schema,
   },
 
   'video.summary': {

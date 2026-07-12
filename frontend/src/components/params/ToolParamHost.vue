@@ -93,8 +93,9 @@ async function execute(): Promise<{ task_id?: string }> {
 // slot → 設定頁「模型與資源下載」分類 tab 對照（沿各舊 panel 硬編 category 字面值；
 // 例如舊 DocumentTranslatePanel 傳 'llm'）。slot 是 modelRequirement 的語意識別（未來
 // GPU VRAM 協調也用得到），與設定頁 tab 分類是兩件事，故此處另建對照表、非直接複用 slot。
-// 首用僅 translate→llm 一筆，之後 6 個模型系工具面板在各自 task 補上對應項。
-const SLOT_GUARD_CATEGORY: Record<string, string> = { translate: 'llm' }
+// 首用 translate→llm；批 2 Task 2.3 補 interpolate→video（舊 VideoInterpolatePanel.preflight
+// 傳 'video'）、enhance→image（舊 VideoEnhancePanel.preflight 傳 'image'，realesrgan 屬影像 tab）。
+const SLOT_GUARD_CATEGORY: Record<string, string> = { translate: 'llm', interpolate: 'video', enhance: 'image' }
 
 async function preflight(): Promise<boolean> {
   const req = meta.modelRequirement?.(params.value)
@@ -226,11 +227,11 @@ const agentSchema: PanelAgentSchema = {
     return agentFields.value
   },
   actions: [],
-  // requiresConfirm/label 目前無 meta 欄位可查（ToolParamMeta 未宣告，見報告）；
-  // 批 0 唯一在案例 video.cut 舊 panel 原值為 requiresConfirm:true，故採保守預設：
-  // 一律 requiresConfirm:true（寧可多一次確認，不放過 GPU 任務誤觸）；label 借用
-  // meta.labelKey（唯一可用的語意字串，沿用舊 panel「不轉譯、直傳 i18n key」的慣例）。
-  execute: { requiresConfirm: true, label: meta.labelKey },
+  // requiresConfirm 批 0 起固定 true（寧可多一次確認，不放過 GPU 任務誤觸）；label 預設借用
+  // meta.labelKey，但 interpolate/enhance 等舊 panel 的 agentSchema.execute.label 是獨立字串
+  // （'panel.interpolate.execute' ≠ 'video.interpolate.task_label'）——第一個不同者出現時
+  // （批 2 Task 2.3）加 meta.agentExecuteLabel 選配欄位承接，未設時退回 labelKey（既有工具不變）。
+  execute: { requiresConfirm: true, label: meta.agentExecuteLabel ?? meta.labelKey },
 }
 
 useAgentPanelHost(props.panelId, {

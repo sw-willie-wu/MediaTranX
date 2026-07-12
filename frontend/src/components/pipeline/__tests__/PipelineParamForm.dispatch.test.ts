@@ -4,9 +4,9 @@
  * 否則走既有 registry paramSchema 直出的 legacy 表單（過渡期漸次遷移）。
  *
  * 覆蓋 PARAM_COMPONENTS['video.cut'] 為同步 stub 元件（避免真拉 defineAsyncComponent
- * 包的 CutParams.vue，測試才能同步斷言、不必 await 元件載入）；'video.enhance'
- * 未在 PARAM_COMPONENTS 中註冊（批 1 Task 1.2 起 video.transcode 已註冊，改用
- * video.enhance 天然驗證 legacy fallback 路徑；paramSchema 含 enum 欄位以維持
+ * 包的 CutParams.vue，測試才能同步斷言、不必 await 元件載入）；'video.subtitle'
+ * 未在 PARAM_COMPONENTS 中註冊（批 2 Task 2.3 起 video.enhance 已註冊，改用
+ * video.subtitle 天然驗證 legacy fallback 路徑；paramSchema 含 enum 欄位以維持
  * .app-select-trigger 斷言有意義）。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
@@ -73,10 +73,10 @@ const cutNode: RecipeNode = {
   params: { start_time: 5 },
 }
 
-const enhanceNode: RecipeNode = {
+const subtitleNode: RecipeNode = {
   id: 'n2',
   kind: 'tool',
-  toolKey: 'video.enhance',
+  toolKey: 'video.subtitle',
   params: {},
 }
 
@@ -101,8 +101,8 @@ describe('PipelineParamForm — dispatcher', () => {
     expect(w.emitted('update-params')).toEqual([[{ start_time: 9 }]])
   })
 
-  it('3. toolKey 無參數元件（video.enhance）→ legacy 表單渲染、stub testid 不存在', () => {
-    const w = mountForm(enhanceNode)
+  it('3. toolKey 無參數元件（video.subtitle）→ legacy 表單渲染、stub testid 不存在', () => {
+    const w = mountForm(subtitleNode)
     expect(w.find('[data-testid="stub-param-component"]').exists()).toBe(false)
     expect(w.find('.app-select-trigger').exists()).toBe(true)
   })
