@@ -7,7 +7,6 @@ import AudioPreview from '@/components/audio/AudioPreview.vue'
 import AudioMultiTrackPreview from '@/components/audio/AudioMultiTrackPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
-import AudioCutPanel        from '@/components/audio/panels/AudioCutPanel.vue'
 import AudioTranscribePanel from '@/components/audio/panels/AudioTranscribePanel.vue'
 import AudioSeparatePanel  from '@/components/audio/panels/AudioSeparatePanel.vue'
 import AudioLyricsPanel    from '@/components/audio/panels/AudioLyricsPanel.vue'
@@ -58,7 +57,7 @@ const { isCanceling, requestStop } = useExecuteStop(collection)
 
 // Panel refs
 const transcodePanelRef  = ref<InstanceType<typeof ToolParamHost>        | null>(null)
-const cutPanelRef        = ref<InstanceType<typeof AudioCutPanel>        | null>(null)
+const cutPanelRef        = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const volumePanelRef     = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const transcribePanelRef = ref<InstanceType<typeof AudioTranscribePanel> | null>(null)
 const separatePanelRef   = ref<InstanceType<typeof AudioSeparatePanel>  | null>(null)
@@ -154,6 +153,12 @@ useViewHost('audio', {
 
 const volumeGainPreview = ref(1)
 const trimRange = ref<{ start: number; end: number } | null>(null)
+
+// cut ToolParamHost 出向：元件 emit update:trimRange 經 host 單根元件 attrs fallthrough
+// 穿透到這裡（host 未宣告此事件）——沿 volume 的 update:gain-preview 先例。
+function onCutParamsTrimRange(r: { start: number; end: number }) {
+  trimRange.value = r
+}
 
 // Toast warning when non-MIDI file is loaded in MIDI edit mode
 watch([() => currentFunction.value, () => currentFileName.value], ([fn, name]) => {
@@ -758,7 +763,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
         :file="collection.activeEntry.value?.file ?? file"
         :gain-preview="currentFunction === 'volume' ? volumeGainPreview : 1"
         :trim-range="currentFunction === 'cut' ? trimRange : null"
-        @update:trim-range="r => { trimRange = r; cutPanelRef?.onTrimRangeUpdate(r) }"
+        @update:trim-range="r => { trimRange = r; cutPanelRef?.notify('trimRange', r) }"
       />
     </template>
 
@@ -798,14 +803,16 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @submit="handlePanelSubmit"
         />
 
-        <AudioCutPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'cut'"
           ref="cutPanelRef"
+          tool-key="audio.cut"
+          :panel-id="panelIdFor('audio', 'cut')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :duration="audioInfo?.duration"
+          :file-info="audioInfo"
           @submit="handlePanelSubmit"
-          @update:trim-range="r => trimRange = r"
+          @update:trim-range="onCutParamsTrimRange"
         />
 
         <ToolParamHost

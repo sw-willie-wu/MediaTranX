@@ -916,6 +916,7 @@ export default {
       end_time: 'End Time',
       duration: 'Duration:',
       selection_duration: 'Selection Duration:',
+      time_error: 'End time must be greater than start time',
       task_label: 'Audio · Cut',
     },
 

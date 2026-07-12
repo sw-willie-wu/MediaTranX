@@ -916,6 +916,7 @@ export default {
       end_time: '結束時間',
       duration: '音訊長度：',
       selection_duration: '選取長度：',
+      time_error: '結束時間必須大於開始時間',
       task_label: '音訊 · 剪輯',
     },
 

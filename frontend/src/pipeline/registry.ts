@@ -28,6 +28,7 @@ import { META as SUBTITLE_META } from '@/components/params/video/subtitle.meta'
 import { META as TRANSLATE_META } from '@/components/params/document/translate.meta'
 import { META as AUDIO_TRANSCODE_META } from '@/components/params/audio/transcode.meta'
 import { META as AUDIO_VOLUME_META } from '@/components/params/audio/volume.meta'
+import { META as AUDIO_CUT_META } from '@/components/params/audio/cut.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
@@ -280,19 +281,17 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     paramSchema: AUDIO_VOLUME_META.schema,
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 3 Task 3.2）：欄位定義唯一事實來源在
+  // audio/cut.meta.ts。後端合約是 HH:MM:SS 字串(AudioCutRequest)，與 video.cut 的秒數
+  // float 不同 — string 欄位。
   'audio.cut': {
-    toolKey: 'audio.cut',
-    apiPath: '/audio/cut',
-    labelKey: 'audio.cut.task_label',
+    toolKey: AUDIO_CUT_META.toolKey,
+    apiPath: AUDIO_CUT_META.apiPath,
+    labelKey: AUDIO_CUT_META.labelKey,
     kind: 'tool',
     inputKinds: ['audio'],
     outputKind: AUDIO_OUT,
-    // 後端合約是 HH:MM:SS 字串(AudioCutRequest),與 video.cut 的秒數 float
-    // 不同 — string 欄位,default 照後端
-    paramSchema: [
-      { name: 'start_time', type: 'string', default: '00:00:00' },
-      { name: 'end_time', type: 'string' },
-    ],
+    paramSchema: AUDIO_CUT_META.schema,
   },
 
   // ── image ─────────────────────────────────────────────────────────
