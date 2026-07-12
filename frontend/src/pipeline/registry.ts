@@ -15,7 +15,7 @@
  * agentFields）。動態模型系欄位（model_id/provider/conn_id/remote_model/
  * 語言清單）標 advanced 且不給 options。
  */
-import type { MediaKindT, ParamField, ToolSpec } from './types'
+import type { MediaKindT, ToolSpec } from './types'
 import { META as CUT_META } from '@/components/params/video/cut.meta'
 import { META as CROP_META } from '@/components/params/video/crop.meta'
 import { META as TRANSCODE_META, AUDIO_FORMATS as TRANSCODE_AUDIO_FORMATS } from '@/components/params/video/transcode.meta'
@@ -37,6 +37,9 @@ import { META as IMAGE_CONVERT_META } from '@/components/params/image/convert.me
 import { META as IMAGE_FILTER_META } from '@/components/params/image/filter.meta'
 import { META as IMAGE_CROP_META } from '@/components/params/image/crop.meta'
 import { META as IMAGE_REMOVE_BG_META } from '@/components/params/image/remove_bg.meta'
+import { META as IMAGE_UPSCALE_META } from '@/components/params/image/upscale.meta'
+import { META as IMAGE_OCR_META } from '@/components/params/image/ocr.meta'
+import { META as DOCUMENT_OCR_META } from '@/components/params/document/ocr.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
@@ -44,19 +47,6 @@ const IMAGE_OUT = (): MediaKindT => 'image'
 const DOCUMENT_OUT = (): MediaKindT => 'document'
 
 const VIDEO_IMAGE_FORMATS = new Set(['gif', 'apng'])
-
-/** image.ocr / document.ocr 共用的 VLM 模型欄位（本地 family/size 或 remote 三元組） */
-function vlmModelFields(): ParamField[] {
-  return [
-    { name: 'model_family', type: 'string', advanced: true },
-    { name: 'model_size', type: 'string', default: '4b', advanced: true },
-    { name: 'quantization', type: 'string', advanced: true },
-    { name: 'remote', type: 'boolean', default: false, advanced: true },
-    { name: 'provider', type: 'string', advanced: true },
-    { name: 'conn_id', type: 'number', advanced: true },
-    { name: 'remote_model', type: 'string', advanced: true },
-  ]
-}
 
 export const TOOL_REGISTRY: Record<string, ToolSpec> = {
   // ── source ────────────────────────────────────────────────────────
@@ -297,17 +287,17 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     paramSchema: IMAGE_FILTER_META.schema,
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 4 Task 4.4）：欄位定義唯一事實來源在
+  // image/ocr.meta.ts（本身透過 document/ocr.meta.ts 的 buildOcrMeta() 工廠產生，與
+  // document.ocr 欄位逐一相同——見該檔檔頭比對記錄）。
   'image.ocr': {
-    toolKey: 'image.ocr',
-    apiPath: '/image/ocr',
-    labelKey: 'image.ocr.task_label',
+    toolKey: IMAGE_OCR_META.toolKey,
+    apiPath: IMAGE_OCR_META.apiPath,
+    labelKey: IMAGE_OCR_META.labelKey,
     kind: 'tool',
     inputKinds: ['image'],
     outputKind: DOCUMENT_OUT,
-    paramSchema: [
-      { name: 'output_format', type: 'enum', options: ['md', 'txt'], default: 'md' },
-      ...vlmModelFields(),
-    ],
+    paramSchema: IMAGE_OCR_META.schema,
   },
 
   // paramSchema 由 META 組裝（統一參數元件案，批 4 Task 4.3）：欄位定義唯一事實來源在
@@ -322,22 +312,17 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     paramSchema: IMAGE_REMOVE_BG_META.schema,
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 4 Task 4.4）：欄位定義唯一事實來源在
+  // upscale.meta.ts（含 id 型 modelRequirements——model_id 跨家族 realesrgan/swinir/bsrgan/
+  // real-cugan/waifu2x，見該檔檔頭 id 型比對決策記錄）。
   'image.upscale': {
-    toolKey: 'image.upscale',
-    apiPath: '/image/upscale',
-    labelKey: 'image.upscale.task_label',
+    toolKey: IMAGE_UPSCALE_META.toolKey,
+    apiPath: IMAGE_UPSCALE_META.apiPath,
+    labelKey: IMAGE_UPSCALE_META.labelKey,
     kind: 'tool',
     inputKinds: ['image'],
     outputKind: IMAGE_OUT,
-    paramSchema: [
-      // model_id 跨 family（realesrgan/swinir/waifu2x…）動態模型系,不列 options
-      { name: 'model_id', type: 'string', default: 'realesrgan-x4plus', advanced: true },
-      { name: 'scale', type: 'number', min: 2, max: 4, step: 1, default: 4 },
-      { name: 'sharpen', type: 'boolean', default: false },
-      { name: 'face_fix', type: 'boolean', default: false },
-      { name: 'face_restore_model_id', type: 'string', advanced: true, visibleWhen: (p) => p.face_fix === true },
-      { name: 'face_restore_upscale', type: 'number', min: 1, max: 4, step: 1, default: 2, advanced: true, visibleWhen: (p) => p.face_fix === true },
-    ],
+    paramSchema: IMAGE_UPSCALE_META.schema,
   },
 
   // paramSchema 由 META 組裝（統一參數元件案，批 4 Task 4.3）：欄位定義唯一事實來源在
@@ -354,17 +339,16 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
   },
 
   // ── document ──────────────────────────────────────────────────────
+  // paramSchema 由 META 組裝（統一參數元件案，批 4 Task 4.4）：欄位定義唯一事實來源在
+  // document/ocr.meta.ts（buildOcrMeta() 工廠，與 image.ocr 共用，見該檔檔頭比對記錄）。
   'document.ocr': {
-    toolKey: 'document.ocr',
-    apiPath: '/document/ocr',
-    labelKey: 'document.ocr.task_label',
+    toolKey: DOCUMENT_OCR_META.toolKey,
+    apiPath: DOCUMENT_OCR_META.apiPath,
+    labelKey: DOCUMENT_OCR_META.labelKey,
     kind: 'tool',
     inputKinds: ['document'],
     outputKind: DOCUMENT_OUT,
-    paramSchema: [
-      { name: 'output_format', type: 'enum', options: ['md', 'txt'], default: 'md' },
-      ...vlmModelFields(),
-    ],
+    paramSchema: DOCUMENT_OCR_META.schema,
   },
 
   'document.pdf_convert': {

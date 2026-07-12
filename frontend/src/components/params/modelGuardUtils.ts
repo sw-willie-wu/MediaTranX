@@ -1,10 +1,17 @@
 /**
  * 模型需求 × 已安裝模型清單的比對純函式（統一參數元件 spec；批 1 Task 1.6 抽出，
- * 批 2 Task 2.3 擴充 variant 型比對）。
+ * 批 2 Task 2.3 擴充 variant 型比對，批 4 Task 4.4 擴充 id 型比對）。
  * 原本 inline 在 ToolParamHost.preflight()——現與 pipeline store 的 startRun 前驗證共用
  * 同一份比對邏輯，避免兩處漂移。
  *
- * 三種比對形狀：
+ * 四種比對形狀：
+ * - id（批 4 Task 4.4 新增）：req.id 有定義——直接比對 modelStore 的 `id` 欄位（後端
+ *   model_metadata_service.py `id=f"{family}-{variant}"`，如 'realesrgan-x4plus'）。
+ *   image.upscale 的 model_id/face_restore_model_id 就是這個 id 字面值（多家族並存
+ *   ——realesrgan/swinir/bsrgan/real-cugan/waifu2x——且送給後端的欄位本來就是 id，不是
+ *   單獨的 family 或 variant），既有 variant 分支要求 `m.variant === req.variant`
+ *   對不上（m.variant 只是 id 去掉 family 前綴的那段，如 'x4plus'），故加此形狀，比
+ *   「硬塞進 variant 欄位」更正確、不需碰現有分支語意。
  * - family/size/quantization：req.variant 未定義且 req.family/req.size 至少一個有值時走此
  *   分支；variant 格式 'size:quantization'（如 '4b:Q4_K_M'）；quantization 段可空（未指定＝
  *   萬用，任一量化命中即可——translate 等既有路徑，行為不變）。
@@ -25,6 +32,8 @@ export interface ModelGuardEntry {
   downloaded: boolean
   category?: string
   subcategory?: string
+  /** 選配：id 型比對用（stores/models.ts ModelItem.id，如 'realesrgan-x4plus'） */
+  id?: string
 }
 
 export interface ModelGuardRequirement {
@@ -34,6 +43,8 @@ export interface ModelGuardRequirement {
   quantization?: string
   variant?: string
   categories?: string[]
+  /** 選配：id 型比對（見檔頭註解）——優先於 variant/family/size 判斷 */
+  id?: string
 }
 
 /** requirement 是否已有對應的已安裝模型。 */
@@ -41,6 +52,9 @@ export function isModelInstalled(
   models: ModelGuardEntry[],
   req: ModelGuardRequirement,
 ): boolean {
+  if (req.id !== undefined) {
+    return models.some((m) => m.id === req.id && m.downloaded)
+  }
   if (req.variant !== undefined) {
     return models.some((m) => {
       if (req.family !== undefined && m.family !== req.family) return false

@@ -122,3 +122,36 @@ describe('isModelInstalled — categories-only 比對（批 2 Task 2.4 擴充，
     expect(isModelInstalled(withQuant, { slot: 'llm', family: 'gemma4', size: '4b' })).toBe(true)
   })
 })
+
+describe('isModelInstalled — id 型比對（批 4 Task 4.4 擴充，image.upscale 用）', () => {
+  const models: ModelGuardEntry[] = [
+    { family: 'realesrgan', variant: 'x4plus', downloaded: true, category: 'upscale', id: 'realesrgan-x4plus' },
+    { family: 'realesrgan', variant: 'x2plus', downloaded: false, category: 'upscale', id: 'realesrgan-x2plus' },
+    { family: 'swinir', variant: 'lightweight-x4', downloaded: true, category: 'upscale', id: 'swinir-lightweight-x4' },
+    { family: 'gfpgan', variant: 'v1.4', downloaded: true, category: 'face_restore', id: 'gfpgan-v1.4' },
+  ]
+
+  it('req.id 相符、downloaded=true → true', () => {
+    expect(isModelInstalled(models, { slot: 'upscale', id: 'realesrgan-x4plus' })).toBe(true)
+  })
+
+  it('req.id 相符但 downloaded=false → false', () => {
+    expect(isModelInstalled(models, { slot: 'upscale', id: 'realesrgan-x2plus' })).toBe(false)
+  })
+
+  it('req.id 不存在於清單 → false', () => {
+    expect(isModelInstalled(models, { slot: 'upscale', id: 'realesrgan-x8plus' })).toBe(false)
+  })
+
+  it('req.id 命中 face_restore 類別的模型也適用（同一分支，無 category 限制）', () => {
+    expect(isModelInstalled(models, { slot: 'upscale', id: 'gfpgan-v1.4' })).toBe(true)
+  })
+
+  it('req.id 優先於 variant/family——即使剛好給了不相符的 family 也不影響比對（id 分支不看 family）', () => {
+    expect(isModelInstalled(models, { slot: 'upscale', id: 'realesrgan-x4plus', family: 'nonexistent' })).toBe(true)
+  })
+
+  it('空清單 → 恆 false', () => {
+    expect(isModelInstalled([], { slot: 'upscale', id: 'realesrgan-x4plus' })).toBe(false)
+  })
+})

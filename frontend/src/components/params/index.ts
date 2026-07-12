@@ -14,6 +14,7 @@ import { META as ENHANCE_META } from './video/enhance.meta'
 import { META as SUMMARY_META } from './video/summary.meta'
 import { META as SUBTITLE_META } from './video/subtitle.meta'
 import { META as TRANSLATE_META } from './document/translate.meta'
+import { META as DOCUMENT_OCR_META } from './document/ocr.meta'
 import { META as AUDIO_TRANSCODE_META } from './audio/transcode.meta'
 import { META as AUDIO_VOLUME_META } from './audio/volume.meta'
 import { META as AUDIO_CUT_META } from './audio/cut.meta'
@@ -25,6 +26,8 @@ import { META as IMAGE_CONVERT_META } from './image/convert.meta'
 import { META as IMAGE_FILTER_META } from './image/filter.meta'
 import { META as IMAGE_CROP_META } from './image/crop.meta'
 import { META as IMAGE_REMOVE_BG_META } from './image/remove_bg.meta'
+import { META as IMAGE_UPSCALE_META } from './image/upscale.meta'
+import { META as IMAGE_OCR_META } from './image/ocr.meta'
 
 export const PARAM_COMPONENTS: Record<string, Component> = {
   'video.cut': defineAsyncComponent(() => import('./video/CutParams.vue')),
@@ -40,6 +43,10 @@ export const PARAM_COMPONENTS: Record<string, Component> = {
   // （不經 ToolParamHost，見 SubtitlePanel.vue 檔頭註解），本表僅供 pipeline 側使用。
   'video.subtitle': defineAsyncComponent(() => import('./video/SubtitleParams.vue')),
   'document.translate': defineAsyncComponent(() => import('./document/TranslateParams.vue')),
+  // 批 4 Task 4.4 ⭐共用：document.ocr／image.ocr 兩 toolKey 指同一元件（document/OcrParams.vue）
+  // ——兩後端 route 欄位逐一相同，見該檔／document/ocr.meta.ts 檔頭比對記錄。domain 差異
+  // （persistKey/i18nPrefix）由掛載點以 fallthrough attrs 傳入。
+  'document.ocr': defineAsyncComponent(() => import('./document/OcrParams.vue')),
   'audio.transcode': defineAsyncComponent(() => import('./audio/AudioTranscodeParams.vue')),
   'audio.volume': defineAsyncComponent(() => import('./audio/VolumeParams.vue')),
   'audio.cut': defineAsyncComponent(() => import('./audio/AudioCutParams.vue')),
@@ -54,6 +61,9 @@ export const PARAM_COMPONENTS: Record<string, Component> = {
   'image.filter': defineAsyncComponent(() => import('./image/FilterParams.vue')),
   'image.crop': defineAsyncComponent(() => import('./image/CropParams.vue')),
   'image.remove_bg': defineAsyncComponent(() => import('./image/RemoveBgParams.vue')),
+  'image.upscale': defineAsyncComponent(() => import('./image/UpscaleParams.vue')),
+  // 同 document.ocr——共用 document/OcrParams.vue（見上方 document.ocr 條目註解）。
+  'image.ocr': defineAsyncComponent(() => import('./document/OcrParams.vue')),
 }
 
 export const METAS: Record<string, ToolParamMeta> = {
@@ -67,6 +77,7 @@ export const METAS: Record<string, ToolParamMeta> = {
   'video.summary': SUMMARY_META,
   'video.subtitle': SUBTITLE_META,
   'document.translate': TRANSLATE_META,
+  'document.ocr': DOCUMENT_OCR_META,
   'audio.transcode': AUDIO_TRANSCODE_META,
   'audio.volume': AUDIO_VOLUME_META,
   'audio.cut': AUDIO_CUT_META,
@@ -78,6 +89,8 @@ export const METAS: Record<string, ToolParamMeta> = {
   'image.filter': IMAGE_FILTER_META,
   'image.crop': IMAGE_CROP_META,
   'image.remove_bg': IMAGE_REMOVE_BG_META,
+  'image.upscale': IMAGE_UPSCALE_META,
+  'image.ocr': IMAGE_OCR_META,
 }
 
 export function hasParamComponent(toolKey: string): boolean {

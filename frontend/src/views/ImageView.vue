@@ -6,9 +6,7 @@ import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import ImagePreview from '@/components/image/ImagePreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
-import ImageUpscalePanel  from '@/components/image/panels/ImageUpscalePanel.vue'
 import ImageAiRemovePanel from '@/components/image/panels/ImageAiRemovePanel.vue'
-import ImageOcrPanel      from '@/components/image/panels/ImageOcrPanel.vue'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
 import { useImageWorkspace } from '@/composables/useImageWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
@@ -51,13 +49,13 @@ const maskToolMode = ref<'brush' | 'polygon' | 'bezier'>('brush')
 // Panel refs
 const convertPanelRef  = ref<InstanceType<typeof ToolParamHost>  | null>(null)
 const compressPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
-const upscalePanelRef  = ref<InstanceType<typeof ImageUpscalePanel>  | null>(null)
+const upscalePanelRef  = ref<InstanceType<typeof ToolParamHost>  | null>(null)
 const removeBgPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const aiRemovePanelRef = ref<InstanceType<typeof ImageAiRemovePanel> | null>(null)
 const adjustPanelRef   = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const filterPanelRef   = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const cropPanelRef     = ref<InstanceType<typeof ToolParamHost> | null>(null)
-const ocrPanelRef      = ref<InstanceType<typeof ImageOcrPanel>      | null>(null)
+const ocrPanelRef      = ref<InstanceType<typeof ToolParamHost>      | null>(null)
 
 const subFunctions = computed(() => [
   { id: 'transcode', name: t('image.functions.transcode'), icon: 'bi-arrow-repeat',         group: t('image.group.edit') },
@@ -286,8 +284,12 @@ function handleMultiExecute() {
     }
     case 'compress':
       submitToAll('/image/compress',  () => compressPanelRef.value!.getParams(), t('image.compress.task_label'),   'image.compress',   noop); break
-    case 'upscale':
-      submitToAll('/image/upscale',   () => upscalePanelRef.value!.getParams(),  t('image.upscale.task_label'),    'image.upscale',    noop); break
+    case 'upscale': {
+      // upscale 有 buildSubmit（face_fix=false 時 face_restore_model_id 明確送 null）——
+      // 批次必須走 getSubmitSpec 而非 getParams（同 VideoView/transcode/adjust/filter 慣例）。
+      const spec = upscalePanelRef.value!.getSubmitSpec()
+      submitToAll(spec.apiPath, () => upscalePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop); break
+    }
     case 'remove-bg':
       submitToAll('/image/remove-bg', () => removeBgPanelRef.value!.getParams(), t('image.remove_bg.task_label'), 'image.remove_bg',  noop); break
     case 'adjust': {
@@ -502,9 +504,11 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @submit="onPanelSubmit"
         />
 
-        <ImageUpscalePanel
+        <ToolParamHost
           v-else-if="currentFunction === 'upscale'"
           ref="upscalePanelRef"
+          tool-key="image.upscale"
+          :panel-id="panelIdFor('image', 'upscale')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
@@ -581,9 +585,13 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @update:aspect-ratio="cropAspectRatio = $event"
         />
 
-        <ImageOcrPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'ocr'"
           ref="ocrPanelRef"
+          tool-key="image.ocr"
+          :panel-id="panelIdFor('image', 'ocr')"
+          persist-key="image_ocr_model"
+          i18n-prefix="image.ocr"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"

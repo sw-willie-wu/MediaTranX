@@ -7,7 +7,6 @@ import DocumentPreview from '@/components/document/DocumentPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import DocumentPdfConvertPanel  from '@/components/document/panels/DocumentPdfConvertPanel.vue'
-import DocumentOcrPanel         from '@/components/document/panels/DocumentOcrPanel.vue'
 import DocumentSplitPanel       from '@/components/document/panels/DocumentSplitPanel.vue'
 import TextPreviewModal          from '@/components/common/TextPreviewModal.vue'
 import { useDocumentWorkspace } from '@/composables/useDocumentWorkspace'
@@ -36,7 +35,7 @@ const { isCanceling, requestStop } = useExecuteStop(collection)
 // Panel refs
 const translatePanelRef  = ref<InstanceType<typeof ToolParamHost>  | null>(null)
 const pdfConvertPanelRef = ref<InstanceType<typeof DocumentPdfConvertPanel> | null>(null)
-const ocrPanelRef        = ref<InstanceType<typeof DocumentOcrPanel>        | null>(null)
+const ocrPanelRef        = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const splitPanelRef      = ref<InstanceType<typeof DocumentSplitPanel>      | null>(null)
 const showOcrModal       = ref(false)
 
@@ -60,12 +59,21 @@ const currentFileExt = computed(() => {
   return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : ''
 })
 
+// document.ocr 副檔名限制（PDF 或圖片）——沿舊 DocumentOcrPanel.isPdfOrImage。ToolParamHost
+// 的 validate 只吃 params 做不到這個判斷（需要檔名副檔名），故留在 View 層算，與 host 的
+// isDisabled 用 || 合併（見下方 executeDisabled 'ocr' 分支）——批 4 Task 4.4 遷移決策，見
+// components/params/document/OcrParams.vue 檔頭「isPdfOrImage」段落。
+const isPdfOrImage = computed(() => {
+  const ext = currentFileExt.value
+  return ext === 'pdf' || ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tiff', 'tif'].includes(ext)
+})
+
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
 
 const executeDisabled = computed(() => {
   if (currentFunction.value === 'translate')   return translatePanelRef.value?.isDisabled   ?? !hasFile.value
   if (currentFunction.value === 'pdf-convert') return pdfConvertPanelRef.value?.isDisabled  ?? !hasFile.value
-  if (currentFunction.value === 'ocr')         return ocrPanelRef.value?.isDisabled         ?? !hasFile.value
+  if (currentFunction.value === 'ocr')         return (ocrPanelRef.value?.isDisabled ?? !hasFile.value) || !isPdfOrImage.value
   if (currentFunction.value === 'split')       return splitPanelRef.value?.isDisabled       ?? !hasFile.value
   return !hasFile.value
 })
@@ -270,15 +278,23 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @submit="handlePanelSubmit"
         />
 
-        <DocumentOcrPanel
-          v-else-if="currentFunction === 'ocr'"
-          ref="ocrPanelRef"
-          :file-id="fileId"
-          :current-file-name="currentFileName"
-          :current-file-ext="currentFileExt"
-          :is-multi-select="isMultiSelect"
-          @submit="handlePanelSubmit"
-        />
+        <template v-else-if="currentFunction === 'ocr'">
+          <div v-if="!isPdfOrImage && hasFile" class="info-box info-box--warn">
+            <i class="bi bi-info-circle"></i>
+            <span>{{ $t('document.ocr.format_not_supported') }}</span>
+          </div>
+          <ToolParamHost
+            ref="ocrPanelRef"
+            tool-key="document.ocr"
+            :panel-id="panelIdFor('document', 'ocr')"
+            persist-key="doc_ocr_model"
+            i18n-prefix="document.ocr"
+            :file-id="fileId"
+            :current-file-name="currentFileName"
+            :is-multi-select="isMultiSelect"
+            @submit="handlePanelSubmit"
+          />
+        </template>
 
         <DocumentSplitPanel
           v-else-if="currentFunction === 'split'"
@@ -296,7 +312,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     v-if="showOcrModal && textResultContent"
     :text="textResultContent"
     :title="$t('document.ocr.result_title')"
-    :format="ocrPanelRef?.outputFormat ?? 'md'"
+    :format="(ocrPanelRef?.outputFormat as 'md' | 'txt' | undefined) ?? 'md'"
     :filename="textResultFilename"
     @close="showOcrModal = false"
   />
@@ -304,4 +320,25 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
 
 <style lang="scss" scoped>
 .settings-form { color: var(--text-primary); }
+
+// document.ocr 副檔名警告（見 template ocr 分支）——最小複製 tool-panels-shared.scss 的
+// .info-box/.info-box--warn，不整包 @use 進 View 層（該 partial 是給 panel 元件用的設計系統）。
+.info-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.75rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+
+  > i { flex-shrink: 0; margin-top: 1px; }
+
+  &.info-box--warn {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    color: var(--color-warning, #fbbf24);
+  }
+}
 </style>

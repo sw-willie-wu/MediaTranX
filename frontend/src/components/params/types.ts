@@ -31,9 +31,11 @@ export interface ToolParamMeta {
    * - variant/categories：批 2 Task 2.3 擴充（interpolate/enhance 等單一 variant token 系，
    *   如 RIFE/Real-ESRGAN；categories 是 modelStore category/subcategory 的查找範圍，family
    *   選配（enhance 用以縮限 realesrgan 家族，interpolate 不需要因單一家族))
+   * - id：批 4 Task 4.4 擴充（image.upscale 的 model_id/face_restore_model_id 是跨家族
+   *   的 modelStore id 字面值，如 'realesrgan-x4plus'——見 modelGuardUtils.ts 檔頭註解）
    */
   modelRequirement?(params: Record<string, unknown>):
-    { slot: string; family?: string; size?: string; quantization?: string; variant?: string; categories?: string[] } | null
+    { slot: string; family?: string; size?: string; quantization?: string; variant?: string; categories?: string[]; id?: string } | null
   /**
    * 複數模型需求（批 2 Task 2.4 host 擴充——video.summary 三模型系 whisper/demucs/align/
    * llm/vlm 逐一 guard）。與 modelRequirement（單數）並存,host 二擇一讀取(優先讀複數)；
@@ -41,7 +43,7 @@ export interface ToolParamMeta {
    * family/size、只有 categories——categories 內任一 downloaded 即視為就緒(align 用)。
    */
   modelRequirements?(params: Record<string, unknown>):
-    Array<{ slot: string; family?: string; size?: string; quantization?: string; variant?: string; categories?: string[] }> | null
+    Array<{ slot: string; family?: string; size?: string; quantization?: string; variant?: string; categories?: string[]; id?: string }> | null
   multiSelect: boolean
   /** 下載按鈕的輸出格式欄位名（host 據此 expose outputFormat） */
   downloadFormatField?: string

@@ -116,7 +116,10 @@ async function execute(): Promise<{ task_id?: string }> {
 // 批 2 Task 2.4 補 whisper/separate/align→audio、llm/vlm→llm（舊 VideoSummaryPanel.preflight
 // 五道 guard 依序皆傳 'audio'/'llm'，見該檔 preflight()）。批 3 Task 3.4 補
 // summarize→llm（舊 AudioTranscribePanel.execute() 的 summarize guard 傳 'llm'，見
-// transcribe.meta.ts modelRequirements 註解）。
+// transcribe.meta.ts modelRequirements 註解）。批 4 Task 4.4 補 upscale→image（舊
+// ImageUpscalePanel.execute() guardModelReady 傳 'image'；face_restore 第二道需求沿用同一
+// slot 'upscale'，見 upscale.meta.ts modelRequirements 註解）、ocr→llm（舊
+// ImageOcrPanel/DocumentOcrPanel.execute() guardModelReady 皆傳 'llm'）。
 const SLOT_GUARD_CATEGORY: Record<string, string> = {
   translate: 'llm',
   interpolate: 'video',
@@ -127,6 +130,8 @@ const SLOT_GUARD_CATEGORY: Record<string, string> = {
   llm: 'llm',
   vlm: 'llm',
   summarize: 'llm',
+  upscale: 'image',
+  ocr: 'llm',
 }
 
 // 複數模型需求逐一過 guard（批 2 Task 2.4 host 擴充）：meta.modelRequirements 優先於單數
