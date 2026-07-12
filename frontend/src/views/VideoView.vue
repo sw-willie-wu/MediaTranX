@@ -389,19 +389,6 @@ onUnmounted(() => { clearActions() })
 <style lang="scss" scoped>
 .settings-form { color: var(--text-primary); }
 
-.function-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.settings-title {
-  display: flex;
-  align-items: center;
-  font-size: 1rem;
-  font-weight: 500;
-  margin: 0;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--panel-border);
-}
+// .function-settings / .settings-title 由 tool-panels-shared.scss 提供（SubtitlePanel 靜態
+// import 時非 scoped @use 注入全域），不在 View 層重複定義（FRONTEND_DEVELOP_SPEC §24）。
 </style>

@@ -123,7 +123,7 @@ const tools = computed<{ mode: MaskToolMode; icon: string; label: string }[]>(()
   }
 
   &.is-active {
-    background: rgba(168, 156, 200, 0.15);
+    background: color-mix(in srgb, var(--color-accent) 15%, transparent);
     border-color: var(--color-accent);
     color: var(--color-accent);
   }

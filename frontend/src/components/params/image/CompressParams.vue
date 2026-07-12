@@ -280,7 +280,7 @@ const pngModeOptions = computed(() => [
   margin-bottom: 0.75rem;
 
   &.compress-result-saved {
-    color: var(--text-success, #4caf50);
+    color: var(--color-success);
   }
 
   &.compress-result-neutral {

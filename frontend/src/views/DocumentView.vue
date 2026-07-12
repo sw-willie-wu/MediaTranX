@@ -342,27 +342,15 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
   />
 </template>
 
+<style lang="scss">
+// document.ocr 副檔名警告（見 template ocr 分支）用共用 .info-box/.info-box--warn——
+// 依 FRONTEND_DEVELOP_SPEC §24 不得在 scoped style 重複定義共用 class，改 @use 共用 partial。
+@use '@/styles/tool-panels-shared';
+</style>
+
 <style lang="scss" scoped>
 .settings-form { color: var(--text-primary); }
 
-// document.ocr 副檔名警告（見 template ocr 分支）——最小複製 tool-panels-shared.scss 的
-// .info-box/.info-box--warn，不整包 @use 進 View 層（該 partial 是給 panel 元件用的設計系統）。
-.info-box {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.5rem 0.65rem;
-  margin-bottom: 0.75rem;
-  border-radius: 6px;
-  font-size: 0.82rem;
-  line-height: 1.5;
-
-  > i { flex-shrink: 0; margin-top: 1px; }
-
-  &.info-box--warn {
-    background: rgba(245, 158, 11, 0.08);
-    border: 1px solid rgba(245, 158, 11, 0.25);
-    color: var(--color-warning, #fbbf24);
-  }
-}
+// 僅本 View 的版面間距（共用 .info-box 不帶 margin）。
+.info-box { margin-bottom: 0.75rem; }
 </style>

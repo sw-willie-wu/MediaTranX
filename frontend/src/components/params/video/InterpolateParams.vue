@@ -198,7 +198,7 @@ const codecOptions = computed(() => [
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 0.75rem;
-  background: var(--bg-secondary);
+  background: var(--panel-bg);
   border-radius: 6px;
   font-size: 0.875rem;
 }

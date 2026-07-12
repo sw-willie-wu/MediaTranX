@@ -486,7 +486,7 @@ defineExpose({
   display: flex;
   gap: 2px;
   padding: 8px 12px 0;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--panel-border);
   margin-bottom: 8px;
 }
 

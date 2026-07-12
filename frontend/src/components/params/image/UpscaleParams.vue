@@ -231,7 +231,6 @@ registerComposite?.({
           <AppSelect
             :model-value="faceModelIdToken"
             :options="faceOptions"
-            size="sm"
             :placeholder="$t('common.select_function')"
             @update:model-value="onFaceModelChange"
           />
