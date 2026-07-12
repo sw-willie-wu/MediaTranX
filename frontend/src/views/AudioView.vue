@@ -6,9 +6,8 @@ import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import AudioPreview from '@/components/audio/AudioPreview.vue'
 import AudioMultiTrackPreview from '@/components/audio/AudioMultiTrackPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
-import AudioTranscodePanel  from '@/components/audio/panels/AudioTranscodePanel.vue'
+import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import AudioCutPanel        from '@/components/audio/panels/AudioCutPanel.vue'
-import AudioVolumePanel     from '@/components/audio/panels/AudioVolumePanel.vue'
 import AudioTranscribePanel from '@/components/audio/panels/AudioTranscribePanel.vue'
 import AudioSeparatePanel  from '@/components/audio/panels/AudioSeparatePanel.vue'
 import AudioLyricsPanel    from '@/components/audio/panels/AudioLyricsPanel.vue'
@@ -31,6 +30,7 @@ import { useTaskStore } from '@/stores/tasks'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 import { apiFetch } from '@/composables/useApi'
 import { useViewHost } from '@/composables/useViewHost'
+import { panelIdFor } from '@/composables/useActiveView'
 import { subfunctionsForView } from '@/agent/agentNavCatalog'
 import { useRouter } from 'vue-router'
 import { useModelStore } from '@/stores/models'
@@ -57,9 +57,9 @@ const { submitToAll } = useMultiSubmit(collection)
 const { isCanceling, requestStop } = useExecuteStop(collection)
 
 // Panel refs
-const transcodePanelRef  = ref<InstanceType<typeof AudioTranscodePanel>  | null>(null)
+const transcodePanelRef  = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const cutPanelRef        = ref<InstanceType<typeof AudioCutPanel>        | null>(null)
-const volumePanelRef     = ref<InstanceType<typeof AudioVolumePanel>     | null>(null)
+const volumePanelRef     = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const transcribePanelRef = ref<InstanceType<typeof AudioTranscribePanel> | null>(null)
 const separatePanelRef   = ref<InstanceType<typeof AudioSeparatePanel>  | null>(null)
 const lyricsPanelRef     = ref<InstanceType<typeof AudioLyricsPanel>    | null>(null)
@@ -241,10 +241,19 @@ function handleSingleExecute() {
 function handleMultiExecute() {
   const noop = () => {}
   switch (currentFunction.value) {
-    case 'transcode':
-      submitToAll('/audio/transcode', () => transcodePanelRef.value!.getParams(), t('audio.transcode.task_label'), 'audio.transcode', noop); break
-    case 'volume':
-      submitToAll('/audio/volume',    () => volumePanelRef.value!.getParams(),    t('audio.volume.task_label'),    'audio.volume',    noop); break
+    case 'transcode': {
+      // getSubmitSpec() 走 meta.buildSubmit（無損剔 audio_bitrate／sample_rate 正規化）——
+      // 批次所有選取檔案共用同一參數組，apiPath/taskType/labelKey 取一次，payload 由
+      // submitToAll 逐檔重新呼叫 getSubmitSpec().payload 快照（沿 VideoView video.transcode 模式）。
+      const spec = transcodePanelRef.value!.getSubmitSpec()
+      submitToAll(spec.apiPath, () => transcodePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
+      break
+    }
+    case 'volume': {
+      const spec = volumePanelRef.value!.getSubmitSpec()
+      submitToAll(spec.apiPath, () => volumePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
+      break
+    }
     case 'transcribe':
       submitToAll('/audio/transcribe',() => transcribePanelRef.value!.getParams(),t('audio.transcribe.task_label'),'audio.transcribe', noop); break
     case 'separate':
@@ -291,8 +300,13 @@ const audioInfoItems = computed<InfoItem[]>(() => {
 })
 
 function onDownload() {
+  // transcode 的下載格式改讀 host.outputFormat（meta.downloadFormatField='output_format'，
+  // 沿 VideoView 已遷模式）——取代舊 `transcodePanelRef.value ? '' : 'mp3'` 寫法。
+  if (currentFunction.value === 'transcode') {
+    handleDownload(transcodePanelRef.value?.outputFormat || 'mp3', '_transcoded')
+    return
+  }
   const fmtMap: Record<string, [string, string]> = {
-    transcode:  [transcodePanelRef.value ? '' : 'mp3', '_transcoded'],
     cut:        ['', '_cut'],
     volume:     ['', '_adjusted'],
     transcribe: ['', '_transcript'],
@@ -773,9 +787,11 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
 
     <template #settings>
       <div class="settings-form">
-        <AudioTranscodePanel
+        <ToolParamHost
           v-if="currentFunction === 'transcode'"
           ref="transcodePanelRef"
+          tool-key="audio.transcode"
+          :panel-id="panelIdFor('audio', 'transcode')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
@@ -792,14 +808,16 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @update:trim-range="r => trimRange = r"
         />
 
-        <AudioVolumePanel
+        <ToolParamHost
           v-else-if="currentFunction === 'volume'"
           ref="volumePanelRef"
+          tool-key="audio.volume"
+          :panel-id="panelIdFor('audio', 'volume')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
-          @update:gain-preview="g => volumeGainPreview = g"
+          @update:gain-preview="(g: number) => volumeGainPreview = g"
         />
 
         <AudioTranscribePanel

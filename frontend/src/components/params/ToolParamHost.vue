@@ -251,7 +251,13 @@ const agentSchema: PanelAgentSchema = {
   // meta.labelKey，但 interpolate/enhance 等舊 panel 的 agentSchema.execute.label 是獨立字串
   // （'panel.interpolate.execute' ≠ 'video.interpolate.task_label'）——第一個不同者出現時
   // （批 2 Task 2.3）加 meta.agentExecuteLabel 選配欄位承接，未設時退回 labelKey（既有工具不變）。
-  execute: { requiresConfirm: true, label: meta.agentExecuteLabel ?? meta.labelKey },
+  // requiresConfirm 第一個不同者是 audio.volume（批 3 Task 3.1）——舊 AudioVolumePanel.agentSchema
+  // .execute.requiresConfirm 為 false（音量調整非破壞性/低風險，免二次確認）；加
+  // meta.agentRequiresConfirm 選配欄位承接，未設時退回 true（既有工具不變）。
+  execute: {
+    requiresConfirm: meta.agentRequiresConfirm ?? true,
+    label: meta.agentExecuteLabel ?? meta.labelKey,
+  },
 }
 
 useAgentPanelHost(props.panelId, {

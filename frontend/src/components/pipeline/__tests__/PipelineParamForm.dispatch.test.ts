@@ -5,8 +5,9 @@
  *
  * 覆蓋 PARAM_COMPONENTS['video.cut'] 為同步 stub 元件（避免真拉 defineAsyncComponent
  * 包的 CutParams.vue，測試才能同步斷言、不必 await 元件載入）；'video.subtitle' 已於
- * 批 2 Task 2.5 註冊（SubtitleParams.vue），legacy fallback 反例改用 'audio.transcode'
- * （批 3 才遷移；paramSchema 含 enum 欄位 output_format 以維持 .app-select-trigger 斷言有意義）。
+ * 批 2 Task 2.5 註冊（SubtitleParams.vue）。legacy fallback 反例原用 'audio.transcode'，
+ * 批 3 Task 3.1 遷移後該斷言反轉（audio.transcode 現已有參數元件）——改用 'image.compress'
+ * （批 4 才遷移；paramSchema 含 enum 選填欄位以維持 legacy 表單斷言有意義）。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
@@ -72,10 +73,13 @@ const cutNode: RecipeNode = {
   params: { start_time: 5 },
 }
 
-const audioTranscodeNode: RecipeNode = {
+// image.remove_bg 尚未遷移（批 4 才輪到）；paramSchema 唯一欄位 mode 是非 advanced 的
+// enum，確保 legacy 表單一定渲染 .app-select-trigger（image.compress 全欄位皆
+// number/boolean，無 enum，不適合當這個斷言的反例）。
+const imageRemoveBgNode: RecipeNode = {
   id: 'n2',
   kind: 'tool',
-  toolKey: 'audio.transcode',
+  toolKey: 'image.remove_bg',
   params: {},
 }
 
@@ -100,8 +104,8 @@ describe('PipelineParamForm — dispatcher', () => {
     expect(w.emitted('update-params')).toEqual([[{ start_time: 9 }]])
   })
 
-  it('3. toolKey 無參數元件（audio.transcode）→ legacy 表單渲染、stub testid 不存在', () => {
-    const w = mountForm(audioTranscodeNode)
+  it('3. toolKey 無參數元件（image.remove_bg）→ legacy 表單渲染、stub testid 不存在', () => {
+    const w = mountForm(imageRemoveBgNode)
     expect(w.find('[data-testid="stub-param-component"]').exists()).toBe(false)
     expect(w.find('.app-select-trigger').exists()).toBe(true)
   })

@@ -26,6 +26,8 @@ import { META as ENHANCE_META } from '@/components/params/video/enhance.meta'
 import { META as SUMMARY_META } from '@/components/params/video/summary.meta'
 import { META as SUBTITLE_META } from '@/components/params/video/subtitle.meta'
 import { META as TRANSLATE_META } from '@/components/params/document/translate.meta'
+import { META as AUDIO_TRANSCODE_META } from '@/components/params/audio/transcode.meta'
+import { META as AUDIO_VOLUME_META } from '@/components/params/audio/volume.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
@@ -38,8 +40,6 @@ const VIDEO_IMAGE_FORMATS = new Set(['gif', 'apng'])
 const WHISPER_SIZES = ['tiny', 'base', 'small', 'medium', 'large-v3']
 // 後端 translate 風格常數（document/translate.py 描述: colloquial, formal, literal）
 const TRANSLATE_STYLES = ['colloquial', 'formal', 'literal']
-// audio/transcode.py _FORMAT_CODEC_MAP 無損格式（不需 bitrate）
-const LOSSLESS_AUDIO_FORMATS = new Set(['flac', 'wav', 'alac', 'aiff'])
 
 /** transcribe/lyrics 共用的翻譯子欄位（translate=true 才顯示;glossary 見檔頭註記） */
 function translateSubFields(visible: (p: Record<string, unknown>) => boolean): ParamField[] {
@@ -192,20 +192,17 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
   },
 
   // ── audio ─────────────────────────────────────────────────────────
+  // paramSchema 由 META 組裝（統一參數元件案，批 3 Task 3.1）：欄位定義唯一事實來源在
+  // transcode.meta.ts（含 wma 全集，LOSSLESS_FORMATS 常量搬進該檔——與此處舊
+  // LOSSLESS_AUDIO_FORMATS 同義，見 audio_bitrate 舊寫死片段已移除）。
   'audio.transcode': {
-    toolKey: 'audio.transcode',
-    apiPath: '/audio/transcode',
-    labelKey: 'audio.transcode.task_label',
+    toolKey: AUDIO_TRANSCODE_META.toolKey,
+    apiPath: AUDIO_TRANSCODE_META.apiPath,
+    labelKey: AUDIO_TRANSCODE_META.labelKey,
     kind: 'tool',
     inputKinds: ['audio'],
     outputKind: AUDIO_OUT,
-    paramSchema: [
-      // options = 後端 _FORMAT_CODEC_MAP 全集
-      { name: 'output_format', type: 'enum', options: ['mp3', 'aac', 'm4a', 'ogg', 'opus', 'wma', 'flac', 'wav', 'alac', 'aiff'], default: 'mp3' },
-      { name: 'audio_bitrate', type: 'enum', options: ['128k', '192k', '256k', '320k'], default: '192k', advanced: true, visibleWhen: (p) => !LOSSLESS_AUDIO_FORMATS.has(String(p.output_format)) },
-      { name: 'sample_rate', type: 'number', min: 8000, max: 192000, step: 100, advanced: true },
-      { name: 'channels', type: 'number', min: 1, max: 2, step: 1, advanced: true },
-    ],
+    paramSchema: AUDIO_TRANSCODE_META.schema,
   },
 
   'audio.lyrics': {
@@ -271,17 +268,16 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     ],
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 3 Task 3.1）：欄位定義唯一事實來源在
+  // volume.meta.ts。
   'audio.volume': {
-    toolKey: 'audio.volume',
-    apiPath: '/audio/volume',
-    labelKey: 'audio.volume.adjust_label',
+    toolKey: AUDIO_VOLUME_META.toolKey,
+    apiPath: AUDIO_VOLUME_META.apiPath,
+    labelKey: AUDIO_VOLUME_META.labelKey,
     kind: 'tool',
     inputKinds: ['audio'],
     outputKind: AUDIO_OUT,
-    paramSchema: [
-      { name: 'volume_db', type: 'number', min: -30, max: 30, step: 1, default: 0 },
-      { name: 'normalize', type: 'boolean', default: false },
-    ],
+    paramSchema: AUDIO_VOLUME_META.schema,
   },
 
   'audio.cut': {

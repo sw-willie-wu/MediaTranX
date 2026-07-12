@@ -169,6 +169,15 @@ METAS[STUB_MULTI_MODEL_KEY] = makeStubMeta({
 })
 PARAM_COMPONENTS[STUB_MULTI_MODEL_KEY] = StubParams
 
+// agentRequiresConfirm 選配欄位案（批 3 Task 3.1：第一個不同者是 audio.volume，
+// 舊 AudioVolumePanel.agentSchema.execute.requiresConfirm 為 false）
+const STUB_NO_CONFIRM_KEY = 'test.stub.noconfirm'
+METAS[STUB_NO_CONFIRM_KEY] = makeStubMeta({
+  toolKey: STUB_NO_CONFIRM_KEY,
+  agentRequiresConfirm: false,
+})
+PARAM_COMPONENTS[STUB_NO_CONFIRM_KEY] = StubParams
+
 // dict/list 型欄位案（review finding #2：agentSchema.fields 不得含 dict/list 欄位）
 const STUB_DICT_KEY = 'test.stub.dict'
 METAS[STUB_DICT_KEY] = makeStubMeta({
@@ -483,6 +492,22 @@ describe('ToolParamHost — outputFormat', () => {
   it('9. downloadFormatField=fmt，params.fmt=mp4 → "mp4"', () => {
     const w = mountHost(STUB_TOOL_KEY)
     expect((w.vm as any).outputFormat).toBe('mp4')
+  })
+})
+
+describe('ToolParamHost — agentSchema.execute.requiresConfirm（批 3 Task 3.1 選配欄位）', () => {
+  it('a. meta 未設 agentRequiresConfirm → requiresConfirm 預設 true', async () => {
+    const w = mountHost(STUB_TOOL_KEY)
+    const handle = capturedHandle.current
+    expect(handle.agentSchema.execute.requiresConfirm).toBe(true)
+    w.unmount()
+  })
+
+  it('b. meta.agentRequiresConfirm=false → requiresConfirm false', async () => {
+    const w = mountHost(STUB_NO_CONFIRM_KEY)
+    const handle = capturedHandle.current
+    expect(handle.agentSchema.execute.requiresConfirm).toBe(false)
+    w.unmount()
   })
 })
 

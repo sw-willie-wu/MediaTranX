@@ -48,6 +48,10 @@ export interface ToolParamMeta {
   /** agent 面板 execute 動作的 label i18n key；未設時 host 用 meta.labelKey（批 2 Task 2.3
    *  新增——interpolate/enhance 舊 agentSchema.execute.label 與 labelKey 不同,見兩檔 meta 註解） */
   agentExecuteLabel?: string
+  /** agent 面板 execute 動作是否需要確認；未設時 host 預設 true（批 3 Task 3.1 新增——
+   *  第一個不同者是 audio.volume，舊 AudioVolumePanel.agentSchema.execute.requiresConfirm
+   *  為 false，見 volume.meta.ts 註解） */
+  agentRequiresConfirm?: boolean
   /** persisted-model seeding 受控欄位 */
   persistedModelFields?: string[]
   /** 檔案載入/切換時 seeding：工具頁 host 對 fileInfo 做 immediate watch 呼叫並 merge patch；

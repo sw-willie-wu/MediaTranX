@@ -14,6 +14,8 @@ import { META as ENHANCE_META } from './video/enhance.meta'
 import { META as SUMMARY_META } from './video/summary.meta'
 import { META as SUBTITLE_META } from './video/subtitle.meta'
 import { META as TRANSLATE_META } from './document/translate.meta'
+import { META as AUDIO_TRANSCODE_META } from './audio/transcode.meta'
+import { META as AUDIO_VOLUME_META } from './audio/volume.meta'
 
 export const PARAM_COMPONENTS: Record<string, Component> = {
   'video.cut': defineAsyncComponent(() => import('./video/CutParams.vue')),
@@ -29,6 +31,8 @@ export const PARAM_COMPONENTS: Record<string, Component> = {
   // （不經 ToolParamHost，見 SubtitlePanel.vue 檔頭註解），本表僅供 pipeline 側使用。
   'video.subtitle': defineAsyncComponent(() => import('./video/SubtitleParams.vue')),
   'document.translate': defineAsyncComponent(() => import('./document/TranslateParams.vue')),
+  'audio.transcode': defineAsyncComponent(() => import('./audio/AudioTranscodeParams.vue')),
+  'audio.volume': defineAsyncComponent(() => import('./audio/VolumeParams.vue')),
 }
 
 export const METAS: Record<string, ToolParamMeta> = {
@@ -42,6 +46,8 @@ export const METAS: Record<string, ToolParamMeta> = {
   'video.summary': SUMMARY_META,
   'video.subtitle': SUBTITLE_META,
   'document.translate': TRANSLATE_META,
+  'audio.transcode': AUDIO_TRANSCODE_META,
+  'audio.volume': AUDIO_VOLUME_META,
 }
 
 export function hasParamComponent(toolKey: string): boolean {
