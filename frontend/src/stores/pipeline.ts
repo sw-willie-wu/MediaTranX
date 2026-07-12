@@ -12,10 +12,13 @@ import { useComputeSettingsStore } from '@/stores/computeSettings'
 import { TOOL_REGISTRY } from '@/pipeline/registry'
 import { normalizeParams, validateRecipe } from '@/pipeline/recipe'
 import { PipelineRunner, type EngineDeps, type RunSnapshot } from '@/pipeline/runner'
-import type { Recipe, RecipeNode } from '@/pipeline/types'
+import type { Recipe, RecipeNode, ValidationIssue } from '@/pipeline/types'
 import type { MediaKindT } from '@/utils/mediaKind'
 import { detectMediaKind } from '@/utils/mediaKind'
 import { createLogger } from '@/utils/logger'
+import { useModelStore } from '@/stores/models'
+import { METAS } from '@/components/params'
+import { isModelInstalled } from '@/components/params/modelGuardUtils'
 
 const log = createLogger('PipelineStore')
 
@@ -36,6 +39,7 @@ function emptyRecipe(): Recipe {
 export const usePipelineStore = defineStore('pipeline', () => {
   const taskStore = useTaskStore()
   const computeStore = useComputeSettingsStore()
+  const modelStore = useModelStore()
 
   const recipe = ref<Recipe>(emptyRecipe())
   const selectedNodeId = ref<string | null>(null)
@@ -50,10 +54,18 @@ export const usePipelineStore = defineStore('pipeline', () => {
   let snapTimer: ReturnType<typeof setInterval> | null = null
   let nodeSeq = 1
 
-  const issues = computed(() => validateRecipe(recipe.value, TOOL_REGISTRY))
+  // 圖結構驗證（連線/參數/度數……）；純函式、隨 recipe 變動即時重算。
+  const structuralIssues = computed(() => validateRecipe(recipe.value, TOOL_REGISTRY))
+  // 模型缺失驗證（Task 1.6）——只在 startRun 按下時掃一次（避免每次參數變動都掃
+  // modelStore），故不是 computed 而是獨立 ref；下一次 startRun 會重算並覆蓋/清除。
+  const modelIssues = ref<ValidationIssue[]>([])
+  const issues = computed(() => [...structuralIssues.value, ...modelIssues.value])
   const errors = computed(() => issues.value.filter(i => i.severity === 'error'))
+  // canRun 刻意只看結構性 errors（不含 modelIssues）：模型缺失不該永久鎖死執行鈕——
+  // 使用者裝好模型後要能直接再按一次執行重新驗證,而非卡在「按鈕本身被 disable」。
   const canRun = computed(() => {
-    if (errors.value.length > 0 || running.value) return false
+    const structuralErrors = structuralIssues.value.filter(i => i.severity === 'error')
+    if (structuralErrors.length > 0 || running.value) return false
     const root = recipe.value.nodes.find(n => n.kind === 'input' || n.kind === 'source')
     if (!root) return false
     if (root.kind === 'input') return inputFiles.value.length > 0
@@ -134,6 +146,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     selectedNodeId.value = null
     inputFiles.value = []
     runSnapshot.value = null
+    modelIssues.value = []
   }
 
   // ── 引擎接線 ───────────────────────────────────────────────────────
@@ -201,8 +214,36 @@ export const usePipelineStore = defineStore('pipeline', () => {
     }
   }
 
+  /**
+   * startRun 前逐 tool/source 節點驗模型（Task 1.6）。未安裝 → 不啟動、
+   * modelIssues 塞 model_missing（issue bar 可見）；已裝妥（或 remote/無需求）
+   * → 清空 modelIssues 放行。
+   */
+  async function checkModelsReady(): Promise<boolean> {
+    await modelStore.ensureLoaded()
+    const missing: ValidationIssue[] = []
+    for (const node of recipe.value.nodes) {
+      if (node.kind !== 'tool' && node.kind !== 'source') continue
+      if (!node.toolKey) continue
+      const meta = METAS[node.toolKey]
+      const req = meta?.modelRequirement?.(node.params)
+      if (!req) continue
+      if (isModelInstalled(modelStore.models, req)) continue
+      const label = [req.family, req.size, req.quantization].filter(Boolean).join(' ')
+      missing.push({
+        severity: 'error',
+        nodeId: node.id,
+        code: 'model_missing',
+        message: `node ${node.id} (${node.toolKey}) requires model ${label} (not installed)`,
+      })
+    }
+    modelIssues.value = missing
+    return missing.length === 0
+  }
+
   async function startRun(): Promise<void> {
     if (runActive.value || !canRun.value) return
+    if (!(await checkModelsReady())) return
     runActive.value = true
     if (snapTimer) { clearInterval(snapTimer); snapTimer = null }
     const kinds: Record<string, MediaKindT> = {}
@@ -299,6 +340,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
       currentRecipeId.value = id
       selectedNodeId.value = null
       runSnapshot.value = null
+      modelIssues.value = []
       // nodeSeq 取既有 id 數字前綴最大值（刪除過節點時 length 會低估）
       nodeSeq = parsed.nodes.reduce((mx, nd) => {
         const m = /^n(\d+)-/.exec(nd.id)

@@ -13,6 +13,7 @@ import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
 import type { PanelFieldSchema, PanelAgentSchema } from '@/stores/panelRegistry'
 import { PARAM_COMPONENTS, METAS } from './index'
+import { isModelInstalled } from './modelGuardUtils'
 import type { SubmitSpec, AgentCompositeField } from './types'
 
 const props = defineProps<{
@@ -98,13 +99,7 @@ const SLOT_GUARD_CATEGORY: Record<string, string> = { translate: 'llm' }
 async function preflight(): Promise<boolean> {
   const req = meta.modelRequirement?.(params.value)
   if (!req) return true
-  const ready = modelStore.models.some((m) => {
-    if (m.family !== req.family) return false
-    const [size, quant] = m.variant.split(':')
-    if (size !== req.size) return false
-    if (req.quantization && quant !== req.quantization) return false
-    return m.downloaded
-  })
+  const ready = isModelInstalled(modelStore.models, req)
   return await guardModelReady(ready, SLOT_GUARD_CATEGORY[req.slot] ?? req.slot)
 }
 
