@@ -30,6 +30,7 @@ import { META as AUDIO_TRANSCODE_META } from '@/components/params/audio/transcod
 import { META as AUDIO_VOLUME_META } from '@/components/params/audio/volume.meta'
 import { META as AUDIO_CUT_META } from '@/components/params/audio/cut.meta'
 import { META as AUDIO_SEPARATE_META } from '@/components/params/audio/separate.meta'
+import { META as AUDIO_TRANSCRIBE_META } from '@/components/params/audio/transcribe.meta'
 
 const AUDIO_OUT = (): MediaKindT => 'audio'
 const VIDEO_OUT = (): MediaKindT => 'video'
@@ -236,36 +237,17 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     paramSchema: AUDIO_SEPARATE_META.schema,
   },
 
+  // paramSchema 由 META 組裝（統一參數元件案，批 3 Task 3.4）：欄位定義唯一事實來源在
+  // audio/transcribe.meta.ts（29 欄全集，含 summarize 第三組動態模型系——subtitle/summary
+  // 皆無；翻譯 gate 是獨立 translate bool，非 subtitle 的 target_language 非空判準）。
   'audio.transcribe': {
-    toolKey: 'audio.transcribe',
-    apiPath: '/audio/transcribe',
-    labelKey: 'audio.transcribe.task_label',
+    toolKey: AUDIO_TRANSCRIBE_META.toolKey,
+    apiPath: AUDIO_TRANSCRIBE_META.apiPath,
+    labelKey: AUDIO_TRANSCRIBE_META.labelKey,
     kind: 'tool',
     inputKinds: ['audio'],
     outputKind: DOCUMENT_OUT,
-    paramSchema: [
-      { name: 'model_size', type: 'enum', options: WHISPER_SIZES, default: 'medium' },
-      { name: 'output_format', type: 'enum', options: ['txt', 'srt'], default: 'txt' },
-      // Whisper 語言清單動態（/audio/transcribe/languages）;None=自動偵測
-      { name: 'source_language', type: 'string', advanced: true },
-      { name: 'vocal_separation', type: 'boolean', default: false },
-      { name: 'translate', type: 'boolean', default: false },
-      ...translateSubFields((p) => p.translate === true),
-      { name: 'summarize', type: 'boolean', default: false },
-      { name: 'summarize_model_family', type: 'string', default: 'gemma4', advanced: true, visibleWhen: (p) => p.summarize === true },
-      { name: 'summarize_model_size', type: 'string', default: '4b', advanced: true, visibleWhen: (p) => p.summarize === true },
-      { name: 'summarize_quantization', type: 'string', advanced: true, visibleWhen: (p) => p.summarize === true },
-      { name: 'summarize_remote', type: 'boolean', default: false, advanced: true, visibleWhen: (p) => p.summarize === true },
-      { name: 'summarize_provider', type: 'string', advanced: true, visibleWhen: (p) => p.summarize === true },
-      { name: 'summarize_conn_id', type: 'number', advanced: true, visibleWhen: (p) => p.summarize === true },
-      { name: 'summarize_remote_model', type: 'string', advanced: true, visibleWhen: (p) => p.summarize === true },
-      // Whisper 進階（A1）
-      { name: 'align', type: 'boolean', default: false, advanced: true },
-      { name: 'word_timestamps', type: 'boolean', default: false, advanced: true },
-      { name: 'condition_on_previous_text', type: 'boolean', default: true, advanced: true },
-      { name: 'min_silence_duration_ms', type: 'number', min: 0, step: 50, default: 200, advanced: true },
-      { name: 'vad_threshold', type: 'number', min: 0, max: 1, step: 0.05, default: 0.3, advanced: true },
-    ],
+    paramSchema: AUDIO_TRANSCRIBE_META.schema,
   },
 
   // paramSchema 由 META 組裝（統一參數元件案，批 3 Task 3.1）：欄位定義唯一事實來源在

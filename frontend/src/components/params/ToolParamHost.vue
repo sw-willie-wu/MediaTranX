@@ -96,7 +96,9 @@ async function execute(): Promise<{ task_id?: string }> {
 // 首用 translate→llm；批 2 Task 2.3 補 interpolate→video（舊 VideoInterpolatePanel.preflight
 // 傳 'video'）、enhance→image（舊 VideoEnhancePanel.preflight 傳 'image'，realesrgan 屬影像 tab）；
 // 批 2 Task 2.4 補 whisper/separate/align→audio、llm/vlm→llm（舊 VideoSummaryPanel.preflight
-// 五道 guard 依序皆傳 'audio'/'llm'，見該檔 preflight()）。
+// 五道 guard 依序皆傳 'audio'/'llm'，見該檔 preflight()）。批 3 Task 3.4 補
+// summarize→llm（舊 AudioTranscribePanel.execute() 的 summarize guard 傳 'llm'，見
+// transcribe.meta.ts modelRequirements 註解）。
 const SLOT_GUARD_CATEGORY: Record<string, string> = {
   translate: 'llm',
   interpolate: 'video',
@@ -106,6 +108,7 @@ const SLOT_GUARD_CATEGORY: Record<string, string> = {
   align: 'audio',
   llm: 'llm',
   vlm: 'llm',
+  summarize: 'llm',
 }
 
 // 複數模型需求逐一過 guard（批 2 Task 2.4 host 擴充）：meta.modelRequirements 優先於單數

@@ -958,6 +958,7 @@ export default {
       select_output: 'Select output path',
       task_label: 'Audio · Transcribe',
       no_translate_model: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
+      source_language_placeholder: 'Language code, e.g. en/zh/ja (blank = auto-detect)',
     },
 
     lyrics: {

@@ -958,6 +958,7 @@ export default {
       select_output: '選擇輸出路徑',
       task_label: '音訊 · 逐字稿',
       no_translate_model: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
+      source_language_placeholder: '語言代碼，如 en/zh/ja（留空＝自動偵測）',
     },
 
     lyrics: {

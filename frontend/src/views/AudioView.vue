@@ -7,7 +7,6 @@ import AudioPreview from '@/components/audio/AudioPreview.vue'
 import AudioMultiTrackPreview from '@/components/audio/AudioMultiTrackPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
-import AudioTranscribePanel from '@/components/audio/panels/AudioTranscribePanel.vue'
 import AudioLyricsPanel    from '@/components/audio/panels/AudioLyricsPanel.vue'
 const AudioMidiEditPanel = defineAsyncComponent(
   () => import('@/components/audio/panels/AudioMidiEditPanel.vue')
@@ -60,7 +59,7 @@ const { isCanceling, requestStop } = useExecuteStop(collection)
 const transcodePanelRef  = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const cutPanelRef        = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const volumePanelRef     = ref<InstanceType<typeof ToolParamHost>        | null>(null)
-const transcribePanelRef = ref<InstanceType<typeof AudioTranscribePanel> | null>(null)
+const transcribePanelRef = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const separatePanelRef   = ref<InstanceType<typeof ToolParamHost>        | null>(null)
 const lyricsPanelRef     = ref<InstanceType<typeof AudioLyricsPanel>    | null>(null)
 const midiEditPanelRef   = ref<InstanceType<typeof AudioMidiEditPanel>  | null>(null)
@@ -260,8 +259,12 @@ function handleMultiExecute() {
       submitToAll(spec.apiPath, () => volumePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
       break
     }
-    case 'transcribe':
-      submitToAll('/audio/transcribe',() => transcribePanelRef.value!.getParams(),t('audio.transcribe.task_label'),'audio.transcribe', noop); break
+    case 'transcribe': {
+      // getSubmitSpec() 走 meta.buildSubmit（雙 gate 剔欄）——沿 transcode/volume/separate 模式。
+      const spec = transcribePanelRef.value!.getSubmitSpec()
+      submitToAll(spec.apiPath, () => transcribePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
+      break
+    }
     case 'separate': {
       const spec = separatePanelRef.value!.getSubmitSpec()
       submitToAll(spec.apiPath, () => separatePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
@@ -848,9 +851,11 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @update:gain-preview="(g: number) => volumeGainPreview = g"
         />
 
-        <AudioTranscribePanel
+        <ToolParamHost
           v-else-if="currentFunction === 'transcribe'"
           ref="transcribePanelRef"
+          tool-key="audio.transcribe"
+          :panel-id="panelIdFor('audio', 'transcribe')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
