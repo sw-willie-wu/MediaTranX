@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import VideoPreview from '@/components/video/VideoPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import VideoTranscodePanel from '@/components/video/panels/VideoTranscodePanel.vue'
-import VideoCutPanel from '@/components/video/panels/VideoCutPanel.vue'
+import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import VideoCropPanel from '@/components/video/panels/VideoCropPanel.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
 import VideoInterpolatePanel from '@/components/video/panels/VideoInterpolatePanel.vue'
@@ -18,7 +18,9 @@ import { useExecuteStop } from '@/composables/useExecuteStop'
 import { useToast } from '@/composables/useToast'
 import { useTitlebar } from '@/composables/useTitlebar'
 import { useViewHost } from '@/composables/useViewHost'
+import { panelIdFor } from '@/composables/useActiveView'
 import { subfunctionsForView } from '@/agent/agentNavCatalog'
+import { parseTimeToSeconds, secondsToTime } from '@/components/params/video/cut.meta'
 
 const { t } = useI18n()
 
@@ -38,23 +40,9 @@ const { submitToAll } = useMultiSubmit(collection)
 const { isCanceling, requestStop } = useExecuteStop(collection)
 const toast = useToast()
 
-// Cut time points (shared between VideoPreview and VideoCutPanel)
-const cutStartTime = ref('00:00:00')
-const cutEndTime = ref('00:00:00')
-const cutStreamCopy = ref(true)
-
-watch(mediaInfo, (info) => {
-  if (info) {
-    const h = Math.floor(info.duration / 3600)
-    const m = Math.floor((info.duration % 3600) / 60)
-    const s = Math.floor(info.duration % 60)
-    cutEndTime.value = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
-  }
-})
-
 // Panel refs
 const transcodePanelRef = ref<InstanceType<typeof VideoTranscodePanel> | null>(null)
-const cutPanelRef = ref<InstanceType<typeof VideoCutPanel> | null>(null)
+const cutPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const cropPanelRef = ref<InstanceType<typeof VideoCropPanel> | null>(null)
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
 const interpolatePanelRef = ref<InstanceType<typeof VideoInterpolatePanel> | null>(null)
@@ -65,6 +53,18 @@ const summaryPanelRef = ref<InstanceType<typeof VideoSummaryPanel> | null>(null)
 const showCropOverlay = ref(false)
 const cropAspectRatio = ref('free')
 const canvasCropRect = ref<{ x: number; y: number; w: number; h: number } | null>(null)
+
+// Cut time points 橋接：VideoPreview 走 HH:MM:SS 字串契約（不動），host 內部走秒數（後端詞彙）。
+// get 讀 host.params.{start,end}_time（秒）轉字串；set 把 VideoPreview 拖曳寫回的字串轉秒後
+// 經 setField 寫回 host（agent 寫入路徑同一入口，維持單一事實來源）。
+const cutStart = computed({
+  get: () => secondsToTime(cutPanelRef.value?.params?.start_time as number | undefined),
+  set: (v: string) => cutPanelRef.value?.setField('start_time', parseTimeToSeconds(v)),
+})
+const cutEnd = computed({
+  get: () => secondsToTime(cutPanelRef.value?.params?.end_time as number | undefined),
+  set: (v: string) => cutPanelRef.value?.setField('end_time', parseTimeToSeconds(v)),
+})
 
 const subFunctions = computed(() => [
   { id: 'transcode',   name: t('video.functions.transcode'),   icon: 'bi-arrow-repeat',   group: t('video.group.edit') },
@@ -256,8 +256,8 @@ onUnmounted(() => { clearActions() })
         :preview-url="activePreviewUrl ?? collection.activeEntry.value?.previewUrl ?? previewUrl"
         :media-info="mediaInfo"
         :current-function="currentFunction"
-        v-model:start-time="cutStartTime"
-        v-model:end-time="cutEndTime"
+        v-model:start-time="cutStart"
+        v-model:end-time="cutEnd"
         :show-crop-overlay="showCropOverlay && currentFunction === 'crop'"
         :crop-aspect-ratio="cropAspectRatio"
         @crop-rect-change="canvasCropRect = $event"
@@ -298,15 +298,15 @@ onUnmounted(() => { clearActions() })
           @submit="handlePanelSubmit"
         />
 
-        <VideoCutPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'cut'"
           ref="cutPanelRef"
+          tool-key="video.cut"
+          :panel-id="panelIdFor('video', 'cut')"
           :file-id="activeFileId"
-          :current-file-name="''"
-          v-model:start-time="cutStartTime"
-          v-model:end-time="cutEndTime"
-          v-model:stream-copy="cutStreamCopy"
+          :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
+          :file-info="mediaInfo"
           @submit="handlePanelSubmit"
         />
 
