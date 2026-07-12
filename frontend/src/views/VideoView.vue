@@ -5,7 +5,6 @@ import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import VideoPreview from '@/components/video/VideoPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
-import VideoTranscodePanel from '@/components/video/panels/VideoTranscodePanel.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import VideoCropPanel from '@/components/video/panels/VideoCropPanel.vue'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
@@ -41,7 +40,7 @@ const { isCanceling, requestStop } = useExecuteStop(collection)
 const toast = useToast()
 
 // Panel refs
-const transcodePanelRef = ref<InstanceType<typeof VideoTranscodePanel> | null>(null)
+const transcodePanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const cutPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const cropPanelRef = ref<InstanceType<typeof VideoCropPanel> | null>(null)
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
@@ -128,8 +127,15 @@ function handleSingleExecute() {
 async function handleMultiExecute() {
   const noop = () => {}
   switch (currentFunction.value) {
-    case 'transcode':
-      await submitToAll('/video/transcode', () => transcodePanelRef.value!.getParams(), t('video.transcode.task_label'), 'video.transcode', noop); break
+    case 'transcode': {
+      // getSubmitSpec() 分流(音訊格式→/video/extract-audio；視訊/動圖→/video/transcode)：
+      // 批次所有選取檔案共用同一參數組——apiPath/taskType 取一次；payload 由 submitToAll
+      // 快照一次(sharedParams)後逐檔注入 file_id。修復現況 bug——舊
+      // VideoTranscodePanel.getParams() 無分流、批次選音訊格式仍誤打 /video/transcode。
+      const spec = transcodePanelRef.value!.getSubmitSpec()
+      await submitToAll(spec.apiPath, () => transcodePanelRef.value!.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
+      break
+    }
     case 'summary':
       if (await summaryPanelRef.value?.preflight() === false) break
       await submitToAll('/video/summary', () => summaryPanelRef.value!.getParams(), t('video.summary.task_label'), 'video.summary', noop); break
@@ -289,12 +295,15 @@ onUnmounted(() => { clearActions() })
 
     <template #settings>
       <div class="settings-form">
-        <VideoTranscodePanel
+        <ToolParamHost
           v-if="currentFunction === 'transcode'"
           ref="transcodePanelRef"
+          tool-key="video.transcode"
+          :panel-id="panelIdFor('video', 'transcode')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
+          :file-info="mediaInfo"
           @submit="handlePanelSubmit"
         />
 
