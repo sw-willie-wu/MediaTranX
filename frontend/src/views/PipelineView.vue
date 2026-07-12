@@ -12,6 +12,7 @@ import { usePipelineStore } from '@/stores/pipeline'
 import { useFilesStore } from '@/stores/files'
 import { useToast } from '@/composables/useToast'
 import { TOOL_REGISTRY, listToolSpecs } from '@/pipeline/registry'
+import type { RecipeNode } from '@/pipeline/types'
 import PipelineParamForm from '@/components/pipeline/PipelineParamForm.vue'
 
 const { t } = useI18n()
@@ -96,7 +97,28 @@ function onNodeDragStop(e: NodeDragEvent) {
 }
 
 function onNodeClick(e: { node: { id: string } }) {
+  previewToolKey.value = null
   store.selectedNodeId = e.node.id
+}
+
+// ── 節點盤預覽:點工具名只在右欄看/調選項,按「+」才真正加到畫布 ──────
+const previewToolKey = ref<string | null>(null)
+const previewParams = ref<Record<string, unknown>>({})
+const previewNode = computed<RecipeNode | null>(() => {
+  const key = previewToolKey.value
+  if (!key) return null
+  return {
+    id: '__preview__',
+    kind: TOOL_REGISTRY[key]?.kind === 'source' ? 'source' : 'tool',
+    toolKey: key,
+    params: previewParams.value,
+  }
+})
+
+function previewTool(toolKey: string) {
+  if (previewToolKey.value !== toolKey) previewParams.value = {}
+  previewToolKey.value = toolKey
+  store.selectedNodeId = null
 }
 
 function onEdgeClick(e: { edge: { source: string; target: string } }) {
@@ -120,7 +142,15 @@ function onCanvasDrop(ev: DragEvent) {
 function addByClick(toolKey: string) {
   // 依既有節點數橫向排開,加完 fitView 讓新節點一定在可視範圍
   const idx = store.recipe.nodes.length
-  store.addToolNode(toolKey, { x: 80 + idx * 190, y: 180 + (idx % 2) * 90 })
+  const id = store.addToolNode(toolKey, { x: 80 + idx * 190, y: 180 + (idx % 2) * 90 })
+  if (!id) return
+  // 預覽面板調過的參數帶進新節點,並直接選取讓右欄無縫接到節點表單
+  if (previewToolKey.value === toolKey && Object.keys(previewParams.value).length > 0) {
+    const seeded = store.recipe.nodes.find(n => n.id === id)?.params ?? {}
+    store.updateNodeParams(id, { ...seeded, ...previewParams.value })
+  }
+  previewToolKey.value = null
+  store.selectedNodeId = id
   setTimeout(() => fitView({ padding: 0.25 }), 50)
 }
 
@@ -194,30 +224,31 @@ async function onOpen(id: string) {
     <!-- 左:節點盤（run 中鎖定；欄 chrome 由殼擁有） -->
     <template #left>
       <div class="palette" :class="{ locked: store.running }">
-        <h6 class="palette-title">{{ t('pipeline.palette_title') }}</h6>
         <template v-for="(items, domain) in paletteGroups" :key="domain">
           <button class="palette-group palette-group-toggle" @click="toggleSection(domain)">
-            <i class="bi" :class="isSectionOpen(domain) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
             {{ t(`nav.${domain}`) }}
+            <i class="bi" :class="isSectionOpen(domain) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
           </button>
           <template v-if="isSectionOpen(domain)">
             <button
               v-for="item in items"
               :key="item.key"
               class="palette-item"
+              :class="{ 'is-previewing': previewToolKey === item.key }"
               draggable="true"
               @dragstart="onPaletteDragStart($event, item.key)"
-              @click="addByClick(item.key)"
+              @click="previewTool(item.key)"
             >
-              <i class="bi bi-plus-square me-1"></i>{{ item.label }}
+              {{ item.label }}
+              <i class="bi bi-plus-lg palette-item-add" @click.stop="addByClick(item.key)"></i>
             </button>
           </template>
         </template>
 
         <!-- 已存流程 -->
         <button class="palette-group saved-group palette-group-toggle" @click="toggleSection('__saved')">
-          <i class="bi" :class="isSectionOpen('__saved') ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
           {{ t('pipeline.saved_recipes') }}
+          <i class="bi" :class="isSectionOpen('__saved') ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
         </button>
         <template v-if="isSectionOpen('__saved')">
           <button class="palette-item" @click="store.newRecipe(); recipeName = ''">
@@ -289,6 +320,12 @@ async function onOpen(id: string) {
           @update-keep-output="(k) => store.setKeepOutput(store.selectedNode!.id, k)"
           @remove="store.removeNode(store.selectedNode!.id)"
         />
+        <PipelineParamForm
+          v-else-if="previewNode"
+          :node="previewNode"
+          preview
+          @update-params="(p) => (previewParams = p)"
+        />
         <p v-else class="config-empty">{{ t('pipeline.select_node_hint') }}</p>
       </div>
 
@@ -352,14 +389,20 @@ async function onOpen(id: string) {
 .palette {
   flex: 1;
   min-height: 0;
-  padding: 0.75rem;
+  padding: 1rem;
+  padding-top: 0.5rem;
   overflow-y: auto;
 }
-.palette-title { font-size: 0.85rem; color: var(--text-primary); margin: 0 0 0.5rem; }
+// 群組標題:對齊 ToolLayout .function-group-label（字級/留白/分隔線一致）
 .palette-group {
-  margin-top: 0.6rem; padding: 0.25rem 0.35rem 0.1rem;
+  padding: 0.5rem 0.75rem 0.15rem;
   font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
   color: var(--text-muted); letter-spacing: 0.05em;
+
+  &:not(:first-child) {
+    margin-top: 0.6rem;
+    border-top: 1px solid var(--panel-border);
+  }
 }
 // 折疊頭:沿用 palette-group 的小標籤外觀,補上可點/chevron
 .palette-group-toggle {
@@ -370,12 +413,28 @@ async function onOpen(id: string) {
   i { font-size: 0.65rem; }
 }
 .palette-item {
-  display: block; width: 100%;
-  padding: 0.4rem 0.5rem; margin-top: 2px;
-  background: transparent; border: none; border-radius: 6px;
-  color: var(--text-muted); font-size: 0.82rem; text-align: left;
+  display: flex; align-items: center; gap: 0.5rem; width: 100%;
+  padding: 0.6rem 0.75rem; margin-top: 0.25rem;
+  background: transparent; border: none; border-radius: 8px;
+  color: var(--text-muted); font-size: 0.9rem; text-align: left;
   cursor: grab; font-family: inherit;
+  transition: all 0.15s ease;
   &:hover { color: var(--text-primary); background: var(--panel-bg-hover); }
+  &.is-previewing { color: var(--text-primary); background: var(--panel-bg-active); }
+
+  // hover/預覽中才浮現加號,平時保持與一般工具頁同樣乾淨的列表
+  &:hover .palette-item-add, &.is-previewing .palette-item-add { opacity: 1; }
+}
+// 加號:置右、獨立點擊目標（點名字=右欄預覽選項,點 + 才加到畫布）
+// 無底色:浮現時淺灰、自身 hover 亮起(text-primary=深色主題白/淺色主題黑)
+.palette-item-add {
+  margin-left: auto; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  font-size: 0.95rem; cursor: pointer; opacity: 0;
+  color: var(--text-muted);
+  transition: all 0.15s ease;
+  &:hover { color: var(--text-primary); }
 }
 
 // 中欄 wrapper：撐滿（少 flex:1 → VueFlow height:100% 解析成 0）+ issue-bar 錨點
@@ -434,7 +493,7 @@ async function onOpen(id: string) {
   &:hover:not(:disabled) { color: var(--text-primary); }
   &:disabled { opacity: 0.5; }
 }
-.saved-group { margin-top: 1rem; border-top: 1px solid var(--panel-border); padding-top: 0.6rem; }
+.saved-group { margin-top: 1rem; }
 .saved-row { display: flex; align-items: center; gap: 2px; }
 .saved-item { flex: 1; &.current { color: var(--text-primary); background: var(--panel-bg-active); } }
 .saved-del {

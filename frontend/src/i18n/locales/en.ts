@@ -14,8 +14,8 @@ export default {
 
   // ── Pipeline canvas ───────────────────────────────────────────────────
   pipeline: {
-    palette_title: 'Tool nodes',
     input_node: 'File input',
+    preview_hint: 'Options set here carry over when you add the tool to the canvas with "+".',
     input_node_hint: 'Pick the files to run through this pipeline in the Run section below.',
     select_node_hint: 'Click a node on the canvas to edit its parameters; drag or click on the left to add nodes.',
     connect_invalid: 'This connection is not compatible',

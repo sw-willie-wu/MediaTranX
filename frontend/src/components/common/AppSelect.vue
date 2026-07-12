@@ -246,7 +246,8 @@ onBeforeUnmount(() => {
   border: 1px solid var(--input-border);
   border-radius: 8px;
   color: var(--text-primary);
-  font-size: inherit;
+  /* 與 tool-panels-shared .form-input 同字級,兩者同 padding/border → 同高 */
+  font-size: 0.85rem;
   font-family: inherit;
   cursor: pointer;
   transition: all 0.15s ease;

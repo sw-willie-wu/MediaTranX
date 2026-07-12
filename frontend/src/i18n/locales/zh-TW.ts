@@ -14,8 +14,8 @@ export default {
 
   // ── Pipeline 畫布 ─────────────────────────────────────────────────────
   pipeline: {
-    palette_title: '工具節點',
     input_node: '檔案輸入',
+    preview_hint: '這裡調整的選項會在按「+」加入畫布時一併帶入。',
     input_node_hint: '在下方「執行」區選擇要跑這條流程的檔案。',
     select_node_hint: '點選畫布上的節點編輯參數；從左側拖入或點擊新增節點。',
     connect_invalid: '這條連線不相容',
