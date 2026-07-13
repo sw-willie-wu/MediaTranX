@@ -127,6 +127,15 @@ export default {
     save_as: 'Save As',
   },
 
+  // ── Unsupported file / flow-file guidance overlay ─────────────────────
+  unsupported: {
+    title: 'This tool does not support this file format',
+    goto: 'Open in {tool}',
+    close: 'Close',
+    flow_file: 'This is a MediaTranX flow file',
+    open_in_pipeline: 'Open in Pipeline',
+  },
+
   // ── Results drawer ────────────────────────────────────────────────────
   results: {
     title: 'Results',
@@ -221,8 +230,6 @@ export default {
     copy_all: 'Copy All',
     auto_detect: 'Auto Detect',
     all_files: 'All Files',
-    unsupported_format: 'This tool does not support this file format',
-    go_to_tool: 'Go to {tool}',
     view_ocr_result: 'View OCR Result',
     view_result: 'View Result',
     text_preview: 'Text Preview',

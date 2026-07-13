@@ -127,6 +127,15 @@ export default {
     save_as: '另存新檔',
   },
 
+  // ── 不支援檔案/流程檔引導 overlay ────────────────────────────────────
+  unsupported: {
+    title: '此工具不支援此檔案格式',
+    goto: '前往{tool}',
+    close: '關閉',
+    flow_file: '這是 MediaTranX 流程檔',
+    open_in_pipeline: '前往流程頁開啟',
+  },
+
   // ── 產出抽屜 ──────────────────────────────────────────────────────────
   results: {
     title: '產出',
@@ -221,8 +230,6 @@ export default {
     copy_all: '複製全文',
     auto_detect: '自動偵測',
     all_files: '所有檔案',
-    unsupported_format: '此工具不支援此檔案格式',
-    go_to_tool: '前往{tool}',
     view_ocr_result: '查看 OCR 結果',
     view_result: '查看結果',
     text_preview: '文字預覽',
