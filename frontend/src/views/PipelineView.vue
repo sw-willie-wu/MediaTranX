@@ -192,7 +192,10 @@ async function onFilesPicked(e: Event) {
   uploading.value = true
   try {
     for (const f of Array.from(input.files)) {
-      const fileId = await filesStore.uploadFile(f)
+      // Electron：preload 已攔 file input change 快取本機路徑——帶 sourceDir 走
+      // /files/register 零搬運（大影片瞬間完成）；瀏覽器環境 fallback HTTP 整檔上傳
+      const sourceDir = window.electron?.getFileSourceDir?.(f.name, f.size, f.lastModified) ?? undefined
+      const fileId = await filesStore.uploadFile(f, sourceDir)
       store.inputFiles.push({ fileId, filename: f.name })
     }
   } catch (err) {
