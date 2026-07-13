@@ -86,11 +86,6 @@ const HOST_REFS: Record<string, typeof convertPanelRef> = {
 function hostFor(fn: string) {
   return HOST_REFS[fn]?.value ?? null
 }
-// upscale/ocr 帶 modelRequirement(s) 但舊 handleMultiExecute 從未呼叫 preflight()（僅單筆
-// execute() 內部會 gate）——W2 是純重構，不新增批次模型就緒門檻，故這兩個工具在泛型批次
-// 路徑中跳過 preflight()、維持舊行為原樣。標記於 task report concerns。
-const MULTI_SKIP_PREFLIGHT = new Set(['upscale', 'ocr'])
-
 const subFunctions = computed(() => [
   { id: 'transcode', name: t('image.functions.transcode'), icon: 'bi-arrow-repeat',         group: t('image.group.edit') },
   { id: 'compress',  name: t('image.functions.compress'),  icon: 'bi-file-zip-fill',        group: t('image.group.edit') },
@@ -312,9 +307,9 @@ async function handleMultiExecute() {
   if (!host) return
   // getSubmitSpec() 一律取代舊 compress/remove-bg/ocr 的 getParams()——三者皆無 buildSubmit，
   // getSubmitSpec().payload === {...params} 與 getParams() 完全等價（僅 apiPath/labelKey/
-  // taskType 從硬編字面值改讀 meta，值相同）。upscale/ocr 帶 modelRequirement(s) 但舊
-  // handleMultiExecute 從未呼叫 preflight()——沿舊行為跳過，不新增批次模型就緒門檻。
-  if (!MULTI_SKIP_PREFLIGHT.has(fn) && (await host.preflight()) === false) return
+  // taskType 從硬編字面值改讀 meta，值相同）。preflight 統一先行：無 modelRequirement 的工具
+  // （compress/remove-bg/filter）恆真、upscale/ocr 與單筆 execute() 同語意。
+  if ((await host.preflight()) === false) return
   const spec = host.getSubmitSpec()
   await submitToAll(spec.apiPath, () => host.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
 }

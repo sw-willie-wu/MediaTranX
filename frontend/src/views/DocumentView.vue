@@ -54,11 +54,6 @@ const HOST_REFS: Record<string, typeof translatePanelRef> = {
 function hostFor(fn: string) {
   return HOST_REFS[fn]?.value ?? null
 }
-// translate/ocr 帶 modelRequirement 但舊 handleMultiExecute 從未呼叫 preflight()（僅單筆
-// execute() 內部會 gate）——W2 是純重構，不新增批次模型就緒門檻，故這兩個工具在泛型批次
-// 路徑中跳過 preflight()、維持舊行為原樣。標記於 task report concerns。
-const MULTI_SKIP_PREFLIGHT = new Set(['translate', 'ocr'])
-
 const subFunctions = computed(() => [
   { id: 'split',       name: t('document.functions.split'),        icon: 'bi-layout-split',            group: t('document.group.edit') },
   { id: 'pdf-convert', name: t('document.functions.pdf_convert'),  icon: 'bi-file-earmark-pdf-fill',   group: t('document.group.edit') },
@@ -130,9 +125,9 @@ async function handleMultiExecute() {
   if (!toolKey || !host) return
   // getSubmitSpec() 取代舊四工具一律 getParams()——四者皆無 buildSubmit，getSubmitSpec().payload
   // === {...params} 與 getParams() 完全等價（僅 apiPath/labelKey/taskType 從硬編字面值改讀
-  // meta，值相同）。translate/ocr 帶 modelRequirement 但舊 handleMultiExecute 從未呼叫
-  // preflight()——沿舊行為跳過，不新增批次模型就緒門檻。
-  if (!MULTI_SKIP_PREFLIGHT.has(fn) && (await host.preflight()) === false) return
+  // meta，值相同）。preflight 統一先行：無 modelRequirement 的工具（pdf-convert/split）恆真、
+  // translate/ocr 與單筆 execute() 同語意，跟 VideoView 一致。
+  if ((await host.preflight()) === false) return
   const spec = host.getSubmitSpec()
   await submitToAll(spec.apiPath, () => host.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
 }

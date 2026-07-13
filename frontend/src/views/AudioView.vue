@@ -86,12 +86,6 @@ const HOST_REFS: Record<string, typeof transcodePanelRef> = {
 function hostFor(fn: string) {
   return HOST_REFS[fn]?.value ?? null
 }
-// transcribe/separate/lyrics 帶 modelRequirement(s) 但舊 handleMultiExecute 從未呼叫
-// preflight()（僅單筆 execute() 內部會 gate）——W2 是純重構，不新增批次模型就緒門檻,
-// 故這三個工具在泛型批次路徑中跳過 preflight()、維持舊行為原樣（differs from VideoView,
-// 那邊 summary/interpolate/enhance 本來就有呼叫）。標記於 task report concerns。
-const MULTI_SKIP_PREFLIGHT = new Set(['transcribe', 'separate', 'lyrics'])
-
 // ── MIDI Playback ──
 const midiPlayback = useMidiPlayback()
 
@@ -268,7 +262,9 @@ async function handleMultiExecute() {
   if (!toolKey || !host) return
   // getSubmitSpec() 走各自 meta.buildSubmit（transcode 正規化／transcribe·lyrics 雙 gate 剔欄）
   // ——批次所有選取檔案共用同一參數組，payload 由 submitToAll 逐檔重新呼叫快照。
-  if (!MULTI_SKIP_PREFLIGHT.has(fn) && (await host.preflight()) === false) return
+  // preflight 統一先行：無 modelRequirement 的工具（transcode/cut/volume）恆真、
+  // transcribe/separate/lyrics 與單筆 execute() 同語意，跟 VideoView 一致。
+  if ((await host.preflight()) === false) return
   const spec = host.getSubmitSpec()
   await submitToAll(spec.apiPath, () => host.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
 }
