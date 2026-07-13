@@ -304,7 +304,7 @@ async function onOpen(id: string) {
           @node-click="onNodeClick"
           @edge-click="onEdgeClick"
         >
-          <template #node-pipeline="{ data }">
+          <template #node-pipeline="{ id, data }">
             <div
               class="p-node"
               :class="{
@@ -317,6 +317,16 @@ async function onOpen(id: string) {
             >
               <Handle v-if="data.kind === 'tool'" type="target" :position="Position.Left" />
               <Handle type="source" :position="Position.Right" />
+              <!-- hover 顯示的移除 badge；stop 防止觸發 node-click（選取/輸入節點開檔）與 drag -->
+              <button
+                v-if="!store.running"
+                class="p-node-remove"
+                :title="t('pipeline.remove_node')"
+                @click.stop="store.removeNode(id)"
+                @mousedown.stop
+              >
+                <i class="bi bi-x"></i>
+              </button>
               <div class="p-node-title">
                 <i :class="['bi', data.kind === 'input' ? 'bi-folder2-open' : data.kind === 'source' ? 'bi-cloud-download' : 'bi-gear']"></i>
                 {{ data.label }}
@@ -538,6 +548,7 @@ async function onOpen(id: string) {
 
 // Vue Flow 自訂節點
 .p-node {
+  position: relative; // 移除 badge 的定位錨點
   min-width: 130px;
   padding: 0.5rem 0.7rem;
   background: var(--panel-bg-active, rgba(255,255,255,0.06));
@@ -553,6 +564,37 @@ async function onOpen(id: string) {
   &.is-selected { box-shadow: 0 0 0 2px var(--color-primary); }
 }
 .p-node-title { display: flex; align-items: center; gap: 0.4rem; }
+// hover 顯示的移除 badge（樣式沿 AppFilmstrip 移除鈕慣例）
+.p-node-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: var(--color-danger);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    background: var(--color-danger-hover, color-mix(in srgb, var(--color-danger) 80%, black));
+  }
+}
+.p-node:hover .p-node-remove {
+  opacity: 1;
+  pointer-events: auto;
+}
 .p-node-status {
   margin-top: 0.3rem; font-size: 0.7rem; color: var(--text-muted);
   &.active { color: var(--color-primary); }
