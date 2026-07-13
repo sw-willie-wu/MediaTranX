@@ -16,16 +16,24 @@ import type { RecipeNode } from '@/pipeline/types'
 import PipelineParamForm from '@/components/pipeline/PipelineParamForm.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import { useTitlebar } from '@/composables/useTitlebar'
+import { useSpaceHeld } from '@/composables/useSpaceHeld'
 
 const { t } = useI18n()
 const store = usePipelineStore()
 const filesStore = useFilesStore()
 const toast = useToast()
 const { screenToFlowCoordinate, fitView, onPaneReady, viewport } = useVueFlow()
+const { isSpaceHeld } = useSpaceHeld()
 
-// 底部資訊列：目前縮放百分比（viewport 響應 pan/zoom；形狀沿 ImageView 的 imageInfoItems）
+// 底部資訊列：目前縮放百分比（viewport 響應 pan/zoom；形狀沿 ImageView 的 imageInfoItems）；
+// 點擊＝fitView 縮放至可見全部節點
 const canvasInfoItems = computed<InfoItem[]>(() => [
-  { icon: 'bi-zoom-in', label: `${Math.round(viewport.value.zoom * 100)}%` },
+  {
+    icon: 'bi-zoom-in',
+    label: `${Math.round(viewport.value.zoom * 100)}%`,
+    title: t('common.zoom_fit'),
+    onClick: () => fitView(FIT_VIEW_OPTS),
+  },
 ])
 
 // fitView 在節點少時會把 zoom 拉滿填畫布（1-2 個節點時看起來巨大）——
@@ -330,11 +338,19 @@ async function onOpen(id: string) {
     <template #center>
       <div class="canvas-wrap" @drop.prevent="onCanvasDrop" @dragover.prevent>
         <div class="canvas-flow">
+        <!-- 互動慣例（全 app 統一）：左鍵拖=選取框、Space+左鍵/中鍵/右鍵拖=平移。
+             Vue Flow 1.x 沒有 selection-on-drag（那是 React Flow 的名字），左鍵框選＝
+             selection-key-code=true；pan-on-drag 的按鈕陣列會在 d3 filter 擋掉左鍵、
+             panActivationKeyCode 蓋不過——故用 isSpaceHeld 動態切整組模式。
+             delete-key-code 關閉——節點移除只走 X badge（VueFlow 內建刪除會繞過 store） -->
         <VueFlow
           :nodes="flowNodes"
           :edges="flowEdges"
           :nodes-connectable="!store.running"
-          :nodes-draggable="!store.running"
+          :nodes-draggable="!store.running && !isSpaceHeld"
+          :pan-on-drag="isSpaceHeld ? true : [1, 2]"
+          :selection-key-code="isSpaceHeld ? null : true"
+          :delete-key-code="null"
           @connect="onConnect"
           @node-drag-stop="onNodeDragStop"
           @node-click="onNodeClick"
@@ -526,6 +542,11 @@ async function onOpen(id: string) {
   flex: 1;
   min-height: 0;
   position: relative;
+}
+// 資訊列置中（對齊工具頁 filmstrip overlay 模式的置中慣例）
+.canvas-wrap :deep(.media-info-bar) {
+  justify-content: center;
+  padding: 0.35rem 0.9rem;
 }
 
 .issue-bar {

@@ -343,7 +343,9 @@ const imageInfoItems = computed<InfoItem[]>(() => {
     { icon: 'bi-file-earmark', label: info.format ?? '—' },
     { icon: 'bi-palette',      label: info.mode },
     { icon: 'bi-hdd',          label: formatSize(info.file_size) },
-    { icon: 'bi-zoom-in',      label: `${zoom}%` },
+    // 點擊縮放百分比＝重置縮放（fit）——與流程頁畫布資訊列同慣例
+    { icon: 'bi-zoom-in',      label: `${zoom}%`, title: t('common.zoom_fit'),
+      onClick: () => previewRef.value?.resetZoom() },
   ]
 })
 

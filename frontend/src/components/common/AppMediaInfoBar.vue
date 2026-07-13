@@ -6,6 +6,9 @@ const { t } = useI18n()
 export interface InfoItem {
   icon: string
   label: string
+  /** 給了就渲染成可點擊項（如縮放百分比→點擊重置/fit）；title 為 hover 提示 */
+  onClick?: () => void
+  title?: string
 }
 
 withDefaults(defineProps<{
@@ -25,10 +28,18 @@ withDefaults(defineProps<{
       <span>{{ loadingText ?? t('common.loading_info') }}</span>
     </template>
     <template v-else-if="items?.length">
-      <div v-for="(item, i) in items" :key="i" class="info-item">
+      <component
+        :is="item.onClick ? 'button' : 'div'"
+        v-for="(item, i) in items"
+        :key="i"
+        class="info-item"
+        :class="{ 'is-clickable': !!item.onClick }"
+        :title="item.title"
+        @click="item.onClick?.()"
+      >
         <i :class="['bi', item.icon]"></i>
         <span>{{ item.label }}</span>
-      </div>
+      </component>
     </template>
   </div>
 </template>
@@ -68,6 +79,19 @@ withDefaults(defineProps<{
   i {
     font-size: 0.7rem;
     color: var(--text-muted);
+  }
+
+  &.is-clickable {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: color 0.15s ease;
+
+    &:hover {
+      color: var(--color-primary);
+      i { color: var(--color-primary); }
+    }
   }
 }
 </style>

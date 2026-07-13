@@ -205,6 +205,7 @@ export default {
     pick_folder: '或選擇資料夾',
     folder_register_failed: '有 {count} 個檔案無法加入',
     loading_info: '讀取資訊...',
+    zoom_fit: '縮放至顯示全部',
     uploading: '上傳中...',
     copy: '複製',
     copy_all: '複製全文',

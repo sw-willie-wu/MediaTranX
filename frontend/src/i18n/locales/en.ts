@@ -205,6 +205,7 @@ export default {
     pick_folder: 'or select a folder',
     folder_register_failed: '{count} file(s) could not be added',
     loading_info: 'Loading info...',
+    zoom_fit: 'Zoom to fit',
     uploading: 'Uploading...',
     copy: 'Copy',
     copy_all: 'Copy All',
