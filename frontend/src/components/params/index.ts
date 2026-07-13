@@ -1,0 +1,104 @@
+/**
+ * 參數元件載入表（統一參數元件 spec §3）——兩側 host（ToolParamHost/PipelineParamForm）共用。
+ * PARAM_COMPONENTS 懶載（defineAsyncComponent），METAS 同步（純資料，不拖 SFC 進模組圖）。
+ */
+import { defineAsyncComponent, type Component } from 'vue'
+import type { ToolParamMeta } from './types'
+import { META as CUT_META } from './video/cut.meta'
+import { META as CROP_META } from './video/crop.meta'
+import { META as TRANSCODE_META } from './video/transcode.meta'
+import { META as EXTRACT_AUDIO_META } from './video/extract_audio.meta'
+import { META as DOWNLOAD_META } from './video/download.meta'
+import { META as INTERPOLATE_META } from './video/interpolate.meta'
+import { META as ENHANCE_META } from './video/enhance.meta'
+import { META as SUMMARY_META } from './video/summary.meta'
+import { META as SUBTITLE_META } from './video/subtitle.meta'
+import { META as TRANSLATE_META } from './document/translate.meta'
+import { META as DOCUMENT_OCR_META } from './document/ocr.meta'
+import { META as DOCUMENT_SPLIT_META } from './document/split.meta'
+import { META as DOCUMENT_PDF_CONVERT_META } from './document/pdf_convert.meta'
+import { META as AUDIO_TRANSCODE_META } from './audio/transcode.meta'
+import { META as AUDIO_VOLUME_META } from './audio/volume.meta'
+import { META as AUDIO_CUT_META } from './audio/cut.meta'
+import { META as AUDIO_SEPARATE_META } from './audio/separate.meta'
+import { META as AUDIO_TRANSCRIBE_META } from './audio/transcribe.meta'
+import { META as AUDIO_LYRICS_META } from './audio/lyrics.meta'
+import { META as IMAGE_COMPRESS_META } from './image/compress.meta'
+import { META as IMAGE_CONVERT_META } from './image/convert.meta'
+import { META as IMAGE_FILTER_META } from './image/filter.meta'
+import { META as IMAGE_CROP_META } from './image/crop.meta'
+import { META as IMAGE_REMOVE_BG_META } from './image/remove_bg.meta'
+import { META as IMAGE_UPSCALE_META } from './image/upscale.meta'
+import { META as IMAGE_OCR_META } from './image/ocr.meta'
+
+export const PARAM_COMPONENTS: Record<string, Component> = {
+  'video.cut': defineAsyncComponent(() => import('./video/CutParams.vue')),
+  'video.crop': defineAsyncComponent(() => import('./video/CropParams.vue')),
+  'video.transcode': defineAsyncComponent(() => import('./video/TranscodeParams.vue')),
+  'video.extract_audio': defineAsyncComponent(() => import('./video/ExtractAudioParams.vue')),
+  'video.download': defineAsyncComponent(() => import('./video/DownloadParams.vue')),
+  'video.interpolate': defineAsyncComponent(() => import('./video/InterpolateParams.vue')),
+  'video.enhance': defineAsyncComponent(() => import('./video/EnhanceParams.vue')),
+  'video.summary': defineAsyncComponent(() => import('./video/SummaryParams.vue')),
+  // 例外殼工具（批 2 Task 2.5）：video.subtitle 的組件是 SubtitleParams.vue（表單本體，非
+  // 整個殼）——pipeline dispatcher 掛這個；工具頁走 SubtitlePanel.vue 自建 template 直接掛載
+  // （不經 ToolParamHost，見 SubtitlePanel.vue 檔頭註解），本表僅供 pipeline 側使用。
+  'video.subtitle': defineAsyncComponent(() => import('./video/SubtitleParams.vue')),
+  'document.translate': defineAsyncComponent(() => import('./document/TranslateParams.vue')),
+  // 批 4 Task 4.4 ⭐共用：document.ocr／image.ocr 兩 toolKey 指同一元件（document/OcrParams.vue）
+  // ——兩後端 route 欄位逐一相同，見該檔／document/ocr.meta.ts 檔頭比對記錄。domain 差異
+  // （persistKey/i18nPrefix）由掛載點以 fallthrough attrs 傳入。
+  'document.ocr': defineAsyncComponent(() => import('./document/OcrParams.vue')),
+  'document.split': defineAsyncComponent(() => import('./document/SplitParams.vue')),
+  'document.pdf_convert': defineAsyncComponent(() => import('./document/PdfConvertParams.vue')),
+  'audio.transcode': defineAsyncComponent(() => import('./audio/AudioTranscodeParams.vue')),
+  'audio.volume': defineAsyncComponent(() => import('./audio/VolumeParams.vue')),
+  'audio.cut': defineAsyncComponent(() => import('./audio/AudioCutParams.vue')),
+  'audio.separate': defineAsyncComponent(() => import('./audio/SeparateParams.vue')),
+  'audio.transcribe': defineAsyncComponent(() => import('./audio/TranscribeParams.vue')),
+  'audio.lyrics': defineAsyncComponent(() => import('./audio/LyricsParams.vue')),
+  'image.compress': defineAsyncComponent(() => import('./image/CompressParams.vue')),
+  'image.convert': defineAsyncComponent(() => import('./image/ConvertParams.vue')),
+  // 批 4 Task 4.2 ⭐合併：舊 image.adjust/image.filter 兩 panel 打同一後端 /image/filter，
+  // 單一 toolKey image.filter 對應單一組件（FilterParams.vue 依 fieldGroup attr 分組渲染）；
+  // ImageView 同 tool-key 掛兩次 ToolParamHost（不同 panel-id）——見該檔＋filter.meta.ts。
+  'image.filter': defineAsyncComponent(() => import('./image/FilterParams.vue')),
+  'image.crop': defineAsyncComponent(() => import('./image/CropParams.vue')),
+  'image.remove_bg': defineAsyncComponent(() => import('./image/RemoveBgParams.vue')),
+  'image.upscale': defineAsyncComponent(() => import('./image/UpscaleParams.vue')),
+  // 同 document.ocr——共用 document/OcrParams.vue（見上方 document.ocr 條目註解）。
+  'image.ocr': defineAsyncComponent(() => import('./document/OcrParams.vue')),
+}
+
+export const METAS: Record<string, ToolParamMeta> = {
+  'video.cut': CUT_META,
+  'video.crop': CROP_META,
+  'video.transcode': TRANSCODE_META,
+  'video.extract_audio': EXTRACT_AUDIO_META,
+  'video.download': DOWNLOAD_META,
+  'video.interpolate': INTERPOLATE_META,
+  'video.enhance': ENHANCE_META,
+  'video.summary': SUMMARY_META,
+  'video.subtitle': SUBTITLE_META,
+  'document.translate': TRANSLATE_META,
+  'document.ocr': DOCUMENT_OCR_META,
+  'document.split': DOCUMENT_SPLIT_META,
+  'document.pdf_convert': DOCUMENT_PDF_CONVERT_META,
+  'audio.transcode': AUDIO_TRANSCODE_META,
+  'audio.volume': AUDIO_VOLUME_META,
+  'audio.cut': AUDIO_CUT_META,
+  'audio.separate': AUDIO_SEPARATE_META,
+  'audio.transcribe': AUDIO_TRANSCRIBE_META,
+  'audio.lyrics': AUDIO_LYRICS_META,
+  'image.compress': IMAGE_COMPRESS_META,
+  'image.convert': IMAGE_CONVERT_META,
+  'image.filter': IMAGE_FILTER_META,
+  'image.crop': IMAGE_CROP_META,
+  'image.remove_bg': IMAGE_REMOVE_BG_META,
+  'image.upscale': IMAGE_UPSCALE_META,
+  'image.ocr': IMAGE_OCR_META,
+}
+
+export function hasParamComponent(toolKey: string): boolean {
+  return toolKey in PARAM_COMPONENTS
+}

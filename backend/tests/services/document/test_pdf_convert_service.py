@@ -100,6 +100,18 @@ def test_execute_plain_text_copies_content(tmp_path):
     assert out.read_text(encoding="utf-8") == "# Hello\nWorld"
 
 
+def test_execute_plain_text_with_str_file_path(tmp_path):
+    # 生產環境 FileInfo.file_path 是 str（非 Path）——回歸鎖：
+    # 純文字分支曾對 str 呼叫 .read_text() 直接 AttributeError（批 4 e2e 抓到）
+    src = tmp_path / "notes.txt"
+    src.write_text("plain text body", encoding="utf-8")
+    svc, fs, tm = _make_svc(tmp_path, src_name="notes.txt", src_path=src)
+    fs.require_file.return_value.file_path = str(src)
+    svc._execute({"file_id": "fid", "output_format": "txt"}, lambda p, m: None)
+    out = fs.output_dir / "notes_converted.txt"
+    assert out.read_text(encoding="utf-8") == "plain text body"
+
+
 def test_execute_emits_progress_keys(tmp_path, tiny_pdf_path):
     import re
     progress_re = re.compile(r"^task\.progress\.[a-z_]+(\|.+)*$")

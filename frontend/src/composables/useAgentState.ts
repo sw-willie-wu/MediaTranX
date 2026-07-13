@@ -21,6 +21,7 @@ export interface SnapshotField {
   max?: number
   step?: number
   visible: boolean
+  description?: string
 }
 
 export interface AgentStateSnapshot {
@@ -76,6 +77,7 @@ export function buildAgentStateSnapshot(inp: SnapshotInputs): AgentStateSnapshot
           visible: f.visibleWhen ? f.visibleWhen() : true,
         }
         if (f.options) field.options = f.options()
+        if (f.description) field.description = f.description
         const mn = resolveNum(f.min)
         const mx = resolveNum(f.max)
         if (mn !== undefined) field.min = mn

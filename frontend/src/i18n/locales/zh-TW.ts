@@ -670,13 +670,12 @@ export default {
       crop_size: '裁切尺寸',
       original_image: '原圖：',
       task_label: '圖片 · 裁切',
+      size_error: '裁切寬高必須為正數',
     },
 
     ocr: {
       title: '文字辨識設定',
       description: '使用 AI 辨識圖片中的文字，輸出為可編輯格式。',
-      server_not_found: 'llama-server 未找到，請前往設定頁面安裝 AI 核心',
-      go_to_settings: '前往設定',
       model: '文字辨識模型',
       markdown: 'Markdown (.md)',
       text: '純文字 (.txt)',
@@ -720,6 +719,8 @@ export default {
       flac: 'FLAC（純音訊）',
       video_codec: '影片編碼',
       copy_codec: '不重新編碼',
+      preset: '編碼速度',
+      audio_codec: '音訊編碼',
       resolution: '解析度',
       keep_original: '保持原始',
       custom: '自訂尺寸',
@@ -736,10 +737,16 @@ export default {
       bitrate: '位元率',
       extract_audio: '影片 · 提取音訊',
       task_label: '影片 · 轉檔',
+      resolution_error: '解析度格式錯誤，請輸入「寬x高」（例如 1920x1080）',
     },
 
     download: {
       task_label: '影片 · 網址下載',
+      title: '網址下載設定',
+      description: '設定下載網址與進階畫質選項（用於流程節點）。',
+      url: '網址',
+      url_error: '請輸入有效的網址（須以 http:// 或 https:// 開頭）',
+      filename: '檔名',
     },
 
     cut: {
@@ -762,6 +769,7 @@ export default {
       crop_size: '裁切尺寸',
       free: '自由',
       square: '正方形',
+      size_error: '裁切寬高必須為正數',
     },
 
     subtitle: {
@@ -776,6 +784,7 @@ export default {
       start: '開始',
       vocal_separation: '分離人聲',
       vocal_separation_hint: '若影片配樂干擾辨識可開啟；會增加處理時間。',
+      source_language_placeholder: '語言代碼，如 en/zh/ja（留空＝自動偵測）',
     },
 
     translate: {
@@ -844,6 +853,8 @@ export default {
     summary: {
       title: '影片摘要',
       description: '使用 LLM 整理字幕為 Markdown 摘要，附關鍵影格；輸出為 ZIP 壓縮檔。',
+      language: '內容語言',
+      language_hint: '協助語音辨識與摘要更準確判斷影片內容的語言（預設 zh-TW）。',
       whisper_model: '語音辨識模型',
       vocal_separation: '分離人聲',
       vocal_separation_hint: '若影片配樂干擾辨識可開啟；會增加處理時間。',
@@ -890,6 +901,9 @@ export default {
       lossless: '無損',
       bitrate: '位元率',
       sample_rate: '取樣率',
+      channels: '聲道數',
+      mono: '單聲道',
+      stereo: '立體聲',
       keep_original: '保持原始',
       task_label: '音訊 · 轉檔',
     },
@@ -901,6 +915,7 @@ export default {
       end_time: '結束時間',
       duration: '音訊長度：',
       selection_duration: '選取長度：',
+      time_error: '結束時間必須大於開始時間',
       task_label: '音訊 · 剪輯',
     },
 
@@ -942,6 +957,7 @@ export default {
       select_output: '選擇輸出路徑',
       task_label: '音訊 · 逐字稿',
       no_translate_model: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
+      source_language_placeholder: '語言代碼，如 en/zh/ja（留空＝自動偵測）',
     },
 
     lyrics: {
@@ -981,6 +997,7 @@ export default {
       midi_jump_prompt: '音源分離完成，已產出 MIDI 檔案。是否跳轉至 MIDI 編輯器？',
       midi_jump: '跳轉',
       midi_stay: '留在此頁',
+      no_stems_selected: '請至少選擇一個要分離的音軌。',
     },
 
     midi: {
@@ -1076,8 +1093,6 @@ export default {
     ocr: {
       title: '文字辨識設定',
       description: '使用 AI 辨識 PDF 或圖片中的文字，輸出為可編輯格式。',
-      server_not_found: 'llama-server 未找到，請前往設定頁面安裝 AI 核心',
-      go_to_settings: '前往設定',
       format_not_supported: 'OCR 僅支援 PDF 及圖片格式',
       model: '文字辨識模型',
       markdown: 'Markdown (.md)',

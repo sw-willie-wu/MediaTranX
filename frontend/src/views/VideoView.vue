@@ -1,24 +1,22 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import VideoPreview from '@/components/video/VideoPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
-import VideoTranscodePanel from '@/components/video/panels/VideoTranscodePanel.vue'
-import VideoCutPanel from '@/components/video/panels/VideoCutPanel.vue'
-import VideoCropPanel from '@/components/video/panels/VideoCropPanel.vue'
+import ToolParamHost from '@/components/params/ToolParamHost.vue'
+import { METAS } from '@/components/params'
 import SubtitlePanel from '@/components/video/SubtitlePanel.vue'
-import VideoInterpolatePanel from '@/components/video/panels/VideoInterpolatePanel.vue'
-import VideoEnhancePanel from '@/components/video/panels/VideoEnhancePanel.vue'
-import VideoSummaryPanel from '@/components/video/panels/VideoSummaryPanel.vue'
 import { useVideoWorkspace } from '@/composables/useVideoWorkspace'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useExecuteStop } from '@/composables/useExecuteStop'
 import { useToast } from '@/composables/useToast'
 import { useTitlebar } from '@/composables/useTitlebar'
 import { useViewHost } from '@/composables/useViewHost'
+import { panelIdFor } from '@/composables/useActiveView'
 import { subfunctionsForView } from '@/agent/agentNavCatalog'
+import { parseTimeToSeconds, secondsToTime } from '@/components/params/video/cut.meta'
 
 const { t } = useI18n()
 
@@ -38,33 +36,55 @@ const { submitToAll } = useMultiSubmit(collection)
 const { isCanceling, requestStop } = useExecuteStop(collection)
 const toast = useToast()
 
-// Cut time points (shared between VideoPreview and VideoCutPanel)
-const cutStartTime = ref('00:00:00')
-const cutEndTime = ref('00:00:00')
-const cutStreamCopy = ref(true)
-
-watch(mediaInfo, (info) => {
-  if (info) {
-    const h = Math.floor(info.duration / 3600)
-    const m = Math.floor((info.duration % 3600) / 60)
-    const s = Math.floor(info.duration % 60)
-    cutEndTime.value = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
-  }
-})
-
 // Panel refs
-const transcodePanelRef = ref<InstanceType<typeof VideoTranscodePanel> | null>(null)
-const cutPanelRef = ref<InstanceType<typeof VideoCutPanel> | null>(null)
-const cropPanelRef = ref<InstanceType<typeof VideoCropPanel> | null>(null)
+const transcodePanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
+const cutPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
+const cropPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const subtitlePanelRef = ref<InstanceType<typeof SubtitlePanel> | null>(null)
-const interpolatePanelRef = ref<InstanceType<typeof VideoInterpolatePanel> | null>(null)
-const enhancePanelRef = ref<InstanceType<typeof VideoEnhancePanel> | null>(null)
-const summaryPanelRef = ref<InstanceType<typeof VideoSummaryPanel> | null>(null)
+const interpolatePanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
+const enhancePanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
+const summaryPanelRef = ref<InstanceType<typeof ToolParamHost> | null>(null)
 
-// Crop state (shared between VideoPreview and VideoCropPanel)
+// ── W2：host 泛型收斂 ──────────────────────────────────────────────────────
+// toolKey↔subFunction id 對映（transcode/cut/crop/interpolate/enhance/summary 皆走
+// ToolParamHost；subtitle 是非 host 殼 SubtitlePanel，不進此表）。hostFor() 供
+// execute/disabled/loading/multi 四組 switch 共用單一入口。
+const HOST_TOOL_KEYS: Record<string, string> = {
+  transcode: 'video.transcode',
+  cut: 'video.cut',
+  crop: 'video.crop',
+  interpolate: 'video.interpolate',
+  enhance: 'video.enhance',
+  summary: 'video.summary',
+}
+const HOST_REFS: Record<string, typeof transcodePanelRef> = {
+  transcode: transcodePanelRef,
+  cut: cutPanelRef,
+  crop: cropPanelRef,
+  interpolate: interpolatePanelRef,
+  enhance: enhancePanelRef,
+  summary: summaryPanelRef,
+}
+function hostFor(fn: string) {
+  return HOST_REFS[fn]?.value ?? null
+}
+
+// Crop state (shared between VideoPreview and CropParams, bridged via ToolParamHost attrs fallthrough)
 const showCropOverlay = ref(false)
 const cropAspectRatio = ref('free')
 const canvasCropRect = ref<{ x: number; y: number; w: number; h: number } | null>(null)
+
+// Cut time points 橋接：VideoPreview 走 HH:MM:SS 字串契約（不動），host 內部走秒數（後端詞彙）。
+// get 讀 host.params.{start,end}_time（秒）轉字串；set 把 VideoPreview 拖曳寫回的字串轉秒後
+// 經 setField 寫回 host（agent 寫入路徑同一入口，維持單一事實來源）。
+const cutStart = computed({
+  get: () => secondsToTime(cutPanelRef.value?.params?.start_time as number | undefined),
+  set: (v: string) => cutPanelRef.value?.setField('start_time', parseTimeToSeconds(v)),
+})
+const cutEnd = computed({
+  get: () => secondsToTime(cutPanelRef.value?.params?.end_time as number | undefined),
+  set: (v: string) => cutPanelRef.value?.setField('end_time', parseTimeToSeconds(v)),
+})
 
 const subFunctions = computed(() => [
   { id: 'transcode',   name: t('video.functions.transcode'),   icon: 'bi-arrow-repeat',   group: t('video.group.edit') },
@@ -87,22 +107,16 @@ useViewHost('video', {
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
 
 const executeDisabled = computed(() => {
-  if (currentFunction.value === 'subtitle')  return subtitlePanelRef.value?.isDisabled ?? true
-  if (currentFunction.value === 'transcode') return transcodePanelRef.value?.isDisabled ?? !hasFile.value
-  if (currentFunction.value === 'cut')       return cutPanelRef.value?.isDisabled ?? !hasFile.value
-  if (currentFunction.value === 'crop')      return cropPanelRef.value?.isDisabled ?? !hasFile.value
-  if (currentFunction.value === 'summary')   return summaryPanelRef.value?.isDisabled ?? true
-  return !hasFile.value
+  if (currentFunction.value === 'subtitle') return subtitlePanelRef.value?.isDisabled ?? true
+  // summary 的無 host 時退回值是 true（非 !hasFile.value）——沿舊分支語意保留，非統一收斂遺漏。
+  const fallback = currentFunction.value === 'summary' ? true : !hasFile.value
+  return hostFor(currentFunction.value)?.isDisabled ?? fallback
 })
 
 const executeLoading = computed(() => {
   if (isEntryProcessing.value) return true
-  if (currentFunction.value === 'subtitle')  return subtitlePanelRef.value?.isLoading ?? false
-  if (currentFunction.value === 'transcode') return transcodePanelRef.value?.isLoading ?? false
-  if (currentFunction.value === 'cut')       return cutPanelRef.value?.isLoading ?? false
-  if (currentFunction.value === 'crop')      return cropPanelRef.value?.isLoading ?? false
-  if (currentFunction.value === 'summary')   return summaryPanelRef.value?.isLoading ?? false
-  return false
+  if (currentFunction.value === 'subtitle') return subtitlePanelRef.value?.isLoading ?? false
+  return hostFor(currentFunction.value)?.isLoading ?? false
 })
 
 function handleExecute() {
@@ -114,38 +128,31 @@ function handleExecute() {
 }
 
 function handleSingleExecute() {
-  switch (currentFunction.value) {
-    case 'transcode':   transcodePanelRef.value?.execute(); break
-    case 'cut':         cutPanelRef.value?.execute(); break
-    case 'crop':        cropPanelRef.value?.execute(); break
-    case 'subtitle':    subtitlePanelRef.value?.submitGenerate(); break
-    case 'summary':     summaryPanelRef.value?.execute(); break
-    case 'interpolate': interpolatePanelRef.value?.execute(); break
-    case 'enhance':     enhancePanelRef.value?.execute(); break
+  if (currentFunction.value === 'subtitle') {
+    subtitlePanelRef.value?.submitGenerate()
+    return
   }
+  hostFor(currentFunction.value)?.execute()
 }
 
 async function handleMultiExecute() {
   const noop = () => {}
-  switch (currentFunction.value) {
-    case 'transcode':
-      await submitToAll('/video/transcode', () => transcodePanelRef.value!.getParams(), t('video.transcode.task_label'), 'video.transcode', noop); break
-    case 'summary':
-      if (await summaryPanelRef.value?.preflight() === false) break
-      await submitToAll('/video/summary', () => summaryPanelRef.value!.getParams(), t('video.summary.task_label'), 'video.summary', noop); break
-    case 'interpolate':
-      if (await interpolatePanelRef.value?.preflight() === false) break
-      await submitToAll('/video/interpolate', () => interpolatePanelRef.value!.getParams(), t('video.interpolate.task_label'), 'video.interpolate', noop); break
-    case 'enhance':
-      if (await enhancePanelRef.value?.preflight() === false) break
-      await submitToAll('/video/enhance', () => enhancePanelRef.value!.getParams(), t('video.enhance.task_label'), 'video.enhance', noop); break
-    case 'cut':
-    case 'crop':
-    case 'subtitle':
-      // 互動型工具不支援批次(座標/時間軸 per-file):明示並只跑目前檔案
-      toast.show(t('video.multi_not_supported'), { type: 'info', icon: 'bi-info-circle' })
-      handleSingleExecute(); break
+  const fn = currentFunction.value
+  const toolKey = HOST_TOOL_KEYS[fn]
+  // 互動型工具(座標/時間軸 per-file)或非 host 殼(subtitle)不支援批次：明示並只跑目前檔案。
+  // multiSelect gate 查 META（cut/crop 為 false）；subtitle 不在 HOST_TOOL_KEYS 表內同樣落此分支。
+  if (!toolKey || METAS[toolKey].multiSelect === false) {
+    toast.show(t('video.multi_not_supported'), { type: 'info', icon: 'bi-info-circle' })
+    handleSingleExecute()
+    return
   }
+  const host = hostFor(fn)
+  if (!host) return
+  // preflight 統一先行：video.transcode 無 modelRequirement 恆真、summary/interpolate/enhance
+  // 沿舊各自 preflight() 呼叫——語意等價（見 task report）。
+  if ((await host.preflight()) === false) return
+  const spec = host.getSubmitSpec()
+  await submitToAll(spec.apiPath, () => host.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
 }
 
 function onDownload() {
@@ -256,8 +263,8 @@ onUnmounted(() => { clearActions() })
         :preview-url="activePreviewUrl ?? collection.activeEntry.value?.previewUrl ?? previewUrl"
         :media-info="mediaInfo"
         :current-function="currentFunction"
-        v-model:start-time="cutStartTime"
-        v-model:end-time="cutEndTime"
+        v-model:start-time="cutStart"
+        v-model:end-time="cutEnd"
         :show-crop-overlay="showCropOverlay && currentFunction === 'crop'"
         :crop-aspect-ratio="cropAspectRatio"
         @crop-rect-change="canvasCropRect = $event"
@@ -289,33 +296,39 @@ onUnmounted(() => { clearActions() })
 
     <template #settings>
       <div class="settings-form">
-        <VideoTranscodePanel
+        <ToolParamHost
           v-if="currentFunction === 'transcode'"
           ref="transcodePanelRef"
+          tool-key="video.transcode"
+          :panel-id="panelIdFor('video', 'transcode')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
+          :file-info="mediaInfo"
           @submit="handlePanelSubmit"
         />
 
-        <VideoCutPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'cut'"
           ref="cutPanelRef"
+          tool-key="video.cut"
+          :panel-id="panelIdFor('video', 'cut')"
           :file-id="activeFileId"
-          :current-file-name="''"
-          v-model:start-time="cutStartTime"
-          v-model:end-time="cutEndTime"
-          v-model:stream-copy="cutStreamCopy"
+          :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
+          :file-info="mediaInfo"
           @submit="handlePanelSubmit"
         />
 
-        <VideoCropPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'crop'"
           ref="cropPanelRef"
+          tool-key="video.crop"
+          :panel-id="panelIdFor('video', 'crop')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :video-size="mediaInfo ? { width: mediaInfo.width, height: mediaInfo.height } : null"
+          :is-multi-select="isMultiSelect"
+          :file-info="mediaInfo"
           :canvas-crop-rect="canvasCropRect"
           @submit="handlePanelSubmit"
           @update:show-crop-overlay="showCropOverlay = $event"
@@ -333,32 +346,39 @@ onUnmounted(() => { clearActions() })
         </div>
         <!-- Note: SubtitlePanel does not accept :isMultiSelect (m16 — subtitle panel hardcodes false internally) -->
 
-        <VideoInterpolatePanel
+        <ToolParamHost
           v-else-if="currentFunction === 'interpolate'"
           ref="interpolatePanelRef"
+          tool-key="video.interpolate"
+          :panel-id="panelIdFor('video', 'interpolate')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :media-info="mediaInfo"
           :is-multi-select="isMultiSelect"
+          :file-info="mediaInfo"
           @submit="handlePanelSubmit"
         />
 
-        <VideoSummaryPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'summary'"
           ref="summaryPanelRef"
+          tool-key="video.summary"
+          :panel-id="panelIdFor('video', 'summary')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
+          :file-info="mediaInfo"
           @submit="handlePanelSubmit"
         />
 
-        <VideoEnhancePanel
+        <ToolParamHost
           v-else-if="currentFunction === 'enhance'"
           ref="enhancePanelRef"
+          tool-key="video.enhance"
+          :panel-id="panelIdFor('video', 'enhance')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :media-info="mediaInfo"
           :is-multi-select="isMultiSelect"
+          :file-info="mediaInfo"
           @submit="handlePanelSubmit"
         />
       </div>
@@ -369,19 +389,6 @@ onUnmounted(() => { clearActions() })
 <style lang="scss" scoped>
 .settings-form { color: var(--text-primary); }
 
-.function-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.settings-title {
-  display: flex;
-  align-items: center;
-  font-size: 1rem;
-  font-weight: 500;
-  margin: 0;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--panel-border);
-}
+// .function-settings / .settings-title 由 tool-panels-shared.scss 提供（SubtitlePanel 靜態
+// import 時非 scoped @use 注入全域），不在 View 層重複定義（FRONTEND_DEVELOP_SPEC §24）。
 </style>

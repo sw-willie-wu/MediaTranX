@@ -1,0 +1,244 @@
+/**
+ * pipeline store — startRun 前逐節點模型驗證（Task 1.6）。
+ * PipelineRunner 整套 mock 掉：本測試只關心「起跑前的 model_missing 驗證/放行」邊界，
+ * 不驗證引擎本體執行（那是 pipeline/__tests__/runner.test.ts 的職責）。
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { setActivePinia, createPinia } from 'pinia'
+
+const runnerCtor = vi.fn()
+const runnerStart = vi.fn(async () => {})
+const runnerSnapshot = vi.fn(() => ({ status: 'completed', executions: [], truncatedNodes: [] }))
+
+vi.mock('@/pipeline/runner', async () => {
+  const actual = await vi.importActual<typeof import('@/pipeline/runner')>('@/pipeline/runner')
+  class FakePipelineRunner {
+    constructor(...args: unknown[]) {
+      runnerCtor(...args)
+    }
+    start = runnerStart
+    snapshot = runnerSnapshot
+    cancel = vi.fn(async () => {})
+  }
+  return { ...actual, PipelineRunner: FakePipelineRunner }
+})
+
+import { usePipelineStore } from '@/stores/pipeline'
+import { useModelStore } from '@/stores/models'
+import type { Recipe } from '@/pipeline/types'
+
+function translateRecipe(params: Record<string, unknown> = {}): Recipe {
+  return {
+    version: 1,
+    name: 'r',
+    nodes: [
+      { id: 'input-1', kind: 'input', params: {}, position: { x: 0, y: 0 } },
+      {
+        id: 'n2',
+        kind: 'tool',
+        toolKey: 'document.translate',
+        params: {
+          source_language: 'en',
+          target_language: 'zh-TW',
+          model_family: 'gemma4',
+          model_size: '4b',
+          quantization: 'Q4_K_M',
+          remote: false,
+          ...params,
+        },
+        position: { x: 100, y: 0 },
+      },
+    ],
+    edges: [{ from: 'input-1', to: 'n2' }],
+  }
+}
+
+function cutRecipe(): Recipe {
+  return {
+    version: 1,
+    name: 'r',
+    nodes: [
+      { id: 'input-1', kind: 'input', params: {}, position: { x: 0, y: 0 } },
+      { id: 'n2', kind: 'tool', toolKey: 'video.cut', params: { start: 0, end: 1 }, position: { x: 100, y: 0 } },
+    ],
+    edges: [{ from: 'input-1', to: 'n2' }],
+  }
+}
+
+// video.summary 只定義複數 modelRequirements（無單數 modelRequirement）——
+// I1 修復標的：checkModelsReady 曾只讀單數,summary 節點完全不受模型閘攔截。
+function summaryRecipe(params: Record<string, unknown> = {}): Recipe {
+  return {
+    version: 1,
+    name: 'r',
+    nodes: [
+      { id: 'input-1', kind: 'input', params: {}, position: { x: 0, y: 0 } },
+      {
+        id: 'n2',
+        kind: 'tool',
+        toolKey: 'video.summary',
+        params: {
+          summary_mode: 'bullets',
+          language: 'zh-TW',
+          whisper_model_size: 'medium',
+          llm_remote: false,
+          ...params,
+        },
+        position: { x: 100, y: 0 },
+      },
+    ],
+    edges: [{ from: 'input-1', to: 'n2' }],
+  }
+}
+
+describe('pipeline store — startRun 前模型驗證', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    runnerCtor.mockClear()
+    runnerStart.mockClear()
+    runnerSnapshot.mockClear()
+  })
+
+  function seedModels(models: Array<{ family: string; variant: string; downloaded: boolean }>) {
+    const modelStore = useModelStore()
+    modelStore.models = models as never
+    modelStore.loaded = true // ensureLoaded 因此不會真的打 API
+  }
+
+  it('1. local 模型未安裝 → startRun 不啟動、issues 含 model_missing（nodeId 對）', async () => {
+    seedModels([{ family: 'gemma4', variant: '4b:Q4_K_M', downloaded: false }])
+    const store = usePipelineStore()
+    store.recipe = translateRecipe()
+    store.inputFiles = [{ fileId: 'f1', filename: 'a.pdf' }]
+
+    await store.startRun()
+
+    expect(runnerCtor).not.toHaveBeenCalled()
+    expect(store.running).toBe(false)
+    const missing = store.issues.filter(i => i.code === 'model_missing')
+    expect(missing).toHaveLength(1)
+    expect(missing[0].nodeId).toBe('n2')
+    expect(missing[0].severity).toBe('error')
+    expect(store.errors.some(i => i.code === 'model_missing')).toBe(true)
+  })
+
+  it('2. remote:true → 照常啟動（runner 被呼叫），不做模型檢查', async () => {
+    seedModels([]) // 空清單也無妨——remote 分支不查
+    const store = usePipelineStore()
+    store.recipe = translateRecipe({ remote: true })
+    store.inputFiles = [{ fileId: 'f1', filename: 'a.pdf' }]
+
+    await store.startRun()
+
+    expect(runnerCtor).toHaveBeenCalledTimes(1)
+    expect(runnerStart).toHaveBeenCalledTimes(1)
+    expect(store.issues.some(i => i.code === 'model_missing')).toBe(false)
+  })
+
+  it('3. 模型已安裝 → 照常啟動', async () => {
+    seedModels([{ family: 'gemma4', variant: '4b:Q4_K_M', downloaded: true }])
+    const store = usePipelineStore()
+    store.recipe = translateRecipe()
+    store.inputFiles = [{ fileId: 'f1', filename: 'a.pdf' }]
+
+    await store.startRun()
+
+    expect(runnerCtor).toHaveBeenCalledTimes(1)
+    expect(runnerStart).toHaveBeenCalledTimes(1)
+    expect(store.issues.some(i => i.code === 'model_missing')).toBe(false)
+  })
+
+  it('4. 無 modelRequirement 的節點（video.cut）→ 不受影響，照常啟動', async () => {
+    seedModels([])
+    const store = usePipelineStore()
+    store.recipe = cutRecipe()
+    store.inputFiles = [{ fileId: 'f1', filename: 'a.mp4' }]
+
+    await store.startRun()
+
+    expect(runnerCtor).toHaveBeenCalledTimes(1)
+    expect(runnerStart).toHaveBeenCalledTimes(1)
+    expect(store.issues.some(i => i.code === 'model_missing')).toBe(false)
+  })
+
+  it('5. model_missing 後補裝再 startRun → 過（issues 清除）', async () => {
+    const modelStore = useModelStore()
+    modelStore.models = [{ family: 'gemma4', variant: '4b:Q4_K_M', downloaded: false }] as never
+    modelStore.loaded = true
+    const store = usePipelineStore()
+    store.recipe = translateRecipe()
+    store.inputFiles = [{ fileId: 'f1', filename: 'a.pdf' }]
+
+    await store.startRun()
+    expect(store.issues.some(i => i.code === 'model_missing')).toBe(true)
+    expect(runnerCtor).not.toHaveBeenCalled()
+
+    // 補裝
+    modelStore.models = [{ family: 'gemma4', variant: '4b:Q4_K_M', downloaded: true }] as never
+
+    await store.startRun()
+    expect(store.issues.some(i => i.code === 'model_missing')).toBe(false)
+    expect(runnerCtor).toHaveBeenCalledTimes(1)
+  })
+
+  it('6. video.summary（只定義複數 modelRequirements，無單數 modelRequirement）：其中一道 ' +
+    '（whisper，variant 型）未就緒 → startRun 不啟動、model_missing 含 label（variant 後援非空，I1 修復）', async () => {
+    // llm_remote:true 排除 llm req、align/vocal_separation 預設 false、vlm 未給值 → reqs 只剩 whisper 一道
+    seedModels([]) // 空清單 → whisper（variant 'medium'）必然未就緒
+    const store = usePipelineStore()
+    store.recipe = summaryRecipe({ llm_remote: true })
+    store.inputFiles = [{ fileId: 'f1', filename: 'a.mp4' }]
+
+    await store.startRun()
+
+    expect(runnerCtor).not.toHaveBeenCalled()
+    const missing = store.issues.filter(i => i.code === 'model_missing')
+    expect(missing).toHaveLength(1)
+    expect(missing[0].nodeId).toBe('n2')
+    // label 用 req.variant 後援（family/size/quantization 皆空）,不得是空字串
+    expect(missing[0].message).toContain('medium')
+    expect(missing[0].message).not.toMatch(/model\s*\(not installed\)/) // 排除「label 為空」退化情形
+  })
+
+  it('7. video.summary categories-only 型需求（align）未就緒 → model_missing label 用 categories 後援（非空）', async () => {
+    // whisper 已裝妥（variant 命中）、align 未裝（無 alignment 分類模型）→ 僅 align 一道 missing
+    seedModels([{ family: 'x', variant: 'medium', downloaded: true, category: 'stt' } as never])
+    const store = usePipelineStore()
+    store.recipe = summaryRecipe({ llm_remote: true, align: true })
+    store.inputFiles = [{ fileId: 'f1', filename: 'a.mp4' }]
+
+    await store.startRun()
+
+    expect(runnerCtor).not.toHaveBeenCalled()
+    const missing = store.issues.filter(i => i.code === 'model_missing')
+    expect(missing).toHaveLength(1)
+    expect(missing[0].nodeId).toBe('n2')
+    expect(missing[0].message).toContain('alignment')
+  })
+
+  it('8. video.summary 複數需求全部已就緒 → 照常啟動', async () => {
+    seedModels([{ family: 'x', variant: 'medium', downloaded: true, category: 'stt' } as never])
+    const store = usePipelineStore()
+    store.recipe = summaryRecipe({ llm_remote: true })
+    store.inputFiles = [{ fileId: 'f1', filename: 'a.mp4' }]
+
+    await store.startRun()
+
+    expect(runnerCtor).toHaveBeenCalledTimes(1)
+    expect(runnerStart).toHaveBeenCalledTimes(1)
+    expect(store.issues.some(i => i.code === 'model_missing')).toBe(false)
+  })
+
+  it('canRun 不因 model_missing 被永久鎖死（結構合法時恆 true，供重按執行）', async () => {
+    seedModels([{ family: 'gemma4', variant: '4b:Q4_K_M', downloaded: false }])
+    const store = usePipelineStore()
+    store.recipe = translateRecipe()
+    store.inputFiles = [{ fileId: 'f1', filename: 'a.pdf' }]
+
+    expect(store.canRun).toBe(true)
+    await store.startRun()
+    expect(store.issues.some(i => i.code === 'model_missing')).toBe(true)
+    // 執行鈕仍可再按（canRun 不看 modelIssues）
+    expect(store.canRun).toBe(true)
+  })
+})
