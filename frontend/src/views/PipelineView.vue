@@ -14,12 +14,18 @@ import { useToast } from '@/composables/useToast'
 import { TOOL_REGISTRY, listToolSpecs } from '@/pipeline/registry'
 import type { RecipeNode } from '@/pipeline/types'
 import PipelineParamForm from '@/components/pipeline/PipelineParamForm.vue'
+import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 
 const { t } = useI18n()
 const store = usePipelineStore()
 const filesStore = useFilesStore()
 const toast = useToast()
-const { screenToFlowCoordinate, fitView, onPaneReady } = useVueFlow()
+const { screenToFlowCoordinate, fitView, onPaneReady, viewport } = useVueFlow()
+
+// 底部資訊列：目前縮放百分比（viewport 響應 pan/zoom；形狀沿 ImageView 的 imageInfoItems）
+const canvasInfoItems = computed<InfoItem[]>(() => [
+  { icon: 'bi-zoom-in', label: `${Math.round(viewport.value.zoom * 100)}%` },
+])
 
 // fitView 在節點少時會把 zoom 拉滿填畫布（1-2 個節點時看起來巨大）——
 // maxZoom:1 讓「置中」不「放大」；使用者仍可手動 zoom（受 VueFlow 預設上限）
@@ -310,9 +316,10 @@ async function onOpen(id: string) {
       </div>
     </template>
 
-    <!-- 中:畫布（wrapper 承接 drop handler + issue-bar 錨點 — spec §3.3） -->
+    <!-- 中:畫布（wrapper 承接 drop handler；canvas-flow 為 issue-bar 錨點 — spec §3.3） -->
     <template #center>
       <div class="canvas-wrap" @drop.prevent="onCanvasDrop" @dragover.prevent>
+        <div class="canvas-flow">
         <VueFlow
           :nodes="flowNodes"
           :edges="flowEdges"
@@ -363,6 +370,10 @@ async function onOpen(id: string) {
           <i class="bi bi-exclamation-triangle me-1"></i>{{ store.errors[0].message }}
           <span v-if="store.errors.length > 1" class="issue-more">+{{ store.errors.length - 1 }}</span>
         </div>
+        </div>
+
+        <!-- 底部資訊列：目前縮放（沿其他工具 preview info bar 慣例） -->
+        <AppMediaInfoBar :items="canvasInfoItems" />
       </div>
     </template>
 
@@ -495,6 +506,13 @@ async function onOpen(id: string) {
 
 // 中欄 wrapper：撐滿（少 flex:1 → VueFlow height:100% 解析成 0）+ issue-bar 錨點
 .canvas-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+// 畫布本體＋issue-bar 錨點；資訊列在其下方常駐（不被 issue-bar 蓋住）
+.canvas-flow {
   flex: 1;
   min-height: 0;
   position: relative;
