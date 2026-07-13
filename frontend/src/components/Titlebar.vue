@@ -45,6 +45,12 @@ const pageTitle = computed(() => {
     const toolName = t(toolKey)
     return activeFileName.value ? `${toolName} - ${activeFileName.value}` : toolName
   }
+  // 流程頁：同工具頁「頁名 - 名稱」組法（名稱=PipelineView 設的流程名/未命名），
+  // 但不進 toolTitleKeys——isToolPage 會帶出 undo/redo 等流程頁沒註冊的按鈕
+  if (route.path === '/pipeline') {
+    const base = t('nav.pipeline')
+    return activeFileName.value ? `${base} - ${activeFileName.value}` : base
+  }
   const pageKey = pageTitleKeys[route.path]
   return pageKey ? t(pageKey) : ''
 })

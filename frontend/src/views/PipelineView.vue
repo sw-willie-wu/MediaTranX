@@ -4,7 +4,7 @@
  * recipe（store）是唯一事實來源;Vue Flow nodes/edges 由 recipe 派生,
  * 拖曳/連線事件寫回 store。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Handle, Position, VueFlow, useVueFlow, type Connection, type NodeDragEvent } from '@vue-flow/core'
 import AppThreePaneLayout from '@/components/common/AppThreePaneLayout.vue'
@@ -15,6 +15,7 @@ import { TOOL_REGISTRY, listToolSpecs } from '@/pipeline/registry'
 import type { RecipeNode } from '@/pipeline/types'
 import PipelineParamForm from '@/components/pipeline/PipelineParamForm.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
+import { useTitlebar } from '@/composables/useTitlebar'
 
 const { t } = useI18n()
 const store = usePipelineStore()
@@ -249,6 +250,15 @@ watch(() => store.recipe.nodes.length, () => {
 // ── 持久化 UI ─────────────────────────────────────────────────────
 const recipeName = ref('')
 const saving = ref(false)
+
+// ── Titlebar：設「名稱」部分（未命名 fallback）；「流程 - 」前綴由
+//    Titlebar.vue 的 /pipeline 分支組（同工具頁「頁名 - 檔名」慣例）。
+//    其他工具頁由 ToolLayout 設檔名；本頁用 AppThreePaneLayout 無此機制。─────
+const { setFileName, clearFileName } = useTitlebar()
+const titlebarText = computed(() => recipeName.value.trim() || t('pipeline.titlebar_unnamed'))
+watch(titlebarText, (v) => setFileName(v), { immediate: true })
+onActivated(() => setFileName(titlebarText.value)) // KeepAlive 切回時恢復
+onDeactivated(clearFileName) // 離頁清掉，讓下一頁的 ToolLayout 接手
 
 onMounted(() => { void store.loadRecipeList() })
 
