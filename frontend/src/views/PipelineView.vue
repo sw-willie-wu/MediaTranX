@@ -79,11 +79,21 @@ const flowNodes = computed(() =>
       titleAttr: n.kind === 'input' && store.inputFiles.length
         ? store.inputFiles.map(f => f.filename).join('\n') : undefined,
       hasError: store.errors.some(i => i.nodeId === n.id),
-      agg: nodeAgg(n.id),
+      runState: nodeRunState(n.id),
       selected: store.selectedNodeId === n.id,
     },
   })),
 )
+
+// 節點執行狀態視覺：running（脈動外框）> failed（紅底）> done（綠底）；無 run 快照＝null
+function nodeRunState(nodeId: string): 'running' | 'failed' | 'done' | null {
+  const agg = nodeAgg(nodeId)
+  if (!agg) return null
+  if (agg.active) return 'running'
+  if (agg.failed > 0) return 'failed'
+  if (agg.total > 0 && agg.done === agg.total) return 'done'
+  return null
+}
 
 const flowEdges = computed(() =>
   store.recipe.edges.map((e) => ({
@@ -321,6 +331,9 @@ async function onOpen(id: string) {
                 'is-source': data.kind === 'source',
                 'has-error': data.hasError,
                 'is-selected': data.selected,
+                'is-running': data.runState === 'running',
+                'is-run-failed': data.runState === 'failed',
+                'is-run-done': data.runState === 'done',
               }"
               :title="data.titleAttr"
             >
@@ -340,10 +353,6 @@ async function onOpen(id: string) {
               <div class="p-node-title">
                 <i :class="['bi', data.kind === 'input' ? 'bi-folder2-open' : data.kind === 'source' ? 'bi-cloud-download' : 'bi-gear']"></i>
                 {{ data.label }}
-              </div>
-              <div v-if="data.agg" class="p-node-status" :class="{ failed: data.agg.failed > 0, active: data.agg.active }">
-                {{ data.agg.done }}/{{ data.agg.total }}
-                <span v-if="data.agg.failed > 0">({{ data.agg.failed }}✗)</span>
               </div>
             </div>
           </template>
@@ -572,6 +581,26 @@ async function onOpen(id: string) {
   &.is-source { border-color: #2aa198; }
   &.has-error { border-color: var(--color-danger, #dc3545); }
   &.is-selected { box-shadow: 0 0 0 2px var(--color-primary); }
+
+  // 執行狀態視覺（run 快照驅動；流程線不動）——tint 疊在 panel 底色上，深淺主題皆可讀
+  &.is-run-done {
+    background: color-mix(in srgb, var(--color-success) 22%, var(--panel-bg-active, rgba(255,255,255,0.06)));
+    border-color: var(--color-success);
+  }
+  &.is-run-failed {
+    background: color-mix(in srgb, var(--color-danger) 22%, var(--panel-bg-active, rgba(255,255,255,0.06)));
+    border-color: var(--color-danger);
+  }
+  &.is-running {
+    border-color: var(--color-primary);
+    animation: p-node-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+// 執行中外框脈動（box-shadow 擴散淡出；持續動畫非 transition，沿執行中流光先例）
+@keyframes p-node-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 55%, transparent); }
+  50%      { box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-primary) 8%, transparent); }
 }
 .p-node-title { display: flex; align-items: center; gap: 0.4rem; }
 // hover 顯示的移除 badge（樣式沿 AppFilmstrip 移除鈕慣例）
@@ -604,10 +633,5 @@ async function onOpen(id: string) {
 .p-node:hover .p-node-remove {
   opacity: 1;
   pointer-events: auto;
-}
-.p-node-status {
-  margin-top: 0.3rem; font-size: 0.7rem; color: var(--text-muted);
-  &.active { color: var(--color-primary); }
-  &.failed { color: var(--color-danger, #dc3545); }
 }
 </style>
