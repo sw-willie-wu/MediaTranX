@@ -656,10 +656,13 @@ const dispatchers: Record<string, (args: any, ctx: DispatchCtx) => Promise<ToolR
       if (run_id) {
         const { usePipelineStore } = await import('@/stores/pipeline')
         const pipeline = usePipelineStore()
-        if (pipeline.currentRunId !== run_id || !pipeline.runSnapshot) {
+        // 跨全部分頁解析 run_id——currentRunId 代理只看 active doc，使用者
+        // 切分頁後 agent 的 run 就查不到了（spec §5.4）
+        const doc = pipeline.findRunDoc(run_id)
+        if (!doc?.runSnapshot) {
           return { error: 'agent.error.tool_failed', detail: `run ${run_id} not found` }
         }
-        const snap = pipeline.runSnapshot
+        const snap = doc.runSnapshot
         return {
           ok: true,
           run: {
@@ -742,13 +745,11 @@ const dispatchers: Record<string, (args: any, ctx: DispatchCtx) => Promise<ToolR
         }
       }
       const pipeline = usePipelineStore()
-      if (pipeline.running) return { error: 'agent.error.pipeline_busy' }
-      pipeline.recipe = recipe
-      pipeline.currentRecipeId = null
-      pipeline.selectedNodeId = null
-      // 清掉舊 run 狀態,避免 get_task_status(舊 run_id) 讀到過期快照
-      pipeline.currentRunId = null
-      pipeline.runSnapshot = null
+      // adoptDraft（spec §5.4）：blank active 重用（原地新文件全重置）、否則開新
+      // 分頁 focus-first——永不覆蓋使用者的非空分頁。busy gate 不需要：草稿走新
+      // 分頁，任何時候都不碰跑中的 doc。
+      const adopted = pipeline.adoptDraft(recipe, name ?? '')
+      if (!adopted.ok) return { error: 'agent.error.tool_failed', detail: 'tab_limit_reached' }
       const router = await resolveRouter()
       await router.push('/pipeline')
       return { ok: true, node_count: recipe.nodes.length, edge_count: recipe.edges.length }
@@ -768,7 +769,9 @@ const dispatchers: Record<string, (args: any, ctx: DispatchCtx) => Promise<ToolR
       if (ctx.signal?.aborted) return { error: 'agent.error.aborted' }
       const { usePipelineStore } = await import('@/stores/pipeline')
       const pipeline = usePipelineStore()
-      if (pipeline.running) return { error: 'agent.error.pipeline_busy' }
+      // busy 判準＝全域 runningDocId（任一分頁在跑）。舊 pipeline.running 只看
+      // active doc——他頁在跑時會 fall through 到誤導的 pipeline_not_ready
+      if (pipeline.runningDocId !== null) return { error: 'agent.error.pipeline_busy' }
       if (input_file_ids && input_file_ids.length > 0) {
         const { getApiBase } = await import('@/composables/useApi')
         const resolved: Array<{ fileId: string; filename: string }> = []
