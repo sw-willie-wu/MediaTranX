@@ -30,6 +30,7 @@ interface Window {
     openExternal?: (url: string) => Promise<void>
     fileExists: (filePath: string) => Promise<boolean>
     readLocalFile: (filePath: string) => Promise<Uint8Array>
+    writeLocalFile: (filePath: string, data: string) => Promise<void>
     restart: () => void
     appVersion?: string | null
     updateChannel?: string | null

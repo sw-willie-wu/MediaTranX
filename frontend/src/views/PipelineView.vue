@@ -4,7 +4,7 @@
  * recipe（store）是唯一事實來源;Vue Flow nodes/edges 由 recipe 派生,
  * 拖曳/連線事件寫回 store。
  */
-import { computed, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Handle, Position, VueFlow, useVueFlow, type Connection, type NodeDragEvent } from '@vue-flow/core'
 import AppThreePaneLayout from '@/components/common/AppThreePaneLayout.vue'
@@ -18,6 +18,10 @@ import PipelineTabBar from '@/components/pipeline/PipelineTabBar.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import { useTitlebar } from '@/composables/useTitlebar'
 import { useSpaceHeld } from '@/composables/useSpaceHeld'
+import { isFlowFileName, sniffFlowText } from '@/pipeline/flowFile'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('PipelineView')
 
 const { t } = useI18n()
 const store = usePipelineStore()
@@ -190,7 +194,13 @@ function onPaletteDragStart(ev: DragEvent, toolKey: string) {
   ev.dataTransfer?.setData('application/mtx-tool', toolKey)
 }
 
-function onCanvasDrop(ev: DragEvent) {
+async function onCanvasDrop(ev: DragEvent) {
+  // 流程檔拖入（.mtxflow 直收、.json 靠內容 sniff）→ 開新分頁；非流程檔忽略
+  const file = ev.dataTransfer?.files?.[0]
+  if (file && (isFlowFileName(file.name) || file.name.toLowerCase().endsWith('.json'))) {
+    await importFlowFile(file)
+    return
+  }
   const toolKey = ev.dataTransfer?.getData('application/mtx-tool')
   if (!toolKey) return
   // screenToFlowCoordinate 吃 client 座標、自帶容器偏移與 pan/zoom 換算;
@@ -264,38 +274,112 @@ watch(() => store.activeDocId, () => {
   setTimeout(() => fitView(FIT_VIEW_OPTS), 50)
 })
 
-// ── 持久化 UI ─────────────────────────────────────────────────────
-const recipeName = ref('')
-const saving = ref(false)
-
 // ── Titlebar：設「名稱」部分（未命名 fallback）；「流程 - 」前綴由
 //    Titlebar.vue 的 /pipeline 分支組（同工具頁「頁名 - 檔名」慣例）。
 //    其他工具頁由 ToolLayout 設檔名；本頁用 AppThreePaneLayout 無此機制。─────
-const { setFileName, clearFileName } = useTitlebar()
-// 名稱源＝分頁名（doc.name 唯一權威名，spec §3）；recipeName 只剩 save-row 在用（Task 5 拆）
+const { setFileName, clearFileName, registerActions, clearActions } = useTitlebar()
+// 名稱源＝分頁名（doc.name 唯一權威名，spec §3）
 const titlebarText = computed(() => {
   const tab = store.tabs.find(x => x.active)
   return tab?.name?.trim() || t('pipeline.titlebar_unnamed')
 })
 watch(titlebarText, (v) => setFileName(v), { immediate: true })
-onActivated(() => setFileName(titlebarText.value)) // KeepAlive 切回時恢復
-onDeactivated(clearFileName) // 離頁清掉，讓下一頁的 ToolLayout 接手
 
-onMounted(() => { void store.loadRecipeList() })
+// Titlebar 軟碟鈕＝匯出流程檔。KeepAlive 下必須四鉤（同 ImageView 慣例）：
+// 只掛 onMounted 第二次進頁按鈕會失效、clear 時序不對會蓋掉下一頁的註冊。
+function registerTitlebar() {
+  registerActions({
+    canUndo: () => false,
+    canRedo: () => false,
+    canSaveAs: () => !store.isBlankDoc(),
+    onUndo: () => {},
+    onRedo: () => {},
+    onSaveAs: () => { void handleExport() },
+  })
+}
+onActivated(() => { registerTitlebar(); setFileName(titlebarText.value); consumePendingImport() })
+onDeactivated(() => { clearActions(); clearFileName() })
+onMounted(() => { registerTitlebar(); void store.loadRecipeList(); consumePendingImport() })
+onUnmounted(() => { clearActions() })
 
-watch(() => store.recipe.name, (n) => { recipeName.value = n }, { immediate: true })
+// ── 匯出（spec §4.1）──────────────────────────────────────────────
+async function handleExport(): Promise<void> {
+  const json = store.exportCurrent()
+  // 與 onAddFavorite 同名稱源：原始分頁名，未命名 fallback 統一 pipeline.unnamed
+  const stem = store.tabs.find(x => x.active)?.name?.trim() || t('pipeline.unnamed')
+  const name = `${stem}.mtxflow`
+  if (window.electron?.saveFileDialog && window.electron?.writeLocalFile) {
+    const dest = await window.electron.saveFileDialog({
+      title: t('common.save'),
+      defaultPath: name,
+      filters: [{ name: 'MediaTranX Flow', extensions: ['mtxflow'] }],
+    })
+    if (!dest) return                       // 使用者取消≠失敗，靜默（spec §7）
+    try {
+      await window.electron.writeLocalFile(dest, json)
+      toast.show(t('toast.saved'), { type: 'success', icon: 'bi-check-circle' })
+    } catch (e) {
+      log.error('export flow failed', e)
+      toast.show(t('toast.save_failed'), { type: 'error', icon: 'bi-x-circle' })
+    }
+    return
+  }
+  // 瀏覽器 fallback：blob 下載
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
-async function onSave() {
-  const name = recipeName.value.trim() || t('pipeline.unnamed')
-  saving.value = true
+// ── 匯入（spec §4.2）＋常用（spec §5.5）───────────────────────────
+const importInputRef = ref<HTMLInputElement | null>(null)
+
+function stemOf(filename: string): string {
+  return filename.replace(/\.[^.]+$/, '')
+}
+
+async function importFlowFile(file: File): Promise<void> {
+  const text = await file.text()
+  if (!isFlowFileName(file.name) && !sniffFlowText(text)) return   // .json 非流程檔忽略
+  const r = store.importRecipe(text, stemOf(file.name))
+  if (!r.ok) {
+    const key = r.error === 'tab_limit' ? 'pipeline.tab_limit'
+      : r.error === 'version_too_new' ? 'pipeline.import_version_new' : 'pipeline.import_bad_file'
+    toast.show(t(key), { type: 'error', icon: 'bi-x-circle' })
+  }
+}
+
+async function onImportPicked(e: Event) {
+  const input = e.target as HTMLInputElement
+  const f = input.files?.[0]
+  input.value = ''
+  if (f) await importFlowFile(f)
+}
+
+// 工具頁拖入流程檔 → 轉頁帶檔（spec §4.3）；撿走即清防 KeepAlive 重複匯入
+function consumePendingImport() {
+  const p = store.pendingImport
+  if (!p) return
+  store.setPendingImport(null)
+  const r = store.importRecipe(p.text, p.fallbackName)
+  if (!r.ok) {
+    const key = r.error === 'tab_limit' ? 'pipeline.tab_limit'
+      : r.error === 'version_too_new' ? 'pipeline.import_version_new' : 'pipeline.import_bad_file'
+    toast.show(t(key), { type: 'error', icon: 'bi-x-circle' })
+  }
+}
+
+async function onAddFavorite() {
+  // 取原始分頁名（titlebarText 帶「未命名」fallback，會蓋掉這裡的 unnamed 預設）
+  const name = store.tabs.find(x => x.active)?.name?.trim() || t('pipeline.unnamed')
   const ok = await store.saveCurrent(name)
-  saving.value = false
   toast.show(ok ? t('pipeline.saved') : t('toast.save_failed'),
     { type: ok ? 'success' : 'error', icon: ok ? 'bi-check-circle' : 'bi-x-circle' })
 }
 
 function onNewTab() {
-  // 新分頁的 recipe.name 為空 → 既有 watch 會同步清 recipeName，這裡不必手動清
   if (store.newDoc() === null) {
     toast.show(t('pipeline.tab_limit'), { type: 'error', icon: 'bi-x-circle' })
   }
@@ -344,6 +428,13 @@ async function onOpen(id: string) {
           <button class="palette-item" @click="onNewTab">
             <i class="bi bi-file-earmark-plus me-1"></i>{{ t('pipeline.new_recipe') }}
           </button>
+          <button class="palette-item" @click="importInputRef?.click()">
+            <i class="bi bi-box-arrow-in-down me-1"></i>{{ t('pipeline.import_flow') }}
+          </button>
+          <button class="palette-item" :disabled="store.isBlankDoc()" @click="onAddFavorite">
+            <i class="bi bi-star me-1"></i>{{ t('pipeline.add_favorite') }}
+          </button>
+          <input ref="importInputRef" type="file" accept=".mtxflow,.json" hidden @change="onImportPicked" />
           <div v-for="r in store.savedRecipes" :key="r.id" class="saved-row">
             <button class="palette-item saved-item" :class="{ current: r.id === store.currentRecipeId }" @click="onOpen(r.id)">
               <i class="bi bi-diagram-3 me-1"></i>{{ r.name || t('pipeline.unnamed') }}
@@ -447,17 +538,6 @@ async function onOpen(id: string) {
 
       <!-- run 控制 -->
       <div class="run-bar">
-        <div class="save-row">
-          <input
-            v-model="recipeName"
-            class="save-name"
-            :placeholder="t('pipeline.recipe_name_placeholder')"
-            :disabled="store.running"
-          />
-          <button class="save-btn" :disabled="saving || store.running" @click="onSave">
-            <i class="bi bi-save"></i>
-          </button>
-        </div>
         <div v-if="rootIsInput" class="run-files">
           <button class="run-files-btn" :disabled="uploading || store.running" @click="fileInputRef?.click()">
             <i class="bi bi-file-earmark-plus me-1"></i>
@@ -615,20 +695,6 @@ async function onOpen(id: string) {
   i { cursor: pointer; &:hover { color: var(--color-danger, #dc3545); } }
 }
 .run-status { font-size: 0.78rem; color: var(--text-muted); }
-.save-row { display: flex; gap: 0.4rem; }
-.save-name {
-  flex: 1; padding: 0.35rem 0.5rem;
-  background: var(--input-bg); border: 1px solid var(--panel-border);
-  border-radius: 6px; color: var(--text-primary);
-  font-size: 0.82rem; font-family: inherit;
-}
-.save-btn {
-  padding: 0.35rem 0.6rem;
-  background: transparent; border: 1px solid var(--panel-border);
-  border-radius: 6px; color: var(--text-muted); cursor: pointer;
-  &:hover:not(:disabled) { color: var(--text-primary); }
-  &:disabled { opacity: 0.5; }
-}
 .saved-group { margin-top: 1rem; }
 .saved-row { display: flex; align-items: center; gap: 2px; }
 .saved-item { flex: 1; &.current { color: var(--text-primary); background: var(--panel-bg-active); } }

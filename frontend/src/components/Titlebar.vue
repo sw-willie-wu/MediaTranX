@@ -24,6 +24,7 @@ const { activeFileName, canUndo, canRedo, canSaveAs, undo, redo, saveAs, extraAc
 const isElectron = !!window.electron
 
 const isToolPage = computed(() => !!toolTitleKeys[route.path])
+const isPipelinePage = computed(() => route.path === '/pipeline')
 
 // 工具頁路徑
 const toolTitleKeys: Record<string, string> = {
@@ -110,10 +111,10 @@ onMounted(async () => {
     <div v-if="pageTitle" class="app-title-wrap">
       <span class="app-title">{{ pageTitle }}</span>
       <TitlebarButton
-        v-if="isToolPage && canSaveAs"
+        v-if="(isToolPage || isPipelinePage) && canSaveAs"
         class="title-save"
         icon="bi-floppy"
-        :tooltip="$t('titlebar.save_as')"
+        :tooltip="isPipelinePage ? $t('pipeline.export_flow') : $t('titlebar.save_as')"
         @click="saveAs"
       />
     </div>
