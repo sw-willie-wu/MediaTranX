@@ -98,6 +98,11 @@ export default {
     saved: '流程已儲存',
     open_failed: '流程載入失敗',
     tab_limit: '分頁已達上限（8），請先關閉部分分頁',
+    tab_new: '新分頁',
+    tab_close: '關閉分頁',
+    tab_close_confirm: '關閉後未儲存的內容會消失，確定關閉？',
+    tab_running_no_close: '執行中，請先停止',
+    run_busy_other_tab: '另一分頁執行中',
     status: {
       idle: '待命',
       running: '執行中',

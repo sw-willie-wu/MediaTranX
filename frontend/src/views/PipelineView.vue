@@ -14,6 +14,7 @@ import { useToast } from '@/composables/useToast'
 import { TOOL_REGISTRY, listToolSpecs } from '@/pipeline/registry'
 import type { RecipeNode } from '@/pipeline/types'
 import PipelineParamForm from '@/components/pipeline/PipelineParamForm.vue'
+import PipelineTabBar from '@/components/pipeline/PipelineTabBar.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import { useTitlebar } from '@/composables/useTitlebar'
 import { useSpaceHeld } from '@/composables/useSpaceHeld'
@@ -256,6 +257,13 @@ watch(() => store.recipe.nodes.length, () => {
   }
 })
 
+// 切分頁：清工具預覽＋fitView——VueFlow 單一實例，pan/zoom 會殘留上一頁，
+// 不 fit 的話新頁節點可能整批在畫面外（spec §3）
+watch(() => store.activeDocId, () => {
+  previewToolKey.value = null
+  setTimeout(() => fitView(FIT_VIEW_OPTS), 50)
+})
+
 // ── 持久化 UI ─────────────────────────────────────────────────────
 const recipeName = ref('')
 const saving = ref(false)
@@ -264,7 +272,11 @@ const saving = ref(false)
 //    Titlebar.vue 的 /pipeline 分支組（同工具頁「頁名 - 檔名」慣例）。
 //    其他工具頁由 ToolLayout 設檔名；本頁用 AppThreePaneLayout 無此機制。─────
 const { setFileName, clearFileName } = useTitlebar()
-const titlebarText = computed(() => recipeName.value.trim() || t('pipeline.titlebar_unnamed'))
+// 名稱源＝分頁名（doc.name 唯一權威名，spec §3）；recipeName 只剩 save-row 在用（Task 5 拆）
+const titlebarText = computed(() => {
+  const tab = store.tabs.find(x => x.active)
+  return tab?.name?.trim() || t('pipeline.titlebar_unnamed')
+})
 watch(titlebarText, (v) => setFileName(v), { immediate: true })
 onActivated(() => setFileName(titlebarText.value)) // KeepAlive 切回時恢復
 onDeactivated(clearFileName) // 離頁清掉，讓下一頁的 ToolLayout 接手
@@ -342,8 +354,9 @@ async function onOpen(id: string) {
       </div>
     </template>
 
-    <!-- 中:畫布（wrapper 承接 drop handler；canvas-flow 為 issue-bar 錨點 — spec §3.3） -->
+    <!-- 中:分頁列＋畫布（wrapper 承接 drop handler；canvas-flow 為 issue-bar 錨點 — spec §3.3） -->
     <template #center>
+      <PipelineTabBar />
       <div class="canvas-wrap" @drop.prevent="onCanvasDrop" @dragover.prevent>
         <div class="canvas-flow" :class="{ 'space-pan': isSpaceHeld }">
         <!-- 互動慣例（全 app 統一）：左鍵拖=選取框、Space+左鍵/中鍵/右鍵拖=平移。
@@ -467,6 +480,7 @@ async function onOpen(id: string) {
           v-if="!store.running"
           class="run-btn"
           :disabled="!store.canRun"
+          :title="!store.canRun && store.runningDocId ? t('pipeline.run_busy_other_tab') : undefined"
           @click="store.startRun()"
         >
           <i class="bi bi-play-fill me-1"></i>{{ t('pipeline.run') }}

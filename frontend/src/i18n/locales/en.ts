@@ -98,6 +98,11 @@ export default {
     saved: 'Pipeline saved',
     open_failed: 'Failed to open pipeline',
     tab_limit: 'Tab limit (8) reached — close some tabs first',
+    tab_new: 'New tab',
+    tab_close: 'Close tab',
+    tab_close_confirm: 'Unsaved changes will be lost. Close this tab?',
+    tab_running_no_close: 'Running — stop it first',
+    run_busy_other_tab: 'Another tab is running',
     status: {
       idle: 'Idle',
       running: 'Running',
