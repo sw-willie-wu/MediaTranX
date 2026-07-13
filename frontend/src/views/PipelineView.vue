@@ -52,6 +52,20 @@ function toggleSection(id: string) {
 }
 
 // ── recipe → Vue Flow 派生 ────────────────────────────────────────
+/** 中段省略保留結尾（含副檔名）：verylongname_v2.jpg → verylo…e_v2.jpg */
+function truncateMiddle(name: string, max = 18): string {
+  if (name.length <= max) return name
+  return `${name.slice(0, max - 9)}…${name.slice(-8)}`
+}
+
+// 輸入節點的顯示文字＝檔案選取狀態（空→「選取檔案」；有→檔名，多檔加 +N）
+const inputNodeLabel = computed(() => {
+  const files = store.inputFiles
+  if (!files.length) return t('pipeline.input_pick')
+  const name = truncateMiddle(files[0].filename)
+  return files.length > 1 ? `${name} +${files.length - 1}` : name
+})
+
 const flowNodes = computed(() =>
   store.recipe.nodes.map((n) => ({
     id: n.id,
@@ -60,7 +74,10 @@ const flowNodes = computed(() =>
     data: {
       kind: n.kind,
       toolKey: n.toolKey,
-      label: n.kind === 'input' ? t('pipeline.input_node') : t(TOOL_REGISTRY[n.toolKey!]?.labelKey ?? n.toolKey!),
+      label: n.kind === 'input' ? inputNodeLabel.value : t(TOOL_REGISTRY[n.toolKey!]?.labelKey ?? n.toolKey!),
+      // 省略後 hover 可看全名（多檔逐行列出）
+      titleAttr: n.kind === 'input' && store.inputFiles.length
+        ? store.inputFiles.map(f => f.filename).join('\n') : undefined,
       hasError: store.errors.some(i => i.nodeId === n.id),
       agg: nodeAgg(n.id),
       selected: store.selectedNodeId === n.id,
@@ -106,6 +123,9 @@ function onNodeDragStop(e: NodeDragEvent) {
 function onNodeClick(e: { node: { id: string } }) {
   previewToolKey.value = null
   store.selectedNodeId = e.node.id
+  // 輸入節點：點擊直接開檔案總管選檔（拖曳移動不觸發 node-click，VueFlow 已區分）
+  const node = store.recipe.nodes.find(n => n.id === e.node.id)
+  if (node?.kind === 'input' && !store.running && !uploading.value) fileInputRef.value?.click()
 }
 
 // ── 節點盤預覽:點工具名只在右欄看/調選項,按「+」才真正加到畫布 ──────
@@ -293,6 +313,7 @@ async function onOpen(id: string) {
                 'has-error': data.hasError,
                 'is-selected': data.selected,
               }"
+              :title="data.titleAttr"
             >
               <Handle v-if="data.kind === 'tool'" type="target" :position="Position.Left" />
               <Handle type="source" :position="Position.Right" />
@@ -525,7 +546,8 @@ async function onOpen(id: string) {
   color: var(--text-primary);
   font-size: 0.8rem;
 
-  &.is-input { border-color: var(--color-primary); }
+  // 輸入節點可點選檔——手型提示可互動（拖曳移動仍由 VueFlow 處理）
+  &.is-input { border-color: var(--color-primary); cursor: pointer; }
   &.is-source { border-color: #2aa198; }
   &.has-error { border-color: var(--color-danger, #dc3545); }
   &.is-selected { box-shadow: 0 0 0 2px var(--color-primary); }
