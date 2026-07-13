@@ -379,12 +379,6 @@ async function onAddFavorite() {
     { type: ok ? 'success' : 'error', icon: ok ? 'bi-check-circle' : 'bi-x-circle' })
 }
 
-function onNewTab() {
-  if (store.newDoc() === null) {
-    toast.show(t('pipeline.tab_limit'), { type: 'error', icon: 'bi-x-circle' })
-  }
-}
-
 async function onOpen(id: string) {
   const before = store.tabs.length
   const docId = await store.openRecipeInTab(id)
@@ -425,9 +419,6 @@ async function onOpen(id: string) {
           <i class="bi" :class="isSectionOpen('__saved') ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
         </button>
         <template v-if="isSectionOpen('__saved')">
-          <button class="palette-item" @click="onNewTab">
-            <i class="bi bi-file-earmark-plus me-1"></i>{{ t('pipeline.new_recipe') }}
-          </button>
           <button class="palette-item" @click="importInputRef?.click()">
             <i class="bi bi-box-arrow-in-down me-1"></i>{{ t('pipeline.import_flow') }}
           </button>

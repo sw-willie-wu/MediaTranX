@@ -92,7 +92,6 @@ export default {
       vad_threshold: 'VAD 閾值',
     },
     saved_recipes: '常用流程',
-    new_recipe: '新流程',
     unnamed: '未命名流程',
     saved: '流程已儲存',
     open_failed: '流程載入失敗',

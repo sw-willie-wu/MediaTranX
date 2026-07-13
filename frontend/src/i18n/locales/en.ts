@@ -92,7 +92,6 @@ export default {
       vad_threshold: 'VAD threshold',
     },
     saved_recipes: 'Favorite flows',
-    new_recipe: 'New pipeline',
     unnamed: 'Untitled pipeline',
     saved: 'Pipeline saved',
     open_failed: 'Failed to open pipeline',
