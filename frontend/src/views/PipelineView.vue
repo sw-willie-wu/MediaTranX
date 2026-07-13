@@ -419,13 +419,6 @@ async function onOpen(id: string) {
           <i class="bi" :class="isSectionOpen('__saved') ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
         </button>
         <template v-if="isSectionOpen('__saved')">
-          <button class="palette-item" @click="importInputRef?.click()">
-            <i class="bi bi-box-arrow-in-down me-1"></i>{{ t('pipeline.import_flow') }}
-          </button>
-          <button class="palette-item" :disabled="store.isBlankDoc()" @click="onAddFavorite">
-            <i class="bi bi-star me-1"></i>{{ t('pipeline.add_favorite') }}
-          </button>
-          <input ref="importInputRef" type="file" accept=".mtxflow,.json" hidden @change="onImportPicked" />
           <div v-for="r in store.savedRecipes" :key="r.id" class="saved-row">
             <!-- 清單項純文字（對齊上方工具清單慣例）；圖示只留給動作鈕（匯入/新增常用） -->
             <button class="palette-item saved-item" :class="{ current: r.id === store.currentRecipeId }" @click="onOpen(r.id)">
@@ -434,6 +427,17 @@ async function onOpen(id: string) {
             <i class="bi bi-trash saved-del" @click="store.deleteRecipe(r.id)"></i>
           </div>
         </template>
+      </div>
+
+      <!-- 欄底固定動作列：匯入/新增常用（palette 捲動、此列不動——可發現性優先） -->
+      <div class="palette-footer" :class="{ locked: store.running }">
+        <button class="palette-footer-btn" @click="importInputRef?.click()">
+          <i class="bi bi-box-arrow-in-down me-1"></i>{{ t('pipeline.import_flow') }}
+        </button>
+        <button class="palette-footer-btn" :disabled="store.isBlankDoc()" @click="onAddFavorite">
+          <i class="bi bi-star me-1"></i>{{ t('pipeline.add_favorite') }}
+        </button>
+        <input ref="importInputRef" type="file" accept=".mtxflow,.json" hidden @change="onImportPicked" />
       </div>
     </template>
 
@@ -688,6 +692,28 @@ async function onOpen(id: string) {
 }
 .run-status { font-size: 0.78rem; color: var(--text-muted); }
 .saved-group { margin-top: 1rem; }
+// 欄底固定動作列（palette flex:1 捲動、本列 shrink:0 常駐）
+.palette-footer {
+  flex-shrink: 0;
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem 0.8rem;
+  border-top: 1px solid var(--panel-border);
+}
+.palette-footer-btn {
+  flex: 1;
+  padding: 0.4rem 0.3rem;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  &:hover:not(:disabled) { color: var(--text-primary); background: var(--panel-bg-hover); }
+  &:disabled { opacity: 0.45; cursor: default; }
+}
 .saved-row { display: flex; align-items: center; gap: 2px; }
 .saved-item { flex: 1; &.current { color: var(--text-primary); background: var(--panel-bg-active); } }
 .saved-del {
