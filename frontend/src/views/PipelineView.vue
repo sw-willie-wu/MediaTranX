@@ -427,8 +427,9 @@ async function onOpen(id: string) {
           </button>
           <input ref="importInputRef" type="file" accept=".mtxflow,.json" hidden @change="onImportPicked" />
           <div v-for="r in store.savedRecipes" :key="r.id" class="saved-row">
+            <!-- 清單項純文字（對齊上方工具清單慣例）；圖示只留給動作鈕（匯入/新增常用） -->
             <button class="palette-item saved-item" :class="{ current: r.id === store.currentRecipeId }" @click="onOpen(r.id)">
-              <i class="bi bi-diagram-3 me-1"></i>{{ r.name || t('pipeline.unnamed') }}
+              {{ r.name || t('pipeline.unnamed') }}
             </button>
             <i class="bi bi-trash saved-del" @click="store.deleteRecipe(r.id)"></i>
           </div>
