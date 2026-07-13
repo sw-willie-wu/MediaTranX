@@ -6,8 +6,8 @@ import { describe, it, expect } from 'vitest'
 import { META, parseTimeToSeconds, secondsToTime } from '../cut.meta'
 
 describe('video.cut META', () => {
-  it('defaults() 只含有 default 的欄位', () => {
-    expect(META.defaults()).toEqual({ stream_copy: true })
+  it('defaults() 只含有 default 的欄位（start_time=0 讓 pipeline 節點不缺鍵送 422；end_time 必填無 default）', () => {
+    expect(META.defaults()).toEqual({ start_time: 0, stream_copy: true })
   })
 
   describe('validate', () => {
