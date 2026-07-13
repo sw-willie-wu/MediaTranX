@@ -58,12 +58,13 @@ export const META: ToolParamMeta = {
   toolKey: 'video.subtitle',
   apiPath: '/video/subtitle/generate',
   labelKey: 'video.subtitle.task_label',
-  // 沿舊三處三名之一（frontend taskStore.addTask 的手寫字面值)——registry.ts 檔頭已註記
-  // toolKey('video.subtitle')≠後端 task_type('video.subtitle_generate')≠此值,三者故意不統一
-  // (地面實況核實,批 2 Task 2.5 brief)。SubtitlePanel.vue 的殼職責是「例外」,不經 ToolParamHost，
-  // 此欄位僅為滿足 ToolParamMeta 介面(taskType 必填)與未來若有東西讀 META.taskType 時的一致性,
-  // 目前無人消費(shell 自己 literal 'subtitle/generate',與此值相同、非透過本欄位)。
-  taskType: 'subtitle/generate',
+  // 命名統一小案 Task B（fix/tool-naming-unification）已把 toolKey/後端 task_type/前端
+  // taskStore.addTask 手寫值三處三名歸一為 'video.subtitle'（原本分別是 'video.subtitle'／
+  // 'video.subtitle_generate'／'subtitle/generate'，見 naming-recon.md §3）。SubtitlePanel.vue
+  // 的殼職責仍是「例外」,不經 ToolParamHost，此欄位僅為滿足 ToolParamMeta 介面(taskType 必填)；
+  // 舊 sqlite history 紀錄的 label fallback 相容靠 i18n tasks.types 的 legacy alias 兩鍵承接
+  // （'video.subtitle_generate'／'subtitle/generate'，見 zh-TW.ts/en.ts tasks.types 註解）。
+  taskType: 'video.subtitle',
   schema: [
     // ── 頂層：source_language/model_size/output_format（舊 panel top-level） ──────────
     { name: 'source_language', type: 'string' },

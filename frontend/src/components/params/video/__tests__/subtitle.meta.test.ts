@@ -104,7 +104,7 @@ describe('video.subtitle META', () => {
       })
       expect(spec.labelKey).toBe('video.subtitle.task_label')
       expect(spec.apiPath).toBe('/video/subtitle/generate')
-      expect(spec.taskType).toBe('subtitle/generate')
+      expect(spec.taskType).toBe('video.subtitle')
     })
 
     it('target_language 空字串 → 視同未啟用（不送 translate_*）', () => {

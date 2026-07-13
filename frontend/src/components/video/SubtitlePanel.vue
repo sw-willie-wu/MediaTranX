@@ -127,7 +127,7 @@ async function submitGenerate() {
     const label = t(spec.labelKey)
     taskStore.addTask({
       taskId: result.task_id,
-      taskType: 'subtitle/generate',
+      taskType: 'video.subtitle',
       status: 'pending',
       progress: 0,
       message: null,

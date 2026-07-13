@@ -176,7 +176,7 @@ describe('SubtitlePanel — submitGenerate() body 與舊等價（無翻譯）', 
     expect(addTaskMock).toHaveBeenCalledTimes(1)
     const addTaskArg = addTaskMock.mock.calls[0][0]
     expect(addTaskArg.taskId).toBe('task-1')
-    expect(addTaskArg.taskType).toBe('subtitle/generate')
+    expect(addTaskArg.taskType).toBe('video.subtitle')
     expect(addTaskArg.label).toBe('video.subtitle.task_label')
     expect(addTaskArg.fileName).toBe('video.mp4')
 

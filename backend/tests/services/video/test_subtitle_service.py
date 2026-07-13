@@ -12,7 +12,7 @@ from tests.conftest import make_file_service_mock, make_model_manager_mock
 from app.adapters.binary.ffmpeg import MediaInfo
 from app.services.video.subtitle_service import (
     SubtitleService,
-    TASK_TYPE_VIDEO_SUBTITLE_GENERATE,
+    TASK_TYPE_VIDEO_SUBTITLE,
 )
 
 PROGRESS_KEY = re.compile(r"^task\.progress\.[a-z_]+(\|.+)*$")
@@ -108,7 +108,7 @@ class TestInit:
             whisper=MagicMock(),
         )
         args, kwargs = tm.register_handler.call_args
-        assert args[0] == TASK_TYPE_VIDEO_SUBTITLE_GENERATE
+        assert args[0] == TASK_TYPE_VIDEO_SUBTITLE
         assert kwargs.get("output_policy") == "results"
 
 
@@ -133,7 +133,7 @@ class TestSubmit:
         )
         assert tid == "tid"
         args, _ = tm.submit.call_args
-        assert args[0] == TASK_TYPE_VIDEO_SUBTITLE_GENERATE
+        assert args[0] == TASK_TYPE_VIDEO_SUBTITLE
         assert args[1]["source_language"] == "en"
         assert args[1]["target_language"] == "zh-TW"
 

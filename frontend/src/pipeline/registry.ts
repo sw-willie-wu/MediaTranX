@@ -1,7 +1,7 @@
 /**
  * Tool registry — pipeline 節點白名單（25 工具 + 1 source）。
  * param_schema 以後端各 route 的 Pydantic request model 為準（欄位/預設值照抄;
- * file_id / suppress_results 不進 schema）。互動工具（ai-remove 畫遮罩／
+ * file_id / suppress_results 不進 schema）。互動工具（remove-object 畫遮罩／
  * subtitle 編輯燒錄流）與 multipart 的 audio.midi 不在白名單;cut/crop（影音圖）
  * 與字幕「提取」以面板數值入列（2026-07-07 User 決策,推翻 v1 傘型排除）。
  *
@@ -121,9 +121,8 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
 
   // paramSchema 由 META 組裝（統一參數元件案，批 2 Task 2.5——例外殼工具）:欄位定義唯一事實
   // 來源在 subtitle.meta.ts（含 glossary(dict)——v1 排除已於本 task 解禁加回,20 欄全集）。
-  // 註:toolKey 'video.subtitle' ≠ 後端 task_type 'video.subtitle_generate' ≠ 前端
-  // taskStore.addTask 手寫 taskType 'subtitle/generate' — 全 registry 唯一三名不同者;
-  // 無害(label 各路徑同字樣),別誤當 bug（見 subtitle.meta.ts META.taskType 註解）。
+  // 註:toolKey/後端 task_type/前端 taskStore.addTask 手寫值三處三名已於命名統一小案 Task B
+  // 歸一為 'video.subtitle'（見 subtitle.meta.ts META.taskType 註解＋naming-recon.md §3）。
   'video.subtitle': {
     toolKey: SUBTITLE_META.toolKey,
     apiPath: SUBTITLE_META.apiPath,

@@ -513,10 +513,10 @@ export default {
     loading: 'Loading image info...',
 
     functions: {
-      transcode: 'Transcode',
+      convert: 'Transcode',
       compress: 'Compress',
       remove_bg: 'Remove BG',
-      ai_remove: 'Object Remove',
+      remove_object: 'Object Remove',
       upscale: 'Upscale',
       adjust: 'Adjust',
       filter: 'Filters',
@@ -1496,7 +1496,12 @@ export default {
       'video.cut': 'Video · Cut',
       'video.crop': 'Video · Crop',
       'video.extract_audio': 'Video · Extract Audio',
+      'video.subtitle': 'Video · Subtitles',
+      // Naming-unification Task B (fix/tool-naming-unification) legacy alias: old sqlite
+      // task_history rows may store either legacy task_type value (same string as
+      // 'video.subtitle' above), kept for getTaskTypeLabel fallback lookup — do not remove.
       'video.subtitle_generate': 'Video · Subtitles',
+      'subtitle/generate': 'Video · Subtitles',
       'video.summary': 'Video · Summary',
       'video.download': 'Video · Download',
       'audio.transcode': 'Audio · Transcode',
