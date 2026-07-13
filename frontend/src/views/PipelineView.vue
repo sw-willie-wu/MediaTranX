@@ -19,7 +19,14 @@ const { t } = useI18n()
 const store = usePipelineStore()
 const filesStore = useFilesStore()
 const toast = useToast()
-const { screenToFlowCoordinate, fitView } = useVueFlow()
+const { screenToFlowCoordinate, fitView, onPaneReady } = useVueFlow()
+
+// fitView 在節點少時會把 zoom 拉滿填畫布（1-2 個節點時看起來巨大）——
+// maxZoom:1 讓「置中」不「放大」；使用者仍可手動 zoom（受 VueFlow 預設上限）
+const FIT_VIEW_OPTS = { padding: 0.25, maxZoom: 1 } as const
+
+// 取代 fit-view-on-init（boolean prop 吃不到 maxZoom 選項）
+onPaneReady(() => fitView(FIT_VIEW_OPTS))
 
 // ── 節點盤（依域分組）─────────────────────────────────────────────
 const paletteGroups = computed(() => {
@@ -151,7 +158,7 @@ function addByClick(toolKey: string) {
   }
   previewToolKey.value = null
   store.selectedNodeId = id
-  setTimeout(() => fitView({ padding: 0.25 }), 50)
+  setTimeout(() => fitView(FIT_VIEW_OPTS), 50)
 }
 
 // ── run 列:輸入檔 ─────────────────────────────────────────────────
@@ -215,7 +222,7 @@ async function onOpen(id: string) {
   if (store.running) return
   const ok = await store.openRecipe(id)
   if (!ok) toast.show(t('pipeline.open_failed'), { type: 'error', icon: 'bi-x-circle' })
-  setTimeout(() => fitView({ padding: 0.25 }), 80)
+  setTimeout(() => fitView(FIT_VIEW_OPTS), 80)
 }
 </script>
 
@@ -272,7 +279,6 @@ async function onOpen(id: string) {
           :edges="flowEdges"
           :nodes-connectable="!store.running"
           :nodes-draggable="!store.running"
-          fit-view-on-init
           @connect="onConnect"
           @node-drag-stop="onNodeDragStop"
           @node-click="onNodeClick"
