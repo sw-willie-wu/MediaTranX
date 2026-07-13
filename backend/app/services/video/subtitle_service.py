@@ -24,7 +24,7 @@ from app.workers.task_manager import TaskManager
 logger = logging.getLogger(__name__)
 
 # Task type constant
-TASK_TYPE_VIDEO_SUBTITLE_GENERATE = "video.subtitle_generate"
+TASK_TYPE_VIDEO_SUBTITLE = "video.subtitle"
 
 
 class SubtitleService:
@@ -48,7 +48,7 @@ class SubtitleService:
 
         # Register task handler
         self._task_manager.register_handler(
-            TASK_TYPE_VIDEO_SUBTITLE_GENERATE,
+            TASK_TYPE_VIDEO_SUBTITLE,
             self._handle_task,
             output_policy="results",
         )
@@ -139,7 +139,7 @@ class SubtitleService:
 
         # Submit task
         task_id = await self._task_manager.submit(
-            TASK_TYPE_VIDEO_SUBTITLE_GENERATE, params, suppress_results=suppress_results
+            TASK_TYPE_VIDEO_SUBTITLE, params, suppress_results=suppress_results
         )
         logger.info(f"Subtitle generate task submitted: {task_id} for file {file_id}")
 

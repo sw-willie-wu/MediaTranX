@@ -1496,7 +1496,12 @@ export default {
       'video.cut': '影片 · 剪輯',
       'video.crop': '影片 · 畫面裁切',
       'video.extract_audio': '影片 · 提取音訊',
+      'video.subtitle': '影片 · 字幕提取',
+      // 命名統一小案 Task B（fix/tool-naming-unification）legacy alias：舊 sqlite task_history
+      // 可能存這兩個舊 task_type 值（值與上方 'video.subtitle' 相同），保留供 getTaskTypeLabel
+      // fallback 查表，勿刪。
       'video.subtitle_generate': '影片 · 字幕提取',
+      'subtitle/generate': '影片 · 字幕提取',
       'video.summary': '影片 · 摘要',
       'video.download': '影片 · 下載',
       'audio.transcode': '音訊 · 轉檔',
