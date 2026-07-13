@@ -8,7 +8,7 @@ import { computed, onActivated, onDeactivated, onMounted, ref, watch } from 'vue
 import { useI18n } from 'vue-i18n'
 import { Handle, Position, VueFlow, useVueFlow, type Connection, type NodeDragEvent } from '@vue-flow/core'
 import AppThreePaneLayout from '@/components/common/AppThreePaneLayout.vue'
-import { usePipelineStore } from '@/stores/pipeline'
+import { MAX_DOCS, usePipelineStore } from '@/stores/pipeline'
 import { useFilesStore } from '@/stores/files'
 import { useToast } from '@/composables/useToast'
 import { TOOL_REGISTRY, listToolSpecs } from '@/pipeline/registry'
@@ -282,11 +282,18 @@ async function onSave() {
     { type: ok ? 'success' : 'error', icon: ok ? 'bi-check-circle' : 'bi-x-circle' })
 }
 
+function onNewTab() {
+  // 新分頁的 recipe.name 為空 → 既有 watch 會同步清 recipeName，這裡不必手動清
+  if (store.newDoc() === null) {
+    toast.show(t('pipeline.tab_limit'), { type: 'error', icon: 'bi-x-circle' })
+  }
+}
+
 async function onOpen(id: string) {
-  if (store.running) return
-  const ok = await store.openRecipe(id)
-  if (!ok) toast.show(t('pipeline.open_failed'), { type: 'error', icon: 'bi-x-circle' })
-  setTimeout(() => fitView(FIT_VIEW_OPTS), 80)
+  const before = store.tabs.length
+  const docId = await store.openRecipeInTab(id)
+  if (docId) { setTimeout(() => fitView(FIT_VIEW_OPTS), 80); return }
+  toast.show(t(before >= MAX_DOCS ? 'pipeline.tab_limit' : 'pipeline.open_failed'), { type: 'error', icon: 'bi-x-circle' })
 }
 </script>
 
@@ -322,7 +329,7 @@ async function onOpen(id: string) {
           <i class="bi" :class="isSectionOpen('__saved') ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
         </button>
         <template v-if="isSectionOpen('__saved')">
-          <button class="palette-item" @click="store.newRecipe(); recipeName = ''">
+          <button class="palette-item" @click="onNewTab">
             <i class="bi bi-file-earmark-plus me-1"></i>{{ t('pipeline.new_recipe') }}
           </button>
           <div v-for="r in store.savedRecipes" :key="r.id" class="saved-row">

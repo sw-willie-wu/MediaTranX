@@ -97,6 +97,7 @@ export default {
     recipe_name_placeholder: '流程名稱',
     saved: '流程已儲存',
     open_failed: '流程載入失敗',
+    tab_limit: '分頁已達上限（8），請先關閉部分分頁',
     status: {
       idle: '待命',
       running: '執行中',

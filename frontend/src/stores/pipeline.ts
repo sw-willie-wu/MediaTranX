@@ -14,6 +14,7 @@ import { useTaskStore } from '@/stores/tasks'
 import { useComputeSettingsStore } from '@/stores/computeSettings'
 import { TOOL_REGISTRY } from '@/pipeline/registry'
 import { normalizeParams, validateRecipe } from '@/pipeline/recipe'
+import { parseFlow, serializeFlow, type FlowParseError } from '@/pipeline/flowFile'
 import { PipelineRunner, type EngineDeps, type RunSnapshot } from '@/pipeline/runner'
 import type { Recipe, ValidationIssue } from '@/pipeline/types'
 import type { MediaKindT } from '@/utils/mediaKind'
@@ -141,6 +142,121 @@ export const usePipelineStore = defineStore('pipeline', () => {
     docs.value.push(d)
     activeDocId.value = d.id
     return d.id
+  }
+
+  /** 關分頁：跑中拒關；關到 0 自動補空白；active 被關 focus 右鄰、無則左鄰 */
+  function closeDoc(id: string): boolean {
+    if (runningDocId.value === id) return false
+    const idx = docs.value.findIndex(d => d.id === id)
+    if (idx < 0) return false
+    docs.value.splice(idx, 1)
+    if (docs.value.length === 0) {
+      const d = createDoc()
+      docs.value.push(d)
+      activeDocId.value = d.id
+      return true
+    }
+    if (activeDocId.value === id) {
+      activeDocId.value = (docs.value[idx] ?? docs.value[idx - 1]).id
+    }
+    return true
+  }
+
+  function renameDoc(id: string, name: string): void {
+    const d = docs.value.find(x => x.id === id)
+    if (d) d.name = name
+  }
+
+  /** revalidate-on-load 共用：normalizeParams＋缺座標補位＋nodeSeq 重算（防匯入後加節點撞號） */
+  function hydrateDocFromRecipe(doc: PipelineDoc, parsed: Recipe): void {
+    let i = 0
+    for (const n of parsed.nodes) {
+      if (!n.position) n.position = { x: 80 + (i++) * 190, y: 200 }
+      if (n.kind !== 'input' && n.toolKey) {
+        const spec = TOOL_REGISTRY[n.toolKey]
+        if (spec) n.params = normalizeParams(n.params ?? {}, spec).params
+      }
+    }
+    doc.recipe = parsed
+    doc.nodeSeq = parsed.nodes.reduce((mx, nd) => {
+      const m = /^n(\d+)-/.exec(nd.id)
+      return m ? Math.max(mx, Number(m[1])) : mx
+    }, 1)
+  }
+
+  /** 匯入 .mtxflow 文字 → 一律開新分頁（spec §3）；信封 name 空用 fallbackName（檔名去副檔名） */
+  function importRecipe(text: string, fallbackName?: string):
+    { ok: true; docId: string } | { ok: false; error: FlowParseError | 'tab_limit' } {
+    const parsed = parseFlow(text)
+    if (!parsed.ok) return { ok: false, error: parsed.error }
+    const docId = newDoc()
+    if (!docId) return { ok: false, error: 'tab_limit' }
+    const doc = docs.value.find(d => d.id === docId)!
+    hydrateDocFromRecipe(doc, parsed.recipe)
+    doc.name = parsed.name || fallbackName || ''
+    return { ok: true, docId }
+  }
+
+  /** 純序列化 active doc（doc.name 雙注入由 flowFile 保證）；存檔對話框/toast 是 view 層的事 */
+  function exportCurrent(): string {
+    return serializeFlow(activeDoc.value.name, activeDoc.value.recipe)
+  }
+
+  /** 開常用流程：同 currentRecipeId 已開 → focus 不新開；否則新分頁載入（名稱用 sqlite row name） */
+  async function openRecipeInTab(id: string): Promise<string | null> {
+    const existing = docs.value.find(d => d.currentRecipeId === id)
+    if (existing) { activeDocId.value = existing.id; return existing.id }
+    try {
+      const res = await fetch(`${getApiBase()}/pipeline/recipes/${id}`)
+      if (!res.ok) return null
+      const data = await res.json()
+      const parsed = JSON.parse(data.graph) as Recipe
+      const docId = newDoc()
+      if (!docId) return null            // 滿頁；呼叫端據 tabs.length 區分 toast 文案
+      const doc = docs.value.find(d => d.id === docId)!
+      hydrateDocFromRecipe(doc, parsed)
+      // 名稱用 sqlite row 的 data.name（saveCurrent 先序列化 graph 再寫 recipe.name，
+      // graph 內嵌 name 是舊值——用 parsed.name 會顯「未命名」）
+      doc.name = data.name ?? parsed.name ?? ''
+      doc.currentRecipeId = id
+      return docId
+    } catch (e) {
+      log.error('openRecipeInTab failed', e)
+      return null
+    }
+  }
+
+  // ── 工具頁轉頁帶檔（spec §4.3）────────────────────────────────────
+  const pendingImport = ref<{ text: string; fallbackName: string } | null>(null)
+  function setPendingImport(p: { text: string; fallbackName: string } | null): void {
+    pendingImport.value = p
+  }
+
+  /**
+   * agent create_pipeline 落圖（spec §5.4）：blank active 重用＝原地新文件
+   * （reset()＋補清關聯欄位），否則 newDoc()（focus-first——先 focus 再寫，
+   * 先寫後 focus 會把圖灌進舊 active doc）。永不覆蓋非空分頁。
+   * 註：經 hydrateDocFromRecipe 會重算 nodeSeq——spec §5.3 對 create_pipeline
+   * 豁免此重算，這裡刻意比 spec 更嚴（重算永不退化、共用路徑較簡）。
+   */
+  function adoptDraft(recipe: Recipe, name: string):
+    { ok: true; docId: string } | { ok: false; error: 'tab_limit_reached' } {
+    let docId: string
+    if (isBlankDoc()) {
+      reset()
+      const d = activeDoc.value
+      d.currentRecipeId = null
+      d.currentRunId = null              // reset() 不清這兩欄（spec §5.4）
+      docId = d.id
+    } else {
+      const id = newDoc()
+      if (!id) return { ok: false, error: 'tab_limit_reached' }
+      docId = id
+    }
+    const doc = docs.value.find(d => d.id === docId)!
+    hydrateDocFromRecipe(doc, JSON.parse(JSON.stringify(recipe)) as Recipe)
+    renameDoc(docId, name)
+    return { ok: true, docId }
   }
 
   // ── 圖編輯 ─────────────────────────────────────────────────────────
@@ -405,40 +521,6 @@ export const usePipelineStore = defineStore('pipeline', () => {
     }
   }
 
-  /** 載入已存 recipe;revalidate-on-load:未知參數剝除、缺項補 default、缺座標補位。 */
-  async function openRecipe(id: string): Promise<boolean> {
-    try {
-      const res = await fetch(`${getApiBase()}/pipeline/recipes/${id}`)
-      if (!res.ok) return false
-      const data = await res.json()
-      const parsed = JSON.parse(data.graph) as Recipe
-      let i = 0
-      for (const n of parsed.nodes) {
-        if (!n.position) n.position = { x: 80 + (i++) * 190, y: 200 }
-        if (n.kind !== 'input' && n.toolKey) {
-          const spec = TOOL_REGISTRY[n.toolKey]
-          if (spec) n.params = normalizeParams(n.params ?? {}, spec).params
-        }
-      }
-      const doc = activeDoc.value
-      doc.recipe = parsed
-      doc.name = data.name ?? parsed.name ?? ''
-      doc.currentRecipeId = id
-      doc.selectedNodeId = null
-      doc.runSnapshot = null
-      doc.modelIssues = []
-      // nodeSeq 取既有 id 數字前綴最大值（刪除過節點時 length 會低估）
-      doc.nodeSeq = parsed.nodes.reduce((mx, nd) => {
-        const m = /^n(\d+)-/.exec(nd.id)
-        return m ? Math.max(mx, Number(m[1])) : mx
-      }, 1)
-      return true
-    } catch (e) {
-      log.error('openRecipe failed', e)
-      return false
-    }
-  }
-
   async function deleteRecipe(id: string): Promise<void> {
     try {
       await fetch(`${getApiBase()}/pipeline/recipes/${id}`, { method: 'DELETE' })
@@ -453,20 +535,17 @@ export const usePipelineStore = defineStore('pipeline', () => {
     await loadRecipeList()
   }
 
-  function newRecipe(): void {
-    reset()
-    currentRecipeId.value = null
-  }
-
   return {
     recipe, selectedNodeId, selectedNode, inputFiles, issues, errors, canRun,
     runSnapshot, running,
     addToolNode, removeNode, connect, disconnect, updateNodeParams,
     setKeepOutput, moveNode, reset, startRun, cancelRun,
     savedRecipes, currentRecipeId, currentRunId, loadRecipeList, saveCurrent,
-    openRecipe, deleteRecipe, newRecipe,
+    deleteRecipe,
     // 多文件（分頁）
     activeDocId, runningDocId: readonly(runningDocId), tabs,
-    newDoc, findRunDoc, isBlankDoc, isBlankDocId,
+    newDoc, closeDoc, renameDoc, openRecipeInTab, importRecipe, exportCurrent,
+    adoptDraft, findRunDoc, isBlankDoc, isBlankDocId,
+    pendingImport: readonly(pendingImport), setPendingImport,
   }
 })

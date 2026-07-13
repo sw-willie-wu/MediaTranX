@@ -97,6 +97,7 @@ export default {
     recipe_name_placeholder: 'Pipeline name',
     saved: 'Pipeline saved',
     open_failed: 'Failed to open pipeline',
+    tab_limit: 'Tab limit (8) reached — close some tabs first',
     status: {
       idle: 'Idle',
       running: 'Running',
