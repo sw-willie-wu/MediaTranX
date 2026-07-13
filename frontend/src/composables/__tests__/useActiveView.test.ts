@@ -79,7 +79,7 @@ describe('panelIdFor', () => {
     // kebab subfunction ids normalize to the snake panelId namespace
     ['image',    'remove-bg',    'image.remove_bg'],
     ['document', 'pdf-convert',  'document.pdf_convert'],
-    ['image',    'ai-remove',    'image.ai_remove'],
+    ['image',    'remove-object', 'image.remove_object'],
     ['audio',    'midi-edit',    'audio.midi_edit'],
     // single-word subfunctions are unaffected (no-op)
     ['image',    'upscale',      'image.upscale'],

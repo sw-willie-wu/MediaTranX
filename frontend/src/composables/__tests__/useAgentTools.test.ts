@@ -219,16 +219,19 @@ describe('dispatch: select_subfunction', () => {
   it('Bug #22: returns invalid_subfunction with allowed list when name not in validSubfunctions', async () => {
     const router = makeRouter('/image')
     await router.isReady()
-    const vh = makeViewHandle('transcode', ['transcode', 'upscale', 'remove-bg', 'ai-remove', 'adjust', 'filter', 'crop', 'ocr'])
+    // 命名統一小案 Task A 已把 image 子功能 id 由 transcode/ai-remove 正名為
+    // convert/remove-object；此測試沿 Bug #22 情境改測「舊模型吐出已淘汰的 transcode」
+    // 被動態 enum 擋下、自我修正的路徑。
+    const vh = makeViewHandle('convert', ['convert', 'upscale', 'remove-bg', 'remove-object', 'adjust', 'filter', 'crop', 'ocr'])
     viewRegistry.register('image', vh)
 
-    const result = await withContext(router, d => d(tc('select_subfunction', { name: 'convert' })))
+    const result = await withContext(router, d => d(tc('select_subfunction', { name: 'transcode' })))
     expect(result.error).toBe('agent.error.invalid_subfunction')
-    expect(result.name).toBe('convert')
-    expect(result.allowed).toContain('transcode')
-    expect(result.allowed).not.toContain('convert')
+    expect(result.name).toBe('transcode')
+    expect(result.allowed).toContain('convert')
+    expect(result.allowed).not.toContain('transcode')
     // currentFunction should NOT have changed
-    expect(vh.currentFunction.value).toBe('transcode')
+    expect(vh.currentFunction.value).toBe('convert')
   })
 
   it('Bug #22: view without validSubfunctions passes any name through (backward compat)', async () => {
@@ -931,7 +934,7 @@ describe('getTools (Phase 2.A dynamic field enum)', () => {
 
   it('Bug #22: getTools with both panel schema and view handle produces correct tool array length', () => {
     const panel: PanelAgentSchema = {
-      panelId: 'image.transcode',
+      panelId: 'image.convert',
       fields: [{ name: 'output_format', type: 'enum', options: () => ['png', 'jpg'] }],
       actions: [],
       execute: { requiresConfirm: true },

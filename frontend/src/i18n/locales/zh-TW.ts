@@ -513,10 +513,10 @@ export default {
     loading: '讀取圖片資訊...',
 
     functions: {
-      transcode: '轉檔',
+      convert: '轉檔',
       compress: '壓縮',
       remove_bg: '去背',
-      ai_remove: '物件移除',
+      remove_object: '物件移除',
       upscale: '超解析',
       adjust: '調整',
       filter: '濾鏡',

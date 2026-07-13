@@ -2,8 +2,8 @@
  * ToolParamHost + ConvertParams 合掛整合測（統一參數元件 spec §6；批 4 Task 4.1）。
  * 取代舊 ImageConvertPanel.agent.test.ts——host 接手 agent 掛載後，唯一權威測試點；
  * resizeMode 響應式衍生行為已由 ConvertParams.test.ts 覆蓋，本檔專注 host×元件整合
- * （panelId='image.transcode' 裁決、agentSchema 衍生、execute buildSubmit 互斥清理、
- * outputFormat expose），仿 TranscodeParams.hostagent.test.ts。
+ * （panelId='image.convert' ＝ toolKey/taskType，命名統一小案 Task A 已正名、agentSchema
+ * 衍生、execute buildSubmit 互斥清理、outputFormat expose），仿 TranscodeParams.hostagent.test.ts。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -39,10 +39,9 @@ function mountHost(props: Record<string, unknown> = {}) {
   return mount(ToolParamHost, {
     props: {
       toolKey: 'image.convert',
-      // panelId 裁決（Surprise 2）：沿舊 ImageConvertPanel.agentSchema.panelId 用
-      // 'image.transcode'（= panelIdFor('image','transcode') 自然產出，即 ImageView 掛載時
-      // 傳入的字面值，見 convert.meta.ts 檔頭註解）。
-      panelId: 'image.transcode',
+      // panelId ＝ panelIdFor('image','convert') 自然產出，即 ImageView 掛載時傳入的字面值
+      // （命名統一小案 Task A 已正名，與 toolKey/taskType 一致，見 convert.meta.ts 檔頭註解）。
+      panelId: 'image.convert',
       fileId: 'f1',
       currentFileName: 'photo.png',
       fileInfo: null,
@@ -61,12 +60,12 @@ beforeEach(() => {
 })
 
 describe('ConvertParams × ToolParamHost — agentSchema', () => {
-  it('1. panelId="image.transcode"；fields 名稱集合 = 後端詞彙全集（schema 順序）', async () => {
+  it('1. panelId="image.convert"；fields 名稱集合 = 後端詞彙全集（schema 順序）', async () => {
     const w = mountHost()
     await flushPromises()
     const handle = capturedHandle.current
     expect(handle).toBeTruthy()
-    expect(handle.agentSchema.panelId).toBe('image.transcode')
+    expect(handle.agentSchema.panelId).toBe('image.convert')
 
     const fields = handle.agentSchema.fields
     expect(fields.map((f: any) => f.name)).toEqual([

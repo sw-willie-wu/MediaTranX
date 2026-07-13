@@ -513,10 +513,10 @@ export default {
     loading: 'Loading image info...',
 
     functions: {
-      transcode: 'Transcode',
+      convert: 'Transcode',
       compress: 'Compress',
       remove_bg: 'Remove BG',
-      ai_remove: 'Object Remove',
+      remove_object: 'Object Remove',
       upscale: 'Upscale',
       adjust: 'Adjust',
       filter: 'Filters',

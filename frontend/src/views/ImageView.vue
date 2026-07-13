@@ -59,12 +59,12 @@ const cropPanelRef     = ref<InstanceType<typeof ToolParamHost> | null>(null)
 const ocrPanelRef      = ref<InstanceType<typeof ToolParamHost>      | null>(null)
 
 // ── W2：host 泛型收斂 ──────────────────────────────────────────────────────
-// toolKey↔subFunction id 對映（transcode/compress/upscale/remove-bg/adjust/filter/crop/ocr
-// 皆走 ToolParamHost；ai-remove 是非 host 殼 ImageAiRemovePanel，不進此表）。注意 'transcode'
-// 對應 toolKey 'image.convert'（沿命名不一致舊帳，見 project_naming_inconsistency_debt）；
+// toolKey↔subFunction id 對映（convert/compress/upscale/remove-bg/adjust/filter/crop/ocr
+// 皆走 ToolParamHost；remove-object 是非 host 殼 ImageAiRemovePanel，不進此表）。'convert'
+// 對應 toolKey 'image.convert'（命名統一小案 Task A 已正名，id 與 toolKey/後端一致）；
 // 'adjust'/'filter' 共用同一 toolKey 'image.filter'（兩掛載點各自 labelKey override）。
 const HOST_TOOL_KEYS: Record<string, string> = {
-  transcode: 'image.convert',
+  convert: 'image.convert',
   compress: 'image.compress',
   upscale: 'image.upscale',
   'remove-bg': 'image.remove_bg',
@@ -74,7 +74,7 @@ const HOST_TOOL_KEYS: Record<string, string> = {
   ocr: 'image.ocr',
 }
 const HOST_REFS: Record<string, typeof convertPanelRef> = {
-  transcode: convertPanelRef,
+  convert: convertPanelRef,
   compress: compressPanelRef,
   upscale: upscalePanelRef,
   'remove-bg': removeBgPanelRef,
@@ -87,18 +87,18 @@ function hostFor(fn: string) {
   return HOST_REFS[fn]?.value ?? null
 }
 const subFunctions = computed(() => [
-  { id: 'transcode', name: t('image.functions.transcode'), icon: 'bi-arrow-repeat',         group: t('image.group.edit') },
-  { id: 'compress',  name: t('image.functions.compress'),  icon: 'bi-file-zip-fill',        group: t('image.group.edit') },
-  { id: 'adjust',    name: t('image.functions.adjust'),    icon: 'bi-sliders',              group: t('image.group.edit') },
-  { id: 'filter',    name: t('image.functions.filter'),    icon: 'bi-palette-fill',         group: t('image.group.edit') },
-  { id: 'crop',      name: t('image.functions.crop'),      icon: 'bi-crop',                 group: t('image.group.edit') },
-  { id: 'remove-bg', name: t('image.functions.remove_bg'), icon: 'bi-eraser-fill',          group: t('image.group.ai') },
-  { id: 'ai-remove', name: t('image.functions.ai_remove'), icon: 'bi-magic',                group: t('image.group.ai') },
-  { id: 'upscale',   name: t('image.functions.upscale'),   icon: 'bi-arrows-angle-expand',  group: t('image.group.ai') },
-  { id: 'ocr',       name: t('image.functions.ocr'),       icon: 'bi-type',                 group: t('image.group.ai') },
+  { id: 'convert',       name: t('image.functions.convert'),       icon: 'bi-arrow-repeat',         group: t('image.group.edit') },
+  { id: 'compress',      name: t('image.functions.compress'),      icon: 'bi-file-zip-fill',        group: t('image.group.edit') },
+  { id: 'adjust',        name: t('image.functions.adjust'),        icon: 'bi-sliders',              group: t('image.group.edit') },
+  { id: 'filter',        name: t('image.functions.filter'),        icon: 'bi-palette-fill',         group: t('image.group.edit') },
+  { id: 'crop',          name: t('image.functions.crop'),          icon: 'bi-crop',                 group: t('image.group.edit') },
+  { id: 'remove-bg',     name: t('image.functions.remove_bg'),     icon: 'bi-eraser-fill',          group: t('image.group.ai') },
+  { id: 'remove-object', name: t('image.functions.remove_object'), icon: 'bi-magic',                group: t('image.group.ai') },
+  { id: 'upscale',       name: t('image.functions.upscale'),       icon: 'bi-arrows-angle-expand',  group: t('image.group.ai') },
+  { id: 'ocr',           name: t('image.functions.ocr'),           icon: 'bi-type',                 group: t('image.group.ai') },
 ])
 
-const currentFunction     = ref('transcode')
+const currentFunction     = ref('convert')
 const filterPreviewParams = ref<FilterPreview | null>(null)
 
 useViewHost('image', {
@@ -148,7 +148,7 @@ function restorePanelSettings(entryId: string) {
 }
 
 const isFilterMode   = computed(() => currentFunction.value === 'adjust' || currentFunction.value === 'filter')
-const isAiRemoveMode = computed(() => currentFunction.value === 'ai-remove' && hasFile.value)
+const isAiRemoveMode = computed(() => currentFunction.value === 'remove-object' && hasFile.value)
 const isCropMode     = computed(() => currentFunction.value === 'crop'      && hasFile.value)
 
 const isAnimated = computed(() => {
@@ -156,7 +156,7 @@ const isAnimated = computed(() => {
   return fmt === 'GIF' || fmt === 'APNG'
 })
 const showAnimFilterHint = computed(() => isFilterMode.value && isAnimated.value && !!filterPreviewParams.value)
-const showAnimRemoveHint = computed(() => currentFunction.value === 'ai-remove' && isAnimated.value)
+const showAnimRemoveHint = computed(() => currentFunction.value === 'remove-object' && isAnimated.value)
 
 // ── Preview: WebGL handles real-time rendering, no backend round-trip ────────
 const effectivePreviewUrl = computed(() => activePreviewUrl.value)
@@ -189,7 +189,7 @@ watch(currentFunction, (val, oldVal) => {
     filterPreviewParams.value = null
   }
 
-  if (val === 'ai-remove') {
+  if (val === 'remove-object') {
     nextTick(() => previewRef.value?.syncToImage())
   }
 
@@ -260,10 +260,10 @@ const isAnyProcessing = computed(() =>
 const executeDisabled = computed(() => {
   if (isAnyProcessing.value) return true
   if (currentFunction.value === 'ocr') return hostFor('ocr')?.isDisabled ?? !hasFile.value
-  if (currentFunction.value === 'ai-remove' && isAnimated.value) return true
+  if (currentFunction.value === 'remove-object' && isAnimated.value) return true
   // crop 寬高未填時執行鈕 disabled（host validate → isDisabled；與 VideoView crop 分支對齊）
   if (currentFunction.value === 'crop') return hostFor('crop')?.isDisabled ?? !hasFile.value
-  // 其餘工具(transcode/compress/upscale/remove-bg/ai-remove 非動圖/adjust/filter)沿舊行為
+  // 其餘工具(convert/compress/upscale/remove-bg/remove-object 非動圖/adjust/filter)沿舊行為
   // 不查各自 host.isDisabled，只看通用檔案/上傳狀態——非遺漏，是本來就有的既有語意
   // （這些 meta 皆無 validate()，host.isDisabled 實質上僅剩 !fileId/isProcessing，與此處
   // fallback 條件不完全等價，貿然統一會改變 isUploading 期間的可觀察行為，故不收）。
@@ -272,7 +272,7 @@ const executeDisabled = computed(() => {
 
 const executeLoading = computed(() => {
   if (collection.activeEntry.value?.status === 'processing') return true
-  if (currentFunction.value === 'ai-remove') return aiRemovePanelRef.value?.isLoading ?? false
+  if (currentFunction.value === 'remove-object') return aiRemovePanelRef.value?.isLoading ?? false
   return hostFor(currentFunction.value)?.isLoading ?? false
 })
 
@@ -286,7 +286,7 @@ function handleExecute() {
 }
 
 function handleSingleExecute() {
-  if (currentFunction.value === 'ai-remove') {
+  if (currentFunction.value === 'remove-object') {
     aiRemovePanelRef.value?.execute()
     return
   }
@@ -297,7 +297,7 @@ async function handleMultiExecute() {
   const noop = () => {}
   const fn = currentFunction.value
   const toolKey = HOST_TOOL_KEYS[fn]
-  // ai-remove(非 host 殼，需筆刷互動)/crop(META.multiSelect===false，需裁切互動)不支援批次，
+  // remove-object(非 host 殼，需筆刷互動)/crop(META.multiSelect===false，需裁切互動)不支援批次，
   // 退回單張（沿舊行為：無 toast，直接呼叫 handleSingleExecute）。
   if (!toolKey || METAS[toolKey].multiSelect === false) {
     handleSingleExecute()
@@ -483,10 +483,10 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     <template #settings>
       <div class="settings-form">
         <ToolParamHost
-          v-if="currentFunction === 'transcode'"
+          v-if="currentFunction === 'convert'"
           ref="convertPanelRef"
           tool-key="image.convert"
-          :panel-id="panelIdFor('image', 'transcode')"
+          :panel-id="panelIdFor('image', 'convert')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :file-info="imageInfoForHost"
@@ -530,7 +530,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
         />
 
         <ImageAiRemovePanel
-          v-else-if="currentFunction === 'ai-remove'"
+          v-else-if="currentFunction === 'remove-object'"
           ref="aiRemovePanelRef"
           :file-id="activeFileId"
           :current-file-name="currentFileName"

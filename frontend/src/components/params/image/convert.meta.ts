@@ -10,10 +10,10 @@
  * buildSubmit 在送出前做最後一道防線清理：scale 有值時剔除 width/height，否則剔除 scale
  * （鏡射舊 ImageConvertPanel.getParams() 每次呼叫都重新算三選一，本質同構）。
  *
- * panelId 裁決（Surprise 2，registry 全域唯一名不同者）：toolKey/taskType 是 image.convert，
- * 但 agent 面板 panelId 沿舊 ImageConvertPanel.agentSchema.panelId 用 'image.transcode'
- * （= ImageView subFunction id、= panelIdFor('image','transcode') 的自然產出，接線時不必
- * 特殊處理）。agent 導覽相容優先，收尾批再議正名（見 batch4-recon.md Surprise 2）。
+ * panelId（命名統一小案 Task A 已正名，2026-07-13）：ImageView subFunction id 由舊
+ * 'transcode' 改為 'convert'，panelIdFor('image','convert') 產出 'image.convert'，與
+ * toolKey/taskType 完全一致，不再需要特殊補償（原 Surprise 2 的 'image.transcode' 落差
+ * 已消除；史見 batch4-recon.md Surprise 2、project_naming_inconsistency_debt）。
  */
 import type { SubmitSpec, ToolParamMeta } from '../types'
 

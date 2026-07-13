@@ -19,7 +19,7 @@ export interface NavCatalogEntry {
 
 export const AGENT_NAV_CATALOG: NavCatalogEntry[] = [
   { viewId: 'image',    route: '/image',    label: 'Image',
-    subfunctions: ['transcode','compress','adjust','filter','crop','remove-bg','ai-remove','upscale','ocr'] },
+    subfunctions: ['convert','compress','adjust','filter','crop','remove-bg','remove-object','upscale','ocr'] },
   { viewId: 'video',    route: '/video',    label: 'Video',
     subfunctions: ['transcode','cut','crop','subtitle','summary','interpolate','enhance'] },
   { viewId: 'audio',    route: '/audio',    label: 'Audio',
