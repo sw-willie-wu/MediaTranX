@@ -337,7 +337,7 @@ async function onOpen(id: string) {
     <!-- 中:畫布（wrapper 承接 drop handler；canvas-flow 為 issue-bar 錨點 — spec §3.3） -->
     <template #center>
       <div class="canvas-wrap" @drop.prevent="onCanvasDrop" @dragover.prevent>
-        <div class="canvas-flow">
+        <div class="canvas-flow" :class="{ 'space-pan': isSpaceHeld }">
         <!-- 互動慣例（全 app 統一）：左鍵拖=選取框、Space+左鍵/中鍵/右鍵拖=平移。
              Vue Flow 1.x 沒有 selection-on-drag（那是 React Flow 的名字），左鍵框選＝
              selection-key-code=true；pan-on-drag 的按鈕陣列會在 d3 filter 擋掉左鍵、
@@ -542,6 +542,13 @@ async function onOpen(id: string) {
   flex: 1;
   min-height: 0;
   position: relative;
+
+  // 游標慣例：空白畫布=default（VueFlow 的 .selection class 預設給 pointer、
+  // pan 模式預設給 grab——都蓋掉）；Space 按住=grab；實際平移中=grabbing
+  :deep(.vue-flow__pane) { cursor: default; }
+  :deep(.vue-flow__pane.selection) { cursor: default; }
+  &.space-pan :deep(.vue-flow__pane) { cursor: grab; }
+  :deep(.vue-flow__pane.dragging) { cursor: grabbing; }
 }
 // 資訊列置中（對齊工具頁 filmstrip overlay 模式的置中慣例）
 .canvas-wrap :deep(.media-info-bar) {
