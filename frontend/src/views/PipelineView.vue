@@ -120,6 +120,12 @@ function onNodeDragStop(e: NodeDragEvent) {
   for (const n of e.nodes) store.moveNode(n.id, { x: n.position.x, y: n.position.y })
 }
 
+// 節點右上 X：輸入節點=清除已選檔案（節點是根、不移除）；工具/source 節點=移除節點
+function onNodeRemoveClick(id: string, kind: string) {
+  if (kind === 'input') store.inputFiles = []
+  else store.removeNode(id)
+}
+
 function onNodeClick(e: { node: { id: string } }) {
   previewToolKey.value = null
   store.selectedNodeId = e.node.id
@@ -320,12 +326,13 @@ async function onOpen(id: string) {
             >
               <Handle v-if="data.kind === 'tool'" type="target" :position="Position.Left" />
               <Handle type="source" :position="Position.Right" />
-              <!-- hover 顯示的移除 badge；stop 防止觸發 node-click（選取/輸入節點開檔）與 drag -->
+              <!-- hover 顯示的移除 badge；stop 防止觸發 node-click（選取/輸入節點開檔）與 drag。
+                   輸入節點語意=清除已選檔案（無檔案時不顯示）；其餘節點=移除節點 -->
               <button
-                v-if="!store.running"
+                v-if="!store.running && (data.kind !== 'input' || store.inputFiles.length > 0)"
                 class="p-node-remove"
-                :title="t('pipeline.remove_node')"
-                @click.stop="store.removeNode(id)"
+                :title="data.kind === 'input' ? t('pipeline.input_clear') : t('pipeline.remove_node')"
+                @click.stop="onNodeRemoveClick(id, data.kind)"
                 @mousedown.stop
               >
                 <i class="bi bi-x"></i>
