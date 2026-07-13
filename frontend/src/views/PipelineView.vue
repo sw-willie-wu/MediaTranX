@@ -115,7 +115,8 @@ const flowEdges = computed(() =>
     id: `${e.from}->${e.to}`,
     source: e.from,
     target: e.to,
-    animated: store.running,
+    // 只有「流入正在執行節點」的那段亮虛線動畫（原本整條 pipeline 齊閃，看不出進行到哪）
+    animated: nodeRunState(e.to) === 'running',
   })),
 )
 
@@ -384,7 +385,9 @@ async function onOpen(id: string) {
                 <i class="bi bi-x"></i>
               </button>
               <div class="p-node-title">
-                <i :class="['bi', data.kind === 'input' ? 'bi-folder2-open' : data.kind === 'source' ? 'bi-cloud-download' : 'bi-gear']"></i>
+                <!-- 執行中換旋轉 spinner——一眼看出目前跑到哪個節點 -->
+                <i v-if="data.runState === 'running'" class="bi bi-arrow-repeat p-node-spin"></i>
+                <i v-else :class="['bi', data.kind === 'input' ? 'bi-folder2-open' : data.kind === 'source' ? 'bi-cloud-download' : 'bi-gear']"></i>
                 {{ data.label }}
               </div>
             </div>
@@ -649,14 +652,24 @@ async function onOpen(id: string) {
   }
   &.is-running {
     border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 18%, var(--panel-bg-active, rgba(255,255,255,0.06)));
     animation: p-node-pulse 1.2s ease-in-out infinite;
   }
 }
 
+// 執行中 icon 旋轉（搭配主色底 tint——比單靠外框脈動醒目）
+.p-node-spin {
+  color: var(--color-primary);
+  animation: p-node-icon-spin 1s linear infinite;
+}
+@keyframes p-node-icon-spin {
+  to { transform: rotate(360deg); }
+}
+
 // 執行中外框脈動（box-shadow 擴散淡出；持續動畫非 transition，沿執行中流光先例）
 @keyframes p-node-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 55%, transparent); }
-  50%      { box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-primary) 8%, transparent); }
+  0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 70%, transparent); }
+  50%      { box-shadow: 0 0 0 9px color-mix(in srgb, var(--color-primary) 6%, transparent); }
 }
 .p-node-title { display: flex; align-items: center; gap: 0.4rem; }
 // hover 顯示的移除 badge（樣式沿 AppFilmstrip 移除鈕慣例）
