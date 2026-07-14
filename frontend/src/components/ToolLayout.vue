@@ -14,6 +14,7 @@ import { createLogger } from '@/utils/logger'
 import { usePasteUpload } from '@/composables/usePasteUpload'
 import { useUrlDownload } from '@/composables/useUrlDownload'
 import { expandDropItems, hasDirectoryItem } from '@/utils/dropEntries'
+import { isFlowFileName } from '@/pipeline/flowFile'
 import { useToast } from '@/composables/useToast'
 
 const { t } = useI18n()
@@ -148,9 +149,12 @@ watch(
   },
 )
 
-// 不支援類型 overlay
+// 不支援類型 overlay；mode 在 show 時快照（不用 computed 派生 pendingFlowFile——
+// dismiss 清 pending 會讓淡出中的卡片變體閃跳）（spec §4.3）
 const showUnsupported = ref(false)
 const unsupportedTarget = ref<ToolType | null>(null)
+const pendingFlowFile = ref<File | null>(null)
+const overlayMode = ref<'unsupported' | 'flow-file'>('unsupported')
 let unsupportedTimer: ReturnType<typeof setTimeout> | null = null
 
 // 拖曳 hover 狀態
@@ -166,6 +170,12 @@ function setFile(file: File, sourceDir?: string) {
 }
 
 function handleUploadFile(file: File, sourceDir?: string) {
+  // 空狀態 drop 落在 AppUploadZone 自己的 handler（stopPropagation），不經
+  // ingestDroppedFiles——流程檔判別在此入口也要有（spec §4.3）
+  if (isFlowFileName(file.name)) {
+    showFlowGuide(file)
+    return
+  }
   if (props.acceptType) {
     const detected = detectMediaType(file)
     if (detected && detected !== props.acceptType) {
@@ -178,6 +188,11 @@ function handleUploadFile(file: File, sourceDir?: string) {
 }
 
 function handleUploadFiles(files: File[]) {
+  const flow = files.find(f => isFlowFileName(f.name))
+  if (flow) {
+    showFlowGuide(flow)
+    return
+  }
   emit('files', files)
 }
 
@@ -228,6 +243,8 @@ const folderPathsBusy = ref(false)
  * /files/register 零搬運註冊,走 existing-files 引用流進 filmstrip。
  * 首個註冊成功立即 emit — collectionSize > 0 讓 upload zone 馬上消失,
  * 其餘批次補上;busy guard 防 zone 消失前的重入。末檔 active(沿用既有流)。
+ * 註:此路徑（Electron 原生資料夾 picker）刻意不做 .mtxflow 流程檔判別——
+ * 這是媒體批次入口,夾帶的流程檔由 detectTypeByName 靜默濾掉即可。
  */
 async function handleFolderPaths(paths: string[], truncated: boolean) {
   if (folderPathsBusy.value) return
@@ -278,6 +295,13 @@ async function handleFolderPaths(paths: string[], truncated: boolean) {
  */
 function ingestDroppedFiles(candidates: File[], firstNative?: File) {
   if (candidates.length === 0) return
+  // 流程檔（只認 .mtxflow 副檔名——.json 是 document 工具合法輸入，不 sniff 免誤攔）
+  // → 引導浮層「前往流程頁開啟」（spec §4.3）
+  const flow = candidates.find(f => isFlowFileName(f.name))
+  if (flow) {
+    showFlowGuide(flow)
+    return
+  }
   const valid = props.acceptType
     ? candidates.filter(f => detectMediaType(f) === props.acceptType)
     : candidates
@@ -310,17 +334,43 @@ function handleDragLeave() {
 
 function showUnsupportedOverlay(target: ToolType | null) {
   unsupportedTarget.value = target
+  overlayMode.value = 'unsupported'
+  pendingFlowFile.value = null      // 蓋掉前一輪殘留的流程檔
+  _showOverlay()
+}
+
+/** 流程檔引導變體（spec §4.3）——三個檔案入口共用 */
+function showFlowGuide(file: File) {
+  pendingFlowFile.value = file
+  unsupportedTarget.value = null
+  overlayMode.value = 'flow-file'
+  _showOverlay()
+}
+
+function _showOverlay() {
   showUnsupported.value = true
   if (unsupportedTimer) clearTimeout(unsupportedTimer)
-  unsupportedTimer = setTimeout(() => { showUnsupported.value = false }, 3000)
+  // 自動隱藏也要棄 pendingFlowFile（殘留會污染下一輪）；mode 留著給淡出動畫
+  unsupportedTimer = setTimeout(() => { showUnsupported.value = false; pendingFlowFile.value = null }, 3000)
 }
 
 function dismissUnsupported() {
   showUnsupported.value = false
+  pendingFlowFile.value = null      // 關閉即棄；mode 不動、淡出動畫不閃變體
   if (unsupportedTimer) clearTimeout(unsupportedTimer)
 }
 
-function goToTool() {
+async function goToTool() {
+  // 流程檔變體：讀文字塞 pendingImport → 轉頁，PipelineView 撿走開新分頁
+  if (pendingFlowFile.value) {
+    const f = pendingFlowFile.value
+    const text = await f.text()
+    const { usePipelineStore } = await import('@/stores/pipeline')
+    usePipelineStore().setPendingImport({ text, fallbackName: f.name.replace(/\.[^.]+$/, '') })
+    dismissUnsupported()
+    void router.push('/pipeline')
+    return
+  }
   if (unsupportedTarget.value) router.push(getToolPath(unsupportedTarget.value))
   dismissUnsupported()
 }
@@ -397,6 +447,7 @@ onBeforeUnmount(() => {
         <UnsupportedFileOverlay
           :visible="showUnsupported"
           :target="unsupportedTarget"
+          :mode="overlayMode"
           @dismiss="dismissUnsupported"
           @go-to-tool="goToTool"
         />
