@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useImageZoom } from '@/composables/useImageZoom'
+import { useSpaceHeld } from '@/composables/useSpaceHeld'
 import { useCanvasMask, type MaskToolMode } from '@/composables/useCanvasMask'
 import { useCropRect } from '@/composables/useCropRect'
 import { useWebGLFilter } from '@/composables/useWebGLFilter'
@@ -172,26 +173,17 @@ const vignetteStyle = computed(() => {
   return { background: `radial-gradient(ellipse at center, transparent ${spread}%, rgba(0,0,0,${opacity}) 100%)` }
 })
 
-// ── Space 鍵臨時平移（PS 風格）─────────────────────────────────────
-const isSpaceHeld = ref(false)
+// ── Space 鍵臨時平移（PS 風格；全 app 統一慣例：拖曳畫面一律 Space+左鍵）────
+const { isSpaceHeld } = useSpaceHeld()
 
 function handleKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape' && props.isAiRemoveMode) cancelShape()
-  if (e.code === 'Space' && !e.repeat && (props.isAiRemoveMode || props.showCropOverlay)) {
-    e.preventDefault()
-    isSpaceHeld.value = true
-  }
-}
-function handleKeyUp(e: KeyboardEvent) {
-  if (e.code === 'Space') isSpaceHeld.value = false
 }
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown)
-  window.addEventListener('keyup', handleKeyUp)
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
-  window.removeEventListener('keyup', handleKeyUp)
   glDispose()
 })
 
@@ -217,6 +209,8 @@ function handleImageLoad() {
 
 function handleMouseDown(e: MouseEvent) {
   if (props.isAiRemoveMode || props.showCropOverlay) return
+  // 統一互動慣例：左鍵拖曳平移需按住 Space；中鍵拖曳直接平移（同流程頁畫布）
+  if (e.button === 0 && !isSpaceHeld.value) return
   onMouseDown(e)
 }
 
@@ -255,7 +249,7 @@ function handleCropMouseUp(_e: MouseEvent) {
     <div
       ref="containerRef"
       class="preview-image"
-      :class="{ dragging: isDragging, 'draw-mode': isAiRemoveMode, 'crop-mode': showCropOverlay }"
+      :class="{ dragging: isDragging, 'draw-mode': isAiRemoveMode, 'crop-mode': showCropOverlay, 'pan-ready': isSpaceHeld }"
       @wheel.prevent="onWheel"
       @mousedown="handleMouseDown"
     >
@@ -327,11 +321,12 @@ function handleCropMouseUp(_e: MouseEvent) {
   justify-content: center;
   min-height: 0;
   overflow: hidden;
-  cursor: grab;
+  cursor: default; // 平移需 Space（統一慣例），平時不再暗示可拖
 
+  &.pan-ready { cursor: grab; }    // Space 按住＝可平移（優先於 draw/crop 的 crosshair）
   &.dragging  { cursor: grabbing; }
-  &.draw-mode { cursor: crosshair; }
-  &.crop-mode { cursor: crosshair; }
+  &.draw-mode:not(.pan-ready) { cursor: crosshair; }
+  &.crop-mode:not(.pan-ready) { cursor: crosshair; }
 
 }
 

@@ -14,8 +14,11 @@ export default {
 
   // ── Pipeline canvas ───────────────────────────────────────────────────
   pipeline: {
-    palette_title: 'Tool nodes',
     input_node: 'File input',
+    input_pick: 'Select files',
+    input_clear: 'Clear files',
+    titlebar_unnamed: 'Untitled',
+    preview_hint: 'Options set here carry over when you add the tool to the canvas with "+".',
     input_node_hint: 'Pick the files to run through this pipeline in the Run section below.',
     select_node_hint: 'Click a node on the canvas to edit its parameters; drag or click on the left to add nodes.',
     connect_invalid: 'This connection is not compatible',
@@ -88,12 +91,21 @@ export default {
       min_silence_duration_ms: 'Min silence (ms)',
       vad_threshold: 'VAD threshold',
     },
-    saved_recipes: 'Saved pipelines',
-    new_recipe: 'New pipeline',
+    saved_recipes: 'Favorite flows',
     unnamed: 'Untitled pipeline',
-    recipe_name_placeholder: 'Pipeline name',
     saved: 'Pipeline saved',
     open_failed: 'Failed to open pipeline',
+    tab_limit: 'Tab limit (8) reached — close some tabs first',
+    tab_new: 'New tab',
+    tab_close: 'Close tab',
+    tab_close_confirm: 'Unsaved changes will be lost. Close this tab?',
+    tab_running_no_close: 'Running — stop it first',
+    run_busy_other_tab: 'Another tab is running',
+    export_flow: 'Export flow file',
+    import_flow: 'Import flow file',
+    add_favorite: 'Add to favorites',
+    import_bad_file: 'Cannot read flow file (bad format)',
+    import_version_new: 'Flow file version too new — please update the app',
     status: {
       idle: 'Idle',
       running: 'Running',
@@ -112,6 +124,15 @@ export default {
     undo: 'Undo',
     redo: 'Redo',
     save_as: 'Save As',
+  },
+
+  // ── Unsupported file / flow-file guidance overlay ─────────────────────
+  unsupported: {
+    title: 'This tool does not support this file format',
+    goto: 'Open in {tool}',
+    close: 'Close',
+    flow_file: 'This is a MediaTranX flow file',
+    open_in_pipeline: 'Open in Pipeline',
   },
 
   // ── Results drawer ────────────────────────────────────────────────────
@@ -202,13 +223,12 @@ export default {
     pick_folder: 'or select a folder',
     folder_register_failed: '{count} file(s) could not be added',
     loading_info: 'Loading info...',
+    zoom_fit: 'Zoom to fit',
     uploading: 'Uploading...',
     copy: 'Copy',
     copy_all: 'Copy All',
     auto_detect: 'Auto Detect',
     all_files: 'All Files',
-    unsupported_format: 'This tool does not support this file format',
-    go_to_tool: 'Go to {tool}',
     view_ocr_result: 'View OCR Result',
     view_result: 'View Result',
     text_preview: 'Text Preview',
@@ -513,10 +533,10 @@ export default {
     loading: 'Loading image info...',
 
     functions: {
-      transcode: 'Transcode',
+      convert: 'Transcode',
       compress: 'Compress',
       remove_bg: 'Remove BG',
-      ai_remove: 'Object Remove',
+      remove_object: 'Object Remove',
       upscale: 'Upscale',
       adjust: 'Adjust',
       filter: 'Filters',
@@ -670,13 +690,12 @@ export default {
       crop_size: 'Crop Size',
       original_image: 'Original:',
       task_label: 'Image · Crop',
+      size_error: 'Crop width/height must be positive numbers',
     },
 
     ocr: {
       title: 'OCR Settings',
       description: 'Use AI to recognize text in images, output as editable format.',
-      server_not_found: 'llama-server not found. Please install AI core in Settings.',
-      go_to_settings: 'Go to Settings',
       model: 'Text Recognition Model',
       markdown: 'Markdown (.md)',
       text: 'Plain Text (.txt)',
@@ -720,6 +739,8 @@ export default {
       flac: 'FLAC (Audio Only)',
       video_codec: 'Video Codec',
       copy_codec: 'Copy (No Re-encode)',
+      preset: 'Encoding Speed',
+      audio_codec: 'Audio Codec',
       resolution: 'Resolution',
       keep_original: 'Keep Original',
       custom: 'Custom Size',
@@ -736,10 +757,16 @@ export default {
       bitrate: 'Bitrate',
       extract_audio: 'Video · Extract Audio',
       task_label: 'Video · Transcode',
+      resolution_error: 'Invalid resolution format, expected "WIDTHxHEIGHT" (e.g. 1920x1080)',
     },
 
     download: {
       task_label: 'Video · URL Download',
+      title: 'URL Download Settings',
+      description: 'Set the download URL and advanced quality options (used by pipeline nodes).',
+      url: 'URL',
+      url_error: 'Enter a valid URL (must start with http:// or https://)',
+      filename: 'Filename',
     },
 
     cut: {
@@ -762,6 +789,7 @@ export default {
       crop_size: 'Crop size',
       free: 'Free',
       square: 'Square',
+      size_error: 'Crop width and height must be positive numbers',
     },
 
     subtitle: {
@@ -776,6 +804,7 @@ export default {
       start: 'Start',
       vocal_separation: 'Separate vocals (Demucs)',
       vocal_separation_hint: 'Enable if background music interferes with transcription; adds processing time.',
+      source_language_placeholder: 'Language code, e.g. en/zh/ja (blank = auto-detect)',
     },
 
     translate: {
@@ -844,6 +873,8 @@ export default {
     summary: {
       title: 'Video Summary',
       description: 'LLM-organized markdown summary of video subtitles with key frames, packaged as a ZIP.',
+      language: 'Content Language',
+      language_hint: 'Helps transcription and summarization better identify the language spoken in the video (default zh-TW).',
       whisper_model: 'Speech Recognition Model',
       vocal_separation: 'Separate vocals (Demucs)',
       vocal_separation_hint: 'Enable if background music interferes with transcription; adds processing time.',
@@ -890,6 +921,9 @@ export default {
       lossless: 'Lossless',
       bitrate: 'Bitrate',
       sample_rate: 'Sample Rate',
+      channels: 'Channels',
+      mono: 'Mono',
+      stereo: 'Stereo',
       keep_original: 'Keep Original',
       task_label: 'Audio · Transcode',
     },
@@ -901,6 +935,7 @@ export default {
       end_time: 'End Time',
       duration: 'Duration:',
       selection_duration: 'Selection Duration:',
+      time_error: 'End time must be greater than start time',
       task_label: 'Audio · Cut',
     },
 
@@ -942,6 +977,7 @@ export default {
       select_output: 'Select output path',
       task_label: 'Audio · Transcribe',
       no_translate_model: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
+      source_language_placeholder: 'Language code, e.g. en/zh/ja (blank = auto-detect)',
     },
 
     lyrics: {
@@ -981,6 +1017,7 @@ export default {
       midi_jump_prompt: 'Source separation complete. MIDI file generated. Jump to MIDI editor?',
       midi_jump: 'Jump',
       midi_stay: 'Stay',
+      no_stems_selected: 'Select at least one stem to separate.',
     },
 
     midi: {
@@ -1076,8 +1113,6 @@ export default {
     ocr: {
       title: 'OCR Settings',
       description: 'Use AI to recognize text in PDF or images, output as editable format.',
-      server_not_found: 'llama-server not found. Please install AI core in Settings.',
-      go_to_settings: 'Go to Settings',
       format_not_supported: 'OCR only supports PDF and image formats',
       model: 'Text Recognition Model',
       markdown: 'Markdown (.md)',
@@ -1481,7 +1516,12 @@ export default {
       'video.cut': 'Video · Cut',
       'video.crop': 'Video · Crop',
       'video.extract_audio': 'Video · Extract Audio',
+      'video.subtitle': 'Video · Subtitles',
+      // Naming-unification Task B (fix/tool-naming-unification) legacy alias: old sqlite
+      // task_history rows may store either legacy task_type value (same string as
+      // 'video.subtitle' above), kept for getTaskTypeLabel fallback lookup — do not remove.
       'video.subtitle_generate': 'Video · Subtitles',
+      'subtitle/generate': 'Video · Subtitles',
       'video.summary': 'Video · Summary',
       'video.download': 'Video · Download',
       'audio.transcode': 'Audio · Transcode',

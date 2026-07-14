@@ -6,12 +6,7 @@ import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import AudioPreview from '@/components/audio/AudioPreview.vue'
 import AudioMultiTrackPreview from '@/components/audio/AudioMultiTrackPreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
-import AudioTranscodePanel  from '@/components/audio/panels/AudioTranscodePanel.vue'
-import AudioCutPanel        from '@/components/audio/panels/AudioCutPanel.vue'
-import AudioVolumePanel     from '@/components/audio/panels/AudioVolumePanel.vue'
-import AudioTranscribePanel from '@/components/audio/panels/AudioTranscribePanel.vue'
-import AudioSeparatePanel  from '@/components/audio/panels/AudioSeparatePanel.vue'
-import AudioLyricsPanel    from '@/components/audio/panels/AudioLyricsPanel.vue'
+import ToolParamHost from '@/components/params/ToolParamHost.vue'
 const AudioMidiEditPanel = defineAsyncComponent(
   () => import('@/components/audio/panels/AudioMidiEditPanel.vue')
 )
@@ -24,6 +19,7 @@ import TextPreviewModal from '@/components/common/TextPreviewModal.vue'
 import { GM_INSTRUMENT_OPTIONS } from '@/constants/midiInstruments'
 import { useAudioWorkspace } from '@/composables/useAudioWorkspace'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { useMidiPlayback } from '@/composables/useMidiPlayback'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useExecuteStop } from '@/composables/useExecuteStop'
@@ -31,6 +27,7 @@ import { useTaskStore } from '@/stores/tasks'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
 import { apiFetch } from '@/composables/useApi'
 import { useViewHost } from '@/composables/useViewHost'
+import { panelIdFor } from '@/composables/useActiveView'
 import { subfunctionsForView } from '@/agent/agentNavCatalog'
 import { useRouter } from 'vue-router'
 import { useModelStore } from '@/stores/models'
@@ -38,6 +35,7 @@ import { SOUNDFONT_MODEL_ID } from '@/constants/gmSoundfontNames'
 
 const { t } = useI18n()
 const toast = useToast()
+const { confirm } = useConfirm()
 const router = useRouter()
 const modelStore = useModelStore()
 
@@ -57,15 +55,37 @@ const { submitToAll } = useMultiSubmit(collection)
 const { isCanceling, requestStop } = useExecuteStop(collection)
 
 // Panel refs
-const transcodePanelRef  = ref<InstanceType<typeof AudioTranscodePanel>  | null>(null)
-const cutPanelRef        = ref<InstanceType<typeof AudioCutPanel>        | null>(null)
-const volumePanelRef     = ref<InstanceType<typeof AudioVolumePanel>     | null>(null)
-const transcribePanelRef = ref<InstanceType<typeof AudioTranscribePanel> | null>(null)
-const separatePanelRef   = ref<InstanceType<typeof AudioSeparatePanel>  | null>(null)
-const lyricsPanelRef     = ref<InstanceType<typeof AudioLyricsPanel>    | null>(null)
+const transcodePanelRef  = ref<InstanceType<typeof ToolParamHost>        | null>(null)
+const cutPanelRef        = ref<InstanceType<typeof ToolParamHost>        | null>(null)
+const volumePanelRef     = ref<InstanceType<typeof ToolParamHost>        | null>(null)
+const transcribePanelRef = ref<InstanceType<typeof ToolParamHost>        | null>(null)
+const separatePanelRef   = ref<InstanceType<typeof ToolParamHost>        | null>(null)
+const lyricsPanelRef     = ref<InstanceType<typeof ToolParamHost>       | null>(null)
 const midiEditPanelRef   = ref<InstanceType<typeof AudioMidiEditPanel>  | null>(null)
 const pianoRollRef       = ref<InstanceType<typeof MidiPianoRoll>       | null>(null)
 
+// ── W2：host 泛型收斂 ──────────────────────────────────────────────────────
+// toolKey↔subFunction id 對映（transcode/cut/volume/transcribe/separate/lyrics 皆走
+// ToolParamHost；midi-edit 是非 host 殼 AudioMidiEditPanel，不進此表）。
+const HOST_TOOL_KEYS: Record<string, string> = {
+  transcode: 'audio.transcode',
+  cut: 'audio.cut',
+  volume: 'audio.volume',
+  transcribe: 'audio.transcribe',
+  separate: 'audio.separate',
+  lyrics: 'audio.lyrics',
+}
+const HOST_REFS: Record<string, typeof transcodePanelRef> = {
+  transcode: transcodePanelRef,
+  cut: cutPanelRef,
+  volume: volumePanelRef,
+  transcribe: transcribePanelRef,
+  separate: separatePanelRef,
+  lyrics: lyricsPanelRef,
+}
+function hostFor(fn: string) {
+  return HOST_REFS[fn]?.value ?? null
+}
 // ── MIDI Playback ──
 const midiPlayback = useMidiPlayback()
 
@@ -155,6 +175,12 @@ useViewHost('audio', {
 const volumeGainPreview = ref(1)
 const trimRange = ref<{ start: number; end: number } | null>(null)
 
+// cut ToolParamHost 出向：元件 emit update:trimRange 經 host 單根元件 attrs fallthrough
+// 穿透到這裡（host 未宣告此事件）——沿 volume 的 update:gain-preview 先例。
+function onCutParamsTrimRange(r: { start: number; end: number }) {
+  trimRange.value = r
+}
+
 // Toast warning when non-MIDI file is loaded in MIDI edit mode
 watch([() => currentFunction.value, () => currentFileName.value], ([fn, name]) => {
   if (fn === 'midi-edit' && name && !isMidiFile.value) {
@@ -194,67 +220,53 @@ async function warnIfSoundfontMissing() {
 }
 
 const executeDisabled = computed(() => {
-  if (currentFunction.value === 'transcode')  return transcodePanelRef.value?.isDisabled  ?? !hasFile.value
-  if (currentFunction.value === 'cut')        return cutPanelRef.value?.isDisabled        ?? !hasFile.value
-  if (currentFunction.value === 'volume')     return volumePanelRef.value?.isDisabled     ?? !hasFile.value
-  if (currentFunction.value === 'transcribe') return transcribePanelRef.value?.isDisabled ?? !hasFile.value
-  if (currentFunction.value === 'separate')  return separatePanelRef.value?.isDisabled  ?? !hasFile.value
-  if (currentFunction.value === 'lyrics')    return lyricsPanelRef.value?.isDisabled    ?? !hasFile.value
-  if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.isDisabled  ?? !hasFile.value
-  return !hasFile.value
+  if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.isDisabled ?? !hasFile.value
+  return hostFor(currentFunction.value)?.isDisabled ?? !hasFile.value
 })
 
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
 
 const executeLoading = computed(() => {
   if (isEntryProcessing.value) return true
-  if (currentFunction.value === 'transcode')  return transcodePanelRef.value?.isLoading  ?? false
-  if (currentFunction.value === 'cut')        return cutPanelRef.value?.isLoading        ?? false
-  if (currentFunction.value === 'volume')     return volumePanelRef.value?.isLoading     ?? false
-  if (currentFunction.value === 'transcribe') return transcribePanelRef.value?.isLoading ?? false
-  if (currentFunction.value === 'separate')  return separatePanelRef.value?.isLoading  ?? false
-  if (currentFunction.value === 'lyrics')    return lyricsPanelRef.value?.isLoading    ?? false
-  if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.isLoading  ?? false
-  return false
+  if (currentFunction.value === 'midi-edit') return midiEditPanelRef.value?.isLoading ?? false
+  return hostFor(currentFunction.value)?.isLoading ?? false
 })
 
 function handleExecute() {
   if (isMultiSelect.value) {
-    handleMultiExecute()
+    void handleMultiExecute()
   } else {
     handleSingleExecute()
   }
 }
 
 function handleSingleExecute() {
-  switch (currentFunction.value) {
-    case 'transcode':  transcodePanelRef.value?.execute();  break
-    case 'cut':        cutPanelRef.value?.execute();        break
-    case 'volume':     volumePanelRef.value?.execute();     break
-    case 'transcribe': transcribePanelRef.value?.execute(); break
-    case 'separate':  separatePanelRef.value?.execute();  break
-    case 'lyrics':    lyricsPanelRef.value?.execute();    break
-    case 'midi-edit': midiEditPanelRef.value?.execute(); break
+  if (currentFunction.value === 'midi-edit') {
+    midiEditPanelRef.value?.execute()
+    return
   }
+  hostFor(currentFunction.value)?.execute()
 }
 
-function handleMultiExecute() {
+async function handleMultiExecute() {
   const noop = () => {}
-  switch (currentFunction.value) {
-    case 'transcode':
-      submitToAll('/audio/transcode', () => transcodePanelRef.value!.getParams(), t('audio.transcode.task_label'), 'audio.transcode', noop); break
-    case 'volume':
-      submitToAll('/audio/volume',    () => volumePanelRef.value!.getParams(),    t('audio.volume.task_label'),    'audio.volume',    noop); break
-    case 'transcribe':
-      submitToAll('/audio/transcribe',() => transcribePanelRef.value!.getParams(),t('audio.transcribe.task_label'),'audio.transcribe', noop); break
-    case 'separate':
-      submitToAll('/audio/separate',  () => separatePanelRef.value!.getParams(),  t('audio.separate.task_label'),  'audio.separate',  noop); break
-    case 'lyrics':
-      submitToAll('/audio/lyrics',    () => lyricsPanelRef.value!.getParams(),    t('audio.lyrics.task_label'),    'audio.lyrics',    noop); break
-    case 'cut':
-      // 剪輯每個檔案起止不同，不支援批次
-      cutPanelRef.value?.execute(); break
+  const fn = currentFunction.value
+  if (fn === 'cut') {
+    // 剪輯每個檔案起止不同，不支援批次（沿舊行為：無 toast，直接跑目前檔案）
+    cutPanelRef.value?.execute()
+    return
   }
+  if (fn === 'midi-edit') return // 非 host 殼、無批次支援（沿舊行為：switch 無此 case，no-op）
+  const toolKey = HOST_TOOL_KEYS[fn]
+  const host = hostFor(fn)
+  if (!toolKey || !host) return
+  // getSubmitSpec() 走各自 meta.buildSubmit（transcode 正規化／transcribe·lyrics 雙 gate 剔欄）
+  // ——批次所有選取檔案共用同一參數組，payload 由 submitToAll 逐檔重新呼叫快照。
+  // preflight 統一先行：無 modelRequirement 的工具（transcode/cut/volume）恆真、
+  // transcribe/separate/lyrics 與單筆 execute() 同語意，跟 VideoView 一致。
+  if ((await host.preflight()) === false) return
+  const spec = host.getSubmitSpec()
+  await submitToAll(spec.apiPath, () => host.getSubmitSpec().payload, t(spec.labelKey), spec.taskType, noop)
 }
 
 function formatDuration(s: number): string {
@@ -291,8 +303,13 @@ const audioInfoItems = computed<InfoItem[]>(() => {
 })
 
 function onDownload() {
+  // transcode 的下載格式改讀 host.outputFormat（meta.downloadFormatField='output_format'，
+  // 沿 VideoView 已遷模式）——取代舊 `transcodePanelRef.value ? '' : 'mp3'` 寫法。
+  if (currentFunction.value === 'transcode') {
+    handleDownload(transcodePanelRef.value?.outputFormat || 'mp3', '_transcoded')
+    return
+  }
   const fmtMap: Record<string, [string, string]> = {
-    transcode:  [transcodePanelRef.value ? '' : 'mp3', '_transcoded'],
     cut:        ['', '_cut'],
     volume:     ['', '_adjusted'],
     transcribe: ['', '_transcript'],
@@ -380,7 +397,7 @@ watch(
     // 只問一次 MIDI 跳轉
     if (meta.midi_file_id && !_midiJumpAskedIds.has(entry.id)) {
       _midiJumpAskedIds.add(entry.id)
-      separatePanelRef.value?.onTaskComplete({ midi_file_id: meta.midi_file_id })
+      void askJumpToMidi(meta.midi_file_id)
     }
   },
 )
@@ -398,6 +415,23 @@ watch(() => collection.activeId.value, () => {
 })
 
 const separateStems = computed(() => separateStemsData.value)
+
+// ── 跳 MIDI 詢問（批 3 Task 3.3 從 AudioSeparatePanel.onTaskComplete 上移）──
+// separate 完成且有 midi_file_id 時彈窗問是否跳轉；yes 才呼叫 handleJumpToMidi。
+// 舊 AudioSeparatePanel 版本此邏輯在 panel 內、由 AudioView 呼叫 panel.onTaskComplete()
+// 轉呼；遷移後 separate 走標準 ToolParamHost（無 onTaskComplete 掛勾點），故收訊/彈窗邏輯
+// 整段移進觸發源本來就在的 AudioView（historyStack watch）。
+async function askJumpToMidi(midiFileId: string) {
+  const yes = await confirm({
+    message: t('audio.separate.midi_jump_prompt'),
+    confirmLabel: t('audio.separate.midi_jump'),
+    cancelLabel: t('audio.separate.midi_stay'),
+    type: 'info',
+  })
+  if (yes) {
+    await handleJumpToMidi(midiFileId)
+  }
+}
 
 // ── MIDI 跳轉 ──
 async function handleJumpToMidi(midiFileId: string) {
@@ -744,7 +778,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
         :file="collection.activeEntry.value?.file ?? file"
         :gain-preview="currentFunction === 'volume' ? volumeGainPreview : 1"
         :trim-range="currentFunction === 'cut' ? trimRange : null"
-        @update:trim-range="r => { trimRange = r; cutPanelRef?.onTrimRangeUpdate(r) }"
+        @update:trim-range="r => { trimRange = r; cutPanelRef?.notify('trimRange', r) }"
       />
     </template>
 
@@ -773,59 +807,71 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
 
     <template #settings>
       <div class="settings-form">
-        <AudioTranscodePanel
+        <ToolParamHost
           v-if="currentFunction === 'transcode'"
           ref="transcodePanelRef"
+          tool-key="audio.transcode"
+          :panel-id="panelIdFor('audio', 'transcode')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
-        <AudioCutPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'cut'"
           ref="cutPanelRef"
+          tool-key="audio.cut"
+          :panel-id="panelIdFor('audio', 'cut')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :duration="audioInfo?.duration"
+          :file-info="audioInfo"
           @submit="handlePanelSubmit"
-          @update:trim-range="r => trimRange = r"
+          @update:trim-range="onCutParamsTrimRange"
         />
 
-        <AudioVolumePanel
+        <ToolParamHost
           v-else-if="currentFunction === 'volume'"
           ref="volumePanelRef"
+          tool-key="audio.volume"
+          :panel-id="panelIdFor('audio', 'volume')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
-          @update:gain-preview="g => volumeGainPreview = g"
+          @update:gain-preview="(g: number) => volumeGainPreview = g"
         />
 
-        <AudioTranscribePanel
+        <ToolParamHost
           v-else-if="currentFunction === 'transcribe'"
           ref="transcribePanelRef"
+          tool-key="audio.transcribe"
+          :panel-id="panelIdFor('audio', 'transcribe')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 
-        <AudioSeparatePanel
+        <ToolParamHost
           v-else-if="currentFunction === 'separate'"
           ref="separatePanelRef"
+          tool-key="audio.separate"
+          :panel-id="panelIdFor('audio', 'separate')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
-          @jump-to-midi="handleJumpToMidi"
         />
 
-        <AudioLyricsPanel
+        <ToolParamHost
           v-else-if="currentFunction === 'lyrics'"
           ref="lyricsPanelRef"
+          tool-key="audio.lyrics"
+          :panel-id="panelIdFor('audio', 'lyrics')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
           @submit="handlePanelSubmit"
         />
 

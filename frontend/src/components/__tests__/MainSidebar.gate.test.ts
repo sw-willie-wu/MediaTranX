@@ -22,13 +22,13 @@ function mountSidebar() {
 
 afterEach(() => { delete w.electron })
 
-describe('MainSidebar — pipeline gate', () => {
+describe('MainSidebar — pipeline gate（v1.7.0 已拆，任何通道皆顯示）', () => {
   // 注意：nav label 只渲染在 data-tooltip 屬性＋CSS ::after，不進 textContent——
-  // 必須用屬性 selector 斷言，wrap.text() 會 dev 案例必紅、stable 案例假綠。
-  it('stable：無流程項', () => {
+  // 必須用屬性 selector 斷言，wrap.text() 會假綠。
+  it('stable：有流程項（gate 已拆）', () => {
     w.electron = { updateChannel: 'stable' }
     const wrap = mountSidebar()
-    expect(wrap.find('[data-tooltip="nav.pipeline"]').exists()).toBe(false)
+    expect(wrap.find('[data-tooltip="nav.pipeline"]').exists()).toBe(true)
     expect(wrap.find('[data-tooltip="nav.image"]').exists()).toBe(true) // 其餘項健在
   })
   it('dev（jsdom 缺省無 electron）：有流程項', () => {

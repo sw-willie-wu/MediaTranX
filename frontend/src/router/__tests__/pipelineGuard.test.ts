@@ -10,11 +10,11 @@ const w = window as unknown as { electron?: { updateChannel?: string | null } }
 
 afterEach(async () => { delete w.electron; await router.push('/') })
 
-describe('/pipeline route gate', () => {
-  it('stable：redirect 回 /', async () => {
+describe('/pipeline route gate（v1.7.0 已拆——任何通道皆可進）', () => {
+  it('stable：可進 /pipeline（gate 已拆）', async () => {
     w.electron = { updateChannel: 'stable' }
     await router.push('/pipeline')
-    expect(router.currentRoute.value.path).toBe('/')
+    expect(router.currentRoute.value.path).toBe('/pipeline')
   })
   it('dev：可進 /pipeline', async () => {
     await router.push('/pipeline')

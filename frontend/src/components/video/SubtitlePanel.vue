@@ -1,20 +1,27 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+/**
+ * SubtitlePanel — 例外殼（統一參數元件 spec；批 2 Task 2.5）。
+ * **不刪、不換 ToolParamHost**——保留自建 task 的職責：apiFetch('/video/subtitle/generate')
+ * + 手動 taskStore.addTask + 自管 isLoading/error + 語言清單載入（殼責任）+ agent host。
+ * 表單本體（source_language/model_size/output_format/翻譯區塊/進階區）已抽成
+ * components/params/video/SubtitleParams.vue（＋ subtitle.meta.ts 提供 schema/buildSubmit/
+ * modelRequirements）——本檔改持 `params` ref，透過 `<SubtitleParams v-model:params>` 收發。
+ *
+ * defineExpose 契約不變（VideoView 掛載法不變，:334-342 殼掛法，見該檔）；agentSchema 沿舊
+ * 4 欄清單（language/whisper_model/vocal_separation/output_format，勿擴——殼不是 host）。
+ */
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
-import AppSelect from '@/components/common/AppSelect.vue'
-import AppToggle from '@/components/common/AppToggle.vue'
-import WhisperAdvancedSettings from '@/components/video/WhisperAdvancedSettings.vue'
-import TranslationOptionsPanel from '@/components/video/TranslationOptionsPanel.vue'
-import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
 import { apiFetch } from '@/composables/useApi'
-import { parseModelValue } from '@/composables/useModelOptions'
 import { useModelStore } from '@/stores/models'
 import { useModelGuard } from '@/composables/useModelGuard'
-import { usePersistedModel } from '@/composables/usePersistedModel'
 import { useAgentPanelHost } from '@/composables/useAgentPanelHost'
+import { isModelInstalled } from '@/components/params/modelGuardUtils'
+import SubtitleParams from '@/components/params/video/SubtitleParams.vue'
+import { META as SUBTITLE_META } from '@/components/params/video/subtitle.meta'
 
 const { t } = useI18n()
 
@@ -46,36 +53,10 @@ const { guardModelReady } = useModelGuard()
 const isLoading = ref(false)
 const error = ref<string | null>(null)
 
-// ── Whisper 模型狀態 ────────────────────────────────────────────
-const modelSizesWithBadge = computed(() =>
-  modelStore.forPanel(modelStore.byCategory('stt')).map(m => ({
-    value: m.variant,
-    label: m.label,
-    badge: (m.downloaded ? 'ok' : 'err') as 'ok' | 'err',
-  }))
-)
+// ── params（表單本體交給 SubtitleParams.vue；殼只持有整包 params state） ──────────
+const params = ref<Record<string, unknown>>(SUBTITLE_META.defaults())
 
-// Auto-select first downloaded model when current selection is not downloaded or not in list
-watch(modelSizesWithBadge, (sizes) => {
-  if (sizes.length === 0) return
-  const current = sizes.find(m => m.value === modelSize.value)
-  if (!current || current.badge !== 'ok') {
-    const firstOk = sizes.find(m => m.badge === 'ok')
-    if (firstOk) modelSize.value = firstOk.value
-  }
-})
-
-// ── 字幕選項 ────────────────────────────────────────────────────
-const language = ref('')
-const modelSize = usePersistedModel('subtitle_whisper_model', 'medium')
-const outputFormat = ref('srt')
-const vocalSeparation = ref(false)
-
-// Demucs model (for vocal separation guard)
-const demucsModel = computed(() =>
-  modelStore.byCategory('separate').find(m => m.family === 'demucs' && m.variant === 'htdemucs_6s')
-)
-
+// ── 語言清單（殼責任——source_language 選項來源，傳給 SubtitleParams 當 prop） ───────
 const rawLanguages = ref<{ value: string; label: string }[]>([])
 
 const languages = computed(() =>
@@ -91,82 +72,46 @@ async function loadLanguages() {
   } catch {}
 }
 
+// ── agent 欄位用的靜態清單（沿舊 4 欄清單，勿擴——見檔頭註解；與 SubtitleParams 內部的
+// picker 清單各自獨立小重複，避免殼伸手進子元件內部狀態） ─────────────────────────
+const modelSizesWithBadge = computed(() =>
+  modelStore.forPanel(modelStore.byCategory('stt')).map(m => ({
+    value: m.variant,
+    label: m.label,
+    badge: (m.downloaded ? 'ok' : 'err') as 'ok' | 'err',
+  }))
+)
+
 const outputFormats = computed(() => [
   { value: 'srt', label: t('video.subtitle.srt') },
   { value: 'vtt', label: t('video.subtitle.vtt') },
 ])
 
-// ── 子元件 refs ─────────────────────────────────────────────────
-const whisperAdvanced = ref<InstanceType<typeof WhisperAdvancedSettings> | null>(null)
-const translationOptions = ref<InstanceType<typeof TranslationOptionsPanel> | null>(null)
-
-// ── wav2vec2 (alignment) readiness ──────────────────────────────
-const alignReady = computed(() =>
-  modelStore.byCategory('alignment').some(m => m.downloaded)
-)
+// ── 提交前模型 guard（沿 SUBTITLE_META.modelRequirements 依序：whisper → demucs(若
+// vocal_separation) → align(若 align) → translate(若翻譯已啟用且非 remote)——與舊
+// submitGenerate 四道 guard 語意等價，見 subtitle.meta.ts 檔頭註解） ─────────────────
+async function preflight(): Promise<boolean> {
+  const reqs = SUBTITLE_META.modelRequirements?.(params.value) ?? []
+  for (const req of reqs) {
+    const ready = isModelInstalled(modelStore.models, req)
+    const category = req.slot === 'translate' ? 'llm' : 'audio'
+    if (!(await guardModelReady(ready, category))) return false
+  }
+  return true
+}
 
 // ── 提交 ────────────────────────────────────────────────────────
 async function submitGenerate() {
-  const whisperModel = modelStore.byCategory('stt').find(m => m.variant === modelSize.value)
-  if (!await guardModelReady(whisperModel?.downloaded === true, 'audio')) return
-  if (vocalSeparation.value) {
-    if (!await guardModelReady(demucsModel.value?.downloaded === true, 'audio')) return
-  }
-  if (whisperAdvanced.value?.align) {
-    if (!await guardModelReady(alignReady.value, 'audio')) return
-  }
-  if (translationOptions.value?.enableTranslation) {
-    const tParsed = parseModelValue(translationOptions.value.selectedTranslateModel)
-    const tModel = translationOptions.value.selectedTranslateModel
-    const translateReady = tParsed.isRemote || modelStore.byCapability('text').some(m => {
-      const [size, quant] = m.variant.split(':')
-      return `${m.family}:${size}:${quant}` === tModel && m.downloaded
-    })
-    if (!await guardModelReady(translateReady, 'llm')) return
-  }
+  if (!(await preflight())) return
   if (!props.fileId) return
   isLoading.value = true
   error.value = null
 
   try {
-    const body: Record<string, unknown> = {
-      file_id: props.fileId,
-      model_size: modelSize.value,
-      output_format: outputFormat.value,
-      vocal_separation: vocalSeparation.value,
-    }
+    const spec = SUBTITLE_META.buildSubmit!(params.value)
+    const body: Record<string, unknown> = { file_id: props.fileId, ...spec.payload }
 
-    if (language.value) body.source_language = language.value
-
-    if (translationOptions.value?.enableTranslation && translationOptions.value.targetLanguage) {
-      const parsed = parseModelValue(translationOptions.value.selectedTranslateModel)
-      body.target_language = translationOptions.value.targetLanguage
-      if (parsed.isRemote) {
-        body.translate_remote = true
-        body.translate_provider = parsed.provider
-        body.translate_conn_id = parsed.connId
-        body.translate_remote_model = parsed.modelId
-      } else {
-        const [tmType, tmSize, tmQuant] = translationOptions.value.selectedTranslateModel.split(':')
-        body.translate_model_family = tmType
-        body.translate_model_size = tmSize
-        body.translate_quantization = tmQuant
-      }
-      body.keep_names = translationOptions.value.keepNames
-      body.translate_style = translationOptions.value.translateStyle
-      const glossary = translationOptions.value.parseGlossary()
-      if (glossary) body.glossary = glossary
-    }
-
-    if (whisperAdvanced.value) {
-      body.word_timestamps = whisperAdvanced.value.wordTimestamps
-      body.align = whisperAdvanced.value.align
-      body.condition_on_previous_text = whisperAdvanced.value.conditionOnPreviousText
-      body.min_silence_duration_ms = whisperAdvanced.value.minSilenceDurationMs
-      body.vad_threshold = whisperAdvanced.value.vadThreshold
-    }
-
-    const response = await apiFetch('/video/subtitle/generate', {
+    const response = await apiFetch(spec.apiPath, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -179,12 +124,10 @@ async function submitGenerate() {
 
     const result = await response.json()
     const fileName = filesStore.currentFile?.originalName ?? undefined
-    const label = translationOptions.value?.enableTranslation
-      ? t('video.subtitle.task_label_with_translate')
-      : t('video.subtitle.task_label')
+    const label = t(spec.labelKey)
     taskStore.addTask({
       taskId: result.task_id,
-      taskType: 'subtitle/generate',
+      taskType: 'video.subtitle',
       status: 'pending',
       progress: 0,
       message: null,
@@ -229,24 +172,26 @@ useAgentPanelHost('video.subtitle', {
   agentSchema,
   isMultiSelect: () => false,  // subtitle panel does not support multi-select
   getCurrentValues: () => ({
-    language: language.value,
-    whisper_model: modelSize.value,
-    vocal_separation: vocalSeparation.value,
-    output_format: outputFormat.value,
+    language: params.value.source_language ?? '',
+    whisper_model: params.value.model_size ?? '',
+    vocal_separation: Boolean(params.value.vocal_separation),
+    output_format: params.value.output_format ?? '',
   }),
   setField: (field, value) => {
     switch (field) {
       case 'language':
-        language.value = value as string
+        params.value = { ...params.value, source_language: value as string }
         return value
       case 'whisper_model':
-        modelSize.value = value as string
+        params.value = { ...params.value, model_size: value as string }
         return value
-      case 'vocal_separation':
-        vocalSeparation.value = !!value
-        return vocalSeparation.value
+      case 'vocal_separation': {
+        const b = !!value
+        params.value = { ...params.value, vocal_separation: b }
+        return b
+      }
       case 'output_format':
-        outputFormat.value = value as string
+        params.value = { ...params.value, output_format: value as string }
         return value
       default:
         throw new Error(`Unknown field: ${field}`)
@@ -273,30 +218,11 @@ onMounted(() => { loadLanguages(); modelStore.ensureLoaded() })
       <span>{{ error }}</span>
     </div>
 
-    <div class="form-group">
-      <label>{{ $t('common.source_language') }}</label>
-      <AppSelect v-model="language" :options="languages" />
-    </div>
-
-    <div class="form-group">
-      <label>{{ $t('video.subtitle.model_settings') }}</label>
-      <AppSelect v-model="modelSize" :options="modelSizesWithBadge" :placeholder="$t('common.no_models_available')" />
-    </div>
-
-    <div class="form-group">
-      <label>{{ $t('common.output_format') }}</label>
-      <AppSelect v-model="outputFormat" :options="outputFormats" />
-    </div>
-
-    <TranslationOptionsPanel ref="translationOptions" />
-
-    <SettingsCollapsible storageKey="video_subtitle_advanced">
-      <div class="form-group">
-        <AppToggle v-model="vocalSeparation">{{ $t('video.subtitle.vocal_separation') }}</AppToggle>
-        <small class="form-hint">{{ $t('video.subtitle.vocal_separation_hint') }}</small>
-      </div>
-      <WhisperAdvancedSettings ref="whisperAdvanced" :embedded="true" />
-    </SettingsCollapsible>
+    <SubtitleParams
+      v-model:params="params"
+      :language-options="languages"
+      context="tool"
+    />
   </div>
 </template>
 

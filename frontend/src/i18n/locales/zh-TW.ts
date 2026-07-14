@@ -14,8 +14,11 @@ export default {
 
   // ── Pipeline 畫布 ─────────────────────────────────────────────────────
   pipeline: {
-    palette_title: '工具節點',
     input_node: '檔案輸入',
+    input_pick: '選取檔案',
+    input_clear: '清除檔案',
+    titlebar_unnamed: '未命名',
+    preview_hint: '這裡調整的選項會在按「+」加入畫布時一併帶入。',
     input_node_hint: '在下方「執行」區選擇要跑這條流程的檔案。',
     select_node_hint: '點選畫布上的節點編輯參數；從左側拖入或點擊新增節點。',
     connect_invalid: '這條連線不相容',
@@ -88,12 +91,21 @@ export default {
       min_silence_duration_ms: '最短靜音（毫秒）',
       vad_threshold: 'VAD 閾值',
     },
-    saved_recipes: '已存流程',
-    new_recipe: '新流程',
+    saved_recipes: '常用流程',
     unnamed: '未命名流程',
-    recipe_name_placeholder: '流程名稱',
     saved: '流程已儲存',
     open_failed: '流程載入失敗',
+    tab_limit: '分頁已達上限（8），請先關閉部分分頁',
+    tab_new: '新分頁',
+    tab_close: '關閉分頁',
+    tab_close_confirm: '關閉後未儲存的內容會消失，確定關閉？',
+    tab_running_no_close: '執行中，請先停止',
+    run_busy_other_tab: '另一分頁執行中',
+    export_flow: '匯出流程檔',
+    import_flow: '匯入流程檔',
+    add_favorite: '新增常用',
+    import_bad_file: '無法讀取流程檔（格式錯誤）',
+    import_version_new: '流程檔版本過新，請更新程式',
     status: {
       idle: '待命',
       running: '執行中',
@@ -112,6 +124,15 @@ export default {
     undo: '上一步',
     redo: '下一步',
     save_as: '另存新檔',
+  },
+
+  // ── 不支援檔案/流程檔引導 overlay ────────────────────────────────────
+  unsupported: {
+    title: '此工具不支援此檔案格式',
+    goto: '前往{tool}',
+    close: '關閉',
+    flow_file: '這是 MediaTranX 流程檔',
+    open_in_pipeline: '前往流程頁開啟',
   },
 
   // ── 產出抽屜 ──────────────────────────────────────────────────────────
@@ -202,13 +223,12 @@ export default {
     pick_folder: '或選擇資料夾',
     folder_register_failed: '有 {count} 個檔案無法加入',
     loading_info: '讀取資訊...',
+    zoom_fit: '縮放至顯示全部',
     uploading: '上傳中...',
     copy: '複製',
     copy_all: '複製全文',
     auto_detect: '自動偵測',
     all_files: '所有檔案',
-    unsupported_format: '此工具不支援此檔案格式',
-    go_to_tool: '前往{tool}',
     view_ocr_result: '查看 OCR 結果',
     view_result: '查看結果',
     text_preview: '文字預覽',
@@ -513,10 +533,10 @@ export default {
     loading: '讀取圖片資訊...',
 
     functions: {
-      transcode: '轉檔',
+      convert: '轉檔',
       compress: '壓縮',
       remove_bg: '去背',
-      ai_remove: '物件移除',
+      remove_object: '物件移除',
       upscale: '超解析',
       adjust: '調整',
       filter: '濾鏡',
@@ -670,13 +690,12 @@ export default {
       crop_size: '裁切尺寸',
       original_image: '原圖：',
       task_label: '圖片 · 裁切',
+      size_error: '裁切寬高必須為正數',
     },
 
     ocr: {
       title: '文字辨識設定',
       description: '使用 AI 辨識圖片中的文字，輸出為可編輯格式。',
-      server_not_found: 'llama-server 未找到，請前往設定頁面安裝 AI 核心',
-      go_to_settings: '前往設定',
       model: '文字辨識模型',
       markdown: 'Markdown (.md)',
       text: '純文字 (.txt)',
@@ -720,6 +739,8 @@ export default {
       flac: 'FLAC（純音訊）',
       video_codec: '影片編碼',
       copy_codec: '不重新編碼',
+      preset: '編碼速度',
+      audio_codec: '音訊編碼',
       resolution: '解析度',
       keep_original: '保持原始',
       custom: '自訂尺寸',
@@ -736,10 +757,16 @@ export default {
       bitrate: '位元率',
       extract_audio: '影片 · 提取音訊',
       task_label: '影片 · 轉檔',
+      resolution_error: '解析度格式錯誤，請輸入「寬x高」（例如 1920x1080）',
     },
 
     download: {
       task_label: '影片 · 網址下載',
+      title: '網址下載設定',
+      description: '設定下載網址與進階畫質選項（用於流程節點）。',
+      url: '網址',
+      url_error: '請輸入有效的網址（須以 http:// 或 https:// 開頭）',
+      filename: '檔名',
     },
 
     cut: {
@@ -762,6 +789,7 @@ export default {
       crop_size: '裁切尺寸',
       free: '自由',
       square: '正方形',
+      size_error: '裁切寬高必須為正數',
     },
 
     subtitle: {
@@ -776,6 +804,7 @@ export default {
       start: '開始',
       vocal_separation: '分離人聲',
       vocal_separation_hint: '若影片配樂干擾辨識可開啟；會增加處理時間。',
+      source_language_placeholder: '語言代碼，如 en/zh/ja（留空＝自動偵測）',
     },
 
     translate: {
@@ -844,6 +873,8 @@ export default {
     summary: {
       title: '影片摘要',
       description: '使用 LLM 整理字幕為 Markdown 摘要，附關鍵影格；輸出為 ZIP 壓縮檔。',
+      language: '內容語言',
+      language_hint: '協助語音辨識與摘要更準確判斷影片內容的語言（預設 zh-TW）。',
       whisper_model: '語音辨識模型',
       vocal_separation: '分離人聲',
       vocal_separation_hint: '若影片配樂干擾辨識可開啟；會增加處理時間。',
@@ -890,6 +921,9 @@ export default {
       lossless: '無損',
       bitrate: '位元率',
       sample_rate: '取樣率',
+      channels: '聲道數',
+      mono: '單聲道',
+      stereo: '立體聲',
       keep_original: '保持原始',
       task_label: '音訊 · 轉檔',
     },
@@ -901,6 +935,7 @@ export default {
       end_time: '結束時間',
       duration: '音訊長度：',
       selection_duration: '選取長度：',
+      time_error: '結束時間必須大於開始時間',
       task_label: '音訊 · 剪輯',
     },
 
@@ -942,6 +977,7 @@ export default {
       select_output: '選擇輸出路徑',
       task_label: '音訊 · 逐字稿',
       no_translate_model: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
+      source_language_placeholder: '語言代碼，如 en/zh/ja（留空＝自動偵測）',
     },
 
     lyrics: {
@@ -981,6 +1017,7 @@ export default {
       midi_jump_prompt: '音源分離完成，已產出 MIDI 檔案。是否跳轉至 MIDI 編輯器？',
       midi_jump: '跳轉',
       midi_stay: '留在此頁',
+      no_stems_selected: '請至少選擇一個要分離的音軌。',
     },
 
     midi: {
@@ -1076,8 +1113,6 @@ export default {
     ocr: {
       title: '文字辨識設定',
       description: '使用 AI 辨識 PDF 或圖片中的文字，輸出為可編輯格式。',
-      server_not_found: 'llama-server 未找到，請前往設定頁面安裝 AI 核心',
-      go_to_settings: '前往設定',
       format_not_supported: 'OCR 僅支援 PDF 及圖片格式',
       model: '文字辨識模型',
       markdown: 'Markdown (.md)',
@@ -1481,7 +1516,12 @@ export default {
       'video.cut': '影片 · 剪輯',
       'video.crop': '影片 · 畫面裁切',
       'video.extract_audio': '影片 · 提取音訊',
+      'video.subtitle': '影片 · 字幕提取',
+      // 命名統一小案 Task B（fix/tool-naming-unification）legacy alias：舊 sqlite task_history
+      // 可能存這兩個舊 task_type 值（值與上方 'video.subtitle' 相同），保留供 getTaskTypeLabel
+      // fallback 查表，勿刪。
       'video.subtitle_generate': '影片 · 字幕提取',
+      'subtitle/generate': '影片 · 字幕提取',
       'video.summary': '影片 · 摘要',
       'video.download': '影片 · 下載',
       'audio.transcode': '音訊 · 轉檔',

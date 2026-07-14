@@ -19,7 +19,8 @@ export function useImageZoom(
     zoomLevel.value = 1
     panX.value = 0
     panY.value = 0
-    fitPercent.value = 100
+    // fitPercent 不動——它是 onImageLoad 算出的「fit=實際顯示/原圖」比例（大圖可能 11%），
+    // reset 只回 fit 狀態；曾誤寫死 100 造成 reset 後百分比顯示與初載不一致
   }
 
   function clampPan(px: number, py: number) {
@@ -69,7 +70,8 @@ export function useImageZoom(
   }
 
   function onMouseDown(e: MouseEvent) {
-    if (e.button !== 0) return
+    // 左鍵（呼叫端 gate Space）或中鍵（直接平移，同流程頁畫布慣例）
+    if (e.button !== 0 && e.button !== 1) return
     e.preventDefault()
     isDragging.value = true
     _dragStartX = e.clientX

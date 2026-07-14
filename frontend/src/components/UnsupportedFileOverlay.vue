@@ -1,27 +1,36 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { getToolLabel, type ToolType } from '@/utils/mediaType'
 
-defineProps<{
+// mode='flow-file'：拖入的是 .mtxflow 流程檔——非「不支援」而是引導去流程頁開啟
+// （流程檔沒有 ToolType，target 模型裝不下，故獨立 variant；spec §4.3）
+withDefaults(defineProps<{
   visible: boolean
   target: ToolType | null
-}>()
+  mode?: 'unsupported' | 'flow-file'
+}>(), { mode: 'unsupported' })
 
 const emit = defineEmits<{
   dismiss: []
   goToTool: []
 }>()
+
+const { t } = useI18n()
 </script>
 
 <template>
   <Transition name="overlay-fade">
     <div v-if="visible" class="unsupported-overlay" @click.self="emit('dismiss')">
       <div class="unsupported-card">
-        <i class="bi bi-exclamation-triangle"></i>
-        <p>此工具不支援此檔案格式</p>
-        <button v-if="target" class="goto-btn" @click="emit('goToTool')">
-          前往{{ getToolLabel(target) }}
+        <i class="bi" :class="mode === 'flow-file' ? 'bi-diagram-3' : 'bi-exclamation-triangle'"></i>
+        <p>{{ mode === 'flow-file' ? t('unsupported.flow_file') : t('unsupported.title') }}</p>
+        <button v-if="mode === 'flow-file'" class="goto-btn" @click="emit('goToTool')">
+          {{ t('unsupported.open_in_pipeline') }}
         </button>
-        <button class="dismiss-btn" @click="emit('dismiss')">關閉</button>
+        <button v-else-if="target" class="goto-btn" @click="emit('goToTool')">
+          {{ t('unsupported.goto', { tool: getToolLabel(target) }) }}
+        </button>
+        <button class="dismiss-btn" @click="emit('dismiss')">{{ t('unsupported.close') }}</button>
       </div>
     </div>
   </Transition>

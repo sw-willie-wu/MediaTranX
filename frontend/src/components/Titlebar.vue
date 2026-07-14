@@ -24,6 +24,7 @@ const { activeFileName, canUndo, canRedo, canSaveAs, undo, redo, saveAs, extraAc
 const isElectron = !!window.electron
 
 const isToolPage = computed(() => !!toolTitleKeys[route.path])
+const isPipelinePage = computed(() => route.path === '/pipeline')
 
 // 工具頁路徑
 const toolTitleKeys: Record<string, string> = {
@@ -44,6 +45,12 @@ const pageTitle = computed(() => {
   if (toolKey) {
     const toolName = t(toolKey)
     return activeFileName.value ? `${toolName} - ${activeFileName.value}` : toolName
+  }
+  // 流程頁：同工具頁「頁名 - 名稱」組法（名稱=PipelineView 設的流程名/未命名），
+  // 但不進 toolTitleKeys——isToolPage 會帶出 undo/redo 等流程頁沒註冊的按鈕
+  if (route.path === '/pipeline') {
+    const base = t('nav.pipeline')
+    return activeFileName.value ? `${base} - ${activeFileName.value}` : base
   }
   const pageKey = pageTitleKeys[route.path]
   return pageKey ? t(pageKey) : ''
@@ -104,10 +111,10 @@ onMounted(async () => {
     <div v-if="pageTitle" class="app-title-wrap">
       <span class="app-title">{{ pageTitle }}</span>
       <TitlebarButton
-        v-if="isToolPage && canSaveAs"
+        v-if="(isToolPage || isPipelinePage) && canSaveAs"
         class="title-save"
         icon="bi-floppy"
-        :tooltip="$t('titlebar.save_as')"
+        :tooltip="isPipelinePage ? $t('pipeline.export_flow') : $t('titlebar.save_as')"
         @click="saveAs"
       />
     </div>

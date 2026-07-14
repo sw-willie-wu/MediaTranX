@@ -4,21 +4,49 @@
  * recipe（store）是唯一事實來源;Vue Flow nodes/edges 由 recipe 派生,
  * 拖曳/連線事件寫回 store。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Handle, Position, VueFlow, useVueFlow, type Connection, type NodeDragEvent } from '@vue-flow/core'
 import AppThreePaneLayout from '@/components/common/AppThreePaneLayout.vue'
-import { usePipelineStore } from '@/stores/pipeline'
+import { MAX_DOCS, usePipelineStore } from '@/stores/pipeline'
 import { useFilesStore } from '@/stores/files'
 import { useToast } from '@/composables/useToast'
 import { TOOL_REGISTRY, listToolSpecs } from '@/pipeline/registry'
+import type { RecipeNode } from '@/pipeline/types'
 import PipelineParamForm from '@/components/pipeline/PipelineParamForm.vue'
+import PipelineTabBar from '@/components/pipeline/PipelineTabBar.vue'
+import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
+import { useTitlebar } from '@/composables/useTitlebar'
+import { useSpaceHeld } from '@/composables/useSpaceHeld'
+import { isFlowFileName, sniffFlowText } from '@/pipeline/flowFile'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('PipelineView')
 
 const { t } = useI18n()
 const store = usePipelineStore()
 const filesStore = useFilesStore()
 const toast = useToast()
-const { screenToFlowCoordinate, fitView } = useVueFlow()
+const { screenToFlowCoordinate, fitView, onPaneReady, viewport } = useVueFlow()
+const { isSpaceHeld } = useSpaceHeld()
+
+// 底部資訊列：目前縮放百分比（viewport 響應 pan/zoom；形狀沿 ImageView 的 imageInfoItems）；
+// 點擊＝fitView 縮放至可見全部節點
+const canvasInfoItems = computed<InfoItem[]>(() => [
+  {
+    icon: 'bi-zoom-in',
+    label: `${Math.round(viewport.value.zoom * 100)}%`,
+    title: t('common.zoom_fit'),
+    onClick: () => fitView(FIT_VIEW_OPTS),
+  },
+])
+
+// fitView 在節點少時會把 zoom 拉滿填畫布（1-2 個節點時看起來巨大）——
+// maxZoom:1 讓「置中」不「放大」；使用者仍可手動 zoom（受 VueFlow 預設上限）
+const FIT_VIEW_OPTS = { padding: 0.25, maxZoom: 1 } as const
+
+// 取代 fit-view-on-init（boolean prop 吃不到 maxZoom 選項）
+onPaneReady(() => fitView(FIT_VIEW_OPTS))
 
 // ── 節點盤（依域分組）─────────────────────────────────────────────
 const paletteGroups = computed(() => {
@@ -44,6 +72,20 @@ function toggleSection(id: string) {
 }
 
 // ── recipe → Vue Flow 派生 ────────────────────────────────────────
+/** 中段省略保留結尾（含副檔名）：verylongname_v2.jpg → verylo…e_v2.jpg */
+function truncateMiddle(name: string, max = 18): string {
+  if (name.length <= max) return name
+  return `${name.slice(0, max - 9)}…${name.slice(-8)}`
+}
+
+// 輸入節點的顯示文字＝檔案選取狀態（空→「選取檔案」；有→檔名，多檔加 +N）
+const inputNodeLabel = computed(() => {
+  const files = store.inputFiles
+  if (!files.length) return t('pipeline.input_pick')
+  const name = truncateMiddle(files[0].filename)
+  return files.length > 1 ? `${name} +${files.length - 1}` : name
+})
+
 const flowNodes = computed(() =>
   store.recipe.nodes.map((n) => ({
     id: n.id,
@@ -52,20 +94,34 @@ const flowNodes = computed(() =>
     data: {
       kind: n.kind,
       toolKey: n.toolKey,
-      label: n.kind === 'input' ? t('pipeline.input_node') : t(TOOL_REGISTRY[n.toolKey!]?.labelKey ?? n.toolKey!),
+      label: n.kind === 'input' ? inputNodeLabel.value : t(TOOL_REGISTRY[n.toolKey!]?.labelKey ?? n.toolKey!),
+      // 省略後 hover 可看全名（多檔逐行列出）
+      titleAttr: n.kind === 'input' && store.inputFiles.length
+        ? store.inputFiles.map(f => f.filename).join('\n') : undefined,
       hasError: store.errors.some(i => i.nodeId === n.id),
-      agg: nodeAgg(n.id),
+      runState: nodeRunState(n.id),
       selected: store.selectedNodeId === n.id,
     },
   })),
 )
+
+// 節點執行狀態視覺：running（脈動外框）> failed（紅底）> done（綠底）；無 run 快照＝null
+function nodeRunState(nodeId: string): 'running' | 'failed' | 'done' | null {
+  const agg = nodeAgg(nodeId)
+  if (!agg) return null
+  if (agg.active) return 'running'
+  if (agg.failed > 0) return 'failed'
+  if (agg.total > 0 && agg.done === agg.total) return 'done'
+  return null
+}
 
 const flowEdges = computed(() =>
   store.recipe.edges.map((e) => ({
     id: `${e.from}->${e.to}`,
     source: e.from,
     target: e.to,
-    animated: store.running,
+    // 只有「流入正在執行節點」的那段亮虛線動畫（原本整條 pipeline 齊閃，看不出進行到哪）
+    animated: nodeRunState(e.to) === 'running',
   })),
 )
 
@@ -95,8 +151,38 @@ function onNodeDragStop(e: NodeDragEvent) {
   for (const n of e.nodes) store.moveNode(n.id, { x: n.position.x, y: n.position.y })
 }
 
+// 節點右上 X：輸入節點=清除已選檔案（節點是根、不移除）；工具/source 節點=移除節點
+function onNodeRemoveClick(id: string, kind: string) {
+  if (kind === 'input') store.inputFiles = []
+  else store.removeNode(id)
+}
+
 function onNodeClick(e: { node: { id: string } }) {
+  previewToolKey.value = null
   store.selectedNodeId = e.node.id
+  // 輸入節點：點擊直接開檔案總管選檔（拖曳移動不觸發 node-click，VueFlow 已區分）
+  const node = store.recipe.nodes.find(n => n.id === e.node.id)
+  if (node?.kind === 'input' && !store.running && !uploading.value) fileInputRef.value?.click()
+}
+
+// ── 節點盤預覽:點工具名只在右欄看/調選項,按「+」才真正加到畫布 ──────
+const previewToolKey = ref<string | null>(null)
+const previewParams = ref<Record<string, unknown>>({})
+const previewNode = computed<RecipeNode | null>(() => {
+  const key = previewToolKey.value
+  if (!key) return null
+  return {
+    id: '__preview__',
+    kind: TOOL_REGISTRY[key]?.kind === 'source' ? 'source' : 'tool',
+    toolKey: key,
+    params: previewParams.value,
+  }
+})
+
+function previewTool(toolKey: string) {
+  if (previewToolKey.value !== toolKey) previewParams.value = {}
+  previewToolKey.value = toolKey
+  store.selectedNodeId = null
 }
 
 function onEdgeClick(e: { edge: { source: string; target: string } }) {
@@ -108,7 +194,13 @@ function onPaletteDragStart(ev: DragEvent, toolKey: string) {
   ev.dataTransfer?.setData('application/mtx-tool', toolKey)
 }
 
-function onCanvasDrop(ev: DragEvent) {
+async function onCanvasDrop(ev: DragEvent) {
+  // 流程檔拖入（.mtxflow 直收、.json 靠內容 sniff）→ 開新分頁；非流程檔忽略
+  const file = ev.dataTransfer?.files?.[0]
+  if (file && (isFlowFileName(file.name) || file.name.toLowerCase().endsWith('.json'))) {
+    await importFlowFile(file)
+    return
+  }
   const toolKey = ev.dataTransfer?.getData('application/mtx-tool')
   if (!toolKey) return
   // screenToFlowCoordinate 吃 client 座標、自帶容器偏移與 pan/zoom 換算;
@@ -120,8 +212,16 @@ function onCanvasDrop(ev: DragEvent) {
 function addByClick(toolKey: string) {
   // 依既有節點數橫向排開,加完 fitView 讓新節點一定在可視範圍
   const idx = store.recipe.nodes.length
-  store.addToolNode(toolKey, { x: 80 + idx * 190, y: 180 + (idx % 2) * 90 })
-  setTimeout(() => fitView({ padding: 0.25 }), 50)
+  const id = store.addToolNode(toolKey, { x: 80 + idx * 190, y: 180 + (idx % 2) * 90 })
+  if (!id) return
+  // 預覽面板調過的參數帶進新節點,並直接選取讓右欄無縫接到節點表單
+  if (previewToolKey.value === toolKey && Object.keys(previewParams.value).length > 0) {
+    const seeded = store.recipe.nodes.find(n => n.id === id)?.params ?? {}
+    store.updateNodeParams(id, { ...seeded, ...previewParams.value })
+  }
+  previewToolKey.value = null
+  store.selectedNodeId = id
+  setTimeout(() => fitView(FIT_VIEW_OPTS), 50)
 }
 
 // ── run 列:輸入檔 ─────────────────────────────────────────────────
@@ -135,7 +235,10 @@ async function onFilesPicked(e: Event) {
   uploading.value = true
   try {
     for (const f of Array.from(input.files)) {
-      const fileId = await filesStore.uploadFile(f)
+      // Electron：preload 已攔 file input change 快取本機路徑——帶 sourceDir 走
+      // /files/register 零搬運（大影片瞬間完成）；瀏覽器環境 fallback HTTP 整檔上傳
+      const sourceDir = window.electron?.getFileSourceDir?.(f.name, f.size, f.lastModified) ?? undefined
+      const fileId = await filesStore.uploadFile(f, sourceDir)
       store.inputFiles.push({ fileId, filename: f.name })
     }
   } catch (err) {
@@ -164,28 +267,123 @@ watch(() => store.recipe.nodes.length, () => {
   }
 })
 
-// ── 持久化 UI ─────────────────────────────────────────────────────
-const recipeName = ref('')
-const saving = ref(false)
+// 切分頁：清工具預覽＋fitView——VueFlow 單一實例，pan/zoom 會殘留上一頁，
+// 不 fit 的話新頁節點可能整批在畫面外（spec §3）
+watch(() => store.activeDocId, () => {
+  previewToolKey.value = null
+  setTimeout(() => fitView(FIT_VIEW_OPTS), 50)
+})
 
-onMounted(() => { void store.loadRecipeList() })
+// ── Titlebar：設「名稱」部分（未命名 fallback）；「流程 - 」前綴由
+//    Titlebar.vue 的 /pipeline 分支組（同工具頁「頁名 - 檔名」慣例）。
+//    其他工具頁由 ToolLayout 設檔名；本頁用 AppThreePaneLayout 無此機制。─────
+const { setFileName, clearFileName, registerActions, clearActions } = useTitlebar()
+// 名稱源＝分頁名（doc.name 唯一權威名，spec §3）
+const titlebarText = computed(() => {
+  const tab = store.tabs.find(x => x.active)
+  return tab?.name?.trim() || t('pipeline.titlebar_unnamed')
+})
+watch(titlebarText, (v) => setFileName(v), { immediate: true })
 
-watch(() => store.recipe.name, (n) => { recipeName.value = n }, { immediate: true })
+// Titlebar 軟碟鈕＝匯出流程檔。KeepAlive 下必須四鉤（同 ImageView 慣例）：
+// 只掛 onMounted 第二次進頁按鈕會失效、clear 時序不對會蓋掉下一頁的註冊。
+function registerTitlebar() {
+  registerActions({
+    canUndo: () => false,
+    canRedo: () => false,
+    canSaveAs: () => !store.isBlankDoc(),
+    onUndo: () => {},
+    onRedo: () => {},
+    onSaveAs: () => { void handleExport() },
+  })
+}
+onActivated(() => { registerTitlebar(); setFileName(titlebarText.value); consumePendingImport() })
+onDeactivated(() => { clearActions(); clearFileName() })
+onMounted(() => { registerTitlebar(); void store.loadRecipeList(); consumePendingImport() })
+onUnmounted(() => { clearActions() })
 
-async function onSave() {
-  const name = recipeName.value.trim() || t('pipeline.unnamed')
-  saving.value = true
+// ── 匯出（spec §4.1）──────────────────────────────────────────────
+async function handleExport(): Promise<void> {
+  const json = store.exportCurrent()
+  // 與 onAddFavorite 同名稱源：原始分頁名，未命名 fallback 統一 pipeline.unnamed
+  const stem = store.tabs.find(x => x.active)?.name?.trim() || t('pipeline.unnamed')
+  const name = `${stem}.mtxflow`
+  if (window.electron?.saveFileDialog && window.electron?.writeLocalFile) {
+    const dest = await window.electron.saveFileDialog({
+      title: t('common.save'),
+      defaultPath: name,
+      filters: [{ name: 'MediaTranX Flow', extensions: ['mtxflow'] }],
+    })
+    if (!dest) return                       // 使用者取消≠失敗，靜默（spec §7）
+    try {
+      await window.electron.writeLocalFile(dest, json)
+      toast.show(t('toast.saved'), { type: 'success', icon: 'bi-check-circle' })
+    } catch (e) {
+      log.error('export flow failed', e)
+      toast.show(t('toast.save_failed'), { type: 'error', icon: 'bi-x-circle' })
+    }
+    return
+  }
+  // 瀏覽器 fallback：blob 下載
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// ── 匯入（spec §4.2）＋常用（spec §5.5）───────────────────────────
+const importInputRef = ref<HTMLInputElement | null>(null)
+
+function stemOf(filename: string): string {
+  return filename.replace(/\.[^.]+$/, '')
+}
+
+async function importFlowFile(file: File): Promise<void> {
+  const text = await file.text()
+  if (!isFlowFileName(file.name) && !sniffFlowText(text)) return   // .json 非流程檔忽略
+  const r = store.importRecipe(text, stemOf(file.name))
+  if (!r.ok) {
+    const key = r.error === 'tab_limit' ? 'pipeline.tab_limit'
+      : r.error === 'version_too_new' ? 'pipeline.import_version_new' : 'pipeline.import_bad_file'
+    toast.show(t(key), { type: 'error', icon: 'bi-x-circle' })
+  }
+}
+
+async function onImportPicked(e: Event) {
+  const input = e.target as HTMLInputElement
+  const f = input.files?.[0]
+  input.value = ''
+  if (f) await importFlowFile(f)
+}
+
+// 工具頁拖入流程檔 → 轉頁帶檔（spec §4.3）；撿走即清防 KeepAlive 重複匯入
+function consumePendingImport() {
+  const p = store.pendingImport
+  if (!p) return
+  store.setPendingImport(null)
+  const r = store.importRecipe(p.text, p.fallbackName)
+  if (!r.ok) {
+    const key = r.error === 'tab_limit' ? 'pipeline.tab_limit'
+      : r.error === 'version_too_new' ? 'pipeline.import_version_new' : 'pipeline.import_bad_file'
+    toast.show(t(key), { type: 'error', icon: 'bi-x-circle' })
+  }
+}
+
+async function onAddFavorite() {
+  // 取原始分頁名（titlebarText 帶「未命名」fallback，會蓋掉這裡的 unnamed 預設）
+  const name = store.tabs.find(x => x.active)?.name?.trim() || t('pipeline.unnamed')
   const ok = await store.saveCurrent(name)
-  saving.value = false
   toast.show(ok ? t('pipeline.saved') : t('toast.save_failed'),
     { type: ok ? 'success' : 'error', icon: ok ? 'bi-check-circle' : 'bi-x-circle' })
 }
 
 async function onOpen(id: string) {
-  if (store.running) return
-  const ok = await store.openRecipe(id)
-  if (!ok) toast.show(t('pipeline.open_failed'), { type: 'error', icon: 'bi-x-circle' })
-  setTimeout(() => fitView({ padding: 0.25 }), 80)
+  const before = store.tabs.length
+  const docId = await store.openRecipeInTab(id)
+  if (docId) { setTimeout(() => fitView(FIT_VIEW_OPTS), 80); return }
+  toast.show(t(before >= MAX_DOCS ? 'pipeline.tab_limit' : 'pipeline.open_failed'), { type: 'error', icon: 'bi-x-circle' })
 }
 </script>
 
@@ -194,60 +392,79 @@ async function onOpen(id: string) {
     <!-- 左:節點盤（run 中鎖定；欄 chrome 由殼擁有） -->
     <template #left>
       <div class="palette" :class="{ locked: store.running }">
-        <h6 class="palette-title">{{ t('pipeline.palette_title') }}</h6>
         <template v-for="(items, domain) in paletteGroups" :key="domain">
           <button class="palette-group palette-group-toggle" @click="toggleSection(domain)">
-            <i class="bi" :class="isSectionOpen(domain) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
             {{ t(`nav.${domain}`) }}
+            <i class="bi" :class="isSectionOpen(domain) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
           </button>
           <template v-if="isSectionOpen(domain)">
             <button
               v-for="item in items"
               :key="item.key"
               class="palette-item"
+              :class="{ 'is-previewing': previewToolKey === item.key }"
               draggable="true"
               @dragstart="onPaletteDragStart($event, item.key)"
-              @click="addByClick(item.key)"
+              @click="previewTool(item.key)"
             >
-              <i class="bi bi-plus-square me-1"></i>{{ item.label }}
+              {{ item.label }}
+              <i class="bi bi-plus-lg palette-item-add" @click.stop="addByClick(item.key)"></i>
             </button>
           </template>
         </template>
 
         <!-- 已存流程 -->
         <button class="palette-group saved-group palette-group-toggle" @click="toggleSection('__saved')">
-          <i class="bi" :class="isSectionOpen('__saved') ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
           {{ t('pipeline.saved_recipes') }}
+          <i class="bi" :class="isSectionOpen('__saved') ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
         </button>
         <template v-if="isSectionOpen('__saved')">
-          <button class="palette-item" @click="store.newRecipe(); recipeName = ''">
-            <i class="bi bi-file-earmark-plus me-1"></i>{{ t('pipeline.new_recipe') }}
-          </button>
           <div v-for="r in store.savedRecipes" :key="r.id" class="saved-row">
+            <!-- 清單項純文字（對齊上方工具清單慣例）；圖示只留給動作鈕（匯入/新增常用） -->
             <button class="palette-item saved-item" :class="{ current: r.id === store.currentRecipeId }" @click="onOpen(r.id)">
-              <i class="bi bi-diagram-3 me-1"></i>{{ r.name || t('pipeline.unnamed') }}
+              {{ r.name || t('pipeline.unnamed') }}
             </button>
             <i class="bi bi-trash saved-del" @click="store.deleteRecipe(r.id)"></i>
           </div>
         </template>
       </div>
+
+      <!-- 欄底固定動作列：匯入/新增常用（palette 捲動、此列不動——可發現性優先） -->
+      <div class="palette-footer" :class="{ locked: store.running }">
+        <button class="palette-footer-btn" @click="importInputRef?.click()">
+          <i class="bi bi-box-arrow-in-down me-1"></i>{{ t('pipeline.import_flow') }}
+        </button>
+        <button class="palette-footer-btn" :disabled="store.isBlankDoc()" @click="onAddFavorite">
+          <i class="bi bi-star me-1"></i>{{ t('pipeline.add_favorite') }}
+        </button>
+        <input ref="importInputRef" type="file" accept=".mtxflow,.json" hidden @change="onImportPicked" />
+      </div>
     </template>
 
-    <!-- 中:畫布（wrapper 承接 drop handler + issue-bar 錨點 — spec §3.3） -->
+    <!-- 中:分頁列＋畫布（wrapper 承接 drop handler；canvas-flow 為 issue-bar 錨點 — spec §3.3） -->
     <template #center>
+      <PipelineTabBar />
       <div class="canvas-wrap" @drop.prevent="onCanvasDrop" @dragover.prevent>
+        <div class="canvas-flow" :class="{ 'space-pan': isSpaceHeld }">
+        <!-- 互動慣例（全 app 統一）：左鍵拖=選取框、Space+左鍵/中鍵/右鍵拖=平移。
+             Vue Flow 1.x 沒有 selection-on-drag（那是 React Flow 的名字），左鍵框選＝
+             selection-key-code=true；pan-on-drag 的按鈕陣列會在 d3 filter 擋掉左鍵、
+             panActivationKeyCode 蓋不過——故用 isSpaceHeld 動態切整組模式。
+             delete-key-code 關閉——節點移除只走 X badge（VueFlow 內建刪除會繞過 store） -->
         <VueFlow
           :nodes="flowNodes"
           :edges="flowEdges"
           :nodes-connectable="!store.running"
-          :nodes-draggable="!store.running"
-          fit-view-on-init
+          :nodes-draggable="!store.running && !isSpaceHeld"
+          :pan-on-drag="isSpaceHeld ? true : [1, 2]"
+          :selection-key-code="isSpaceHeld ? null : true"
+          :delete-key-code="null"
           @connect="onConnect"
           @node-drag-stop="onNodeDragStop"
           @node-click="onNodeClick"
           @edge-click="onEdgeClick"
         >
-          <template #node-pipeline="{ data }">
+          <template #node-pipeline="{ id, data }">
             <div
               class="p-node"
               :class="{
@@ -255,17 +472,30 @@ async function onOpen(id: string) {
                 'is-source': data.kind === 'source',
                 'has-error': data.hasError,
                 'is-selected': data.selected,
+                'is-running': data.runState === 'running',
+                'is-run-failed': data.runState === 'failed',
+                'is-run-done': data.runState === 'done',
               }"
+              :title="data.titleAttr"
             >
               <Handle v-if="data.kind === 'tool'" type="target" :position="Position.Left" />
               <Handle type="source" :position="Position.Right" />
+              <!-- hover 顯示的移除 badge；stop 防止觸發 node-click（選取/輸入節點開檔）與 drag。
+                   輸入節點語意=清除已選檔案（無檔案時不顯示）；其餘節點=移除節點 -->
+              <button
+                v-if="!store.running && (data.kind !== 'input' || store.inputFiles.length > 0)"
+                class="p-node-remove"
+                :title="data.kind === 'input' ? t('pipeline.input_clear') : t('pipeline.remove_node')"
+                @click.stop="onNodeRemoveClick(id, data.kind)"
+                @mousedown.stop
+              >
+                <i class="bi bi-x"></i>
+              </button>
               <div class="p-node-title">
-                <i :class="['bi', data.kind === 'input' ? 'bi-folder2-open' : data.kind === 'source' ? 'bi-cloud-download' : 'bi-gear']"></i>
+                <!-- 執行中換旋轉 spinner——一眼看出目前跑到哪個節點 -->
+                <i v-if="data.runState === 'running'" class="bi bi-arrow-repeat p-node-spin"></i>
+                <i v-else :class="['bi', data.kind === 'input' ? 'bi-folder2-open' : data.kind === 'source' ? 'bi-cloud-download' : 'bi-gear']"></i>
                 {{ data.label }}
-              </div>
-              <div v-if="data.agg" class="p-node-status" :class="{ failed: data.agg.failed > 0, active: data.agg.active }">
-                {{ data.agg.done }}/{{ data.agg.total }}
-                <span v-if="data.agg.failed > 0">({{ data.agg.failed }}✗)</span>
               </div>
             </div>
           </template>
@@ -276,6 +506,10 @@ async function onOpen(id: string) {
           <i class="bi bi-exclamation-triangle me-1"></i>{{ store.errors[0].message }}
           <span v-if="store.errors.length > 1" class="issue-more">+{{ store.errors.length - 1 }}</span>
         </div>
+        </div>
+
+        <!-- 底部資訊列：目前縮放（沿其他工具 preview info bar 慣例） -->
+        <AppMediaInfoBar :items="canvasInfoItems" />
       </div>
     </template>
 
@@ -289,22 +523,17 @@ async function onOpen(id: string) {
           @update-keep-output="(k) => store.setKeepOutput(store.selectedNode!.id, k)"
           @remove="store.removeNode(store.selectedNode!.id)"
         />
+        <PipelineParamForm
+          v-else-if="previewNode"
+          :node="previewNode"
+          preview
+          @update-params="(p) => (previewParams = p)"
+        />
         <p v-else class="config-empty">{{ t('pipeline.select_node_hint') }}</p>
       </div>
 
       <!-- run 控制 -->
       <div class="run-bar">
-        <div class="save-row">
-          <input
-            v-model="recipeName"
-            class="save-name"
-            :placeholder="t('pipeline.recipe_name_placeholder')"
-            :disabled="store.running"
-          />
-          <button class="save-btn" :disabled="saving || store.running" @click="onSave">
-            <i class="bi bi-save"></i>
-          </button>
-        </div>
         <div v-if="rootIsInput" class="run-files">
           <button class="run-files-btn" :disabled="uploading || store.running" @click="fileInputRef?.click()">
             <i class="bi bi-file-earmark-plus me-1"></i>
@@ -327,6 +556,7 @@ async function onOpen(id: string) {
           v-if="!store.running"
           class="run-btn"
           :disabled="!store.canRun"
+          :title="!store.canRun && store.runningDocId ? t('pipeline.run_busy_other_tab') : undefined"
           @click="store.startRun()"
         >
           <i class="bi bi-play-fill me-1"></i>{{ t('pipeline.run') }}
@@ -352,14 +582,20 @@ async function onOpen(id: string) {
 .palette {
   flex: 1;
   min-height: 0;
-  padding: 0.75rem;
+  padding: 1rem;
+  padding-top: 0.5rem;
   overflow-y: auto;
 }
-.palette-title { font-size: 0.85rem; color: var(--text-primary); margin: 0 0 0.5rem; }
+// 群組標題:對齊 ToolLayout .function-group-label（字級/留白/分隔線一致）
 .palette-group {
-  margin-top: 0.6rem; padding: 0.25rem 0.35rem 0.1rem;
+  padding: 0.5rem 0.75rem 0.15rem;
   font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
   color: var(--text-muted); letter-spacing: 0.05em;
+
+  &:not(:first-child) {
+    margin-top: 0.6rem;
+    border-top: 1px solid var(--panel-border);
+  }
 }
 // 折疊頭:沿用 palette-group 的小標籤外觀,補上可點/chevron
 .palette-group-toggle {
@@ -370,19 +606,54 @@ async function onOpen(id: string) {
   i { font-size: 0.65rem; }
 }
 .palette-item {
-  display: block; width: 100%;
-  padding: 0.4rem 0.5rem; margin-top: 2px;
-  background: transparent; border: none; border-radius: 6px;
-  color: var(--text-muted); font-size: 0.82rem; text-align: left;
+  display: flex; align-items: center; gap: 0.5rem; width: 100%;
+  padding: 0.6rem 0.75rem; margin-top: 0.25rem;
+  background: transparent; border: none; border-radius: 8px;
+  color: var(--text-muted); font-size: 0.9rem; text-align: left;
   cursor: grab; font-family: inherit;
+  transition: all 0.15s ease;
   &:hover { color: var(--text-primary); background: var(--panel-bg-hover); }
+  &.is-previewing { color: var(--text-primary); background: var(--panel-bg-active); }
+
+  // hover/預覽中才浮現加號,平時保持與一般工具頁同樣乾淨的列表
+  &:hover .palette-item-add, &.is-previewing .palette-item-add { opacity: 1; }
+}
+// 加號:置右、獨立點擊目標（點名字=右欄預覽選項,點 + 才加到畫布）
+// 無底色:浮現時淺灰、自身 hover 亮起(text-primary=深色主題白/淺色主題黑)
+.palette-item-add {
+  margin-left: auto; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  font-size: 0.95rem; cursor: pointer; opacity: 0;
+  color: var(--text-muted);
+  transition: all 0.15s ease;
+  &:hover { color: var(--text-primary); }
 }
 
 // 中欄 wrapper：撐滿（少 flex:1 → VueFlow height:100% 解析成 0）+ issue-bar 錨點
 .canvas-wrap {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+// 畫布本體＋issue-bar 錨點；資訊列在其下方常駐（不被 issue-bar 蓋住）
+.canvas-flow {
+  flex: 1;
+  min-height: 0;
   position: relative;
+
+  // 游標慣例：空白畫布=default（VueFlow 的 .selection class 預設給 pointer、
+  // pan 模式預設給 grab——都蓋掉）；Space 按住=grab；實際平移中=grabbing
+  :deep(.vue-flow__pane) { cursor: default; }
+  :deep(.vue-flow__pane.selection) { cursor: default; }
+  &.space-pan :deep(.vue-flow__pane) { cursor: grab; }
+  :deep(.vue-flow__pane.dragging) { cursor: grabbing; }
+}
+// 資訊列置中（對齊工具頁 filmstrip overlay 模式的置中慣例）
+.canvas-wrap :deep(.media-info-bar) {
+  justify-content: center;
+  padding: 0.35rem 0.9rem;
 }
 
 .issue-bar {
@@ -420,21 +691,29 @@ async function onOpen(id: string) {
   i { cursor: pointer; &:hover { color: var(--color-danger, #dc3545); } }
 }
 .run-status { font-size: 0.78rem; color: var(--text-muted); }
-.save-row { display: flex; gap: 0.4rem; }
-.save-name {
-  flex: 1; padding: 0.35rem 0.5rem;
-  background: var(--input-bg); border: 1px solid var(--panel-border);
-  border-radius: 6px; color: var(--text-primary);
-  font-size: 0.82rem; font-family: inherit;
+.saved-group { margin-top: 1rem; }
+// 欄底固定動作列（palette flex:1 捲動、本列 shrink:0 常駐）
+.palette-footer {
+  flex-shrink: 0;
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem 0.8rem;
+  border-top: 1px solid var(--panel-border);
 }
-.save-btn {
-  padding: 0.35rem 0.6rem;
-  background: transparent; border: 1px solid var(--panel-border);
-  border-radius: 6px; color: var(--text-muted); cursor: pointer;
-  &:hover:not(:disabled) { color: var(--text-primary); }
-  &:disabled { opacity: 0.5; }
+.palette-footer-btn {
+  flex: 1;
+  padding: 0.4rem 0.3rem;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  &:hover:not(:disabled) { color: var(--text-primary); background: var(--panel-bg-hover); }
+  &:disabled { opacity: 0.45; cursor: default; }
 }
-.saved-group { margin-top: 1rem; border-top: 1px solid var(--panel-border); padding-top: 0.6rem; }
 .saved-row { display: flex; align-items: center; gap: 2px; }
 .saved-item { flex: 1; &.current { color: var(--text-primary); background: var(--panel-bg-active); } }
 .saved-del {
@@ -452,6 +731,7 @@ async function onOpen(id: string) {
 
 // Vue Flow 自訂節點
 .p-node {
+  position: relative; // 移除 badge 的定位錨點
   min-width: 130px;
   padding: 0.5rem 0.7rem;
   background: var(--panel-bg-active, rgba(255,255,255,0.06));
@@ -460,15 +740,72 @@ async function onOpen(id: string) {
   color: var(--text-primary);
   font-size: 0.8rem;
 
-  &.is-input { border-color: var(--color-primary); }
+  // 輸入節點可點選檔——手型提示可互動（拖曳移動仍由 VueFlow 處理）
+  &.is-input { border-color: var(--color-primary); cursor: pointer; }
   &.is-source { border-color: #2aa198; }
   &.has-error { border-color: var(--color-danger, #dc3545); }
   &.is-selected { box-shadow: 0 0 0 2px var(--color-primary); }
+
+  // 執行狀態視覺（run 快照驅動；流程線不動）——tint 疊在 panel 底色上，深淺主題皆可讀
+  &.is-run-done {
+    background: color-mix(in srgb, var(--color-success) 22%, var(--panel-bg-active, rgba(255,255,255,0.06)));
+    border-color: var(--color-success);
+  }
+  &.is-run-failed {
+    background: color-mix(in srgb, var(--color-danger) 22%, var(--panel-bg-active, rgba(255,255,255,0.06)));
+    border-color: var(--color-danger);
+  }
+  &.is-running {
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 18%, var(--panel-bg-active, rgba(255,255,255,0.06)));
+    animation: p-node-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+// 執行中 icon 旋轉（搭配主色底 tint——比單靠外框脈動醒目）
+.p-node-spin {
+  color: var(--color-primary);
+  animation: p-node-icon-spin 1s linear infinite;
+}
+@keyframes p-node-icon-spin {
+  to { transform: rotate(360deg); }
+}
+
+// 執行中外框脈動（box-shadow 擴散淡出；持續動畫非 transition，沿執行中流光先例）
+@keyframes p-node-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 70%, transparent); }
+  50%      { box-shadow: 0 0 0 9px color-mix(in srgb, var(--color-primary) 6%, transparent); }
 }
 .p-node-title { display: flex; align-items: center; gap: 0.4rem; }
-.p-node-status {
-  margin-top: 0.3rem; font-size: 0.7rem; color: var(--text-muted);
-  &.active { color: var(--color-primary); }
-  &.failed { color: var(--color-danger, #dc3545); }
+// hover 顯示的移除 badge（樣式沿 AppFilmstrip 移除鈕慣例）
+.p-node-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: var(--color-danger);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    background: var(--color-danger-hover, color-mix(in srgb, var(--color-danger) 80%, black));
+  }
+}
+.p-node:hover .p-node-remove {
+  opacity: 1;
+  pointer-events: auto;
 }
 </style>

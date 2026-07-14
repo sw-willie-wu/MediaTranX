@@ -18,7 +18,7 @@ describe('tasks store compute notices', () => {
   it('shows a warning toast once per unique notice', async () => {
     const store = useTaskStore()
     const taskData = {
-      task_id: 't1', task_type: 'video.subtitle_generate', status: 'processing',
+      task_id: 't1', task_type: 'video.subtitle', status: 'processing',
       progress: 0.3, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       notices: [{ code: 'vram_insufficient', params: { model: 'whisper-medium' } }],
     }

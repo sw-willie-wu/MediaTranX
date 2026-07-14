@@ -6,8 +6,8 @@ describe('agentNavCatalog', () => {
     expect(subfunctionsForView('image')).toContain('compress')
   })
 
-  it('subfunctionsForView("image") includes transcode', () => {
-    expect(subfunctionsForView('image')).toContain('transcode')
+  it('subfunctionsForView("image") includes convert', () => {
+    expect(subfunctionsForView('image')).toContain('convert')
   })
 
   it('subfunctionsForView("unknown") returns empty array', () => {

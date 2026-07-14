@@ -89,7 +89,9 @@ describe('WhisperAdvancedSettings', () => {
     expect(w.text()).not.toContain('VAD Sensitivity')
   })
 
-  it('exposes the 5 refs', () => {
+  // defineExpose 已於收尾批 W1-3 移除（消費者全受控），此測試改驗內部 5 個狀態存在
+  // （vue-test-utils 對 script-setup 頂層綁定可達），非公開契約
+  it('internal 5 state refs exist (defineExpose removed in W1-3)', () => {
     const vm = mountIt({ embedded: true }).vm as any
     for (const k of [
       'wordTimestamps',
@@ -100,5 +102,78 @@ describe('WhisperAdvancedSettings', () => {
     ]) {
       expect(vm[k]).not.toBeUndefined()
     }
+  })
+})
+
+// ── v-model 受控（批 2 Task 2.4 導入；收尾批 W1-3 移除雙軌相容，恆受控）───────────
+describe('WhisperAdvancedSettings — v-model 受控', () => {
+  const fullValue = {
+    word_timestamps: true,
+    align: true,
+    condition_on_previous_text: false,
+    min_silence_duration_ms: 500,
+    vad_threshold: 0.5,
+  }
+
+  it('無 modelValue prop：內部 ref 用固定預設值', () => {
+    const vm = mountIt({ embedded: true }).vm as any
+    expect(vm.wordTimestamps).toBe(false)
+    expect(vm.align).toBe(false)
+    expect(vm.conditionOnPreviousText).toBe(true)
+    expect(vm.minSilenceDurationMs).toBe(200)
+    expect(vm.vadThreshold).toBe(0.3)
+  })
+
+  it('無 modelValue prop：內部 ref 變動仍 emit update:modelValue（不再區分受控/非受控，恆 emit）', async () => {
+    const w = mountIt({ embedded: true })
+    const vm = w.vm as any
+    vm.align = true
+    await w.vm.$nextTick()
+    expect(vm.align).toBe(true)
+    const emitted = w.emitted('update:modelValue')
+    expect(emitted).toBeDefined()
+    const last = emitted![emitted!.length - 1][0] as Record<string, unknown>
+    expect(last.align).toBe(true)
+  })
+
+  it('有 modelValue prop：內部 ref 初值來自 modelValue（受控）', () => {
+    const vm = mountIt({ embedded: true, modelValue: fullValue }).vm as any
+    expect(vm.wordTimestamps).toBe(true)
+    expect(vm.align).toBe(true)
+    expect(vm.conditionOnPreviousText).toBe(false)
+    expect(vm.minSilenceDurationMs).toBe(500)
+    expect(vm.vadThreshold).toBe(0.5)
+  })
+
+  it('有 modelValue prop：內部使用者操作（改寫曝露的 ref）觸發 update:modelValue 帶完整五欄 patch', async () => {
+    const w = mountIt({ embedded: true, modelValue: fullValue })
+    const vm = w.vm as any
+    vm.vadThreshold = 0.7
+    await w.vm.$nextTick()
+    const emitted = w.emitted('update:modelValue')
+    expect(emitted).toBeTruthy()
+    const lastPatch = emitted![emitted!.length - 1][0]
+    expect(lastPatch).toEqual({ ...fullValue, vad_threshold: 0.7 })
+  })
+
+  it('有 modelValue prop：外部改寫 modelValue（父層 setProps）→ 內部 ref 同步更新', async () => {
+    const w = mountIt({ embedded: true, modelValue: fullValue })
+    await w.setProps({ modelValue: { ...fullValue, min_silence_duration_ms: 1000 } })
+    const vm = w.vm as any
+    expect(vm.minSilenceDurationMs).toBe(1000)
+  })
+
+  it('有 modelValue prop：emit 觸發的 props 回流不會被誤判成外部寫入而重新 emit（無迴圈）', async () => {
+    const w = mountIt({ embedded: true, modelValue: fullValue })
+    const vm = w.vm as any
+    vm.align = false
+    await w.vm.$nextTick()
+    const emittedCountAfterFirstChange = w.emitted('update:modelValue')!.length
+    expect(emittedCountAfterFirstChange).toBe(1)
+    // 模擬父層把 emit 出去的值原樣 v-model 傳回（回流）——不應觸發第二次 emit
+    const lastPatch = w.emitted('update:modelValue')![0][0]
+    await w.setProps({ modelValue: lastPatch })
+    await w.vm.$nextTick()
+    expect(w.emitted('update:modelValue')!.length).toBe(emittedCountAfterFirstChange)
   })
 })

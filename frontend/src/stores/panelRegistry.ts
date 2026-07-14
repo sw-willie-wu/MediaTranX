@@ -18,6 +18,8 @@ export interface PanelFieldSchema {
   max?: number | (() => number)
   step?: number
   visibleWhen?: () => boolean
+  /** 給 LLM 的欄位語意說明（選配；由 META.agentHint 餵入） */
+  description?: string
 }
 
 export interface PanelActionSchema {

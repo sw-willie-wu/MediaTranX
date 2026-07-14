@@ -6,13 +6,18 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SettingsCollapsible from '@/components/common/SettingsCollapsible.vue'
+import AppSelect from '@/components/common/AppSelect.vue'
+import type { SelectItem } from '@/components/common/AppSelect.vue'
 import { TOOL_REGISTRY } from '@/pipeline/registry'
 import type { ParamField, RecipeNode } from '@/pipeline/types'
+import { PARAM_COMPONENTS, hasParamComponent } from '@/components/params'
 
 const { t } = useI18n()
 
 const props = defineProps<{
   node: RecipeNode
+  /** 節點盤預覽模式:調的是草稿參數(按「+」加入時帶進節點),不顯示 keep-output/刪除 */
+  preview?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -25,6 +30,10 @@ const spec = computed(() => (props.node.toolKey ? TOOL_REGISTRY[props.node.toolK
 const basicFields = computed(() => spec.value?.paramSchema.filter(f => !f.advanced && visible(f)) ?? [])
 const advancedFields = computed(() => spec.value?.paramSchema.filter(f => f.advanced && visible(f)) ?? [])
 const isLeafCandidate = computed(() => props.node.kind === 'tool' || props.node.kind === 'source')
+// dispatcher：工具已有統一參數元件 → 掛元件，否則走下方 legacy schema 表單（過渡期漸次遷移）
+const useParamComponent = computed(
+  () => !!props.node.toolKey && hasParamComponent(props.node.toolKey!),
+)
 
 function visible(f: ParamField): boolean {
   return f.visibleWhen ? f.visibleWhen(props.node.params) : true
@@ -59,6 +68,10 @@ function setValue(f: ParamField, raw: unknown) {
   emit('update-params', params)
 }
 
+function enumItems(f: ParamField): SelectItem[] {
+  return (f.options ?? []).map(o => ({ value: o, label: o === '' ? t('pipeline.param_default') : o }))
+}
+
 function fieldLabel(f: ParamField): string {
   // registry 欄位名即後端參數名;顯示用 i18n key 存在就用、否則原名
   const key = `pipeline.param.${f.name}`
@@ -68,56 +81,30 @@ function fieldLabel(f: ParamField): string {
 </script>
 
 <template>
-  <div v-if="node.kind === 'input'" class="param-form">
+  <div v-if="node.kind === 'input'" class="param-form function-settings">
     <p class="form-hint">{{ t('pipeline.input_node_hint') }}</p>
   </div>
-  <div v-else-if="spec" class="param-form">
-    <h6 class="form-title">{{ t(spec.labelKey) }}</h6>
+  <div v-else-if="spec" class="param-form function-settings">
+    <h6 class="settings-title">{{ t(spec.labelKey) }}</h6>
+    <p v-if="preview" class="form-hint">{{ t('pipeline.preview_hint') }}</p>
 
-    <div v-for="f in basicFields" :key="f.name" class="form-group">
-      <label>{{ fieldLabel(f) }}</label>
-      <select
-        v-if="f.type === 'enum'"
-        class="form-input"
-        :value="String(valueOf(f))"
-        @change="setValue(f, ($event.target as HTMLSelectElement).value)"
-      >
-        <option v-for="o in f.options" :key="o" :value="o">{{ o === '' ? t('pipeline.param_default') : o }}</option>
-      </select>
-      <input
-        v-else-if="f.type === 'number'"
-        type="number" class="form-input"
-        :min="f.min" :max="f.max" :step="f.step ?? 1"
-        :value="valueOf(f) as number"
-        @change="setValue(f, ($event.target as HTMLInputElement).value)"
-      />
-      <label v-else-if="f.type === 'boolean'" class="check-row">
-        <input
-          type="checkbox"
-          :checked="Boolean(valueOf(f))"
-          @change="setValue(f, ($event.target as HTMLInputElement).checked)"
-        />
-        <span>{{ t('pipeline.param_enabled') }}</span>
-      </label>
-      <input
-        v-else
-        type="text" class="form-input"
-        :value="String(valueOf(f))"
-        @change="setValue(f, ($event.target as HTMLInputElement).value)"
-      />
-    </div>
-
-    <SettingsCollapsible v-if="advancedFields.length > 0" storage-key="pipeline_param_advanced">
-      <div v-for="f in advancedFields" :key="f.name" class="form-group">
+    <component
+      :is="PARAM_COMPONENTS[node.toolKey!]"
+      v-if="useParamComponent"
+      :params="node.params"
+      context="pipeline"
+      :file-info="null"
+      @update:params="(p: Record<string, unknown>) => emit('update-params', p)"
+    />
+    <template v-else>
+      <div v-for="f in basicFields" :key="f.name" class="form-group">
         <label>{{ fieldLabel(f) }}</label>
-        <select
+        <AppSelect
           v-if="f.type === 'enum'"
-          class="form-input"
-          :value="String(valueOf(f))"
-          @change="setValue(f, ($event.target as HTMLSelectElement).value)"
-        >
-          <option v-for="o in f.options" :key="o" :value="o">{{ o === '' ? t('pipeline.param_default') : o }}</option>
-        </select>
+          :model-value="String(valueOf(f))"
+          :options="enumItems(f)"
+          @update:model-value="(v) => setValue(f, v)"
+        />
         <input
           v-else-if="f.type === 'number'"
           type="number" class="form-input"
@@ -125,7 +112,7 @@ function fieldLabel(f: ParamField): string {
           :value="valueOf(f) as number"
           @change="setValue(f, ($event.target as HTMLInputElement).value)"
         />
-        <label v-else-if="f.type === 'boolean'" class="check-row">
+        <label v-else-if="f.type === 'boolean'" class="checkbox-label">
           <input
             type="checkbox"
             :checked="Boolean(valueOf(f))"
@@ -140,10 +127,43 @@ function fieldLabel(f: ParamField): string {
           @change="setValue(f, ($event.target as HTMLInputElement).value)"
         />
       </div>
-    </SettingsCollapsible>
 
-    <div v-if="isLeafCandidate" class="form-group keep-output">
-      <label class="check-row">
+      <SettingsCollapsible v-if="advancedFields.length > 0" storage-key="pipeline_param_advanced">
+        <div v-for="f in advancedFields" :key="f.name" class="form-group">
+          <label>{{ fieldLabel(f) }}</label>
+          <AppSelect
+            v-if="f.type === 'enum'"
+            :model-value="String(valueOf(f))"
+            :options="enumItems(f)"
+            @update:model-value="(v) => setValue(f, v)"
+          />
+          <input
+            v-else-if="f.type === 'number'"
+            type="number" class="form-input"
+            :min="f.min" :max="f.max" :step="f.step ?? 1"
+            :value="valueOf(f) as number"
+            @change="setValue(f, ($event.target as HTMLInputElement).value)"
+          />
+          <label v-else-if="f.type === 'boolean'" class="checkbox-label">
+            <input
+              type="checkbox"
+              :checked="Boolean(valueOf(f))"
+              @change="setValue(f, ($event.target as HTMLInputElement).checked)"
+            />
+            <span>{{ t('pipeline.param_enabled') }}</span>
+          </label>
+          <input
+            v-else
+            type="text" class="form-input"
+            :value="String(valueOf(f))"
+            @change="setValue(f, ($event.target as HTMLInputElement).value)"
+          />
+        </div>
+      </SettingsCollapsible>
+    </template>
+
+    <div v-if="isLeafCandidate && !preview" class="form-group keep-output">
+      <label class="checkbox-label">
         <input
           type="checkbox"
           :checked="node.keepOutput === true"
@@ -154,34 +174,18 @@ function fieldLabel(f: ParamField): string {
       <p class="form-hint">{{ t('pipeline.keep_output_hint') }}</p>
     </div>
 
-    <button class="remove-btn" @click="emit('remove')">
+    <button v-if="!preview" class="remove-btn" @click="emit('remove')">
       <i class="bi bi-trash me-1"></i>{{ t('pipeline.remove_node') }}
     </button>
   </div>
 </template>
 
 <style lang="scss" scoped>
-.param-form { display: flex; flex-direction: column; gap: 0.75rem; }
-.form-title { font-size: 0.9rem; color: var(--text-primary); margin: 0; }
-.form-group {
-  display: flex; flex-direction: column; gap: 0.3rem;
-  label { font-size: 0.8rem; color: var(--text-muted); }
-}
-.form-input {
-  padding: 0.35rem 0.5rem;
-  background: var(--input-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-size: 0.85rem;
-  font-family: inherit;
-}
-.check-row {
-  display: flex; align-items: center; gap: 0.5rem;
-  color: var(--text-primary) !important;
-  input { accent-color: var(--color-primary); }
-}
-.form-hint { font-size: 0.75rem; color: var(--text-muted); margin: 0; }
+// 表單樣式走 tool panel 設計系統(form-group/form-input/checkbox-label/settings-title),
+// 與一般工具頁右欄同款;此處只留 pipeline 專屬樣式
+@use '@/styles/tool-panels-shared';
+
+.form-hint { margin: 0; }
 .keep-output { border-top: 1px solid var(--panel-border); padding-top: 0.75rem; }
 .remove-btn {
   margin-top: 0.5rem; padding: 0.4rem;

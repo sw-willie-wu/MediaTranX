@@ -9,7 +9,7 @@ export type { MediaKindT }
 
 export interface ParamField {
   name: string
-  type: 'enum' | 'number' | 'boolean' | 'string'
+  type: 'enum' | 'number' | 'boolean' | 'string' | 'dict' | 'list'
   default?: unknown
   /** enum 選項（靜態；動態選項欄位 v1 不建模，落 advanced 原樣透傳） */
   options?: string[]
@@ -20,6 +20,10 @@ export interface ParamField {
   advanced?: boolean
   /** 條件顯示（僅影響表單 UI，驗證仍全欄位過） */
   visibleWhen?: (params: Record<string, unknown>) => boolean
+  /** list 元素型別（選配；未宣告時不檢查元素型別） */
+  itemType?: 'string' | 'number'
+  /** 給 LLM 的欄位說明（選配） */
+  agentHint?: string
 }
 
 export interface ToolSpec {
@@ -82,5 +86,7 @@ export interface ValidationIssue {
     | 'param_unknown'
     | 'orphan_node'
     | 'source_has_input'
+    | 'param_semantic'
+    | 'model_missing'
   message: string
 }
