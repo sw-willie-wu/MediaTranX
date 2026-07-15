@@ -16,7 +16,7 @@ import { TOOL_REGISTRY } from '@/pipeline/registry'
 import { canConnect, normalizeParams, reachableFromRoot, validateRecipe } from '@/pipeline/recipe'
 import { parseFlow, serializeFlow, type FlowParseError } from '@/pipeline/flowFile'
 import { PipelineRunner, type EngineDeps, type RunSnapshot } from '@/pipeline/runner'
-import type { Recipe, ValidationIssue } from '@/pipeline/types'
+import type { Recipe, RecipeEdge, RecipeNode, ValidationIssue } from '@/pipeline/types'
 import type { MediaKindT } from '@/utils/mediaKind'
 import { detectMediaKind } from '@/utils/mediaKind'
 import { createLogger } from '@/utils/logger'
@@ -434,6 +434,54 @@ export const usePipelineStore = defineStore('pipeline', () => {
     moveNodes([{ id, position }])
   }
 
+  // ── 剪貼簿（spec F3 複製貼上）───────────────────────────────────────
+  const PASTE_OFFSET = 32
+  /** closure 單例（非響應式）：跨分頁有效、不落地、不碰系統剪貼簿 */
+  let clipboard: { nodes: RecipeNode[]; edges: RecipeEdge[]; pasteCount: number } | null = null
+
+  /** 複製選取中的 tool 節點（input/source 根排除——貼第二根必 multi_root）
+   *  ＋集合內部的邊；回傳複製數（0＝無 tool 節點、剪貼簿不動） */
+  function copyNodes(ids: string[]): number {
+    const want = new Set(ids)
+    const nodes = recipe.value.nodes.filter(n => want.has(n.id) && n.kind === 'tool')
+    if (nodes.length === 0) return 0
+    const picked = new Set(nodes.map(n => n.id))
+    const edges = recipe.value.edges.filter(e => picked.has(e.from) && picked.has(e.to))
+    clipboard = {
+      nodes: JSON.parse(JSON.stringify(nodes)) as RecipeNode[],
+      edges: JSON.parse(JSON.stringify(edges)) as RecipeEdge[],
+      pasteCount: 0,
+    }
+    return nodes.length
+  }
+
+  /** 貼到 active doc：nodeSeq 配號（同 addToolNode 式）、內部邊依 id 映射
+   *  重接、位置隨貼次 +32 錯開；單一 undo 步。回傳新 id（view 據以設選取）。 */
+  function pasteNodes(): string[] | null {
+    if (running.value || !clipboard || clipboard.nodes.length === 0) return null
+    const doc = activeDoc.value
+    pushHistory()
+    clipboard.pasteCount++
+    const offset = PASTE_OFFSET * clipboard.pasteCount
+    const idMap = new Map<string, string>()
+    const newIds: string[] = []
+    for (const src of clipboard.nodes) {
+      const clone = JSON.parse(JSON.stringify(src)) as RecipeNode
+      clone.id = `n${++doc.nodeSeq}-${Date.now() % 100000}`
+      clone.position = {
+        x: (src.position?.x ?? 100) + offset,
+        y: (src.position?.y ?? 100) + offset,
+      }
+      idMap.set(src.id, clone.id)
+      newIds.push(clone.id)
+      doc.recipe.nodes.push(clone)
+    }
+    for (const e of clipboard.edges) {
+      doc.recipe.edges.push({ from: idMap.get(e.from)!, to: idMap.get(e.to)! })
+    }
+    return newIds
+  }
+
   /** reset active doc（分頁化後語意＝清當前分頁內容，不動其他分頁） */
   function reset() {
     const d = activeDoc.value
@@ -654,7 +702,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     runSnapshot, running,
     addToolNode, removeNode, connect, disconnect, updateNodeParams,
     setKeepOutput, moveNode, moveNodes, reset, startRun, cancelRun,
-    undo, redo, canUndo, canRedo,
+    undo, redo, canUndo, canRedo, copyNodes, pasteNodes,
     savedRecipes, currentRecipeId, currentRunId, loadRecipeList, saveCurrent,
     deleteRecipe,
     // 多文件（分頁）
