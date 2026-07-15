@@ -46,6 +46,8 @@ export interface PipelineDoc {
   /** per-doc！模組級單例會讓 A 頁的 model_missing 洩漏到 B 頁 issue bar */
   modelIssues: ValidationIssue[]
   nodeSeq: number
+  /** undo/redo 快照堆疊（spec F3）——不進 .mtxflow/saveCurrent（序列化只吃 recipe） */
+  history: { past: Recipe[]; future: Recipe[] }
 }
 
 function emptyRecipe(): Recipe {
@@ -70,6 +72,7 @@ function createDoc(): PipelineDoc {
     currentRecipeId: null,
     modelIssues: [],
     nodeSeq: 1,
+    history: { past: [], future: [] },
   }
 }
 
@@ -201,6 +204,8 @@ export const usePipelineStore = defineStore('pipeline', () => {
       const m = /^n(\d+)-/.exec(nd.id)
       return m ? Math.max(mx, Number(m[1])) : mx
     }, 1)
+    doc.history = { past: [], future: [] }   // 載入＝新起點，舊歷史作廢（spec F3）
+    breakCoalescing()
   }
 
   /** 匯入 .mtxflow 文字 → 一律開新分頁（spec §3）；信封 name 空用 fallbackName（檔名去副檔名） */
@@ -278,10 +283,75 @@ export const usePipelineStore = defineStore('pipeline', () => {
     return { ok: true, docId }
   }
 
+  // ── undo/redo 歷史（spec F3）────────────────────────────────────────
+  const HISTORY_CAP = 50
+  const COALESCE_MS = 800
+  /** 合併窗（closure 非響應式）：同 doc 同 key 的連續 mutation 窗內沿用上一步快照 */
+  let coalesce: { docId: string; key: string; at: number } | null = null
+  function breakCoalescing() { coalesce = null }
+  // 切分頁斷合併窗（快照歸屬不跨 doc）
+  watch(activeDocId, () => breakCoalescing())
+
+  function cloneRecipe(r: Recipe): Recipe {
+    return JSON.parse(JSON.stringify(r)) as Recipe
+  }
+
+  /**
+   * mutation 前呼叫：推入當前 recipe 快照、清 future。coalesceKey 相同且
+   * 800ms 滑動窗內＝同一步（滑桿/打字/連續拖曳不會一動一步）；異類 mutation
+   * key 不同自然斷窗。cap 50 丟最舊。
+   */
+  function pushHistory(coalesceKey?: string) {
+    const doc = activeDoc.value
+    const now = Date.now()
+    if (coalesceKey && coalesce
+        && coalesce.docId === doc.id && coalesce.key === coalesceKey
+        && now - coalesce.at <= COALESCE_MS) {
+      coalesce.at = now
+      return
+    }
+    doc.history.past.push(cloneRecipe(doc.recipe))
+    if (doc.history.past.length > HISTORY_CAP) doc.history.past.shift()
+    doc.history.future = []
+    coalesce = coalesceKey ? { docId: doc.id, key: coalesceKey, at: now } : null
+  }
+
+  // 執行中禁用（active doc 在跑；非 active doc 在跑不影響本頁）
+  const canUndo = computed(() => !running.value && activeDoc.value.history.past.length > 0)
+  const canRedo = computed(() => !running.value && activeDoc.value.history.future.length > 0)
+
+  /** 套用快照：整份替換 recipe（派生重算）；選取指向已刪節點則清空。
+   *  VueFlow 內部 selection 會自行剔除消失的節點（Task 0 spike S3 實證），無需收斂。 */
+  function applySnapshot(doc: PipelineDoc, snap: Recipe) {
+    doc.recipe = snap
+    if (doc.selectedNodeId && !snap.nodes.some(n => n.id === doc.selectedNodeId)) {
+      doc.selectedNodeId = null
+    }
+  }
+
+  function undo() {
+    if (!canUndo.value) return
+    const doc = activeDoc.value
+    const snap = doc.history.past.pop()!
+    doc.history.future.push(cloneRecipe(doc.recipe))
+    applySnapshot(doc, snap)
+    breakCoalescing()
+  }
+
+  function redo() {
+    if (!canRedo.value) return
+    const doc = activeDoc.value
+    const snap = doc.history.future.pop()!
+    doc.history.past.push(cloneRecipe(doc.recipe))
+    applySnapshot(doc, snap)
+    breakCoalescing()
+  }
+
   // ── 圖編輯 ─────────────────────────────────────────────────────────
   function addToolNode(toolKey: string, position: { x: number; y: number }): string {
     const spec = TOOL_REGISTRY[toolKey]
     if (!spec) return ''
+    pushHistory()
     const id = `n${++activeDoc.value.nodeSeq}-${Date.now() % 100000}`
     const params: Record<string, unknown> = {}
     for (const f of spec.paramSchema) {
@@ -303,6 +373,8 @@ export const usePipelineStore = defineStore('pipeline', () => {
   }
 
   function removeNode(id: string) {
+    if (!recipe.value.nodes.some(n => n.id === id)) return
+    pushHistory()
     recipe.value.nodes = recipe.value.nodes.filter(n => n.id !== id)
     recipe.value.edges = recipe.value.edges.filter(e => e.from !== id && e.to !== id)
     if (selectedNodeId.value === id) selectedNodeId.value = null
@@ -322,27 +394,44 @@ export const usePipelineStore = defineStore('pipeline', () => {
     if (recipe.value.edges.some(e => e.from === from && e.to === to)) return null
     const err = canConnect(recipe.value, from, to, TOOL_REGISTRY)
     if (err) return err
+    pushHistory()   // 只有實際加邊才進歷史（duplicate/不合法在前面 early return）
     recipe.value.edges.push({ from, to })
     return null
   }
 
   function disconnect(from: string, to: string) {
+    if (!recipe.value.edges.some(e => e.from === from && e.to === to)) return
+    pushHistory()
     recipe.value.edges = recipe.value.edges.filter(e => !(e.from === from && e.to === to))
   }
 
   function updateNodeParams(id: string, params: Record<string, unknown>) {
     const n = recipe.value.nodes.find(x => x.id === id)
-    if (n) n.params = { ...params }
+    if (!n) return
+    pushHistory(`params:${id}`)
+    n.params = { ...params }
   }
 
   function setKeepOutput(id: string, keep: boolean) {
     const n = recipe.value.nodes.find(x => x.id === id)
-    if (n) n.keepOutput = keep
+    if (!n) return
+    pushHistory()
+    n.keepOutput = keep
+  }
+
+  /** 一次拖曳（可含框選多節點）＝單一歷史步；同集合 800ms 窗內合併 */
+  function moveNodes(updates: Array<{ id: string; position: { x: number; y: number } }>) {
+    const valid = updates.filter(u => recipe.value.nodes.some(n => n.id === u.id))
+    if (valid.length === 0) return
+    pushHistory(`move:${valid.map(u => u.id).sort().join(',')}`)
+    for (const u of valid) {
+      const n = recipe.value.nodes.find(x => x.id === u.id)!
+      n.position = u.position
+    }
   }
 
   function moveNode(id: string, position: { x: number; y: number }) {
-    const n = recipe.value.nodes.find(x => x.id === id)
-    if (n) n.position = position
+    moveNodes([{ id, position }])
   }
 
   /** reset active doc（分頁化後語意＝清當前分頁內容，不動其他分頁） */
@@ -564,7 +653,8 @@ export const usePipelineStore = defineStore('pipeline', () => {
     blockingErrors, advisoryErrors,
     runSnapshot, running,
     addToolNode, removeNode, connect, disconnect, updateNodeParams,
-    setKeepOutput, moveNode, reset, startRun, cancelRun,
+    setKeepOutput, moveNode, moveNodes, reset, startRun, cancelRun,
+    undo, redo, canUndo, canRedo,
     savedRecipes, currentRecipeId, currentRunId, loadRecipeList, saveCurrent,
     deleteRecipe,
     // 多文件（分頁）

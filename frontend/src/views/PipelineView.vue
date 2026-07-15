@@ -148,7 +148,8 @@ function onConnect(c: Connection) {
 }
 
 function onNodeDragStop(e: NodeDragEvent) {
-  for (const n of e.nodes) store.moveNode(n.id, { x: n.position.x, y: n.position.y })
+  // 單一呼叫＝單一 undo 歷史步（框選多節點拖曳不會一節點一步）
+  store.moveNodes(e.nodes.map(n => ({ id: n.id, position: { x: n.position.x, y: n.position.y } })))
 }
 
 // 節點右上 X：輸入節點=清除已選檔案（節點是根、不移除）；工具/source 節點=移除節點
