@@ -12,7 +12,8 @@ import { MAX_DOCS, usePipelineStore } from '@/stores/pipeline'
 import { useFilesStore } from '@/stores/files'
 import { useToast } from '@/composables/useToast'
 import { TOOL_REGISTRY, listToolSpecs } from '@/pipeline/registry'
-import { canConnect } from '@/pipeline/recipe'
+import { canConnect, reachableFromRoot } from '@/pipeline/recipe'
+import { barState, nodeFlagged } from '@/pipeline/viewState'
 import type { RecipeNode } from '@/pipeline/types'
 import PipelineParamForm from '@/components/pipeline/PipelineParamForm.vue'
 import PipelineTabBar from '@/components/pipeline/PipelineTabBar.vue'
@@ -116,6 +117,9 @@ const inputNodeLabel = computed(() => {
   return files.length > 1 ? `${name} +${files.length - 1}` : name
 })
 
+// 可達集合（F4-①/②）：canRun scope 與淡化視覺共用同一判定源
+const reachable = computed(() => reachableFromRoot(store.recipe))
+
 const flowNodes = computed(() =>
   store.recipe.nodes.map((n) => ({
     id: n.id,
@@ -128,7 +132,11 @@ const flowNodes = computed(() =>
       // 省略後 hover 可看全名（多檔逐行列出）
       titleAttr: n.kind === 'input' && store.inputFiles.length
         ? store.inputFiles.map(f => f.filename).join('\n') : undefined,
-      hasError: store.errors.some(i => i.nodeId === n.id),
+      // 紅框＝「需要注意」的節點級標記、非嚴格 error 對映：error ∪ tool_unrooted
+      // warning（未生根 head 拆碼前是 error 有紅框——保留、零視覺回退）
+      hasError: nodeFlagged(n.id, store.issues),
+      // 不可達（未連通/懸空鏈）→ 虛線淡化；紅框可與之疊加（紅色虛線淡化框）
+      unreachable: !reachable.value.has(n.id),
       runState: nodeRunState(n.id),
       selected: store.selectedNodeId === n.id,
     },
@@ -152,6 +160,8 @@ const flowEdges = computed(() =>
     target: e.to,
     // 只有「流入正在執行節點」的那段亮虛線動畫（原本整條 pipeline 齊閃，看不出進行到哪）
     animated: nodeRunState(e.to) === 'running',
+    // 懸空鏈上的邊同步淡化虛線（to 不可達 ⇒ 這段不會跑）
+    class: reachable.value.has(e.to) ? undefined : 'edge-unreachable',
   })),
 )
 
@@ -283,6 +293,12 @@ async function onFilesPicked(e: Event) {
 function removeInputFile(fileId: string) {
   store.inputFiles = store.inputFiles.filter(f => f.fileId !== fileId)
 }
+
+// issue bar 三態（F4-①）：danger＝blocking∪modelIssues／warning＝僅不可達分支
+// 的錯誤／隱藏。節點紅框（節點級標記）與黃 bar＋run 可按（run 級 gate）可同時
+// 成立——不可達分支的問題標在節點上、不擋可達鏈執行。
+const modelErrors = computed(() => store.errors.filter(i => i.code === 'model_missing'))
+const issueBar = computed(() => barState(store.blockingErrors, store.advisoryErrors, modelErrors.value))
 
 const runSummary = computed(() => {
   const snap = store.runSnapshot
@@ -504,6 +520,7 @@ async function onOpen(id: string) {
                 'is-input': data.kind === 'input',
                 'is-source': data.kind === 'source',
                 'has-error': data.hasError,
+                'is-unreachable': data.unreachable,
                 'is-selected': data.selected,
                 'is-running': data.runState === 'running',
                 'is-run-failed': data.runState === 'failed',
@@ -534,10 +551,10 @@ async function onOpen(id: string) {
           </template>
         </VueFlow>
 
-        <!-- 驗證訊息列 -->
-        <div v-if="store.errors.length > 0" class="issue-bar">
-          <i class="bi bi-exclamation-triangle me-1"></i>{{ store.errors[0].message }}
-          <span v-if="store.errors.length > 1" class="issue-more">+{{ store.errors.length - 1 }}</span>
+        <!-- 驗證訊息列（三態：紅＝擋 run 或 run 失敗類、黃＝不可達分支問題不擋路、無＝隱藏） -->
+        <div v-if="issueBar" class="issue-bar" :class="{ warning: issueBar.tone === 'warning' }">
+          <i class="bi bi-exclamation-triangle me-1"></i>{{ issueBar.message }}
+          <span v-if="issueBar.extra > 0" class="issue-more">+{{ issueBar.extra }}</span>
         </div>
         </div>
 
@@ -682,6 +699,12 @@ async function onOpen(id: string) {
   :deep(.vue-flow__pane.selection) { cursor: default; }
   &.space-pan :deep(.vue-flow__pane) { cursor: grab; }
   :deep(.vue-flow__pane.dragging) { cursor: grabbing; }
+
+  // 懸空鏈上的邊：虛線＋淡化（與節點的 is-unreachable 同語彙；F4-②）
+  :deep(.vue-flow__edge.edge-unreachable path.vue-flow__edge-path) {
+    stroke-dasharray: 5 4;
+    opacity: 0.45;
+  }
 }
 // 資訊列置中（對齊工具頁 filmstrip overlay 模式的置中慣例）
 .canvas-wrap :deep(.media-info-bar) {
@@ -696,6 +719,13 @@ async function onOpen(id: string) {
   border-top: 1px solid rgba(220, 53, 69, 0.4);
   color: var(--color-danger, #dc3545);
   font-size: 0.8rem;
+
+  // 黃色態：僅剩不可達分支的錯誤——保留提醒但不擋 run（F4-①）
+  &.warning {
+    background: color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent);
+    border-top-color: color-mix(in srgb, var(--color-warning, #f59e0b) 40%, transparent);
+    color: var(--color-warning, #f59e0b);
+  }
 }
 .issue-more { margin-left: 0.5rem; opacity: 0.7; }
 
@@ -777,6 +807,9 @@ async function onOpen(id: string) {
   &.is-input { border-color: var(--color-primary); cursor: pointer; }
   &.is-source { border-color: #2aa198; }
   &.has-error { border-color: var(--color-danger, #dc3545); }
+  // 不可達（未連通/懸空鏈）：虛線＋淡化——一眼看出哪條會跑（F4-②）。
+  // 與 has-error 疊加＝紅色虛線淡化框（未生根 head 的紅框保留、零回退）
+  &.is-unreachable { border-style: dashed; opacity: 0.55; }
   &.is-selected { box-shadow: 0 0 0 2px var(--color-primary); }
 
   // 執行狀態視覺（run 快照驅動；流程線不動）——tint 疊在 panel 底色上，深淺主題皆可讀
