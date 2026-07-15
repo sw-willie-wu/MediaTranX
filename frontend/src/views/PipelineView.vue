@@ -12,12 +12,14 @@ import { MAX_DOCS, usePipelineStore } from '@/stores/pipeline'
 import { useFilesStore } from '@/stores/files'
 import { useToast } from '@/composables/useToast'
 import { TOOL_REGISTRY, listToolSpecs } from '@/pipeline/registry'
+import { canConnect } from '@/pipeline/recipe'
 import type { RecipeNode } from '@/pipeline/types'
 import PipelineParamForm from '@/components/pipeline/PipelineParamForm.vue'
 import PipelineTabBar from '@/components/pipeline/PipelineTabBar.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import { useTitlebar } from '@/composables/useTitlebar'
 import { useSpaceHeld } from '@/composables/useSpaceHeld'
+import { useShiftHeld } from '@/composables/useKeyHeld'
 import { isFlowFileName, sniffFlowText } from '@/pipeline/flowFile'
 import { createLogger } from '@/utils/logger'
 
@@ -27,8 +29,36 @@ const { t } = useI18n()
 const store = usePipelineStore()
 const filesStore = useFilesStore()
 const toast = useToast()
-const { screenToFlowCoordinate, fitView, onPaneReady, viewport } = useVueFlow()
+const { screenToFlowCoordinate, fitView, onPaneReady, viewport, endConnection, connectionClickStartHandle } = useVueFlow()
 const { isSpaceHeld } = useSpaceHeld()
+const { isShiftHeld } = useShiftHeld()
+
+// ── Shift 點擊連線（R1）＋意外連線 bug 修（R2）─────────────────────
+// VueFlow connectOnClick 預設 true：單擊 handle 即進入「待連線」狀態（幾乎無視覺
+// 回饋），下一次點到任何 handle 就完成連線——R2「框選後點節點憑空連到 output」
+// 的根因。改為平時關閉、按住 Shift 才開（回報者建議的 Shift 點兩圓圈連線）。
+//
+// Shift 中途放開必須主動清 pending：connectOnClick 轉 false 只會讓 handleClick
+// early-return，connectionClickStartHandle 不會被清（全庫僅拖曳 pointerup 與
+// handleClick 第二擊會清）——殘留會讓下次 Shift 點擊直接完成幻影連線。
+// endConnection(evt, isClick=true) 才清 click 的 pending（isClick=false 清的是
+// 拖曳用的 connectionStartHandle）——真機 spike 實證（plan Task 0 S2）。
+watch(isShiftHeld, (held) => {
+  if (!held && connectionClickStartHandle.value) {
+    endConnection(new MouseEvent('click'), true)
+  }
+})
+
+// 連線前置驗證（R4-③）：拖曳與 Shift 點擊共用（useHandle 兩路徑都尊重
+// isValidConnection）——不合法的目標 handle 直接不接受，取代事後 toast。
+// ⚠ VueFlow 對 controlled :edges 也會逐條跑 isValidConnection（createGraphEdges
+// 再驗）——不放行的話整圖既存邊會被當「duplicate」拒絕渲染（真機踩雷：store
+// 有邊、DOM 零邊）。兩種呼叫以 id 區分：重驗既存邊傳帶 id 的 Edge（放行），
+// 即時拖曳/點擊傳無 id 的裸 Connection（走 canConnect，duplicate 也擋）。
+function isValidConnection(c: Connection): boolean {
+  if ((c as { id?: string }).id) return true
+  return canConnect(store.recipe, c.source, c.target, TOOL_REGISTRY) === null
+}
 
 // 底部資訊列：目前縮放百分比（viewport 響應 pan/zoom；形狀沿 ImageView 的 imageInfoItems）；
 // 點擊＝fitView 縮放至可見全部節點
@@ -460,6 +490,8 @@ async function onOpen(id: string) {
           :pan-on-drag="isSpaceHeld ? true : [1, 2]"
           :selection-key-code="isSpaceHeld ? null : true"
           :delete-key-code="null"
+          :connect-on-click="isShiftHeld && !store.running"
+          :is-valid-connection="isValidConnection"
           @connect="onConnect"
           @node-drag-stop="onNodeDragStop"
           @node-click="onNodeClick"
