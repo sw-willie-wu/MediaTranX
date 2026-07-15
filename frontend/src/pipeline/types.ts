@@ -79,6 +79,7 @@ export interface ValidationIssue {
     | 'multi_root'
     | 'no_root'
     | 'tool_indegree'
+    | 'tool_unrooted'
     | 'edge_endpoint'
     | 'kind_mismatch'
     | 'unknown_tool'
