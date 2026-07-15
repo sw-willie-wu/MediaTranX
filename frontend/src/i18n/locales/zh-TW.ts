@@ -22,6 +22,7 @@ export default {
     input_node_hint: '在下方「執行」區選擇要跑這條流程的檔案。',
     select_node_hint: '點選畫布上的節點編輯參數；從左側拖入或點擊新增節點。',
     connect_invalid: '這條連線不相容',
+    copied_n: '已複製 {n} 個節點',
     keep_output: '保留此節點產出',
     keep_output_hint: '預設只有末端節點的產出會進產出抽屜；勾選讓中間產物也保留。',
     remove_node: '移除節點',

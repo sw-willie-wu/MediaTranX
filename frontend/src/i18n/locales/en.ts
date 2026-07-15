@@ -22,6 +22,7 @@ export default {
     input_node_hint: 'Pick the files to run through this pipeline in the Run section below.',
     select_node_hint: 'Click a node on the canvas to edit its parameters; drag or click on the left to add nodes.',
     connect_invalid: 'This connection is not compatible',
+    copied_n: 'Copied {n} node(s)',
     keep_output: 'Keep this node output',
     keep_output_hint: 'By default only terminal node outputs enter the Results drawer; check to keep intermediates too.',
     remove_node: 'Remove node',

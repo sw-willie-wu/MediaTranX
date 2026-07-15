@@ -4,7 +4,7 @@
  * recipe（store）是唯一事實來源;Vue Flow nodes/edges 由 recipe 派生,
  * 拖曳/連線事件寫回 store。
  */
-import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Handle, Position, VueFlow, useVueFlow, type Connection, type NodeDragEvent } from '@vue-flow/core'
 import AppThreePaneLayout from '@/components/common/AppThreePaneLayout.vue'
@@ -14,6 +14,7 @@ import { useToast } from '@/composables/useToast'
 import { TOOL_REGISTRY, listToolSpecs } from '@/pipeline/registry'
 import { canConnect, reachableFromRoot } from '@/pipeline/recipe'
 import { barState, nodeFlagged } from '@/pipeline/viewState'
+import { isEditableTarget, matchShortcut, pickConnectPair } from '@/pipeline/canvasKeys'
 import type { RecipeNode } from '@/pipeline/types'
 import PipelineParamForm from '@/components/pipeline/PipelineParamForm.vue'
 import PipelineTabBar from '@/components/pipeline/PipelineTabBar.vue'
@@ -30,7 +31,7 @@ const { t } = useI18n()
 const store = usePipelineStore()
 const filesStore = useFilesStore()
 const toast = useToast()
-const { screenToFlowCoordinate, fitView, onPaneReady, viewport, endConnection, connectionClickStartHandle } = useVueFlow()
+const { screenToFlowCoordinate, fitView, onPaneReady, viewport, endConnection, connectionClickStartHandle, getSelectedNodes, addSelectedNodes, removeSelectedNodes, findNode } = useVueFlow()
 const { isSpaceHeld } = useSpaceHeld()
 const { isShiftHeld } = useShiftHeld()
 
@@ -294,6 +295,74 @@ function removeInputFile(fileId: string) {
   store.inputFiles = store.inputFiles.filter(f => f.fileId !== fileId)
 }
 
+// ── 畫布鍵盤快捷鍵（F2/F3）：C 連線、Ctrl+Z/Y undo/redo、Ctrl+C/V 複製貼上 ──
+// 判定邏輯在 pipeline/canvasKeys.ts（純函式、可測）；此處只做 store/VueFlow 接線。
+// 執行中一律 no-op（含 Ctrl+C——spec §3「執行中圖不可變」的鍵盤路徑 guard）。
+function onCanvasKeydown(e: KeyboardEvent) {
+  if (isEditableTarget(e)) return                 // 輸入框的 Ctrl+C/Z 等本職不攔
+  const action = matchShortcut(e)
+  if (!action || store.running) return
+  switch (action) {
+    case 'connect': {
+      const pair = pickConnectPair(
+        getSelectedNodes.value.map(n => ({ id: n.id, x: n.position.x, y: n.position.y })),
+        (from, to) => canConnect(store.recipe, from, to, TOOL_REGISTRY),
+      )
+      if (!pair) return                           // 選取數 ≠ 2：no-op、不吃事件
+      e.preventDefault()
+      if ('error' in pair) {
+        toast.show(pair.error || t('pipeline.connect_invalid'), { type: 'error', icon: 'bi-x-circle' })
+      } else {
+        store.connect(pair.from, pair.to)
+      }
+      return
+    }
+    case 'undo': e.preventDefault(); store.undo(); return
+    case 'redo': e.preventDefault(); store.redo(); return
+    case 'copy': {
+      // 選取合流（spec F3）：VueFlow 多選優先，否則 store 單選
+      const ids = getSelectedNodes.value.length > 0
+        ? getSelectedNodes.value.map(n => n.id)
+        : (store.selectedNodeId ? [store.selectedNodeId] : [])
+      const n = store.copyNodes(ids)
+      if (n > 0) {
+        e.preventDefault()
+        toast.show(t('pipeline.copied_n', { n }), { type: 'success', icon: 'bi-clipboard-check' })
+      }
+      return
+    }
+    case 'paste': {
+      const ids = store.pasteNodes()
+      if (!ids) return
+      e.preventDefault()
+      store.selectedNodeId = ids.length === 1 ? ids[0] : null
+      // flowNodes 派生重算後才找得到新節點——nextTick 後設 VueFlow selection。
+      // ⚠ 必須先清舊選取：Ctrl+V 當下 Ctrl 仍按住＝multiSelectionActive，
+      // addSelectedNodes 走「疊加」分支不清舊選取——殘留的原節點會讓下一次
+      // 按 C 把原節點與複製品焊起來（review 抓到的意外連線隱患）
+      void nextTick(() => {
+        removeSelectedNodes(getSelectedNodes.value)
+        addSelectedNodes(ids.map(id => findNode(id)).filter((x): x is NonNullable<typeof x> => !!x))
+      })
+      return
+    }
+  }
+}
+
+// KeepAlive 四鉤＋attached 旗標：addEventListener 非冪等（有別於 titlebar
+// registerActions 的可重入），onMounted+onActivated 都會走、不防會雙掛
+let keydownAttached = false
+function attachKeydown() {
+  if (keydownAttached) return
+  keydownAttached = true
+  window.addEventListener('keydown', onCanvasKeydown)
+}
+function detachKeydown() {
+  if (!keydownAttached) return
+  keydownAttached = false
+  window.removeEventListener('keydown', onCanvasKeydown)
+}
+
 // issue bar 三態（F4-①）：danger＝blocking∪modelIssues／warning＝僅不可達分支
 // 的錯誤／隱藏。節點紅框（節點級標記）與黃 bar＋run 可按（run 級 gate）可同時
 // 成立——不可達分支的問題標在節點上、不擋可達鏈執行。
@@ -336,18 +405,18 @@ watch(titlebarText, (v) => setFileName(v), { immediate: true })
 // 只掛 onMounted 第二次進頁按鈕會失效、clear 時序不對會蓋掉下一頁的註冊。
 function registerTitlebar() {
   registerActions({
-    canUndo: () => false,
-    canRedo: () => false,
+    canUndo: () => store.canUndo,
+    canRedo: () => store.canRedo,
     canSaveAs: () => !store.isBlankDoc(),
-    onUndo: () => {},
-    onRedo: () => {},
+    onUndo: () => store.undo(),
+    onRedo: () => store.redo(),
     onSaveAs: () => { void handleExport() },
   })
 }
-onActivated(() => { registerTitlebar(); setFileName(titlebarText.value); consumePendingImport() })
-onDeactivated(() => { clearActions(); clearFileName() })
-onMounted(() => { registerTitlebar(); void store.loadRecipeList(); consumePendingImport() })
-onUnmounted(() => { clearActions() })
+onActivated(() => { registerTitlebar(); attachKeydown(); setFileName(titlebarText.value); consumePendingImport() })
+onDeactivated(() => { clearActions(); detachKeydown(); clearFileName() })
+onMounted(() => { registerTitlebar(); attachKeydown(); void store.loadRecipeList(); consumePendingImport() })
+onUnmounted(() => { clearActions(); detachKeydown() })
 
 // ── 匯出（spec §4.1）──────────────────────────────────────────────
 async function handleExport(): Promise<void> {
