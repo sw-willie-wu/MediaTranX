@@ -13,7 +13,7 @@ import { getApiBase } from '@/composables/useApi'
 import { useTaskStore } from '@/stores/tasks'
 import { useComputeSettingsStore } from '@/stores/computeSettings'
 import { TOOL_REGISTRY } from '@/pipeline/registry'
-import { normalizeParams, validateRecipe } from '@/pipeline/recipe'
+import { canConnect, normalizeParams, reachableFromRoot, validateRecipe } from '@/pipeline/recipe'
 import { parseFlow, serializeFlow, type FlowParseError } from '@/pipeline/flowFile'
 import { PipelineRunner, type EngineDeps, type RunSnapshot } from '@/pipeline/runner'
 import type { Recipe, ValidationIssue } from '@/pipeline/types'
@@ -101,12 +101,31 @@ export const usePipelineStore = defineStore('pipeline', () => {
   const structuralIssues = computed(() => validateRecipe(recipe.value, TOOL_REGISTRY))
   const issues = computed(() => [...structuralIssues.value, ...activeDoc.value.modelIssues])
   const errors = computed(() => issues.value.filter(i => i.severity === 'error'))
-  // canRun 刻意只看結構性 errors（不含 modelIssues）：模型缺失不該永久鎖死執行鈕——
-  // 使用者裝好模型後要能直接再按一次執行重新驗證,而非卡在「按鈕本身被 disable」。
+
+  // ── 可達子圖執行語意（spec F4-①）────────────────────────────────
+  const reachable = computed(() => reachableFromRoot(recipe.value))
+  /**
+   * 結構 error 二分（僅 structuralIssues；modelIssues 刻意排除——見 canRun 註解）：
+   * node-scoped 看 nodeId 可達、edge-scoped 只看 from 可達（edge_endpoint 的 to
+   * 可能根本不存在，不能假設「from 可達則 to 必可達」）、graph-scoped
+   * （no_root/multi_root/cycle，無 nodeId 無 edge）一律 blocking。
+   */
+  function isBlockingIssue(i: ValidationIssue, reach: Set<string>): boolean {
+    if (i.edge) return reach.has(i.edge.from)
+    if (i.nodeId) return reach.has(i.nodeId)
+    return true
+  }
+  const blockingErrors = computed(() =>
+    structuralIssues.value.filter(i => i.severity === 'error' && isBlockingIssue(i, reachable.value)))
+  const advisoryErrors = computed(() =>
+    structuralIssues.value.filter(i => i.severity === 'error' && !isBlockingIssue(i, reachable.value)))
+
+  // canRun 只看「可達子圖上的」結構 errors（不含 modelIssues）：模型缺失不該永久
+  // 鎖死執行鈕——使用者裝好模型後要能直接再按一次執行重新驗證,而非卡在「按鈕
+  // 本身被 disable」。懸空分支的錯誤不擋（runner 只走可達節點，該分支不會跑）。
   const canRun = computed(() => {
     if (runningDocId.value !== null) return false   // 全域 gate:任何分頁在跑一律 false
-    const structuralErrors = structuralIssues.value.filter(i => i.severity === 'error')
-    if (structuralErrors.length > 0) return false
+    if (blockingErrors.value.length > 0) return false
     const root = recipe.value.nodes.find(n => n.kind === 'input' || n.kind === 'source')
     if (!root) return false
     if (root.kind === 'input') return inputFiles.value.length > 0
@@ -293,16 +312,17 @@ export const usePipelineStore = defineStore('pipeline', () => {
     }
   }
 
-  /** 連線;成功回 null、失敗回退並回傳具體原因（給 toast） */
+  /**
+   * 連線;成功回 null、失敗回傳具體原因（給 toast）。前置驗證（canConnect,
+   * spec F4-③）——不再有「先推入再回退」暫態;成環/匯流等 node/graph-scoped
+   * 錯誤也擋得住（舊版只攔 edge-scoped、環邊實際進得了 recipe）。
+   * duplicate 維持靜默 no-op（在 canConnect 之前,不觸發 toast）。
+   */
   function connect(from: string, to: string): string | null {
     if (recipe.value.edges.some(e => e.from === from && e.to === to)) return null
+    const err = canConnect(recipe.value, from, to, TOOL_REGISTRY)
+    if (err) return err
     recipe.value.edges.push({ from, to })
-    const bad = validateRecipe(recipe.value, TOOL_REGISTRY)
-      .find(i => i.severity === 'error' && (i.edge?.from === from && i.edge?.to === to))
-    if (bad) {
-      recipe.value.edges = recipe.value.edges.filter(e => !(e.from === from && e.to === to))
-      return bad.message
-    }
     return null
   }
 
@@ -407,7 +427,11 @@ export const usePipelineStore = defineStore('pipeline', () => {
   async function checkModelsReady(doc: PipelineDoc): Promise<boolean> {
     await modelStore.ensureLoaded()
     const missing: ValidationIssue[] = []
+    // 只驗可達子圖（spec F4-①）:不可達節點不會跑,缺模型不擋 run 也不產 issue。
+    // 根自身在集合內（reachableFromRoot 含根）——source 根的模型不被 scope 掉。
+    const reach = reachableFromRoot(doc.recipe)
     for (const node of doc.recipe.nodes) {
+      if (!reach.has(node.id)) continue
       if (node.kind !== 'tool' && node.kind !== 'source') continue
       if (!node.toolKey) continue
       const meta = METAS[node.toolKey]
@@ -537,6 +561,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
 
   return {
     recipe, selectedNodeId, selectedNode, inputFiles, issues, errors, canRun,
+    blockingErrors, advisoryErrors,
     runSnapshot, running,
     addToolNode, removeNode, connect, disconnect, updateNodeParams,
     setKeepOutput, moveNode, reset, startRun, cancelRun,
