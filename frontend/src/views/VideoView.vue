@@ -102,6 +102,11 @@ useViewHost('video', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
   validSubfunctions: () => subfunctionsForView('video'),
+  activeFile: computed(() =>
+    activeFileId.value
+      ? { id: activeFileId.value, name: currentFileName.value, kind: 'video' }
+      : null,
+  ),
 })
 
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')

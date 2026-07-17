@@ -67,6 +67,12 @@ useViewHost('document', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
   validSubfunctions: () => subfunctionsForView('document'),
+  // document 無 activeFileId，用 fileId 當 active file id
+  activeFile: computed(() =>
+    fileId.value
+      ? { id: fileId.value, name: currentFileName.value, kind: 'document' }
+      : null,
+  ),
 })
 
 const currentFileExt = computed(() => {

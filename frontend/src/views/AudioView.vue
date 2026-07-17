@@ -170,6 +170,11 @@ useViewHost('audio', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
   validSubfunctions: () => subfunctionsForView('audio'),
+  activeFile: computed(() =>
+    activeFileId.value
+      ? { id: activeFileId.value, name: currentFileName.value, kind: 'audio' }
+      : null,
+  ),
 })
 
 const volumeGainPreview = ref(1)

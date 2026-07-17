@@ -105,6 +105,11 @@ useViewHost('image', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
   validSubfunctions: () => subfunctionsForView('image'),
+  activeFile: computed(() =>
+    activeFileId.value
+      ? { id: activeFileId.value, name: currentFileName.value, kind: 'image' }
+      : null,
+  ),
 })
 
 // ── Per-entry panel settings cache ───────────────────────────────────────────
