@@ -4,6 +4,7 @@ Logging configuration.
 import logging
 import os
 import re
+import sys
 from pathlib import Path
 
 LOG_FORMAT = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -48,6 +49,20 @@ class RedactSecretsFilter(logging.Filter):
 
 def configure_logging(settings) -> None:
     """Configure logging system based on settings."""
+    # Packaged core.exe 的 stdout/stderr 是非 tty pipe → CPython 預設 block buffer
+    # （4–8KB 才落地），任務期間 app.log 整批延後。改 line buffering，讓 Electron
+    # pipe 端逐行收到。非標準 stream（測試 capsys、未知 runtime）無 reconfigure 則跳過。
+    for _stream in (sys.stdout, sys.stderr):
+        _reconfigure = getattr(_stream, "reconfigure", None)
+        if callable(_reconfigure):
+            try:
+                _reconfigure(line_buffering=True)
+            except Exception:
+                # best-effort 優化——任何失敗（非標準 wrapper 簽名不吃 kwarg 拋
+                # TypeError、stream 不可 reconfigure 拋 ValueError/OSError 等）都靜默降級，
+                # 絕不讓它擋住 bootstrap。
+                pass
+
     log_formatter = logging.Formatter(LOG_FORMAT)
     handlers: list[logging.Handler] = [logging.StreamHandler()]
 
