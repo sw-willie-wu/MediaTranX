@@ -1,5 +1,10 @@
 import { ref, computed, onBeforeUnmount } from 'vue'
 
+/** zoomLevel 相對 fit 的縮放倍率界限（滾輪/滑桿/setZoom 共用同一 clamp）。 */
+export const ZOOM_MIN = 0.1
+export const ZOOM_MAX = 10
+export const ZOOM_STEP = 0.1
+
 export function useImageZoom(
   imgRef: Readonly<{ value: HTMLImageElement | null }>,
   containerRef: Readonly<{ value: HTMLElement | null }>,
@@ -42,8 +47,8 @@ export function useImageZoom(
     if (!containerRef.value) return
 
     const oldZoom = zoomLevel.value
-    const step = e.deltaY > 0 ? -0.1 : 0.1
-    const newZoom = Math.max(0.1, Math.min(10, +(oldZoom + step).toFixed(1)))
+    const step = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP
+    const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, +(oldZoom + step).toFixed(1)))
     if (newZoom === oldZoom) return
 
     // 滑鼠相對於容器中心的偏移（transform-origin 是容器中心）
@@ -102,6 +107,14 @@ export function useImageZoom(
 
   const zoomPercent = computed(() => Math.round(fitPercent.value * zoomLevel.value))
 
+  /** slidebar／程式化縮放入口——與滾輪同 clamp；縮放後重新 clamp pan 防出界。 */
+  function setZoom(level: number) {
+    zoomLevel.value = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, level))
+    const c = clampPan(panX.value, panY.value)
+    panX.value = c.x
+    panY.value = c.y
+  }
+
   return {
     zoomLevel,
     panX,
@@ -110,6 +123,7 @@ export function useImageZoom(
     fitPercent,
     zoomPercent,
     reset,
+    setZoom,
     onWheel,
     onImageLoad,
     onMouseDown,

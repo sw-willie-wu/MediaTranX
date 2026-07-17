@@ -225,6 +225,7 @@ export default {
     folder_register_failed: '{count} file(s) could not be added',
     loading_info: 'Loading info...',
     zoom_fit: 'Zoom to fit',
+    zoom: 'Zoom',
     uploading: 'Uploading...',
     copy: 'Copy',
     copy_all: 'Copy All',

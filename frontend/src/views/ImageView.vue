@@ -5,11 +5,13 @@ import ToolLayout from '@/components/ToolLayout.vue'
 import AppFilmstrip from '@/components/common/AppFilmstrip.vue'
 import ImagePreview from '@/components/image/ImagePreview.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
+import AppRange from '@/components/common/AppRange.vue'
 import ToolParamHost from '@/components/params/ToolParamHost.vue'
 import { METAS } from '@/components/params'
 import ImageAiRemovePanel from '@/components/image/panels/ImageAiRemovePanel.vue'
 import type { FilterPreview } from '@/components/image/panels/filterTypes'
 import { useImageWorkspace } from '@/composables/useImageWorkspace'
+import { ZOOM_MIN, ZOOM_MAX, ZOOM_STEP } from '@/composables/useImageZoom'
 import { useMultiSubmit } from '@/composables/useMultiSubmit'
 import { useExecuteStop } from '@/composables/useExecuteStop'
 import { useTitlebar, type TitlebarExtraAction } from '@/composables/useTitlebar'
@@ -465,12 +467,23 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
     </template>
 
     <template #info-bar>
-      <AppMediaInfoBar
-        v-if="imageInfo || isLoadingInfo || isUploading"
-        :items="imageInfoItems"
-        :loading="(isLoadingInfo || isUploading) && !imageInfo"
-        :loading-text="$t('image.loading')"
-      />
+      <div v-if="imageInfo || isLoadingInfo || isUploading" class="info-bar-row">
+        <AppMediaInfoBar
+          :items="imageInfoItems"
+          :loading="(isLoadingInfo || isUploading) && !imageInfo"
+          :loading-text="$t('image.loading')"
+        />
+        <AppRange
+          v-if="imageInfo"
+          class="zoom-range"
+          :model-value="previewRef?.zoomLevel ?? 1"
+          :min="ZOOM_MIN"
+          :max="ZOOM_MAX"
+          :step="ZOOM_STEP"
+          :title="$t('common.zoom')"
+          @update:model-value="previewRef?.setZoom($event)"
+        />
+      </div>
     </template>
 
     <template #filmstrip>
@@ -614,6 +627,17 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
 
 <style lang="scss" scoped>
 .settings-form { color: var(--text-primary); }
+
+.info-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+.zoom-range {
+  flex: 0 0 auto;
+  width: 120px;
+}
 
 .anim-hint {
   position: absolute;

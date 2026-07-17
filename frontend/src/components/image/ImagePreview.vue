@@ -31,8 +31,15 @@ const containerRef = ref<HTMLElement | null>(null)
 const glCanvasRef = ref<HTMLCanvasElement | null>(null)
 
 // ── Zoom/Pan ─────────────────────────────────────────────────────────────
-const { zoomLevel, panX, panY, isDragging, zoomPercent, reset, onWheel, onImageLoad, onMouseDown } =
+const { zoomLevel, panX, panY, isDragging, zoomPercent, reset, setZoom, onWheel, onImageLoad, onMouseDown } =
   useImageZoom(imgRef, containerRef)
+
+/** 雙擊還原 fit——AiRemove 模式讓給 mask-canvas 的封閉形狀 dblclick（letterbox 空白區
+ *  是本 gate 唯一防線，canvas 的 .stop 只擋圖片區）。 */
+function onPreviewDblClick() {
+  if (props.isAiRemoveMode) return
+  reset()
+}
 
 // ── Canvas Mask ──────────────────────────────────────────────────────────
 const {
@@ -190,7 +197,7 @@ onUnmounted(() => {
 defineExpose({
   clearMask, exportMask, hasMask, syncToImage, cancelShape,
   cropRect, clearCropRect, syncCropCanvas,
-  isAiRemoveActive: () => props.isAiRemoveMode, zoomPercent,
+  isAiRemoveActive: () => props.isAiRemoveMode, zoomPercent, zoomLevel, setZoom,
   getZoomState: () => ({ zoomLevel: zoomLevel.value, panX: panX.value, panY: panY.value }),
   setZoomState: (s: { zoomLevel: number; panX: number; panY: number }) => {
     zoomLevel.value = s.zoomLevel
@@ -252,6 +259,7 @@ function handleCropMouseUp(_e: MouseEvent) {
       :class="{ dragging: isDragging, 'draw-mode': isAiRemoveMode, 'crop-mode': showCropOverlay, 'pan-ready': isSpaceHeld }"
       @wheel.prevent="onWheel"
       @mousedown="handleMouseDown"
+      @dblclick="onPreviewDblClick"
     >
       <!-- image-transform 包住圖片與暈影，讓 inset:0 的 overlay 只覆蓋圖片 -->
       <div
