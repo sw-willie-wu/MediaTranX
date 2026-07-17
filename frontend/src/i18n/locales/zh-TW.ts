@@ -1145,6 +1145,7 @@ export default {
       output_file: '輸出檔案',
       select_output: '選擇輸出位置',
       task_label: '文件 · 分割',
+      format_not_supported: '分割僅支援 PDF 檔案',
     },
 
     translate: {
@@ -1163,6 +1164,7 @@ export default {
       install_complete: '翻譯功能安裝完成',
       install_error: '安裝失敗，請查看任務列表',
       no_model_downloaded: '尚未下載翻譯模型，請至設定 → 模型與資源下載。',
+      format_not_supported: '翻譯僅支援文字與字幕格式（txt、md、log、srt、vtt、lrc、ass）',
     },
   },
 

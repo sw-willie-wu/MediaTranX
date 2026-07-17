@@ -62,6 +62,9 @@ export interface BuildOcrMetaOptions {
   labelKey: string
   taskType: string
   agentExecuteLabel: string
+  /** 選配副檔名白名單——document.ocr 設 pdf+圖片（沿舊 View isPdfOrImage）；
+   *  image.ocr 不設（image 域檔案恆為圖片、guard 永不觸發）。 */
+  supportedExts?: string[]
 }
 
 /** image.ocr／document.ocr 共用的 META 工廠（見檔頭註解）。 */
@@ -71,6 +74,7 @@ export function buildOcrMeta(opts: BuildOcrMetaOptions): ToolParamMeta {
     apiPath: opts.apiPath,
     labelKey: opts.labelKey,
     taskType: opts.taskType,
+    supportedExts: opts.supportedExts,
     schema: ocrSchema(),
     defaults() {
       const d: Record<string, unknown> = {}
@@ -106,6 +110,8 @@ export const META: ToolParamMeta = buildOcrMeta({
   taskType: 'document.ocr',
   // 舊 DocumentOcrPanel.agentSchema.execute.label。
   agentExecuteLabel: 'panel.doc_ocr.execute',
+  // 沿舊 DocumentView isPdfOrImage（PDF 或圖片）——收斂進 host guard，刪 View 特例
+  supportedExts: ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'tiff', 'tif'],
 })
 
 /**
