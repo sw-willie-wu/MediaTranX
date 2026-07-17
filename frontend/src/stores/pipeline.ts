@@ -13,10 +13,10 @@ import { getApiBase } from '@/composables/useApi'
 import { useTaskStore } from '@/stores/tasks'
 import { useComputeSettingsStore } from '@/stores/computeSettings'
 import { TOOL_REGISTRY } from '@/pipeline/registry'
-import { normalizeParams, validateRecipe } from '@/pipeline/recipe'
+import { canConnect, normalizeParams, reachableFromRoot, validateRecipe } from '@/pipeline/recipe'
 import { parseFlow, serializeFlow, type FlowParseError } from '@/pipeline/flowFile'
 import { PipelineRunner, type EngineDeps, type RunSnapshot } from '@/pipeline/runner'
-import type { Recipe, ValidationIssue } from '@/pipeline/types'
+import type { Recipe, RecipeEdge, RecipeNode, ValidationIssue } from '@/pipeline/types'
 import type { MediaKindT } from '@/utils/mediaKind'
 import { detectMediaKind } from '@/utils/mediaKind'
 import { createLogger } from '@/utils/logger'
@@ -46,6 +46,8 @@ export interface PipelineDoc {
   /** per-doc！模組級單例會讓 A 頁的 model_missing 洩漏到 B 頁 issue bar */
   modelIssues: ValidationIssue[]
   nodeSeq: number
+  /** undo/redo 快照堆疊（spec F3）——不進 .mtxflow/saveCurrent（序列化只吃 recipe） */
+  history: { past: Recipe[]; future: Recipe[] }
 }
 
 function emptyRecipe(): Recipe {
@@ -70,6 +72,7 @@ function createDoc(): PipelineDoc {
     currentRecipeId: null,
     modelIssues: [],
     nodeSeq: 1,
+    history: { past: [], future: [] },
   }
 }
 
@@ -101,12 +104,31 @@ export const usePipelineStore = defineStore('pipeline', () => {
   const structuralIssues = computed(() => validateRecipe(recipe.value, TOOL_REGISTRY))
   const issues = computed(() => [...structuralIssues.value, ...activeDoc.value.modelIssues])
   const errors = computed(() => issues.value.filter(i => i.severity === 'error'))
-  // canRun 刻意只看結構性 errors（不含 modelIssues）：模型缺失不該永久鎖死執行鈕——
-  // 使用者裝好模型後要能直接再按一次執行重新驗證,而非卡在「按鈕本身被 disable」。
+
+  // ── 可達子圖執行語意（spec F4-①）────────────────────────────────
+  const reachable = computed(() => reachableFromRoot(recipe.value))
+  /**
+   * 結構 error 二分（僅 structuralIssues；modelIssues 刻意排除——見 canRun 註解）：
+   * node-scoped 看 nodeId 可達、edge-scoped 只看 from 可達（edge_endpoint 的 to
+   * 可能根本不存在，不能假設「from 可達則 to 必可達」）、graph-scoped
+   * （no_root/multi_root/cycle，無 nodeId 無 edge）一律 blocking。
+   */
+  function isBlockingIssue(i: ValidationIssue, reach: Set<string>): boolean {
+    if (i.edge) return reach.has(i.edge.from)
+    if (i.nodeId) return reach.has(i.nodeId)
+    return true
+  }
+  const blockingErrors = computed(() =>
+    structuralIssues.value.filter(i => i.severity === 'error' && isBlockingIssue(i, reachable.value)))
+  const advisoryErrors = computed(() =>
+    structuralIssues.value.filter(i => i.severity === 'error' && !isBlockingIssue(i, reachable.value)))
+
+  // canRun 只看「可達子圖上的」結構 errors（不含 modelIssues）：模型缺失不該永久
+  // 鎖死執行鈕——使用者裝好模型後要能直接再按一次執行重新驗證,而非卡在「按鈕
+  // 本身被 disable」。懸空分支的錯誤不擋（runner 只走可達節點，該分支不會跑）。
   const canRun = computed(() => {
     if (runningDocId.value !== null) return false   // 全域 gate:任何分頁在跑一律 false
-    const structuralErrors = structuralIssues.value.filter(i => i.severity === 'error')
-    if (structuralErrors.length > 0) return false
+    if (blockingErrors.value.length > 0) return false
     const root = recipe.value.nodes.find(n => n.kind === 'input' || n.kind === 'source')
     if (!root) return false
     if (root.kind === 'input') return inputFiles.value.length > 0
@@ -182,6 +204,8 @@ export const usePipelineStore = defineStore('pipeline', () => {
       const m = /^n(\d+)-/.exec(nd.id)
       return m ? Math.max(mx, Number(m[1])) : mx
     }, 1)
+    doc.history = { past: [], future: [] }   // 載入＝新起點，舊歷史作廢（spec F3）
+    breakCoalescing()
   }
 
   /** 匯入 .mtxflow 文字 → 一律開新分頁（spec §3）；信封 name 空用 fallbackName（檔名去副檔名） */
@@ -259,10 +283,75 @@ export const usePipelineStore = defineStore('pipeline', () => {
     return { ok: true, docId }
   }
 
+  // ── undo/redo 歷史（spec F3）────────────────────────────────────────
+  const HISTORY_CAP = 50
+  const COALESCE_MS = 800
+  /** 合併窗（closure 非響應式）：同 doc 同 key 的連續 mutation 窗內沿用上一步快照 */
+  let coalesce: { docId: string; key: string; at: number } | null = null
+  function breakCoalescing() { coalesce = null }
+  // 切分頁斷合併窗（快照歸屬不跨 doc）
+  watch(activeDocId, () => breakCoalescing())
+
+  function cloneRecipe(r: Recipe): Recipe {
+    return JSON.parse(JSON.stringify(r)) as Recipe
+  }
+
+  /**
+   * mutation 前呼叫：推入當前 recipe 快照、清 future。coalesceKey 相同且
+   * 800ms 滑動窗內＝同一步（滑桿/打字/連續拖曳不會一動一步）；異類 mutation
+   * key 不同自然斷窗。cap 50 丟最舊。
+   */
+  function pushHistory(coalesceKey?: string) {
+    const doc = activeDoc.value
+    const now = Date.now()
+    if (coalesceKey && coalesce
+        && coalesce.docId === doc.id && coalesce.key === coalesceKey
+        && now - coalesce.at <= COALESCE_MS) {
+      coalesce.at = now
+      return
+    }
+    doc.history.past.push(cloneRecipe(doc.recipe))
+    if (doc.history.past.length > HISTORY_CAP) doc.history.past.shift()
+    doc.history.future = []
+    coalesce = coalesceKey ? { docId: doc.id, key: coalesceKey, at: now } : null
+  }
+
+  // 執行中禁用（active doc 在跑；非 active doc 在跑不影響本頁）
+  const canUndo = computed(() => !running.value && activeDoc.value.history.past.length > 0)
+  const canRedo = computed(() => !running.value && activeDoc.value.history.future.length > 0)
+
+  /** 套用快照：整份替換 recipe（派生重算）；選取指向已刪節點則清空。
+   *  VueFlow 內部 selection 會自行剔除消失的節點（Task 0 spike S3 實證），無需收斂。 */
+  function applySnapshot(doc: PipelineDoc, snap: Recipe) {
+    doc.recipe = snap
+    if (doc.selectedNodeId && !snap.nodes.some(n => n.id === doc.selectedNodeId)) {
+      doc.selectedNodeId = null
+    }
+  }
+
+  function undo() {
+    if (!canUndo.value) return
+    const doc = activeDoc.value
+    const snap = doc.history.past.pop()!
+    doc.history.future.push(cloneRecipe(doc.recipe))
+    applySnapshot(doc, snap)
+    breakCoalescing()
+  }
+
+  function redo() {
+    if (!canRedo.value) return
+    const doc = activeDoc.value
+    const snap = doc.history.future.pop()!
+    doc.history.past.push(cloneRecipe(doc.recipe))
+    applySnapshot(doc, snap)
+    breakCoalescing()
+  }
+
   // ── 圖編輯 ─────────────────────────────────────────────────────────
   function addToolNode(toolKey: string, position: { x: number; y: number }): string {
     const spec = TOOL_REGISTRY[toolKey]
     if (!spec) return ''
+    pushHistory()
     const id = `n${++activeDoc.value.nodeSeq}-${Date.now() % 100000}`
     const params: Record<string, unknown> = {}
     for (const f of spec.paramSchema) {
@@ -284,6 +373,8 @@ export const usePipelineStore = defineStore('pipeline', () => {
   }
 
   function removeNode(id: string) {
+    if (!recipe.value.nodes.some(n => n.id === id)) return
+    pushHistory()
     recipe.value.nodes = recipe.value.nodes.filter(n => n.id !== id)
     recipe.value.edges = recipe.value.edges.filter(e => e.from !== id && e.to !== id)
     if (selectedNodeId.value === id) selectedNodeId.value = null
@@ -293,36 +384,102 @@ export const usePipelineStore = defineStore('pipeline', () => {
     }
   }
 
-  /** 連線;成功回 null、失敗回退並回傳具體原因（給 toast） */
+  /**
+   * 連線;成功回 null、失敗回傳具體原因（給 toast）。前置驗證（canConnect,
+   * spec F4-③）——不再有「先推入再回退」暫態;成環/匯流等 node/graph-scoped
+   * 錯誤也擋得住（舊版只攔 edge-scoped、環邊實際進得了 recipe）。
+   * duplicate 維持靜默 no-op（在 canConnect 之前,不觸發 toast）。
+   */
   function connect(from: string, to: string): string | null {
     if (recipe.value.edges.some(e => e.from === from && e.to === to)) return null
+    const err = canConnect(recipe.value, from, to, TOOL_REGISTRY)
+    if (err) return err
+    pushHistory()   // 只有實際加邊才進歷史（duplicate/不合法在前面 early return）
     recipe.value.edges.push({ from, to })
-    const bad = validateRecipe(recipe.value, TOOL_REGISTRY)
-      .find(i => i.severity === 'error' && (i.edge?.from === from && i.edge?.to === to))
-    if (bad) {
-      recipe.value.edges = recipe.value.edges.filter(e => !(e.from === from && e.to === to))
-      return bad.message
-    }
     return null
   }
 
   function disconnect(from: string, to: string) {
+    if (!recipe.value.edges.some(e => e.from === from && e.to === to)) return
+    pushHistory()
     recipe.value.edges = recipe.value.edges.filter(e => !(e.from === from && e.to === to))
   }
 
   function updateNodeParams(id: string, params: Record<string, unknown>) {
     const n = recipe.value.nodes.find(x => x.id === id)
-    if (n) n.params = { ...params }
+    if (!n) return
+    pushHistory(`params:${id}`)
+    n.params = { ...params }
   }
 
   function setKeepOutput(id: string, keep: boolean) {
     const n = recipe.value.nodes.find(x => x.id === id)
-    if (n) n.keepOutput = keep
+    if (!n) return
+    pushHistory()
+    n.keepOutput = keep
+  }
+
+  /** 一次拖曳（可含框選多節點）＝單一歷史步；同集合 800ms 窗內合併 */
+  function moveNodes(updates: Array<{ id: string; position: { x: number; y: number } }>) {
+    const valid = updates.filter(u => recipe.value.nodes.some(n => n.id === u.id))
+    if (valid.length === 0) return
+    pushHistory(`move:${valid.map(u => u.id).sort().join(',')}`)
+    for (const u of valid) {
+      const n = recipe.value.nodes.find(x => x.id === u.id)!
+      n.position = u.position
+    }
   }
 
   function moveNode(id: string, position: { x: number; y: number }) {
-    const n = recipe.value.nodes.find(x => x.id === id)
-    if (n) n.position = position
+    moveNodes([{ id, position }])
+  }
+
+  // ── 剪貼簿（spec F3 複製貼上）───────────────────────────────────────
+  const PASTE_OFFSET = 32
+  /** closure 單例（非響應式）：跨分頁有效、不落地、不碰系統剪貼簿 */
+  let clipboard: { nodes: RecipeNode[]; edges: RecipeEdge[]; pasteCount: number } | null = null
+
+  /** 複製選取中的 tool 節點（input/source 根排除——貼第二根必 multi_root）
+   *  ＋集合內部的邊；回傳複製數（0＝無 tool 節點、剪貼簿不動） */
+  function copyNodes(ids: string[]): number {
+    const want = new Set(ids)
+    const nodes = recipe.value.nodes.filter(n => want.has(n.id) && n.kind === 'tool')
+    if (nodes.length === 0) return 0
+    const picked = new Set(nodes.map(n => n.id))
+    const edges = recipe.value.edges.filter(e => picked.has(e.from) && picked.has(e.to))
+    clipboard = {
+      nodes: JSON.parse(JSON.stringify(nodes)) as RecipeNode[],
+      edges: JSON.parse(JSON.stringify(edges)) as RecipeEdge[],
+      pasteCount: 0,
+    }
+    return nodes.length
+  }
+
+  /** 貼到 active doc：nodeSeq 配號（同 addToolNode 式）、內部邊依 id 映射
+   *  重接、位置隨貼次 +32 錯開；單一 undo 步。回傳新 id（view 據以設選取）。 */
+  function pasteNodes(): string[] | null {
+    if (running.value || !clipboard || clipboard.nodes.length === 0) return null
+    const doc = activeDoc.value
+    pushHistory()
+    clipboard.pasteCount++
+    const offset = PASTE_OFFSET * clipboard.pasteCount
+    const idMap = new Map<string, string>()
+    const newIds: string[] = []
+    for (const src of clipboard.nodes) {
+      const clone = JSON.parse(JSON.stringify(src)) as RecipeNode
+      clone.id = `n${++doc.nodeSeq}-${Date.now() % 100000}`
+      clone.position = {
+        x: (src.position?.x ?? 100) + offset,
+        y: (src.position?.y ?? 100) + offset,
+      }
+      idMap.set(src.id, clone.id)
+      newIds.push(clone.id)
+      doc.recipe.nodes.push(clone)
+    }
+    for (const e of clipboard.edges) {
+      doc.recipe.edges.push({ from: idMap.get(e.from)!, to: idMap.get(e.to)! })
+    }
+    return newIds
   }
 
   /** reset active doc（分頁化後語意＝清當前分頁內容，不動其他分頁） */
@@ -407,7 +564,11 @@ export const usePipelineStore = defineStore('pipeline', () => {
   async function checkModelsReady(doc: PipelineDoc): Promise<boolean> {
     await modelStore.ensureLoaded()
     const missing: ValidationIssue[] = []
+    // 只驗可達子圖（spec F4-①）:不可達節點不會跑,缺模型不擋 run 也不產 issue。
+    // 根自身在集合內（reachableFromRoot 含根）——source 根的模型不被 scope 掉。
+    const reach = reachableFromRoot(doc.recipe)
     for (const node of doc.recipe.nodes) {
+      if (!reach.has(node.id)) continue
       if (node.kind !== 'tool' && node.kind !== 'source') continue
       if (!node.toolKey) continue
       const meta = METAS[node.toolKey]
@@ -537,9 +698,11 @@ export const usePipelineStore = defineStore('pipeline', () => {
 
   return {
     recipe, selectedNodeId, selectedNode, inputFiles, issues, errors, canRun,
+    blockingErrors, advisoryErrors,
     runSnapshot, running,
     addToolNode, removeNode, connect, disconnect, updateNodeParams,
-    setKeepOutput, moveNode, reset, startRun, cancelRun,
+    setKeepOutput, moveNode, moveNodes, reset, startRun, cancelRun,
+    undo, redo, canUndo, canRedo, copyNodes, pasteNodes,
     savedRecipes, currentRecipeId, currentRunId, loadRecipeList, saveCurrent,
     deleteRecipe,
     // 多文件（分頁）

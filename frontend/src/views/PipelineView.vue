@@ -4,7 +4,7 @@
  * recipe（store）是唯一事實來源;Vue Flow nodes/edges 由 recipe 派生,
  * 拖曳/連線事件寫回 store。
  */
-import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Handle, Position, VueFlow, useVueFlow, type Connection, type NodeDragEvent } from '@vue-flow/core'
 import AppThreePaneLayout from '@/components/common/AppThreePaneLayout.vue'
@@ -12,12 +12,16 @@ import { MAX_DOCS, usePipelineStore } from '@/stores/pipeline'
 import { useFilesStore } from '@/stores/files'
 import { useToast } from '@/composables/useToast'
 import { TOOL_REGISTRY, listToolSpecs } from '@/pipeline/registry'
+import { canConnect, reachableFromRoot } from '@/pipeline/recipe'
+import { barState, nodeFlagged } from '@/pipeline/viewState'
+import { isEditableTarget, matchShortcut, pickConnectPair } from '@/pipeline/canvasKeys'
 import type { RecipeNode } from '@/pipeline/types'
 import PipelineParamForm from '@/components/pipeline/PipelineParamForm.vue'
 import PipelineTabBar from '@/components/pipeline/PipelineTabBar.vue'
 import AppMediaInfoBar, { type InfoItem } from '@/components/common/AppMediaInfoBar.vue'
 import { useTitlebar } from '@/composables/useTitlebar'
 import { useSpaceHeld } from '@/composables/useSpaceHeld'
+import { useShiftHeld } from '@/composables/useKeyHeld'
 import { isFlowFileName, sniffFlowText } from '@/pipeline/flowFile'
 import { createLogger } from '@/utils/logger'
 
@@ -27,8 +31,36 @@ const { t } = useI18n()
 const store = usePipelineStore()
 const filesStore = useFilesStore()
 const toast = useToast()
-const { screenToFlowCoordinate, fitView, onPaneReady, viewport } = useVueFlow()
+const { screenToFlowCoordinate, fitView, onPaneReady, viewport, endConnection, connectionClickStartHandle, getSelectedNodes, addSelectedNodes, removeSelectedNodes, findNode } = useVueFlow()
 const { isSpaceHeld } = useSpaceHeld()
+const { isShiftHeld } = useShiftHeld()
+
+// ── Shift 點擊連線（R1）＋意外連線 bug 修（R2）─────────────────────
+// VueFlow connectOnClick 預設 true：單擊 handle 即進入「待連線」狀態（幾乎無視覺
+// 回饋），下一次點到任何 handle 就完成連線——R2「框選後點節點憑空連到 output」
+// 的根因。改為平時關閉、按住 Shift 才開（回報者建議的 Shift 點兩圓圈連線）。
+//
+// Shift 中途放開必須主動清 pending：connectOnClick 轉 false 只會讓 handleClick
+// early-return，connectionClickStartHandle 不會被清（全庫僅拖曳 pointerup 與
+// handleClick 第二擊會清）——殘留會讓下次 Shift 點擊直接完成幻影連線。
+// endConnection(evt, isClick=true) 才清 click 的 pending（isClick=false 清的是
+// 拖曳用的 connectionStartHandle）——真機 spike 實證（plan Task 0 S2）。
+watch(isShiftHeld, (held) => {
+  if (!held && connectionClickStartHandle.value) {
+    endConnection(new MouseEvent('click'), true)
+  }
+})
+
+// 連線前置驗證（R4-③）：拖曳與 Shift 點擊共用（useHandle 兩路徑都尊重
+// isValidConnection）——不合法的目標 handle 直接不接受，取代事後 toast。
+// ⚠ VueFlow 對 controlled :edges 也會逐條跑 isValidConnection（createGraphEdges
+// 再驗）——不放行的話整圖既存邊會被當「duplicate」拒絕渲染（真機踩雷：store
+// 有邊、DOM 零邊）。兩種呼叫以 id 區分：重驗既存邊傳帶 id 的 Edge（放行），
+// 即時拖曳/點擊傳無 id 的裸 Connection（走 canConnect，duplicate 也擋）。
+function isValidConnection(c: Connection): boolean {
+  if ((c as { id?: string }).id) return true
+  return canConnect(store.recipe, c.source, c.target, TOOL_REGISTRY) === null
+}
 
 // 底部資訊列：目前縮放百分比（viewport 響應 pan/zoom；形狀沿 ImageView 的 imageInfoItems）；
 // 點擊＝fitView 縮放至可見全部節點
@@ -86,6 +118,9 @@ const inputNodeLabel = computed(() => {
   return files.length > 1 ? `${name} +${files.length - 1}` : name
 })
 
+// 可達集合（F4-①/②）：canRun scope 與淡化視覺共用同一判定源
+const reachable = computed(() => reachableFromRoot(store.recipe))
+
 const flowNodes = computed(() =>
   store.recipe.nodes.map((n) => ({
     id: n.id,
@@ -98,7 +133,11 @@ const flowNodes = computed(() =>
       // 省略後 hover 可看全名（多檔逐行列出）
       titleAttr: n.kind === 'input' && store.inputFiles.length
         ? store.inputFiles.map(f => f.filename).join('\n') : undefined,
-      hasError: store.errors.some(i => i.nodeId === n.id),
+      // 紅框＝「需要注意」的節點級標記、非嚴格 error 對映：error ∪ tool_unrooted
+      // warning（未生根 head 拆碼前是 error 有紅框——保留、零視覺回退）
+      hasError: nodeFlagged(n.id, store.issues),
+      // 不可達（未連通/懸空鏈）→ 虛線淡化；紅框可與之疊加（紅色虛線淡化框）
+      unreachable: !reachable.value.has(n.id),
       runState: nodeRunState(n.id),
       selected: store.selectedNodeId === n.id,
     },
@@ -122,6 +161,8 @@ const flowEdges = computed(() =>
     target: e.to,
     // 只有「流入正在執行節點」的那段亮虛線動畫（原本整條 pipeline 齊閃，看不出進行到哪）
     animated: nodeRunState(e.to) === 'running',
+    // 懸空鏈上的邊同步淡化虛線（to 不可達 ⇒ 這段不會跑）
+    class: reachable.value.has(e.to) ? undefined : 'edge-unreachable',
   })),
 )
 
@@ -148,7 +189,8 @@ function onConnect(c: Connection) {
 }
 
 function onNodeDragStop(e: NodeDragEvent) {
-  for (const n of e.nodes) store.moveNode(n.id, { x: n.position.x, y: n.position.y })
+  // 單一呼叫＝單一 undo 歷史步（框選多節點拖曳不會一節點一步）
+  store.moveNodes(e.nodes.map(n => ({ id: n.id, position: { x: n.position.x, y: n.position.y } })))
 }
 
 // 節點右上 X：輸入節點=清除已選檔案（節點是根、不移除）；工具/source 節點=移除節點
@@ -253,6 +295,80 @@ function removeInputFile(fileId: string) {
   store.inputFiles = store.inputFiles.filter(f => f.fileId !== fileId)
 }
 
+// ── 畫布鍵盤快捷鍵（F2/F3）：C 連線、Ctrl+Z/Y undo/redo、Ctrl+C/V 複製貼上 ──
+// 判定邏輯在 pipeline/canvasKeys.ts（純函式、可測）；此處只做 store/VueFlow 接線。
+// 執行中一律 no-op（含 Ctrl+C——spec §3「執行中圖不可變」的鍵盤路徑 guard）。
+function onCanvasKeydown(e: KeyboardEvent) {
+  if (isEditableTarget(e)) return                 // 輸入框的 Ctrl+C/Z 等本職不攔
+  const action = matchShortcut(e)
+  if (!action || store.running) return
+  switch (action) {
+    case 'connect': {
+      const pair = pickConnectPair(
+        getSelectedNodes.value.map(n => ({ id: n.id, x: n.position.x, y: n.position.y })),
+        (from, to) => canConnect(store.recipe, from, to, TOOL_REGISTRY),
+      )
+      if (!pair) return                           // 選取數 ≠ 2：no-op、不吃事件
+      e.preventDefault()
+      if ('error' in pair) {
+        toast.show(pair.error || t('pipeline.connect_invalid'), { type: 'error', icon: 'bi-x-circle' })
+      } else {
+        store.connect(pair.from, pair.to)
+      }
+      return
+    }
+    case 'undo': e.preventDefault(); store.undo(); return
+    case 'redo': e.preventDefault(); store.redo(); return
+    case 'copy': {
+      // 選取合流（spec F3）：VueFlow 多選優先，否則 store 單選
+      const ids = getSelectedNodes.value.length > 0
+        ? getSelectedNodes.value.map(n => n.id)
+        : (store.selectedNodeId ? [store.selectedNodeId] : [])
+      const n = store.copyNodes(ids)
+      if (n > 0) {
+        e.preventDefault()
+        toast.show(t('pipeline.copied_n', { n }), { type: 'success', icon: 'bi-clipboard-check' })
+      }
+      return
+    }
+    case 'paste': {
+      const ids = store.pasteNodes()
+      if (!ids) return
+      e.preventDefault()
+      store.selectedNodeId = ids.length === 1 ? ids[0] : null
+      // flowNodes 派生重算後才找得到新節點——nextTick 後設 VueFlow selection。
+      // ⚠ 必須先清舊選取：Ctrl+V 當下 Ctrl 仍按住＝multiSelectionActive，
+      // addSelectedNodes 走「疊加」分支不清舊選取——殘留的原節點會讓下一次
+      // 按 C 把原節點與複製品焊起來（review 抓到的意外連線隱患）
+      void nextTick(() => {
+        removeSelectedNodes(getSelectedNodes.value)
+        addSelectedNodes(ids.map(id => findNode(id)).filter((x): x is NonNullable<typeof x> => !!x))
+      })
+      return
+    }
+  }
+}
+
+// KeepAlive 四鉤＋attached 旗標：addEventListener 非冪等（有別於 titlebar
+// registerActions 的可重入），onMounted+onActivated 都會走、不防會雙掛
+let keydownAttached = false
+function attachKeydown() {
+  if (keydownAttached) return
+  keydownAttached = true
+  window.addEventListener('keydown', onCanvasKeydown)
+}
+function detachKeydown() {
+  if (!keydownAttached) return
+  keydownAttached = false
+  window.removeEventListener('keydown', onCanvasKeydown)
+}
+
+// issue bar 三態（F4-①）：danger＝blocking∪modelIssues／warning＝僅不可達分支
+// 的錯誤／隱藏。節點紅框（節點級標記）與黃 bar＋run 可按（run 級 gate）可同時
+// 成立——不可達分支的問題標在節點上、不擋可達鏈執行。
+const modelErrors = computed(() => store.errors.filter(i => i.code === 'model_missing'))
+const issueBar = computed(() => barState(store.blockingErrors, store.advisoryErrors, modelErrors.value))
+
 const runSummary = computed(() => {
   const snap = store.runSnapshot
   if (!snap) return ''
@@ -289,18 +405,18 @@ watch(titlebarText, (v) => setFileName(v), { immediate: true })
 // 只掛 onMounted 第二次進頁按鈕會失效、clear 時序不對會蓋掉下一頁的註冊。
 function registerTitlebar() {
   registerActions({
-    canUndo: () => false,
-    canRedo: () => false,
+    canUndo: () => store.canUndo,
+    canRedo: () => store.canRedo,
     canSaveAs: () => !store.isBlankDoc(),
-    onUndo: () => {},
-    onRedo: () => {},
+    onUndo: () => store.undo(),
+    onRedo: () => store.redo(),
     onSaveAs: () => { void handleExport() },
   })
 }
-onActivated(() => { registerTitlebar(); setFileName(titlebarText.value); consumePendingImport() })
-onDeactivated(() => { clearActions(); clearFileName() })
-onMounted(() => { registerTitlebar(); void store.loadRecipeList(); consumePendingImport() })
-onUnmounted(() => { clearActions() })
+onActivated(() => { registerTitlebar(); attachKeydown(); setFileName(titlebarText.value); consumePendingImport() })
+onDeactivated(() => { clearActions(); detachKeydown(); clearFileName() })
+onMounted(() => { registerTitlebar(); attachKeydown(); void store.loadRecipeList(); consumePendingImport() })
+onUnmounted(() => { clearActions(); detachKeydown() })
 
 // ── 匯出（spec §4.1）──────────────────────────────────────────────
 async function handleExport(): Promise<void> {
@@ -459,6 +575,8 @@ async function onOpen(id: string) {
           :pan-on-drag="isSpaceHeld ? true : [1, 2]"
           :selection-key-code="isSpaceHeld ? null : true"
           :delete-key-code="null"
+          :connect-on-click="isShiftHeld && !store.running"
+          :is-valid-connection="isValidConnection"
           @connect="onConnect"
           @node-drag-stop="onNodeDragStop"
           @node-click="onNodeClick"
@@ -471,6 +589,7 @@ async function onOpen(id: string) {
                 'is-input': data.kind === 'input',
                 'is-source': data.kind === 'source',
                 'has-error': data.hasError,
+                'is-unreachable': data.unreachable,
                 'is-selected': data.selected,
                 'is-running': data.runState === 'running',
                 'is-run-failed': data.runState === 'failed',
@@ -501,10 +620,10 @@ async function onOpen(id: string) {
           </template>
         </VueFlow>
 
-        <!-- 驗證訊息列 -->
-        <div v-if="store.errors.length > 0" class="issue-bar">
-          <i class="bi bi-exclamation-triangle me-1"></i>{{ store.errors[0].message }}
-          <span v-if="store.errors.length > 1" class="issue-more">+{{ store.errors.length - 1 }}</span>
+        <!-- 驗證訊息列（三態：紅＝擋 run 或 run 失敗類、黃＝不可達分支問題不擋路、無＝隱藏） -->
+        <div v-if="issueBar" class="issue-bar" :class="{ warning: issueBar.tone === 'warning' }">
+          <i class="bi bi-exclamation-triangle me-1"></i>{{ issueBar.message }}
+          <span v-if="issueBar.extra > 0" class="issue-more">+{{ issueBar.extra }}</span>
         </div>
         </div>
 
@@ -649,6 +768,12 @@ async function onOpen(id: string) {
   :deep(.vue-flow__pane.selection) { cursor: default; }
   &.space-pan :deep(.vue-flow__pane) { cursor: grab; }
   :deep(.vue-flow__pane.dragging) { cursor: grabbing; }
+
+  // 懸空鏈上的邊：虛線＋淡化（與節點的 is-unreachable 同語彙；F4-②）
+  :deep(.vue-flow__edge.edge-unreachable path.vue-flow__edge-path) {
+    stroke-dasharray: 5 4;
+    opacity: 0.45;
+  }
 }
 // 資訊列置中（對齊工具頁 filmstrip overlay 模式的置中慣例）
 .canvas-wrap :deep(.media-info-bar) {
@@ -663,6 +788,13 @@ async function onOpen(id: string) {
   border-top: 1px solid rgba(220, 53, 69, 0.4);
   color: var(--color-danger, #dc3545);
   font-size: 0.8rem;
+
+  // 黃色態：僅剩不可達分支的錯誤——保留提醒但不擋 run（F4-①）
+  &.warning {
+    background: color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent);
+    border-top-color: color-mix(in srgb, var(--color-warning, #f59e0b) 40%, transparent);
+    color: var(--color-warning, #f59e0b);
+  }
 }
 .issue-more { margin-left: 0.5rem; opacity: 0.7; }
 
@@ -744,6 +876,9 @@ async function onOpen(id: string) {
   &.is-input { border-color: var(--color-primary); cursor: pointer; }
   &.is-source { border-color: #2aa198; }
   &.has-error { border-color: var(--color-danger, #dc3545); }
+  // 不可達（未連通/懸空鏈）：虛線＋淡化——一眼看出哪條會跑（F4-②）。
+  // 與 has-error 疊加＝紅色虛線淡化框（未生根 head 的紅框保留、零回退）
+  &.is-unreachable { border-style: dashed; opacity: 0.55; }
   &.is-selected { box-shadow: 0 0 0 2px var(--color-primary); }
 
   // 執行狀態視覺（run 快照驅動；流程線不動）——tint 疊在 panel 底色上，深淺主題皆可讀

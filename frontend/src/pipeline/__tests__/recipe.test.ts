@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { validateRecipe, normalizeParams } from '../recipe'
+import { canConnect, reachableFromRoot, validateRecipe, normalizeParams } from '../recipe'
 import type { Recipe } from '../types'
 import type { ToolSpec } from '../types'
 
@@ -169,7 +169,9 @@ describe('validateRecipe', () => {
     expect(errsOf(r)).toEqual([])
   })
 
-  it('rejects tool node with in-degree 0 that has outgoing edges (dead branch)', () => {
+  it('flags tool node with in-degree 0 that has outgoing edges as tool_unrooted warning (not error)', () => {
+    // 拆碼（2026-07-16 spec §0）：未生根子鏈是「還沒接到根」的狀態、非不合理圖——
+    // 可達子圖執行語意下不擋 run、不擋連線；error 版會封死「先組子鏈再接根」
     const r = recipe(
       [
         { id: 'n1', kind: 'input', params: {} },
@@ -177,9 +179,11 @@ describe('validateRecipe', () => {
         { id: 'x', kind: 'tool', toolKey: 'video.transcode', params: {} },   // 無入邊
         { id: 'y', kind: 'tool', toolKey: 'video.transcode', params: {} },
       ],
-      [{ from: 'n1', to: 'a' }, { from: 'x', to: 'y' }],   // x→y 分支永遠不會跑
+      [{ from: 'n1', to: 'a' }, { from: 'x', to: 'y' }],   // x→y 尚未接根
     )
-    expect(errsOf(r)).toContain('tool_indegree')
+    expect(warnsOf(r)).toContain('tool_unrooted')
+    expect(errsOf(r)).not.toContain('tool_indegree')
+    expect(errsOf(r)).not.toContain('tool_unrooted')
   })
 
   it('rejects tool/source upstream into an inputExts-refined node', () => {
@@ -215,6 +219,191 @@ describe('validateRecipe', () => {
       [{ from: 'n1', to: 'a' }, { from: 'a', to: 's' }],
     )
     expect(errsOf(r)).toContain('source_has_input')
+  })
+})
+
+describe('reachableFromRoot', () => {
+  it('walks a straight chain and includes the root itself', () => {
+    const r = recipe(
+      [
+        { id: 'n1', kind: 'input', params: {} },
+        { id: 'a', kind: 'tool', toolKey: 'video.transcode', params: {} },
+        { id: 'b', kind: 'tool', toolKey: 'image.compress', params: {} },
+      ],
+      [{ from: 'n1', to: 'a' }, { from: 'a', to: 'b' }],
+    )
+    expect(reachableFromRoot(r)).toEqual(new Set(['n1', 'a', 'b']))
+  })
+
+  it('covers branches (out-tree) from a source root', () => {
+    const r = recipe(
+      [
+        { id: 's', kind: 'source', toolKey: 'video.download', params: { url: 'x' } },
+        { id: 'a', kind: 'tool', toolKey: 'video.transcode', params: {} },
+        { id: 'b', kind: 'tool', toolKey: 'video.transcode', params: {} },
+      ],
+      [{ from: 's', to: 'a' }, { from: 's', to: 'b' }],
+    )
+    expect(reachableFromRoot(r)).toEqual(new Set(['s', 'a', 'b']))
+  })
+
+  it('excludes orphans and unrooted chains', () => {
+    const r = recipe(
+      [
+        { id: 'n1', kind: 'input', params: {} },
+        { id: 'a', kind: 'tool', toolKey: 'video.transcode', params: {} },
+        { id: 'x', kind: 'tool', toolKey: 'video.transcode', params: {} },
+        { id: 'y', kind: 'tool', toolKey: 'video.transcode', params: {} },
+        { id: 'lone', kind: 'tool', toolKey: 'image.compress', params: {} },
+      ],
+      [{ from: 'n1', to: 'a' }, { from: 'x', to: 'y' }],
+    )
+    expect(reachableFromRoot(r)).toEqual(new Set(['n1', 'a']))
+  })
+
+  it('returns empty set with no root, and walks only the first root with two roots', () => {
+    const none = recipe(
+      [{ id: 'a', kind: 'tool', toolKey: 'video.transcode', params: {} }],
+      [],
+    )
+    expect(reachableFromRoot(none)).toEqual(new Set())
+    // 雙根：與 runner.start() 同規則——nodes 序上第一個根
+    const two = recipe(
+      [
+        { id: 'n1', kind: 'input', params: {} },
+        { id: 's', kind: 'source', toolKey: 'video.download', params: { url: 'x' } },
+        { id: 'a', kind: 'tool', toolKey: 'video.transcode', params: {} },
+        { id: 'b', kind: 'tool', toolKey: 'video.transcode', params: {} },
+      ],
+      [{ from: 'n1', to: 'a' }, { from: 's', to: 'b' }],
+    )
+    expect(reachableFromRoot(two)).toEqual(new Set(['n1', 'a']))
+  })
+})
+
+describe('canConnect', () => {
+  const chain = () => recipe(
+    [
+      { id: 'n1', kind: 'input', params: {} },
+      { id: 'a', kind: 'tool', toolKey: 'video.transcode', params: { output_format: 'gif' } },
+      { id: 'b', kind: 'tool', toolKey: 'image.compress', params: {} },
+    ],
+    [{ from: 'n1', to: 'a' }],
+  )
+
+  it('allows a legal tool→tool connection and does not mutate the recipe', () => {
+    const r = chain()
+    const edgesBefore = r.edges.length
+    expect(canConnect(r, 'a', 'b', REG)).toBeNull()
+    expect(r.edges.length).toBe(edgesBefore)
+  })
+
+  it('allows root→tool', () => {
+    const r = recipe(
+      [
+        { id: 'n1', kind: 'input', params: {} },
+        { id: 'a', kind: 'tool', toolKey: 'video.transcode', params: {} },
+      ],
+      [],
+    )
+    expect(canConnect(r, 'n1', 'a', REG)).toBeNull()
+  })
+
+  it('rejects tool→root (source_has_input)', () => {
+    // 注意用 b→n1（無環路徑）:a→n1 會先被成環檢查攔下（n1→a 既存）
+    const r = chain()
+    expect(canConnect(r, 'b', 'n1', REG)).toMatch(/must not have incoming/)
+  })
+
+  it('rejects tool→root that would also close a cycle with the cycle message', () => {
+    const r = chain()
+    expect(canConnect(r, 'a', 'n1', REG)).toMatch(/cycle/)
+  })
+
+  it('rejects kind mismatch (image output → video-only input)', () => {
+    // a 產出 gif（image）、video.transcode 只吃 video
+    const r = recipe(
+      [
+        { id: 'n1', kind: 'input', params: {} },
+        { id: 'a', kind: 'tool', toolKey: 'video.transcode', params: { output_format: 'gif' } },
+        { id: 'v', kind: 'tool', toolKey: 'video.transcode', params: {} },
+      ],
+      [{ from: 'n1', to: 'a' }],
+    )
+    expect(canConnect(r, 'a', 'v', REG)).toMatch(/expects/)
+  })
+
+  it('rejects duplicate edges', () => {
+    const r = chain()
+    expect(canConnect(r, 'n1', 'a', REG)).toMatch(/already exists/)
+  })
+
+  it('rejects self-loop and back-edge cycles', () => {
+    const r = recipe(
+      [
+        { id: 'n1', kind: 'input', params: {} },
+        { id: 'a', kind: 'tool', toolKey: 'image.compress', params: {} },
+        { id: 'b', kind: 'tool', toolKey: 'image.compress', params: {} },
+      ],
+      [{ from: 'n1', to: 'a' }, { from: 'a', to: 'b' }],
+    )
+    expect(canConnect(r, 'a', 'a', REG)).toMatch(/cycle/)
+    expect(canConnect(r, 'b', 'a', REG)).toMatch(/cycle/)
+  })
+
+  it('rejects a second cycle-closing edge even when the graph already contains a cycle', () => {
+    // 差集法對 cycle 只 push 一次會漏判（spec §F4-③）——成環走專用檢查
+    const r = recipe(
+      [
+        { id: 'n1', kind: 'input', params: {} },
+        { id: 'a', kind: 'tool', toolKey: 'image.compress', params: {} },
+        { id: 'b', kind: 'tool', toolKey: 'image.compress', params: {} },
+        { id: 'c', kind: 'tool', toolKey: 'image.compress', params: {} },
+        { id: 'd', kind: 'tool', toolKey: 'image.compress', params: {} },
+      ],
+      [
+        { from: 'n1', to: 'a' },
+        { from: 'a', to: 'b' }, { from: 'b', to: 'a' },      // 既有環（如匯入檔）
+        { from: 'c', to: 'd' },
+      ],
+    )
+    expect(canConnect(r, 'd', 'c', REG)).toMatch(/cycle/)
+  })
+
+  it('rejects merge (in-degree > 1) via node-scoped diff', () => {
+    const r = recipe(
+      [
+        { id: 'n1', kind: 'input', params: {} },
+        { id: 'a', kind: 'tool', toolKey: 'image.compress', params: {} },
+        { id: 'b', kind: 'tool', toolKey: 'image.compress', params: {} },
+      ],
+      [{ from: 'n1', to: 'a' }, { from: 'n1', to: 'b' }],
+    )
+    expect(canConnect(r, 'a', 'b', REG)).toMatch(/in-degree/)
+  })
+
+  it('allows connecting two isolated tools (unrooted subchain is legal)', () => {
+    const r = recipe(
+      [
+        { id: 'n1', kind: 'input', params: {} },
+        { id: 'x', kind: 'tool', toolKey: 'image.compress', params: {} },
+        { id: 'y', kind: 'tool', toolKey: 'image.compress', params: {} },
+      ],
+      [],
+    )
+    expect(canConnect(r, 'x', 'y', REG)).toBeNull()
+  })
+
+  it('is not confused by pre-existing dangling-endpoint edges elsewhere', () => {
+    const r = recipe(
+      [
+        { id: 'n1', kind: 'input', params: {} },
+        { id: 'a', kind: 'tool', toolKey: 'image.compress', params: {} },
+        { id: 'b', kind: 'tool', toolKey: 'image.compress', params: {} },
+      ],
+      [{ from: 'n1', to: 'a' }, { from: 'ghost', to: 'b' }],   // 懸空 id（壞檔匯入）
+    )
+    expect(canConnect(r, 'a', 'b', REG)).toBeNull()
   })
 })
 
