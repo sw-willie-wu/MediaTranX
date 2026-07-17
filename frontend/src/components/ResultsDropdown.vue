@@ -81,6 +81,7 @@ onBeforeUnmount(() => {
           v-for="r in resultsStore.sortedResults"
           :key="r.fileId"
           :entry="r"
+          @request-close="emit('close')"
         />
       </template>
       <template v-else>
@@ -89,11 +90,11 @@ onBeforeUnmount(() => {
             {{ toolLabel(toolId) }}
             <span class="group-count">({{ items.length }})</span>
           </div>
-          <ResultCard v-for="r in items" :key="r.fileId" :entry="r" />
+          <ResultCard v-for="r in items" :key="r.fileId" :entry="r" @request-close="emit('close')" />
         </div>
       </template>
     </div>
-    <ResultsBatchBar />
+    <ResultsBatchBar @request-close="emit('close')" />
   </div>
 </template>
 
