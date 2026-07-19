@@ -10,6 +10,7 @@ const resultsStore = useResultsStore()
 const router = useRouter()
 const route = useRoute()
 const { confirm: showConfirm } = useConfirm()
+const emit = defineEmits<{ (e: 'request-close'): void }>()
 
 const count = computed(() => resultsStore.selectedIds.size)
 const cat = computed(() => resultsStore.selectedCategory)
@@ -40,6 +41,7 @@ async function doBatchDelete() {
 
 async function doBatchOpen() {
   if (!canOpenInTool.value) return
+  emit('request-close') // 先關抽屜給即時體感回饋，再切頁
   const ids = [...resultsStore.selectedIds]
   await resultsStore.openManyInTool(ids, router, route.path)
   resultsStore.clearSelection()

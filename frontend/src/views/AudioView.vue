@@ -17,7 +17,7 @@ import AppSelect from '@/components/common/AppSelect.vue'
 import AppRange from '@/components/common/AppRange.vue'
 import TextPreviewModal from '@/components/common/TextPreviewModal.vue'
 import { GM_INSTRUMENT_OPTIONS } from '@/constants/midiInstruments'
-import { useAudioWorkspace } from '@/composables/useAudioWorkspace'
+import { useAudioWorkspace, isMidiFileName } from '@/composables/useAudioWorkspace'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useMidiPlayback } from '@/composables/useMidiPlayback'
@@ -51,6 +51,11 @@ const {
 
 const selectedIds = computed(() => collection.selectedIds.value)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
+// ToolParamHost fileInfo 需 Record<string, unknown>；audioInfo 現由 useDomainInfoCache
+// 的泛型 Ref<AudioInfo | null> 供給，須轉型一次（同 ImageView 慣例）。
+const audioInfoForHost = computed<Record<string, unknown> | null>(
+  () => audioInfo.value as Record<string, unknown> | null,
+)
 const { submitToAll } = useMultiSubmit(collection)
 const { isCanceling, requestStop } = useExecuteStop(collection)
 
@@ -148,11 +153,8 @@ function onInstrumentChange(trackIdx: number, value: number) {
   }
 }
 
-// ── MIDI file detection ──
-const isMidiFile = computed(() => {
-  const name = currentFileName.value?.toLowerCase() || ''
-  return name.endsWith('.mid') || name.endsWith('.midi')
-})
+// ── MIDI file detection ──（與 workspace info gate 共用同一判定）
+const isMidiFile = computed(() => isMidiFileName(currentFileName.value ?? ''))
 
 const subFunctions = computed(() => [
   { id: 'transcode',  name: t('audio.functions.transcode'),  icon: 'bi-arrow-repeat',     group: t('audio.group.edit') },
@@ -170,6 +172,11 @@ useViewHost('audio', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
   validSubfunctions: () => subfunctionsForView('audio'),
+  activeFile: computed(() =>
+    activeFileId.value
+      ? { id: activeFileId.value, name: currentFileName.value, kind: 'audio' }
+      : null,
+  ),
 })
 
 const volumeGainPreview = ref(1)
@@ -825,7 +832,7 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           :panel-id="panelIdFor('audio', 'cut')"
           :file-id="activeFileId"
           :current-file-name="currentFileName"
-          :file-info="audioInfo"
+          :file-info="audioInfoForHost"
           @submit="handlePanelSubmit"
           @update:trim-range="onCutParamsTrimRange"
         />

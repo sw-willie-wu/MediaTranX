@@ -23,6 +23,8 @@ export const META: ToolParamMeta = {
   apiPath: '/document/split',
   labelKey: 'document.split.task_label',
   taskType: 'document.split',
+  // 只吃 PDF（後端 split_service 直接 PdfReader，非 PDF → 422）——前端擋在送出前
+  supportedExts: ['pdf'],
   schema: [
     { name: 'pages', type: 'string', default: '' },
   ],

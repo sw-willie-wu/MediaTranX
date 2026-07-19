@@ -67,6 +67,12 @@ useViewHost('document', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
   validSubfunctions: () => subfunctionsForView('document'),
+  // document 無 activeFileId，用 fileId 當 active file id
+  activeFile: computed(() =>
+    fileId.value
+      ? { id: fileId.value, name: currentFileName.value, kind: 'document' }
+      : null,
+  ),
 })
 
 const currentFileExt = computed(() => {
@@ -81,24 +87,13 @@ const currentFileExt = computed(() => {
 // 不讀取內容，只要被呼叫就無條件清空 pages（語意與舊 watch(fileId) 完全等價）。
 const splitFileInfo = computed(() => (fileId.value ? { fileId: fileId.value } : null))
 
-// document.ocr 副檔名限制（PDF 或圖片）——沿舊 DocumentOcrPanel.isPdfOrImage。ToolParamHost
-// 的 validate 只吃 params 做不到這個判斷（需要檔名副檔名），故留在 View 層算，與 host 的
-// isDisabled 用 || 合併（見下方 executeDisabled 'ocr' 分支）——批 4 Task 4.4 遷移決策，見
-// components/params/document/OcrParams.vue 檔頭「isPdfOrImage」段落。
-const isPdfOrImage = computed(() => {
-  const ext = currentFileExt.value
-  return ext === 'pdf' || ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tiff', 'tif'].includes(ext)
-})
-
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
 
-const executeDisabled = computed(() => {
-  const disabled = hostFor(currentFunction.value)?.isDisabled ?? !hasFile.value
-  // ocr 副檔名限制（PDF/圖片）——host validate 判斷不到檔名副檔名，額外 || 合併（見上方
-  // isPdfOrImage 註解）。
-  if (currentFunction.value === 'ocr') return disabled || !isPdfOrImage.value
-  return disabled
-})
+// 副檔名 guard 收斂進 ToolParamHost（META supportedExts，v1.7.1 F）——含 ocr 的
+// PDF/圖片限制，不再於 View 層特判。
+const executeDisabled = computed(
+  () => hostFor(currentFunction.value)?.isDisabled ?? !hasFile.value,
+)
 
 const executeLoading = computed(() => {
   if (isEntryProcessing.value) return true
@@ -294,23 +289,18 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
           @submit="handlePanelSubmit"
         />
 
-        <template v-else-if="currentFunction === 'ocr'">
-          <div v-if="!isPdfOrImage && hasFile" class="info-box info-box--warn">
-            <i class="bi bi-info-circle"></i>
-            <span>{{ $t('document.ocr.format_not_supported') }}</span>
-          </div>
-          <ToolParamHost
-            ref="ocrPanelRef"
-            tool-key="document.ocr"
-            :panel-id="panelIdFor('document', 'ocr')"
-            persist-key="doc_ocr_model"
-            i18n-prefix="document.ocr"
-            :file-id="fileId"
-            :current-file-name="currentFileName"
-            :is-multi-select="isMultiSelect"
-            @submit="handlePanelSubmit"
-          />
-        </template>
+        <ToolParamHost
+          v-else-if="currentFunction === 'ocr'"
+          ref="ocrPanelRef"
+          tool-key="document.ocr"
+          :panel-id="panelIdFor('document', 'ocr')"
+          persist-key="doc_ocr_model"
+          i18n-prefix="document.ocr"
+          :file-id="fileId"
+          :current-file-name="currentFileName"
+          :is-multi-select="isMultiSelect"
+          @submit="handlePanelSubmit"
+        />
 
         <ToolParamHost
           v-else-if="currentFunction === 'split'"
@@ -337,15 +327,6 @@ onUnmounted(() => { clearActions(); clearExtraActions() })
   />
 </template>
 
-<style lang="scss">
-// document.ocr 副檔名警告（見 template ocr 分支）用共用 .info-box/.info-box--warn——
-// 依 FRONTEND_DEVELOP_SPEC §24 不得在 scoped style 重複定義共用 class，改 @use 共用 partial。
-@use '@/styles/tool-panels-shared';
-</style>
-
 <style lang="scss" scoped>
 .settings-form { color: var(--text-primary); }
-
-// 僅本 View 的版面間距（共用 .info-box 不帶 margin）。
-.info-box { margin-bottom: 0.75rem; }
 </style>

@@ -215,6 +215,9 @@ function startPythonBackend() {
         ...process.env,
         MEDIATRANX_ERROR_LOG: errorLog,
         MEDIATRANX_IS_FROZEN: 'true',
+        // 非 tty pipe 下讓 core.exe stdout/stderr 走 unbuffered，app.log 任務期間即時落地
+        // （對 Nuitka 非百分百保證，backend configure_logging 的 line-buffering 才是承重件）
+        PYTHONUNBUFFERED: '1',
         // bin/.venv/logs computed from ROOT in backend PathSettings
         MEDIATRANX_PATH__ROOT: appDataPath,
         MEDIATRANX_PATH__MODELS: userEnv.MEDIATRANX_PATH__MODELS || join(appDataPath, 'models'),

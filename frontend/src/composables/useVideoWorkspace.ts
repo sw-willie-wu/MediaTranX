@@ -7,6 +7,7 @@ import { useMediaCollection } from '@/composables/useMediaCollection'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
 import { renderGlyphThumbnail, TOOL_GLYPH } from '@/utils/glyphThumbnail'
 import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
+import { useDomainInfoCache } from '@/composables/useDomainInfoCache'
 import { apiFetch } from '@/composables/useApi'
 import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
@@ -119,9 +120,6 @@ export function useVideoWorkspace() {
     shouldAddToHistory: (_result, taskType) => VIDEO_OUTPUT_TASKS.has(taskType),
   })
 
-  // ── Video-specific state ──
-  const mediaInfo = ref<VideoMediaInfo | null>(null)
-
   // ── Derived from active entry ──
   const hasFile = computed(() => collection.hasEntries.value)
   const fileId = computed<string | null>(() => collection.activeEntry.value?.fileId ?? null)
@@ -146,22 +144,18 @@ export function useVideoWorkspace() {
     () => historyStack.value.at(-1)?.fileId ?? fileId.value,
   )
 
-  async function loadMediaInfo() {
-    const fid = activeFileId.value
-    if (!fid) return
-    try {
-      const response = await apiFetch(`/video/info/${fid}`)
-      if (response.ok) mediaInfo.value = await response.json()
-    } catch (e) {
-      console.error('Failed to load media info:', e)
-    }
+  // ── Info cache（per-fileId、race-guarded；bug4 helper）──────────────────────
+  async function fetchBasicInfo(fileId: string): Promise<VideoMediaInfo> {
+    const response = await apiFetch(`/video/info/${fileId}`)
+    if (!response.ok) throw new Error('無法取得影片資訊')
+    return response.json()
   }
 
-  // Reload media info when active entry or result file changes
-  watch([() => collection.activeId.value, activeFileId], async () => {
-    mediaInfo.value = null
-    if (fileId.value) await loadMediaInfo()
+  const infoCache = useDomainInfoCache<VideoMediaInfo>({
+    activeFileId: () => activeFileId.value,
+    fetcher: fetchBasicInfo,
   })
+  const mediaInfo = infoCache.info
 
   async function handleFile(file: File, srcDir?: string) {
     const ext = ('.' + file.name.split('.').pop()!).toLowerCase()
@@ -171,7 +165,6 @@ export function useVideoWorkspace() {
       return
     }
     log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
-    mediaInfo.value = null
 
     const entryId = await collection.addEntry(file, srcDir, generateVideoThumbnail)
 
@@ -179,7 +172,7 @@ export function useVideoWorkspace() {
       const uploadedFileId = await filesStore.uploadFile(file, srcDir)
       log.info('handleFile uploaded', { fileName: file.name, fileId: uploadedFileId })
       collection.updateEntry(entryId, { fileId: uploadedFileId, status: 'idle' })
-      await loadMediaInfo()
+      // info 由 useDomainInfoCache 的 activeFileId watcher 自動載入（fileId 就位即觸發）
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       log.error('handleFile upload failed', { fileName: file.name, error: msg })
@@ -196,7 +189,7 @@ export function useVideoWorkspace() {
   }
 
   const { handleExistingFiles } = useExistingFileHandler(
-    collection, loadMediaInfo, () => renderGlyphThumbnail(TOOL_GLYPH.video),
+    collection, undefined, () => renderGlyphThumbnail(TOOL_GLYPH.video),
   )
   usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
 
@@ -221,9 +214,7 @@ export function useVideoWorkspace() {
     if (id) {
       collection.removeEntry(id)
     }
-    if (!collection.hasEntries.value) {
-      mediaInfo.value = null
-    }
+    // info 由 activeFileId → null 時 helper 自清，無需顯式重設
   }
 
   function handlePanelSubmit(taskId: string) {

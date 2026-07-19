@@ -45,6 +45,10 @@ export interface ToolParamMeta {
   modelRequirements?(params: Record<string, unknown>):
     Array<{ slot: string; family?: string; size?: string; quantization?: string; variant?: string; categories?: string[]; id?: string }> | null
   multiSelect: boolean
+  /** 支援副檔名白名單（小寫、不含點）。未設＝不限制（零行為變化）。工具頁 host 據此
+   *  disable 執行＋顯示警示；語意同 pipeline registry inputExts（兩處目前獨立維護，
+   *  單一事實來源收斂列 backlog——v1.7.1 F 非目標）。 */
+  supportedExts?: string[]
   /** 下載按鈕的輸出格式欄位名（host 據此 expose outputFormat） */
   downloadFormatField?: string
   /** agent 面板 execute 動作的 label i18n key；未設時 host 用 meta.labelKey（批 2 Task 2.3
