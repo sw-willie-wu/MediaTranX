@@ -2,7 +2,7 @@
 
 本檔記錄 MediaTranX 每個正式版本的使用者可見變更。格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/)。
 
-## [Unreleased]
+## [1.7.1] - 2026-07-19
 
 ### 新增
 - **流程畫布復原／重做**：Ctrl+Z 復原、Ctrl+Y（或 Ctrl+Shift+Z）重做，標題列的復原鈕同步可用；加刪節點、連線、移動、參數修改都可回退（每個分頁獨立記錄）
