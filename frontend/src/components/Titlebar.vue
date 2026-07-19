@@ -47,7 +47,8 @@ const pageTitle = computed(() => {
     return activeFileName.value ? `${toolName} - ${activeFileName.value}` : toolName
   }
   // 流程頁：同工具頁「頁名 - 名稱」組法（名稱=PipelineView 設的流程名/未命名），
-  // 但不進 toolTitleKeys——isToolPage 會帶出 undo/redo 等流程頁沒註冊的按鈕
+  // 但不進 toolTitleKeys——流程頁的按鈕（undo/redo/saveAs）由下方 gate 以
+  // isPipelinePage 各自帶入，不吃 isToolPage 的整組工具頁行為
   if (route.path === '/pipeline') {
     const base = t('nav.pipeline')
     return activeFileName.value ? `${base} - ${activeFileName.value}` : base
@@ -81,7 +82,9 @@ onMounted(async () => {
 <template>
   <div class="titlebar pywebview-drag-region">
     <div class="titlebar-left">
-      <template v-if="isToolPage">
+      <!-- 流程頁也有 undo/redo（畫布 UX 批次接了 registerActions；此 gate 原只認
+           isToolPage 導致按鈕從未在 /pipeline 渲染） -->
+      <template v-if="isToolPage || isPipelinePage">
         <TitlebarButton
           icon="bi-arrow-return-left flip-v"
           :disabled="!canUndo"
