@@ -375,7 +375,6 @@ function _createAgent(deps: UseAgentDeps = {}) {
         const ap = getActivePanel()
         const av = getActiveView()
         const filesStore = useFilesStore()
-        const cur = filesStore.currentFile
         const viewId = ap ? ap.panelId.split('.')[0] : null
         const snapshot = buildAgentStateSnapshot({
           activePanel: ap
@@ -387,7 +386,9 @@ function _createAgent(deps: UseAgentDeps = {}) {
           files: filesStore.allFiles.map(f => ({
             id: f.id, name: f.originalName ?? f.name, kind: f.type,
           })),
-          activeFile: cur ? { id: cur.id, name: cur.originalName ?? cur.name, kind: cur.type } : null,
+          // 跨 domain 污染修復（v1.7.1）：active_file 取「當前 view handle」的作用檔，與
+          // current_position 同 domain；不再用全域 filesStore.currentFile（切 domain 從不重置）。
+          activeFile: av?.activeFile?.value ?? null,
         })
         agent.state = toCloneable({ agent_model_choice: settings.modelChoice, snapshot })
 

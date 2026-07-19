@@ -52,10 +52,11 @@ export function validateRecipe(
     if (n.kind === 'tool' && d > 1) {
       issues.push({ severity: 'error', nodeId: n.id, code: 'tool_indegree', message: `tool node ${n.id} has in-degree ${d} (merge not supported)` })
     }
-    // 入度 0 但有出邊的 tool 節點:不是孤立、也不是根——引擎永遠不會執行它,
-    // 必須擋下（否則 run 靜默略過整條分支還回報成功）。
+    // 入度 0 但有出邊的 tool 節點:未生根子鏈的 head——「還沒接到根」的狀態
+    // 標記（warning），非不合理圖。可達子圖執行語意下不擋 run 也不擋連線
+    // （error 版會封死「先組子鏈再接根」的建圖順序）；呈現＝畫布淡化＋紅框。
     if (n.kind === 'tool' && d === 0 && connected.has(n.id)) {
-      issues.push({ severity: 'error', nodeId: n.id, code: 'tool_indegree', message: `tool node ${n.id} has no incoming edge (branch would never run)` })
+      issues.push({ severity: 'warning', nodeId: n.id, code: 'tool_unrooted', message: `tool node ${n.id} has no incoming edge (branch will not run until connected)` })
     }
     if ((n.kind === 'input' || n.kind === 'source') && d > 0) {
       issues.push({ severity: 'error', nodeId: n.id, code: 'source_has_input', message: `${n.kind} node ${n.id} must not have incoming edges` })
@@ -142,6 +143,82 @@ export function validateRecipe(
   }
 
   return issues
+}
+
+/**
+ * 從根可達的節點集合（含根本身）。root＝nodes 序上第一個 input/source
+ * （與 runner.start() 同規則）；0 根回空集合。多根時只算第一根——第二根
+ * 的鏈呈現為不可達淡化，與 multi_root blocking 一致地提示使用者。
+ */
+export function reachableFromRoot(recipe: Recipe): Set<string> {
+  const root = recipe.nodes.find(n => n.kind === 'input' || n.kind === 'source')
+  if (!root) return new Set()
+  const adj = new Map<string, string[]>()
+  for (const e of recipe.edges) {
+    const arr = adj.get(e.from) ?? []
+    arr.push(e.to)
+    adj.set(e.from, arr)
+  }
+  const ids = new Set(recipe.nodes.map(n => n.id))
+  const reachable = new Set<string>([root.id])
+  const queue = [root.id]
+  while (queue.length > 0) {
+    const cur = queue.shift()!
+    for (const next of adj.get(cur) ?? []) {
+      if (!reachable.has(next) && ids.has(next)) {
+        reachable.add(next)
+        queue.push(next)
+      }
+    }
+  }
+  return reachable
+}
+
+/**
+ * 連線前置驗證（spec F4-③）:合法回 null、不合法回具體原因。純函式、不動
+ * recipe。三段檢查:
+ * 1. 重複 edge —— UI 一律不給連（store.connect 的 dedup 靜默 no-op 是另一層）
+ * 2. 成環專用檢查（to 可達 from ⇒ 加邊必成環）——不依賴差集:validateRecipe
+ *    對 cycle 只 push 一次,圖已含環（匯入檔）時再加第二條環邊差集會漏判
+ * 3. 差集法 —— 加 edge 前後 error 集合比對,新增者即擋（涵蓋 kind_mismatch
+ *    edge-scoped、匯流 tool_indegree node-scoped 等;warning 如 tool_unrooted
+ *    不參與——未生根子鏈的合法連線要放行）
+ */
+export function canConnect(
+  recipe: Recipe,
+  from: string,
+  to: string,
+  registry: Record<string, ToolSpec>,
+): string | null {
+  if (recipe.edges.some(e => e.from === from && e.to === to)) {
+    return 'edge already exists'
+  }
+  // 成環:from === to 或 to 沿既有 edges 可達 from
+  if (from === to) return 'connection would create a cycle'
+  const adj = new Map<string, string[]>()
+  for (const e of recipe.edges) {
+    const arr = adj.get(e.from) ?? []
+    arr.push(e.to)
+    adj.set(e.from, arr)
+  }
+  const seen = new Set<string>([to])
+  const queue = [to]
+  while (queue.length > 0) {
+    const cur = queue.shift()!
+    if (cur === from) return 'connection would create a cycle'
+    for (const next of adj.get(cur) ?? []) {
+      if (!seen.has(next)) { seen.add(next); queue.push(next) }
+    }
+  }
+  // 差集:僅比對 error（key＝code|nodeId|edge）
+  const key = (i: ValidationIssue) => `${i.code}|${i.nodeId ?? ''}|${i.edge?.from ?? ''}|${i.edge?.to ?? ''}`
+  const before = new Set(
+    validateRecipe(recipe, registry).filter(i => i.severity === 'error').map(key),
+  )
+  const candidate: Recipe = { ...recipe, edges: [...recipe.edges, { from, to }] }
+  const added = validateRecipe(candidate, registry)
+    .filter(i => i.severity === 'error' && !before.has(key(i)))
+  return added.length > 0 ? added[0].message : null
 }
 
 /**

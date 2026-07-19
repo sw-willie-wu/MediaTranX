@@ -7,11 +7,18 @@ import { useMediaCollection } from '@/composables/useMediaCollection'
 import { usePendingFileListener } from '@/composables/usePendingFileListener'
 import { renderGlyphThumbnail, TOOL_GLYPH } from '@/utils/glyphThumbnail'
 import { useExistingFileHandler } from '@/composables/useExistingFileHandler'
+import { useDomainInfoCache } from '@/composables/useDomainInfoCache'
 import { apiFetch } from '@/composables/useApi'
 import { useI18n } from 'vue-i18n'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('AudioWorkspace')
+
+/** MIDI 檔非真實音訊、後端 /audio/info 會失敗——info 快取需跳過它。 */
+export function isMidiFileName(name: string): boolean {
+  const n = name.toLowerCase()
+  return n.endsWith('.mid') || n.endsWith('.midi')
+}
 
 // 支援的音訊格式
 const AUDIO_EXTS = new Set([
@@ -73,9 +80,6 @@ export function useAudioWorkspace() {
     shouldAddToHistory: (result) => !result.text_content && !result.text_file_id,
   })
 
-  // ── Audio-specific state ──
-  const audioInfo = ref<AudioInfo | null>(null)
-
   // ── Derived from active entry ──
   const hasFile = computed(() => collection.hasEntries.value)
   const fileId = computed<string | null>(() => collection.activeEntry.value?.fileId ?? null)
@@ -104,25 +108,23 @@ export function useAudioWorkspace() {
   const textResultFileId = ref<string | null>(null)
   const textResultContent = ref<string | null>(null)
 
-  async function loadAudioInfo() {
-    const fid = activeFileId.value
-    if (!fid) return
-    // MIDI files don't have audio info (not real audio)
-    const name = currentFileName.value?.toLowerCase() || ''
-    if (name.endsWith('.mid') || name.endsWith('.midi')) return
-    try {
-      const res = await apiFetch(`/audio/info/${fid}`)
-      if (res.ok) audioInfo.value = await res.json()
-    } catch (e) {
-      console.error('Failed to load audio info:', e)
-    }
+  // ── Info cache（per-fileId、race-guarded；bug4 helper）──────────────────────
+  async function fetchBasicInfo(fileId: string): Promise<AudioInfo> {
+    const res = await apiFetch(`/audio/info/${fileId}`)
+    if (!res.ok) throw new Error('無法取得音訊資訊')
+    return res.json()
   }
 
-  // Reload audio info when active entry or result file changes
-  watch([() => collection.activeId.value, activeFileId], async () => {
-    audioInfo.value = null
-    if (fileId.value) await loadAudioInfo()
+  // MIDI 非真實音訊、後端 /audio/info 會失敗——包裝 getter 回 null（helper 清 info 不 fetch）。
+  // 公開的 activeFileId computed 絕對不動（MIDI 編輯/下載依賴它非 null）。
+  const infoFileId = () =>
+    isMidiFileName(currentFileName.value ?? '') ? null : activeFileId.value
+
+  const infoCache = useDomainInfoCache<AudioInfo>({
+    activeFileId: infoFileId,
+    fetcher: fetchBasicInfo,
   })
+  const audioInfo = infoCache.info
 
   async function handleFile(file: File, srcDir?: string) {
     // 檢查副檔名
@@ -133,7 +135,6 @@ export function useAudioWorkspace() {
       return
     }
     log.info('handleFile', { fileName: file.name, size: file.size, srcDir })
-    audioInfo.value = null
 
     const entryId = await collection.addEntry(file, srcDir, generateAudioThumbnail)
 
@@ -141,7 +142,7 @@ export function useAudioWorkspace() {
       const uploadedFileId = await filesStore.uploadFile(file, srcDir)
       log.info('handleFile uploaded', { fileName: file.name, fileId: uploadedFileId })
       collection.updateEntry(entryId, { fileId: uploadedFileId, status: 'idle' })
-      await loadAudioInfo()
+      // info 由 useDomainInfoCache 的 activeFileId watcher 自動載入（fileId 就位即觸發）
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       log.error('handleFile upload failed', { fileName: file.name, error: msg })
@@ -158,7 +159,7 @@ export function useAudioWorkspace() {
   }
 
   const { handleExistingFiles, addExistingFile } = useExistingFileHandler(
-    collection, loadAudioInfo, () => renderGlyphThumbnail(TOOL_GLYPH.audio),
+    collection, undefined, () => renderGlyphThumbnail(TOOL_GLYPH.audio),
   )
   usePendingFileListener(handleFile, handleFiles, handleExistingFiles)
 
@@ -167,9 +168,7 @@ export function useAudioWorkspace() {
     if (id) {
       collection.removeEntry(id)
     }
-    if (!collection.hasEntries.value) {
-      audioInfo.value = null
-    }
+    // info 由 activeFileId → null 時 helper 自清，無需顯式重設
   }
 
   function handlePanelSubmit(taskId: string) {
@@ -260,7 +259,7 @@ export function useAudioWorkspace() {
     return addExistingFile({
       fileId: midiFileId,
       filename: midiFilename,
-      fileSize: 0,            // MIDI: not real audio; loadAudioInfo skips .mid/.midi; no consumer reads size
+      fileSize: 0,            // MIDI: not real audio; infoFileId gate skips .mid/.midi; no consumer reads size
       mimeType: 'audio/midi',
     })
   }

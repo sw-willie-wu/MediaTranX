@@ -38,6 +38,8 @@ export const META: ToolParamMeta = {
   apiPath: '/document/translate',
   labelKey: 'document.translate.task_label',
   taskType: 'document.translate',
+  // 只吃文字與字幕（對齊後端 translate_service SUPPORTED_EXTENSIONS）——非此類 → 422
+  supportedExts: ['txt', 'md', 'log', 'srt', 'vtt', 'lrc', 'ass'],
   schema: [
     { name: 'source_language', type: 'string' },
     { name: 'target_language', type: 'string' },

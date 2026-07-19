@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useResultsStore } from '@/stores/results'
 import TitlebarButton from './common/TitlebarButton.vue'
 import ResultsDropdown from './ResultsDropdown.vue'
+import { prefetchToolViews } from '@/router/prefetchViews'
 
 const { t } = useI18n()
 const resultsStore = useResultsStore()
@@ -16,7 +17,11 @@ const hasFiles = computed(() => count.value > 0)
 
 function toggle() {
   open.value = !open.value
-  if (open.value) resultsStore.markRead()
+  if (open.value) {
+    resultsStore.markRead()
+    // 抽屜開啟＝即將 open-in-tool 的強意圖——預熱工具頁 chunk，讓之後 router.push 幾乎即時
+    prefetchToolViews()
+  }
 }
 function close() { open.value = false }
 </script>

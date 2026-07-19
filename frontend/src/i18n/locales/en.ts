@@ -22,6 +22,7 @@ export default {
     input_node_hint: 'Pick the files to run through this pipeline in the Run section below.',
     select_node_hint: 'Click a node on the canvas to edit its parameters; drag or click on the left to add nodes.',
     connect_invalid: 'This connection is not compatible',
+    copied_n: 'Copied {n} node(s)',
     keep_output: 'Keep this node output',
     keep_output_hint: 'By default only terminal node outputs enter the Results drawer; check to keep intermediates too.',
     remove_node: 'Remove node',
@@ -224,6 +225,7 @@ export default {
     folder_register_failed: '{count} file(s) could not be added',
     loading_info: 'Loading info...',
     zoom_fit: 'Zoom to fit',
+    zoom: 'Zoom',
     uploading: 'Uploading...',
     copy: 'Copy',
     copy_all: 'Copy All',
@@ -1144,6 +1146,7 @@ export default {
       output_file: 'Output File',
       select_output: 'Select Output Location',
       task_label: 'Document · Split',
+      format_not_supported: 'Split only supports PDF files',
     },
 
     translate: {
@@ -1162,6 +1165,7 @@ export default {
       install_complete: 'Translation feature installed',
       install_error: 'Installation failed, check task list',
       no_model_downloaded: 'No translation model downloaded. Please download one in Settings → Models & Resources.',
+      format_not_supported: 'Translate only supports text and subtitle formats (txt, md, log, srt, vtt, lrc, ass)',
     },
   },
 

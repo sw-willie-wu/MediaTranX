@@ -388,6 +388,10 @@ function handleExecuteClick() {
 
 // KeepAlive: 每次 activated 時檢查 pending file
 onActivated(() => {
+  // KeepAlive 切回時上方 watch（activeFileName 來源未變則不重跑）可能讓 titlebar 單例
+  // 殘留他 domain 檔名——鏡射該 watch 的分支 re-assert（空值走 clearFileName 還原預設標題）。
+  const name = props.activeFileName ?? currentFile.value?.name ?? ''
+  if (name) { setFileName(name) } else { clearFileName() }
   // Single pending file
   const pending = filesStore.consumePendingFile()
   if (pending) setFile(pending.file, pending.sourceDir)

@@ -43,6 +43,10 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ submit: [taskId: string] }>()
 
+// 副檔名 guard 的警示 div 讓 template 變 fragment → 關閉自動 attr 繼承；顯式接管 $attrs
+// 轉發到子參數元件（crop 覆蓋層 props/OCR persist-key/adjust field-group 等靠此 fallthrough）。
+defineOptions({ inheritAttrs: false })
+
 const { t } = useI18n()
 const toast = useToast()
 const { submitTask, isProcessing } = useSubmitTask()
@@ -150,10 +154,21 @@ async function preflight(): Promise<boolean> {
   return true
 }
 
+// ─── 副檔名 guard（v1.7.1 F）────────────────────────────────────────────────
+// META 未設 supportedExts 的工具零行為變化（formatUnsupported 恆 false）。
+const currentExt = computed(() => {
+  const name = props.currentFileName
+  const i = name.lastIndexOf('.')
+  return i >= 0 ? name.slice(i + 1).toLowerCase() : ''
+})
+const formatUnsupported = computed(
+  () => !!props.fileId && !!meta.supportedExts && !meta.supportedExts.includes(currentExt.value),
+)
+
 // ─── isDisabled / isLoading / outputFormat ─────────────────────────────────
 const isLoading = isProcessing
 const isDisabled = computed(
-  () => !props.fileId || isProcessing.value || meta.validate?.(params.value) != null,
+  () => !props.fileId || isProcessing.value || formatUnsupported.value || meta.validate?.(params.value) != null,
 )
 const outputFormat = computed<string | undefined>(() =>
   meta.downloadFormatField ? String(params.value[meta.downloadFormatField] ?? '') : undefined,
@@ -313,12 +328,23 @@ defineExpose({
 </script>
 
 <template>
+  <div v-if="formatUnsupported" class="info-box info-box--warn">
+    <i class="bi bi-info-circle"></i>
+    <span>{{ t(`${props.toolKey}.format_not_supported`) }}</span>
+  </div>
   <component
     :is="PARAM_COMPONENTS[props.toolKey]"
     ref="paramComponentRef"
+    v-bind="$attrs"
     :params="params"
     :context="'tool'"
     :file-info="fileInfo ?? null"
     @update:params="onParamsUpdate"
   />
 </template>
+
+<style scoped>
+@use '@/styles/tool-panels-shared';
+/* 共用 .info-box 不帶 margin——與參數元件間留距 */
+.info-box { margin-bottom: 0.75rem; }
+</style>

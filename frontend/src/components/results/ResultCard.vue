@@ -13,6 +13,7 @@ const resultsStore = useResultsStore()
 const router = useRouter()
 const route = useRoute()
 const props = defineProps<{ entry: ResultEntry }>()
+const emit = defineEmits<{ (e: 'request-close'): void }>()
 
 const isSelected = computed(() => resultsStore.selectedIds.has(props.entry.fileId))
 
@@ -56,6 +57,7 @@ function onSave() { resultsStore.saveOne(props.entry.fileId) }
 function onBrowse() { resultsStore.browseSaved(props.entry.fileId) }
 function onRemove() { resultsStore.removeOne(props.entry.fileId) }
 function onOpenInTool() {
+  emit('request-close') // 先關抽屜給即時體感回饋，再切頁（不 await、不阻擋 push）
   resultsStore.openInTool(props.entry.fileId, router, route.path)
 }
 </script>

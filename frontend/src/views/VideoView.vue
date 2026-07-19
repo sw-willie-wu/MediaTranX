@@ -32,6 +32,11 @@ const {
 
 const selectedIds = computed(() => collection.selectedIds.value)
 const isMultiSelect = computed(() => selectedIds.value.size > 1)
+// ToolParamHost fileInfo 需 Record<string, unknown>；mediaInfo 現由 useDomainInfoCache
+// 的泛型 Ref<VideoMediaInfo | null> 供給，須轉型一次供各掛載點共用（同 ImageView 慣例）。
+const mediaInfoForHost = computed<Record<string, unknown> | null>(
+  () => mediaInfo.value as Record<string, unknown> | null,
+)
 const { submitToAll } = useMultiSubmit(collection)
 const { isCanceling, requestStop } = useExecuteStop(collection)
 const toast = useToast()
@@ -102,6 +107,11 @@ useViewHost('video', {
   currentFunction,
   setCurrentFunction: (id) => { currentFunction.value = id },
   validSubfunctions: () => subfunctionsForView('video'),
+  activeFile: computed(() =>
+    activeFileId.value
+      ? { id: activeFileId.value, name: currentFileName.value, kind: 'video' }
+      : null,
+  ),
 })
 
 const isEntryProcessing = computed(() => collection.activeEntry.value?.status === 'processing')
@@ -304,7 +314,7 @@ onUnmounted(() => { clearActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
-          :file-info="mediaInfo"
+          :file-info="mediaInfoForHost"
           @submit="handlePanelSubmit"
         />
 
@@ -316,7 +326,7 @@ onUnmounted(() => { clearActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
-          :file-info="mediaInfo"
+          :file-info="mediaInfoForHost"
           @submit="handlePanelSubmit"
         />
 
@@ -328,7 +338,7 @@ onUnmounted(() => { clearActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
-          :file-info="mediaInfo"
+          :file-info="mediaInfoForHost"
           :canvas-crop-rect="canvasCropRect"
           @submit="handlePanelSubmit"
           @update:show-crop-overlay="showCropOverlay = $event"
@@ -354,7 +364,7 @@ onUnmounted(() => { clearActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
-          :file-info="mediaInfo"
+          :file-info="mediaInfoForHost"
           @submit="handlePanelSubmit"
         />
 
@@ -366,7 +376,7 @@ onUnmounted(() => { clearActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
-          :file-info="mediaInfo"
+          :file-info="mediaInfoForHost"
           @submit="handlePanelSubmit"
         />
 
@@ -378,7 +388,7 @@ onUnmounted(() => { clearActions() })
           :file-id="activeFileId"
           :current-file-name="currentFileName"
           :is-multi-select="isMultiSelect"
-          :file-info="mediaInfo"
+          :file-info="mediaInfoForHost"
           @submit="handlePanelSubmit"
         />
       </div>

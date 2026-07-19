@@ -7,6 +7,12 @@
  */
 import type { Ref } from 'vue'
 
+export interface ViewActiveFile {
+  id: string
+  name: string
+  kind: string
+}
+
 export interface ViewHandle {
   /** The currently-active function/tab ID within this view */
   currentFunction: Ref<string>
@@ -17,6 +23,13 @@ export interface ViewHandle {
    * Optional — views that don't declare it are treated as "allow any".
    */
   validSubfunctions?: () => string[]
+  /**
+   * 跨 domain 檔案上下文污染修復（v1.7.1）：本 view 當前作用檔案（歷史最新結果檔）。
+   * agent state snapshot 的 active_file 唯一來源——與 current_position 保證同一個 domain，
+   * 不再從全域 filesStore.currentFile 取（那個切 domain 從不重置、會殘留他 domain 檔）。
+   * 未註冊（settings/pipeline 等無檔 view）或無檔時視為 null。
+   */
+  activeFile?: Ref<ViewActiveFile | null>
 }
 
 const _registry = new Map<string, ViewHandle>()
