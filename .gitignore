@@ -71,6 +71,7 @@ backend/models/
 CLAUDE.md
 .gemini/
 .playwright-mcp/
+.issue/
 
 # SDD / superpowers scratch (never commit)
 .superpowers/
