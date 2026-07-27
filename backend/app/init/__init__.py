@@ -14,7 +14,8 @@ def bootstrap() -> None:
 
     1. inject_paths() — already done at module level above
     2. DLL registration (Windows frozen only)
-    3. Logging config
+    3. Bundled ffmpeg on PATH (for third-party libs that shell out by name)
+    4. Logging config
 
     NOTE: third-party compat patches are NOT applied here — importing the
     patched libs (torchvision, scipy) is ~4 s and must stay off the
@@ -23,8 +24,9 @@ def bootstrap() -> None:
     and the scipy.signal.gaussian patch lives in its sole consumer
     (adapters/ai/wrapper/basic_pitch.py). See app/init/compat.py.
     """
-    from app.init.setup import register_dlls
+    from app.init.setup import register_bundled_binaries, register_dlls
     register_dlls(SETTINGS)
+    register_bundled_binaries(SETTINGS)
 
     from app.init.logging_config import configure_logging
     configure_logging(SETTINGS)
