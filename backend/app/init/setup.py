@@ -1,11 +1,13 @@
 """
 Runtime environment setup for production mode.
 
-Two phases:
+Three phases:
 1. inject_paths() — called at import time, before any third-party import.
    Adds .venv/site-packages to sys.path so pydantic etc. are importable.
 2. register_dlls(settings) — called at bootstrap, after settings are loaded.
    Registers DLL search directories for Windows frozen mode.
+3. register_bundled_binaries(settings) — called at bootstrap. Puts the bundled
+   ffmpeg directory on PATH for third-party libs that shell out by bare name.
 """
 import glob
 import os
@@ -102,3 +104,33 @@ def register_dlls(settings) -> None:
                 os.add_dll_directory(d)
             except Exception:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: bundled binaries on PATH (needs settings)
+# ---------------------------------------------------------------------------
+
+def register_bundled_binaries(settings) -> None:
+    """Prepend the bundled ffmpeg directory to PATH.
+
+    Our own FFmpegWrapper resolves an absolute path and never needs this, but
+    third-party libraries shell out by bare name: demucs' ``AudioFile`` runs
+    ``ffprobe``/``ffmpeg`` through ``subprocess``, so on a machine with no
+    system ffmpeg it raises FileNotFoundError and demucs reports "FFmpeg is not
+    installed" (it then falls back to torchaudio, which only rescues formats
+    libsndfile can decode — wav yes, aac no). Prepending mirrors the wrapper's
+    bundled-first preference.
+
+    No-op when there is no bundled copy (non-Windows, where path.ffmpeg is the
+    bare name "ffmpeg" and the system install is expected).
+    """
+    bin_dir = settings.path.ffmpeg
+    exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+    if not os.path.isfile(os.path.join(str(bin_dir), exe)):
+        return
+
+    entry = str(bin_dir)
+    current = os.environ.get("PATH", "")
+    if entry in current.split(os.pathsep):
+        return
+    os.environ["PATH"] = entry + os.pathsep + current if current else entry
