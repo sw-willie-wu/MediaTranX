@@ -1,6 +1,6 @@
 {
   "name": "mediatranx-electron",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "buildMode": "prod",
   "private": true,
   "license": "MIT",
